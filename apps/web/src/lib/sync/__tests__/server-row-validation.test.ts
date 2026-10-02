@@ -155,7 +155,7 @@ async function pullThrough(changes: ServerChange[]): Promise<PullResult> {
     processOperation: async () => ({ success: true }),
     fetchServerChanges,
   })
-  service.onChangesPulled((pulled) => applyServerChangesToStores(pulled))
+  service.onChangesPulled((pulled) => applyServerChangesToStores(pulled, USER_ID))
   service.onServerChangesRefused(reportRefusedServerChanges)
   try {
     const result = await service.pull()
@@ -430,7 +430,7 @@ describe('AC-7: a pull whose only row was refused does not perturb ordering or t
     const before = useIncomeStore.getState().incomeSources
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
-      applyServerChangesToStores([incomeChange({}, { entityId: '' })])
+      applyServerChangesToStores([incomeChange({}, { entityId: '' })], USER_ID)
       // Positive anchor: the applier ran and refused it.
       expect(warn).toHaveBeenCalledTimes(1)
     } finally {
@@ -598,7 +598,7 @@ describe('story 75.4: the applier itself no longer validates — ONE validator, 
     // last-writer-wins drops the user's queued edit, and that is core's `pull()`.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
-      applyServerChangesToStores([incomeChange({ amount: '500000' })])
+      applyServerChangesToStores([incomeChange({ amount: '500000' })], USER_ID)
       const rows = useIncomeStore.getState().incomeSources
       expect(rows).toHaveLength(1)
       expect((rows[0] as unknown as Record<string, unknown>)['amount']).toBe('500000')

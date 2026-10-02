@@ -21,6 +21,12 @@
  *
  * Re-seeding is avoided across sessions by a per-user localStorage marker so an
  * ordinary re-login does not replay creates and inflate the conflict count.
+ *
+ * ⚠️ Only rows that belong to NO account are seeded (story 86.2, FR140). The
+ * stores are shared by whoever uses the browser, so when B signs in where A
+ * synced before they still hold A's pulled rows, each carrying A's uuid. The
+ * marker is per user, so B's first session on this device seeds, and it used to
+ * upload A's whole history into B's account. See `lib/sync/accountOwner.ts`.
  */
 
 import { useBalanceStore } from '../../stores/balanceStore'
@@ -28,6 +34,7 @@ import { useCategoryStore } from '../../stores/categoryStore'
 import { useExpenseStore } from '../../stores/expenseStore'
 import { useIncomeStore } from '../../stores/incomeStore'
 import { useSavingsStore } from '../../stores/savingsStore'
+import { isOwnedByAnotherAccount } from './accountOwner'
 import { enqueueCreate, isSyncActive } from './syncBridge'
 
 /** localStorage key marking that this user's free-tier backlog has been seeded. */
@@ -69,9 +76,16 @@ function markSeeded(userId: string): void {
  * re-creating server rows — which would produce `create-create` conflicts the
  * push queue never drains (→ circuit breaker). Race-free: it reads the merged
  * store state, no dependence on capturing the pull result.
+ *
+ * ⚠️ "Not the session user's" is NOT "never synced" (story 86.2). A row another
+ * account synced on this browser carries THAT account's uuid, and is skipped too.
+ * What is left is the placeholder-owned rows: this browser's free-tier backlog.
  */
 function needsSeeding(row: { userId?: unknown }, sessionUserId: string): boolean {
-  return String(row.userId ?? '') !== sessionUserId
+  return (
+    String(row.userId ?? '') !== sessionUserId &&
+    !isOwnedByAnotherAccount(row.userId, sessionUserId)
+  )
 }
 
 /**

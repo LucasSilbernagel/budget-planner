@@ -33,6 +33,7 @@ import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import { useShallow } from 'zustand/react/shallow'
 import { fetchServerChangesWithMeta, sendSyncOperation } from '../features/api/client'
+import { isOwnedByAnotherAccount } from '../lib/sync/accountOwner'
 import {
   applyServerChangesToStores,
   findLocalRow,
@@ -445,7 +446,7 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     // Subscribe to pulled changes: write them into the UI stores (Story 4-18).
     // The core emits applied changes; the web layer owns the store writes.
     const unsubscribeChanges = syncServiceRef.current.onChangesPulled((changes: ServerChange[]) => {
-      applyServerChangesToStores(changes)
+      applyServerChangesToStores(changes, userId)
       const svc = syncServiceRef.current
       store.getState().setState({
         lastPullTimestamp: svc ? svc.getState().lastPullTimestamp : null,
@@ -473,7 +474,7 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
         queue: service.getQueue(),
         discardOperationsForDeletedProfile: (profileId) =>
           service.discardOperationsForDeletedProfile(profileId),
-        applyChanges: applyServerChangesToStores,
+        applyChanges: (changes) => applyServerChangesToStores(changes, userId),
         lookupLocalRow: findLocalRow,
         requestFullRepull,
         notify: addRefusalNotices,
@@ -631,6 +632,13 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
    * profile with a pending op is already on its way and is skipped. The queue
    * sends profile creates ahead of everything else, so the rows that depend on
    * the profile succeed in the same sync.
+   *
+   * ⚠️ Never another account's profile (story 86.2, FR140). The profile store is
+   * shared by whoever uses this browser, so after A signs out and B signs in it
+   * still holds A's synced profiles, none of them in B's live list. They used to
+   * be uploaded into B's account. A profile made here before the bridge
+   * registered carries a placeholder (`'temp-user'`) or B's own id, and still
+   * uploads (`lib/sync/accountOwner.ts`).
    */
   const uploadMissingProfiles = useCallback(
     async (profileIds: string[]): Promise<void> => {
@@ -645,6 +653,7 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
         .profiles.filter(
           (profile) =>
             Boolean(profile.userId) &&
+            !isOwnedByAnotherAccount(profile.userId, userId) &&
             !live.has(profile.id) &&
             !queue.hasPendingOperations('userProfile', profile.id)
         )

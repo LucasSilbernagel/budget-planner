@@ -1,8 +1,9 @@
 import { useSync } from '@/hooks/useSync'
+import { dropAnotherAccountsLocalData } from '@/lib/sync/dropAnotherAccountsLocalData'
 import { seedOnce } from '@/lib/sync/seedLocalData'
 import { clearSyncBridge, registerSyncBridge } from '@/lib/sync/syncBridge'
 import { useProfileStore } from '@/stores/profileStore'
-import { type ReactElement, useEffect, useRef } from 'react'
+import { type ReactElement, useEffect, useRef, useState } from 'react'
 import { RefusedEditNotice } from './RefusedEditNotice'
 
 /**
@@ -31,11 +32,37 @@ import { RefusedEditNotice } from './RefusedEditNotice'
  */
 
 /**
- * The mounted-for-paid-sessions inner component. Split out so the `useSync` hook
- * (and its poller) only ever runs once we KNOW the session is a paid sync tier —
+ * The mounted-for-paid-sessions component. Split out so the `useSync` hook (and
+ * its poller) only ever runs once we KNOW the session is a paid sync tier —
  * hooks cannot be called conditionally in the parent.
+ *
+ * ⚠️ It first removes ANOTHER account's data from this browser's stores (story
+ * 86.2, FR140, D2), and only then mounts the engine. Every store is shared by
+ * whoever uses the browser, so after A signs out and B signs in they still hold
+ * A's profiles and rows; the engine's first render reads them (the active
+ * profile it stamps on ops, `activeProfileReconciled` below, the seed). An
+ * effect runs after that render, so the engine is not rendered until the removal
+ * has run. A throw here reaches `SyncProvider`'s error boundary: no sync, rather
+ * than sync on another account's data. (Only the SYNC is stopped: the pages
+ * beside this component keep rendering whatever the stores hold, and the removal
+ * is not atomic, one persisted store per write, so a write that throws part-way
+ * leaves the later stores' rows in place until the next load re-runs it. Pages
+ * also show the previous account's rows for the `/api/auth/me` + chunk round trip
+ * before this effect runs: deferred-work, 86.2 review.)
  */
-export function ActiveSync({ userId }: { userId: string }): ReactElement {
+export function ActiveSync({ userId }: { userId: string }): ReactElement | null {
+  const [clearedFor, setClearedFor] = useState<string | null>(null)
+  useEffect(() => {
+    dropAnotherAccountsLocalData(userId)
+    setClearedFor(userId)
+  }, [userId])
+  if (clearedFor !== userId) {
+    return null
+  }
+  return <ActiveSyncEngine userId={userId} />
+}
+
+function ActiveSyncEngine({ userId }: { userId: string }): ReactElement {
   const sync = useSync({ userId, autoSync: true, autoPull: true })
   const initialPullRef = useRef(false)
   const backfillRef = useRef(false)

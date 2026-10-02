@@ -78,7 +78,7 @@ describe('story 75.4: a malformed server row does not discard the local edit (we
       fetchServerChanges,
     })
     // Exactly the wiring `hooks/useSync.ts` performs.
-    service.onChangesPulled((changes) => applyServerChangesToStores(changes))
+    service.onChangesPulled((changes) => applyServerChangesToStores(changes, USER_ID))
     service.onServerChangesRefused(reportRefusedServerChanges)
     // The recorded repro's local edit: an update at t=1000, no baseVersion.
     vi.setSystemTime(1_000)

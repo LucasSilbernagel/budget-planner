@@ -273,3 +273,104 @@ describe('seedOnce — once-per-user gating', () => {
     expect(hasSeeded(USER_ID)).toBe(false)
   })
 })
+
+describe("seedOnce — another account's rows on a shared browser (story 86.2, AC 3)", () => {
+  // Account A synced on this browser, signed out, and B (USER_ID) signs in. A's
+  // pulled rows carry A's uuid, which is "not the session user" exactly as a
+  // free-tier `0` is. Before 86.2 the seed read every such row as never synced
+  // and uploaded A's whole history into B's account.
+  const OTHER_ACCOUNT = '86286286-2862-4862-8862-862862862862'
+  const ISO = '2026-06-01T00:00:00.000Z'
+
+  beforeEach(() => {
+    useCategoryStore.setState({
+      categories: [
+        {
+          id: 'cat-a',
+          // A pulled row carries its owner's uuid; the client type still says number.
+          userId: OTHER_ACCOUNT as unknown as number,
+          profileId: 'profile-a',
+          name: 'Their category',
+          kind: 'expense',
+          isDeleted: false,
+          createdAt: ISO,
+          updatedAt: ISO,
+        },
+      ],
+    })
+    useIncomeStore.setState({
+      incomeSources: [
+        {
+          id: 'inc-a',
+          userId: OTHER_ACCOUNT,
+          categoryId: null,
+          name: 'Their salary',
+          amount: 1,
+          frequency: 'monthly',
+          createdAt: ISO,
+          updatedAt: ISO,
+        },
+        // The positive control: a free-tier row is still adopted (5-15 AC-2).
+        {
+          id: 'inc-free',
+          userId: 0,
+          categoryId: null,
+          name: 'My salary',
+          amount: 2,
+          frequency: 'monthly',
+          createdAt: ISO,
+          updatedAt: ISO,
+        },
+      ],
+    })
+    useExpenseStore.setState({
+      expenses: [
+        {
+          id: 'exp-a',
+          userId: OTHER_ACCOUNT,
+          categoryId: null,
+          name: 'Their rent',
+          amount: 1,
+          frequency: 'monthly',
+          createdAt: ISO,
+          updatedAt: ISO,
+        },
+      ],
+    })
+    useSavingsStore.setState({
+      savingsGoals: [
+        {
+          id: 'sav-a',
+          userId: OTHER_ACCOUNT,
+          name: 'Their goal',
+          targetAmount: 1,
+          currentBalance: 0,
+          createdAt: ISO,
+          updatedAt: ISO,
+        } as never,
+      ],
+    })
+    useBalanceStore.setState({
+      entries: [
+        {
+          id: 'bal-a',
+          userId: OTHER_ACCOUNT,
+          type: 'investment',
+          name: 'Their brokerage',
+          currentBalance: 1,
+          monthlyContribution: 0,
+          frequency: 'monthly',
+          createdAt: ISO,
+          updatedAt: ISO,
+        } as never,
+      ],
+    })
+  })
+
+  it("enqueues only the free-tier row, none of the other account's", async () => {
+    const count = await seedOnce(USER_ID)
+
+    expect(handle.queueCreate.mock.calls.map((call) => call[1])).toEqual(['inc-free'])
+    expect(count).toBe(1)
+  })
+})

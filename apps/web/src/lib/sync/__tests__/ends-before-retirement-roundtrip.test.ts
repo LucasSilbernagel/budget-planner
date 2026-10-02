@@ -179,16 +179,19 @@ async function pullRow() {
 async function pullIntoStore(): Promise<Record<string, unknown> | undefined> {
   const row = await pullRow()
   useExpenseStore.setState({ expenses: [] })
-  applyServerChangesToStores([
-    {
-      entityType: 'expense',
-      entityId: ROW_ID,
-      // The server serializes whole rows; this is that payload.
-      data: row as unknown as Record<string, unknown>,
-      updatedAt: Date.now(),
-      isDeleted: false,
-    },
-  ])
+  applyServerChangesToStores(
+    [
+      {
+        entityType: 'expense',
+        entityId: ROW_ID,
+        // The server serializes whole rows; this is that payload.
+        data: row as unknown as Record<string, unknown>,
+        updatedAt: Date.now(),
+        isDeleted: false,
+      },
+    ],
+    USER_ID
+  )
   return useExpenseStore.getState().expenses[0] as unknown as Record<string, unknown>
 }
 

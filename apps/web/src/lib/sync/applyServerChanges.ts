@@ -71,6 +71,7 @@ import { useProfileStore } from '../../stores/profileStore'
 import { useSavingsStore } from '../../stores/savingsStore'
 import { stampMissingSortOrder } from '../ordering'
 import { cascadeProfileRowRemoval } from '../profile-cascade'
+import { isOwnedByAnotherAccount } from './accountOwner'
 
 /** Minimal structural view of a Zustand vanilla store used here. */
 interface StoreApi {
@@ -356,8 +357,17 @@ function resortCollection(entityType: SyncEntityType): void {
  * switcher doesn't show a phantom "Main Profile", and (2) repoint `activeProfileId`
  * to the server's default (or first) profile UNLESS the user is already on a real
  * profile (a deliberate switch is preserved).
+ *
+ * ⚠️ "Real" means THIS session's (story 86.2, FR140). The profile store is shared
+ * by whoever uses the browser, so after A signs out and B signs in it still holds
+ * A's profiles, each with A's uuid. Counting them as real kept an active profile
+ * of A's as "a deliberate switch", and B's new rows were stamped with A's
+ * `profileId`. Another account's profiles are now dropped here like the
+ * placeholders, but their rows are NOT re-homed: re-homing would move A's rows
+ * into B's profile. (`ActiveSync` removes A's rows and profiles before sync
+ * starts; this is the same rule where pulled profiles land.)
  */
-function reconcileActiveProfile(): void {
+function reconcileActiveProfile(sessionUserId: string): void {
   const state = useProfileStore.getState() as unknown as {
     profiles: { id: string; userId?: string; isDefault?: boolean }[]
     activeProfileId: string | null
@@ -365,19 +375,19 @@ function reconcileActiveProfile(): void {
     setActiveProfileId: (id: string | null) => void
   }
   const { profiles, activeProfileId } = state
-  const realProfiles = profiles.filter((p) => p.userId !== undefined && p.userId !== '')
+  const isPlaceholder = (p: { userId?: string }) => p.userId === undefined || p.userId === ''
+  const realProfiles = profiles.filter(
+    (p) => !isPlaceholder(p) && !isOwnedByAnotherAccount(p.userId, sessionUserId)
+  )
   if (realProfiles.length === 0) {
     // No server-backed profile pulled yet — leave the free-tier bootstrap alone.
     return
   }
 
-  // Placeholders are identified by ID, not object identity (code review 54.4):
-  // `realProfiles` must stay a subset of `profiles` for an identity check to be
-  // safe, and a future `.map` would silently re-home a REAL profile's rows.
-  const realProfileIds = new Set(realProfiles.map((p) => p.id))
-  const droppedPlaceholderIds = new Set(
-    profiles.filter((p) => !realProfileIds.has(p.id)).map((p) => p.id)
-  )
+  // Placeholders are identified by ID, not object identity (code review 54.4): a
+  // future `.map` would silently re-home a REAL profile's rows. Only a
+  // PLACEHOLDER's rows are re-homed, never another account's (story 86.2).
+  const droppedPlaceholderIds = new Set(profiles.filter(isPlaceholder).map((p) => p.id))
 
   const active = realProfiles.find((p) => p.id === activeProfileId)
   // realProfiles is non-empty here (guarded above), so the fallback is defined.
@@ -394,9 +404,10 @@ function reconcileActiveProfile(): void {
   // job; dropping first would leave the un-re-homed rows hidden for good.
   rehomePlaceholderRows(droppedPlaceholderIds, target.id)
 
-  // Drop un-synced bootstrap placeholders now that real profiles exist (keeps the
-  // profile list authoritative). setProfiles repoints active to the first entry,
-  // so we re-assert the intended active id immediately after.
+  // Drop un-synced bootstrap placeholders, and another account's profiles (story
+  // 86.2), now that real profiles exist (keeps the profile list authoritative).
+  // setProfiles repoints active to the first entry, so we re-assert the intended
+  // active id immediately after.
   if (realProfiles.length !== profiles.length) {
     state.setProfiles(realProfiles)
   }
@@ -450,8 +461,12 @@ function rehomePlaceholderRows(placeholderIds: ReadonlySet<string>, targetId: st
  * Apply a batch of pulled server changes to the domain stores. Safe to call with
  * an empty array (no-op). Each change is applied independently so one malformed
  * change cannot block the rest.
+ *
+ * `sessionUserId` is the signed-in account (story 86.2): a profile owned by any
+ * other account is never made active (`reconcileActiveProfile`). Required, so a
+ * new caller cannot forget it.
  */
-export function applyServerChangesToStores(changes: ServerChange[]): void {
+export function applyServerChangesToStores(changes: ServerChange[], sessionUserId: string): void {
   let appliedProfile = false
   // Story 34.1a: which ordered collections this batch actually touched.
   const touchedOrdered = new Set<SyncEntityType>()
@@ -489,7 +504,7 @@ export function applyServerChangesToStores(changes: ServerChange[]): void {
   // ordinary income/expense pull never perturbs the user's selected profile.
   if (appliedProfile) {
     try {
-      reconcileActiveProfile()
+      reconcileActiveProfile(sessionUserId)
     } catch {
       // Reconciliation is best-effort; a failure here must not drop the changes.
     }

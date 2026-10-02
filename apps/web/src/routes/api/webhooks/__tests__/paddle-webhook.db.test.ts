@@ -1829,6 +1829,39 @@ describe('Story 74.1 — erase then repurchase at the same address', () => {
     })
   })
 
+  describe('story 86.2, AC 5 — a re-created account gets a NEW users.id', () => {
+    // MEASURED, not assumed: the client tells another account's local rows from
+    // its own by `userId` alone (`lib/sync/accountOwner.ts`). If a re-created
+    // account got its old id back, the old account's rows left on a browser
+    // would read as the new account's own and be adopted into it.
+    it('same customer id', async () => {
+      await post({ ...lifetimeEvent({}), occurred_at: at(0) })
+      const [erased] = await readUser('ctm_1')
+      await eraseThroughTheRealDeletion('ctm_1')
+
+      await post({ ...lifetimeEvent({ id: 'txn_paid_2' }), occurred_at: at(60) })
+
+      const [recreated] = await readUser('ctm_1')
+      expect(recreated.email).toBe(erased.email)
+      expect(recreated.id).not.toBe(erased.id)
+    })
+
+    it('new customer id', async () => {
+      await post({ ...lifetimeEvent({}), occurred_at: at(0) })
+      const [erased] = await readUser('ctm_1')
+      await eraseThroughTheRealDeletion('ctm_1')
+
+      await post({
+        ...lifetimeEvent({ id: 'txn_paid_2', customer_id: 'ctm_2' }),
+        occurred_at: at(60),
+      })
+
+      const [recreated] = await readUser('ctm_2')
+      expect(recreated.email).toBe(erased.email)
+      expect(recreated.id).not.toBe(erased.id)
+    })
+  })
+
   describe('regression guards — these never reproduced in-app (context probe P2-P4)', () => {
     it('paid lifetime repurchase, same customer id', async () => {
       await post({ ...lifetimeEvent({}), occurred_at: at(0) })

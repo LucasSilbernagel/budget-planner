@@ -196,7 +196,9 @@ describe('useSync pull wiring (Story 4-18)', () => {
 
     const { result, unmount } = renderHook(() =>
       // A poll interval far beyond the waitFor timeout: only the re-pull can pass.
-      useSync({ userId: 'u-1', autoSync: false, autoPull: true, pullInterval: 600_000 })
+      // The session is the pulled profile's owner, as in production (story 86.2:
+      // another account's profile is never made active).
+      useSync({ userId: SERVER_USER_ID, autoSync: false, autoPull: true, pullInterval: 600_000 })
     )
     await result.current.forcePull()
 

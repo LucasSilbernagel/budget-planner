@@ -92,12 +92,15 @@ describe('applyServerChangesToStores — a pull cannot reorder the list (AC-5)',
       ],
     })
 
-    applyServerChangesToStores([
-      change({
-        entityId: ID_B,
-        data: { ...incomeRow(ID_B, 'second (edited)', 1, at('02')) },
-      }),
-    ])
+    applyServerChangesToStores(
+      [
+        change({
+          entityId: ID_B,
+          data: { ...incomeRow(ID_B, 'second (edited)', 1, at('02')) },
+        }),
+      ],
+      SERVER_USER_ID
+    )
 
     const rows = useIncomeStore.getState().incomeSources
     // Position preserved, and it really is the updated row.
@@ -110,9 +113,10 @@ describe('applyServerChangesToStores — a pull cannot reorder the list (AC-5)',
       incomeSources: [incomeRow(ID_A, 'first', 0, at('01')), incomeRow(ID_C, 'third', 2, at('03'))],
     })
 
-    applyServerChangesToStores([
-      change({ entityId: ID_B, data: { ...incomeRow(ID_B, 'second', 1, at('02')) } }),
-    ])
+    applyServerChangesToStores(
+      [change({ entityId: ID_B, data: { ...incomeRow(ID_B, 'second', 1, at('02')) } })],
+      SERVER_USER_ID
+    )
 
     expect(useIncomeStore.getState().incomeSources.map((r) => r.name)).toEqual([
       'first',
@@ -130,7 +134,10 @@ describe('applyServerChangesToStores — a pull cannot reorder the list (AC-5)',
       ],
     })
 
-    applyServerChangesToStores([change({ entityId: ID_A, isDeleted: true, data: { id: ID_A } })])
+    applyServerChangesToStores(
+      [change({ entityId: ID_A, isDeleted: true, data: { id: ID_A } })],
+      SERVER_USER_ID
+    )
 
     const rows = useIncomeStore.getState().incomeSources
     expect(rows.map((r) => r.name)).toEqual(['second', 'third'])
@@ -154,9 +161,10 @@ describe('applyServerChangesToStores — a pull cannot reorder the list (AC-5)',
       ],
     })
 
-    applyServerChangesToStores([
-      change({ entityId: ID_B, data: { ...incomeRow(ID_B, 'server-dupe', 1, at('03')) } }),
-    ])
+    applyServerChangesToStores(
+      [change({ entityId: ID_B, data: { ...incomeRow(ID_B, 'server-dupe', 1, at('03')) } })],
+      SERVER_USER_ID
+    )
 
     // Both rows sit at position 1; createdAt ASC decides, so the earlier one wins.
     expect(useIncomeStore.getState().incomeSources.map((r) => r.name)).toEqual([
@@ -229,54 +237,57 @@ describe('applyServerChangesToStores — a pull cannot reorder the list (AC-5)',
       ],
     })
 
-    applyServerChangesToStores([
-      change({
-        entityType: 'incomeSource',
-        entityId: ID_B,
-        data: { ...incomeRow(ID_B, 'inc-2', 1, at('02')) },
-      }),
-      change({
-        entityType: 'expense',
-        entityId: ID_B,
-        // ⚠️ `endsBeforeRetirement` is a NOT NULL column, so a real pulled expense
-        // always carries it; `incomeRow` alone is not an expense-shaped row.
-        data: { ...incomeRow(ID_B, 'exp-2', 1, at('02')), endsBeforeRetirement: false },
-      }),
-      change({
-        entityType: 'savingsGoal',
-        entityId: ID_B,
-        data: {
-          id: ID_B,
-          userId: SERVER_USER_ID,
-          name: 'sav-2',
-          targetAmount: 1,
-          currentBalance: 0,
-          // NOT NULL column; a pulled row always carries it (code review 66.2).
-          allocationMode: 'automatic',
-          sortOrder: 1,
-          createdAt: at('02'),
-          updatedAt: at('02'),
-        },
-      }),
-      change({
-        entityType: 'balanceTracking',
-        entityId: ID_B,
-        data: {
-          id: ID_B,
-          userId: SERVER_USER_ID,
-          type: 'investment',
-          name: 'bal-2',
-          currentBalance: 0,
-          monthlyContribution: 0,
-          frequency: 'monthly',
-          // NOT NULL column; a pulled row always carries it (code review 66.2).
-          contributionRecordedAsExpense: false,
-          sortOrder: 1,
-          createdAt: at('02'),
-          updatedAt: at('02'),
-        },
-      }),
-    ])
+    applyServerChangesToStores(
+      [
+        change({
+          entityType: 'incomeSource',
+          entityId: ID_B,
+          data: { ...incomeRow(ID_B, 'inc-2', 1, at('02')) },
+        }),
+        change({
+          entityType: 'expense',
+          entityId: ID_B,
+          // ⚠️ `endsBeforeRetirement` is a NOT NULL column, so a real pulled expense
+          // always carries it; `incomeRow` alone is not an expense-shaped row.
+          data: { ...incomeRow(ID_B, 'exp-2', 1, at('02')), endsBeforeRetirement: false },
+        }),
+        change({
+          entityType: 'savingsGoal',
+          entityId: ID_B,
+          data: {
+            id: ID_B,
+            userId: SERVER_USER_ID,
+            name: 'sav-2',
+            targetAmount: 1,
+            currentBalance: 0,
+            // NOT NULL column; a pulled row always carries it (code review 66.2).
+            allocationMode: 'automatic',
+            sortOrder: 1,
+            createdAt: at('02'),
+            updatedAt: at('02'),
+          },
+        }),
+        change({
+          entityType: 'balanceTracking',
+          entityId: ID_B,
+          data: {
+            id: ID_B,
+            userId: SERVER_USER_ID,
+            type: 'investment',
+            name: 'bal-2',
+            currentBalance: 0,
+            monthlyContribution: 0,
+            frequency: 'monthly',
+            // NOT NULL column; a pulled row always carries it (code review 66.2).
+            contributionRecordedAsExpense: false,
+            sortOrder: 1,
+            createdAt: at('02'),
+            updatedAt: at('02'),
+          },
+        }),
+      ],
+      SERVER_USER_ID
+    )
 
     // Each of the four lands in the middle of its own list, not at the end.
     expect(useIncomeStore.getState().incomeSources.map((r) => r.name)).toEqual([
@@ -310,30 +321,33 @@ describe('applyServerChangesToStores — a pull cannot reorder the list (AC-5)',
    * at the TOP — a confirmed AC-3 violation. The pull now stamps on arrival.
    */
   it('stamps pulled rows that arrive WITHOUT a sortOrder (pre-migration server)', () => {
-    applyServerChangesToStores([
-      change({
-        entityId: ID_A,
-        data: {
-          id: ID_A,
-          userId: SERVER_USER_ID,
-          name: 'no-order-B',
-          amount: 1000,
-          frequency: 'monthly',
-          createdAt: at('02'),
-        },
-      }),
-      change({
-        entityId: ID_B,
-        data: {
-          id: ID_B,
-          userId: SERVER_USER_ID,
-          name: 'no-order-A',
-          amount: 1000,
-          frequency: 'monthly',
-          createdAt: at('01'),
-        },
-      }),
-    ])
+    applyServerChangesToStores(
+      [
+        change({
+          entityId: ID_A,
+          data: {
+            id: ID_A,
+            userId: SERVER_USER_ID,
+            name: 'no-order-B',
+            amount: 1000,
+            frequency: 'monthly',
+            createdAt: at('02'),
+          },
+        }),
+        change({
+          entityId: ID_B,
+          data: {
+            id: ID_B,
+            userId: SERVER_USER_ID,
+            name: 'no-order-A',
+            amount: 1000,
+            frequency: 'monthly',
+            createdAt: at('01'),
+          },
+        }),
+      ],
+      SERVER_USER_ID
+    )
 
     const rows = useIncomeStore.getState().incomeSources
     // Ordered by createdAt (their only usable key) and given real positions.
@@ -342,30 +356,33 @@ describe('applyServerChangesToStores — a pull cannot reorder the list (AC-5)',
   })
 
   it('AC-3 survives a pull: a row added AFTER unstamped rows arrive goes to the BOTTOM', () => {
-    applyServerChangesToStores([
-      change({
-        entityId: ID_A,
-        data: {
-          id: ID_A,
-          userId: SERVER_USER_ID,
-          name: 'pulled-1',
-          amount: 1000,
-          frequency: 'monthly',
-          createdAt: at('01'),
-        },
-      }),
-      change({
-        entityId: ID_B,
-        data: {
-          id: ID_B,
-          userId: SERVER_USER_ID,
-          name: 'pulled-2',
-          amount: 1000,
-          frequency: 'monthly',
-          createdAt: at('02'),
-        },
-      }),
-    ])
+    applyServerChangesToStores(
+      [
+        change({
+          entityId: ID_A,
+          data: {
+            id: ID_A,
+            userId: SERVER_USER_ID,
+            name: 'pulled-1',
+            amount: 1000,
+            frequency: 'monthly',
+            createdAt: at('01'),
+          },
+        }),
+        change({
+          entityId: ID_B,
+          data: {
+            id: ID_B,
+            userId: SERVER_USER_ID,
+            name: 'pulled-2',
+            amount: 1000,
+            frequency: 'monthly',
+            createdAt: at('02'),
+          },
+        }),
+      ],
+      SERVER_USER_ID
+    )
 
     useIncomeStore
       .getState()
@@ -381,19 +398,22 @@ describe('applyServerChangesToStores — a pull cannot reorder the list (AC-5)',
 
   it('does not renumber positions the server DID supply', () => {
     useIncomeStore.setState({ incomeSources: [incomeRow(ID_A, 'kept', 9, at('01'))] })
-    applyServerChangesToStores([
-      change({
-        entityId: ID_B,
-        data: {
-          id: ID_B,
-          userId: SERVER_USER_ID,
-          name: 'orphan',
-          amount: 1000,
-          frequency: 'monthly',
-          createdAt: at('02'),
-        },
-      }),
-    ])
+    applyServerChangesToStores(
+      [
+        change({
+          entityId: ID_B,
+          data: {
+            id: ID_B,
+            userId: SERVER_USER_ID,
+            name: 'orphan',
+            amount: 1000,
+            frequency: 'monthly',
+            createdAt: at('02'),
+          },
+        }),
+      ],
+      SERVER_USER_ID
+    )
     expect(useIncomeStore.getState().incomeSources.map((r) => [r.name, r.sortOrder])).toEqual([
       ['kept', 9],
       ['orphan', 10],
@@ -416,10 +436,13 @@ describe('applyServerChangesToStores — a pull cannot reorder the list (AC-5)',
       incomeSources: [incomeRow(ID_C, 'third', 2, at('03')), incomeRow(ID_A, 'first', 0, at('01'))],
     })
 
-    applyServerChangesToStores([
-      // No entityId — applyOne skips it defensively and applies nothing.
-      change({ entityType: 'incomeSource', entityId: '', data: { name: 'ignored' } }),
-    ])
+    applyServerChangesToStores(
+      [
+        // No entityId — applyOne skips it defensively and applies nothing.
+        change({ entityType: 'incomeSource', entityId: '', data: { name: 'ignored' } }),
+      ],
+      SERVER_USER_ID
+    )
 
     // Untouched. If the collection came back ['first','third'] a re-sort ran for a
     // batch that changed nothing.
@@ -431,13 +454,16 @@ describe('applyServerChangesToStores — a pull cannot reorder the list (AC-5)',
     useExpenseStore.setState({ expenses: untouched.map((r) => ({ ...r })) })
     useIncomeStore.setState({ incomeSources: [incomeRow(ID_A, 'inc', 0, at('01'))] })
 
-    applyServerChangesToStores([
-      change({
-        entityType: 'incomeSource',
-        entityId: ID_B,
-        data: { ...incomeRow(ID_B, 'inc-2', 1, at('02')) },
-      }),
-    ])
+    applyServerChangesToStores(
+      [
+        change({
+          entityType: 'incomeSource',
+          entityId: ID_B,
+          data: { ...incomeRow(ID_B, 'inc-2', 1, at('02')) },
+        }),
+      ],
+      SERVER_USER_ID
+    )
 
     // Deliberately still in its original (unsorted) order: nothing pulled for it.
     expect(useExpenseStore.getState().expenses.map((r) => r.name)).toEqual(['third', 'first'])

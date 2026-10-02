@@ -84,9 +84,10 @@ describe('applyServerChangesToStores — uuid reconciliation (Story 5-14)', () =
       ],
     })
 
-    applyServerChangesToStores([
-      incomeChange({ data: { ...incomeChange().data, name: 'Salary (server)' } }),
-    ])
+    applyServerChangesToStores(
+      [incomeChange({ data: { ...incomeChange().data, name: 'Salary (server)' } })],
+      SERVER_USER_ID
+    )
 
     const rows = useIncomeStore.getState().incomeSources.filter((s) => s.id === UUID_A)
     // Exactly one row — the server row REPLACED the local one (not appended).
@@ -97,9 +98,10 @@ describe('applyServerChangesToStores — uuid reconciliation (Story 5-14)', () =
   })
 
   it('inserts a brand-new pulled row keyed by its uuid', () => {
-    applyServerChangesToStores([
-      incomeChange({ entityId: UUID_B, data: { ...incomeChange().data, id: UUID_B } }),
-    ])
+    applyServerChangesToStores(
+      [incomeChange({ entityId: UUID_B, data: { ...incomeChange().data, id: UUID_B } })],
+      SERVER_USER_ID
+    )
 
     const sources = useIncomeStore.getState().incomeSources
     expect(sources).toHaveLength(1)
@@ -122,13 +124,13 @@ describe('applyServerChangesToStores — uuid reconciliation (Story 5-14)', () =
       ],
     })
 
-    applyServerChangesToStores([incomeChange({ isDeleted: true, updatedAt: 3000 })])
+    applyServerChangesToStores([incomeChange({ isDeleted: true, updatedAt: 3000 })], SERVER_USER_ID)
 
     expect(useIncomeStore.getState().incomeSources).toHaveLength(0)
   })
 
   it('P3: skips a change with a missing/empty entityId instead of inserting an orphan', () => {
-    applyServerChangesToStores([incomeChange({ entityId: '' })])
+    applyServerChangesToStores([incomeChange({ entityId: '' })], SERVER_USER_ID)
     // No `{ id: '' }` orphan written — the store stays empty.
     expect(useIncomeStore.getState().incomeSources).toHaveLength(0)
   })
@@ -136,25 +138,28 @@ describe('applyServerChangesToStores — uuid reconciliation (Story 5-14)', () =
   it('reconciles each entity type by uuid into its own store/collection', () => {
     // savingsGoal maps to a different store + collection ('savingsGoals'); prove the
     // generic binding writes there too.
-    applyServerChangesToStores([
-      {
-        entityType: 'savingsGoal',
-        entityId: UUID_B,
-        data: {
-          id: UUID_B,
-          userId: SERVER_USER_ID,
-          name: 'Emergency fund',
-          targetAmount: 1000000,
-          currentBalance: 250000,
-          // NOT NULL column; a pulled row always carries it (code review 66.2).
-          allocationMode: 'automatic',
-          createdAt: '2026-06-28T00:00:00.000Z',
-          updatedAt: '2026-06-28T00:00:00.000Z',
+    applyServerChangesToStores(
+      [
+        {
+          entityType: 'savingsGoal',
+          entityId: UUID_B,
+          data: {
+            id: UUID_B,
+            userId: SERVER_USER_ID,
+            name: 'Emergency fund',
+            targetAmount: 1000000,
+            currentBalance: 250000,
+            // NOT NULL column; a pulled row always carries it (code review 66.2).
+            allocationMode: 'automatic',
+            createdAt: '2026-06-28T00:00:00.000Z',
+            updatedAt: '2026-06-28T00:00:00.000Z',
+          },
+          updatedAt: 2000,
+          isDeleted: false,
         },
-        updatedAt: 2000,
-        isDeleted: false,
-      },
-    ])
+      ],
+      SERVER_USER_ID
+    )
 
     const goals = useSavingsStore.getState().savingsGoals
     expect(goals).toHaveLength(1)
@@ -201,10 +206,13 @@ describe('applyServerChangesToStores — active-profile reconciliation (Story 5-
   })
 
   it('repoints a stale active profile to the pulled DEFAULT server profile', () => {
-    applyServerChangesToStores([
-      profileChange(SERVER_PROFILE_OTHER, false, 'Side'),
-      profileChange(SERVER_PROFILE_DEFAULT, true, 'Main'),
-    ])
+    applyServerChangesToStores(
+      [
+        profileChange(SERVER_PROFILE_OTHER, false, 'Side'),
+        profileChange(SERVER_PROFILE_DEFAULT, true, 'Main'),
+      ],
+      SERVER_USER_ID
+    )
 
     // The locally-generated active id was not among the pulled profiles, so it is
     // repointed to the server's default profile — not just the first one.
@@ -212,7 +220,7 @@ describe('applyServerChangesToStores — active-profile reconciliation (Story 5-
   })
 
   it('falls back to the first profile when none is marked default', () => {
-    applyServerChangesToStores([profileChange(SERVER_PROFILE_OTHER, false, 'Side')])
+    applyServerChangesToStores([profileChange(SERVER_PROFILE_OTHER, false, 'Side')], SERVER_USER_ID)
     expect(useProfileStore.getState().activeProfileId).toBe(SERVER_PROFILE_OTHER)
   })
 
@@ -221,7 +229,7 @@ describe('applyServerChangesToStores — active-profile reconciliation (Story 5-
       profiles: [
         {
           id: SERVER_PROFILE_DEFAULT,
-          userId: 'u-1',
+          userId: SERVER_USER_ID,
           name: 'Main',
           isDefault: true,
           currency: 'NONE',
@@ -230,7 +238,7 @@ describe('applyServerChangesToStores — active-profile reconciliation (Story 5-
       activeProfileId: SERVER_PROFILE_DEFAULT,
     })
 
-    applyServerChangesToStores([profileChange(SERVER_PROFILE_OTHER, false, 'Side')])
+    applyServerChangesToStores([profileChange(SERVER_PROFILE_OTHER, false, 'Side')], SERVER_USER_ID)
 
     // The user's selection is still valid (it is in the set), so it is preserved
     // even though another profile arrived.
@@ -238,7 +246,7 @@ describe('applyServerChangesToStores — active-profile reconciliation (Story 5-
   })
 
   it('does NOT touch the active profile on a non-profile (income) pull', () => {
-    applyServerChangesToStores([incomeChange()])
+    applyServerChangesToStores([incomeChange()], SERVER_USER_ID)
     expect(useProfileStore.getState().activeProfileId).toBe('local-default')
   })
 
@@ -258,12 +266,15 @@ describe('applyServerChangesToStores — active-profile reconciliation (Story 5-
    * sitting on a valid profile keeps its own selection by design.
    */
   it('lands on the PROMOTED default after the old default was deleted elsewhere', () => {
-    applyServerChangesToStores([
-      // Array order puts the promoted profile SECOND on purpose: resolving by
-      // position rather than by the flag would pass with it first.
-      profileChange(SERVER_PROFILE_OTHER, false, 'Side'),
-      profileChange(SERVER_PROFILE_DEFAULT, true, 'Promoted'),
-    ])
+    applyServerChangesToStores(
+      [
+        // Array order puts the promoted profile SECOND on purpose: resolving by
+        // position rather than by the flag would pass with it first.
+        profileChange(SERVER_PROFILE_OTHER, false, 'Side'),
+        profileChange(SERVER_PROFILE_DEFAULT, true, 'Promoted'),
+      ],
+      SERVER_USER_ID
+    )
 
     expect(useProfileStore.getState().activeProfileId).toBe(SERVER_PROFILE_DEFAULT)
     const profiles = useProfileStore.getState().profiles
@@ -375,7 +386,10 @@ describe('applyServerChangesToStores — placeholder re-home on reconcile (Story
   })
 
   it('re-homes rows and categories stamped with a dropped placeholder onto the new active profile', () => {
-    applyServerChangesToStores([profileChange(SERVER_PROFILE_DEFAULT, true, 'Main')])
+    applyServerChangesToStores(
+      [profileChange(SERVER_PROFILE_DEFAULT, true, 'Main')],
+      SERVER_USER_ID
+    )
 
     expect(useProfileStore.getState().activeProfileId).toBe(SERVER_PROFILE_DEFAULT)
     const income = useIncomeStore.getState().incomeSources
@@ -400,12 +414,21 @@ describe('applyServerChangesToStores — placeholder re-home on reconcile (Story
           isDefault: true,
           currency: 'NONE',
         },
-        { id: OTHER_REAL, userId: 'u-1', name: 'Real', isDefault: false, currency: 'NONE' },
+        {
+          id: OTHER_REAL,
+          userId: SERVER_USER_ID,
+          name: 'Real',
+          isDefault: false,
+          currency: 'NONE',
+        },
       ],
       activeProfileId: 'local-default',
     })
 
-    applyServerChangesToStores([profileChange(SERVER_PROFILE_DEFAULT, true, 'Main')])
+    applyServerChangesToStores(
+      [profileChange(SERVER_PROFILE_DEFAULT, true, 'Main')],
+      SERVER_USER_ID
+    )
 
     const income = useIncomeStore.getState().incomeSources
     expect(income.find((row) => row.id === 'stamped-other-real')?.profileId).toBe(OTHER_REAL)
@@ -414,12 +437,12 @@ describe('applyServerChangesToStores — placeholder re-home on reconcile (Story
   it('re-homes nothing when no placeholder was dropped', () => {
     useProfileStore.setState({
       profiles: [
-        { id: OTHER_REAL, userId: 'u-1', name: 'Real', isDefault: true, currency: 'NONE' },
+        { id: OTHER_REAL, userId: SERVER_USER_ID, name: 'Real', isDefault: true, currency: 'NONE' },
       ],
       activeProfileId: OTHER_REAL,
     })
 
-    applyServerChangesToStores([profileChange(SERVER_PROFILE_OTHER, false, 'Side')])
+    applyServerChangesToStores([profileChange(SERVER_PROFILE_OTHER, false, 'Side')], SERVER_USER_ID)
 
     // 'local-default' is not a profile in the store at all, so it was not dropped
     // by this reconcile and must not be rewritten.
@@ -433,7 +456,10 @@ describe('applyServerChangesToStores — placeholder re-home on reconcile (Story
       throw new Error('QuotaExceededError')
     }
     try {
-      applyServerChangesToStores([profileChange(SERVER_PROFILE_DEFAULT, true, 'Main')])
+      applyServerChangesToStores(
+        [profileChange(SERVER_PROFILE_DEFAULT, true, 'Main')],
+        SERVER_USER_ID
+      )
     } finally {
       useExpenseStore.setState = original
     }
@@ -442,7 +468,10 @@ describe('applyServerChangesToStores — placeholder re-home on reconcile (Story
     expect(useProfileStore.getState().profiles.map((p) => p.id)).toContain('local-default')
 
     // ...so the next pull that delivers profiles completes the re-home.
-    applyServerChangesToStores([profileChange(SERVER_PROFILE_DEFAULT, true, 'Main')])
+    applyServerChangesToStores(
+      [profileChange(SERVER_PROFILE_DEFAULT, true, 'Main')],
+      SERVER_USER_ID
+    )
     expect(useExpenseStore.getState().expenses[0]?.profileId).toBe(SERVER_PROFILE_DEFAULT)
     expect(useProfileStore.getState().profiles.map((p) => p.id)).not.toContain('local-default')
   })
@@ -462,44 +491,50 @@ describe('applyServerChangesToStores — profile icon (Story 54.2)', () => {
   })
 
   it('lands a pulled icon in the store', () => {
-    applyServerChangesToStores([
-      {
-        entityType: 'userProfile',
-        entityId: SERVER_PROFILE_OTHER,
-        data: {
-          id: SERVER_PROFILE_OTHER,
-          userId: SERVER_USER_ID,
-          name: 'Business',
-          isDefault: false,
-          currency: 'EUR',
-          icon: '✈️',
+    applyServerChangesToStores(
+      [
+        {
+          entityType: 'userProfile',
+          entityId: SERVER_PROFILE_OTHER,
+          data: {
+            id: SERVER_PROFILE_OTHER,
+            userId: SERVER_USER_ID,
+            name: 'Business',
+            isDefault: false,
+            currency: 'EUR',
+            icon: '✈️',
+          },
+          updatedAt: 2000,
+          isDeleted: false,
         },
-        updatedAt: 2000,
-        isDeleted: false,
-      },
-    ])
+      ],
+      SERVER_USER_ID
+    )
 
     const stored = useProfileStore.getState().profiles.find((p) => p.id === SERVER_PROFILE_OTHER)
     expect(stored?.icon).toBe('✈️')
   })
 
   it('lands an explicit null icon without dropping the key or throwing', () => {
-    applyServerChangesToStores([
-      {
-        entityType: 'userProfile',
-        entityId: SERVER_PROFILE_OTHER,
-        data: {
-          id: SERVER_PROFILE_OTHER,
-          userId: SERVER_USER_ID,
-          name: 'Business',
-          isDefault: false,
-          currency: 'EUR',
-          icon: null,
+    applyServerChangesToStores(
+      [
+        {
+          entityType: 'userProfile',
+          entityId: SERVER_PROFILE_OTHER,
+          data: {
+            id: SERVER_PROFILE_OTHER,
+            userId: SERVER_USER_ID,
+            name: 'Business',
+            isDefault: false,
+            currency: 'EUR',
+            icon: null,
+          },
+          updatedAt: 2000,
+          isDeleted: false,
         },
-        updatedAt: 2000,
-        isDeleted: false,
-      },
-    ])
+      ],
+      SERVER_USER_ID
+    )
 
     const stored = useProfileStore.getState().profiles.find((p) => p.id === SERVER_PROFILE_OTHER)
     expect(stored).toBeDefined()
@@ -572,15 +607,18 @@ describe('a pulled userProfile tombstone cascades locally (story 66.3)', () => {
   })
 
   it('removes the profile AND its rows, keeping the survivor and the unscoped row', () => {
-    applyServerChangesToStores([
-      {
-        entityType: 'userProfile',
-        entityId: DOOMED,
-        data: {},
-        isDeleted: true,
-        updatedAt: Date.now(),
-      } as ServerChange,
-    ])
+    applyServerChangesToStores(
+      [
+        {
+          entityType: 'userProfile',
+          entityId: DOOMED,
+          data: {},
+          isDeleted: true,
+          updatedAt: Date.now(),
+        } as ServerChange,
+      ],
+      SERVER_USER_ID
+    )
 
     expect(useProfileStore.getState().profiles.map((p) => p.id)).toEqual([UUID_A])
     expect(useIncomeStore.getState().incomeSources.map((r) => r.id)).toEqual([
@@ -603,15 +641,18 @@ describe('a pulled userProfile tombstone cascades locally (story 66.3)', () => {
    * assertion here would still pass. A control that cannot fail is not a control.
    */
   it('does NOT cascade on a tombstone for any other entity type', () => {
-    applyServerChangesToStores([
-      {
-        entityType: 'incomeSource',
-        entityId: 'i-keeper',
-        data: {},
-        isDeleted: true,
-        updatedAt: Date.now(),
-      } as ServerChange,
-    ])
+    applyServerChangesToStores(
+      [
+        {
+          entityType: 'incomeSource',
+          entityId: 'i-keeper',
+          data: {},
+          isDeleted: true,
+          updatedAt: Date.now(),
+        } as ServerChange,
+      ],
+      SERVER_USER_ID
+    )
 
     // The tombstone under test really was applied — this is what makes the two
     // assertions below meaningful rather than vacuous.

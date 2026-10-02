@@ -100,7 +100,7 @@ describe('AC-4: the pull cursor when a row is refused', () => {
       fetchServerChanges,
     })
     // Exactly the wiring `hooks/useSync.ts` performs.
-    service.onChangesPulled((changes) => applyServerChangesToStores(changes))
+    service.onChangesPulled((changes) => applyServerChangesToStores(changes, USER_ID))
     service.onServerChangesRefused(reportRefusedServerChanges)
   })
 
@@ -180,7 +180,7 @@ describe('AC-4: the pull cursor when a row is refused', () => {
       fetchServerChanges,
     })
     try {
-      reloaded.onChangesPulled((changes) => applyServerChangesToStores(changes))
+      reloaded.onChangesPulled((changes) => applyServerChangesToStores(changes, USER_ID))
       fetchServerChanges.mockResolvedValueOnce([incomeChange(BAD_ID, '500000', 1500)])
       await reloaded.pull()
       // Pulled from scratch, not from 1500 — and refused again.
