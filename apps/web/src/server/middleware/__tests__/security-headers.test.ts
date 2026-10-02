@@ -3,7 +3,8 @@
  */
 
 import { createHash } from 'node:crypto'
-import { describe, expect, it } from 'vitest'
+import { getPaddleConfig, resetConfig } from '@budget-planner/config'
+import { afterEach, describe, expect, it } from 'vitest'
 import { NO_FLASH_PLANNER_SCRIPT } from '../../../lib/nav/no-flash-planner-visibility-script'
 import { NO_FLASH_ACCOUNT_NOTICE_SCRIPT } from '../../../lib/overview/no-flash-account-notice-script'
 import {
@@ -17,6 +18,9 @@ import {
   buildContentSecurityPolicy,
   isCanonicalHttpsRequest,
   isConfirmedHttps,
+  paddleEnvironmentForCsp,
+  paddleEnvironmentFromProcessEnv,
+  paddleStyleHosts,
 } from '../security-headers'
 
 const TEST_NONCE = 'dGVzdC1ub25jZS0xMjM='
@@ -48,7 +52,12 @@ function parseCsp(csp: string): Record<string, string> {
   return map
 }
 
-const baseOpts = { isDev: false, isHttps: true, nonce: TEST_NONCE }
+const baseOpts = {
+  isDev: false,
+  isHttps: true,
+  nonce: TEST_NONCE,
+  paddleEnvironment: 'production' as const,
+}
 
 describe('applySecurityHeaders', () => {
   it('sets the baseline legacy security headers on a response', () => {
@@ -68,11 +77,18 @@ describe('applySecurityHeaders', () => {
 
   it('sets dev-only permissive CORS in development', () => {
     const headers = new Headers()
-    applySecurityHeaders(headers, { isDev: true, isHttps: false, nonce: TEST_NONCE })
+    applySecurityHeaders(headers, {
+      isDev: true,
+      isHttps: false,
+      nonce: TEST_NONCE,
+      paddleEnvironment: 'production',
+    })
     expect(headers.get('Access-Control-Allow-Origin')).toBe('*')
     // Security headers are still present in dev.
     expect(headers.get('X-Frame-Options')).toBe('DENY')
-    expect(headers.get('Content-Security-Policy')).toBe(buildContentSecurityPolicy(TEST_NONCE))
+    expect(headers.get('Content-Security-Policy')).toBe(
+      buildContentSecurityPolicy(TEST_NONCE, 'production', true)
+    )
   })
 
   describe('Content-Security-Policy (sec-1 AC-1)', () => {
@@ -81,7 +97,7 @@ describe('applySecurityHeaders', () => {
     const csp = headers.get('Content-Security-Policy')
 
     it('is present on every response and injects the request nonce', () => {
-      expect(csp).toBe(buildContentSecurityPolicy(TEST_NONCE))
+      expect(csp).toBe(buildContentSecurityPolicy(TEST_NONCE, 'production', false))
       expect(csp).toBeTruthy()
     })
 
@@ -141,6 +157,11 @@ describe('applySecurityHeaders', () => {
           'object-src',
           'script-src',
           'style-src',
+          // Story 89.1 (D2 (c′)): added deliberately. `style-src-elem` OVERRIDES
+          // `style-src` for <style>/stylesheet loads, so its value is pinned
+          // exactly below, the same discipline as `script-src`.
+          'style-src-attr',
+          'style-src-elem',
           'worker-src',
         ].sort()
       )
@@ -202,9 +223,44 @@ describe('applySecurityHeaders', () => {
       )
     })
 
-    it('allows unsafe-inline for STYLES only (React/Recharts attribute styles)', () => {
+    // Story 89.1 (D2 (c′), Lucas 2026-10-02). MEASURED on the production build
+    // (`89-1-evidence/violations.md`): the app needs no inline style; Paddle.js's
+    // checkout overlay needs inline style ATTRIBUTES (its iframe collapses to a
+    // static 300×150 without them) and its stylesheet from the Paddle CDN. So
+    // attributes keep 'unsafe-inline', and <style> elements / stylesheets are
+    // locked to 'self' + the production Paddle CDN. The base `style-src` is
+    // 'self' 'unsafe-inline' as a LEGACY FALLBACK only (89.1 review, Lucas
+    // 2026-10-02): CSP3 §6.8.3/§6.8.4 run it only when the sub-directive is absent.
+    // All three pinned EXACTLY: adding a source to any of them is a security
+    // decision made here.
+    it('splits styles: elements locked to self + the production Paddle CDN, attributes inline (89.1 D2)', () => {
       const d = parseCsp(csp ?? '')
-      expect(d['style-src']).toBe(`'self' 'unsafe-inline'`)
+      expect(d['style-src']).toBe(`'self' 'unsafe-inline' https://cdn.paddle.com`)
+      expect(d['style-src-elem']).toBe(`'self' https://cdn.paddle.com`)
+      expect(d['style-src-attr']).toBe(`'unsafe-inline'`)
+    })
+
+    // The <style>-element restriction lives in `style-src-elem` ALONE now: the base
+    // `style-src` carries 'unsafe-inline', so a policy that dropped (or emptied)
+    // `style-src-elem` would silently hand <style> elements to the fallback and
+    // REOPEN injected <style> in every CSP3 browser. Pinned in both environments.
+    it.each(['production', 'sandbox'] as const)(
+      "in %s, <style> elements are refused: style-src-elem is present, has no 'unsafe-inline', nonce, hash or wildcard (89.1 review)",
+      (env) => {
+        const d = parseCsp(buildContentSecurityPolicy(TEST_NONCE, env, false))
+        const elem = d['style-src-elem']
+        expect(elem).toBeDefined()
+        expect(elem).not.toMatch(
+          /'unsafe-inline'|'nonce-|'sha(256|384|512)-|(^|\s)\*(\s|$)|'unsafe-hashes'/
+        )
+        // The attribute directive must also be present, or attributes fall back to
+        // the base 'unsafe-inline' (harmless today, but no longer a deliberate pin).
+        expect(d['style-src-attr']).toBe(`'unsafe-inline'`)
+      }
+    )
+
+    it('never grants the SANDBOX Paddle CDN to a production policy (89.1 D2)', () => {
+      expect(csp ?? '').not.toContain('sandbox-cdn.paddle.com')
     })
 
     it('allows the real connect / frame / img / font origins', () => {
@@ -285,24 +341,160 @@ describe('applySecurityHeaders', () => {
     })
   })
 
+  describe('Paddle stylesheet host by Paddle environment (story 89.1 D2)', () => {
+    it('a SANDBOX policy adds the sandbox CDN to style-src-elem, and changes nothing else', () => {
+      const sandbox = parseCsp(buildContentSecurityPolicy(TEST_NONCE, 'sandbox', false))
+      const production = parseCsp(buildContentSecurityPolicy(TEST_NONCE, 'production', false))
+      expect(sandbox['style-src-elem']).toBe(
+        `'self' https://cdn.paddle.com https://sandbox-cdn.paddle.com`
+      )
+      expect(production['style-src-elem']).toBe(`'self' https://cdn.paddle.com`)
+      // The legacy fallback and the attribute directive, pinned in BOTH environments.
+      // The legacy fallback carries the same Paddle hosts (89.1 review, Lucas).
+      expect(sandbox['style-src']).toBe(
+        `'self' 'unsafe-inline' https://cdn.paddle.com https://sandbox-cdn.paddle.com`
+      )
+      expect(production['style-src']).toBe(`'self' 'unsafe-inline' https://cdn.paddle.com`)
+      for (const d of [sandbox, production]) {
+        expect(d['style-src-attr']).toBe(`'unsafe-inline'`)
+      }
+      // Every other directive is identical between the two branches.
+      const { 'style-src-elem': _s, 'style-src': _sb, ...sandboxRest } = sandbox
+      const { 'style-src-elem': _p, 'style-src': _pb, ...productionRest } = production
+      expect(sandboxRest).toEqual(productionRest)
+    })
+
+    it('applySecurityHeaders passes the environment through to the header', () => {
+      const headers = new Headers()
+      applySecurityHeaders(headers, { ...baseOpts, paddleEnvironment: 'sandbox' })
+      expect(headers.get('Content-Security-Policy')).toBe(
+        buildContentSecurityPolicy(TEST_NONCE, 'sandbox', false)
+      )
+    })
+
+    it('paddleStyleHosts never lists the sandbox CDN for production', () => {
+      expect(paddleStyleHosts('production')).toEqual(['https://cdn.paddle.com'])
+      expect(paddleStyleHosts('sandbox')).toEqual([
+        'https://cdn.paddle.com',
+        'https://sandbox-cdn.paddle.com',
+      ])
+    })
+
+    describe('paddleEnvironmentForCsp (mirrors /api/paddle/checkout-config)', () => {
+      it('is sandbox ONLY when PADDLE_ENVIRONMENT is explicitly set and the config says sandbox', () => {
+        expect(paddleEnvironmentForCsp('sandbox', () => 'sandbox')).toBe('sandbox')
+      })
+
+      it('is production when the config says production', () => {
+        expect(paddleEnvironmentForCsp('production', () => 'production')).toBe('production')
+      })
+
+      it('is production when PADDLE_ENVIRONMENT is unset or empty, even though the schema DEFAULTS to sandbox', () => {
+        // The resolver would answer 'sandbox' (the schema default); it must not be asked.
+        const resolver = () => 'sandbox'
+        expect(paddleEnvironmentForCsp(undefined, resolver)).toBe('production')
+        expect(paddleEnvironmentForCsp('', resolver)).toBe('production')
+      })
+
+      it('is production when the config fails to load (never a 500 from the CSP)', () => {
+        expect(
+          paddleEnvironmentForCsp('sandbox', () => {
+            throw new Error('invalid env')
+          })
+        ).toBe('production')
+      })
+    })
+  })
+
+  // 89.1 review (Lucas 2026-10-02, option (a)): Vite's error-overlay <style> and HMR
+  // <style> need inline <style> in DEV. A nonce does not work (Vite reads the meta's
+  // `.nonce`, TanStack writes `content`; measured). A PRODUCTION policy never gets it.
+  describe("style-src-elem 'unsafe-inline': dev only (89.1 review)", () => {
+    it.each(['production', 'sandbox'] as const)(
+      "in %s, the DEV policy adds exactly 'unsafe-inline' to style-src-elem",
+      (env) => {
+        const dev = parseCsp(buildContentSecurityPolicy(TEST_NONCE, env, true))
+        const prod = parseCsp(buildContentSecurityPolicy(TEST_NONCE, env, false))
+        expect(dev['style-src-elem']).toBe(
+          `'self' 'unsafe-inline' ${paddleStyleHosts(env).join(' ')}`
+        )
+        // Nothing else differs between dev and production.
+        const { 'style-src-elem': _d, ...devRest } = dev
+        const { 'style-src-elem': _p, ...prodRest } = prod
+        expect(devRest).toEqual(prodRest)
+      }
+    )
+
+    it('applySecurityHeaders gives inline <style> to development only', () => {
+      const devHeaders = new Headers()
+      applySecurityHeaders(devHeaders, { ...baseOpts, isDev: true })
+      expect(parseCsp(devHeaders.get('Content-Security-Policy') ?? '')['style-src-elem']).toBe(
+        `'self' 'unsafe-inline' https://cdn.paddle.com`
+      )
+      const prodHeaders = new Headers()
+      applySecurityHeaders(prodHeaders, baseOpts)
+      expect(parseCsp(prodHeaders.get('Content-Security-Policy') ?? '')['style-src-elem']).toBe(
+        `'self' https://cdn.paddle.com`
+      )
+    })
+  })
+
+  // 89.1 review: the start.ts wiring, against the REAL config schema (no stub
+  // resolver). The schema DEFAULTS an unset PADDLE_ENVIRONMENT to 'sandbox', so the
+  // unset case is the one that proves the explicit-env gate is actually wired.
+  describe('paddleEnvironmentFromProcessEnv (the start.ts wiring, real config)', () => {
+    const saved = process.env['PADDLE_ENVIRONMENT']
+    const setEnv = (v: string | undefined) => {
+      // Not `= undefined`: process.env coerces that to the STRING 'undefined'.
+      if (v === undefined) Reflect.deleteProperty(process.env, 'PADDLE_ENVIRONMENT')
+      else process.env['PADDLE_ENVIRONMENT'] = v
+      resetConfig()
+    }
+    afterEach(() => setEnv(saved))
+
+    it('unset → production, although getPaddleConfig() itself answers sandbox', () => {
+      setEnv(undefined)
+      expect(getPaddleConfig().environment).toBe('sandbox')
+      resetConfig()
+      expect(paddleEnvironmentFromProcessEnv()).toBe('production')
+    })
+
+    it.each([
+      ['sandbox', 'sandbox'],
+      ['production', 'production'],
+      ['', 'production'],
+      ['Sandbox', 'production'],
+      [' sandbox', 'production'],
+    ] as const)('PADDLE_ENVIRONMENT=%j → %s', (value, expected) => {
+      setEnv(value)
+      expect(paddleEnvironmentFromProcessEnv()).toBe(expected)
+    })
+  })
+
   describe('buildContentSecurityPolicy (per-request nonce)', () => {
     it('injects the exact nonce it is given', () => {
-      const csp = buildContentSecurityPolicy('AAAABBBBCCCCDDDD')
+      const csp = buildContentSecurityPolicy('AAAABBBBCCCCDDDD', 'production', false)
       expect(csp).toContain(`'nonce-AAAABBBBCCCCDDDD'`)
     })
 
     it('produces a different script-src for a different nonce', () => {
-      expect(buildContentSecurityPolicy('AAAA')).not.toBe(buildContentSecurityPolicy('BBBB'))
+      expect(buildContentSecurityPolicy('AAAA', 'production', false)).not.toBe(
+        buildContentSecurityPolicy('BBBB', 'production', false)
+      )
     })
 
     it('accepts a real generated base64 nonce (with padding)', () => {
-      expect(() => buildContentSecurityPolicy('dGVzdC1ub25jZS0xMjM=')).not.toThrow()
+      expect(() =>
+        buildContentSecurityPolicy('dGVzdC1ub25jZS0xMjM=', 'production', false)
+      ).not.toThrow()
     })
 
     it('rejects a non-base64 nonce (CSP-injection guard)', () => {
       // A `'` would break out of the 'nonce-…' token and inject directives.
-      expect(() => buildContentSecurityPolicy(`x' ; script-src *`)).toThrow(/base64/)
-      expect(() => buildContentSecurityPolicy('')).toThrow(/base64/)
+      expect(() => buildContentSecurityPolicy(`x' ; script-src *`, 'production', false)).toThrow(
+        /base64/
+      )
+      expect(() => buildContentSecurityPolicy('', 'production', false)).toThrow(/base64/)
     })
   })
 
@@ -361,7 +553,12 @@ describe('applySecurityHeaders', () => {
   describe('Strict-Transport-Security (sec-1 AC-3, gated on confirmed HTTPS)', () => {
     it('is present over confirmed HTTPS in production, without preload', () => {
       const headers = new Headers()
-      applySecurityHeaders(headers, { isDev: false, isHttps: true, nonce: TEST_NONCE })
+      applySecurityHeaders(headers, {
+        isDev: false,
+        isHttps: true,
+        nonce: TEST_NONCE,
+        paddleEnvironment: 'production',
+      })
       expect(headers.get('Strict-Transport-Security')).toBe(STRICT_TRANSPORT_SECURITY)
       expect(STRICT_TRANSPORT_SECURITY).toBe('max-age=31536000; includeSubDomains')
       // preload intentionally omitted (Lucas's decision — near-irreversible commitment).
@@ -370,13 +567,23 @@ describe('applySecurityHeaders', () => {
 
     it('is ABSENT when the scheme is not confirmed HTTPS (plain HTTP)', () => {
       const headers = new Headers()
-      applySecurityHeaders(headers, { isDev: false, isHttps: false, nonce: TEST_NONCE })
+      applySecurityHeaders(headers, {
+        isDev: false,
+        isHttps: false,
+        nonce: TEST_NONCE,
+        paddleEnvironment: 'production',
+      })
       expect(headers.get('Strict-Transport-Security')).toBeNull()
     })
 
     it('is ABSENT in development even if the scheme reports HTTPS', () => {
       const headers = new Headers()
-      applySecurityHeaders(headers, { isDev: true, isHttps: true, nonce: TEST_NONCE })
+      applySecurityHeaders(headers, {
+        isDev: true,
+        isHttps: true,
+        nonce: TEST_NONCE,
+        paddleEnvironment: 'production',
+      })
       expect(headers.get('Strict-Transport-Security')).toBeNull()
     })
   })
@@ -384,14 +591,24 @@ describe('applySecurityHeaders', () => {
   describe('Referrer-Policy and Permissions-Policy (sec-1 AC-4)', () => {
     it('sets a strict Referrer-Policy on every response', () => {
       const headers = new Headers()
-      applySecurityHeaders(headers, { isDev: false, isHttps: false, nonce: TEST_NONCE })
+      applySecurityHeaders(headers, {
+        isDev: false,
+        isHttps: false,
+        nonce: TEST_NONCE,
+        paddleEnvironment: 'production',
+      })
       expect(headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin')
       expect(REFERRER_POLICY).toBe('strict-origin-when-cross-origin')
     })
 
     it('denies unused browser features via Permissions-Policy', () => {
       const headers = new Headers()
-      applySecurityHeaders(headers, { isDev: false, isHttps: false, nonce: TEST_NONCE })
+      applySecurityHeaders(headers, {
+        isDev: false,
+        isHttps: false,
+        nonce: TEST_NONCE,
+        paddleEnvironment: 'production',
+      })
       expect(headers.get('Permissions-Policy')).toBe(PERMISSIONS_POLICY)
       expect(PERMISSIONS_POLICY).toContain('camera=()')
       expect(PERMISSIONS_POLICY).toContain('microphone=()')
@@ -407,12 +624,13 @@ describe('applyHeadersToNextResult (middleware path)', () => {
       isDev: false,
       isHttps: true,
       nonce: TEST_NONCE,
+      paddleEnvironment: 'production',
     })
     expect(result.response.headers.get('X-Content-Type-Options')).toBe('nosniff')
     expect(result.response.headers.get('X-Frame-Options')).toBe('DENY')
     expect(result.response.headers.get('X-XSS-Protection')).toBe('1; mode=block')
     expect(result.response.headers.get('Content-Security-Policy')).toBe(
-      buildContentSecurityPolicy(TEST_NONCE)
+      buildContentSecurityPolicy(TEST_NONCE, 'production', false)
     )
     expect(result.response.headers.get('Strict-Transport-Security')).toBe(STRICT_TRANSPORT_SECURITY)
     expect(result.response.headers.get('Access-Control-Allow-Origin')).toBeNull()
@@ -423,7 +641,7 @@ describe('applyHeadersToNextResult (middleware path)', () => {
   it('passes through extra result fields and honors dev CORS (and suppresses HSTS in dev)', async () => {
     const result = await applyHeadersToNextResult(
       async () => ({ response: new Response(null), pathname: '/x' }),
-      { isDev: true, isHttps: true, nonce: TEST_NONCE }
+      { isDev: true, isHttps: true, nonce: TEST_NONCE, paddleEnvironment: 'production' }
     )
     expect(result.response.headers.get('Access-Control-Allow-Origin')).toBe('*')
     expect(result.response.headers.get('Strict-Transport-Security')).toBeNull()
