@@ -1,4 +1,9 @@
-import { formatCurrency, localeForCurrency } from '@budget-planner/core'
+import {
+  CONSOLIDATED_CURRENCIES,
+  formatCurrency,
+  getSupportedCurrencies,
+  localeForCurrency,
+} from '@budget-planner/core'
 import { render } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { useCurrencyStore } from '../../../stores/currencyStore'
@@ -75,7 +80,7 @@ describe('GroupedAmount', () => {
   it('de-DE (EUR): breaks after "." group separators, never after the "," decimal', () => {
     useCurrencyStore.setState({ mode: 'symbol', currency: 'EUR' })
     const text = formatLikeTheApp(1234567890, 'symbol', 'EUR')
-    // `1.234.567,89 €` with a no-break space before the symbol.
+    // `12.345.678,90 €` with a no-break space before the symbol.
     expect(text).toBe('12.345.678,90 €')
     const el = renderAmount(text)
     expect(tokens(el)).toEqual(['12.', '<wbr>', '345.', '<wbr>', '678,90 €'])
@@ -102,7 +107,14 @@ describe('GroupedAmount', () => {
   })
 
   it('the <wbr> count equals the group-separator count for every supported currency', () => {
-    for (const currency of ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'CNY', 'INR', 'BRL', 'ZAR', 'MXN']) {
+    // The selectable codes plus the consolidated dollar family (CAD/AUD/MXN),
+    // which stay formattable for legacy/synced values: 9 + 3 = 12.
+    const currencies = [
+      ...getSupportedCurrencies().filter((c) => c !== 'NONE'),
+      ...Object.keys(CONSOLIDATED_CURRENCIES),
+    ]
+    expect(currencies).toHaveLength(12)
+    for (const currency of currencies) {
       useCurrencyStore.setState({ mode: 'symbol', currency })
       const locale = localeForCurrency(currency)
       const parts = new Intl.NumberFormat(locale, { style: 'currency', currency }).formatToParts(
@@ -117,10 +129,25 @@ describe('GroupedAmount', () => {
   })
 })
 
+describe('groupSeparator', () => {
+  it('reads the CURRENCY-style separator when given a currency (de-AT differs by style)', () => {
+    // Measured on Node 20 and 26 (ICU 78): de-AT groups decimals with a
+    // no-break space but currency amounts with `.` (`-€ 1.234.567,89`).
+    expect(groupSeparator('de-AT')).toBe('\u00a0')
+    expect(groupSeparator('de-AT', 'EUR')).toBe('.')
+  })
+
+  it('returns null for an invalid currency instead of throwing', () => {
+    expect(groupSeparator('en-US', 'NOT-A-CODE')).toBeNull()
+  })
+})
+
 describe('splitAtGroupSeparators', () => {
   it('splits only after a separator with a digit on both sides', () => {
     expect(splitAtGroupSeparators('1,234,567.89', ',')).toEqual(['1,', '234,', '567.89'])
     expect(splitAtGroupSeparators('a, b,1', ',')).toEqual(['a, b,1'])
+    // Native (non-ASCII) digits count as digits.
+    expect(splitAtGroupSeparators('١٬٢٣٤', '٬')).toEqual(['١٬', '٢٣٤'])
   })
 
   it('returns the text whole when the locale has no group separator', () => {

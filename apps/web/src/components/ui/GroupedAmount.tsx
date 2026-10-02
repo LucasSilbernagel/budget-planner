@@ -23,9 +23,10 @@
  * ## Contract
  *
  * `text` is the ALREADY-FORMATTED string from `useFormattedAmount()`. The
- * separator comes from the same locale that formatter used
- * (`useCurrencyPreferences().locale`), found with `Intl.formatToParts`, never a
- * hard-coded `,` (de-DE uses `.`, de-CH `'`, en-ZA a no-break space).
+ * separator comes from the same locale, mode and currency that formatter used
+ * (`useCurrencyPreferences()`), found with `Intl.formatToParts`, never a
+ * hard-coded `,` (de-DE uses `.`, en-ZA a no-break space; de-CH's apostrophe
+ * differs between CLDR versions).
  *
  * A separator only counts when a DIGIT sits on both sides of it: in en-ZA the
  * same no-break space also separates the `R` from the number, and a break there
@@ -40,19 +41,30 @@ import { Fragment } from 'react'
 import type React from 'react'
 import { useCurrencyPreferences } from '../../stores/currencyStore'
 
-/** The locale's digit-group separator, or `null` if it has none (or the locale is invalid). */
-export function groupSeparator(locale: string): string | null {
+/**
+ * The digit-group separator of the formatter that produced the text, or `null`
+ * if it has none (or the locale/currency is invalid).
+ *
+ * Pass `currency` in symbol mode: the separator is read from a CURRENCY-style
+ * formatter, exactly as `formatCurrency` builds it. Some locales group
+ * differently in currency style (de-AT: no-break space in decimal style, `.`
+ * in currency style), so a decimal-style lookup would find no break at all.
+ */
+export function groupSeparator(locale: string, currency?: string | null): string | null {
   try {
+    const options: Intl.NumberFormatOptions = currency ? { style: 'currency', currency } : {}
     return (
-      new Intl.NumberFormat(locale).formatToParts(1_234_567).find((p) => p.type === 'group')
-        ?.value ?? null
+      new Intl.NumberFormat(locale, options)
+        .formatToParts(1_234_567)
+        .find((p) => p.type === 'group')?.value ?? null
     )
   } catch {
     return null
   }
 }
 
-const DIGIT = /\d/
+/** Any decimal digit, not just ASCII (a locale with native digits still groups). */
+const DIGIT = /\p{Nd}/u
 
 /**
  * Splits `text` just AFTER each `separator` that has a digit on both sides.
@@ -74,8 +86,10 @@ export function splitAtGroupSeparators(text: string, separator: string | null): 
 }
 
 export function GroupedAmount({ text }: { text: string }): React.ReactElement {
-  const { locale } = useCurrencyPreferences()
-  const segments = splitAtGroupSeparators(text, groupSeparator(locale))
+  const { mode, currency, locale } = useCurrencyPreferences()
+  // Mirrors `formatCurrency`'s branch: currency-less (or `NONE`) is decimal style.
+  const symbolCurrency = mode === 'none' || currency === 'NONE' ? null : currency
+  const segments = splitAtGroupSeparators(text, groupSeparator(locale, symbolCurrency))
   return (
     <>
       {segments.map((segment, i) => (
