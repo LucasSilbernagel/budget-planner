@@ -40,6 +40,7 @@ import {
 import { ErrorBoundary } from './ErrorBoundary'
 import { AccountNoticeBox } from './overview/AccountNoticeBox'
 import { PremiumFeatureGate } from './premium'
+import { GroupedAmount } from './ui/GroupedAmount'
 import { InfoTooltip } from './ui/InfoTooltip'
 import { LoadingStatus, PendingFigure, SKELETON_BAR, SkeletonBlock } from './ui/Skeleton'
 
@@ -678,6 +679,10 @@ export function HomePage() {
                 </select>
               </label>
             </div>
+            {/* Story 88.1: each figure below is a `GroupedAmount`, so one too wide
+                for its `minmax(0,1fr)` column wraps between digit groups instead
+                of overflowing its card (measured: `$1,013,222,221.80` needs 254px,
+                a card has 208px at 320px and 176px at 768px). */}
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               <div className="surface-inset rounded-lg p-4">
                 <p className="flex items-center gap-1 text-sm text-muted">
@@ -702,7 +707,7 @@ export function HomePage() {
                   className="text-2xl font-bold text-green-600"
                 >
                   {hydrated ? (
-                    formatAmount(incomeForDuration)
+                    <GroupedAmount text={formatAmount(incomeForDuration)} />
                   ) : (
                     <PendingFigure testId="overview-total-income-skeleton" />
                   )}
@@ -727,7 +732,7 @@ export function HomePage() {
                   className="text-2xl font-bold text-red-600"
                 >
                   {hydrated ? (
-                    formatAmount(expensesForDuration)
+                    <GroupedAmount text={formatAmount(expensesForDuration)} />
                   ) : (
                     <PendingFigure testId="overview-total-expenses-skeleton" />
                   )}
@@ -751,7 +756,7 @@ export function HomePage() {
                   }`}
                 >
                   {hydrated ? (
-                    formatAmount(netWorth)
+                    <GroupedAmount text={formatAmount(netWorth)} />
                   ) : (
                     <PendingFigure testId="overview-net-worth-skeleton" />
                   )}

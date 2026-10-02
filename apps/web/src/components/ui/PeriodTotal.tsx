@@ -31,6 +31,7 @@ import {
   useOverviewDuration,
   useSetOverviewDuration,
 } from '../../stores/overviewDurationStore'
+import { GroupedAmount } from './GroupedAmount'
 import { InfoTooltip } from './InfoTooltip'
 import { PendingFigure } from './Skeleton'
 
@@ -120,20 +121,21 @@ export function PeriodTotal({
           overflow escaped the card and pushed the whole PAGE to 325px. It passed
           locally and failed in CI purely on font metrics.
 
-          `[overflow-wrap:anywhere]`, not `break-words`: a currency figure has no
-          break opportunity, and `overflow-wrap: break-word` leaves the element's
-          MIN-CONTENT width equal to the whole unbroken string. Since this sits in
-          a flex column whose items default to `min-width: auto`, that min-content
-          is exactly what forced the page wider. Only `anywhere` shrinks the
-          min-content contribution, which is what actually stops the page
-          overflowing. Tailwind 3.4 has no `wrap-anywhere` utility (that is v4),
-          hence the arbitrary property.
+          A currency figure has no break opportunity of its own, and
+          `overflow-wrap: break-word` leaves the element's MIN-CONTENT width equal
+          to the whole unbroken string. Since this sits in a flex column whose
+          items default to `min-width: auto`, that min-content is exactly what
+          forced the page wider. Story 88.1 (D2) replaced the earlier
+          `[overflow-wrap:anywhere]` with `GroupedAmount`: a `<wbr>` after each
+          digit-group separator drops the min-content to the longest group, and
+          a figure that does not fit wraps at a group boundary instead of
+          mid-group (`anywhere` could split `$14,812,345,6` / `78.90`).
 
           Measured at 320px with the widest common Linux font (DejaVu Sans):
           `text-3xl` needs 285px / has 240px → page 325px. `text-2xl` needs 228px
-          → fits on one line with 12px to spare, and the wrap rule keeps even a
-          $14.8bn figure on the page (it takes a second line instead). `sm:` and
-          up are unchanged, so the desktop design is untouched. */}
+          → fits on one line with 12px to spare, and a $14.8bn figure takes a
+          second line instead of widening the page. `sm:` and up are unchanged,
+          so the desktop design is untouched. */}
       {/* Story 38.2 (UX-DR43): pending → a placeholder, never a formatted zero.
           `PendingFigure`'s bar is `h-[1em]`, so it is exactly as tall as the text
           it stands in for at BOTH type sizes above (`text-2xl` / `sm:text-3xl`)
@@ -141,11 +143,11 @@ export function PeriodTotal({
           classes and the 320px wrapping rules above untouched — only its CONTENT
           changes. */}
       <p
-        className={`text-2xl sm:text-3xl font-bold [overflow-wrap:anywhere] ${amountClassName}`}
+        className={`text-2xl sm:text-3xl font-bold ${amountClassName}`}
         data-testid="period-total-amount"
       >
         {hydrated ? (
-          formatAmount(amountForDuration)
+          <GroupedAmount text={formatAmount(amountForDuration)} />
         ) : (
           <PendingFigure testId="period-total-amount-skeleton" widthClass="w-40" />
         )}

@@ -1,4 +1,6 @@
 # generated: 2026-06-18
+# last_updated: 2026-10-02n (**88.1 REVIEWED -> done**, review patches uncommitted.)
+# last_updated: 2026-10-02m (**88.1 -> in-progress**, dev at `e1210a3`; HALTED at Task 5 for the screenshots update run.)
 # last_updated: 2026-10-02l (**88.1, 88.2, 88.3, 89.1 CREATED -> ready-for-dev**; epics 88 + 89 in-progress.)
 # last_updated: 2026-10-02k (**86.2 REVIEWED -> done**, uncommitted; epic 86 complete pending commit.)
 # last_updated: 2026-10-02j (**86.2 DEV DONE -> review**, uncommitted.)
@@ -1212,7 +1214,7 @@ development_status:
   epic-87-retrospective: optional
 
   epic-88: in-progress  # Big Numbers Fit, Narrow Screens Don't Scroll Sideways. FR142. Order 88.1 -> 88.2 -> 88.3; each needs a screenshots.yml update dispatch + push by Lucas.
-  88-1-large-figures-fit-their-cards-at-every-width: ready-for-dev  # CREATED 2026-10-02. D1-D3 CONFIRMED by Lucas 2026-10-02 (as recommended): D1 <wbr> after locale group separators (one shared component), D2 PeriodTotal joins, D3 grids unchanged. Re-proof needs a scratch harness (chromium-layout projects gone; old responsive-320 imports LONG_UNBROKEN_NAME, no longer exported). HALT for Lucas's push + screenshots.yml update.
+  88-1-large-figures-fit-their-cards-at-every-width: done  # REVIEWED 2026-10-02: 11 patches applied (GroupedAmount reads the CURRENCY-style separator in symbol mode + \p{Nd} digits; record fixes), 4 deferred (incl. MED /savings text-3xl headline unfixed, out of scope), gates --sequential green 3m49s; review patches UNCOMMITTED, no screenshot change expected. TASK 5+7 DONE 2026-10-02: CI re-baseline run 37045137447 (8 PNGs: 5 predicted + 3 sub-pixel AA at overview @1280, accepted by Lucas), committed `32af2ca`; mode=compare 37045455839 green. Next: code review. DEV STARTED 2026-10-02 at e1210a3 (86.2 committed). Tasks 0-4, 6 done, gates --sequential green; HALTED at Task 5 for Lucas push + screenshots.yml mode=update (predicted 5 changed shots). CREATED 2026-10-02. D1-D3 CONFIRMED by Lucas 2026-10-02 (as recommended): D1 <wbr> after locale group separators (one shared component), D2 PeriodTotal joins, D3 grids unchanged. Re-proof needs a scratch harness (chromium-layout projects gone; old responsive-320 imports LONG_UNBROKEN_NAME, no longer exported). HALT for Lucas's push + screenshots.yml update.
   88-2-retirement-fits-a-320-px-screen: ready-for-dev  # CREATED 2026-10-02. After 88.1 (baseline order). Overflowing element NOT known: find it under DejaVu first. Candidates: chart ReferenceLine label (epic 24: 2 px slack under Noto), planner text-2xl figure (88.1's class).
   88-3-three-new-screenshots-for-the-most-cited-dropped-claims: ready-for-dev  # CREATED 2026-10-02. After 88.2. 26 claims is the CEILING: @1280/desktop, behaviour (scroll/tap) and landscape claims are expected to stay DROPPED (band rule).
   epic-88-retrospective: optional
