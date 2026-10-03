@@ -10,7 +10,9 @@
  * It resets each financial Zustand store to empty (so the current view updates
  * immediately), clears its persisted localStorage entry (so a refresh does not
  * restore the data), AND — when a `userId` is supplied — clears the durable
- * offline sync queue keyed to that user.
+ * offline sync queue keyed to that user. It also forgets the sync notices
+ * (refused / not-synced edits and their dismissals, story 92.1), which can name
+ * a row it just removed.
  *
  * It is deliberately **best-effort and never throws**: a failure clearing one
  * store (e.g. localStorage disabled / Safari private mode / SecurityError) must
@@ -33,12 +35,16 @@
  */
 
 import { getSyncPurgeHandle } from '@/lib/sync/purgeHandle'
+import { resetRefusalNotices } from '@/lib/sync/refusalNoticeStore'
 import { useBalanceStore } from '@/stores/balanceStore'
 import { useCategoryStore } from '@/stores/categoryStore'
 import { useExpenseStore } from '@/stores/expenseStore'
 import { useIncomeStore } from '@/stores/incomeStore'
 import { useProfileStore } from '@/stores/profileStore'
-import { useRetirementPlannerStore } from '@/stores/retirementPlannerStore'
+import {
+  RETIREMENT_PLANNER_PARKED_KEY_PREFIX,
+  useRetirementPlannerStore,
+} from '@/stores/retirementPlannerStore'
 import { useSavingsStore } from '@/stores/savingsStore'
 import { createSyncQueue } from '@budget-planner/core/sync'
 
@@ -97,6 +103,21 @@ export async function purgeLocalFinancialData(userId?: string): Promise<void> {
     useRetirementPlannerStore.getState().resetPlan()
     useRetirementPlannerStore.persist.clearStorage()
   })
+  // Story 90.1 (D4): plans PARKED for other accounts that used this browser
+  // (`claimRetirementPlanFor`) go too. "Clear local data on this device" must not
+  // leave anyone's plan behind.
+  safely(() => {
+    const parked: string[] = []
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index)
+      if (key?.startsWith(RETIREMENT_PLANNER_PARKED_KEY_PREFIX)) {
+        parked.push(key)
+      }
+    }
+    for (const key of parked) {
+      localStorage.removeItem(key)
+    }
+  })
   // Profiles and balance expose reset() (back to their seeded/empty defaults).
   safely(() => {
     useProfileStore.getState().reset()
@@ -105,6 +126,13 @@ export async function purgeLocalFinancialData(userId?: string): Promise<void> {
   safely(() => {
     useBalanceStore.getState().reset()
     useBalanceStore.persist.clearStorage()
+  })
+  // The sync notices (stories 75.2 / 79.2, story 92.1): a refusal notice names a
+  // row this purge just removed, and a not-synced dismissal would hide a later
+  // edit's notice. In memory only (no storage key). Importing it adds no cycle:
+  // `refusalNoticeStore` imports no store, and no store imports this file.
+  safely(() => {
+    resetRefusalNotices()
   })
 
   // ⚠️ DELIBERATELY NOT PURGED: the persisted table sort

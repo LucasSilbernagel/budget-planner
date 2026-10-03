@@ -44,6 +44,7 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('@/stores/retirementPlannerStore', () => ({
+  RETIREMENT_PLANNER_PARKED_KEY_PREFIX: 'budget-planner-retirement-planner-v1:',
   useRetirementPlannerStore: {
     getState: () => ({ resetPlan: h.retirementPlanReset }),
     persist: { clearStorage: h.retirementPlanClear },
@@ -80,6 +81,14 @@ vi.mock('@/stores/categoryStore', () => ({
 vi.mock('@budget-planner/core/sync', () => ({ createSyncQueue: h.createSyncQueue }))
 
 import { registerSyncPurgeHandle } from '@/lib/sync/purgeHandle'
+import {
+  type RefusalNotice,
+  addRefusalNotices,
+  dismissRefusalNotice,
+  getRefusalNotices,
+  reconcileNotSyncedNotices,
+  resetRefusalNotices,
+} from '@/lib/sync/refusalNoticeStore'
 import { purgeLocalFinancialData } from './purge-local-financial-data'
 
 beforeEach(() => {
@@ -225,9 +234,80 @@ describe('purgeLocalFinancialData', () => {
     })
   })
 
+  it('removes the retirement plans parked for other accounts, and nothing else (story 90.1, D4)', async () => {
+    // This file runs in node (no DOM): a Map-backed stand-in with the Storage
+    // methods the purge uses, including index-based `key()` iteration.
+    const items = new Map<string, string>([
+      ['budget-planner-retirement-planner-v1:aaaa', '{}'],
+      ['budget-planner-retirement-planner-v1:bbbb', '{}'],
+      ['budget-planner-currency-v1', 'kept'],
+    ])
+    vi.stubGlobal('localStorage', {
+      get length() {
+        return items.size
+      },
+      key: (index: number) => [...items.keys()][index] ?? null,
+      getItem: (key: string) => items.get(key) ?? null,
+      removeItem: (key: string) => {
+        items.delete(key)
+      },
+    })
+    try {
+      await purgeLocalFinancialData('')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+    expect([...items.keys()]).toEqual(['budget-planner-currency-v1'])
+  })
+
   it('with an empty-string userId also skips the sync queue', async () => {
     await purgeLocalFinancialData('')
     expect(h.incomeClear).toHaveBeenCalledTimes(1)
     expect(h.createSyncQueue).not.toHaveBeenCalled()
+  })
+
+  // Story 92.1 (deferred-work, code review of 86-1, LOW #3). The REAL notice store
+  // (not mocked): it is in-memory only, and mocking it would let a missing reset
+  // pass. A dismissal has no getter, so it is observed by behaviour: a dismissed
+  // not-synced notice stays hidden on the next reconcile until the dismissal is
+  // forgotten.
+  describe('refusal notices (story 92.1)', () => {
+    const refused: RefusalNotice = {
+      key: 'incomeSource:gone',
+      entityType: 'incomeSource',
+      name: 'Salary',
+      kind: 'income',
+      fallback: 'An income entry',
+      outcome: 'removed',
+    }
+    const notSynced: RefusalNotice = {
+      key: 'expense:stuck',
+      entityType: 'expense',
+      name: 'Rent',
+      kind: 'expense',
+      fallback: 'An expense',
+      outcome: 'not-synced',
+      change: 'update',
+    }
+    afterEach(() => {
+      resetRefusalNotices()
+    })
+
+    it.each([
+      ['a userId', 'user-9'],
+      ['no userId', undefined],
+    ])('forgets every notice and every dismissal (with %s)', async (_label, userId) => {
+      reconcileNotSyncedNotices([notSynced])
+      dismissRefusalNotice(notSynced.key)
+      addRefusalNotices([refused])
+      expect(getRefusalNotices().map((n) => n.key)).toEqual([refused.key])
+
+      await purgeLocalFinancialData(userId)
+
+      expect(getRefusalNotices()).toEqual([])
+      // The dismissal is gone too: the same escalated edit is shown again.
+      reconcileNotSyncedNotices([notSynced])
+      expect(getRefusalNotices().map((n) => n.key)).toEqual([notSynced.key])
+    })
   })
 })

@@ -4,6 +4,7 @@ import {
   RESPONSIVE_ACTIONS_CELL_CLASS,
   RESPONSIVE_ACTIONS_GROUP_CLASS,
   RESPONSIVE_ACTION_BUTTON_CLASS,
+  RESPONSIVE_AMOUNT_CLASS,
   RESPONSIVE_CELL_CLASS,
   RESPONSIVE_HEADER_CELL_CLASS,
   RESPONSIVE_HEADER_CELL_RIGHT_CLASS,
@@ -14,7 +15,6 @@ import {
   RESPONSIVE_TAG_CLASS,
   RESPONSIVE_TBODY_CLASS,
   RESPONSIVE_THEAD_CLASS,
-  RESPONSIVE_VALUE_NOWRAP_CLASS,
   RESPONSIVE_VALUE_TAG_CLASS,
   RESPONSIVE_WRAPPER_CLASS,
 } from '@/components/ui/ResponsiveTable'
@@ -249,9 +249,10 @@ describe('ResponsiveTable class layer', () => {
 
   describe('value/tag pairs (story 42.3, UX-DR47)', () => {
     // ⚠️ Declaration only. jsdom computes no layout and Tailwind never loads,
-    // so nothing here can prove a line count — `e2e/value-tag-one-line.spec.ts`
-    // is the only layer that can. Read each title as "the class this AC needs
-    // is present".
+    // so nothing here can prove a line count. `e2e/value-tag-one-line.spec.ts`
+    // made that claim until stories 84.2/84.5 deleted it; the CI screenshot
+    // `savings-320-light` is the only layout guard on these pairs now (story
+    // 91.1). Read each title as "the class this AC needs is present".
 
     it('the pair is a non-wrapping flex row, aligned to the first line below sm', () => {
       const pairTokens = tokens(RESPONSIVE_VALUE_TAG_CLASS)
@@ -287,12 +288,26 @@ describe('ResponsiveTable class layer', () => {
       expect(bareUtilities(tagTokens)).not.toContain('shrink-0')
     })
 
-    it('the bounded-value class carries nowrap and nothing that reserves width', () => {
-      // Applied to a formatted currency figure only. Anything that adds
-      // horizontal box size here would spend width the 640-1024px budget does
-      // not have (see the block above RESPONSIVE_SCROLL_SHADOW_CLASS).
-      const valueTokens = tokens(RESPONSIVE_VALUE_NOWRAP_CLASS)
-      expect(valueTokens).toContain('whitespace-nowrap')
+    it('the amount class turns the inherited `anywhere` off and reserves no width (story 91.1)', () => {
+      // Applied to a formatted currency figure (a `GroupedAmount`) only.
+      // `overflow-wrap: normal` leaves the `<wbr>`s after each group separator
+      // as the figure's ONLY break opportunities, so a group wider than its
+      // space overflows rather than splitting. It is a floor, not load-bearing
+      // at today's widths (measured, 91.1 arm A1): read the constant's docblock.
+      const valueTokens = tokens(RESPONSIVE_AMOUNT_CLASS)
+      expect(valueTokens).toContain('[overflow-wrap:normal]')
+      // Unprefixed: the child's own value must beat the INHERITED one.
+      expect(valueTokens.some((t) => t.startsWith('max-sm:'))).toBe(false)
+      // ⚠️ LOAD-BEARING FOR DESKTOP. Chromium breaks at `<wbr>` even under the
+      // cell's `nowrap` at >= sm: measured without this token, every row figure
+      // wrapped at its groups at 640/768/1280px and the tables narrowed.
+      expect(valueTokens).toContain('sm:[&_wbr]:hidden')
+      // ⚠️ NOT nowrap any more (91.1 D3): a figure that does not fit must wrap
+      // at a group boundary, never overflow its cell. Variant-stripped.
+      expect(bareUtilities(valueTokens)).not.toContain('whitespace-nowrap')
+      // Anything that adds horizontal box size here would spend width the
+      // 640-1024px budget does not have (see the block above
+      // RESPONSIVE_SCROLL_SHADOW_CLASS).
       for (const utility of bareUtilities(valueTokens)) {
         expect(utility).not.toMatch(/^(p|px|py|ps|pe|pl|pr|m|mx|ms|me|ml|mr|gap|w|min-w)-/)
         // ⚠️ A greedy `replace(/^.*:/, '')` would turn `[padding-left:1rem]`
@@ -468,6 +483,29 @@ describe('ResponsiveTable class layer', () => {
       const labelTokens = tokens(FIELD_LABEL_CLASS)
       expect(labelTokens).toContain('sm:hidden')
       expect(labelTokens.some((t) => t.startsWith('max-sm:'))).toBe(false)
+    })
+
+    it('breaks only between words, not mid-word (story 91.1, AC 1)', () => {
+      // The cell's `overflow-wrap: anywhere` inherits into the label and made
+      // its min-content one character: `N/A/M/E`, `MONT/HLY/ALLO/CATIO/N`
+      // (measured at 320px under DejaVu Sans before 91.1). The label's own
+      // `normal` floors it at its longest word.
+      const labelTokens = tokens(FIELD_LABEL_CLASS)
+      expect(labelTokens).toContain('[overflow-wrap:normal]')
+      // Never nowrap: a one-line `MONTHLY ALLOCATION` would starve the value.
+      expect(bareUtilities(labelTokens)).not.toContain('whitespace-nowrap')
+    })
+
+    it('takes only the width the value leaves (basis-0 grow), never a shrink factor (story 91.1)', () => {
+      // `basis-0 grow`: the value keeps its one-line width whenever it fits.
+      // ⚠️ `shrink-[1000]` was measured and REJECTED: proportional shrinking
+      // still took ~0.02px from the value, past Chromium's 1/64px layout unit,
+      // so a figure that fitted exactly wrapped at its `<wbr>` anyway. See the
+      // constant's docblock.
+      const labelTokens = tokens(FIELD_LABEL_CLASS)
+      expect(labelTokens).toContain('basis-0')
+      expect(labelTokens).toContain('grow')
+      expect(bareUtilities(labelTokens).some((t) => t.startsWith('shrink'))).toBe(false)
     })
 
     it('is not aria-hidden — it is the only field/value association below sm', () => {

@@ -89,6 +89,14 @@ export default defineConfig({
       EMAIL_FROM: 'no-reply@budgetplanner.test',
       // Stable origin for building absolute magic-link URLs in tests.
       SITE_URL: 'https://app.test',
+      // Story 92.1: every PGlite harness here takes its session TimeZone from the
+      // host (`Etc/GMT+5` on an EDT box, UTC on CI's runners), and a `timestamp
+      // without time zone` default then stores that zone's wall time (ops-2).
+      // Pinning the run to UTC makes a dev box match CI and production's pinned
+      // `TimeZone=UTC`. MEASURED to reach PGlite: `TZ=America/New_York` exported →
+      // `current_setting('TimeZone')` = `UTC` (story 92.1 Dev Agent Record).
+      // ⚠️ It also makes JS `Date` local time UTC in every test, as on CI.
+      TZ: 'UTC',
     },
     coverage: {
       provider: 'v8',

@@ -13,11 +13,14 @@
  * anywhere else, turns this RED.
  *
  * Exempt, and why (not scanned, or not a pg connection):
- *   X1 `test-db-simple.mjs` (repo root): a manual connection check from 6c17abb,
- *      never run by the app or the migrator. Deleting it is a cleanup item.
+ *   X1 (gone) `test-db-simple.mjs` (repo root), a manual connection check from
+ *      6c17abb, was deleted by story 92.1.
  *   X2 `migrations-uuid.test.ts` `new Client`: a test, `TEST_DB_URL`-gated.
  *   X3 the PGlite Vitest harnesses (`new PGlite()`, `src/test/pglite-migrated.ts`):
- *      in-process, no pg connection; their TimeZone is a deferred LOW (ops-2 D4).
+ *      in-process, no pg connection. Pinned to UTC by the Vitest runs themselves
+ *      (story 92.1): `TZ: 'UTC'` in `apps/web/vitest.config.ts` `test.env`, and
+ *      `process.env.TZ = 'UTC'` at the top of `packages/db/vitest.config.ts`
+ *      (Vitest 1.6 threads: `test.env` reached `process.env` but not the zone).
  * drizzle-kit's own pool (C4) is pinned through PGOPTIONS by `stepEnv`
  * (`migrate-lock.ts`), covered by `session-timezone.test.ts` AC-2(b)/(c); the
  * wiring (`runStep` passes `stepEnv`) and the manual `db:migrate` script are

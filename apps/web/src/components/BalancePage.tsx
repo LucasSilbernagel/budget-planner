@@ -30,6 +30,7 @@ import {
   RESPONSIVE_ACTIONS_CELL_CLASS,
   RESPONSIVE_ACTIONS_GROUP_CLASS,
   RESPONSIVE_ACTION_BUTTON_CLASS,
+  RESPONSIVE_AMOUNT_CLASS,
   RESPONSIVE_CELL_CLASS,
   RESPONSIVE_HEADER_CELL_RIGHT_CLASS,
   RESPONSIVE_ROW_CLASS,
@@ -741,9 +742,22 @@ export function BalancePage() {
                               <div className="font-medium text-heading text-sm">{entry.name}</div>
                             </td>
                             <td className={RESPONSIVE_CELL_CLASS}>
-                              <FieldLabel>Current Balance/Value</FieldLabel>
-                              <div className="text-muted text-sm">
-                                {formatAmount(entry.currentBalance)}
+                              {/* Story 91.1 (D4): `<wbr>` lets the label break after
+                                the slash. Measured at 320px under DejaVu Sans,
+                                `BALANCE/VALUE` was the widest unbreakable label
+                                (106.5px) and pushed the figure onto two lines.
+                                `<wbr>` adds no text, so the label still reads
+                                "Current Balance/Value". */}
+                              <FieldLabel>
+                                Current Balance/
+                                <wbr />
+                                Value
+                              </FieldLabel>
+                              {/* Story 91.1: row figures wrap only between digit
+                                groups below `sm` (RESPONSIVE_AMOUNT_CLASS +
+                                GroupedAmount, inside the `hydrated` branch). */}
+                              <div className={`text-muted text-sm ${RESPONSIVE_AMOUNT_CLASS}`}>
+                                <GroupedAmount text={formatAmount(entry.currentBalance)} />
                               </div>
                             </td>
                             <td className={RESPONSIVE_CELL_CLASS}>
@@ -764,8 +778,8 @@ export function BalancePage() {
                                 <div className="text-muted text-sm">—</div>
                               ) : (
                                 <div>
-                                  <div className="text-muted text-sm">
-                                    {formatAmount(entry.monthlyContribution)}
+                                  <div className={`text-muted text-sm ${RESPONSIVE_AMOUNT_CLASS}`}>
+                                    <GroupedAmount text={formatAmount(entry.monthlyContribution)} />
                                   </div>
                                   <div className="text-faint text-xs">
                                     {frequencyLabel(entry.frequency)}

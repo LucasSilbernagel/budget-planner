@@ -98,34 +98,25 @@ jobs:
 
       # Story 58.1 (AC-9). `getSessionSeed` carries a dev-only override that
       # fabricates an entitled session from E2E_SESSION_SEED so Playwright can
-      # measure the paid nav. It is gated on `import.meta.env.DEV`, which Vite
-      # replaces at build time, so a production build should not contain it at
-      # all.
+      # measure the paid nav (87.1 added the e2e mail outbox, the same kind of
+      # seam). Each is gated on `import.meta.env.DEV`, which Vite replaces at
+      # build time, so a production build should not contain it at all.
       #
-      # "Should" is the reason this step exists. The unit guard
-      # (`session-seed-dev-seam.guard.test.ts`) asserts the SOURCE SHAPE and
-      # cannot see the bundle; a change to how the server bundle is produced
-      # could stop eliminating the branch while every test stays green. This
-      # builds the real thing and greps it.
+      # "Should" is the reason this step exists. The unit guards assert the
+      # SOURCE SHAPE and cannot see the bundle; a change to how the server bundle
+      # is produced could stop eliminating the branch while every test stays
+      # green. This builds the real thing and scans it.
       #
-      # ⚠️ The positive control is not optional. A grep that finds nothing
-      # because it searched the wrong directory looks exactly like a pass, so we
-      # first assert a string that MUST be present.
-      - name: Dev-only session seam and server-only code are absent from the client build
+      # Story 92.1: the scan is `DEV_ONLY_SEAMS` in
+      # `apps/web/scripts/client-bundle-guard-lib.mjs` (run by the script below,
+      # and by `pnpm gates`), which replaced the inline grep that was here. Its
+      # positive controls: every marker must still be in its SOURCE file, and the
+      # scan fails when `dist/client` + `dist/server` hold no file at all (a scan
+      # of the wrong directory cannot pass).
+      - name: Dev-only seams and server-only code are absent from the build
         run: |
           set -euo pipefail
           pnpm --filter web build
-          if ! grep -rq "getSessionSeed" apps/web/dist/; then
-            echo "::error::Positive control failed - 'getSessionSeed' not found in apps/web/dist/."
-            echo "The grep is not reaching the build output, so a clean result would prove nothing."
-            exit 1
-          fi
-          if grep -rq "E2E_SESSION_SEED" apps/web/dist/; then
-            echo "::error::SECURITY: the dev-only session seam survived into the production build."
-            grep -rn "E2E_SESSION_SEED" apps/web/dist/ || true
-            exit 1
-          fi
-          echo "OK: positive control present, E2E_SESSION_SEED absent from apps/web/dist/."
 
           # Story 83.1 (FR136, AC-4). No server-only code in the CLIENT bundle.
           # The forecasting page once `import()`ed `server/functions/*` in the

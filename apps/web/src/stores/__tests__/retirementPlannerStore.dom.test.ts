@@ -107,7 +107,8 @@ describe('retirementPlannerStore writes', () => {
     expect(raw).not.toBeNull()
     const parsed = JSON.parse(raw as string)
     expect(parsed.version).toBe(RETIREMENT_PLANNER_VERSION)
-    expect(Object.keys(parsed.state)).toEqual(['plan'])
+    // Story 90.1 (D1) adds the owner stamp beside the plan, persisted with it.
+    expect(Object.keys(parsed.state)).toEqual(['plan', 'ownerUserId'])
     expect(parsed.state.plan.currentAgeInput).toBe('42')
   })
 
