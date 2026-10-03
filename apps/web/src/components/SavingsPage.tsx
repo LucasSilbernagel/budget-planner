@@ -26,6 +26,7 @@ import {
 } from '../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 import { ConfirmDialog } from './ui/ConfirmDialog'
+import { GroupedAmount } from './ui/GroupedAmount'
 import { Modal } from './ui/Modal'
 import {
   FieldLabel,
@@ -549,10 +550,19 @@ export function SavingsPage() {
                     scope table — found only because the server-response
                     assertion looks for the VALUE (`$0.00`) rather than for a
                     list of testids it already knew about. A testid-shaped
-                    sweep would have shipped without it. */}
-                <p className="mt-2 font-bold text-purple-600 dark:text-purple-400 text-3xl">
+                    sweep would have shipped without it. The testid was added
+                    by story 88.4 (it changes no pixel). The figure is a
+                    `GroupedAmount` (story 88.4, FR142): at 320 px under CI's
+                    font `$13,222,221.90` is 264 px against a 240 px card, so
+                    it may break after a group separator and nowhere else. The
+                    skeleton branch is untouched (`ui/Skeleton.tsx`'s 0.4 px
+                    `text-3xl` clearance note). */}
+                <p
+                  data-testid="savings-total"
+                  className="mt-2 font-bold text-purple-600 dark:text-purple-400 text-3xl"
+                >
                   {hydrated ? (
-                    formatAmount(totalSavings)
+                    <GroupedAmount text={formatAmount(totalSavings)} />
                   ) : (
                     <PendingFigure testId="savings-total-skeleton" widthClass="w-40" />
                   )}

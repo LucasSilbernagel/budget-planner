@@ -57,6 +57,7 @@ import { useFormattedAmount } from '../../stores/currencyStore'
 import { useExpenses } from '../../stores/expenseStore'
 import { useIncomeSources } from '../../stores/incomeStore'
 import { useSavingsGoals } from '../../stores/savingsStore'
+import { GroupedAmount } from '../ui/GroupedAmount'
 
 /** How a frequency reads in the report's own prose. */
 const FREQUENCY_LABELS: Record<string, string> = {
@@ -275,6 +276,11 @@ function CashflowTable({
  * several identical amounts on the page (a single monthly row's amount equals
  * its normalized value equals the section total, so a page-wide text query for
  * the figure is inherently ambiguous).
+ *
+ * The value renders as a `GroupedAmount` (story 88.4, FR142, D2), so a money
+ * total that runs out of room breaks after a group separator, never inside a
+ * group. The other values here (`formatPercent`'s whole `25%`, the `—` dash)
+ * contain no separator and render unchanged.
  */
 function TotalRow({
   label,
@@ -286,18 +292,28 @@ function TotalRow({
   emphasis?: boolean
 }): React.ReactElement {
   return (
-    <div className="border-default flex items-baseline justify-between border-t py-2">
-      <dt className={emphasis ? 'text-sm font-semibold text-heading' : 'text-sm text-label'}>
+    // The label gives up width first and the value stays right-aligned once it
+    // wraps (D7, as `OutputRow` in RetirementAccumulationPlanner): with
+    // `GroupedAmount` the value can shrink too, so without this a total wrapped
+    // before its label did and its continuation line sat left (88.4 review).
+    <div className="border-default flex items-baseline justify-between gap-4 border-t py-2">
+      <dt
+        className={
+          emphasis
+            ? 'shrink-[1000] text-sm font-semibold text-heading'
+            : 'shrink-[1000] text-sm text-label'
+        }
+      >
         {label}
       </dt>
       <dd
         className={
           emphasis
-            ? 'text-base font-semibold tabular-nums text-heading'
-            : 'text-sm tabular-nums text-body'
+            ? 'text-right text-base font-semibold tabular-nums text-heading'
+            : 'text-right text-sm tabular-nums text-body'
         }
       >
-        {value}
+        <GroupedAmount text={value} />
       </dd>
     </div>
   )

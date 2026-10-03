@@ -37,6 +37,8 @@ import { BalancePage } from '../BalancePage'
 import { ExpensesPage } from '../ExpensesPage'
 import { HomePage } from '../HomePage'
 import { IncomePage } from '../IncomePage'
+import { RetirementAccumulationPlanner } from '../RetirementAccumulationPlanner'
+import { SavingsPage } from '../SavingsPage'
 
 const TS = '2026-08-15T00:00:00.000Z'
 
@@ -98,7 +100,10 @@ function seed(): void {
  * plain string comes back as ONE run.
  */
 function runs(testId: string): string[] {
-  const el = screen.getByTestId(testId)
+  return runsOf(screen.getByTestId(testId))
+}
+
+function runsOf(el: Element): string[] {
   const out = ['']
   for (const node of Array.from(el.childNodes)) {
     if (node.nodeName === 'WBR') out.push('')
@@ -154,5 +159,38 @@ describe('headline figures break only between digit groups (story 88.1)', () => 
     cleanup()
     renderWithProviders(<ExpensesPage />)
     expect(runs('period-total-amount')).toEqual(['$9,', '876,', '543.21'])
+  })
+})
+
+/**
+ * Story 88.4 (FR142): the figures 88.1 left out. Same wiring rule. Measured
+ * under CI's font in Chromium (story 88.4 Dev Agent Record): /savings' `text-3xl`
+ * total overran its card by 23.8 px at 320; Retirement's two derived figures fit
+ * at every width but take the same treatment by decision. The forecasting stat
+ * cards and the report totals are pinned in their own folders' suites.
+ */
+describe('the remaining headline figures break only between digit groups (story 88.4)', () => {
+  it('/savings: the Total Savings figure', () => {
+    renderWithProviders(<SavingsPage />)
+    // 3,333,333.33: the seed's one savings goal.
+    expect(runs('savings-total')).toEqual(['$3,', '333,', '333.33'])
+  })
+
+  it('Retirement: Current Amount Saved and Monthly Savings', () => {
+    useBalanceStore.setState({
+      entries: [
+        { ...balance('inv', 'investment', 1_111_111_111), monthlyContribution: 123_456_789 },
+      ],
+    })
+    renderWithProviders(<RetirementAccumulationPlanner />)
+    const figure = (id: string) => screen.getByTestId(id).querySelector('dd > span') as HTMLElement
+    expect(runsOf(figure('derived-current-saved'))).toEqual(['$11,', '111,', '111.11'])
+    expect(runsOf(figure('derived-monthly-savings'))).toEqual(['$1,', '234,', '567.89'])
+    // The live region reads the WHOLE figure, not just the group that changed.
+    for (const id of ['derived-current-saved', 'derived-monthly-savings']) {
+      const dd = screen.getByTestId(id).querySelector('dd') as HTMLElement
+      expect(dd.getAttribute('aria-live'), id).toBe('polite')
+      expect(dd.getAttribute('aria-atomic'), id).toBe('true')
+    }
   })
 })

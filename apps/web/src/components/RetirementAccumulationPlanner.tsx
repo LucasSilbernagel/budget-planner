@@ -1137,10 +1137,21 @@ function RetirementAccumulationPlannerInner() {
       <dt className="text-sm text-muted">{label}</dt>
       {/* These values change on their own when the Balance/Income/Expenses stores
           update, with no action from the user — announce it rather than mutating
-          silently under a screen reader. */}
-      <dd className="mt-1" aria-live="polite">
+          silently under a screen reader. `aria-atomic`: the figure is split into
+          one text node per digit group, so without it only the CHANGED group
+          would be read out (`600.00` instead of the whole amount; 88.4 review). */}
+      <dd className="mt-1" aria-live="polite" aria-atomic="true">
+        {/* A `GroupedAmount` (story 88.4, FR142): it fits every measured
+            width today (211 px of 224 at 320 under CI's font), but a bigger
+            balance must break after a group separator, not overflow. ⚠️ Not
+            inside a `hydrated` branch (this page has none, see
+            `routes/retirement.tsx`): every store is `skipHydration`, so the
+            server and the first client render both see the EMPTY stores and
+            the default currency (a `0.00` with no separator) and agree on the
+            `<wbr>`s; the real figure arrives as a re-render after rehydration.
+            Checked in Chromium for hydration errors (88.4 Dev Agent Record). */}
         <span className="block text-2xl font-bold text-subheading">
-          {formatAmount(figure.cents)}
+          <GroupedAmount text={formatAmount(figure.cents)} />
         </span>
         {/* The provenance caption shows ONLY for a real figure. In every other
             state the displayed 0.00 does not come from the named source — it is a
@@ -1757,6 +1768,12 @@ function RetirementAccumulationPlannerInner() {
  * ASCII strings: in a locale whose group separator is `.` (EUR → de-DE, BRL →
  * pt-BR) `GroupedAmount` would read `35.2`'s decimal point as a group separator
  * and allow a break at `35.` / `2` (code review of 88.2).
+ *
+ * The label takes `shrink-[1000]` and the value `text-right` (story 88.4, D7,
+ * the 88.2 review's "variant B"): once a value can break, both flex items
+ * shrink, so values that fit on one line wrapped too and continuation lines
+ * sat left. Now the LABEL gives up the width first, and a wrapped value stays
+ * right-aligned (`$1,527,465,` / `602.51`, two lines instead of three).
  */
 function OutputRow({
   label,
@@ -1769,8 +1786,8 @@ function OutputRow({
 }) {
   return (
     <div className="flex justify-between items-baseline gap-4">
-      <dt className="text-sm text-green-700 dark:text-green-300">{label}</dt>
-      <dd className="font-semibold text-green-800 dark:text-green-200">
+      <dt className="shrink-[1000] text-sm text-green-700 dark:text-green-300">{label}</dt>
+      <dd className="text-right font-semibold text-green-800 dark:text-green-200">
         {amount ? <GroupedAmount text={value} /> : value}
       </dd>
     </div>

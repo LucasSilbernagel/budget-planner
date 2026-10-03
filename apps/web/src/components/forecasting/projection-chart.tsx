@@ -24,6 +24,7 @@ import {
 import { useChartColors } from '../../lib/chartTheme'
 import { useFormattedAmount } from '../../stores/currencyStore'
 import { ErrorBoundary } from '../ErrorBoundary'
+import { GroupedAmount } from '../ui/GroupedAmount'
 
 // ============================================================================
 // Type Definitions
@@ -361,6 +362,12 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
 
 /**
  * Summary Card Component
+ *
+ * `value` is a `formatCurrency` string and renders as a `GroupedAmount` (story
+ * 88.4, FR142, D1): at 768 under CI's font these cards are 120 px wide inside
+ * and the seed's `$310,100,483.69` needs 171 px, so it may break after a group
+ * separator and nowhere else. The cards render only for a client-computed
+ * `result`, never on the server.
  */
 interface SummaryCardProps {
   label: string
@@ -377,7 +384,9 @@ function SummaryCard({ label, value, change }: SummaryCardProps): React.ReactEle
   return (
     <div className="surface-inset rounded-lg p-4">
       <dt className="text-sm font-medium text-muted">{label}</dt>
-      <dd className="mt-1 text-lg font-semibold text-subheading">{value}</dd>
+      <dd className="mt-1 text-lg font-semibold text-subheading">
+        <GroupedAmount text={value} />
+      </dd>
       {change !== 0 && (
         <p
           className={`mt-1 text-xs font-medium ${
