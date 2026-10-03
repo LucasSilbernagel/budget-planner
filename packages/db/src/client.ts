@@ -253,6 +253,27 @@ export function buildAppDbCredentials(
   }
 }
 
+/**
+ * The session settings every database connection this codebase opens sends as a
+ * startup parameter (story ops-2, D1): `TimeZone=UTC`.
+ *
+ * WHY: the `createdAt`/`updatedAt` columns are `timestamp WITHOUT time zone`. A
+ * DB-side `now()` (a `defaultNow()` column default, or `SET "updatedAt" = now()`
+ * in a migration) stores the SESSION TimeZone's wall time, while every
+ * app-written value is UTC (drizzle encodes a `Date` with `toISOString()`, and
+ * reads the column back with `+0000`). Pinning the session to UTC puts both on
+ * one clock whatever the server's own default zone is. On a server that is
+ * already UTC this changes nothing.
+ *
+ * A startup parameter, not a `SET` on connect: it applies before the first
+ * statement and costs no round trip. Used by the app pool (here), the migrate
+ * preflight Pool and the migrate lock Client; drizzle-kit's own pool strips an
+ * `options` key from its config, so it gets the same value through `PGOPTIONS`
+ * (`stepEnv` in `./migrate-lock`). `session-timezone-inventory.test.ts` fails
+ * if a new connection appears without it.
+ */
+export const DB_SESSION_OPTIONS = '-c TimeZone=UTC'
+
 function getPool(): Pool {
   if (!pool) {
     const databaseUrl = process.env['DATABASE_URL']
@@ -270,6 +291,8 @@ function getPool(): Pool {
         databaseUrl,
         normalizeCaCert(process.env['DATABASE_CA_CERT'])
       ),
+      // ops-2: session TimeZone=UTC (see DB_SESSION_OPTIONS).
+      options: DB_SESSION_OPTIONS,
       // Connection pooling tuned for development (AC-4); pg defaults to max 10
       max: 10,
       connectionTimeoutMillis: 5000,

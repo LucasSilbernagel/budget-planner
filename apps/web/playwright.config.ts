@@ -311,6 +311,10 @@ const dbServer = {
     // It reads neither; blanked so no ambient value is even present (merge).
     DATABASE_URL: '',
     EMAIL_API_KEY: '',
+    // Story ops-2 (D3b): the PGlite process's own clock is UTC too, so a dev
+    // box matches CI's UTC runners. The script pins the SQL session itself
+    // (`SET TimeZone`) and refuses to start unless it reads UTC.
+    TZ: 'UTC',
   },
 }
 process.env['E2E_DEV_SERVER_PORTS'] = externalBaseURL
