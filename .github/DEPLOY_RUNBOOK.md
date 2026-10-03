@@ -524,8 +524,9 @@ layer, `.github/scripts/image_size.py`) **before** anything is pushed, warns at
 90 % and fails above 112 MB. The same check runs on every pull request
 (`container-image.yml`), which pushes nothing. A rollback (§6) adds a second pin
 (the web container on an older tag) until the next normal deploy; at
-`S ≈ 106 MB` (pre-merge estimate — the build log prints the measured figure)
-that is 5 × 106 = 530 MB, so **do not leave a rollback in place
+`S ≈ 104 MB` (PR #28's `Container image` check, run 37090558542 — a gzip
+estimate; the registry's own `bytes_size` in the deploy log is the figure to
+use) that is 5 × 104 = 520 MB, so **do not leave a rollback in place
 across several deploys** — roll forward, or the next push may be refused.
 
 ⚠️ **Never delete the migrator container to free space** — delete tags (below).

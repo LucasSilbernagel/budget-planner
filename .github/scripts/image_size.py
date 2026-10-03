@@ -8,13 +8,16 @@ tar size and the gzip size `docker push` would upload, marks which layers come
 from the base image, and totals them. Exits 1 when the total is over budget.
 
 WHY THIS NUMBER: the registry quota counts every tag at the sum of its
-COMPRESSED layer blobs, with no dedup across tags (story ops-1 Context §2,
-confirmed per run by the push job's tag table: `bytes_size`). Neither
-`docker image inspect .Size` (uncompressed) nor the zstd export in build-image
-is that number. `docker push` gzips each layer (Go's compress/gzip, default
-level); gzip -6 here is the same algorithm at the same level, so the total
-agrees to within a few per cent — calibrate against the push job's
-`bytes_size` for the same SHA, and keep the budget margin wider than the gap.
+COMPRESSED layer blobs, with no dedup across tags (story ops-1 Context §2 —
+inferred from run sizes, re-checked per run by the push job's tag table:
+`bytes_size`). Neither `docker image inspect .Size` (uncompressed) nor the
+zstd export in build-image is that number. `docker push` gzips each layer
+(Go's compress/gzip, default level); gzip -6 here is the same algorithm at the
+same level, so the total should agree to within a few per cent. It is an
+ESTIMATE until compared with the push job's `bytes_size` for the same SHA;
+keep the budget margin wider than the gap. (PR #28, 2026-10-03: base layers
+measured 79.57 MB here vs 80.82 MB from the Docker Hub manifest — a 1.5 % gap
+on the base alone.)
 A layer that is already compressed in the archive (containerd image store
 keeps pulled base layers as their registry blobs) is counted as-is.
 

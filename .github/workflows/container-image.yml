@@ -12,8 +12,8 @@ name: Container image (PR check)
 # bundle, and reading them would need the environment). Validated by
 # scripts/validate-deploy-workflow.py.
 #
-# Not a required check: it adds ~5 minutes of runner time but no wall time
-# (it runs alongside ci.yml). It is its own workflow, not a job in ci.yml, because
+# Not a required check: it adds ~1 minute of runner time (1m05s on PR #28, run
+# 37090558542) and no wall time (it runs alongside ci.yml). It is its own workflow, not a job in ci.yml, because
 # deploy.yml reuses ci.yml as its gate and builds the image itself — a job there
 # would build every image twice on main.
 #

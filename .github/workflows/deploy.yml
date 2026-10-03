@@ -240,8 +240,10 @@ jobs:
       # is exported or pushed, and fail the build above budget. Warns at 90 %.
       #
       # The number is what `docker push` uploads (gzip of each layer), not
-      # `.Size` (uncompressed, printed alongside for the record). Calibrated
-      # against the registry's own `bytes_size`, which push-image prints per tag.
+      # `.Size` (uncompressed, printed alongside for the record). It is an
+      # ESTIMATE of the registry's own `bytes_size`, which push-image prints per
+      # tag: compare the two for the same SHA in each deploy log (the margin is
+      # sized to absorb the gzip-level gap). PR #28's check: 104.0 MB.
       - name: Check the image size budget
         run: |
           set -euo pipefail
@@ -1062,11 +1064,15 @@ jobs:
       # from was: this MUST run when the migration fails, when the verdict times
       # out, when a step errors, and when the job is cancelled.
       #
-      # ⚠️ This step REPLACES a `rapids rm`. The container is no longer deleted —
-      # deleting it is what left orphaned config in DanubeData's GitOps repo and
-      # broke the next two provisions. Instead it is scaled back to zero (so no pod
-      # runs and it costs ~nothing) and its credentials are STRIPPED, which is the
-      # property deletion was really there for.
+      # ⚠️ This step REPLACES a `rapids rm`. The container is no longer deleted.
+      # (2026-09-16: two provisions failed after a deletion and we blamed orphaned
+      # GitOps config; DanubeData later confirmed deletion is clean — the theory
+      # was ours — and that day's migrations were lost to the apply+update
+      # collision instead, DEPLOY_RUNBOOK §4. Not deleting
+      # stays the rule: no create/update races, no `serverless:delete` scope, and
+      # less churn.) Instead it is scaled back to zero (so no pod runs and it costs
+      # ~nothing) and its credentials are STRIPPED, which is the property deletion
+      # was really there for.
       #
       # The strip is then VERIFIED, because "the container holds no credentials
       # between releases" is a safety claim and an unverified safety claim is just

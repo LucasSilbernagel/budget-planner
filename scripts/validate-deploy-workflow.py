@@ -508,14 +508,18 @@ def main() -> int:
           "the credential-carrying step never uses --json (it would print DATABASE_URL)")
     check(start_i < verdict_i, "the verdict is read after the migration is started")
 
-    # ⚠️ The container must NEVER be deleted. Deleting a Rapids container leaves
-    # its config orphaned in DanubeData's GitOps repo, and the next create of that
-    # name fails to provision — it cost two live runs (2026-09-16). The safety
-    # property deletion provided is now "credentials stripped", verified below.
+    # ⚠️ The container is never deleted by the pipeline. Two provisions failed
+    # after a deletion on 2026-09-16 and the orphaned-GitOps-config theory came
+    # from that; DanubeData later confirmed deletion is clean (the theory was
+    # ours), and that day's lost migrations were the apply+update collision
+    # (DEPLOY_RUNBOOK §4). The rule stands
+    # for the reasons §4 gives (no create/update races, no `serverless:delete`
+    # scope, less churn). The safety property deletion provided is now
+    # "credentials stripped", verified below.
     print("\n== the migrate container is never deleted, only emptied ==")
     all_migrate_runs = "\n".join((st.get("run", "") or "") for st in steps)
     check("rapids rm" not in all_migrate_runs,
-          "no step deletes the container (deletion orphans its GitOps config)")
+          "no step deletes the container (kept idle; DEPLOY_RUNBOOK §4)")
     check(str(steps[teardown_i].get("if")) == "${{ always() }}",
           "the container is emptied even on failure or cancellation")
     check("--rm-env" in teardown_run, "teardown strips the credentials")
