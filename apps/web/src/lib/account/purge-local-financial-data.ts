@@ -38,7 +38,10 @@ import { useCategoryStore } from '@/stores/categoryStore'
 import { useExpenseStore } from '@/stores/expenseStore'
 import { useIncomeStore } from '@/stores/incomeStore'
 import { useProfileStore } from '@/stores/profileStore'
-import { useRetirementPlannerStore } from '@/stores/retirementPlannerStore'
+import {
+  RETIREMENT_PLANNER_PARKED_KEY_PREFIX,
+  useRetirementPlannerStore,
+} from '@/stores/retirementPlannerStore'
 import { useSavingsStore } from '@/stores/savingsStore'
 import { createSyncQueue } from '@budget-planner/core/sync'
 
@@ -96,6 +99,21 @@ export async function purgeLocalFinancialData(userId?: string): Promise<void> {
   safely(() => {
     useRetirementPlannerStore.getState().resetPlan()
     useRetirementPlannerStore.persist.clearStorage()
+  })
+  // Story 90.1 (D4): plans PARKED for other accounts that used this browser
+  // (`claimRetirementPlanFor`) go too. "Clear local data on this device" must not
+  // leave anyone's plan behind.
+  safely(() => {
+    const parked: string[] = []
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index)
+      if (key?.startsWith(RETIREMENT_PLANNER_PARKED_KEY_PREFIX)) {
+        parked.push(key)
+      }
+    }
+    for (const key of parked) {
+      localStorage.removeItem(key)
+    }
   })
   // Profiles and balance expose reset() (back to their seeded/empty defaults).
   safely(() => {

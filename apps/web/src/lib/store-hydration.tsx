@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import type { SessionSeed } from '../context/session-seed'
 import { useBalanceStore } from '../stores/balanceStore'
 import { useCategoryStore } from '../stores/categoryStore'
 import { useCurrencyStore } from '../stores/currencyStore'
@@ -10,6 +11,7 @@ import { useProfileStore } from '../stores/profileStore'
 import { useRetirementPlannerStore } from '../stores/retirementPlannerStore'
 import { useSavingsStore } from '../stores/savingsStore'
 import { useTableSortStore } from '../stores/tableSortStore'
+import { applyAccountBoundary, readCookieString, sessionForBoundary } from './sync/accountBoundary'
 
 /**
  * Client-side rehydration for all persisted Zustand stores.
@@ -55,7 +57,10 @@ import { useTableSortStore } from '../stores/tableSortStore'
  * private mode, `SecurityError`) or holds corrupt JSON, that store simply stays
  * at its default rather than surfacing an unhandled promise rejection.
  */
-export function StoreHydration() {
+export function StoreHydration({ seed }: { seed?: SessionSeed | null } = {}) {
+  // ⚠️ Read once, at mount: the session is fixed for the life of a document
+  // (story 90.1), and the effect below must not re-run on a new object identity.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only by design (see above).
   useEffect(() => {
     const stores = [
       useIncomeStore,
@@ -75,6 +80,17 @@ export function StoreHydration() {
       Promise.resolve(store.persist.rehydrate()).catch((error) => {
         console.error('Store rehydration failed:', error)
       })
+    }
+
+    // Story 90.1 (FR144): remove the previous account's data NOW, after the
+    // synchronous rehydrate above and before route content hydrates (the ordering
+    // the docblock describes), so no page paints it. ⚠️ Order is load-bearing: a
+    // persisted-store write before rehydrate would replace the saved data with the
+    // defaults. An untrusted seed removes nothing here; `SyncProvider` applies the
+    // boundary once the session is verified (`lib/sync/accountBoundary.ts`).
+    const session = sessionForBoundary(seed, readCookieString())
+    if (session !== undefined) {
+      applyAccountBoundary(session)
     }
   }, [])
 

@@ -18,6 +18,10 @@
  *     bridge is cleared and `useSync` tears down its poller — paid→free returns
  *     the app to localStorage-only behaviour with no further network (Task 5).
  *
+ * It also applies the account boundary (story 90.1, `lib/sync/accountBoundary.ts`)
+ * when the root could not trust the SSR seed: once `/api/auth/me` gives a
+ * definitive answer, for every session kind, before `<ActiveSync>` renders.
+ *
  * Otherwise wiring, not UI: its only visible output is `ActiveSync`'s
  * refused-edit notice (story 75.2), which renders nothing until the server
  * permanently refuses an edit. SSR-safe: the session probe runs only on the
@@ -26,6 +30,7 @@
 
 import { lazyWithRetry } from '@/lib/lazy-with-retry'
 import { hasPaidAccess } from '@/lib/premium/access-statuses'
+import { accountBoundaryAppliedFor, applyAccountBoundary } from '@/lib/sync/accountBoundary'
 import { setSyncSessionStatus } from '@/lib/sync/sessionStatusStore'
 import { type ReactElement, Suspense, useEffect, useState } from 'react'
 import { ErrorBoundary } from '../ErrorBoundary'
@@ -102,14 +107,32 @@ export function SyncProvider(): ReactElement | null {
     // free / unauthenticated tier makes ZERO network calls (AC-6, review P3). Only
     // a request that actually carries a session is worth resolving server-side.
     if (!hasProbableSession(cookieString)) {
+      // Signed out. `StoreHydration` has already applied the boundary for `''`
+      // from the same cookie (story 90.1); this call is then a no-op.
+      applyAccountBoundary('')
       setResolved(true)
       setSyncSessionStatus(true, false)
       return
     }
+    let definitive = false
     fetch('/api/auth/me', { headers: { Accept: 'application/json' } })
-      .then((response) => (response.ok ? response.json() : { user: null }))
+      .then((response) => {
+        // Only a 200 is a DEFINITIVE answer (`{ user: null }` is signed out); a
+        // 503 is the resolver failing, so the boundary is not applied on it.
+        definitive = response.ok
+        return response.ok ? response.json() : { user: null }
+      })
       .then((body: { user?: SessionUser | null }) => {
         if (!cancelled) {
+          // Story 90.1 (FR144): when the root could not trust the SSR seed (a
+          // resolver error, or a cached document: `sessionForBoundary`), or
+          // applied it for someone else, apply the boundary for the verified
+          // session now, BEFORE `ActiveSync` can render below. Never on an
+          // unverified answer: an offline paid user keeps their data.
+          const verified = body.user?.userId ?? ''
+          if (definitive && accountBoundaryAppliedFor() !== verified) {
+            applyAccountBoundary(verified)
+          }
           setUser(body.user ?? null)
           setResolved(true)
           setSyncSessionStatus(true, isPaidSyncSession(body.user ?? null))

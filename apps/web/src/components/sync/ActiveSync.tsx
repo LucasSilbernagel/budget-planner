@@ -49,6 +49,13 @@ import { RefusedEditNotice } from './RefusedEditNotice'
  * leaves the later stores' rows in place until the next load re-runs it. Pages
  * also show the previous account's rows for the `/api/auth/me` + chunk round trip
  * before this effect runs: deferred-work, 86.2 review.)
+ *
+ * ⚠️ Since story 90.1 this is a BACKUP (D3): the boundary is applied for every
+ * session from the root chunk, by `StoreHydration` right after rehydrate (or by
+ * `SyncProvider` once an untrusted seed is verified), so by the time this
+ * mounts the call is normally a no-op. Kept because the removal is idempotent
+ * and the engine must never start on another account's data if the root run
+ * threw part-way (`lib/sync/accountBoundary.ts`).
  */
 export function ActiveSync({ userId }: { userId: string }): ReactElement | null {
   const [clearedFor, setClearedFor] = useState<string | null>(null)
