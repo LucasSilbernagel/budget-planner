@@ -165,40 +165,117 @@ describe('run-id binding (migrate container <-> pipeline run)', () => {
 })
 
 /**
- * The migrate path runs `packages/db`'s own `drizzle-kit` and `tsx`, which are
- * devDependencies. They are in the image only because the runtime stage copies
- * the whole built tree after a `NODE_ENV=development` install — an incidental
- * property of a deliberately fat image, and one that a later "slim the image"
- * change (`pnpm deploy --prod`, `pnpm prune`, a narrower COPY) would remove
- * silently: the serving container would be unaffected and every unit test would
- * stay green while production migrations broke.
+ * The migrate path spawns `packages/db`'s own `node_modules/.bin/{tsx,drizzle-kit}`
+ * (migrate-entry.mjs → migrate-runner.mjs → migrate-lock-cli.ts) with cwd
+ * `packages/db`, where `drizzle.config.ts` and `migrations/` live. The serving
+ * container needs none of that, so a slim image can lose all of it and every
+ * unit test, and every serve-path check, stays green while production
+ * migrations break.
  *
- * So the invariant is asserted here rather than assumed.
+ * Until story ops-1 the image was fat (the runtime stage copied the whole built
+ * tree after a dev install) and this block pinned THAT. ops-1 slimmed it to a
+ * prod-only install plus a selective COPY, so the invariant is now asserted
+ * POSITIVELY: the toolchain is a production dependency of `packages/db`, the
+ * prod install includes `packages/db`, and the runtime stage copies the whole
+ * `packages/db` tree (payload + `node_modules/.bin` shims) at the path the
+ * entrypoints resolve. The behavioural backstop is the image's own migrate
+ * check in CI ("Verify the image serves and migrates", .github/scripts/verify-image.sh,
+ * run by deploy.yml build-image and container-image.yml).
  */
 describe('Dockerfile (AC-2: the image actually carries the migrate payload)', () => {
   const dockerfile = readWebFile('Dockerfile')
-  // Comments must be stripped before asserting on absence: the file discusses
-  // `pnpm deploy --prod` in prose as a possible future optimisation, and a test
-  // that matched that sentence would fail on documentation rather than on build
-  // instructions.
+  // Comments are stripped before asserting: the file's prose discusses the old
+  // fat shape and the reasons for each step, and a test matching that prose
+  // would pass or fail on documentation rather than on build instructions.
   const instructions = dockerfile
     .split('\n')
     .filter((line) => !line.trimStart().startsWith('#'))
     .join('\n')
 
+  /** The text of one stage: from its `FROM … AS <name>` to the next `FROM`. */
+  function stage(name: string): string {
+    const parts = instructions.split(/^FROM\s+/m)
+    const match = parts.find((part) =>
+      new RegExp(`\\bAS\\s+${name}\\s*$`, 'm').test(part.split('\n')[0] ?? '')
+    )
+    return match ?? ''
+  }
+
+  const prodDeps = stage('prod-deps')
+  const runtime = stage('runtime')
+
+  it('has the stages these assertions read (non-vacuity)', () => {
+    expect(stage('build')).toMatch(/pnpm --filter @budget-planner\/web build/)
+    expect(prodDeps).not.toBe('')
+    expect(runtime).not.toBe('')
+  })
+
   it('starts the dispatcher, so both modes go through the entrypoint switch', () => {
-    expect(instructions).toMatch(/CMD\s+\[\s*"node"\s*,\s*"apps\/web\/server-entry\.mjs"\s*\]/)
+    expect(runtime).toMatch(/CMD\s+\[\s*"node"\s*,\s*"apps\/web\/server-entry\.mjs"\s*\]/)
   })
 
-  it('installs devDependencies in the build stage', () => {
-    expect(instructions).toMatch(/NODE_ENV=development pnpm install --frozen-lockfile/)
+  it('keeps the runtime contract: production env, unprivileged user, port 8080', () => {
+    expect(runtime).toMatch(/ENV NODE_ENV=production/)
+    expect(runtime).toMatch(/^USER node$/m)
+    expect(runtime).toMatch(/^EXPOSE 8080$/m)
   })
 
-  it('copies the whole tree into the runtime stage and prunes nothing', () => {
-    expect(instructions).toMatch(/COPY --from=build \/app \/app/)
-    expect(instructions).not.toMatch(/pnpm prune/)
-    expect(instructions).not.toMatch(/pnpm deploy/)
-    expect(instructions).not.toMatch(/--prod\b/)
+  it('installs devDependencies in the build stage (vite and the Start plugin build the app)', () => {
+    expect(stage('build')).toMatch(/NODE_ENV=development pnpm install --frozen-lockfile/)
+  })
+
+  it('no longer copies the whole built tree into the runtime stage', () => {
+    expect(runtime).not.toMatch(/COPY --from=build \/app \/app\s*$/m)
+  })
+
+  it('installs production dependencies for BOTH the web app and packages/db', () => {
+    expect(prodDeps).toMatch(/pnpm install --frozen-lockfile --prod\b/)
+    expect(prodDeps).toMatch(/--filter @budget-planner\/web\b/)
+    expect(prodDeps).toMatch(/--filter @budget-planner\/db\b/)
+  })
+
+  it('the migrate toolchain is a PRODUCTION dependency of packages/db, so --prod installs it', () => {
+    const dbManifest = JSON.parse(
+      readFileSync(new URL('../../../../../packages/db/package.json', import.meta.url), 'utf8')
+    ) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }
+    for (const name of ['drizzle-kit', 'tsx', 'dotenv', 'drizzle-orm', 'pg']) {
+      expect(dbManifest.dependencies?.[name], name).toBeDefined()
+      expect(dbManifest.devDependencies?.[name], name).toBeUndefined()
+    }
+  })
+
+  it('carries the migrate payload: config, migrations and the lock/preflight sources', () => {
+    expect(prodDeps).toMatch(/COPY packages\/db\/drizzle\.config\.ts packages\/db\//)
+    expect(prodDeps).toMatch(/COPY packages\/db\/migrations packages\/db\/migrations/)
+    expect(prodDeps).toMatch(/COPY packages\/db\/src packages\/db\/src/)
+  })
+
+  it('copies packages/db (payload + node_modules/.bin shims) to the path migrate-entry resolves', () => {
+    expect(runtime).toMatch(/COPY --from=prod-deps \/app\/packages\/db \/app\/packages\/db/)
+    expect(runtime).toMatch(/COPY --from=prod-deps \/app\/node_modules \/app\/node_modules/)
+  })
+
+  it('copies the serve payload: the built dist (with precompressed siblings) and the entry files', () => {
+    expect(runtime).toMatch(/COPY --from=build \/app\/apps\/web\/dist \/app\/apps\/web\/dist/)
+    expect(runtime).toMatch(
+      /COPY --from=prod-deps \/app\/apps\/web\/node_modules \/app\/apps\/web\/node_modules/
+    )
+    for (const file of [
+      'server-entry.mjs',
+      'serve-entry.mjs',
+      'migrate-entry.mjs',
+      'package.json',
+    ]) {
+      expect(runtime, file).toContain(`/app/apps/web/${file}`)
+    }
+    for (const file of [
+      'entrypoint.mjs',
+      'node-adapter.mjs',
+      'migrate-runner.mjs',
+      'migrate-status.mjs',
+    ]) {
+      expect(runtime, file).toContain(`/app/apps/web/src/server/${file}`)
+    }
   })
 })
 

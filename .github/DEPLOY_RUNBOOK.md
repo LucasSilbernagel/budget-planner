@@ -63,7 +63,7 @@ secrets the *running app* needs are injected by Rapids and are listed once, in
 | `SITE_URL` | Public https origin. Used as the Environment URL and by the smoke check. |
 | `RAPIDS_RESOURCE_PROFILE` | Optional override for the container's size: `free`, `small`, `medium` or `large`. Defaults to **`small`** (0.5-1 vCPU, 256-512MB), matching `apps/web/rapids-service.yaml`. ⚠️ Not optional to the API — creating a container without a profile fails `422 resource_profile`. `free` is 64-128MB, marginal for SSR, and caps max-scale at 3 against the rollout's 5. |
 | `DANUBE_TEAM_ID` | Optional. The CLI needs an explicit project/team id in non-interactive mode **when the account has more than one team**; unset is correct for a single-team account. Passed to every CLI step so a later second team does not silently break deploys. |
-| `REGISTRY_KEEP_TAGS` | Optional. How many newest image tags the `push-image` prune step keeps as rollback targets. Defaults to **`2`** (was `5` until run 34528527480 hit `Storage quota exceeded (638 MB used of 500 MB)` — the runtime image ships the whole workspace, so five tags do not fit the 500 MB plan). Must be a non-negative integer — a non-integer fails the step loudly, and a value below `1` is clamped up to `1` (keeping zero would delete every tag you could roll back to). The prune runs **before** the push (§8), so a registry that has hit its storage quota recovers on the next run without hand intervention. Lower this further, slim the image, or upgrade the plan if `KEEP_TAGS` images by themselves exceed the registry storage limit. |
+| `REGISTRY_KEEP_TAGS` | Optional. How many newest image tags the `push-image` prune step keeps as rollback targets. Defaults to **`2`** (was `5` until run 34528527480 hit `Storage quota exceeded (638 MB used of 500 MB)` — the runtime image then shipped the whole workspace, so five tags did not fit the 500 MB plan). Must be a non-negative integer — a non-integer fails the step loudly, and a value below `1` is clamped up to `1` (keeping zero would delete every tag you could roll back to). The prune runs **before** the push (§8), so a registry that has hit its storage quota recovers on the next run without hand intervention. ⚠️ The image size budget (`.github/scripts/image_size.py`, 112 MB) is derived from **this value being 2** — raising it breaks `(KEEP + 2) × S ≤ 450 MB` (§8); recompute the budget first. |
 | `VITE_COUNTERDEV_ID` | counter.dev site id — a **public** identifier baked into the client bundle at build time (ADR-005). A variable, not a secret, by design. |
 | `VITE_FORMSPARK_FORM_ID` | Formspark form id for the in-app contact form — a **public** identifier baked into the client bundle at build time (ADR-004, the scoped CLOUD-Act exception). A variable, not a secret, by design. Unset is safe: the contact form renders "temporarily unavailable" rather than failing. Define it at **one** scope (repository *or* `production`), unlike `VITE_COUNTERDEV_ID`, so there is no question which value ships. |
 | `DATABASE_MIGRATOR_USER` | The `bp_migrator` role name used by the `migrate` job. Not sensitive — already plaintext in `docs/production-database-runbook.md` §1.1 — so it is a variable, not a secret. |
@@ -493,13 +493,59 @@ there was genuinely no room the push then fails loudly with
 > an in-use tag, `409`, overridable with `--delete-in-use`; CLI 1.2.1+). Ours does
 > not depend on it.
 
+### How the quota counts, and why the image has a size budget (story ops-1)
+
+On 2026-10-02 a deploy died at the push with
+`denied: Storage quota exceeded (510 MB used of 500 MB)`. What the logs showed
+(runs 37033544321 … 37063497840):
+
+- **Every tag is billed at its full compressed size.** There is no layer dedup
+  across tags: two Node-20 tags built the same day from the same base used
+  327.2 MB, i.e. 2 × ~164 MB, and every push uploads all its layers.
+- **The push is refused only when usage is already at the limit when it
+  starts** — allowed at 499.9 MB, denied at 509.6 MB. (Two data points; the
+  push job now prints usage before the prune, after it and after the push, plus
+  every tag's `bytes_size`, so each run re-checks this.)
+- **The prune cannot free everything it does not keep.** Besides the
+  `REGISTRY_KEEP_TAGS` newest tags it never deletes a tag a container is
+  deployed from — the live web container, and the `budget-planner-migrator`
+  container, which is pinned to whichever SHA last ran a migration and so drifts
+  out of the keep window between migrations.
+
+So the steady state is `KEEP + 1 (live) + 1 (migrator pin)` tags. With a
+~173 MB image, `2 + 1 + 1 = 4` tags is ~690 MB: the plan could not hold it. The
+fix (ops-1) was to slim the image rather than keep fewer rollback targets:
+
+    (KEEP + P + 1) × S ≤ 450 MB      (50 MB margin under the 500 MB plan)
+    KEEP = 2, P = 1 (migrator pin)   ⇒   S ≤ 112 MB per tag
+
+`build-image` measures every image the way the registry counts it (gzip of each
+layer, `.github/scripts/image_size.py`) **before** anything is pushed, warns at
+90 % and fails above 112 MB. The same check runs on every pull request
+(`container-image.yml`), which pushes nothing. A rollback (§6) adds a second pin
+(the web container on an older tag) until the next normal deploy; at
+`S ≈ 106 MB` (pre-merge estimate — the build log prints the measured figure)
+that is 5 × 106 = 530 MB, so **do not leave a rollback in place
+across several deploys** — roll forward, or the next push may be refused.
+
+⚠️ **Never delete the migrator container to free space** — delete tags (below).
+The deploy workflow and its validator forbid deleting it (2026-09-16: a deletion
+was followed by two failed provisions; DanubeData later attributed the failures
+elsewhere, see §4, but the pipeline was built never to delete it). It was
+deleted by hand on 2026-10-02 to free space, so the **next migration run
+re-creates it** through `rapids apply`'s create path — the first create since
+2026-09-16. If that run fails at "Start the migrate container", that is the
+first place to look.
+
 ### When you still need to prune by hand
 
 - The prune step keeps failing (a CLI shape change, an auth problem) and the
   push is now blocked.
-- `REGISTRY_KEEP_TAGS` newest images *by themselves* exceed the plan's storage
-  limit, so no automatic prune can make room. Lower `REGISTRY_KEEP_TAGS` or
-  upgrade the plan.
+- `REGISTRY_KEEP_TAGS` newest images plus the pinned ones (live, migrator)
+  exceed the plan's storage limit, so no automatic prune can make room. That
+  should be impossible while the image stays under its 112 MB budget; if it
+  happens, the budget or the counting rule above is wrong — find out which
+  before lowering `REGISTRY_KEEP_TAGS`.
 
 ### Steps
 

@@ -1,0 +1,87 @@
+name: Container image (PR check)
+
+# Story ops-1, D5. Builds the production image on every pull request, measures it
+# against the registry budget, and proves it serves AND migrates — the same
+# three checks deploy.yml's `build-image` runs, through the same scripts
+# (.github/scripts/image_size.py, verify-image.sh), so a Dockerfile change is
+# measured BEFORE it reaches main, where it would otherwise first meet the
+# 500 MB registry at the push.
+#
+# ⚠️ PUSHES NOTHING. No registry, no secrets, no `production` environment (the
+# VITE_* build args are left empty: they only change a few bytes of the client
+# bundle, and reading them would need the environment). Validated by
+# scripts/validate-deploy-workflow.py.
+#
+# Not a required check: it adds ~5 minutes of runner time but no wall time
+# (it runs alongside ci.yml). It is its own workflow, not a job in ci.yml, because
+# deploy.yml reuses ci.yml as its gate and builds the image itself — a job there
+# would build every image twice on main.
+#
+# `workflow_dispatch` with `ref` builds ANOTHER commit with this commit's
+# scripts — e.g. `ref: 913ab34` for the pre-slim baseline breakdown — and only
+# reports the size, never fails on it.
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Commit or branch to build instead of this one (e.g. 913ab34 for the pre-slim baseline). Nothing is pushed.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-image-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: budget-planner-web
+
+jobs:
+  container-image:
+    name: Container image (build, size budget, serve + migrate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check out the tree to build
+        if: ${{ inputs.ref != '' }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          path: target
+
+      - name: Build production image
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          ctx=.
+          if [ -n "${REF}" ]; then ctx=target; fi
+          echo "Building $(git -C "${ctx}" rev-parse HEAD)"
+          docker build -f "${ctx}/apps/web/Dockerfile" -t "${IMAGE_NAME}:check" "${ctx}"
+
+      - name: Check the image size budget
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          docker image inspect "${IMAGE_NAME}:check" --format 'uncompressed .Size: {{.Size}} B'
+          docker pull -q node:24-slim > /dev/null
+          mode=""
+          if [ -n "${REF}" ]; then mode="--report-only"; fi
+          docker save "${IMAGE_NAME}:check" | python3 .github/scripts/image_size.py --base node:24-slim ${mode}
+
+      - name: Verify the image serves and migrates
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          ctx=.
+          if [ -n "${REF}" ]; then ctx=target; fi
+          bash .github/scripts/verify-image.sh "${IMAGE_NAME}:check" "${ctx}/packages/db/migrations/meta/_journal.json"

@@ -44,9 +44,6 @@ importers:
       '@tanstack/react-router':
         specifier: ^1.170.16
         version: 1.170.17(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@tanstack/react-start':
-        specifier: ^1.168.26
-        version: 1.168.27(esbuild@0.28.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(rollup@4.62.2)(vite@7.3.6(@types/node@20.19.43)(jiti@1.21.7)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0))
       drizzle-orm:
         specifier: ^0.32.0
         version: 0.32.2(@electric-sql/pglite@0.5.8)(@types/pg@8.20.0)(@types/react@19.2.17)(pg@8.22.0)(react@19.2.7)
@@ -78,6 +75,9 @@ importers:
       '@tailwindcss/typography':
         specifier: ^0.5.20
         version: 0.5.20(tailwindcss@3.4.19(tsx@4.23.0))
+      '@tanstack/react-start':
+        specifier: ^1.168.26
+        version: 1.168.27(esbuild@0.28.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(rollup@4.62.2)(vite@7.3.6(@types/node@20.19.43)(jiti@1.21.7)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.23.0))
       '@testing-library/dom':
         specifier: ^10.4.1
         version: 10.4.1
@@ -179,12 +179,21 @@ importers:
 
   packages/db:
     dependencies:
+      dotenv:
+        specifier: ^16.3.1
+        version: 16.6.1
+      drizzle-kit:
+        specifier: ^0.23.0
+        version: 0.23.2
       drizzle-orm:
         specifier: ^0.32.0
         version: 0.32.2(@electric-sql/pglite@0.5.8)(@types/pg@8.20.0)(@types/react@19.2.17)(pg@8.22.0)(react@19.2.7)
       pg:
         specifier: ^8.11.0
         version: 8.22.0
+      tsx:
+        specifier: ^4.7.0
+        version: 4.23.0
     devDependencies:
       '@biomejs/biome':
         specifier: 1.5.3
@@ -195,15 +204,6 @@ importers:
       '@types/pg':
         specifier: ^8.10.9
         version: 8.20.0
-      dotenv:
-        specifier: ^16.3.1
-        version: 16.6.1
-      drizzle-kit:
-        specifier: ^0.23.0
-        version: 0.23.2
-      tsx:
-        specifier: ^4.7.0
-        version: 4.23.0
       typescript:
         specifier: ^5.3.3
         version: 5.9.3
