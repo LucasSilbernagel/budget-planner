@@ -8,7 +8,11 @@
  * whether the active profile has an owner, not whose), showed A's rows, and
  * uploaded A's profiles and rows into B's account.
  *
- * `ActiveSync` calls this BEFORE the sync engine mounts, so nothing in it (the
+ * Since story 90.1 it runs for EVERY session, signed out included (`''`: every
+ * real-owned row is then another account's), from the root chunk right after
+ * rehydrate (`lib/sync/accountBoundary.ts`), before any page paints.
+ *
+ * `ActiveSync` also calls this BEFORE the sync engine mounts, so nothing in it (the
  * first pull, the push bridge, the free→paid seed, the profile upload) ever
  * reads A's data. A loses nothing: A's synced data is on the server, and A's
  * unsent edits stay in A's own `bp-sync-queue-<A>` key, which this never touches.
@@ -25,8 +29,8 @@
  *
  * ⚠️ It writes persisted stores, so the stores must have been rehydrated first,
  * or the write would replace the saved data with the defaults. `StoreHydration`
- * rehydrates them in a root mount effect, synchronously; `ActiveSync` mounts
- * only after `SyncProvider`'s `/api/auth/me` round trip.
+ * rehydrates them in a root mount effect, synchronously, and calls this
+ * (through `applyAccountBoundary`) in the same effect, after the rehydrate.
  */
 
 import { useBalanceStore } from '../../stores/balanceStore'

@@ -44,6 +44,7 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('@/stores/retirementPlannerStore', () => ({
+  RETIREMENT_PLANNER_PARKED_KEY_PREFIX: 'budget-planner-retirement-planner-v1:',
   useRetirementPlannerStore: {
     getState: () => ({ resetPlan: h.retirementPlanReset }),
     persist: { clearStorage: h.retirementPlanClear },
@@ -223,6 +224,32 @@ describe('purgeLocalFinancialData', () => {
       expect(next).toHaveBeenCalledTimes(1)
       expect(old).not.toHaveBeenCalled()
     })
+  })
+
+  it('removes the retirement plans parked for other accounts, and nothing else (story 90.1, D4)', async () => {
+    // This file runs in node (no DOM): a Map-backed stand-in with the Storage
+    // methods the purge uses, including index-based `key()` iteration.
+    const items = new Map<string, string>([
+      ['budget-planner-retirement-planner-v1:aaaa', '{}'],
+      ['budget-planner-retirement-planner-v1:bbbb', '{}'],
+      ['budget-planner-currency-v1', 'kept'],
+    ])
+    vi.stubGlobal('localStorage', {
+      get length() {
+        return items.size
+      },
+      key: (index: number) => [...items.keys()][index] ?? null,
+      getItem: (key: string) => items.get(key) ?? null,
+      removeItem: (key: string) => {
+        items.delete(key)
+      },
+    })
+    try {
+      await purgeLocalFinancialData('')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+    expect([...items.keys()]).toEqual(['budget-planner-currency-v1'])
   })
 
   it('with an empty-string userId also skips the sync queue', async () => {

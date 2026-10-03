@@ -290,6 +290,14 @@ type StringSetter = (value: string | ((previous: string) => string)) => void
 interface RetirementPlannerStoreState {
   /** The user's plan. One object so the component reads a single stable value. */
   plan: RetirementPlan
+  /**
+   * Whose plan this is (story 90.1, D1): the signed-in account's id, or `''` for
+   * a plan nobody has claimed yet (authored signed out, or saved before this
+   * field existed). Written ONLY by {@link claimRetirementPlanFor}, once per
+   * document load, for the session that load resolved; never by an edit, so the
+   * setters below stay unchanged.
+   */
+  ownerUserId: string
   setCurrentAgeInput: StringSetter
   setLifeExpectancyInput: StringSetter
   setDesiredIncomeInput: StringSetter
@@ -339,6 +347,7 @@ export const useRetirementPlannerStore = create<RetirementPlannerStoreState>()(
       // paint. The persisted plan is applied after client rehydration (see
       // `lib/store-hydration`).
       plan: { ...RETIREMENT_PLAN_DEFAULTS },
+      ownerUserId: '',
 
       setCurrentAgeInput: (value) => {
         set((current) => ({
@@ -427,23 +436,115 @@ export const useRetirementPlannerStore = create<RetirementPlannerStoreState>()(
       // SSR-safe: defer the localStorage read to client-side rehydration (see
       // lib/store-hydration).
       skipHydration: true,
-      partialize: (state) => ({ plan: state.plan }),
+      partialize: (state) => ({ plan: state.plan, ownerUserId: state.ownerUserId }),
       version: RETIREMENT_PLANNER_VERSION,
       // The seam for a future shape change. See the module docblock: this is NOT
       // the corrupt-payload guard, because it does not run at the current version.
       migrate: (persisted) => ({
         plan: coerceRetirementPlan((persisted as { plan?: unknown } | undefined)?.plan),
+        ownerUserId: coerceOwner((persisted as { ownerUserId?: unknown } | undefined)?.ownerUserId),
       }),
       // Runs on EVERY rehydrate. This is the guard: a corrupt, absent or foreign
       // payload opens the planner on defaults rather than throwing, and no field
       // reaches the parsers as anything but a string or a known literal.
+      // `ownerUserId` is coerced the same way (story 90.1): a plan saved before the
+      // field existed, or a non-string, is nobody's yet (`''`). No version bump.
       merge: (persisted, current) => ({
         ...current,
         plan: coerceRetirementPlan((persisted as { plan?: unknown } | undefined)?.plan),
+        ownerUserId: coerceOwner((persisted as { ownerUserId?: unknown } | undefined)?.ownerUserId),
       }),
     }
   )
 )
+
+/** A persisted owner that is not a string is nobody's (story 90.1). */
+function coerceOwner(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+/**
+ * Where another account's plan is parked while someone else uses the browser
+ * (story 90.1, D1): `<RETIREMENT_PLANNER_STORAGE_KEY>:<ownerUserId>`. "Clear
+ * local data" removes every key with this prefix (D4).
+ */
+export const RETIREMENT_PLANNER_PARKED_KEY_PREFIX = `${RETIREMENT_PLANNER_STORAGE_KEY}:`
+
+function readParkedPlan(userId: string): RetirementPlan | null {
+  try {
+    const raw = localStorage.getItem(`${RETIREMENT_PLANNER_PARKED_KEY_PREFIX}${userId}`)
+    return raw === null ? null : coerceRetirementPlan(JSON.parse(raw))
+  } catch {
+    return null
+  }
+}
+
+function removeParkedPlan(userId: string): void {
+  try {
+    localStorage.removeItem(`${RETIREMENT_PLANNER_PARKED_KEY_PREFIX}${userId}`)
+  } catch {
+    // Blocked storage: nothing was parked either.
+  }
+}
+
+/** Field by field: `coerceRetirementPlan` builds its object in its own key order. */
+function isDefaultPlan(plan: RetirementPlan): boolean {
+  return (Object.keys(RETIREMENT_PLAN_DEFAULTS) as (keyof RetirementPlan)[]).every(
+    (field) => plan[field] === RETIREMENT_PLAN_DEFAULTS[field]
+  )
+}
+
+/**
+ * Give the plan on screen to the session this document load resolved (story
+ * 90.1, D1). `sessionUserId` is `''` for a signed-out session.
+ *
+ * - Already the session's: nothing.
+ * - Nobody's yet (`''`): a signed-in session adopts it, like any placeholder row
+ *   (5-15 AC-2: free -> signed in loses nothing). If the plan is still the
+ *   defaults and the session has a parked plan, that plan comes back instead.
+ * - Another account's: it is PARKED under that account's key, not deleted (the
+ *   plan is not synced, so resetting it would lose it on every sign-out), and the
+ *   session gets its own parked plan back, or the defaults.
+ *
+ * ⚠️ Must run AFTER rehydrate: it writes the persisted store, and a write before
+ * rehydrate replaces the saved plan with the defaults (`StoreHydration` calls it).
+ * Plain `setState`: the store has no sync, but the rule is the same as
+ * `dropAnotherAccountsLocalData`'s.
+ */
+export function claimRetirementPlanFor(sessionUserId: string): void {
+  const { ownerUserId, plan } = useRetirementPlannerStore.getState()
+  if (ownerUserId === sessionUserId) {
+    return
+  }
+  if (ownerUserId === '') {
+    const parked = isDefaultPlan(plan) ? readParkedPlan(sessionUserId) : null
+    if (parked !== null) {
+      removeParkedPlan(sessionUserId)
+    }
+    useRetirementPlannerStore.setState({ ownerUserId: sessionUserId, plan: parked ?? plan })
+    return
+  }
+  // Park first: if storage refuses, keep the plan on screen rather than lose it.
+  // ⚠️ That is a deliberate fail-OPEN for this store only: a refusing storage
+  // also cannot hold the plan the next person would see after a reload.
+  try {
+    localStorage.setItem(
+      `${RETIREMENT_PLANNER_PARKED_KEY_PREFIX}${ownerUserId}`,
+      JSON.stringify(plan)
+    )
+  } catch (error) {
+    console.error('[retirementPlanner] could not park the previous owner’s plan:', error)
+    return
+  }
+  const own = sessionUserId === '' ? null : readParkedPlan(sessionUserId)
+  if (own !== null) {
+    removeParkedPlan(sessionUserId)
+  }
+  useRetirementPlannerStore.setState({
+    ownerUserId: sessionUserId,
+    plan: own ?? { ...RETIREMENT_PLAN_DEFAULTS },
+  })
+}
 
 /**
  * The whole plan.

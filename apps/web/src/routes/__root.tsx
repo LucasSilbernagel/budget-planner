@@ -171,7 +171,7 @@ function RootDocument({ children, seed }: { children: ReactNode; seed: SessionSe
         <HeadContent />
       </head>
       <body suppressHydrationWarning>
-        <StoreHydration />
+        <StoreHydration seed={seed} />
         {/* The session resolved once server-side by the root loader (story UX-1),
             provided as an initial seed so the auth strip (below) and every
             usePremiumAccess consumer (the premium feature gates) paint their
