@@ -214,8 +214,9 @@ jobs:
       # in one place. `__APP_VERSION__` needs no wiring: vite.config.ts inlines it
       # from package.json at build time.
       #
-      # Build context is the monorepo root — the Dockerfile installs the whole
-      # pnpm workspace (apps/web/Dockerfile documents this).
+      # Build context is the monorepo root — the Dockerfile's build stage
+      # installs the whole pnpm workspace, and its runtime stage keeps only what
+      # the serve and migrate entrypoints need (apps/web/Dockerfile documents this).
       - name: Build production image
         env:
           VITE_COUNTERDEV_ID: ${{ vars.VITE_COUNTERDEV_ID }}
@@ -229,42 +230,40 @@ jobs:
             -t "${IMAGE_NAME}:${GITHUB_SHA}" \
             .
 
-      # Prove the image actually boots and serves before it is a deploy
-      # candidate. This is the same three-way check 5-2 documented, run against
-      # the container rather than a local build. No database is required:
-      # /api/health is a process-up probe and the db client connects lazily.
-      - name: Verify the image boots and serves
+      # Story ops-1 (AC-3, AC-7). The registry plan is 500 MB and counts every
+      # tag at its full compressed size, with no dedup across tags. The pipeline
+      # keeps 2 rollback tags + the live tag + the migrator's pinned tag, so one
+      # tag must stay <= 112 MB ((2 + 1 + 1) x S <= 450 MB, 50 MB margin) — the
+      # derivation is the BUDGET constant in .github/scripts/image_size.py. A
+      # bigger image would build, boot and pass every check here, and only die at
+      # the push, after every gate had run: so measure it HERE, before anything
+      # is exported or pushed, and fail the build above budget. Warns at 90 %.
+      #
+      # The number is what `docker push` uploads (gzip of each layer), not
+      # `.Size` (uncompressed, printed alongside for the record). It is an
+      # ESTIMATE of the registry's own `bytes_size`, which push-image prints per
+      # tag: compare the two for the same SHA in each deploy log (the margin is
+      # sized to absorb the gzip-level gap). PR #28's check: 104.0 MB.
+      - name: Check the image size budget
         run: |
           set -euo pipefail
-          docker run -d --name bp-verify -p 8080:8080 \
-            -e NODE_ENV=production \
-            -e SESSION_SECRET="$(openssl rand -hex 32)" \
-            -e SITE_URL="https://example.invalid" \
-            "${IMAGE_NAME}:${GITHUB_SHA}"
+          docker image inspect "${IMAGE_NAME}:${GITHUB_SHA}" --format 'uncompressed .Size: {{.Size}} B'
+          # The base is pulled only to label which layers are base vs app.
+          docker pull -q node:24-slim > /dev/null
+          docker save "${IMAGE_NAME}:${GITHUB_SHA}" | python3 .github/scripts/image_size.py --base node:24-slim
 
-          for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8080/api/health >/dev/null 2>&1; then
-              echo "container is serving after ${i}s"
-              break
-            fi
-            if [ "$i" -eq 30 ]; then
-              echo "::error::Image never became healthy within 30s"
-              docker logs bp-verify
-              exit 1
-            fi
-            sleep 1
-          done
-
-          curl -fsS -o /dev/null -w 'health: %{http_code}\n' http://127.0.0.1:8080/api/health
-          curl -fsS -o /dev/null -w 'SSR /:   %{http_code}\n' http://127.0.0.1:8080/
-
-      - name: Container logs (always)
-        if: ${{ !cancelled() }}
-        run: docker logs bp-verify || true
-
-      - name: Stop verification container
-        if: ${{ !cancelled() }}
-        run: docker rm -f bp-verify || true
+      # Prove the image works in BOTH modes before it is a deploy candidate
+      # (ops-1 AC-4, AC-5): serve (health, SSR, brotli on the on-the-fly AND the
+      # precompressed path, production env, unprivileged user) and migrate (idle
+      # without credentials; a real preflight + drizzle-kit migrate against a
+      # throwaway postgres, verdict line, status endpoint, row count = journal).
+      # The migrate half is the only pre-production proof that the slim image
+      # still carries packages/db's toolchain: production migrations are rare,
+      # and the serving container is unaffected when that payload goes missing.
+      # No database secrets: everything is minted inside the script. The script
+      # prints every container's logs and removes them on exit.
+      - name: Verify the image serves and migrates
+        run: bash .github/scripts/verify-image.sh "${IMAGE_NAME}:${GITHUB_SHA}" packages/db/migrations/meta/_journal.json
 
       # Hand the verified image to `push-image`. Only when deploys are on —
       # otherwise nothing would ever consume it. zstd, and no second zip pass on
@@ -293,7 +292,14 @@ jobs:
     name: Push container image
     runs-on: ubuntu-latest
     needs: [quality-gates, type-check, build-image]
-    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    # ⚠️ `refs/heads/main` as well as DEPLOY_ENABLED (story ops-1, D5). This job
+    # PRUNES tags and PUSHES one into a 500 MB registry, so a `workflow_dispatch`
+    # from any other branch must not reach it: before this, dispatching this
+    # workflow from a branch to "try a Dockerfile change" would have deleted
+    # rollback targets and spent quota on an unreviewed image. Try images with
+    # container-image.yml instead, which builds and verifies and pushes nothing.
+    # Rollback is unaffected: it is a dispatch from main with `image_tag` set.
+    if: ${{ vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
     timeout-minutes: 15
     # DANUBEDATA_REGISTRY_USERNAME/_PASSWORD are `production` ENVIRONMENT secrets
     # (DEPLOY_RUNBOOK.md §1). GitHub does NOT expose environment-scoped secrets to
@@ -336,6 +342,19 @@ jobs:
         if: ${{ vars.DEPLOY_ENABLED == 'true' }}
         run: pnpm add -g "@danubedata/cli@${{ env.DANUBE_CLI_VERSION }}"
 
+      # Story ops-1 (AC-1): quota usage and every tag's billed size, printed
+      # before the prune, after it and after the push, so each deploy log shows
+      # what one tag costs and how the quota check behaves — measured, not
+      # inferred from two failures. Report-only: never fails the job.
+      - name: Registry usage before prune
+        if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+        continue-on-error: true
+        env:
+          DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
+          DANUBE_TEAM_ID: ${{ vars.DANUBE_TEAM_ID }}
+          REGISTRY: ${{ vars.DANUBEDATA_REGISTRY }}
+        run: bash .github/scripts/registry-report.sh "before prune"
+
       # Every run pushes a new SHA-tagged image and nothing removed the old ones.
       # Six runs filled a 500 MB plan and the seventh died with
       # `denied: Storage quota exceeded (638 MB used of 500 MB)` — after a full
@@ -351,9 +370,20 @@ jobs:
       # (DEPLOY_RUNBOOK §6), so pruning too hard deletes the thing you would roll
       # back TO. REGISTRY_KEEP_TAGS defaults to 2 — two rollback targets. It was
       # 5 until run 34528527480 (2026-09-10) died with `denied: Storage quota
-      # exceeded (638 MB used of 500 MB)`: this is a fat image (the runtime stage
-      # ships the whole workspace, apps/web/Dockerfile), and five of them do not
-      # fit the 500 MB registry plan, so keep-5 could never self-heal. The
+      # exceeded (638 MB used of 500 MB)`: the image was fat then (~173 MB a tag,
+      # the whole workspace), and five of them do not fit the 500 MB registry
+      # plan, so keep-5 could never self-heal.
+      #
+      # ⚠️ THE QUOTA (story ops-1). Every tag is billed at its full compressed
+      # size — no layer dedup across tags — and the push was refused only when
+      # usage was ALREADY at the limit when it started (2026-10-02: allowed at
+      # 499.9 MB, denied at 509.6 MB; two data points, re-checked by the
+      # registry-usage steps around this one every run). What this step can never
+      # delete adds to the bill: the live tag, and the migrator container's tag,
+      # which only moves when a migration runs. Steady state is therefore
+      # (KEEP + 1 + 1) tags, and the image is slimmed and size-guarded
+      # (build-image "Check the image size budget") so that 4 x S <= 450 MB holds
+      # with KEEP=2. Raising KEEP_TAGS breaks that sum; recompute it first. The
       # tag this run is about to push does not exist in the registry yet, so it
       # is structurally impossible for this step to delete it; the GITHUB_SHA
       # guard below is a belt-and-braces check for a re-run that re-pushes an
@@ -512,6 +542,15 @@ jobs:
 
           danube registry usage || true
 
+      - name: Registry usage after prune
+        if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+        continue-on-error: true
+        env:
+          DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
+          DANUBE_TEAM_ID: ${{ vars.DANUBE_TEAM_ID }}
+          REGISTRY: ${{ vars.DANUBEDATA_REGISTRY }}
+        run: bash .github/scripts/registry-report.sh "after prune"
+
       # [OPS] blocked-on-account: push the built image to the DanubeData
       # registry. Fails loudly if deploys are enabled without a registry
       # configured, rather than letting a later job deploy a stale image.
@@ -547,6 +586,17 @@ jobs:
           echo "${REGISTRY_PASSWORD}" | docker login "${REGISTRY_HOST}" -u "${REGISTRY_USERNAME}" --password-stdin
           docker tag "${IMAGE_NAME}:${GITHUB_SHA}" "${REGISTRY}/${IMAGE_NAME}:${GITHUB_SHA}"
           docker push "${REGISTRY}/${IMAGE_NAME}:${GITHUB_SHA}"
+
+      # After the push — and after a FAILED push too (`!cancelled()`): a quota
+      # denial is exactly the run whose numbers are most worth having.
+      - name: Registry usage after push
+        if: ${{ !cancelled() && vars.DEPLOY_ENABLED == 'true' }}
+        continue-on-error: true
+        env:
+          DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
+          DANUBE_TEAM_ID: ${{ vars.DANUBE_TEAM_ID }}
+          REGISTRY: ${{ vars.DANUBEDATA_REGISTRY }}
+        run: bash .github/scripts/registry-report.sh "after push"
 
   # --- Are there migrations to apply? ----------------------------------------
   # The migrate job costs a few minutes and most pushes change no migration, so
@@ -1014,11 +1064,15 @@ jobs:
       # from was: this MUST run when the migration fails, when the verdict times
       # out, when a step errors, and when the job is cancelled.
       #
-      # ⚠️ This step REPLACES a `rapids rm`. The container is no longer deleted —
-      # deleting it is what left orphaned config in DanubeData's GitOps repo and
-      # broke the next two provisions. Instead it is scaled back to zero (so no pod
-      # runs and it costs ~nothing) and its credentials are STRIPPED, which is the
-      # property deletion was really there for.
+      # ⚠️ This step REPLACES a `rapids rm`. The container is no longer deleted.
+      # (2026-09-16: two provisions failed after a deletion and we blamed orphaned
+      # GitOps config; DanubeData later confirmed deletion is clean — the theory
+      # was ours — and that day's migrations were lost to the apply+update
+      # collision instead, DEPLOY_RUNBOOK §4. Not deleting
+      # stays the rule: no create/update races, no `serverless:delete` scope, and
+      # less churn.) Instead it is scaled back to zero (so no pod runs and it costs
+      # ~nothing) and its credentials are STRIPPED, which is the property deletion
+      # was really there for.
       #
       # The strip is then VERIFIED, because "the container holds no credentials
       # between releases" is a safety claim and an unverified safety claim is just

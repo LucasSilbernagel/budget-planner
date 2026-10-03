@@ -95,6 +95,21 @@ headers (`x-content-type-options`, `x-frame-options`, …) present on responses.
 - **`apps/web/Dockerfile`** — builds the workspace and runs
   `node apps/web/server-entry.mjs`. Build context is the **monorepo root**:
   `docker build -f apps/web/Dockerfile -t budget-planner-web .`
+  Since story ops-1 the runtime stage is **slim**: `node:24-slim` + a
+  `pnpm install --prod` of `@budget-planner/web` and `@budget-planner/db` + the
+  built `dist/` (with its precompressed `.br`/`.gz` siblings) + the entry files
+  + `packages/db`'s migrate payload (`drizzle.config.ts`, `migrations/`, the
+  lock/preflight sources, and `node_modules/.bin/{tsx,drizzle-kit}`). Layout is
+  still `/app/apps/web` + `/app/packages/db`, so every relative path in the
+  entry files holds. The registry bills each tag at its full compressed size,
+  so one tag must stay **≤ 112 MB** (`DEPLOY_RUNBOOK.md` §8); `build-image` and
+  `container-image.yml` measure it and fail above that, and prove both modes
+  (serve with brotli, and a real migrate run against a throwaway postgres)
+  from the built image (`.github/scripts/verify-image.sh`). ⚠️ A new bare
+  import in the server bundle must be in `@budget-planner/web`'s
+  `dependencies`: the prod install ships nothing else. The image check catches
+  it only on the boot path and `/`; a lazily loaded route chunk would fail in
+  production instead.
 - **`apps/web/rapids-service.yaml`** — Knative `Service`: region intent
   (Falkenstein DE), `min-scale: 0` (scale-to-zero), `max-scale: 5`,
   `containerConcurrency: 100`, CPU/memory requests+limits, `timeoutSeconds: 60`,

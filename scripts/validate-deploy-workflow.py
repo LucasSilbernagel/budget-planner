@@ -38,6 +38,12 @@ DEPLOY = ".github/workflows/deploy.yml"
 ENV_CHECK_HELPER = ".github/scripts/rapids_env_check.py"
 DEPLOYED_TAGS_HELPER = ".github/scripts/rapids_deployed_tags.py"
 VERDICT_HELPER = ".github/scripts/rapids_verdict.py"
+# Story ops-1: the image size guard, the two-mode image check and the registry
+# report, shared by deploy.yml and the PR-only container-image.yml.
+IMAGE_WORKFLOW = ".github/workflows/container-image.yml"
+IMAGE_SIZE_HELPER = ".github/scripts/image_size.py"
+VERIFY_IMAGE_HELPER = ".github/scripts/verify-image.sh"
+REGISTRY_REPORT_HELPER = ".github/scripts/registry-report.sh"
 WEB_PACKAGE = "apps/web/package.json"
 # App (strict, excludes tests), unit tests + test helpers, Playwright specs.
 WEB_TYPECHECK_CONFIGS = ("tsconfig.app.json", "tsconfig.vitest.json", "tsconfig.e2e.json")
@@ -502,14 +508,18 @@ def main() -> int:
           "the credential-carrying step never uses --json (it would print DATABASE_URL)")
     check(start_i < verdict_i, "the verdict is read after the migration is started")
 
-    # ⚠️ The container must NEVER be deleted. Deleting a Rapids container leaves
-    # its config orphaned in DanubeData's GitOps repo, and the next create of that
-    # name fails to provision — it cost two live runs (2026-09-16). The safety
-    # property deletion provided is now "credentials stripped", verified below.
+    # ⚠️ The container is never deleted by the pipeline. Two provisions failed
+    # after a deletion on 2026-09-16 and the orphaned-GitOps-config theory came
+    # from that; DanubeData later confirmed deletion is clean (the theory was
+    # ours), and that day's lost migrations were the apply+update collision
+    # (DEPLOY_RUNBOOK §4). The rule stands
+    # for the reasons §4 gives (no create/update races, no `serverless:delete`
+    # scope, less churn). The safety property deletion provided is now
+    # "credentials stripped", verified below.
     print("\n== the migrate container is never deleted, only emptied ==")
     all_migrate_runs = "\n".join((st.get("run", "") or "") for st in steps)
     check("rapids rm" not in all_migrate_runs,
-          "no step deletes the container (deletion orphans its GitOps config)")
+          "no step deletes the container (kept idle; DEPLOY_RUNBOOK §4)")
     check(str(steps[teardown_i].get("if")) == "${{ always() }}",
           "the container is emptied even on failure or cancellation")
     check("--rm-env" in teardown_run, "teardown strips the credentials")
@@ -845,6 +855,102 @@ def main() -> int:
         # Deleting is the irreversible half; it must never run while deploys are off.
         check("DEPLOY_ENABLED" in str(build_steps[prune_at].get("if", "")),
               "the prune is gated on DEPLOY_ENABLED like every other mutating step")
+
+    print("\n== the image fits the registry, and is proven in both modes before a push (ops-1) ==")
+    # 2026-10-02: a ~173 MB image, 2 rollback tags, the live tag and the
+    # migrator's pinned tag did not fit the 500 MB plan, and the push died
+    # AFTER every gate had run. The budget is now enforced at build time.
+    push_if = " ".join(str(jobs["push-image"].get("if")).split())
+    check("vars.DEPLOY_ENABLED == 'true'" in push_if and "github.ref == 'refs/heads/main'" in push_if,
+          "push-image (prune + push) is confined to main, so a branch dispatch cannot spend quota")
+    image_steps = jobs["build-image"]["steps"]
+    image_names = [str(step.get("name", "")) for step in image_steps]
+    for wanted in ("Check the image size budget", "Verify the image serves and migrates",
+                   "Export the verified image"):
+        check(wanted in image_names, f"build-image has a '{wanted}' step")
+    if all(n in image_names for n in ("Check the image size budget",
+                                      "Verify the image serves and migrates",
+                                      "Export the verified image")):
+        size_at = image_names.index("Check the image size budget")
+        verify_at = image_names.index("Verify the image serves and migrates")
+        export_at = image_names.index("Export the verified image")
+        check(size_at < export_at and verify_at < export_at,
+              "the size budget and both modes are checked before the image is handed to push-image")
+        size_run = code_only(image_steps[size_at].get("run", "") or "")
+        check("image_size.py" in size_run and "--report-only" not in size_run,
+              "build-image FAILS over budget (no --report-only)")
+        check(image_steps[size_at].get("continue-on-error") is not True,
+              "the size budget step is not continue-on-error")
+        check("verify-image.sh" in (image_steps[verify_at].get("run", "") or ""),
+              "build-image runs the shared serve + migrate check")
+    try:
+        size_src = read(IMAGE_SIZE_HELPER)
+    except OSError:
+        size_src = ""
+    check(bool(size_src), "the image size helper exists")
+    if size_src:
+        namespace: dict = {}
+        exec(compile(size_src.split("\ndef ")[0], IMAGE_SIZE_HELPER, "exec"), namespace)
+        check(namespace.get("BUDGET_BYTES") == 112_000_000,
+              "the budget is (500 - 50) MB / (2 keep + 1 live + 1 migrator pin) = 112 MB")
+        check(namespace.get("KEEP_TAGS") == 2, "the budget assumes REGISTRY_KEEP_TAGS = 2, the prune's default")
+    try:
+        verify_src = code_only(read(VERIFY_IMAGE_HELPER))
+    except OSError:
+        verify_src = ""
+    check(bool(verify_src), "the serve + migrate image check exists")
+    for needle, label in (
+        ("/api/health", "serve: health"),
+        ("Accept-Encoding: br", "serve: compression is requested"),
+        ("*.js.br", "serve: a precompressed sibling must exist (positive control)"),
+        ("id -un", "serve: runs as the unprivileged user"),
+        ("APP_ENTRYPOINT=migrate", "migrate: the migrate mode is exercised"),
+        ("[migrate-entry] IDLE", "migrate: the idle branch is checked"),
+        ("VERDICT run=", "migrate: the verdict sentinel is read"),
+        ("select count(*) from drizzle.__drizzle_migrations", "migrate: applied rows are counted against the journal"),
+    ):
+        check(needle in verify_src, f"verify-image.sh checks {label}")
+    check("docker push" not in verify_src and "danube" not in verify_src,
+          "verify-image.sh pushes nothing and calls no platform CLI")
+
+    # AC-1: the registry numbers are printed every run, around the prune and push.
+    push_names = [str(step.get("name", "")) for step in jobs["push-image"]["steps"]]
+    order = ["Registry usage before prune", "Prune old image tags", "Registry usage after prune",
+             "Push image to the DanubeData registry", "Registry usage after push"]
+    check(all(n in push_names for n in order) and
+          [push_names.index(n) for n in order] == sorted(push_names.index(n) for n in order),
+          "registry usage is reported before the prune, after it, and after the push")
+    for step in jobs["push-image"]["steps"]:
+        if str(step.get("name", "")).startswith("Registry usage"):
+            check(step.get("continue-on-error") is True,
+                  f"'{step.get('name')}' is report-only (continue-on-error)")
+    try:
+        report_src = code_only(read(REGISTRY_REPORT_HELPER))
+    except OSError:
+        report_src = ""
+    check(bool(report_src), "the registry report helper exists")
+    check("rapids" not in report_src,
+          "the registry report never reads rapids output (container env carries credentials)")
+
+    # D5: the PR-time image check builds and verifies and can publish nothing.
+    try:
+        image_wf = load(IMAGE_WORKFLOW)
+    except OSError:
+        image_wf = {}
+    check(bool(image_wf), "container-image.yml exists")
+    if image_wf:
+        check(set(triggers(image_wf)) == {"pull_request", "workflow_dispatch"},
+              "container-image.yml runs on PRs (and by hand), never on push")
+        image_blob = yaml.safe_dump(image_wf)
+        check("secrets." not in image_blob, "container-image.yml reads no secrets")
+        check("environment" not in image_wf.get("jobs", {}).get("container-image", {}),
+              "container-image.yml holds no environment")
+        check("docker push" not in image_blob and "danube" not in image_blob,
+              "container-image.yml pushes nothing and calls no platform CLI")
+        check(image_wf.get("permissions") == {"contents": "read"},
+              "container-image.yml is read-only")
+        check("image_size.py" in image_blob and "verify-image.sh" in image_blob,
+              "container-image.yml runs the same size guard and image check as build-image")
 
     print("\n== every job brings its own toolchain ==")
     # Each job gets a fresh runner. A job that invokes a tool must set that tool
