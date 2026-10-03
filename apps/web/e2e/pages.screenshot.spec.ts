@@ -127,7 +127,9 @@ async function openBalanceAddModal(page: Page): Promise<Locator> {
   const trigger = page.getByTestId('balance-add-button')
   const dialog = page.getByRole('dialog', { name: 'Add Balance Entry' })
   await expect(async () => {
-    if (!(await dialog.isVisible())) await trigger.click()
+    // A bounded click: a trigger under the backdrop (the dialog opened between
+    // the check and the click) fails THIS attempt, not the whole test (review).
+    if (!(await dialog.isVisible())) await trigger.click({ timeout: 1000 })
     await expect(dialog).toBeVisible({ timeout: 1000 })
   }).toPass({ timeout: SHOT_TIMEOUT })
   return dialog
@@ -140,7 +142,12 @@ test('modal-320x480', async ({ page }) => {
   await open(page, { path: '/balance', width: 320, height: 480, charts: 0, seed: false })
   const dialog = await openBalanceAddModal(page)
   await expect(dialog.getByLabel(/type/i)).toHaveValue('investment')
-  await expect(dialog.getByRole('button', { name: 'Add Balance Entry' })).toBeAttached()
+  // The investment-ONLY control (`BalancePage.tsx`, `type === 'investment'`):
+  // a form that lost its tallest arm fails here with a name, not as a pixel diff.
+  await expect(
+    dialog.getByRole('checkbox', { name: 'Not taken from the money left over' })
+  ).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Add Balance Entry' })).toBeVisible()
   // Viewport: what matters is how the capped card sits on a short screen.
   await expect(page).toHaveScreenshot('modal-320x480.png', {
     mask: await copyrightYear(page),
