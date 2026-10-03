@@ -33,6 +33,7 @@ import {
   RESPONSIVE_ACTIONS_CELL_CLASS,
   RESPONSIVE_ACTIONS_GROUP_CLASS,
   RESPONSIVE_ACTION_BUTTON_CLASS,
+  RESPONSIVE_AMOUNT_CLASS,
   RESPONSIVE_CELL_CLASS,
   RESPONSIVE_HEADER_CELL_RIGHT_CLASS,
   RESPONSIVE_ROW_CLASS,
@@ -42,7 +43,6 @@ import {
   RESPONSIVE_TAG_CLASS,
   RESPONSIVE_TBODY_CLASS,
   RESPONSIVE_THEAD_CLASS,
-  RESPONSIVE_VALUE_NOWRAP_CLASS,
   RESPONSIVE_VALUE_TAG_CLASS,
   RESPONSIVE_WRAPPER_CLASS,
 } from './ui/ResponsiveTable'
@@ -1046,13 +1046,15 @@ export function SavingsPage() {
                           : Math.max(0, goal.monthlyAllocation ?? 0)
                         return (
                           <tr key={goal.id} className={RESPONSIVE_ROW_CLASS}>
-                            <td className={RESPONSIVE_CELL_CLASS}>
+                            {/* Stacked below `sm` (story 91.1): a name AND a badge
+                              need the card's full width. See RESPONSIVE_STACKED_CELL_CLASS. */}
+                            <td className={RESPONSIVE_STACKED_CELL_CLASS}>
                               <FieldLabel>Name</FieldLabel>
                               {/* ⚠️ The NAME deliberately does NOT get
-                                RESPONSIVE_VALUE_NOWRAP_CLASS: it is unbounded
-                                user free text, so it must keep wrapping. Only
-                                the badge is protected. See the asymmetry note
-                                on RESPONSIVE_VALUE_TAG_CLASS. */}
+                                RESPONSIVE_AMOUNT_CLASS: it is unbounded user free
+                                text, so it must keep the cell's `anywhere` and
+                                wrap. Only the badge is protected. See the
+                                asymmetry note on RESPONSIVE_VALUE_TAG_CLASS. */}
                               <div className={RESPONSIVE_VALUE_TAG_CLASS}>
                                 <span className="font-medium text-heading text-sm">
                                   {goal.name}
@@ -1071,29 +1073,39 @@ export function SavingsPage() {
                             </td>
                             <td className={RESPONSIVE_CELL_CLASS}>
                               <FieldLabel>Target</FieldLabel>
-                              <div className="text-muted text-sm">
-                                {goal.targetAmount == null
-                                  ? 'No target'
-                                  : formatAmount(goal.targetAmount)}
+                              {/* Story 91.1: every row figure wraps only between
+                                digit groups below `sm` (RESPONSIVE_AMOUNT_CLASS +
+                                GroupedAmount, inside the `hydrated` branch). "No
+                                target" is plain words, which `normal` wraps at the
+                                space like any label. */}
+                              <div className={`text-muted text-sm ${RESPONSIVE_AMOUNT_CLASS}`}>
+                                {goal.targetAmount == null ? (
+                                  'No target'
+                                ) : (
+                                  <GroupedAmount text={formatAmount(goal.targetAmount)} />
+                                )}
                               </div>
                             </td>
                             <td className={RESPONSIVE_CELL_CLASS}>
                               <FieldLabel>Current Balance</FieldLabel>
-                              <div className="text-muted text-sm">
-                                {formatAmount(goal.currentBalance)}
+                              <div className={`text-muted text-sm ${RESPONSIVE_AMOUNT_CLASS}`}>
+                                <GroupedAmount text={formatAmount(goal.currentBalance)} />
                               </div>
                             </td>
-                            <td className={RESPONSIVE_CELL_CLASS}>
+                            {/* Stacked below `sm` (story 91.1): a figure AND a pill
+                              need the card's full width. See RESPONSIVE_STACKED_CELL_CLASS. */}
+                            <td className={RESPONSIVE_STACKED_CELL_CLASS}>
                               <FieldLabel>Monthly Allocation</FieldLabel>
                               <div className={RESPONSIVE_VALUE_TAG_CLASS}>
-                                {/* A formatted currency figure is BOUNDED, so
-                                  it may be nowrap — unlike the name above. The
-                                  measured ceiling is on RESPONSIVE_VALUE_TAG_CLASS. */}
+                                {/* A formatted currency figure, so it wraps only
+                                  between digit groups — unlike the free-text name
+                                  above. It was nowrap until story 91.1 (D3); why it
+                                  changed is on RESPONSIVE_AMOUNT_CLASS. */}
                                 <span
-                                  className={`text-muted text-sm ${RESPONSIVE_VALUE_NOWRAP_CLASS}`}
+                                  className={`text-muted text-sm ${RESPONSIVE_AMOUNT_CLASS}`}
                                   data-testid={`savings-allocation-${goal.id}`}
                                 >
-                                  {formatAmount(effectiveAllocation)}
+                                  <GroupedAmount text={formatAmount(effectiveAllocation)} />
                                 </span>
                                 <span
                                   className={`inline-flex items-center bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full font-medium text-gray-600 dark:text-gray-300 text-xs ${RESPONSIVE_TAG_CLASS}`}
