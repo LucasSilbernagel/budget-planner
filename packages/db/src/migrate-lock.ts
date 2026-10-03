@@ -23,6 +23,27 @@
  * its own crash recovery; this needs none.
  */
 
+import { DB_SESSION_OPTIONS } from './client'
+
+/**
+ * The environment for each spawned migrate step (story ops-2, AC-2).
+ *
+ * `drizzle-kit migrate` opens its OWN pg pool, and drizzle-kit 0.23.2 validates
+ * `dbCredentials` with a zod object that silently STRIPS an `options` key, so a
+ * pin in `drizzle.config.ts` would look right and do nothing (MEASURED). pg reads
+ * `PGOPTIONS` when its config has no `options`, so this is how the connection
+ * that runs the migration SQL gets `TimeZone=UTC`. Two applied migrations write
+ * `"updatedAt" = now()` into `timestamp` columns (0013, 0017); a future one in
+ * that style would otherwise stamp the server's wall time.
+ *
+ * Spreads the parent env (DATABASE_URL, DATABASE_CA_CERT, NODE_ENV, PATH all
+ * reach the children) and overrides PGOPTIONS exactly. Lives here rather than in
+ * `migrate-lock-cli.ts` because importing the CLI runs it.
+ */
+export function stepEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return { ...env, PGOPTIONS: DB_SESSION_OPTIONS }
+}
+
 /**
  * The advisory lock key. Arbitrary but FIXED — every migrating process must pick
  * the same number or the lock guards nothing.

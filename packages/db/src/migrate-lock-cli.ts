@@ -28,8 +28,9 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { Client } from 'pg'
 import { normalizeCaCert } from './ca-cert'
+import { DB_SESSION_OPTIONS } from './client'
 import { buildMigrationCredentials } from './migrate-credentials'
-import { LOCK_WAIT_TIMEOUT_MS, acquireMigrationLock } from './migrate-lock'
+import { LOCK_WAIT_TIMEOUT_MS, acquireMigrationLock, stepEnv } from './migrate-lock'
 
 /**
  * Both run from the package root, where `drizzle.config.ts` and `migrations/` live.
@@ -57,7 +58,9 @@ function runStep(step: Step): Promise<number> {
     const child = spawn(path.join(BIN_DIR, step.bin), step.args, {
       cwd: PACKAGE_ROOT,
       stdio: 'inherit',
-      env: process.env,
+      // ops-2: PGOPTIONS pins drizzle-kit's own connection to TimeZone=UTC
+      // (drizzle-kit strips an `options` key from drizzle.config.ts).
+      env: stepEnv(process.env),
     })
     child.on('error', (error) => {
       console.error(`[migrate-lock] could not start ${step.name}: ${error.message}`)
@@ -92,6 +95,8 @@ async function main(): Promise<number> {
         databaseUrl,
         normalizeCaCert(process.env['DATABASE_CA_CERT'])
       ),
+      // ops-2: session TimeZone=UTC, like every other connection.
+      options: DB_SESSION_OPTIONS,
       connectionTimeoutMillis: 15_000,
     })
   } catch (error) {

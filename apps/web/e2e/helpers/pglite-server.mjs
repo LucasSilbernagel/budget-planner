@@ -45,8 +45,22 @@ const outbox = required('E2E_MAIL_OUTBOX')
 
 const MIGRATIONS = new URL('../../../../packages/db/migrations/', import.meta.url)
 
+/**
+ * Story ops-2 (D3): the session TimeZone the database must run in, and the only
+ * value the self-check below accepts (what `SET TimeZone TO 'UTC'` reports,
+ * MEASURED). Without the pin PGlite inherits the HOST zone as a fixed standard
+ * offset (an EDT box read `Etc/GMT+5`), so a `DEFAULT now()` timestamp was hours
+ * off an app-written `toISOString()` one (87.2's "~5 h createdAt shift").
+ * Production pins every connection to UTC (`DB_SESSION_OPTIONS`); pglite-socket
+ * ignores startup `options`, so the pin here is a `SET` on the ONE shared PGlite
+ * session, which every socket connection sees.
+ */
+const UTC_ZONES = ['UTC']
+
 async function migrated() {
   const pg = await PGlite.create()
+  // Before migrations and the seed, so every DB-side now() is UTC wall time.
+  await pg.exec("SET TimeZone TO 'UTC'")
   const journal = JSON.parse(
     readFileSync(fileURLToPath(new URL('meta/_journal.json', MIGRATIONS)), 'utf8')
   )
@@ -71,6 +85,18 @@ await pg.query(
   [seedEmail, seedPaddleId]
 )
 
+// Self-check before listening: a harness that would hand out a non-UTC clock
+// refuses to start, rather than letting F9/F10 run on shifted timestamps.
+const timeZone = (await pg.query(`SELECT current_setting('TimeZone') AS tz`)).rows[0]?.tz
+if (!UTC_ZONES.includes(timeZone)) {
+  console.error(
+    `[e2e-db] session TimeZone is ${JSON.stringify(timeZone)}, expected one of ${UTC_ZONES.join(
+      ', '
+    )} (story ops-2)`
+  )
+  process.exit(3)
+}
+
 mkdirSync(dirname(outbox), { recursive: true })
 writeFileSync(outbox, '')
 
@@ -80,7 +106,7 @@ server.addEventListener('error', (event) => {
 })
 await server.start()
 console.log(
-  `[e2e-db] ${migrations} migrations applied, 1 user seeded, listening on 127.0.0.1:${port}`
+  `[e2e-db] ${migrations} migrations applied, 1 user seeded, TimeZone=${timeZone}, listening on 127.0.0.1:${port}`
 )
 
 let stopping = false

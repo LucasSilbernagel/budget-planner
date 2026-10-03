@@ -34,6 +34,11 @@ const dbCredentials = databaseUrl
     )
   : { host: '', port: 5432, user: '', password: '', database: '', ssl: false }
 
+// Story ops-2: the session TimeZone=UTC pin is NOT set here. drizzle-kit 0.23.2
+// strips any key it does not know from `dbCredentials` (an `options` key would
+// look right and never reach the wire, MEASURED). The migrate step gets it via
+// PGOPTIONS instead: `stepEnv` in src/migrate-lock.ts.
+
 export default {
   schema: './src/schema.ts',
   out: './migrations',

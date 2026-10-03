@@ -19,7 +19,12 @@
 import process from 'node:process'
 import { Pool } from 'pg'
 import { normalizeCaCert } from './ca-cert'
-import { isEuSovereignDbHost, isInClusterDbHost, isRelaxedDbEnv } from './client'
+import {
+  DB_SESSION_OPTIONS,
+  isEuSovereignDbHost,
+  isInClusterDbHost,
+  isRelaxedDbEnv,
+} from './client'
 // The preflight runs in the same place, against the same endpoint, as the
 // migration it gates — so it shares one TLS posture with it by construction.
 // Since Story 5.18 that place is INSIDE the cluster, so the posture is plain
@@ -80,6 +85,22 @@ async function probe(pool: Pool): Promise<DbShape> {
   }
 }
 
+/**
+ * ops-2, AC-7(a): the session TimeZone this (pinned) connection runs with, for the
+ * log line only. It is the production witness that the startup-parameter pin took
+ * effect on the real server. LOG-ONLY, never part of the verdict: a failure to
+ * read it prints `unknown` and changes nothing (a DB setting must not become a
+ * migration gate).
+ */
+async function readSessionTimeZone(pool: Pool): Promise<string> {
+  try {
+    const result = await pool.query<{ tz: string }>("select current_setting('TimeZone') as tz")
+    return result.rows[0]?.tz ?? 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
 async function main(): Promise<number> {
   const databaseUrl = process.env['DATABASE_URL']
   if (!databaseUrl) {
@@ -137,6 +158,8 @@ async function main(): Promise<number> {
       databaseUrl,
       normalizeCaCert(process.env['DATABASE_CA_CERT'])
     ),
+    // ops-2: session TimeZone=UTC, like every other connection (DB_SESSION_OPTIONS).
+    options: DB_SESSION_OPTIONS,
     max: 1,
     connectionTimeoutMillis: 10_000,
     // Connecting is not the only way this can hang: a probe query blocked on a
@@ -150,11 +173,12 @@ async function main(): Promise<number> {
   try {
     const shape = await probe(pool)
     const verdict = assessMigrateSafety(shape)
+    const timezone = await readSessionTimeZone(pool)
 
     console.log(
       `[migrate-preflight] host=${host} journalTable=${shape.hasJournalTable} ` +
         `journalRows=${shape.journalRowCount} publicTables=${shape.userTableCount} ` +
-        `-> ${verdict.provenance}`
+        `timezone=${timezone} -> ${verdict.provenance}`
     )
 
     if (!verdict.safe) {
