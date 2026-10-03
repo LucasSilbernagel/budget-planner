@@ -131,6 +131,12 @@ function childEnv(port: number, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEn
   }
 }
 
+/** Put an env var back; assigning `undefined` would store the string "undefined". */
+function restoreEnv(name: string, saved: string | undefined): void {
+  if (saved === undefined) Reflect.deleteProperty(process.env, name)
+  else process.env[name] = saved
+}
+
 let stub: StartupStub | null = null
 
 afterEach(async () => {
@@ -151,19 +157,23 @@ describe('AC-1: the app pool sends TimeZone=UTC on every connection', () => {
     const savedUrl = process.env['DATABASE_URL']
     const savedEnv = process.env['NODE_ENV']
     const savedCa = process.env['DATABASE_CA_CERT']
+    // pg falls back to PGOPTIONS when `options` is absent: an ambient value would
+    // make this pass with the pin removed.
+    const savedPgOptions = process.env['PGOPTIONS']
     process.env['DATABASE_URL'] = `postgresql://u:p@127.0.0.1:${stub.port}/d`
     process.env['NODE_ENV'] = 'test'
     Reflect.deleteProperty(process.env, 'DATABASE_CA_CERT')
+    Reflect.deleteProperty(process.env, 'PGOPTIONS')
     // testDbConnection logs the (expected) hang-up; keep the run quiet.
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
     try {
       await closeDb()
       await testDbConnection()
     } finally {
-      process.env['DATABASE_URL'] = savedUrl
-      process.env['NODE_ENV'] = savedEnv
-      if (savedCa === undefined) Reflect.deleteProperty(process.env, 'DATABASE_CA_CERT')
-      else process.env['DATABASE_CA_CERT'] = savedCa
+      restoreEnv('DATABASE_URL', savedUrl)
+      restoreEnv('NODE_ENV', savedEnv)
+      restoreEnv('DATABASE_CA_CERT', savedCa)
+      restoreEnv('PGOPTIONS', savedPgOptions)
     }
 
     // Positive control: a startup packet arrived, from this pool's credentials.

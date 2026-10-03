@@ -15,7 +15,7 @@
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate:preflight": "tsx src/migrate-preflight-cli.ts",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "PGOPTIONS='-c TimeZone=UTC' drizzle-kit migrate",
     "db:smoke": "tsx src/db-smoke-cli.ts",
     "db:studio": "drizzle-kit studio",
     "db:ca-expiry": "tsx src/ca-expiry-cli.ts"

@@ -19,13 +19,16 @@
  *   X3 the PGlite Vitest harnesses (`new PGlite()`, `src/test/pglite-migrated.ts`):
  *      in-process, no pg connection; their TimeZone is a deferred LOW (ops-2 D4).
  * drizzle-kit's own pool (C4) is pinned through PGOPTIONS by `stepEnv`
- * (`migrate-lock.ts`), covered by `session-timezone.test.ts` AC-2(b)/(c).
+ * (`migrate-lock.ts`), covered by `session-timezone.test.ts` AC-2(b)/(c); the
+ * wiring (`runStep` passes `stepEnv`) and the manual `db:migrate` script are
+ * pinned below.
  * The e2e PGlite server (C5) pins with `SET TimeZone` (AC-4).
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { DB_SESSION_OPTIONS } from './client'
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
 
@@ -109,5 +112,18 @@ describe('AC-3: every pg connection construction pins TimeZone=UTC', () => {
       readFileSync(path.join(REPO_ROOT, 'packages/db/drizzle.config.ts'), 'utf8')
     )
     expect(code).not.toMatch(/\boptions\s*:/)
+  })
+
+  it('runStep spawns every migrate step with stepEnv (C4 wiring)', () => {
+    const code = stripComments(
+      readFileSync(path.join(REPO_ROOT, 'packages/db/src/migrate-lock-cli.ts'), 'utf8')
+    )
+    expect(count(code, /\benv\s*:\s*stepEnv\(process\.env\)/g)).toBe(1)
+    expect(code).not.toMatch(/\benv\s*:\s*process\.env\b/)
+  })
+
+  it('the manual `db:migrate` script pins drizzle-kit through PGOPTIONS', () => {
+    const pkg = JSON.parse(readFileSync(path.join(REPO_ROOT, 'packages/db/package.json'), 'utf8'))
+    expect(pkg.scripts['db:migrate']).toBe(`PGOPTIONS='${DB_SESSION_OPTIONS}' drizzle-kit migrate`)
   })
 })

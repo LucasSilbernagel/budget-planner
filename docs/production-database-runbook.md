@@ -295,12 +295,17 @@ reads no `.env` file.
 > `drizzle-kit migrate` opens its own pool and **strips an `options` key from
 > `drizzle.config.ts`** (drizzle-kit 0.23.2, measured), so it gets the same value
 > through the `PGOPTIONS` environment variable, which `stepEnv`
-> (`packages/db/src/migrate-lock.ts`) sets for each migrate step. Do not move the
+> (`packages/db/src/migrate-lock.ts`) sets for each migrate step (the manual
+> `pnpm --filter db db:migrate` script sets it too). Do not move the
 > pin into `drizzle.config.ts`, and do not rely on `TZ`/`PGTZ` on the container:
-> `pg` reads neither for the session. Witnesses: the preflight's shape line ends in
-> `timezone=<value>` (log only, never a gate), and `GET /api/ready` returning 200
-> after a deploy shows the server accepted the startup parameter (the deploy smoke
-> checks only `/api/health`, which never touches the database).
+> `pg` reads neither for the session. Witnesses, and their limits: the preflight's
+> shape line ends in `timezone=<value>` (log only, never a gate); it proves the pin
+> only on a server whose own default is NOT UTC, since a UTC-default server prints
+> `UTC` with or without it. `GET /api/ready` returning 200 after a deploy shows the
+> server (or a pooler in front of it) ACCEPTED the startup parameter, not which zone
+> it applied (the deploy smoke checks only `/api/health`, which never touches the
+> database). The unit tests in `packages/db/src/session-timezone.test.ts` are what
+> prove each connection SENDS the pin.
 > `packages/db/src/session-timezone-inventory.test.ts` fails if a new connection
 > appears without the pin.
 

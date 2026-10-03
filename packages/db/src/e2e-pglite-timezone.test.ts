@@ -64,6 +64,7 @@ beforeAll(async () => {
     }
     proc.stdout?.on('data', onData)
     proc.stderr?.on('data', onData)
+    proc.on('error', reject)
     proc.on('exit', (code) => reject(new Error(`pglite-server exited ${code}:\n${output}`)))
   })
 }, 120_000)
