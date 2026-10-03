@@ -33,11 +33,14 @@ account); the code it exercises is already merged.
    `lifetime`.
 3. Confirm a forged/tampered session cookie is still rejected (5-7/5-8
    regression).
-4. Wallet check: `PERMISSIONS_POLICY` ships `payment=()` (`security-headers.ts`),
-   which disables the top-document Payment Request API. Card checkout does not
-   need it (Paddle's iframe handles entry), but confirm Apple Pay / Google Pay
-   still complete a checkout under this policy — if either breaks, relax to
-   `payment=(self "https://checkout.paddle.com")`.
+4. Wallet check: since story sec-4, `Permissions-Policy` ships
+   `payment=(self "https://buy.paddle.com")` (`buildPermissionsPolicy` in
+   `security-headers.ts`; sandbox deployments also name
+   `https://sandbox-buy.paddle.com`), which grants the Payment Request API to
+   Paddle's checkout frame. Before sec-4 it was `payment=()`, which disabled it
+   (Chrome logged "Permissions policy violation: payment is not allowed"). Note
+   whether Apple Pay / Google Pay are offered in the overlay; their availability
+   also depends on the Paddle dashboard's payment-method settings and the device.
 
 ## 3. Cancellation / past-due
 

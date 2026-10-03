@@ -65,8 +65,9 @@ const securityHeadersMiddleware = createMiddleware({ type: 'request' }).server(
     // getRouter → router.options.ssr.nonce) AND to the CSP header below, so both
     // carry the identical value for this request.
     const nonce = generateCspNonce()
-    // The Paddle stylesheet host `style-src-elem` grants (story 89.1): the sandbox
-    // CDN only for a deployment explicitly configured for sandbox.
+    // The Paddle stylesheet host `style-src-elem` grants (story 89.1) and the
+    // checkout frame `Permissions-Policy: payment` names (story sec-4): the sandbox
+    // origins only for a deployment explicitly configured for sandbox.
     const paddleEnvironment = paddleEnvironmentFromProcessEnv()
     return runWithCspNonce(nonce, () =>
       applyHeadersToNextResult(next, { isDev, isHttps, nonce, paddleEnvironment })

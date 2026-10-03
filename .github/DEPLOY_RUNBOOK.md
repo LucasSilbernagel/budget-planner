@@ -595,5 +595,7 @@ would never run unattended. §3 suggests reviewers for the deploy jobs. As of
 In a public repository, GitHub disables scheduled workflows after 60 days with
 no repository activity. The backstop keeps deletions running, but re-enable the
 workflow when you return: Actions → Retention sweep → **Enable workflow**.
-`.github/workflows/ca-expiry.yml` is affected the same way.
+`.github/workflows/ca-expiry.yml` and `.github/workflows/paddle-drift.yml` (the
+weekly Paddle.js drift check, story sec-4) are affected the same way: re-enable
+each under Actions → the workflow's name → **Enable workflow**.
 

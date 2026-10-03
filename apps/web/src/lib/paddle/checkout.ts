@@ -29,13 +29,47 @@ export interface PaddleCheckoutClientConfig {
 // `<script>` tag at worst. Reset only happens on a full page reload.
 let paddleInstancePromise: Promise<Paddle | undefined> | null = null
 
+/** The no-op `window.profitwell` (story sec-4, D1): callable, and already "loaded". */
+type ProfitwellStub = ((...args: unknown[]) => void) & { isLoaded: boolean }
+
+/**
+ * Keep Paddle.js from loading ProfitWell (Paddle Retain) on our pages (story sec-4, D1).
+ *
+ * `Paddle.Initialize()` ends by calling `initPwSnippet()` (paddle.js
+ * `src/gateway/profitwell.gateway.ts:17-35`), which, for a LIVE token, appends
+ * `<script src="https://public.profitwell.com/js/profitwell.js?auth=…">` to `<head>`. Our CSP
+ * blocks it, so every live `/pricing` load logged one CSP error. There is no `Initialize`
+ * option or dashboard switch that stops the call; its only skip is its own first line,
+ * `if (window.profitwell?.isLoaded) return`. So a no-op `window.profitwell` with
+ * `isLoaded: true` is installed BEFORE `initializePaddle`: no script, no request, no console
+ * line, no data to ProfitWell. It is callable because Paddle.js calls `window.profitwell(…)`
+ * from `updatePwCustomer` / `Retain.*`.
+ *
+ * - An existing `window.profitwell` is never replaced (`null` counts as absent: Paddle's guard
+ *   reads `null?.isLoaded` as `undefined` and would load the script).
+ * - ⚠️ This DISABLES Paddle Retain's in-page features (payment-recovery / term-optimization
+ *   notices, cancellation flows). The app uses none, and Retain is not turned on in the live
+ *   Paddle dashboard (Lucas, 2026-10-02). Revisit this (sec-4 D1) BEFORE enabling Retain.
+ * - It relies on an undocumented guard in an unversioned script; the weekly
+ *   `paddle-drift.yml` workflow fails if the guard disappears.
+ */
+export function preemptPaddleRetainSnippet(): void {
+  if (typeof window === 'undefined') return
+  const host = window as Window & { profitwell?: unknown }
+  if (host.profitwell != null) return
+  const stub: ProfitwellStub = Object.assign((..._args: unknown[]) => {}, { isLoaded: true })
+  host.profitwell = stub
+}
+
 /** Lazily loads and initializes Paddle.js. Safe to call more than once. */
 export function getPaddleInstance(config: PaddleCheckoutClientConfig): Promise<Paddle | undefined> {
   if (!paddleInstancePromise) {
     paddleInstancePromise = import('@paddle/paddle-js')
-      .then(({ initializePaddle }) =>
-        initializePaddle({ token: config.clientToken, environment: config.environment })
-      )
+      .then(({ initializePaddle }) => {
+        // Before `initializePaddle`: its `Paddle.Initialize()` runs the ProfitWell check.
+        preemptPaddleRetainSnippet()
+        return initializePaddle({ token: config.clientToken, environment: config.environment })
+      })
       .then((paddle) => {
         // `initializePaddle` signals its OWN failure by RESOLVING `undefined`
         // (a bad token, a CDN load failure) — it does not reject for this
