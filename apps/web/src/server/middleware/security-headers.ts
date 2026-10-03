@@ -21,6 +21,10 @@ import { createHash } from 'node:crypto'
 import { getPaddleConfig } from '@budget-planner/config'
 import { NO_FLASH_PLANNER_SCRIPT } from '../../lib/nav/no-flash-planner-visibility-script'
 import { NO_FLASH_ACCOUNT_NOTICE_SCRIPT } from '../../lib/overview/no-flash-account-notice-script'
+import {
+  PADDLE_CHECKOUT_FRAME_ORIGIN,
+  PADDLE_LOADER_STYLE_TEXT,
+} from '../../lib/paddle/paddle-js-internals'
 
 /**
  * sha256 of the exact inline no-flash planner-visibility script rendered at
@@ -63,6 +67,26 @@ export const PLANNER_SCRIPT_CSP_HASH = `sha256-${createHash('sha256')
  */
 export const ACCOUNT_NOTICE_SCRIPT_CSP_HASH = `sha256-${createHash('sha256')
   .update(NO_FLASH_ACCOUNT_NOTICE_SCRIPT, 'utf8')
+  .digest('base64')}`
+
+/**
+ * sha256 of Paddle.js's overlay loading-spinner `<style>` (story sec-4, AC-3), derived from
+ * the committed copy of its text (`PADDLE_LOADER_STYLE_TEXT`, which names its source) so the
+ * policy never carries a hand-typed hash. Chrome printed this exact value on the live site
+ * when the `<style>` was refused (`sha256-DZJGI9GW1KarnkjWFGQEtAWrfY4TQZwE9gIsAtq6sTk=`);
+ * a test pins it.
+ *
+ * In production `style-src-elem` ONLY. ⚠️ Never in the base `style-src` and never in the dev
+ * `style-src-elem`: those carry `'unsafe-inline'`, and a hash (or nonce) in a source list
+ * switches that list's `'unsafe-inline'` OFF (CSP3 §6.7.3.2 "Does a source list allow all
+ * inline behavior"). In the base fallback that would break Paddle's inline overlay
+ * positioning in old browsers; in dev, Vite's HMR/overlay `<style>` (89.1 review).
+ *
+ * Drift: Paddle.js is unversioned, so Paddle can change the text on any day. A unit pin
+ * cannot see that; the weekly `paddle-drift.yml` workflow can (story sec-4, D2).
+ */
+export const PADDLE_LOADER_STYLE_CSP_HASH = `sha256-${createHash('sha256')
+  .update(PADDLE_LOADER_STYLE_TEXT, 'utf8')
   .digest('base64')}`
 
 /** Which Paddle environment the CSP authorizes stylesheets for (story 89.1). */
@@ -150,9 +174,12 @@ export function paddleEnvironmentFromProcessEnv(): PaddleCspEnvironment {
  *                  looseness, so Paddle's overlay keeps its inline positioning and
  *                  checkout keeps working, and (89.1 review, Lucas) it also lists the
  *                  Paddle CDN so those browsers load `paddle.css` too.
- *   - `style-src-elem` 'self' + Paddle's stylesheet CDN (see `paddleStyleHosts`).
+ *   - `style-src-elem` 'self' + the hash of Paddle.js's overlay spinner <style>
+ *                  (`PADDLE_LOADER_STYLE_CSP_HASH`, story sec-4; production policy only)
+ *                  + Paddle's stylesheet CDN (see `paddleStyleHosts`).
  *                  Governs <style> elements and stylesheet loads. NO `'unsafe-inline'`:
- *                  an injected <style> (selector-based CSS exfiltration) is refused.
+ *                  an injected <style> (selector-based CSS exfiltration) is refused;
+ *                  only that one exact <style> text is allowed.
  *                  DEV ONLY (`isDev`, 89.1 review, Lucas 2026-10-02 option (a)): +
  *                  `'unsafe-inline'`, for Vite's error-overlay <style> and HMR-injected
  *                  <style> (`vite/dist/client/client.mjs`). Not a nonce: Vite reads the
@@ -169,8 +196,9 @@ export function paddleEnvironmentFromProcessEnv(): PaddleCspEnvironment {
  *   overlay on /pricing: it positions the overlay iframe with an inline style
  *   attribute (blocked, the iframe collapses to a static 300×150 and checkout is
  *   unusable, measured), and loads `paddle.css` from its CDN (blocked by the old
- *   `'self' 'unsafe-inline'`, measured). Its inline <style> (loader keyframes) is
- *   deliberately refused; the overlay works without it (measured).
+ *   `'self' 'unsafe-inline'`, measured). Its inline <style> (loader keyframes) was
+ *   refused by 89.1 (the overlay works without it, measured) and is allowed by its
+ *   exact hash since sec-4, so checkout logs no CSP error.
  *   ⚠️ A policy is per DOCUMENT: a client-side navigation into /pricing keeps the
  *   policy of the page it started on, so this cannot be scoped to /pricing.
  * - `connect-src`  same-origin `/api/*`, Formspark contact POST
@@ -215,11 +243,14 @@ export function buildContentSecurityPolicy(
     throw new Error('buildContentSecurityPolicy: nonce must be a non-empty base64 token')
   }
   const paddleHosts = paddleStyleHosts(paddleEnvironment).join(' ')
+  // Dev: any inline <style> (Vite). Production: Paddle's spinner <style> only, by hash.
+  // Never both: a hash would switch 'unsafe-inline' off (CSP3 §6.7.3.2).
+  const inlineStyleElementSource = isDev ? `'unsafe-inline'` : `'${PADDLE_LOADER_STYLE_CSP_HASH}'`
   return [
     `default-src 'self'`,
     `script-src 'self' 'nonce-${nonce}' '${PLANNER_SCRIPT_CSP_HASH}' '${ACCOUNT_NOTICE_SCRIPT_CSP_HASH}' https://cdn.paddle.com https://cdn.counter.dev`,
     `style-src 'self' 'unsafe-inline' ${paddleHosts}`,
-    `style-src-elem 'self'${isDev ? ` 'unsafe-inline'` : ''} ${paddleHosts}`,
+    `style-src-elem 'self' ${inlineStyleElementSource} ${paddleHosts}`,
     `style-src-attr 'unsafe-inline'`,
     `img-src 'self' data:`,
     `font-src 'self' data:`,
@@ -236,18 +267,50 @@ export function buildContentSecurityPolicy(
 }
 
 /**
- * Deny-by-default Permissions-Policy for browser features the app does not use.
- *
- * `payment=()` disables the Payment Request API. Paddle Checkout renders in its
- * own `*.paddle.com` iframe and does not need the top document's Payment Request
- * permission for card entry. Paddle billing went live under story 5-3; a real
- * checkout (annual + lifetime) was confirmed working end-to-end under this
- * policy in both sandbox and production. Apple/Google Pay specifically (which
- * CAN use the Payment Request API) have not been separately verified — see the
- * verification runbook's wallet-check step. If a wallet method ever breaks,
- * relax to `payment=(self "https://checkout.paddle.com")`.
+ * The origins of Paddle's checkout frame that `payment` is granted to (story sec-4, D3):
+ * production's only, plus sandbox's ONLY for a deployment configured for sandbox (mirrors
+ * `paddleStyleHosts`), so a production policy never names a sandbox origin.
  */
-export const PERMISSIONS_POLICY = 'camera=(), microphone=(), geolocation=(), payment=()'
+export function paddleCheckoutFrameOrigins(paddleEnvironment: PaddleCspEnvironment): string[] {
+  return paddleEnvironment === 'sandbox'
+    ? [PADDLE_CHECKOUT_FRAME_ORIGIN.production, PADDLE_CHECKOUT_FRAME_ORIGIN.sandbox]
+    : [PADDLE_CHECKOUT_FRAME_ORIGIN.production]
+}
+
+/**
+ * Permissions-Policy (story sec-1; `payment` rewritten by story sec-4, AC-4).
+ *
+ * `camera`, `microphone`, `geolocation`: `()`, denied everywhere; the app uses none.
+ *
+ * `payment=(self "<Paddle checkout frame origin>")`: Paddle.js (v2) creates its overlay as
+ * `<iframe name="paddle_frame" allow="payment">` whose `src` is `https://buy.paddle.com`
+ * (production) or `https://sandbox-buy.paddle.com` (sandbox) (`PADDLE_CHECKOUT_FRAME_ORIGIN`
+ * names the paddle.js source lines). The checkout inside that frame uses the Payment Request
+ * API for wallets (Apple Pay / Google Pay). Under the old `payment=()` Chrome logged
+ * "[Violation] Permissions policy violation: payment is not allowed in this document." 16
+ * times on live and 7 in sandbox (89.1), and wallets could not work.
+ *
+ * Why BOTH `self` and the frame origin (W3C Permissions Policy WD 2026-09-22, §9.7 "Define an
+ * inherited policy for feature in container at origin"): a frame gets a feature only if it is
+ * enabled in the PARENT document for the parent's own origin (step 2: without `self` the
+ * answer is "Disabled" whatever else is listed), AND for the frame's origin in the parent's
+ * policy (step 3), AND the container's `allow` matches the frame origin (`allow="payment"`
+ * defaults to the frame `src` origin). Frames nested INSIDE Paddle's frame inherit from
+ * Paddle's document, not ours, so no further origin is needed here.
+ *
+ * (The pre-sec-4 note "relax to `checkout.paddle.com`" named an origin Paddle.js v2 does not
+ * use.) The environment is the one `paddleEnvironmentFromProcessEnv()` gives the CSP; there is
+ * no second derivation.
+ */
+export function buildPermissionsPolicy(paddleEnvironment: PaddleCspEnvironment): string {
+  // `self` is a token, origins are quoted strings (structured-field inner list); joined as
+  // one list so an empty origin list could never leave a trailing space.
+  const paymentAllowlist = [
+    'self',
+    ...paddleCheckoutFrameOrigins(paddleEnvironment).map((origin) => `"${origin}"`),
+  ].join(' ')
+  return `camera=(), microphone=(), geolocation=(), payment=(${paymentAllowlist})`
+}
 
 /** Referrer-Policy: send only the origin cross-site; don't leak app URLs/paths. */
 export const REFERRER_POLICY = 'strict-origin-when-cross-origin'
@@ -357,7 +420,8 @@ export interface SecurityHeaderOptions {
   nonce: string
   /**
    * The Paddle environment whose stylesheet CDN `style-src-elem` authorizes (story
-   * 89.1). Resolve it with `paddleEnvironmentForCsp`; required, so no caller can
+   * 89.1) and whose checkout frame `Permissions-Policy: payment` names (story sec-4).
+   * Resolve it with `paddleEnvironmentForCsp`; required, so no caller can
    * silently default to the wider sandbox grant.
    */
   paddleEnvironment: PaddleCspEnvironment
@@ -369,7 +433,7 @@ export interface SecurityHeaderOptions {
  * @param headers - The response headers to mutate in place.
  * @param options - `isDev` (dev-only CORS, no HSTS, dev inline <style>), `isHttps` (HSTS gate), the
  *   per-request `nonce` (CSP `script-src`), and `paddleEnvironment` (the Paddle
- *   stylesheet host in `style-src-elem`).
+ *   stylesheet host in `style-src-elem`, the checkout frame in `Permissions-Policy`).
  */
 export function applySecurityHeaders(headers: Headers, options: SecurityHeaderOptions): void {
   const { isDev, isHttps, nonce, paddleEnvironment } = options
@@ -391,7 +455,7 @@ export function applySecurityHeaders(headers: Headers, options: SecurityHeaderOp
     buildContentSecurityPolicy(nonce, paddleEnvironment, isDev)
   )
   headers.set('Referrer-Policy', REFERRER_POLICY)
-  headers.set('Permissions-Policy', PERMISSIONS_POLICY)
+  headers.set('Permissions-Policy', buildPermissionsPolicy(paddleEnvironment))
 
   // HSTS only over confirmed HTTPS and never in dev — asserting it over a
   // connection we can't confirm is TLS can lock users out (story sec-1 Dev Notes).

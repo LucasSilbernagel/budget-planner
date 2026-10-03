@@ -19,6 +19,10 @@
 import { createHash } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
+  buildPermissionsPolicy,
+  paddleEnvironmentFromProcessEnv,
+} from '../server/middleware/security-headers'
+import {
   SERVED_APP_TIMEOUT_MS,
   SERVED_TEST_TIMEOUT_MS,
   type ServedApp,
@@ -71,7 +75,14 @@ describe('the document response headers (was e2e security-headers AC-1)', () => 
     expect(policy).toContain(`default-src 'self'`)
 
     expect(header(response, 'referrer-policy')).toBe('strict-origin-when-cross-origin')
-    expect(header(response, 'permissions-policy')).toContain('payment=()')
+    // Story sec-4 (AC-4): payment for self + Paddle's checkout frame, built from the
+    // SAME environment the CSP gets (this process's PADDLE_ENVIRONMENT).
+    expect(header(response, 'permissions-policy')).toBe(
+      buildPermissionsPolicy(paddleEnvironmentFromProcessEnv())
+    )
+    expect(header(response, 'permissions-policy')).toMatch(
+      /^camera=\(\), microphone=\(\), geolocation=\(\), payment=\(self "https:\/\/buy\.paddle\.com"( "https:\/\/sandbox-buy\.paddle\.com")?\)$/
+    )
     expect(header(response, 'x-content-type-options')).toBe('nosniff')
     expect(header(response, 'x-frame-options')).toBe('DENY')
     // HSTS is gated on confirmed HTTPS: absent over this plain-HTTP server.

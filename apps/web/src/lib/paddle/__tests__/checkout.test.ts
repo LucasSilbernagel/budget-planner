@@ -4,8 +4,12 @@
  * NFR8: `@paddle/paddle-js` is mocked — no real CDN load in tests.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getPaddleInstance, resetPaddleInstanceForTests } from '../checkout'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  getPaddleInstance,
+  preemptPaddleRetainSnippet,
+  resetPaddleInstanceForTests,
+} from '../checkout'
 
 const initializePaddle = vi.fn()
 
@@ -62,5 +66,82 @@ describe('getPaddleInstance', () => {
 
     expect(retried).toBe(paddleInstance)
     expect(initializePaddle).toHaveBeenCalledTimes(2)
+  })
+})
+
+// Story sec-4, D1 (AC-5): Paddle.js's `initPwSnippet()` skips ProfitWell only when
+// `window.profitwell?.isLoaded` is already truthy at `Paddle.Initialize()` time.
+describe('getPaddleInstance: the window.profitwell stub (sec-4 D1)', () => {
+  type Host = { profitwell?: unknown }
+  let host: Host
+
+  beforeEach(() => {
+    host = {}
+    vi.stubGlobal('window', host)
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('is installed BEFORE initializePaddle runs (Paddle.Initialize reads it)', async () => {
+    let seenAtInit: unknown = 'initializePaddle never ran'
+    initializePaddle.mockImplementation(async () => {
+      seenAtInit = host.profitwell
+      return { Checkout: {} }
+    })
+
+    await getPaddleInstance(CONFIG)
+
+    expect(typeof seenAtInit).toBe('function')
+    expect((seenAtInit as { isLoaded?: unknown }).isLoaded).toBe(true)
+  })
+
+  it('is a callable no-op (Paddle.js calls window.profitwell(...) from updatePwCustomer / Retain)', async () => {
+    initializePaddle.mockResolvedValue({ Checkout: {} })
+    await getPaddleInstance(CONFIG)
+
+    const stub = host.profitwell as (...args: unknown[]) => unknown
+    expect(stub('start', { auth_token: 'x' })).toBeUndefined()
+    expect(stub('cq_get_customer_email')).toBeUndefined()
+    // A no-op: it grows no queue (the real snippet's queue is `window.profitwell.q`).
+    expect((stub as unknown as { q?: unknown }).q).toBeUndefined()
+  })
+
+  it('leaves an EXISTING window.profitwell alone', async () => {
+    const existing = Object.assign(() => {}, { isLoaded: false, marker: 'site-owned' })
+    host.profitwell = existing
+    let seenAtInit: unknown
+    initializePaddle.mockImplementation(async () => {
+      seenAtInit = host.profitwell
+      return { Checkout: {} }
+    })
+
+    await getPaddleInstance(CONFIG)
+
+    expect(seenAtInit).toBe(existing)
+    expect(host.profitwell).toBe(existing)
+    expect((host.profitwell as { isLoaded: boolean }).isLoaded).toBe(false)
+  })
+
+  // Paddle's guard is `window.profitwell?.isLoaded`: `null?.isLoaded` is `undefined`, so a
+  // `null` left in place would let the script load (sec-4 review).
+  it('treats a null window.profitwell as absent and replaces it', async () => {
+    host.profitwell = null
+    let seenAtInit: unknown
+    initializePaddle.mockImplementation(async () => {
+      seenAtInit = host.profitwell
+      return { Checkout: {} }
+    })
+
+    await getPaddleInstance(CONFIG)
+
+    expect(typeof seenAtInit).toBe('function')
+    expect((seenAtInit as { isLoaded?: unknown }).isLoaded).toBe(true)
+  })
+
+  it('preemptPaddleRetainSnippet is a no-op without a window (SSR)', () => {
+    vi.unstubAllGlobals()
+    expect(typeof window).toBe('undefined')
+    expect(() => preemptPaddleRetainSnippet()).not.toThrow()
   })
 })
