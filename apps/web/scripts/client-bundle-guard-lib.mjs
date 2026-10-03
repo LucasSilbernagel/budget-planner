@@ -117,7 +117,7 @@ export function checkClientBundle(distRoot, markers = SERVER_ONLY_MARKERS) {
 
 /**
  * Dev-only test seams that a production build must not contain AT ALL, server
- * included (story 87.1, AC 4). Each is gated on the build-time
+ * included (story 87.1, AC 4; the session seed joined in story 92.1). Each is gated on the build-time
  * `import.meta.env.DEV` literal, so a production build deletes the branch and
  * the variable name with it; finding the name in `dist/` means the gate was
  * weakened. `source` (relative to the app root) is the positive control: the
@@ -126,6 +126,9 @@ export function checkClientBundle(distRoot, markers = SERVER_ONLY_MARKERS) {
  */
 export const DEV_ONLY_SEAMS = Object.freeze([
   Object.freeze({ marker: 'E2E_MAIL_OUTBOX', source: 'src/server/email/mailer.ts' }),
+  // Story 58.1's fabricated-session seed (story 92.1). CI grepped `dist/` for it
+  // inline since 58.1; it lives here now so `pnpm gates` checks it too.
+  Object.freeze({ marker: 'E2E_SESSION_SEED', source: 'src/server/api/auth/session-seed.ts' }),
 ])
 
 /**

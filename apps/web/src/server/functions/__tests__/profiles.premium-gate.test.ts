@@ -8,6 +8,9 @@
  * after the auth check and before any DB work, so an unauthenticated caller
  * still gets the auth error, not the premium error.
  *
+ * ⚠️ `createProfile` and `setDefaultProfile` are NOT here since story 92.1, which
+ * deleted them (no production importer).
+ *
  * ⚠️ `getProfiles` is NOT here since story 83.1: it became a user-scoped core
  * (`getProfiles(userId)`), and its tier boundary moved to its only caller,
  * `routes/api/profiles.ts`, where `routes/api/__tests__/profiles.route.db.test.ts`
@@ -46,13 +49,7 @@ vi.mock('@budget-planner/db', () => ({
 vi.mock('@budget-planner/db/src/schema', () => ({ userProfiles: {}, users: {} }))
 
 import { getCurrentUserSession } from '../../api/auth/paddle'
-import {
-  createProfile,
-  deleteProfile,
-  getProfile,
-  setDefaultProfile,
-  updateProfile,
-} from '../profiles'
+import { deleteProfile, getProfile, updateProfile } from '../profiles'
 
 const req = {} as Request
 
@@ -77,12 +74,6 @@ describe('profiles server functions — premium tier boundary (13-3 AC-2)', () =
   const nonActive = ['free', 'past_due', 'canceled']
 
   describe.each(nonActive)('a %s subscription is rejected with the Premium error', (status) => {
-    it('createProfile', async () => {
-      session(status)
-      const r = await createProfile(req, { name: 'X' })
-      expect(r.success).toBe(false)
-      expect(r.error).toMatch(/premium/i)
-    })
     it('getProfile', async () => {
       session(status)
       const r = await getProfile(req, 'p1')
@@ -101,17 +92,11 @@ describe('profiles server functions — premium tier boundary (13-3 AC-2)', () =
       expect(r.success).toBe(false)
       expect(r.error).toMatch(/premium/i)
     })
-    it('setDefaultProfile', async () => {
-      session(status)
-      const r = await setDefaultProfile(req, 'p1')
-      expect(r.success).toBe(false)
-      expect(r.error).toMatch(/premium/i)
-    })
   })
 
   it('unauthenticated → auth-required error, NOT the premium error (guard ordering)', async () => {
     session(null)
-    const r = await createProfile(req, { name: 'X' })
+    const r = await getProfile(req, 'p1')
     expect(r.success).toBe(false)
     expect(r.error).not.toMatch(/premium/i)
     expect(r.error).toMatch(/auth/i)
