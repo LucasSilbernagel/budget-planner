@@ -251,6 +251,21 @@ describe('the retirement plan follows its owner (story 90.1, D1)', () => {
     expect(localStorage.getItem(`${RETIREMENT_PLANNER_STORAGE_KEY}:${ACCOUNT_A}`)).not.toBeNull()
   })
 
+  it('a plan edited while signed out does not hide the returning owner’s parked plan (review R-D2 (a))', () => {
+    leaveAccountAsDataBehind()
+    render(<StoreHydration seed={{ ...SIGNED_OUT_SEED }} />)
+    useRetirementPlannerStore.getState().setCurrentAgeInput('25')
+    expect(useRetirementPlannerStore.getState().ownerUserId).toBe('')
+
+    resetAccountBoundaryForTests()
+    setMarkerCookie()
+    render(<StoreHydration seed={seedFor(ACCOUNT_A, 'active')} />)
+
+    expect(useRetirementPlannerStore.getState().plan).toEqual(A_PLAN)
+    expect(useRetirementPlannerStore.getState().ownerUserId).toBe(ACCOUNT_A)
+    expect(localStorage.getItem(`${RETIREMENT_PLANNER_STORAGE_KEY}:${ACCOUNT_A}`)).toBeNull()
+  })
+
   it('a saved plan from before the owner field (no ownerUserId) is nobody’s yet', () => {
     localStorage.setItem(
       RETIREMENT_PLANNER_STORAGE_KEY,

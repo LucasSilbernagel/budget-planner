@@ -487,21 +487,15 @@ function removeParkedPlan(userId: string): void {
   }
 }
 
-/** Field by field: `coerceRetirementPlan` builds its object in its own key order. */
-function isDefaultPlan(plan: RetirementPlan): boolean {
-  return (Object.keys(RETIREMENT_PLAN_DEFAULTS) as (keyof RetirementPlan)[]).every(
-    (field) => plan[field] === RETIREMENT_PLAN_DEFAULTS[field]
-  )
-}
-
 /**
  * Give the plan on screen to the session this document load resolved (story
  * 90.1, D1). `sessionUserId` is `''` for a signed-out session.
  *
  * - Already the session's: nothing.
  * - Nobody's yet (`''`): a signed-in session adopts it, like any placeholder row
- *   (5-15 AC-2: free -> signed in loses nothing). If the plan is still the
- *   defaults and the session has a parked plan, that plan comes back instead.
+ *   (5-15 AC-2: free -> signed in loses nothing), UNLESS the session has a
+ *   parked plan of its own: that plan comes back and the unclaimed one is
+ *   discarded (90.1 review R-D2 (a)).
  * - Another account's: it is PARKED under that account's key, not deleted (the
  *   plan is not synced, so resetting it would lose it on every sign-out), and the
  *   session gets its own parked plan back, or the defaults.
@@ -517,7 +511,12 @@ export function claimRetirementPlanFor(sessionUserId: string): void {
     return
   }
   if (ownerUserId === '') {
-    const parked = isDefaultPlan(plan) ? readParkedPlan(sessionUserId) : null
+    // A signed-in session's own parked plan WINS over an unclaimed one (90.1
+    // review R-D2 (a), Lucas 2026-10-03): otherwise a plan edited while signed
+    // out would hide the returning owner's plan and strand it parked for good.
+    // The signed-out edit is discarded, as an anonymous visitor's work is on any
+    // sign-in. A signed-out session (`''`) has no parked plan.
+    const parked = sessionUserId === '' ? null : readParkedPlan(sessionUserId)
     if (parked !== null) {
       removeParkedPlan(sessionUserId)
     }
