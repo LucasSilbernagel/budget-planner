@@ -1,6 +1,6 @@
 import { type Page, type Route, expect, test } from '@playwright/test'
 import { expectSignedInAs } from './helpers/account-menu'
-import { mockSignedIn } from './helpers/nav-more'
+import { mockSignedIn, openMore } from './helpers/nav-more'
 import { FIXED_NOW, SHOT_TIMEOUT, chartsDrawn, copyrightYear } from './helpers/screenshot'
 import { seedFinanceRows } from './helpers/seed-finance-rows'
 
@@ -38,8 +38,8 @@ async function stubForecastApi(page: Page) {
   await page.route('**/api/forecasts**', (route) => ok(route, []))
 }
 
-async function open(page: Page, path: string, width: number, charts: number) {
-  await page.setViewportSize({ width, height: 900 })
+async function open(page: Page, path: string, width: number, charts: number, height = 900) {
+  await page.setViewportSize({ width, height })
   await page.emulateMedia({ colorScheme: 'light' })
   await page.clock.setFixedTime(FIXED_NOW)
   await seedFinanceRows(page)
@@ -70,3 +70,18 @@ for (const width of [768, 1280]) {
     })
   })
 }
+
+test('paid-sheet-320', async ({ page }) => {
+  // 320x640: the phone the 6-row sheet's on-screen claims were measured at.
+  await open(page, '/', 320, 4, 640)
+  await openMore(page)
+  // The OPEN, PAID sheet, asserted: six visible rows (the free sheet has two).
+  await expect(page.locator('nav[aria-label="Primary"] details ul').getByRole('link')).toHaveCount(
+    6
+  )
+  // Viewport, not full page: the sheet is a fixed overlay above the bottom bar.
+  await expect(page).toHaveScreenshot('paid-sheet-320.png', {
+    mask: await copyrightYear(page),
+    timeout: SHOT_TIMEOUT,
+  })
+})

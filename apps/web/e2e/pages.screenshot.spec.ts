@@ -1,5 +1,6 @@
-import { type Page, expect, test } from '@playwright/test'
-import { openMore } from './helpers/nav-more'
+import { type Locator, type Page, expect, test } from '@playwright/test'
+import { expectSignedInAs, openAccountMenu } from './helpers/account-menu'
+import { mockSignedIn, openMore } from './helpers/nav-more'
 import { FIXED_NOW, SHOT_TIMEOUT, chartsDrawn, copyrightYear } from './helpers/screenshot'
 import { seedFinanceRows } from './helpers/seed-finance-rows'
 
@@ -37,9 +38,13 @@ interface Shot {
   name: string
   path: string
   width: number
+  /** Viewport height; 900 unless a shot is about a short screen. */
+  height?: number
   dark?: boolean
   /** How many Recharts charts the page draws (see `chartsDrawn`). */
   charts: number
+  /** `false` opens the page on EMPTY storage (the tallest-modal shot). */
+  seed?: boolean
 }
 
 const PAGE_SHOTS: Shot[] = [
@@ -57,11 +62,14 @@ const PAGE_SHOTS: Shot[] = [
   { name: 'settings-320-light', path: '/settings', width: 320, charts: 0 },
 ]
 
-async function open(page: Page, { path, width, dark, charts }: Omit<Shot, 'name'>) {
-  await page.setViewportSize({ width, height: 900 })
+async function open(
+  page: Page,
+  { path, width, height = 900, dark, charts, seed = true }: Omit<Shot, 'name'>
+) {
+  await page.setViewportSize({ width, height })
   await page.emulateMedia({ colorScheme: dark ? 'dark' : 'light' })
   await page.clock.setFixedTime(FIXED_NOW)
-  await seedFinanceRows(page)
+  if (seed) await seedFinanceRows(page)
   await page.goto(path)
   await page.waitForLoadState('networkidle')
   await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible()
@@ -85,6 +93,63 @@ test('nav-more-sheet-320-light', async ({ page }) => {
   // Viewport, not full page (unlike D1's other shots): the sheet is a fixed
   // overlay, and what matters is how it sits over the first screen.
   await expect(page).toHaveScreenshot('nav-more-sheet-320-light.png', {
+    mask: await copyrightYear(page),
+    timeout: SHOT_TIMEOUT,
+  })
+})
+
+/** Short and fixed, so the avatar initial never moves (as in the paid spec). */
+const SIGNED_IN_EMAIL = 'free@example.test'
+
+test('account-menu-320-open', async ({ page }) => {
+  // ⚠️ This server's SSR seed is signed OUT: without the mock (and the gate on
+  // the mocked identity) the "menu" would be the Sign in / Upgrade cluster.
+  await mockSignedIn(page, { email: SIGNED_IN_EMAIL, subscriptionStatus: 'free' })
+  await open(page, { path: '/', width: 320, height: 640, charts: 4 })
+  await expectSignedInAs(page, SIGNED_IN_EMAIL)
+  const panel = await openAccountMenu(page)
+  // The OPEN state, asserted: a shot of the closed menu would be a vacuous baseline.
+  await expect(panel.getByRole('link', { name: 'Settings', exact: true })).toBeVisible()
+  await expect(panel.getByRole('button', { name: 'Sign out' })).toBeVisible()
+  // Viewport, not full page: the panel is an overlay hanging from the top strip.
+  await expect(page).toHaveScreenshot('account-menu-320-open.png', {
+    mask: await copyrightYear(page),
+    timeout: SHOT_TIMEOUT,
+  })
+})
+
+/**
+ * Open `/balance`'s Add form (from the deleted `responsive-320.spec.ts`, story
+ * 31.3). Checks BEFORE clicking: a retry after a first click that did open the
+ * dialog would click a trigger now covered by the overlay.
+ */
+async function openBalanceAddModal(page: Page): Promise<Locator> {
+  const trigger = page.getByTestId('balance-add-button')
+  const dialog = page.getByRole('dialog', { name: 'Add Balance Entry' })
+  await expect(async () => {
+    // A bounded click: a trigger under the backdrop (the dialog opened between
+    // the check and the click) fails THIS attempt, not the whole test (review).
+    if (!(await dialog.isVisible())) await trigger.click({ timeout: 1000 })
+    await expect(dialog).toBeVisible({ timeout: 1000 })
+  }).toPass({ timeout: SHOT_TIMEOUT })
+  return dialog
+}
+
+test('modal-320x480', async ({ page }) => {
+  // The tallest modal in the app: `/balance`'s Add form on EMPTY storage, where
+  // the type defaults to `investment`, the arm that shows every field (31.3's
+  // guard ran unseeded too). Asserted below, so a new default type fails here.
+  await open(page, { path: '/balance', width: 320, height: 480, charts: 0, seed: false })
+  const dialog = await openBalanceAddModal(page)
+  await expect(dialog.getByLabel(/type/i)).toHaveValue('investment')
+  // The investment-ONLY control (`BalancePage.tsx`, `type === 'investment'`):
+  // a form that lost its tallest arm fails here with a name, not as a pixel diff.
+  await expect(
+    dialog.getByRole('checkbox', { name: 'Not taken from the money left over' })
+  ).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Add Balance Entry' })).toBeVisible()
+  // Viewport: what matters is how the capped card sits on a short screen.
+  await expect(page).toHaveScreenshot('modal-320x480.png', {
     mask: await copyrightYear(page),
     timeout: SHOT_TIMEOUT,
   })
