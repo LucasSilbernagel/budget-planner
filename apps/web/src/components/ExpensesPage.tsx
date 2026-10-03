@@ -19,6 +19,7 @@ import { useShowRetirementPlanner } from '../stores/plannerVisibilityStore'
 import { CategoryBadge } from './categories/CategoryBadge'
 import { CategoryPicker } from './categories/CategoryPicker'
 import { ConfirmDialog } from './ui/ConfirmDialog'
+import { GroupedAmount } from './ui/GroupedAmount'
 import { Modal } from './ui/Modal'
 import { PeriodTotal } from './ui/PeriodTotal'
 import {
@@ -26,6 +27,7 @@ import {
   RESPONSIVE_ACTIONS_CELL_CLASS,
   RESPONSIVE_ACTIONS_GROUP_CLASS,
   RESPONSIVE_ACTION_BUTTON_CLASS,
+  RESPONSIVE_AMOUNT_CLASS,
   RESPONSIVE_CELL_CLASS,
   RESPONSIVE_HEADER_CELL_RIGHT_CLASS,
   RESPONSIVE_ROW_CLASS,
@@ -587,7 +589,12 @@ export function ExpensesPage() {
                           </td>
                           <td className={RESPONSIVE_CELL_CLASS}>
                             <FieldLabel>Amount</FieldLabel>
-                            <div className="text-sm text-muted">{formatAmount(expense.amount)}</div>
+                            {/* Story 91.1: wraps only between digit groups below `sm`
+                              (RESPONSIVE_AMOUNT_CLASS). Inside the page's `hydrated`
+                              branch, as `GroupedAmount` requires. */}
+                            <div className={`text-sm text-muted ${RESPONSIVE_AMOUNT_CLASS}`}>
+                              <GroupedAmount text={formatAmount(expense.amount)} />
+                            </div>
                           </td>
                           <td className={RESPONSIVE_CELL_CLASS}>
                             <FieldLabel>Frequency</FieldLabel>

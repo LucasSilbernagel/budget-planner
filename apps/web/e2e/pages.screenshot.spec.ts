@@ -57,6 +57,10 @@ const PAGE_SHOTS: Shot[] = [
   { name: 'income-1280-dark', path: '/income', width: 1280, dark: true, charts: 0 },
   { name: 'balance-768-light', path: '/balance', width: 768, charts: 0 },
   { name: 'balance-1280-light', path: '/balance', width: 1280, charts: 0 },
+  // Story 91.1 (D2): `/balance`'s row cards at 320, seeded. Its cells differ from
+  // Income's (Type badge, `CURRENT BALANCE/VALUE`, Contribution + cadence), and
+  // no shot showed them below `sm` (`modal-320x480` is `/balance` UNseeded).
+  { name: 'balance-320-light', path: '/balance', width: 320, charts: 0 },
   { name: 'retirement-320-light', path: '/retirement', width: 320, charts: 1 },
   { name: 'retirement-1280-dark', path: '/retirement', width: 1280, dark: true, charts: 1 },
   { name: 'settings-320-light', path: '/settings', width: 320, charts: 0 },

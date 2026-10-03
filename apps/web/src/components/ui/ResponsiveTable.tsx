@@ -302,7 +302,16 @@ export const RESPONSIVE_CELL_CLASS = `${RESPONSIVE_CELL_BASE} max-sm:items-basel
 export const RESPONSIVE_ACTIONS_CELL_CLASS = `${RESPONSIVE_CELL_BASE} max-sm:flex-col max-sm:items-center text-right text-sm`
 
 /** A `<td>` whose content is full-width (the Savings progress bar) and so must
- * stack under its label instead of sitting beside it. */
+ * stack under its label instead of sitting beside it.
+ *
+ * Also every {@link RESPONSIVE_VALUE_TAG_CLASS} cell (the Savings name + badge
+ * and allocation + pill), since story 91.1. Once {@link FIELD_LABEL_CLASS}
+ * stopped breaking mid-word, a label beside a pair left the pair too little
+ * width: measured at 320px under DejaVu Sans, an ordinary `$987.65` + `Fixed`
+ * overflowed the cell by 8.6px (`CHF 987.65`: 32.5px), because a figure with no
+ * group separator cannot wrap, and `Emergency Fund` broke as `Emergenc` / `y
+ * Fund` beside its `Account` badge. Stacked, the pair gets the card's full
+ * width. Desktop tokens are the same as {@link RESPONSIVE_CELL_CLASS}'s. */
 export const RESPONSIVE_STACKED_CELL_CLASS =
   'px-6 max-lg:px-4 py-4 whitespace-nowrap max-sm:block max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere] max-sm:px-3 max-sm:py-2'
 
@@ -328,31 +337,27 @@ export const RESPONSIVE_STACKED_CELL_CLASS =
  *
  * ## ⚠️ THE VALUE AND THE TAG DO NOT GET THE SAME TREATMENT
  *
- * {@link RESPONSIVE_TAG_CLASS} goes on every tag. {@link RESPONSIVE_VALUE_NOWRAP_CLASS}
- * goes ONLY on a value with a BOUNDED width — a currency figure. The Savings
- * NAME is user-supplied free text with no `maxLength`, so it must keep
- * wrapping; `nowrap` there is exactly the ~1134px revert above. Protect the
- * tag, never the free-text value.
+ * {@link RESPONSIVE_TAG_CLASS} goes on every tag. {@link RESPONSIVE_AMOUNT_CLASS}
+ * goes ONLY on a currency figure. The Savings NAME is user-supplied free text
+ * with no `maxLength`, so it must keep the cell's `anywhere` and wrap; `nowrap`
+ * (or `overflow-wrap: normal`) there is exactly the ~1134px revert above.
+ * Protect the tag, never the free-text value.
  *
- * ## ⚠️ `nowrap` IS NOT FREE — it moves the failure, and the bound is measured
+ * ## ⚠️ The bound, re-measured by story 91.1
  *
- * At 320px on DejaVu Sans the allocation cell holds `$987,654,321.00`
- * (15 characters, pair 175px) with no overflow, and tips at
- * `$9,876,543,210.00` (17 characters, pair 189px) — not because the pair
- * outgrows the 222px cell, but because `max-sm:justify-between` crushes the
- * "Monthly Allocation" label to ~21px first. The wrapper and the document stay
- * clean at every tested value, so the failure is contained inside the cell.
- * ~$987M is far past any plausible monthly saving, so the bound is accepted.
- * `e2e/value-tag-one-line.spec.ts` pins it; re-measure before widening this
- * cell rather than deleting the assertion.
- *
- * ⚠️ THAT BOUND IS USD-SPECIFIC, AND USD IS THE NARROW CASE. Currency is
- * user-selectable (`packages/core/src/format/currency.ts`), and CHF renders the
- * same figure as `CHF 987'654'321.00` — 18 characters, already past the tip —
- * so a CHF user meets the ceiling around $98M, roughly an order of magnitude
- * lower; BRL is similar. The e2e seed pins USD, so nothing regression-tests
- * this. The failure past the tip is the same contained cell overflow. Recorded
- * by code review rather than left as an absolute-sounding dollar figure.
+ * Until 91.1 the allocation figure was `nowrap` and held up to `$987,654,321.00`
+ * at 320px only because `justify-between` crushed the "Monthly Allocation"
+ * label to ~21px (`MONT/HLY/ALLO/CATIO/N`). Once the label stopped breaking
+ * mid-word, an ORDINARY `$987.65` + `Fixed` overflowed the cell by 8.6px and
+ * `CHF 987.65` by 32.5px (a figure with no group separator cannot wrap). So
+ * both pair cells are now stacked below `sm` (see
+ * {@link RESPONSIVE_STACKED_CELL_CLASS}) and the figure wraps between groups
+ * (`RESPONSIVE_AMOUNT_CLASS`). Measured at 320px under DejaVu Sans: no cell or
+ * wrapper overflow from USD x0.0001 to x10000 of the e2e seed (`$9.88` to
+ * `$9,876,540,000.00` per month) and CHF x0.001 to x100. No layout test pins
+ * this (`e2e/value-tag-one-line.spec.ts` was deleted by stories 84.2/84.5);
+ * `savings-320-light` shows the seeded figures, so re-measure (story 91.1's
+ * harness) before narrowing these cells.
  *
  * ## ⚠️ `max-sm:items-start` — why the alignment is partitioned by breakpoint
  *
@@ -397,15 +402,55 @@ export const RESPONSIVE_VALUE_TAG_CLASS = 'flex items-center gap-2 max-sm:items-
  * unchanged by inspection. */
 export const RESPONSIVE_TAG_CLASS = 'whitespace-nowrap'
 
-/** The VALUE half — ⚠️ ONLY for a value whose width is BOUNDED, such as a
- * formatted currency amount. Never put this on free text; see the asymmetry
- * note on {@link RESPONSIVE_VALUE_TAG_CLASS}.
+/** A row's MONEY figure — ⚠️ ONLY for a formatted currency amount rendered as a
+ * `GroupedAmount`. Never put this on free text; see the asymmetry note on
+ * {@link RESPONSIVE_VALUE_TAG_CLASS}. Every row amount on the four finance
+ * pages carries it, including the Savings allocation beside its pill.
  *
- * Set on the CHILD, not the cell: a child's own `white-space` beats the value
- * it inherits, so this needs no `max-sm:` variant and cannot be decided by
- * Tailwind source order the way two same-property utilities on ONE element
- * would be. */
-export const RESPONSIVE_VALUE_NOWRAP_CLASS = 'whitespace-nowrap'
+ * ## Why (story 91.1, FR146)
+ *
+ * The cell's inherited `overflow-wrap: anywhere` let a plain-string figure
+ * break between ANY two characters: measured at 320px under DejaVu Sans before
+ * this story, `$12,345,67` / `8.90` (Savings Current Balance), `$12,345,6` /
+ * `78.90` and `$456,789.0` / `0` (Balance). The `<wbr>`s `GroupedAmount`
+ * places after each group separator are what fix that: `anywhere` breaks
+ * inside a word only when a line has NO other break opportunity, so a figure
+ * that does not fit now wraps as `$12,345,` / `678.90`.
+ *
+ * ⚠️ What THIS class adds is a floor, and it is not load-bearing at today's
+ * widths (measured, story 91.1 arms A1 and A1+L2: with it removed, no figure
+ * split inside a group at 320px across USD x0.0001-x10000 and CHF x0.001-x100).
+ * `overflow-wrap: normal` makes the figure's min-content its widest group, so
+ * a group wider than the space the cell leaves OVERFLOWS instead of splitting
+ * (`CHF 98` / `7'`), which keeps "never inside a group" true in that corner.
+ * That case was reachable before the Savings pair cells were stacked
+ * (`CHF 987'` in a 49.5px allocation slot). The class alone, without
+ * `GroupedAmount`, makes the whole figure one unbreakable run: measured (arm
+ * A2) as a 27.4px cell overflow and a 246px-wide wrapper at 320px.
+ *
+ * ## Why not `whitespace-nowrap` (what the Savings allocation used until 91.1)
+ *
+ * nowrap kept the allocation on one line only because the cell crushed its
+ * "Monthly Allocation" label to ~21px first (the bound measured on
+ * {@link RESPONSIVE_VALUE_TAG_CLASS}). Once {@link FIELD_LABEL_CLASS} stopped
+ * breaking mid-word, that slack was gone, so a figure that no longer fits now
+ * WRAPS at a group boundary instead of overflowing the cell.
+ *
+ * ## ⚠️ `sm:[&_wbr]:hidden` keeps desktop byte-identical, and it is load-bearing
+ *
+ * At and above `sm` the cell is `whitespace-nowrap`, but Chromium still breaks
+ * at a `<wbr>` under an inherited `nowrap` (story 88.1's measured finding), and
+ * the auto-layout table then shrinks the column to the widest GROUP. Measured
+ * under DejaVu Sans with this token missing: every row figure on all four pages
+ * wrapped at 640, 768 AND 1280px (`$12,` / `345,` / `678.90` on /income), and
+ * the tables narrowed by 22-135px. `display: none` on the `<wbr>`s removes the
+ * break opportunity (88.1 arm M2b), so the desktop table lays out exactly as
+ * before this story (measured: 0 differences at 640/768/1280).
+ *
+ * `[overflow-wrap:normal]` is unprefixed: at and above `sm` the cell is
+ * `nowrap`, under which it has nothing to act on. Set on the CHILD, not the
+ * cell: a child's own `overflow-wrap` beats the value it inherits. */
+export const RESPONSIVE_AMOUNT_CLASS = '[overflow-wrap:normal] sm:[&_wbr]:hidden'
 
 /** Wraps the row action buttons so the actions cell has exactly two flex
  * children (label + button group) below `sm`. Inert on desktop: an unclassed
@@ -466,8 +511,34 @@ export const RESPONSIVE_ACTIONS_GROUP_CLASS =
 export const RESPONSIVE_ACTION_BUTTON_CLASS =
   'max-sm:inline-flex max-sm:items-center max-sm:justify-center max-sm:min-h-[44px] max-sm:min-w-[44px]'
 
-/** The mobile-only field label. */
-export const FIELD_LABEL_CLASS = 'sm:hidden text-xs font-medium uppercase tracking-wider text-muted'
+/** The mobile-only field label.
+ *
+ * ⚠️ `[overflow-wrap:normal]` (story 91.1, FR146, D1) stops the label
+ * inheriting the cell's `overflow-wrap: anywhere`. With it inherited, the
+ * label's min-content was one character and `justify-between` crushed it:
+ * measured at 320px under DejaVu Sans, `N/A/M/E` one letter per line beside a
+ * long name and `MONT/HLY/ALLO/CATIO/N`. Now it breaks only between words, so
+ * its floor is its longest word. Unprefixed, and no `max-sm:` variant (the
+ * label rule below): the label is `display: none` at and above `sm`. Do NOT
+ * use `whitespace-nowrap` instead: a one-line `MONTHLY ALLOCATION` takes most
+ * of a ~222px cell and leaves too little for the figure.
+ *
+ * ⚠️ `basis-0 grow` (story 91.1) makes the LABEL take only the width the value
+ * leaves, never less than that longest-word floor (a flex item's `min-width:
+ * auto`), so the value keeps its full one-line width whenever it fits and
+ * shrinks (wrapping at a group) only when it does not. Flex otherwise shrinks
+ * items in proportion to their one-line width, so a two-word label and the
+ * figure beside it both wrapped: measured at 320px under DejaVu Sans, `CURRENT
+ * BALANCE` held 114px over two lines while `$12,345.68` wrapped to `$12,` /
+ * `345.68`. ⚠️ Do NOT swap in `shrink-[1000]` (the Retirement outlook's `dt`,
+ * story 88.4 D7): measured, it still took ~0.02px from the value, more than
+ * Chromium's 1/64px layout unit, so a figure that fitted exactly wrapped at
+ * its `<wbr>` anyway (`$12,345,` / `678.90` beside a 130px label at 375px).
+ * With nothing left to grow into, `justify-between` no longer matters. In the
+ * stacked cells (`display: block`) and the column actions cell these do
+ * nothing. */
+export const FIELD_LABEL_CLASS =
+  'sm:hidden text-xs font-medium uppercase tracking-wider text-muted [overflow-wrap:normal] basis-0 grow'
 
 /**
  * The mobile-only label for a single card field (AC-4): below `sm` the column
