@@ -1220,6 +1220,30 @@ describe('section totals break only between digit groups (story 88.4)', () => {
     expect(runsOf(totalFor('Overall progress'))).toEqual(['—'])
   })
 
+  it('every total row: the label shrinks first and the value is right-aligned (D7, 88.4 review)', () => {
+    // jsdom has no layout or Tailwind: this pins the class tokens only; the
+    // behaviour is the D7 one measured on Retirement's OutputRow.
+    useIncomeStore.setState({ incomeSources: [incomeRow('i1', 'Salary', 100_00, 'monthly')] })
+    useBalanceStore.setState({ entries: [balanceRow('b1', 'Brokerage', 'investment', 100_00)] })
+    useSavingsStore.setState({ savingsGoals: [savingsRow('s1', 'Rainy day', null, 100_00)] })
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+    for (const label of [
+      'Monthly income',
+      'Total investments',
+      'Net worth',
+      'Total saved',
+      'Total target',
+      'Overall progress',
+    ]) {
+      const dd = totalFor(label)
+      const dt = dd.previousElementSibling as HTMLElement
+      expect(dt.tagName, label).toBe('DT')
+      expect(dt.className.split(/\s+/), label).toContain('shrink-[1000]')
+      expect(dd.className.split(/\s+/), label).toContain('text-right')
+      expect((dd.parentElement as HTMLElement).className.split(/\s+/), label).toContain('gap-4')
+    }
+  })
+
   it('a percent total renders unchanged, with no break (story 88.4)', () => {
     useCurrencyStore.setState({ mode: 'symbol', currency: 'EUR' })
     useSavingsStore.setState({

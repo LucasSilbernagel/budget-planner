@@ -292,15 +292,25 @@ function TotalRow({
   emphasis?: boolean
 }): React.ReactElement {
   return (
-    <div className="border-default flex items-baseline justify-between border-t py-2">
-      <dt className={emphasis ? 'text-sm font-semibold text-heading' : 'text-sm text-label'}>
+    // The label gives up width first and the value stays right-aligned once it
+    // wraps (D7, as `OutputRow` in RetirementAccumulationPlanner): with
+    // `GroupedAmount` the value can shrink too, so without this a total wrapped
+    // before its label did and its continuation line sat left (88.4 review).
+    <div className="border-default flex items-baseline justify-between gap-4 border-t py-2">
+      <dt
+        className={
+          emphasis
+            ? 'shrink-[1000] text-sm font-semibold text-heading'
+            : 'shrink-[1000] text-sm text-label'
+        }
+      >
         {label}
       </dt>
       <dd
         className={
           emphasis
-            ? 'text-base font-semibold tabular-nums text-heading'
-            : 'text-sm tabular-nums text-body'
+            ? 'text-right text-base font-semibold tabular-nums text-heading'
+            : 'text-right text-sm tabular-nums text-body'
         }
       >
         <GroupedAmount text={value} />

@@ -186,5 +186,11 @@ describe('the remaining headline figures break only between digit groups (story 
     const figure = (id: string) => screen.getByTestId(id).querySelector('dd > span') as HTMLElement
     expect(runsOf(figure('derived-current-saved'))).toEqual(['$11,', '111,', '111.11'])
     expect(runsOf(figure('derived-monthly-savings'))).toEqual(['$1,', '234,', '567.89'])
+    // The live region reads the WHOLE figure, not just the group that changed.
+    for (const id of ['derived-current-saved', 'derived-monthly-savings']) {
+      const dd = screen.getByTestId(id).querySelector('dd') as HTMLElement
+      expect(dd.getAttribute('aria-live'), id).toBe('polite')
+      expect(dd.getAttribute('aria-atomic'), id).toBe('true')
+    }
   })
 })

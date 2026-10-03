@@ -32,9 +32,14 @@
  * same no-break space also separates the `R` from the number, and a break there
  * would strand the symbol.
  *
- * ⚠️ Render it only inside the `hydrated` branch, as every caller does: the
- * locale comes from a persisted store, so the server and the first client
- * render could otherwise disagree on where the `<wbr>`s go.
+ * ⚠️ The server and the first client render must agree on where the `<wbr>`s
+ * go, and the locale comes from a persisted store. So render it either inside
+ * a `hydrated` branch, or where every store involved is `skipHydration` and
+ * rehydrates only in an effect: then both renders see the defaults (a
+ * separator-free `0.00`) and the real figure arrives as a later re-render.
+ * The story 88.4 callers outside a `hydrated` branch (Retirement's derived
+ * figures, forecasting `StatCard`/`SummaryCard`, report `TotalRow`) rely on the
+ * second rule; each says so at its call site.
  */
 
 import { Fragment } from 'react'

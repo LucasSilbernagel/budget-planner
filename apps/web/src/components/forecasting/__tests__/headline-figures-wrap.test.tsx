@@ -83,8 +83,11 @@ beforeEach(() => {
   useProfileStore.setState({ activeProfileId: 'profile-test' })
 })
 
+const initialActiveProfileId = useProfileStore.getState().activeProfileId
+
 afterEach(() => {
   useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
+  useProfileStore.setState({ activeProfileId: initialActiveProfileId })
 })
 
 describe('forecasting headline figures break only between digit groups (story 88.4)', () => {

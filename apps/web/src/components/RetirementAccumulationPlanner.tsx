@@ -1137,8 +1137,10 @@ function RetirementAccumulationPlannerInner() {
       <dt className="text-sm text-muted">{label}</dt>
       {/* These values change on their own when the Balance/Income/Expenses stores
           update, with no action from the user — announce it rather than mutating
-          silently under a screen reader. */}
-      <dd className="mt-1" aria-live="polite">
+          silently under a screen reader. `aria-atomic`: the figure is split into
+          one text node per digit group, so without it only the CHANGED group
+          would be read out (`600.00` instead of the whole amount; 88.4 review). */}
+      <dd className="mt-1" aria-live="polite" aria-atomic="true">
         {/* A `GroupedAmount` (story 88.4, FR142): it fits every measured
             width today (211 px of 224 at 320 under CI's font), but a bigger
             balance must break after a group separator, not overflow. ⚠️ Not
