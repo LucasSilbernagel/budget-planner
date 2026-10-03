@@ -140,6 +140,15 @@ describe('checkDevSeamsAbsent (story 87.1, AC 4)', () => {
     })
   })
 
+  // Story 92.1: the session seed moved here from an inline grep in `ci.yml`, so
+  // this list is now the ONLY build check for it, in CI and in `pnpm gates`.
+  it('the real seam list names the session seed, in getSessionSeed (story 92.1)', () => {
+    expect(DEV_ONLY_SEAMS).toContainEqual({
+      marker: 'E2E_SESSION_SEED',
+      source: 'src/server/api/auth/session-seed.ts',
+    })
+  })
+
   it('passes a build where neither client nor server carries the marker', () => {
     const root = dist({ ...SERVER, ...CLEAN_CLIENT })
     expect(checkDevSeamsAbsent(root, app(), [SEAM])).toEqual({ ok: true, problems: [] })

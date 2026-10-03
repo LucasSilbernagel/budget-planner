@@ -45,94 +45,6 @@ export interface UpdateProfileInput extends Partial<CreateProfileInput> {
 }
 
 /**
- * Create a new profile for the current user
- */
-export async function createProfile(
-  request: Request,
-  input: CreateProfileInput
-): Promise<ApiResult<UserProfile>> {
-  try {
-    // Extract userId from authenticated session
-    const sessionResult = await getCurrentUserSession(request)
-
-    if (!sessionResult.success || !sessionResult.data) {
-      return {
-        success: false,
-        error: sessionResult.error || 'Authentication required',
-      }
-    }
-
-    // Premium tier boundary (Story 13-3, AC-2): custom profiles is a Premium
-    // feature, so a status without premium features (`hasPremiumFeatures`: only
-    // active and lifetime pass — past_due does not) is denied at the server boundary —
-    // mirroring forecastingProfiles.ts — not merely hidden in the UI.
-    if (!hasPremiumFeatures(sessionResult.data.subscriptionStatus)) {
-      return {
-        success: false,
-        error: 'Premium feature: Please upgrade to manage custom profiles',
-      }
-    }
-
-    const userId = sessionResult.data.userId
-
-    // Validate input
-    if (!input.name || typeof input.name !== 'string') {
-      return {
-        success: false,
-        error: 'Profile name is required',
-      }
-    }
-
-    if (input.name.length > 255) {
-      return {
-        success: false,
-        error: 'Profile name must be 255 characters or less',
-      }
-    }
-
-    // Check if user exists
-    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1)
-
-    if (!user) {
-      return {
-        success: false,
-        error: 'User not found',
-      }
-    }
-
-    // Check if this would be the user's first profile
-    const existingProfiles = await db
-      .select()
-      .from(userProfiles)
-      .where(eq(userProfiles.userId, userId))
-
-    // Create the profile
-    const isDefault = existingProfiles.length === 0
-
-    const [newProfile] = await db
-      .insert(userProfiles)
-      .values({
-        userId: user.id,
-        name: input.name,
-        description: input.description,
-        currency: input.currency || user.currency || 'NONE',
-        isDefault,
-      } as NewUserProfile)
-      .returning()
-
-    return {
-      success: true,
-      data: newProfile,
-    }
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to create profile',
-    }
-  }
-}
-
-/**
  * Get the live profiles of `userId`, oldest first.
  *
  * ⚠️ A USER-SCOPED CORE since story 83.1 (FR136): the caller has authenticated
@@ -528,66 +440,15 @@ export async function deleteProfile(request: Request, profileId: string): Promis
     // The detail goes to the server log; the caller gets a fixed string.
     //
     // ⚠️ SCOPE: only this function's passthrough is closed. The same shape sits in
-    // five sibling functions in this file (`createProfile`, `getProfile`,
-    // `updateProfile`, `setDefaultProfile`, `createDefaultProfileForUser`) and is
-    // NOT this story's to fix — recorded so the next reader knows it was seen, not
+    // the sibling functions in this file (`getProfile`, `updateProfile`,
+    // `createDefaultProfileForUser`; `createProfile` and `setDefaultProfile` had it
+    // too until story 92.1 deleted them) and is NOT this story's to fix — recorded so the next reader knows it was seen, not
     // missed. (`getProfiles` still returns the driver text, but since story 83.1 its
     // only caller, `routes/api/profiles.ts`, logs it and answers a fixed message.)
     logger.error('Profile deletion failed', { profileId, error })
     return {
       success: false,
       error: 'Failed to delete profile',
-    }
-  }
-}
-
-/**
- * Set a profile as the default
- */
-export async function setDefaultProfile(
-  request: Request,
-  profileId: string
-): Promise<ApiResult<void>> {
-  try {
-    // Extract userId from authenticated session
-    const sessionResult = await getCurrentUserSession(request)
-
-    if (!sessionResult.success || !sessionResult.data) {
-      return {
-        success: false,
-        error: sessionResult.error || 'Authentication required',
-      }
-    }
-
-    // Premium tier boundary (Story 13-3, AC-2): custom profiles is a Premium
-    // feature, so a status without premium features (`hasPremiumFeatures`: only
-    // active and lifetime pass — past_due does not) is denied at the server boundary —
-    // mirroring forecastingProfiles.ts — not merely hidden in the UI.
-    if (!hasPremiumFeatures(sessionResult.data.subscriptionStatus)) {
-      return {
-        success: false,
-        error: 'Premium feature: Please upgrade to manage custom profiles',
-      }
-    }
-
-    const userId = sessionResult.data.userId
-
-    // First, unset default flag from all profiles
-    await db.update(userProfiles).set({ isDefault: false }).where(eq(userProfiles.userId, userId))
-
-    // Then set the specified profile as default
-    await db
-      .update(userProfiles)
-      .set({ isDefault: true })
-      .where(and(eq(userProfiles.id, profileId), eq(userProfiles.userId, userId)))
-
-    return {
-      success: true,
-    }
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to set default profile',
     }
   }
 }
@@ -617,9 +478,9 @@ export async function setDefaultProfile(
  * creates, which take the same lock; before it, the repair could read "no
  * default", lose the seat to this insert and 23505 after its batch committed.
  * Every live-path writer of the seat is now locked, so the conflict below is no
- * longer reachable from them; `onConflictDoNothing` and the read-back stay for
- * `createProfile`/`setDefaultProfile` in this file (no production importer,
- * unlocked).
+ * longer reachable from them. `onConflictDoNothing` and the read-back stay as
+ * defence in depth: the unlocked writers they also guarded, `createProfile` and
+ * `setDefaultProfile` (no production importer), were deleted by story 92.1.
  *
  * The first SELECT is a lock-free, READ-ONLY fast path (decision D2): this runs
  * on every pull, and a lock there would make every pull conflict with the

@@ -3,8 +3,8 @@
 //   pnpm --filter web build && node apps/web/scripts/check-client-bundle.mjs
 //
 // Exits 1 when any file in `dist/client` carries a server-only marker, when any
-// file in `dist/` (client OR server) carries a dev-only seam (story 87.1, AC 4:
-// the e2e mail outbox), or when a positive control fails. The logic and its
+// file in `dist/` (client OR server) carries a dev-only seam (`DEV_ONLY_SEAMS`:
+// the e2e mail outbox, story 87.1 AC 4; the e2e session seed, story 92.1), or when a positive control fails. The logic and its
 // rationale live in `client-bundle-guard-lib.mjs`. An optional argument names
 // another dist root.
 

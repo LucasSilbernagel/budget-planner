@@ -35,10 +35,12 @@
  *     production runtime never even reads the variable.
  *
  * ⚠️ This file asserts the SOURCE SHAPE. It cannot, on its own, prove what a
- * production bundle contains. That was verified once by measurement — building
- * `apps/web` and grepping `dist/` for `E2E_SESSION_SEED` — and the result is
- * recorded in story 58.1's Dev Agent Record. Re-run that grep if this gate is
- * ever restructured; a source-shape assertion is a tripwire, not a proof.
+ * production bundle contains. The BUILD check is `DEV_ONLY_SEAMS` in
+ * `scripts/client-bundle-guard-lib.mjs` (story 92.1; until then an inline grep
+ * in `ci.yml`, story 58.1 AC-9): `check-client-bundle.mjs` fails when any file in
+ * `dist/client` or `dist/server` contains `E2E_SESSION_SEED`, on every PR in CI
+ * and in `pnpm gates`' bundle step. A source-shape assertion is a tripwire, not
+ * a proof; that build scan is the proof.
  *
  * ⚠️ The seam grants a SEED ONLY. It never mints a signed cookie, never creates a
  * DB user, and never makes a server-side request authenticated. A premium PAGE
