@@ -13,6 +13,8 @@ import { ProjectionChart } from '../projection-chart'
 
 vi.mock('../../../stores/currencyStore', () => ({
   useFormattedAmount: () => (cents: number) => (cents / 100).toFixed(2),
+  // The summary cards' `GroupedAmount` (story 88.4) reads the separator from here.
+  useCurrencyPreferences: () => ({ mode: 'none', currency: 'NONE', locale: 'en-US' }),
 }))
 
 vi.mock('../../../lib/chartTheme', () => ({

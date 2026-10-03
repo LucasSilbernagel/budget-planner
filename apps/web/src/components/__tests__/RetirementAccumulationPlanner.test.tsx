@@ -237,6 +237,34 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
   })
 
   /**
+   * Story 88.4 (D7, the 88.2 review's "variant B"): the label gives up width
+   * first (`shrink-[1000]`) and the value is right-aligned (`text-right`), so a
+   * wrapped value takes fewer lines and its lines share a right edge. jsdom
+   * loads no Tailwind: this pins the class TOKENS on both sides of the row; the
+   * layout itself is the `retirement-320-light` screenshot's job.
+   */
+  it('every outlook row lets the label shrink first and right-aligns the value (story 88.4, D7)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    await fillReachableCase(user)
+
+    const rows = [...screen.getByTestId('accumulation-outputs').querySelectorAll('dl dd')].map(
+      (dd) => dd.parentElement as HTMLElement
+    )
+    expect(rows).toHaveLength(8)
+    for (const row of rows) {
+      const dt = row.querySelector('dt') as HTMLElement
+      const dd = row.querySelector('dd') as HTMLElement
+      expect(row.className.split(/\s+/)).toEqual(
+        expect.arrayContaining(['flex', 'justify-between'])
+      )
+      expect(dt.className.split(/\s+/), dt.textContent ?? '').toContain('shrink-[1000]')
+      expect(dd.className.split(/\s+/), dt.textContent ?? '').toContain('text-right')
+    }
+  })
+
+  /**
    * Code review of 88.2: in EUR (de-DE) the group separator is `.`, so a plain
    * `toFixed(1)` years value (`0.0`) would get a `<wbr>` at its DECIMAL point if
    * it went through `GroupedAmount`. Only the money rows may carry breaks, and

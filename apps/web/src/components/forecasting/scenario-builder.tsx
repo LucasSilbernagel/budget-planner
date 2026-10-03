@@ -37,6 +37,7 @@ import { useCurrencyPreferences, useFormattedAmount } from '../../stores/currenc
 import { useExpenses } from '../../stores/expenseStore'
 import { useIncomeSources } from '../../stores/incomeStore'
 import { useTotalSavings } from '../../stores/savingsStore'
+import { GroupedAmount } from '../ui/GroupedAmount'
 
 // ============================================================================
 // Constants
@@ -1955,6 +1956,13 @@ function OneTimeEventRow({
 
 /**
  * Stat Card Component
+ *
+ * `value` is a `formatCurrency` string and renders as a `GroupedAmount` (story
+ * 88.4, FR142, D1): in the four-column grid under CI's font the seed's
+ * `$310,100,483.69` (171 px at `text-lg` semibold) overran its card by 63 px
+ * at 768 and 3 px at 1024, so it may break after a group separator and
+ * nowhere else. Before the first forecast computes, every card shows `$0.00`
+ * (no separator), so server and first client render agree.
  */
 interface StatCardProps {
   label: string
@@ -1975,7 +1983,7 @@ function StatCard({ label, value, highlight }: StatCardProps): React.ReactElemen
           highlight ? 'text-blue-600 dark:text-blue-400' : 'text-gray-800 dark:text-gray-100'
         }`}
       >
-        {value}
+        <GroupedAmount text={value} />
       </dd>
     </div>
   )

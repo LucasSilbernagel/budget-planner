@@ -60,6 +60,10 @@ const PAGE_SHOTS: Shot[] = [
   { name: 'retirement-320-light', path: '/retirement', width: 320, charts: 1 },
   { name: 'retirement-1280-dark', path: '/retirement', width: 1280, dark: true, charts: 1 },
   { name: 'settings-320-light', path: '/settings', width: 320, charts: 0 },
+  // Story 88.4 (D3): the only width where /savings' `text-3xl` Total Savings
+  // figure overran its card (264 px vs 240 under CI's font) before it became a
+  // `GroupedAmount`. /savings draws no Recharts chart (none in `SavingsPage`).
+  { name: 'savings-320-light', path: '/savings', width: 320, charts: 0 },
 ]
 
 async function open(

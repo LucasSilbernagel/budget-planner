@@ -1172,3 +1172,64 @@ describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', (
     expect(screen.queryByRole('combobox', { name: /show the budget per/i })).not.toBeInTheDocument()
   })
 })
+
+/**
+ * Story 88.4 (FR142, decision D2): every section total renders through
+ * `GroupedAmount`, so a money total can break only straight after a group
+ * separator. The percent and the dash have no separator and render unchanged.
+ *
+ * ⚠️ jsdom computes no layout: this pins the WIRING, never "it fits". The
+ * Chromium measurement under CI's font is in the 88.4 Dev Agent Record.
+ */
+describe('section totals break only between digit groups (story 88.4)', () => {
+  /** The text runs between `<wbr>`s; a plain string comes back as ONE run. */
+  function runsOf(el: Element): string[] {
+    const out = ['']
+    for (const node of Array.from(el.childNodes)) {
+      if (node.nodeName === 'WBR') out.push('')
+      else out[out.length - 1] += node.textContent ?? ''
+    }
+    return out
+  }
+
+  afterEach(() => {
+    useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
+    useIncomeStore.setState({ incomeSources: [] })
+    useBalanceStore.setState({ entries: [] })
+    useSavingsStore.setState({ savingsGoals: [] })
+  })
+
+  it('money totals carry a break after each group separator; percent and dash do not', () => {
+    useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
+    useIncomeStore.setState({
+      incomeSources: [incomeRow('i1', 'Salary', 1_280_246_790, 'monthly')],
+    })
+    useBalanceStore.setState({
+      entries: [balanceRow('b1', 'Brokerage', 'investment', 1_234_567_890)],
+    })
+    // No target: "Total target" is the dash, "Overall progress" the dash too.
+    useSavingsStore.setState({ savingsGoals: [savingsRow('s1', 'Rainy day', null, 1_322_222_190)] })
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    expect(runsOf(totalFor('Monthly income'))).toEqual(['$12,', '802,', '467.90'])
+    expect(runsOf(totalFor('Total investments'))).toEqual(['$12,', '345,', '678.90'])
+    // 12,345,678.90 + 13,222,221.90
+    expect(runsOf(totalFor('Net worth'))).toEqual(['$25,', '567,', '900.80'])
+    expect(runsOf(totalFor('Total saved'))).toEqual(['$13,', '222,', '221.90'])
+    expect(runsOf(totalFor('Total target'))).toEqual(['—'])
+    expect(runsOf(totalFor('Overall progress'))).toEqual(['—'])
+  })
+
+  it('a percent total renders unchanged, with no break (story 88.4)', () => {
+    useCurrencyStore.setState({ mode: 'symbol', currency: 'EUR' })
+    useSavingsStore.setState({
+      savingsGoals: [savingsRow('s1', 'Roof', 4_000_000_00, 1_000_000_00)],
+    })
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    expect(runsOf(totalFor('Overall progress'))).toEqual(['25%'])
+    // EUR (de-DE): the group separator is ".", and the break follows it.
+    // (de-DE puts a NO-BREAK space before the symbol.)
+    expect(runsOf(totalFor('Total saved'))).toEqual(['1.', '000.', '000,00\u00a0€'])
+  })
+})
