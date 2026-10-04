@@ -34,12 +34,14 @@ names, address lines, postal codes or IPs in these payloads (`include_sensitive_
 | 04-transaction.completed-lifetime-B.json | transaction.completed | 21:12:02.220237Z | notification | ntf_01m44c4vwz8t1xy8kffmkmgpjf | |
 | 05-transaction.paid-annual-S.json | transaction.paid | 21:12:17.408167Z | notification | ntf_01m44c5am6p37j6bhvnnbxq57m | `subscription_id` null on `.paid` |
 | 06-subscription.created-annual-S.json | subscription.created | 21:12:17.838253Z | notification | ntf_01m44c5b4msnn468zsdnab9zh2 | sub_01m44c5aghs7tzh0fw6egh1zze |
+| 06a-subscription.activated-annual-S.json | subscription.activated | 21:12:17.838253Z | notification | ntf_01m44c5b5b7tdx930471pvcjr5 | `status: active`; same `occurred_at` as 06. Added after review (D1), read-only capture 2026-10-04 |
 | 07-transaction.completed-annual-S.json | transaction.completed | 21:12:18.757841Z | notification | ntf_01m44c5byc4enx284z9cbw1saw | |
 | 08-adjustment.created-full-refund-A.json | adjustment.created | 21:12:44.959458Z | notification | ntf_01m44c65n7sv1b78e8qjzs1hec | `status: pending_approval` |
 | 09-adjustment.created-partial-refund-B.json | adjustment.created | 21:12:45.142730Z | notification | ntf_01m44c65nmdnrwqtjtb2yqcn59 | `pending_approval`, total 1000 |
 | 10-adjustment.created-refund-annual-S.json | adjustment.created | 21:12:45.327478Z | notification | ntf_01m44c65xrpasyhgy3rjmbkpz1 | `pending_approval`, total 500 |
 | 11-customer.updated-S.json | customer.updated | 21:12:55.384350Z | notification | ntf_01m44c6fn43s265newcd420z3a | new email |
 | 12-subscription.canceled-annual-S.json | subscription.canceled | 21:17:40.267777Z | notification | ntf_01m44cf5ya30j6chska7hdxd4r | real immediate cancel |
+| 12a-subscription.updated-canceled-annual-S.json | subscription.updated | 21:17:40.267777Z | notification | ntf_01m44cf5z9fjr6qkfadbgqh21q | `status: canceled`; same `occurred_at` as 12. Added after review (D1) |
 | 13-subscription.updated-active-annual-S.sim.json | subscription.updated | 21:19:23.103567Z | simulation | ntfsimevt_01m44cj9yzj22q52aevabvsx2d | see "Simulation fixtures" |
 | 14-subscription.past_due-annual-S.sim.json | subscription.past_due | 21:19:23.157722Z | simulation | ntfsimevt_01m44cja0nydcn7ew9y8nvp4cf | see "Simulation fixtures" |
 | 15-adjustment.updated-full-refund-A.json | adjustment.updated | 21:20:01.498741Z | notification | ntf_01m44ckg0phsgy2715gbqx0cxj | `status: approved` |
@@ -60,12 +62,14 @@ All dated 2026-10-04 (capture date 2026-10-04).
 | 04-transaction.completed-lifetime-B.json | `evt_01m44c4vdcnn8edmg2nxj8gmw6` |
 | 05-transaction.paid-annual-S.json | `evt_01m44c5a80tnx53q5khcc8zbbe` |
 | 06-subscription.created-annual-S.json | `evt_01m44c5anesvky0beemvhpskzm` |
+| 06a-subscription.activated-annual-S.json | `evt_01m44c5aneg7ydb6xhf97668nn` |
 | 07-transaction.completed-annual-S.json | `evt_01m44c5bj5wehqygrfhxfsnppf` |
 | 08-adjustment.created-full-refund-A.json | `evt_01m44c654zeb56emdsensa2fx3` |
 | 09-adjustment.created-partial-refund-B.json | `evt_01m44c65ap7qgx7qammn1spmcq` |
 | 10-adjustment.created-refund-annual-S.json | `evt_01m44c65gfrne9yvka0xnp7kqk` |
 | 11-customer.updated-S.json | `evt_01m44c6farxgdajch6pxfnsb1k` |
 | 12-subscription.canceled-annual-S.json | `evt_01m44cf5hb99ypbrvk4tzkbhs7` |
+| 12a-subscription.updated-canceled-annual-S.json | `evt_01m44cf5hb5pq39td24pj0h3p2` |
 | 13-subscription.updated-active-annual-S.sim.json | `ntfsimevt_01m44cj9yzj22q52aevabvsx2d` |
 | 14-subscription.past_due-annual-S.sim.json | `ntfsimevt_01m44cja0nydcn7ew9y8nvp4cf` |
 | 15-adjustment.updated-full-refund-A.json | `evt_01m44ckfet2dyhf74weepaj42f` |
@@ -98,7 +102,8 @@ Simulated events are timestamped at simulation time, so 13 (`active`) is LATER t
 - `rejected` refund — NOT CAPTURED as a real payload (sandbox approves every refund); covered by the DERIVED 90.
 
 Also captured in Paddle's log but not committed: `customer.created` ×3 (unhandled by the handler, 200
-"unhandled"), and the other simulation events. ⚠️ Corrected at the 94.1 code review: `subscription.activated`
-and the real `subscription.updated{canceled}` were also left out, and they are NOT unhandled — the handler
-maps every `subscription.*` event by `data.status`. They were simply not captured into the scratchpad, so the
-only `subscription.updated{active}` fixture is the simulated 13.
+"unhandled"), and the other simulation events. `subscription.activated` (06a) and the real
+`subscription.updated{canceled}` (12a) were missed in the first pass (the code review found it) and added by a
+READ-ONLY notification-log pass on 2026-10-04 (Lucas, review decision D1): same length + FNV-1a check as the
+others, no address in either, so their only change is pretty-printing. The only `subscription.updated{active}`
+fixture is still the simulated 13; 06a is Paddle's real `active` event for the same subscription.

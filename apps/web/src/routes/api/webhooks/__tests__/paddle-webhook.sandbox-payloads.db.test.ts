@@ -205,12 +205,14 @@ const F = {
   completedB: '04-transaction.completed-lifetime-B.json',
   paidS: '05-transaction.paid-annual-S.json',
   subCreatedS: '06-subscription.created-annual-S.json',
+  subActivatedS: '06a-subscription.activated-annual-S.json',
   completedS: '07-transaction.completed-annual-S.json',
   adjCreatedA: '08-adjustment.created-full-refund-A.json',
   adjCreatedB: '09-adjustment.created-partial-refund-B.json',
   adjCreatedS: '10-adjustment.created-refund-annual-S.json',
   customerUpdatedS: '11-customer.updated-S.json',
   subCanceledS: '12-subscription.canceled-annual-S.json',
+  subUpdatedCanceledS: '12a-subscription.updated-canceled-annual-S.json',
   subUpdatedActiveS: '13-subscription.updated-active-annual-S.sim.json',
   subPastDueS: '14-subscription.past_due-annual-S.sim.json',
   adjUpdatedA: '15-adjustment.updated-full-refund-A.json',
@@ -425,6 +427,29 @@ describe('AC 4 — Paddle sandbox payloads through the real handler, outcomes re
     expect(row.accessEndedAt).toBe(occurredMs(F.subCanceledS))
   })
 
+  it('subscription.activated (real) for a first-seen buyer: active, yearly, email from the REAL lookup', async () => {
+    // Review decision D1: Paddle sends `.activated` alongside `.created`, with the
+    // same `occurred_at`. Either alone must grant (whichever lands first).
+    realLookup()
+    await expectOk(F.subActivatedS)
+    const [row] = await readUser(CTM_S)
+    expect(row.subscriptionStatus).toBe('active')
+    expect(row.billingInterval).toBe('year')
+    expect(row.email).toBe('bp-94-1-s-new@example.test')
+    expect(row.entitlementUpdatedAt).toBe(occurredMs(F.subActivatedS))
+  })
+
+  it('the real subscription.updated{canceled} after subscription.created: canceled, accessEndedAt set', async () => {
+    // Review decision D1: the real `.updated` that accompanies the real cancel
+    // (runbook §3 step 1). Delivered WITHOUT its `.canceled` twin.
+    realLookup()
+    await expectOk(F.subCreatedS)
+    await expectOk(F.subUpdatedCanceledS)
+    const [row] = await readUser(CTM_S)
+    expect(row.subscriptionStatus).toBe('canceled')
+    expect(row.accessEndedAt).toBe(occurredMs(F.subUpdatedCanceledS))
+  })
+
   it('every subscription fixture against a LIFETIME row leaves it lifetime', async () => {
     await db.insert(users).values({
       email: 'bp-94-1-s-new@example.test',
@@ -434,7 +459,14 @@ describe('AC 4 — Paddle sandbox payloads through the real handler, outcomes re
       lifetimeGrantTotal: 11187,
       entitlementUpdatedAt: 1,
     } as never)
-    for (const name of [F.subCreatedS, F.subUpdatedActiveS, F.subPastDueS, F.subCanceledS]) {
+    for (const name of [
+      F.subCreatedS,
+      F.subActivatedS,
+      F.subUpdatedActiveS,
+      F.subPastDueS,
+      F.subCanceledS,
+      F.subUpdatedCanceledS,
+    ]) {
       await expectOk(name)
       expect((await readUser(CTM_S))[0].subscriptionStatus, name).toBe('lifetime')
     }
