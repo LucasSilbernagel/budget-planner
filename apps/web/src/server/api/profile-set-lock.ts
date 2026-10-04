@@ -72,7 +72,10 @@ export type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0]
  * the same 9, and 80.2 adds two (the sync profile create in `sync.ts`,
  * `createDefaultProfileForUser` in `profiles.ts`), 11 in all, both taking this
  * lock first. A point-in-time measurement: a new transaction must be checked
- * against this table.
+ * against this table. Story 93.1 deleted `profiles.ts:deleteProfile` (no
+ * production caller); re-grepped 2026-10-04 at `59b06e8` + 93.1: 10 sites
+ * (five in `sync.ts`, `paddle.ts`, `sweep.ts`, `account.ts`,
+ * `profiles.ts:createDefaultProfileForUser`, `forecastingProfiles.ts`).
  *
  * | Contender | Its first lock | Conflicts with ours? | Why no cycle |
  * |---|---|---|---|
@@ -82,7 +85,7 @@ export type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0]
  * | `checkRateLimit` upsert | one `rateLimits` row, autocommit | no shared row | It commits before any op transaction in `processBatchSync` opens. |
  * | Paddle webhook (`routes/api/webhooks/paddle.ts`, `runGuarded`) | the event-claim row, then `users` rows | yes, on `users` | It touches NO `userProfiles` or child rows inside its transaction (`ensureDefaultProfile` runs after it commits), so it never holds a lock we wait for after our first statement. |
  * | Autocommit `users` updates (`auth/paddle.ts`, `retention/sweep.ts` notices) | one `users` row, one statement | yes | Single-statement: they hold nothing while waiting. |
- * | `server/functions/profiles.ts:deleteProfile` | child rows, then `userProfiles` | not on the live path | ZERO production callers (story 63.2). It takes no `users` lock and orders children differently; if it is ever wired up it must take this lock first. |
+ * | ~~`server/functions/profiles.ts:deleteProfile`~~ | (deleted) | (deleted) | DELETED by story 93.1 (it had zero production callers, story 63.2). The live deletion path is the store -> the sync push (`deleteProfileWithChildren` above). A new non-sync deletion path must take this lock first. |
  * | Forecast save (`server/functions/forecastingProfiles.ts`, `createForecastingProfile`, story 80.1) | `users` `FOR SHARE` (this lock) | with the writers above | Same first row as every writer, then a `userProfiles` read, then `forecastingProfiles` rows. The cascade hard-deletes those same `forecastingProfiles` rows only after taking `NO KEY UPDATE` on `users`, so the two serialize on the first row before either touches a forecast. ⚠️ Two saves do NOT serialize: `FOR SHARE` does not conflict with itself, so two concurrent DEFAULT saves of one profile can both commit as default (each demotion's snapshot misses the other's insert; there is no partial unique index on `isDefault`). No deadlock, but not exclusive either: recorded in `deferred-work.md` (code review of 80-1). |
  * | Default-profile provisioning (`server/functions/profiles.ts`, `createDefaultProfileForUser`, story 80.2; the pull backfill `routes/api/sync/changes.ts` and the webhook's `ensureDefaultProfile`) | `users` `NO KEY UPDATE` (this lock), only on the slow path | yes, like every writer | Same first row, then a `userProfiles` read, a `users` currency read and one `userProfiles` insert; no child row. The webhook calls it AFTER its own transaction commits, never inside it, so it never holds the event-claim row or a `users` row while waiting here. The lock-free fast path is one autocommit SELECT and holds nothing. |
  * | Sync profile create (`sync.ts`, `createUserProfile`, story 80.2) | `users` `NO KEY UPDATE` (this lock) | yes, like every writer | The same first lock as the other sync writers, then `userProfiles` reads and one insert; no child row is touched before or after. |

@@ -21,6 +21,12 @@ import { useCurrencyStore } from '../../../stores/currencyStore'
 import { useExpenseStore } from '../../../stores/expenseStore'
 import { useIncomeStore } from '../../../stores/incomeStore'
 import { useSavingsStore } from '../../../stores/savingsStore'
+import {
+  restoreRegionWidths,
+  setRegionFits,
+  setRegionOverflows,
+  stubRegionWidths,
+} from '../../../test/region-widths'
 import { RESPONSIVE_SCROLL_SHADOW_CLASS, RESPONSIVE_WRAPPER_CLASS } from '../../ui/ResponsiveTable'
 import { FinancialSummaryReport } from '../FinancialSummaryReport'
 
@@ -1273,6 +1279,10 @@ describe('section totals break only between digit groups (story 88.4)', () => {
  * structure). The geometry is pinned by the `report-*` CI screenshots.
  */
 describe('the report fits the screen and keeps its columns in print (story 91.2)', () => {
+  afterEach(() => {
+    restoreRegionWidths()
+  })
+
   /** Every table kind: Income, Expenses, Investments, Assets, Debts, Savings. */
   function seedEveryTable(): void {
     seedTypicalData()
@@ -1292,6 +1302,11 @@ describe('the report fits the screen and keeps its columns in print (story 91.2)
 
   it('wraps each of the six tables in its own signposted, keyboard-reachable scroll region', () => {
     seedEveryTable()
+    // Story 93.1 (FR149): a region is a Tab stop only while it scrolls. jsdom
+    // reports every width as 0 ("fits"), so stub the widths: here every table
+    // scrolls, as on a phone; the next case is the desktop, where none does.
+    stubRegionWidths()
+    setRegionOverflows()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
     const regions = regionsOf()
@@ -1321,6 +1336,21 @@ describe('the report fits the screen and keeps its columns in print (story 91.2)
       expect(tokensOf(region.querySelector('table') as HTMLElement), caption).not.toContain('mt-3')
     }
     expect(labels.size, 'every region has a distinct name').toBe(6)
+  })
+
+  it('a table that fits is not a Tab stop, but keeps its region role and name (93.1)', () => {
+    seedEveryTable()
+    stubRegionWidths()
+    setRegionFits()
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+    const regions = regionsOf()
+    expect(regions).toHaveLength(6)
+    for (const region of regions) {
+      const caption = region.querySelector('caption')?.textContent ?? '(no caption)'
+      expect(region.hasAttribute('tabindex'), caption).toBe(false)
+      expect(region, caption).toHaveAttribute('role', 'region')
+      expect(region.getAttribute('aria-label') ?? '', caption).toMatch(/\S/)
+    }
   })
 
   it('the regions never clip or paint in print: overflow visible, no background', () => {

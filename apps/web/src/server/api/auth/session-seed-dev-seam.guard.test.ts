@@ -96,10 +96,15 @@ describe('getSessionSeed dev-only override (story 58.1, AC-9)', () => {
   it('never widens the gate to a runtime-only environment check', () => {
     const text = source()
 
-    // `NODE_ENV`/`MODE` comparisons are the tempting "equivalent" rewrite and are
-    // NOT equivalent: they are runtime strings, so the branch and its literal
-    // survive into the production bundle and a mis-set variable re-opens it.
-    // Only the build-time-replaced flag gets the branch deleted.
+    // `NODE_ENV`/`MODE` comparisons are the tempting "equivalent" rewrite. They
+    // are not guaranteed equivalent, though one form happens to be today: story
+    // 92.1 MEASURED a dot-form `process.env.NODE_ENV !== 'production'` gate
+    // eliminated from the production SSR build as well (why is REASONED: the
+    // build evidently inlines that form); the bracket form was NOT measured.
+    // `import.meta.env.DEV` is the only gate whose elimination is Vite's
+    // documented contract. A NODE_ENV comparison relies on the build inlining
+    // that exact spelling and, where it does not, on the runtime variable being
+    // set right; a mis-set variable would re-open the seam. Hence the policy.
     //
     // ⚠️ Matches ANY NODE_ENV comparison, not just `=== 'production'`. The first
     // version of this guard pinned the production literal alone, so the obvious

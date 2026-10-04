@@ -4,9 +4,9 @@
  *
  * ⚠️⚠️ THIS IS THE LAYER THAT MATTERS, and the story had to measure its way to
  * that. The epic specified this change as a SERVER change, but
- * `server/functions/profiles.ts:deleteProfile` has ZERO production callers — the
- * import grep over `functions/profiles'` returns only `getProfiles` and
- * `createDefaultProfileForUser`. A user's deletion travels
+ * `server/functions/profiles.ts:deleteProfile` had ZERO production callers — the
+ * import grep over `functions/profiles'` returned only `getProfiles` and
+ * `createDefaultProfileForUser` — and story 93.1 deleted it. A user's deletion travels
  * `profile-list.tsx` -> `useProfileManager().deleteProfile` -> THIS STORE ->
  * `syncEntityDelete` -> the sync push, whose handler enforces no guards at all.
  * So `removeProfile` is where the default guard actually lived and where it is

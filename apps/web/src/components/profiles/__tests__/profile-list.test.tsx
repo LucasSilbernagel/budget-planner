@@ -673,8 +673,8 @@ describe('ProfileList card metadata removal (story 54.5)', () => {
  * deletable once another profile exists.
  *
  * ⚠️⚠️ WHERE DELETION IS ACTUALLY ENFORCED, because the epic says otherwise.
- * `server/functions/profiles.ts:deleteProfile` has ZERO production callers — the
- * live path is this component -> `useProfileManager().deleteProfile` ->
+ * `server/functions/profiles.ts:deleteProfile` had ZERO production callers and
+ * was deleted by story 93.1 — the live path is this component -> `useProfileManager().deleteProfile` ->
  * `profileStore.removeProfile` -> `syncEntityDelete` -> the sync push. The store
  * is where the default guard lived and where it is lifted; the store-level
  * consequences (promotion, tombstone ordering) are proven in

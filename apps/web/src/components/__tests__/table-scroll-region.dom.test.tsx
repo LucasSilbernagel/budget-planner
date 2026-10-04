@@ -1,3 +1,9 @@
+import {
+  restoreRegionWidths,
+  setRegionFits,
+  setRegionOverflows,
+  stubRegionWidths,
+} from '@/test/region-widths'
 import { renderWithProviders, screen } from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
@@ -24,9 +30,17 @@ import { RESPONSIVE_SCROLL_SHADOW_CLASS, RESPONSIVE_WRAPPER_CLASS } from '../ui/
  *
  * ⚠️ Structural only. jsdom computes no layout and applies no media queries, so
  * nothing here proves the shadow is painted, that it hides on a table that
- * fits, or that arrow keys scroll anything. Those are geometry and behaviour
- * claims and `e2e/table-scroll-affordance.spec.ts` makes them against real
- * pixels. Read a case below as "this page declares what the AC needs".
+ * fits, or that arrow keys scroll anything. Those were geometry and behaviour
+ * claims of `e2e/table-scroll-affordance.spec.ts`, which stories 84.2/84.5
+ * (FR137) retired; layout is now held by the CI screenshots. Read a case below
+ * as "this page declares what the AC needs".
+ *
+ * Story 93.1 (FR149): the region is a Tab stop ONLY while it scrolls, so its
+ * `tabindex` follows the region's widths, which jsdom reports as 0 ("fits").
+ * The focusability case stubs them (`@/test/region-widths`) and checks the
+ * rule both ways on every page; a hand-written always- or never-focusable
+ * wrapper fails one direction. The rule itself is pinned in
+ * `ui/__tests__/TableScrollRegion.test.tsx`.
  */
 
 const premiumTier = vi.hoisted(() => ({
@@ -78,6 +92,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  restoreRegionWidths()
   useIncomeStore.setState({ incomeSources: [] })
   useExpenseStore.setState({ expenses: [] })
   useCategoryStore.setState({ categories: [] })
@@ -97,24 +112,40 @@ const PAGES = [
 describe('table scroll region', () => {
   for (const page of PAGES) {
     describe(page.name, () => {
-      it('wraps EVERY table it renders in a named, focusable region (AC-5)', () => {
-        // ⚠️ Checks every table-bearing region, not `getAllByRole('region')[0]`.
-        // Taking only the first would let a page that grows a SECOND shared-layer
-        // table ship it with no tabindex, no label and no affordance — the exact
-        // "one tested and three assumed" hole this file exists to close.
-        const { container } = page.render()
-        const regions = [...container.querySelectorAll('div.overflow-x-auto')].filter((el) =>
-          el.querySelector('table')
-        )
-        expect(regions.length, `${page.name} renders no table scroll wrapper`).toBeGreaterThan(0)
-        for (const region of regions) {
-          expect(region.getAttribute('role'), `${page.name} wrapper is not a region`).toBe('region')
-          expect(region.getAttribute('tabindex'), `${page.name} wrapper is not focusable`).toBe('0')
-          // A region with no accessible name is announced as an unlabelled
-          // landmark — the "meaningless content" the AC forbids.
-          expect(region.getAttribute('aria-label')?.trim()).toBeTruthy()
-        }
-      })
+      for (const state of ['overflows', 'fits'] as const) {
+        it(`wraps EVERY table it renders in a named region, a Tab stop only while it scrolls (AC-5; 93.1): ${state}`, () => {
+          // ⚠️ Checks every table-bearing region, not `getAllByRole('region')[0]`.
+          // Taking only the first would let a page that grows a SECOND shared-layer
+          // table ship it with no tabindex, no label and no affordance — the exact
+          // "one tested and three assumed" hole this file exists to close.
+          stubRegionWidths()
+          if (state === 'overflows') setRegionOverflows()
+          else setRegionFits()
+          const { container } = page.render()
+          const regions = [...container.querySelectorAll('div.overflow-x-auto')].filter((el) =>
+            el.querySelector('table')
+          )
+          expect(regions.length, `${page.name} renders no table scroll wrapper`).toBeGreaterThan(0)
+          for (const region of regions) {
+            expect(region.getAttribute('role'), `${page.name} wrapper is not a region`).toBe(
+              'region'
+            )
+            if (state === 'overflows') {
+              expect(
+                region.getAttribute('tabindex'),
+                `${page.name} scrolls but is not focusable`
+              ).toBe('0')
+            } else {
+              expect(region.hasAttribute('tabindex'), `${page.name} fits but is a Tab stop`).toBe(
+                false
+              )
+            }
+            // A region with no accessible name is announced as an unlabelled
+            // landmark — the "meaningless content" the AC forbids.
+            expect(region.getAttribute('aria-label')?.trim()).toBeTruthy()
+          }
+        })
+      }
 
       it('declares the scroll affordance alongside the wrapper class (AC-1, AC-7)', () => {
         page.render()

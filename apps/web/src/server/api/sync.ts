@@ -1419,9 +1419,10 @@ async function applyOperation(operation: SyncOperation): Promise<OperationResult
           // ⚠️⚠️ THE LAST-PROFILE RULE, ON THE LIVE PATH (story 66.3, AC-3).
           //
           // Both pre-existing guards are OFF this path: `stores/profileStore.ts`
-          // is the client and is bypassable, and
-          // `server/functions/profiles.ts:deleteProfile` has zero production
-          // callers. So until this check, a hand-crafted or REPLAYED push could
+          // is the client and is bypassable, and the server function
+          // `deleteProfile` (which had zero production callers) was deleted by
+          // story 93.1; the live deletion path is the store -> this sync push.
+          // So until this check, a hand-crafted or REPLAYED push could
           // tombstone a user's last profile — leaving an account with nowhere to
           // put data and `reconcileActiveProfile` early-returning on an empty
           // profile list (`lib/sync/applyServerChanges.ts:316-319`), which

@@ -1,4 +1,8 @@
 # generated: 2026-06-18
+# last_updated: 2026-10-04k (**93.1 CODE REVIEW -> done**: 7 patches `2aabd14`, 0 decisions; gates green; CI screenshot compare 25/25.)
+# last_updated: 2026-10-04j (**93.1 DEV DONE -> review**: D3 option B applied; gates green.)
+# last_updated: 2026-10-04i (**correct-course**: epic 94 / 94.1 + 94.2 added as backlog; SCP 2026-10-04 approved.)
+# last_updated: 2026-10-04h (**BATCH 19 planned**: epic 93 / 1 story (93.1) added as backlog; baseline_commit reset to `bd12647`.)
 # last_updated: 2026-10-04g (**91.3 + EPIC 91 DONE; BATCH 18 COMPLETE**: PR #34 merged `4f9a632`, deploy 37222479830 green.)
 # last_updated: 2026-10-04f (**91.3 CODE-REVIEWED, APPROVED**; done after merge.)
 # last_updated: 2026-10-04e (**91.3 DEV DONE -> review**: `67dd13e` + baseline `9c8b057`, compare 25/25.)
@@ -634,7 +638,7 @@
 
 generated: 2026-06-18
 last_updated: 2026-10-03
-baseline_commit: c7765eb  # 2026-10-03 reset to HEAD by sprint-planning for BATCH 18 (was 383dce4, set for batch 17). Tree: only sprint-status.yaml modified (batch-17 done lines). Previously: 2026-10-02 reset to HEAD by sprint-planning for BATCH 17 (was 932722f, set for batch 16). Tree clean at reset.
+baseline_commit: bd12647  # 2026-10-04 reset to HEAD by sprint-planning for BATCH 19 (was c7765eb, set for batch 18). Tree clean. Previously: 2026-10-03 reset to HEAD by sprint-planning for BATCH 18 (was 383dce4, set for batch 17). Tree: only sprint-status.yaml modified (batch-17 done lines). Previously: 2026-10-02 reset to HEAD by sprint-planning for BATCH 17 (was 932722f, set for batch 16). Tree clean at reset.
 project: budget-planner
 project_key: NOKEY
 tracking_system: file-system
@@ -1293,6 +1297,15 @@ development_status:
   epic-92: done  # Tooling That Cleans Up After Itself. FR148. Independent; can run in parallel.
   92-1-four-leftovers-from-batch-17-closed: done  # DONE 2026-10-03: MERGED `dec4e8f` (PR #32), deploy 37153577458 green, /api/ready 200.  CODE-REVIEWED 2026-10-03: APPROVED, 0 decisions, 1 patch `4abf064` (TZ pin tests, mutation RED on EDT box), 2 deferred (merged); gates ALL GREEN 3m57s (web 4333, core 1192, db 312/7, e2e 23). Done after merge.  DEV DONE 2026-10-03: `d799c6c` (branch worktree-agent-a7c76819268f9367c, not pushed); gates run 2 ALL GREEN 3m54s (web 4332, core 1192, db 311/7, e2e 23 retry 0); run 1 RED = own tsc slip + account-menu.paid:22 flake (known). Next: code review. DEV STARTED 2026-10-03 (worktree agent).  CREATED 2026-10-03 at c7765eb. CI already greps dist/ for E2E_SESSION_SEED (ci.yml:99-127); 5 dead server fns (not 2); 24 PGlite sites. D1-D3 CONFIRMED by Lucas 2026-10-03 as recommended.
   epic-92-retrospective: optional
+
+  # BATCH 19 (2026-10-04, from deferred-work-triage-2026-10-04.md decision 7 = value trim; FR149). One story by design; the rest ACCEPTED, old backlog ARCHIVED.
+  epic-93: in-progress  # Less Friction for Keyboard and Zoom Users. FR149. Runs alongside launch-verification planning (correct-course 2026-10-04).
+  93-1-tab-only-where-it-matters-and-keep-two-fixes-fixed: review  # Done after merge. REVIEWED 2026-10-04 (3 layers): 7 patches applied `2aabd14`, 15 dismissed, 0 decisions. Gates ALL GREEN 3m49s at `2aabd14` (web 4374, core 1192, db 312/7, e2e 23). CI screenshots compare 37234968569 at `65e1b59`: 25 passed. Dev: `3a9c955` + `65e1b59` (D3 option B). Branch worktree-agent-a3f735579feb72c0e, review commits NOT pushed.
+  epic-93-retrospective: optional
+  epic-94: in-progress  # Billing and Alerts Proven Before Launch. FR152, FR153. From sprint-change-proposal-2026-10-04.md (D1 capture-and-replay, D2 agent drives sandbox checkouts, D3 fix in 94.1). Parallel with 93.1. SANDBOX ONLY.
+  94-1-the-webhook-is-proved-on-paddles-own-payloads: ready-for-dev  # CREATED 2026-10-04 at `73c2b43`; D-A..D-D CONFIRMED by Lucas 2026-10-04 as recommended; D-A..D-D await Lucas (D-A: refund revokes only when approved? handler ignores adjustment status).
+  94-2-an-outage-alert-reaches-me: ready-for-dev  # Do first (smallest; needs Lucas at the dashboard + inbox). Story drafted 2026-10-04: both permanent checks MEASURED notification_channels=null.
+  epic-94-retrospective: optional
 
 action_items:
   - epic: 6

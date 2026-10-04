@@ -183,9 +183,10 @@ export const useProfileStore = create<ProfileState>()(
       /**
        * Remove a profile.
        *
-       * ⚠️⚠️ THIS IS THE REAL DELETION PATH, not `server/functions/profiles.ts`.
-       * That module's `deleteProfile` has ZERO production callers (story 63.2
-       * measured it by grepping the IMPORT, not the identifier); a user's click
+       * ⚠️⚠️ THIS IS THE REAL DELETION PATH, and the only one. The server
+       * function `server/functions/profiles.ts:deleteProfile` had ZERO
+       * production callers (story 63.2 measured it by grepping the IMPORT, not
+       * the identifier) and was deleted by story 93.1; a user's click
        * travels `profile-list.tsx` -> `useProfileManager().deleteProfile` -> here
        * -> `syncEntityDelete` -> the sync push, whose handler enforces no
        * default- or last-profile guard at all. So the guards below are the ones
