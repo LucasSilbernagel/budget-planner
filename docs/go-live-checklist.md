@@ -78,7 +78,7 @@ Resolve it before treating 4.5 as closed — it is a live script on every page.
 | 5.2 | Error-rate baseline | ⚠️ **not established** — metrics report `errors: no data`, which is the absence of a series, not an observed zero | `danube rapids metrics budget-planner-web --hours 720` |
 | 5.3 | Latency acceptable | ✅ avg 120 ms, max 316 ms (30d) — ⚠️ almost certainly a max-of-averages, not a true worst case; a scale-to-zero cold start is seconds | same |
 | 5.4 | Uptime checks provisioned | ✅ **two**, both 300s / threshold 2: `budget-planner-web-health` (`/api/health`, keyword `ok`) and `budget-planner-db-ready` (`/api/ready`, keyword `ready`) | `danube uptime ls` |
-| 5.5 | An alert is proven to fire | ⚠️ **PARTIAL** — detection + recovery proven, delivery unproven; a monitor that detects with no known destination is not yet an alert | `danube uptime incidents` |
+| 5.5 | An alert is proven to fire | ✅ **2026-10-04** — detection, recovery **and delivery** proven: a throwaway check's DOWN and recovered emails both reached the account owner's inbox within the minute (story 94.2; see below). Was ⚠️ PARTIAL 2026-09-16 (delivery unproven) | `danube uptime incidents` + received email |
 | 5.6 | Rollback tested for real | ✅ rolled back and forward, both via the documented pipeline | see below |
 | 5.7 | Scale-to-zero ON | ✅ `--min-scale 0` in `deploy.yml`, and the probe interval was moved 60s → **300s** so the pod can idle between checks | workflow source + `uptime ls` |
 | 5.8 | Cost within envelope | ⚠️ Rapids + PG = €12.99/mo, but this is **not** total infra and the memory tier is uncertain — see below | `danube db ls`, metrics |
@@ -119,15 +119,40 @@ A full open → close incident lifecycle is therefore on record.
 — and the real detection latency is **~10–15 minutes**, not the ~2–3 minutes the
 proof exhibited. That is the deliberate cost of keeping scale-to-zero (5.7).
 
-⚠️ **Delivery is NOT proven.** The CLI exposes no notification-channel option
-(`uptime create` has no `--channels`; `alerts create` does, but metric alerts have
-no evaluator here). Routing is configured account-side, so detection, recording
-and recovery are proven while **an actual email landing is not**. To finish this
-clause: confirm the notification destination in the DanubeData dashboard and
-verify an email arrives.
+~~⚠️ **Delivery is NOT proven.**~~ *(Superseded 2026-10-04, below.)* As of
+2026-09-16 the CLI exposed no notification-channel option (`uptime create` has no
+`--channels`; `alerts create` does, but metric alerts have no evaluator here), so
+detection, recording and recovery were proven while an actual email landing was not.
 
-The permanent check `budget-planner-web-health` remains in place: 60s interval,
-`2xx` + `ok` keyword on `/api/health`, failure threshold 2.
+**Delivery, 2026-10-04 (story 94.2).** How routing works here: a check's
+Settings → Alerts reads *"Who is told, and how, follows each person's notification
+settings."* Routing is **per person, account-level**, which is why
+`notification_channels` is `null` on every check (the CLI 1.3.0 `uptime`
+commands never send that field). It therefore covers all checks equally, and the
+live test below is the evidence that it works. The person-level *Notification
+preferences* page has **no uptime/monitoring row**; Email is ticked for
+Resources → *Status changes* and *Maintenance*. Which row (if either) governs
+uptime emails is **unknown**, so leave both ticked. Emails go to the account
+owner's login address (personal, deliberately not recorded here), **not**
+`hello@longhandbudget.com`.
+
+Throwaway `bp-alert-delivery-proof` (60s, threshold 1), created healthy, then
+repointed at the 404 route, then back to `/api/health`, then deleted:
+
+| Control | Target | Verdict | Email |
+|---|---|---|---|
+| Negative | `/__synthetic_alert_probe__` (404) | `down`, `status_mismatch`; incident opened 21:46:08 UTC | **"Uptime check "bp-alert-delivery-proof" is DOWN"** from `support@danubedata.ro`, inbox, 21:46 UTC |
+| Recovery | repointed at `/api/health` | `up`, 200; incident closed 21:53:04 UTC | **"Uptime check "bp-alert-delivery-proof" recovered"**, inbox, 21:53 UTC |
+| Positive (×2) | `budget-planner-web-health`, `budget-planner-db-ready` | `up` throughout | **none** (delivery discriminates) |
+
+Not proven: the permanent checks' own emails (they run at threshold 2 on 300s, so
+an outage takes ~10–15 min to alert, as above). They share the same per-person
+routing by construction. CLI gotcha: `danube uptime update` needs `--name` or it
+fails `422 The name field is required`.
+
+The permanent checks `budget-planner-web-health` (`/api/health`, keyword `ok`) and
+`budget-planner-db-ready` (`/api/ready`, keyword `ready`) remain in place: **300s**
+interval, `2xx` + keyword, failure threshold 2 (measured 2026-10-04).
 
 ### 5.6 — rollback, executed 2026-09-16
 
@@ -268,11 +293,11 @@ and has not been checked against a real Paddle statement.
 
 | Item | Status | Owner |
 |---|---|---|
-| Alert **delivery** (notification channel + a received email) | unproven | Lucas / dashboard |
+| ~~Alert **delivery** (notification channel + a received email)~~ | ✅ closed 2026-10-04 (94.2): DOWN + recovered emails received; residual: which notification-preference row governs uptime emails is unknown (keep Status changes + Maintenance on) | Lucas / dashboard |
 | Paddle fee rate vs a real statement | assumed | Lucas |
 | Free-tier limits vs published tier | carried, **circular provenance** | Lucas / dashboard |
 | Whether Rapids bills **used** or **allocated** memory | unresolved — decides if Rapids stays €0 | Lucas / dashboard |
-| Clean 24 h re-measure now the 60s check exists | not done | — |
+| Clean 24 h re-measure now the 300s checks exist | not done | — |
 | counter.dev jurisdiction | not recorded in the inventory | Lucas |
 | Non-Rapids/PG infra costs (Brevo, Formspark, counter.dev, OVH, domain) | uncosted | Lucas |
 | Error-rate baseline (`no data` ≠ zero) | not established | — |
