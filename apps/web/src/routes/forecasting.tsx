@@ -246,7 +246,7 @@ function ForecastingPage(): React.ReactElement {
    * ⚠️⚠️ This used to be a bare `string | null`, and that `null` meant FIVE
    * different things: the effect had not run yet, the account had zero profiles,
    * the session had expired, premium was denied at the server boundary
-   * (`server/functions/profiles.ts:144-152`), or the fetch threw. The UI could not
+   * (`routes/api/profiles.ts`, `requirePremiumSession`), or the fetch threw. The UI could not
    * tell them apart, so the only feedback possible was a submit-time error that
    * guessed — and guessed "create a profile" for all five.
    *

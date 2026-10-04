@@ -4,11 +4,11 @@
  * PostgreSQL (story 63.2 code review).
  *
  * ⚠️⚠️ WHY THIS FILE EXISTS. Story 63.2's own headline is that
- * `server/functions/profiles.ts:deleteProfile` has ZERO production callers and
- * that a real deletion travels store -> `syncEntityDelete`/`syncEntityUpdate` ->
- * the sync push. The story then proved its promotion against (a) a fake bridge
- * handle that only records calls, and (b) a PGlite test of the function nothing
- * calls. **All three review layers pointed at the same hole: the path the story
+ * `server/functions/profiles.ts:deleteProfile` had ZERO production callers (story
+ * 93.1 deleted it, and its PGlite test with it) and that a real deletion travels
+ * store -> `syncEntityDelete`/`syncEntityUpdate` -> the sync push. The story then
+ * proved its promotion against (a) a fake bridge handle that only records calls,
+ * and (b) a PGlite test of the function nothing called. **All three review layers pointed at the same hole: the path the story
  * says is the real one had no test against a real database.** That is the exact
  * shape of the `profileId`-stripping defect this repo already shipped green
  * once — a mocked suite agreeing with itself.

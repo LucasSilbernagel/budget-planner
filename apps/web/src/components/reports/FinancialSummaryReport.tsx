@@ -59,6 +59,7 @@ import { useIncomeSources } from '../../stores/incomeStore'
 import { useSavingsGoals } from '../../stores/savingsStore'
 import { GroupedAmount } from '../ui/GroupedAmount'
 import { RESPONSIVE_SCROLL_SHADOW_CLASS, RESPONSIVE_WRAPPER_CLASS } from '../ui/ResponsiveTable'
+import { TableScrollRegion } from '../ui/TableScrollRegion'
 
 /** How a frequency reads in the report's own prose. */
 const FREQUENCY_LABELS: Record<string, string> = {
@@ -131,7 +132,8 @@ const TABLE_CLASS = 'min-w-full divide-y divide-gray-200 dark:divide-gray-700'
  * at 320 even with short names, against a card ~254 px wide, so on a phone a
  * table must scroll INSIDE its own box or the whole page scrolls sideways. This
  * is the app's existing table-region pattern (`IncomePage.tsx`: the wrapper, its
- * self-hiding scroll shadows, and a focus stop with a name), reused rather than
+ * self-hiding scroll shadows, and a name; since 93.1 a focus stop only while it
+ * scrolls: `TableScrollRegion`), reused rather than
  * copied. Where the table fits, the shadows are almost invisible: a faint band
  * (~247/255, ~10 px) at each edge, the shared pattern's look (also in the
  * `balance-1280-light` baseline; MEASURED, deferred-work INFO).
@@ -167,26 +169,6 @@ const TABLE_REGION_CLASS = `${RESPONSIVE_WRAPPER_CLASS} ${RESPONSIVE_SCROLL_SHAD
  */
 const NAME_WRAP_CLASS = '[overflow-wrap:anywhere] max-sm:min-w-[8rem]'
 
-/** One report table inside its own scroll region (see {@link TABLE_REGION_CLASS}). */
-function TableRegion({
-  label,
-  children,
-}: {
-  label: string
-  children: React.ReactNode
-}): React.ReactElement {
-  return (
-    <div
-      className={TABLE_REGION_CLASS}
-      // biome-ignore lint/a11y/noNoninteractiveTabindex: scrollable region needs a focus stop (WCAG 2.1.1) — the only pointer-free way to scroll a table wider than the screen; the autofix would remove keyboard access
-      tabIndex={0}
-      role="region"
-      aria-label={label}
-    >
-      {children}
-    </div>
-  )
-}
 const TH_CLASS = 'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-label'
 const TH_NUMERIC_CLASS = `${TH_CLASS} text-right`
 const TD_CLASS = 'px-3 py-2 text-sm text-body'
@@ -248,7 +230,7 @@ function CashflowTable({
   period: BudgetPeriod
 }): React.ReactElement {
   return (
-    <TableRegion label={`${caption} table`}>
+    <TableScrollRegion label={`${caption} table`} className={TABLE_REGION_CLASS}>
       <table className={TABLE_CLASS}>
         <caption className="text-left text-sm font-medium text-subheading">{caption}</caption>
         <thead className="surface-inset">
@@ -332,7 +314,7 @@ function CashflowTable({
           ))}
         </tbody>
       </table>
-    </TableRegion>
+    </TableScrollRegion>
   )
 }
 
@@ -719,7 +701,10 @@ export function FinancialSummaryReport({
                 </p>
               ) : (
                 <>
-                  <TableRegion label="Goals and accounts table">
+                  <TableScrollRegion
+                    label="Goals and accounts table"
+                    className={TABLE_REGION_CLASS}
+                  >
                     <table className={TABLE_CLASS}>
                       <caption className="text-left text-sm font-medium text-subheading">
                         Goals and accounts
@@ -762,7 +747,7 @@ export function FinancialSummaryReport({
                         ))}
                       </tbody>
                     </table>
-                  </TableRegion>
+                  </TableScrollRegion>
                   <dl className="mt-4">
                     <TotalRow label="Total saved" value={format(model.savings.totalCurrentCents)} />
                     <TotalRow
@@ -842,7 +827,7 @@ function BalanceTable({
   format: (cents: number) => string
 }): React.ReactElement {
   return (
-    <TableRegion label={`${caption} table`}>
+    <TableScrollRegion label={`${caption} table`} className={TABLE_REGION_CLASS}>
       <table className={TABLE_CLASS}>
         <caption className="text-left text-sm font-medium text-subheading">{caption}</caption>
         <thead className="surface-inset">
@@ -868,6 +853,6 @@ function BalanceTable({
           ))}
         </tbody>
       </table>
-    </TableRegion>
+    </TableScrollRegion>
   )
 }

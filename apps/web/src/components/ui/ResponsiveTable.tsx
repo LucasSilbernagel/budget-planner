@@ -89,8 +89,10 @@ import type { ReactNode } from 'react'
  * ⚠️ Story 42.2 (UX-DR46) did NOT change this decision — it is still live, and
  * this constant is still exactly `overflow-x-auto`. What 42.2 added is a
  * SIGNPOST for the scrolling this decision allows, in
- * {@link RESPONSIVE_SCROLL_SHADOW_CLASS}, plus `tabindex="0"` / `role="region"` /
- * `aria-label` at each call site. Containment without a signpost was the defect:
+ * {@link RESPONSIVE_SCROLL_SHADOW_CLASS}, plus `role="region"` / `aria-label` and
+ * a focus stop at each call site (since story 93.1 all through
+ * `TableScrollRegion`, whose `tabindex="0"` is present only while the table
+ * actually scrolls). Containment without a signpost was the defect:
  * measured on the CI font at a 768px viewport, `/income` hid 889px of table
  * behind an overlay scrollbar with nothing on screen saying so, and the Actions
  * column is the last thing that falls off that edge.
@@ -98,9 +100,9 @@ import type { ReactNode } from 'react'
  * ⚠️ `role="region"` on THIS element is not a violation of the accessibility
  * note above. That note forbids re-adding `role="table"`/`row"`/`cell"` INSIDE
  * the table, where it would re-assert a grid the user can no longer navigate.
- * The wrapper is outside the table and is a genuine scrollable region: it is a
- * focus stop that can be scrolled with the arrow keys, which is the only
- * pointer-free way to reach the Actions column when the table overflows. */
+ * The wrapper is outside the table and is a genuine scrollable region: while
+ * the table overflows it is a focus stop that can be scrolled with the arrow
+ * keys, which is the only pointer-free way to reach the Actions column. */
 export const RESPONSIVE_WRAPPER_CLASS = 'overflow-x-auto'
 
 /** Scroll shadows for the wrapper (story 42.2, UX-DR46). Applied ALONGSIDE

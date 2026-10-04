@@ -221,6 +221,56 @@ describe('row money figures wrap only between digit groups (story 91.1)', () => 
     })
   }
 
+  // ⚠️ Story 93.1 (FR149, AC 4): the cases above check only the columns their
+  // `figures` map NAMES, so a NEW money column would ship as a plain string and
+  // nothing would notice. This sweep finds figures by their rendered TEXT, in
+  // every `tbody` cell, whatever the column: any formatted USD figure with a
+  // group separator must sit inside a GroupedAmount (its text split by `<wbr>`).
+  // The count per page is pinned EXACTLY, so a sweep that matches nothing (a
+  // broken regex, an empty render) cannot pass. The seeds are all >= $1,000 by
+  // design, so every figure has a separator; keep them so.
+  const FIGURE = /-?\$\d{1,3}(?:,\d{3})+\.\d{2}/g
+  const SWEEP_COUNT: Record<string, number> = {
+    Income: 1,
+    Expenses: 1,
+    Savings: 3,
+    Balance: 2,
+  }
+
+  /** The deepest element under `td` whose text still contains `figure`. */
+  function deepestHolding(td: HTMLElement, figure: string): HTMLElement {
+    let el: HTMLElement = td
+    for (;;) {
+      const child = [...el.children].find((c) => (c.textContent ?? '').includes(figure)) as
+        | HTMLElement
+        | undefined
+      if (!child) return el
+      el = child
+    }
+  }
+
+  for (const page of CASES) {
+    it(`${page.name} › EVERY money figure in the table body is a GroupedAmount, named column or not (93.1)`, () => {
+      page.seed()
+      const { container } = renderWithProviders(page.render())
+      const found: string[] = []
+      for (const td of container.querySelectorAll<HTMLElement>('tbody td')) {
+        for (const match of (td.textContent ?? '').matchAll(FIGURE)) {
+          const figure = match[0]
+          found.push(figure)
+          const holder = deepestHolding(td, figure)
+          expect(
+            runsOf(holder).length,
+            `${page.name}: "${figure}" in cell "${td.textContent}" is a plain string, not a GroupedAmount`
+          ).toBeGreaterThan(1)
+        }
+      }
+      expect(found, `${page.name}: figures found by the sweep`).toHaveLength(
+        SWEEP_COUNT[page.name] as number
+      )
+    })
+  }
+
   it('Savings › "No target" stays plain words inside the same amount element', () => {
     useSavingsStore
       .getState()

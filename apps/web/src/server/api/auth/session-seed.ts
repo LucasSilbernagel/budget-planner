@@ -50,8 +50,15 @@ export const getSessionSeed = createServerFn({ method: 'GET' }).handler(
     // resolves this to `false && …` and drops the branch and its string
     // entirely: the override is absent from the bundle, not merely unreachable.
     // It is written first so a production runtime never even reads the variable.
-    // Do not rewrite it as a NODE_ENV comparison — that is a runtime string, and
-    // the branch would survive into production.
+    // Keep THIS flag; do not rewrite it as a NODE_ENV comparison. Story 92.1
+    // MEASURED that a gate testing the dot form `process.env.NODE_ENV` against
+    // "production" is eliminated from this app's production SSR build too (the
+    // client-bundle guard stayed green; why is REASONED: the build evidently
+    // inlines that form). The bracket form `process.env['NODE_ENV']` was NOT measured. The
+    // reason to keep `import.meta.env.DEV` is that it is the only gate whose
+    // elimination is Vite's documented contract; a NODE_ENV comparison depends
+    // on the build inlining that exact spelling and, wherever it does not, on
+    // the runtime environment being set right.
     //
     // This grants a seed only: never a signed cookie, never a DB user, never an
     // authenticated server-side request. It is not a way to sign in.
