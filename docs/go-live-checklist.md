@@ -41,7 +41,7 @@ Last executed: **2026-09-16**. Target: `https://www.longhandbudget.com`.
 | 3.2 | Premium features reachable when entitled | ✅ **operator** | Lucas, 2026-09-16 |
 | 3.3 | Two real devices: edit on A appears on B | ✅ **operator** | Lucas, 2026-09-16 — retires the 5-15 AC-4 / 4-18 deferral |
 | 3.4 | Forged session cookie rejected | ✅ `/api/auth/me` → `{"user":null}` | tooling |
-| 3.5 | Cancellation / past-due → downgrade | ⏭️ **carried to 5-19**, not waived | 5-19 rewrites these semantics |
+| 3.5 | Cancellation / past-due → downgrade | ✅ **verified 2026-10-04 on Paddle sandbox payloads** (story 94.1) | real `subscription.canceled` → `canceled`; simulated `subscription.past_due` → `past_due`; see runbook §3 |
 
 > ⚠️ 3.1–3.3 are an **operator attestation**: no transaction id, webhook payload,
 > device pair or DB row was captured into the session record. If the launch file
