@@ -102,7 +102,8 @@ import type { ReactNode } from 'react'
  * the table, where it would re-assert a grid the user can no longer navigate.
  * The wrapper is outside the table and is a genuine scrollable region: while
  * the table overflows it is a focus stop that can be scrolled with the arrow
- * keys, which is the only pointer-free way to reach the Actions column. */
+ * keys, which is the only pointer-free way to see the overflowed columns that
+ * hold no focusable control (the Actions buttons scroll into view on Tab). */
 export const RESPONSIVE_WRAPPER_CLASS = 'overflow-x-auto'
 
 /** Scroll shadows for the wrapper (story 42.2, UX-DR46). Applied ALONGSIDE

@@ -53,7 +53,8 @@ export const getSessionSeed = createServerFn({ method: 'GET' }).handler(
     // Keep THIS flag; do not rewrite it as a NODE_ENV comparison. Story 92.1
     // MEASURED that a gate testing the dot form `process.env.NODE_ENV` against
     // "production" is eliminated from this app's production SSR build too (the
-    // client-bundle guard stayed green; why is REASONED: the build evidently
+    // build guard `scripts/check-client-bundle.mjs`, which scans all of `dist`
+    // including `dist/server`, stayed green; why is REASONED: the build evidently
     // inlines that form). The bracket form `process.env['NODE_ENV']` was NOT measured. The
     // reason to keep `import.meta.env.DEV` is that it is the only gate whose
     // elimination is Vite's documented contract; a NODE_ENV comparison depends

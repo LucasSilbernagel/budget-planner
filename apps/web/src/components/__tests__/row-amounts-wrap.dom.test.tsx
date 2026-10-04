@@ -259,6 +259,14 @@ describe('row money figures wrap only between digit groups (story 91.1)', () => 
           const figure = match[0]
           found.push(figure)
           const holder = deepestHolding(td, figure)
+          // The holder must be the figure's OWN element: if the figure were a
+          // bare text node of the cell (or shared a wrapper with other text),
+          // the holder would be the cell, and an unrelated <wbr> in it (the
+          // Balance label's, BalancePage.tsx) would fake a split (93.1 review).
+          expect(
+            runsOf(holder).join(''),
+            `${page.name}: "${figure}" in cell "${td.textContent}" has no element of its own`
+          ).toBe(figure)
           expect(
             runsOf(holder).length,
             `${page.name}: "${figure}" in cell "${td.textContent}" is a plain string, not a GroupedAmount`

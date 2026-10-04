@@ -32,6 +32,8 @@ export function stubRegionWidths(): void {
 }
 
 export function restoreRegionWidths(): void {
+  widths.scroll = 0
+  widths.client = 0
   for (const [key, descriptor] of Object.entries(originals)) {
     if (descriptor) Object.defineProperty(HTMLElement.prototype, key, descriptor)
     else Reflect.deleteProperty(HTMLElement.prototype, key)

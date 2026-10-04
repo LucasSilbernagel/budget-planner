@@ -20,7 +20,10 @@ import {
  * - `tabindex="0"` only while the content is wider than the box
  *   (`scrollWidth > clientWidth`). A scrolling region must be a focus stop
  *   (WCAG 2.1.1): arrow keys on the focused region are the only pointer-free
- *   way to reach the columns past the edge (the Actions column on the pages).
+ *   way to SEE the columns past the edge that hold no focusable control (the
+ *   amounts). Tab into a row's Edit/Delete buttons scrolls them into view on
+ *   its own (MEASURED in Chromium, 93.1 review), so it is the figures, not the
+ *   Actions column, that need the stop.
  *   A region that fits has nothing to scroll, so as a Tab stop it only costs a
  *   keystroke: at ≥ 768 px no seeded table scrolls, which left `/report` with 6
  *   dead stops and each finance page with 1 (91.2 review).
@@ -90,7 +93,7 @@ export function TableScrollRegion({
  * the server render and the first client render agree (see
  * {@link TableScrollRegion}).
  */
-export function useHorizontalOverflow(ref: RefObject<HTMLElement | null>): boolean {
+function useHorizontalOverflow(ref: RefObject<HTMLElement | null>): boolean {
   const [overflows, setOverflows] = useState(true)
   const observerRef = useRef<ResizeObserver | null>(null)
   const observedChildRef = useRef<Element | null>(null)

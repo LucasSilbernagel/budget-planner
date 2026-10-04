@@ -71,7 +71,7 @@ describe('forecasting tab strip below 640 px (story 91.3)', () => {
     for (const button of buttons) expect(button).toHaveAttribute('type', 'button')
   })
 
-  it('shares the strip width and halves the padding on a phone, and keeps the desktop padding', async () => {
+  it('shares the strip width and narrows the padding on a phone, and keeps the desktop padding', async () => {
     for (const button of await renderTabs()) {
       expect(tokens(button)).toEqual(
         expect.arrayContaining(['max-sm:flex-1', 'max-sm:min-w-0', 'max-sm:px-1.5', 'px-4'])
