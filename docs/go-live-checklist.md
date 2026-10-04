@@ -301,7 +301,7 @@ and has not been checked against a real Paddle statement.
 | counter.dev jurisdiction | not recorded in the inventory | Lucas |
 | Non-Rapids/PG infra costs (Brevo, Formspark, counter.dev, OVH, domain) | uncosted | Lucas |
 | Error-rate baseline (`no data` ≠ zero) | not established | — |
-| Stale `production` secret `DANUBEDATA_REGISTRY` shadowing the live variable (F10) | safe to delete, re-checked 2026-10-04: no workflow reads `secrets.DANUBEDATA_REGISTRY`; the `production` environment variable holds the value. Delete: `gh secret delete DANUBEDATA_REGISTRY --env production` | Lucas |
+| ~~Stale `production` secret `DANUBEDATA_REGISTRY` shadowing the live variable (F10)~~ | ✅ deleted 2026-10-04 (Lucas); unreferenced, the `production` environment variable holds the value | Lucas |
 | Old-code-on-0017 write paths | never exercised | — |
 | ~~Cancellation → downgrade~~ | ✅ closed by decision 2026-10-04 (Lucas): sandbox-payload replay (94.1) covers the shipping handler; live payloads share the format. Also closed: chargeback shapes, live `include_sensitive_fields` (see Paddle runbook record). The first real live purchase's webhook is the final check | Lucas |
 | Error tracking / APM | deliberately not provisioned | Lucas |
