@@ -1298,11 +1298,11 @@ development_status:
 
   # BATCH 19 (2026-10-04, from deferred-work-triage-2026-10-04.md decision 7 = value trim; FR149). One story by design; the rest ACCEPTED, old backlog ARCHIVED.
   epic-93: backlog  # Less Friction for Keyboard and Zoom Users. FR149. Runs alongside launch-verification planning (correct-course 2026-10-04).
-  93-1-tab-only-where-it-matters-and-keep-two-fixes-fixed: backlog
+  93-1-tab-only-where-it-matters-and-keep-two-fixes-fixed: ready-for-dev  # CREATED 2026-10-04 at `73c2b43`; D1-D5 CONFIRMED by Lucas 2026-10-04 as recommended; D1-D5 await Lucas.
   epic-93-retrospective: optional
-  epic-94: backlog  # Billing and Alerts Proven Before Launch. FR152, FR153. From sprint-change-proposal-2026-10-04.md (D1 capture-and-replay, D2 agent drives sandbox checkouts, D3 fix in 94.1). Parallel with 93.1. SANDBOX ONLY.
-  94-1-the-webhook-is-proved-on-paddles-own-payloads: backlog
-  94-2-an-outage-alert-reaches-me: backlog  # Do first (smallest; needs Lucas at the dashboard + inbox).
+  epic-94: in-progress  # Billing and Alerts Proven Before Launch. FR152, FR153. From sprint-change-proposal-2026-10-04.md (D1 capture-and-replay, D2 agent drives sandbox checkouts, D3 fix in 94.1). Parallel with 93.1. SANDBOX ONLY.
+  94-1-the-webhook-is-proved-on-paddles-own-payloads: ready-for-dev  # CREATED 2026-10-04 at `73c2b43`; D-A..D-D CONFIRMED by Lucas 2026-10-04 as recommended; D-A..D-D await Lucas (D-A: refund revokes only when approved? handler ignores adjustment status).
+  94-2-an-outage-alert-reaches-me: ready-for-dev  # Do first (smallest; needs Lucas at the dashboard + inbox). Story drafted 2026-10-04: both permanent checks MEASURED notification_channels=null.
   epic-94-retrospective: optional
 
 action_items:
