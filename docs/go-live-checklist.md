@@ -296,14 +296,14 @@ and has not been checked against a real Paddle statement.
 | ~~Alert **delivery** (notification channel + a received email)~~ | ✅ closed 2026-10-04 (94.2): DOWN + recovered emails received; residual: which notification-preference row governs uptime emails is unknown (keep Status changes + Maintenance on) | Lucas / dashboard |
 | Paddle fee rate vs a real statement | assumed | Lucas |
 | Free-tier limits vs published tier | carried, **circular provenance** | Lucas / dashboard |
-| Whether Rapids bills **used** or **allocated** memory | unresolved — decides if Rapids stays €0 | Lucas / dashboard |
-| Clean 24 h re-measure now the 300s checks exist | not done | — |
+| ~~Whether Rapids bills **used** or **allocated** memory~~ | ✅ closed by decision 2026-10-04 (Lucas): not a launch blocker; the monthly invoice answers it | Lucas |
+| ~~Clean 24 h re-measure now the 300s checks exist~~ | ✅ closed by decision 2026-10-04 (Lucas): not a launch blocker; the monthly invoice is the measure | Lucas |
 | counter.dev jurisdiction | not recorded in the inventory | Lucas |
 | Non-Rapids/PG infra costs (Brevo, Formspark, counter.dev, OVH, domain) | uncosted | Lucas |
 | Error-rate baseline (`no data` ≠ zero) | not established | — |
-| Stale `production` secret `DANUBEDATA_REGISTRY` shadowing the live variable (F10) | open — safe to delete | Lucas |
+| Stale `production` secret `DANUBEDATA_REGISTRY` shadowing the live variable (F10) | safe to delete, re-checked 2026-10-04: no workflow reads `secrets.DANUBEDATA_REGISTRY`; the `production` environment variable holds the value. Delete: `gh secret delete DANUBEDATA_REGISTRY --env production` | Lucas |
 | Old-code-on-0017 write paths | never exercised | — |
-| Cancellation → downgrade | sandbox-payload replay ✅ (94.1, 2026-10-04); no live round trip on post-5-19 code | — |
+| ~~Cancellation → downgrade~~ | ✅ closed by decision 2026-10-04 (Lucas): sandbox-payload replay (94.1) covers the shipping handler; live payloads share the format. Also closed: chargeback shapes, live `include_sensitive_fields` (see Paddle runbook record). The first real live purchase's webhook is the final check | Lucas |
 | Error tracking / APM | deliberately not provisioned | Lucas |
 | Harder evidence for 3.1–3.3 | operator attestation only | Lucas |
 
