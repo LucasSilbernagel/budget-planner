@@ -132,13 +132,18 @@ const TABLE_CLASS = 'min-w-full divide-y divide-gray-200 dark:divide-gray-700'
  * table must scroll INSIDE its own box or the whole page scrolls sideways. This
  * is the app's existing table-region pattern (`IncomePage.tsx`: the wrapper, its
  * self-hiding scroll shadows, and a focus stop with a name), reused rather than
- * copied. Where the table fits, the shadows paint nothing.
+ * copied. Where the table fits, the shadows are almost invisible: a faint band
+ * (~247/255, ~10 px) at each edge, the shared pattern's look (also in the
+ * `balance-1280-light` baseline; MEASURED, deferred-work INFO).
  *
- * ⚠️ `print:` resets are load-bearing: paper cannot scroll, so in print the
- * region must not clip (`print:overflow-visible`), and the shadow GRADIENTS must
- * not print (`print:bg-none`; the report's print rule in `global.css` forces only
- * `background-color`). `mt-3` lives here, not on the table: inside the scroll box
- * it would sit under the shadow covers.
+ * The `print:` resets are GUARDS, not measured necessities: after the name wrap
+ * every table fits the paper, and removing both changed nothing for the seed
+ * (arm L3, MEASURED). Paper cannot scroll, so a table that is ever wider than
+ * the page must not be clipped (`print:overflow-visible`), and the shadow
+ * GRADIENTS must not print with "Background graphics" on (`print:bg-none`; the
+ * report's print rule in `global.css` forces only `background-color`). `mt-3`
+ * lives here, not on the table: inside the scroll box it would sit under the
+ * shadow covers.
  */
 const TABLE_REGION_CLASS = `${RESPONSIVE_WRAPPER_CLASS} ${RESPONSIVE_SCROLL_SHADOW_CLASS} mt-3 print:overflow-visible print:bg-none`
 
