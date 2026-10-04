@@ -1299,12 +1299,12 @@ development_status:
   epic-92-retrospective: optional
 
   # BATCH 19 (2026-10-04, from deferred-work-triage-2026-10-04.md decision 7 = value trim; FR149). One story by design; the rest ACCEPTED, old backlog ARCHIVED.
-  epic-93: in-progress  # Less Friction for Keyboard and Zoom Users. FR149. Runs alongside launch-verification planning (correct-course 2026-10-04).
-  93-1-tab-only-where-it-matters-and-keep-two-fixes-fixed: review  # Done after merge. REVIEWED 2026-10-04 (3 layers): 7 patches applied `2aabd14`, 15 dismissed, 0 decisions. Gates ALL GREEN 3m49s at `2aabd14` (web 4374, core 1192, db 312/7, e2e 23). CI screenshots compare 37234968569 at `65e1b59`: 25 passed. Dev: `3a9c955` + `65e1b59` (D3 option B). Branch worktree-agent-a3f735579feb72c0e, review commits NOT pushed.
+  epic-93: done  # DONE 2026-10-04 (PR #35 `ee623fc`). Less Friction for Keyboard and Zoom Users. FR149. Runs alongside launch-verification planning (correct-course 2026-10-04).
+  93-1-tab-only-where-it-matters-and-keep-two-fixes-fixed: done  # DONE 2026-10-04: MERGED `ee623fc` (PR #35), CI green. REVIEWED 2026-10-04 (3 layers): 7 patches applied `2aabd14`, 15 dismissed, 0 decisions. Gates ALL GREEN 3m49s at `2aabd14` (web 4374, core 1192, db 312/7, e2e 23). CI screenshots compare 37234968569 at `65e1b59`: 25 passed. Dev: `3a9c955` + `65e1b59` (D3 option B). Branch worktree-agent-a3f735579feb72c0e, review commits NOT pushed.
   epic-93-retrospective: optional
   epic-94: in-progress  # Billing and Alerts Proven Before Launch. FR152, FR153. From sprint-change-proposal-2026-10-04.md (D1 capture-and-replay, D2 agent drives sandbox checkouts, D3 fix in 94.1). Parallel with 93.1. SANDBOX ONLY.
   94-1-the-webhook-is-proved-on-paddles-own-payloads: ready-for-dev  # CREATED 2026-10-04 at `73c2b43`; D-A..D-D CONFIRMED by Lucas 2026-10-04 as recommended; D-A..D-D await Lucas (D-A: refund revokes only when approved? handler ignores adjustment status).
-  94-2-an-outage-alert-reaches-me: ready-for-dev  # Do first (smallest; needs Lucas at the dashboard + inbox). Story drafted 2026-10-04: both permanent checks MEASURED notification_channels=null.
+  94-2-an-outage-alert-reaches-me: review  # DEV DONE 2026-10-04 ✅: DOWN + recovered emails received (inbox, within the minute); routing per-person account-level; docs-only. Do first (smallest; needs Lucas at the dashboard + inbox). Story drafted 2026-10-04: both permanent checks MEASURED notification_channels=null.
   epic-94-retrospective: optional
 
 action_items:
