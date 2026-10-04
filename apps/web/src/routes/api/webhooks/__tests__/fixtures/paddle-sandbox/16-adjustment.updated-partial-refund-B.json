@@ -1,0 +1,62 @@
+{
+  "data": {
+    "id": "adj_01m44c658ga1gc94ehpa3x6rdt",
+    "type": "partial",
+    "items": [
+      {
+        "id": "adjitm_01m44c658ga1gc94ehpdbw63yg",
+        "type": "partial",
+        "amount": "1000",
+        "totals": {
+          "tax": "115",
+          "total": "1000",
+          "subtotal": "885"
+        },
+        "item_id": "txnitm_01m44c4mb1c4a7mn98vkb5e59v",
+        "proration": null
+      }
+    ],
+    "action": "refund",
+    "reason": "story 94.1 sandbox test: partial refund lifetime B",
+    "status": "approved",
+    "totals": {
+      "fee": "54",
+      "tax": "115",
+      "total": "1000",
+      "earnings": "831",
+      "subtotal": "885",
+      "retained_fee": "54",
+      "currency_code": "EUR"
+    },
+    "created_at": "2026-10-04T21:12:45.137916Z",
+    "updated_at": "2026-10-04T21:20:02.162867Z",
+    "customer_id": "ctm_01m44c4g2vdv7cyd2bctn0gj71",
+    "currency_code": "EUR",
+    "payout_totals": {
+      "fee": "60",
+      "tax": "127",
+      "total": "1104",
+      "earnings": "917",
+      "subtotal": "977",
+      "retained_fee": "60",
+      "currency_code": "USD"
+    },
+    "tax_rates_used": [
+      {
+        "totals": {
+          "tax": "115",
+          "total": "1000",
+          "subtotal": "885"
+        },
+        "tax_rate": "0.13"
+      }
+    ],
+    "transaction_id": "txn_01m44c4g550vkv6bmm6q1a4bpk",
+    "subscription_id": null,
+    "credit_applied_to_balance": null
+  },
+  "event_id": "evt_01m44ckg41wa2am348dav58ema",
+  "event_type": "adjustment.updated",
+  "occurred_at": "2026-10-04T21:20:02.177834Z",
+  "notification_id": "ntf_01m44ckgh929hnfdkn06gyzvkz"
+}

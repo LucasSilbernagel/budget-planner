@@ -1,0 +1,18 @@
+{
+  "data": {
+    "id": "ctm_01m44c50kqx272q8c72dyfyyza",
+    "name": null,
+    "email": "bp-94-1-s-new@example.test",
+    "locale": "en",
+    "status": "active",
+    "created_at": "2026-10-04T21:12:07.543Z",
+    "updated_at": "2026-10-04T21:12:55.381574Z",
+    "custom_data": null,
+    "import_meta": null,
+    "marketing_consent": false
+  },
+  "event_id": "evt_01m44c6farxgdajch6pxfnsb1k",
+  "event_type": "customer.updated",
+  "occurred_at": "2026-10-04T21:12:55.384350Z",
+  "notification_id": "ntf_01m44c6fn43s265newcd420z3a"
+}
