@@ -152,8 +152,9 @@ export const RESPONSIVE_WRAPPER_CLASS = 'overflow-x-auto'
  *
  * ⚠️ Tables OUTSIDE this shared layer do not inherit any of this and are
  * deliberately out of scope for story 42.2: `forecasting/forecast-list.tsx`
- * (its own hand-rolled `overflow-x-auto`), `categories/CategoryBreakdown.tsx`,
- * and the three print tables in `reports/FinancialSummaryReport.tsx`. The
+ * (its own hand-rolled `overflow-x-auto`) and `categories/CategoryBreakdown.tsx`.
+ * (`reports/FinancialSummaryReport.tsx` used to be listed here; story 91.2 put
+ * every report table inside this wrapper + shadow pair, with `print:` resets.) The
  * forecast list is a real scroll container and carries the same unsignposted
  * defect; it is premium-gated, so the unauthenticated e2e layer cannot reach it
  * and nothing here guards it. Recorded so the header's list of pages above is

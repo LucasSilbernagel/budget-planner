@@ -21,6 +21,7 @@ import { useCurrencyStore } from '../../../stores/currencyStore'
 import { useExpenseStore } from '../../../stores/expenseStore'
 import { useIncomeStore } from '../../../stores/incomeStore'
 import { useSavingsStore } from '../../../stores/savingsStore'
+import { RESPONSIVE_SCROLL_SHADOW_CLASS, RESPONSIVE_WRAPPER_CLASS } from '../../ui/ResponsiveTable'
 import { FinancialSummaryReport } from '../FinancialSummaryReport'
 
 const ISO = '2026-01-01T00:00:00.000Z'
@@ -1255,5 +1256,108 @@ describe('section totals break only between digit groups (story 88.4)', () => {
     // EUR (de-DE): the group separator is ".", and the break follows it.
     // (de-DE puts a NO-BREAK space before the symbol.)
     expect(runsOf(totalFor('Total saved'))).toEqual(['1.', '000.', '000,00\u00a0€'])
+  })
+})
+
+/**
+ * Story 91.2 (FR145): the report fits the window on screen; the printed page
+ * keeps every column.
+ *
+ * MEASURED under CI's font at the baseline (`91-2-evidence/`): the page column
+ * (`mx-auto` in the root's column flexbox) took its widest table's width, and a
+ * long unbroken name made that table ~1490 px wide, so the page scrolled
+ * sideways at EVERY width (1206 px @320 … 510 px @1280), and the printed PDF lost
+ * every figure column of four tables past the paper edge.
+ *
+ * ⚠️ jsdom computes no layout: these pin the WIRING (tokens, attributes,
+ * structure). The geometry is pinned by the `report-*` CI screenshots.
+ */
+describe('the report fits the screen and keeps its columns in print (story 91.2)', () => {
+  /** Every table kind: Income, Expenses, Investments, Assets, Debts, Savings. */
+  function seedEveryTable(): void {
+    seedTypicalData()
+    useBalanceStore.setState({
+      entries: [
+        balanceRow('b1', 'ISA', 'investment', 800_000),
+        balanceRow('b2', 'Mortgage', 'debt', 15_000_000),
+        balanceRow('b3', 'Car', 'asset', 900_000),
+      ],
+    })
+  }
+
+  /** The direct parent of each table, which must be its own scroll region. */
+  function regionsOf(): HTMLElement[] {
+    return screen.getAllByRole('table').map((table) => table.parentElement as HTMLElement)
+  }
+
+  it('wraps each of the six tables in its own signposted, keyboard-reachable scroll region', () => {
+    seedEveryTable()
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+
+    const regions = regionsOf()
+    expect(regions).toHaveLength(6)
+    const labels = new Set<string>()
+    for (const region of regions) {
+      const caption = region.querySelector('caption')?.textContent ?? '(no caption)'
+      expect(region.tagName, caption).toBe('DIV')
+      expect(region.querySelectorAll('table'), caption).toHaveLength(1)
+      // The app's table-region pattern (`IncomePage.tsx`), reused, not copied.
+      for (const token of [
+        ...RESPONSIVE_WRAPPER_CLASS.split(/\s+/),
+        ...RESPONSIVE_SCROLL_SHADOW_CLASS.split(/\s+/),
+      ]) {
+        expect(tokensOf(region), `${caption}: ${token}`).toContain(token)
+      }
+      expect(region, caption).toHaveAttribute('tabindex', '0')
+      expect(region, caption).toHaveAttribute('role', 'region')
+      const label = region.getAttribute('aria-label') ?? ''
+      expect(label, caption).toMatch(/\S/)
+      // 56.1's guards forbid these words on this page (`BUDGET_PERIOD_LABEL_TEXT`).
+      expect(label, caption).not.toMatch(/currency|amounts\b/i)
+      labels.add(label)
+      // The gap above the table moved to the region: on the table it would sit
+      // INSIDE the scroll box, under the shadow covers.
+      expect(tokensOf(region), caption).toContain('mt-3')
+      expect(tokensOf(region.querySelector('table') as HTMLElement), caption).not.toContain('mt-3')
+    }
+    expect(labels.size, 'every region has a distinct name').toBe(6)
+  })
+
+  it('the regions never clip or paint in print: overflow visible, no background', () => {
+    seedEveryTable()
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+    for (const region of regionsOf()) {
+      const caption = region.querySelector('caption')?.textContent ?? '(no caption)'
+      expect(tokensOf(region), caption).toContain('print:overflow-visible')
+      expect(tokensOf(region), caption).toContain('print:bg-none')
+    }
+  })
+
+  it('a long name can wrap anywhere, on screen and on paper, in every table', () => {
+    seedEveryTable()
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+    const rowHeaders = screen.getAllByRole('rowheader')
+    // Salary, Freelance, Rent, ISA, Car, Mortgage, Emergency fund, Rainy day.
+    expect(rowHeaders).toHaveLength(8)
+    for (const cell of rowHeaders) {
+      expect(tokensOf(cell), cell.textContent ?? '').toContain('[overflow-wrap:anywhere]')
+      // The phone floor that keeps ordinary names breaking between words.
+      expect(tokensOf(cell), cell.textContent ?? '').toContain('max-sm:min-w-[8rem]')
+      // Not screen-only: the baseline PDF lost four tables' figure columns.
+      expect(
+        tokensOf(cell).filter((t) => t.startsWith('print:')),
+        cell.textContent ?? ''
+      ).toEqual([])
+    }
+  })
+
+  it('the page column fills the window instead of growing to its widest table', () => {
+    seedEveryTable()
+    const { container } = render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+    const shell = container.firstElementChild as HTMLElement
+    expect(shell.querySelector('#financial-summary-report')).not.toBeNull()
+    for (const token of ['w-full', 'mx-auto', 'max-w-3xl']) {
+      expect(tokensOf(shell)).toContain(token)
+    }
   })
 })
