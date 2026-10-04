@@ -55,7 +55,7 @@
     "subscription_id": null,
     "credit_applied_to_balance": null
   },
-  "event_id": "evt_01m44ckfet2dyhf74weepaj42f",
+  "event_id": "evt_derived_rejected_from_fixture_15",
   "event_type": "adjustment.updated",
   "occurred_at": "2026-10-04T21:20:01.498741Z",
   "notification_id": "ntf_01m44ckg0phsgy2715gbqx0cxj"

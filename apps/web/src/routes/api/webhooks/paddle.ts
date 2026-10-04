@@ -877,10 +877,28 @@ async function handleAdjustment(
         scope: 'paddle-webhook',
         customerId,
         transactionId,
+        adjustmentId,
       })
-    } else {
+    } else if (status === 'pending_approval' || status === 'rejected') {
       logger.info('Webhook: refund not approved (yet) — recorded nothing', {
         customerId,
+        adjustmentId,
+        status,
+      })
+    } else {
+      // Any other value (`reversed`, or one Paddle adds later) is not applied
+      // either, and the claim is terminal, so a redelivery cannot correct it:
+      // make it visible rather than letting an info line be the only trace
+      // (94.1 code review).
+      logger.error('Webhook: refund with an unexpected status — not applied', {
+        customerId,
+        adjustmentId,
+        status,
+      })
+      captureError(new Error('Webhook: refund with an unexpected status needs manual review'), {
+        scope: 'paddle-webhook',
+        customerId,
+        transactionId,
         adjustmentId,
         status,
       })
@@ -1817,7 +1835,11 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
           ...(data.id ? { adjustmentId: data.id } : {}),
           ...(adjustmentTotal === undefined ? {} : { adjustmentTotal }),
           ...(data.transaction_id ? { transactionId: data.transaction_id } : {}),
-          ...(data.status ? { status: data.status.toLowerCase() } : {}),
+          // A non-string status must not throw (a 500 would retry forever);
+          // it is treated as missing and flagged by the D-A gate.
+          ...(typeof data.status === 'string' && data.status.trim()
+            ? { status: data.status.trim().toLowerCase() }
+            : {}),
           occurredAt,
         })
       )

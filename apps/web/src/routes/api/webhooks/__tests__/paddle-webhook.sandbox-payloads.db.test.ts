@@ -302,9 +302,9 @@ describe('AC 4 — Paddle sandbox payloads through the real handler, outcomes re
     realLookup()
     await expectOk(F.subCreatedS)
     const [before] = await readUser(CTM_S)
-    // Fresh deliveries: these two were claimed above, so re-replaying them would
-    // only prove dedup. The DB is reset per test, so claim them for the first
-    // time against an existing subscriber by clearing the claim table.
+    // These two were already claimed by the first half of this test, so a
+    // re-replay would only prove dedup. Clear the claim table so they are
+    // processed afresh, now against an existing subscriber row.
     await db.delete(paddleWebhookEvents)
     await expectOk(F.paidS)
     await expectOk(F.completedS)
@@ -445,7 +445,10 @@ describe('AC 5 — the hazards 5-19 fixed, on the real payloads (re-delivered, n
   it('(a) the same delivery twice: the second is a 200 no-op, one claim row', async () => {
     realLookup()
     await expectOk(F.subCreatedS)
+    const [before] = await readUser(CTM_S)
     await expectOk(F.subCreatedS)
+    // "No change to the users row" (runbook §3a step 1), not just no new row.
+    expect((await readUser(CTM_S))[0]).toEqual(before)
     const claims = await db
       .select()
       .from(paddleWebhookEvents)
@@ -469,13 +472,15 @@ describe('AC 5 — the hazards 5-19 fixed, on the real payloads (re-delivered, n
 
   it('(c) the real created + updated pair for one partial refund counts once and never crosses the bar', async () => {
     // Two guards make this hold: D-A drops the pending `created`, and the
-    // ledger's `onConflictDoNothing` on the adjustment id. Positive control
-    // (story 94.1 AC 8): either guard removed alone stays GREEN here; both
-    // removed together goes RED. The ledger key alone is proven on a
-    // hand-built approved+approved pair in `paddle-webhook.db.test.ts`.
+    // ledger's `onConflictDoNothing` on the adjustment id. The approved
+    // delivery is sent a SECOND time with its claim cleared (as a redelivery
+    // under a fresh event id would arrive), so it reaches the ledger key
+    // instead of being stopped by delivery dedup (94.1 code review: before
+    // this, the ledger-key mutation stayed green here).
     await grantLifetime(F.paidB, F.completedB)
     await expectOk(F.adjCreatedB)
     await expectOk(F.adjUpdatedB)
+    await db.delete(paddleWebhookEvents)
     await expectOk(F.adjUpdatedB)
     expect(await ledgerFor(CTM_B)).toHaveLength(1)
     expect(await refundedSum(CTM_B, TXN_B)).toBe(1000)
@@ -485,11 +490,17 @@ describe('AC 5 — the hazards 5-19 fixed, on the real payloads (re-delivered, n
   it('(d) a late lifetime transaction delivery after the full-refund revocation does not re-grant', async () => {
     realLookup()
     await expectOk(F.completedA)
+    expect((await readUser(CTM_A))[0].subscriptionStatus).toBe('lifetime')
     await expectOk(F.adjCreatedA)
     await expectOk(F.adjUpdatedA)
     expect((await readUser(CTM_A))[0].subscriptionStatus).toBe('canceled')
     // `.paid` arrives last, carrying its earlier occurred_at: no re-grant.
     await expectOk(F.paidA)
+    expect((await readUser(CTM_A))[0].subscriptionStatus).toBe('canceled')
+    // And the late replay of `.completed` itself (AC 5(d)), claim cleared so
+    // the watermark, not delivery dedup, is what refuses it.
+    await db.delete(paddleWebhookEvents)
+    await expectOk(F.completedA)
     expect((await readUser(CTM_A))[0].subscriptionStatus).toBe('canceled')
   })
 
@@ -546,7 +557,7 @@ describe('AC 2 / AC 3 — fixture coverage and scrub guards', () => {
       for (const address of text.match(/[\w.+-]+@[\w.-]+/g) ?? []) {
         expect(address.endsWith('@example.test'), `${name}: ${address}`).toBe(true)
       }
-      expect(text, name).not.toMatch(/pdl_(sdbx|live|ntfset)_/)
+      expect(text, name).not.toMatch(/\bpdl_/)
       expect(text, name).not.toContain('endpoint_secret_key')
       expect(text, name).not.toMatch(/\btest_[0-9a-f]{20,}/)
     }

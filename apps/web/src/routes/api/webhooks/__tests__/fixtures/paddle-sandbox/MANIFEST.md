@@ -45,10 +45,38 @@ names, address lines, postal codes or IPs in these payloads (`include_sensitive_
 | 15-adjustment.updated-full-refund-A.json | adjustment.updated | 21:20:01.498741Z | notification | ntf_01m44ckg0phsgy2715gbqx0cxj | `status: approved` |
 | 16-adjustment.updated-partial-refund-B.json | adjustment.updated | 21:20:02.177834Z | notification | ntf_01m44ckgh929hnfdkn06gyzvkz | `approved` |
 | 17-adjustment.updated-refund-annual-S.json | adjustment.updated | 21:20:03.262294Z | notification | ntf_01m44ckhhdtgfsbr9bgfcsbtfz | `approved` |
-| 90-adjustment.updated-full-refund-A.REJECTED.derived.json | adjustment.updated | (as 15) | **DERIVED** | from ntf_01m44ckg0phsgy2715gbqx0cxj | copy of 15 with ONLY `data.status` → `rejected` (sandbox cannot reject a refund; AC 7 iii) |
+| 90-adjustment.updated-full-refund-A.REJECTED.derived.json | adjustment.updated | (as 15) | **DERIVED** | from ntf_01m44ckg0phsgy2715gbqx0cxj | copy of 15 with `data.status` → `rejected` and, since the 94.1 code review, its own `event_id` (`evt_derived_rejected_from_fixture_15`) so it can never be deduplicated against 15 (sandbox cannot reject a refund; AC 7 iii) |
 | customer-A.json / -B.json / -S.json | — | — | API | `GET /customers/{id}` | the SDK returns the entity; wrapped as `{ "data": … }` (the HTTP body shape), `meta` omitted. S was read AFTER its email change. |
 
 All dated 2026-10-04 (capture date 2026-10-04).
+
+## `event_id` per fixture (AC 1)
+
+| file | `event_id` |
+|---|---|
+| 01-transaction.paid-lifetime-A.json | `evt_01m44c45zab5kr3pe7sdvrh5cm` |
+| 02-transaction.completed-lifetime-A.json | `evt_01m44c47h39t85cp881ckpmcdz` |
+| 03-transaction.paid-lifetime-B.json | `evt_01m44c4stcrpjhqv1sa9yyzdz2` |
+| 04-transaction.completed-lifetime-B.json | `evt_01m44c4vdcnn8edmg2nxj8gmw6` |
+| 05-transaction.paid-annual-S.json | `evt_01m44c5a80tnx53q5khcc8zbbe` |
+| 06-subscription.created-annual-S.json | `evt_01m44c5anesvky0beemvhpskzm` |
+| 07-transaction.completed-annual-S.json | `evt_01m44c5bj5wehqygrfhxfsnppf` |
+| 08-adjustment.created-full-refund-A.json | `evt_01m44c654zeb56emdsensa2fx3` |
+| 09-adjustment.created-partial-refund-B.json | `evt_01m44c65ap7qgx7qammn1spmcq` |
+| 10-adjustment.created-refund-annual-S.json | `evt_01m44c65gfrne9yvka0xnp7kqk` |
+| 11-customer.updated-S.json | `evt_01m44c6farxgdajch6pxfnsb1k` |
+| 12-subscription.canceled-annual-S.json | `evt_01m44cf5hb99ypbrvk4tzkbhs7` |
+| 13-subscription.updated-active-annual-S.sim.json | `ntfsimevt_01m44cj9yzj22q52aevabvsx2d` |
+| 14-subscription.past_due-annual-S.sim.json | `ntfsimevt_01m44cja0nydcn7ew9y8nvp4cf` |
+| 15-adjustment.updated-full-refund-A.json | `evt_01m44ckfet2dyhf74weepaj42f` |
+| 16-adjustment.updated-partial-refund-B.json | `evt_01m44ckg41wa2am348dav58ema` |
+| 17-adjustment.updated-refund-annual-S.json | `evt_01m44ckh5y1btwjxrrsbmvc7em` |
+| 90-adjustment.updated-full-refund-A.REJECTED.derived.json | `evt_derived_rejected_from_fixture_15` |
+
+Scrubbing per fixture: only `11-customer.updated-S.json` and `customer-{A,B,S}.json` contain an address
+(`example.com` → `example.test`); no other event fixture carries an email, so their only change is pretty-printing.
+13/14 also got the envelope described below; `customer-*.json` were wrapped as described in the table above; 90's
+changes are in its row.
 
 ## Simulation fixtures
 
@@ -69,5 +97,8 @@ Simulated events are timestamped at simulation time, so 13 (`active`) is LATER t
 - `credit_reverse` — NOT CAPTURED: not producible in sandbox for these checkouts (no credit adjustments).
 - `rejected` refund — NOT CAPTURED as a real payload (sandbox approves every refund); covered by the DERIVED 90.
 
-Also captured but not committed (unhandled by the handler, 200 "unhandled"): `customer.created` ×3,
-`subscription.activated`, the real `subscription.updated{canceled}`, the other simulation events.
+Also captured in Paddle's log but not committed: `customer.created` ×3 (unhandled by the handler, 200
+"unhandled"), and the other simulation events. ⚠️ Corrected at the 94.1 code review: `subscription.activated`
+and the real `subscription.updated{canceled}` were also left out, and they are NOT unhandled — the handler
+maps every `subscription.*` event by `data.status`. They were simply not captured into the scratchpad, so the
+only `subscription.updated{active}` fixture is the simulated 13.

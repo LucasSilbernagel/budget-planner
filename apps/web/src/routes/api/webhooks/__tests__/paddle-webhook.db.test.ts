@@ -491,8 +491,70 @@ describe('AC-1 — refunds, chargebacks and disputes', () => {
     expect(await db.select().from(paddleAdjustments)).toHaveLength(0)
     expect(captureError).toHaveBeenCalledWith(
       expect.objectContaining({ message: expect.stringContaining('without a status') }),
-      expect.objectContaining({ customerId: 'ctm_1' })
+      expect.objectContaining({ customerId: 'ctm_1', adjustmentId: 'adj_1' })
     )
+
+    // The status-less delivery is terminal, but it must not block the approved
+    // delivery of the same adjustment (its own event id) from applying.
+    await post({ ...adjustmentEvent(), event_type: 'adjustment.updated', occurred_at: at(6) })
+    expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('canceled')
+    expect(await db.select().from(paddleAdjustments)).toHaveLength(1)
+  })
+
+  it('a refund whose status is not a string is treated as missing: 200, not applied, flagged (94.1 review)', async () => {
+    await grantLifetime()
+
+    const res = await post({
+      ...adjustmentEvent({ status: 7, totals: { total: '9900' } }),
+      occurred_at: at(5),
+    })
+
+    expect(res.status).toBe(200)
+    expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('lifetime')
+    expect(captureError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('without a status') }),
+      expect.anything()
+    )
+  })
+
+  it('a refund with an UNEXPECTED status (e.g. `reversed`) is not applied, and is flagged (94.1 review)', async () => {
+    await grantLifetime()
+
+    const res = await post({
+      ...adjustmentEvent({ status: 'reversed', totals: { total: '9900' } }),
+      occurred_at: at(5),
+    })
+
+    expect(res.status).toBe(200)
+    expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('lifetime')
+    expect(await db.select().from(paddleAdjustments)).toHaveLength(0)
+    expect(captureError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('unexpected status') }),
+      expect.objectContaining({ adjustmentId: 'adj_1', status: 'reversed' })
+    )
+  })
+
+  it('a pending_approval refund is NOT flagged: pending is the normal first state', async () => {
+    await grantLifetime()
+    await post({
+      ...adjustmentEvent({ status: 'pending_approval', totals: { total: '9900' } }),
+      occurred_at: at(5),
+    })
+    expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('lifetime')
+    expect(captureError).not.toHaveBeenCalled()
+  })
+
+  it('the approval gate is refund-only: a CHARGEBACK with no status still revokes (94.1 review)', async () => {
+    // Pins D-A's scope: the gate must never swallow a chargeback.
+    await grantLifetime()
+
+    const res = await post({
+      ...adjustmentEvent({ action: 'chargeback', status: undefined, totals: { total: '1' } }),
+      occurred_at: at(5),
+    })
+
+    expect(res.status).toBe(200)
+    expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('canceled')
   })
 
   it('a PARTIAL refund does NOT revoke access', async () => {

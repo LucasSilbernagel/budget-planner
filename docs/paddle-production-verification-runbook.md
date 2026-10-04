@@ -48,7 +48,10 @@ account); the code it exercises is already merged.
    `past_due`/`canceled` status) and confirm access downgrades. ✅ 2026-10-04
    (story 94.1, sandbox capture-and-replay): the real `subscription.canceled` →
    `canceled` with `accessEndedAt` set; Paddle's simulated `subscription.past_due` →
-   `past_due` (premium features closed).
+   `past_due` (the DB status; that `past_due` closes premium features is
+   `STATUS_ACCESS` in `lib/premium/access-statuses.ts`, not re-tested here). The
+   simulation ran after the real cancel, so its `data` also carries the real
+   `canceled_at` (see the fixtures' `MANIFEST.md`).
 2. Confirm a `lifetime` buyer is **never** downgraded by any subscription
    event (25-2 no-downgrade guard). ✅ 2026-10-04 (sandbox replay: four real/simulated
    subscription payloads against a `lifetime` row).
@@ -58,7 +61,8 @@ account); the code it exercises is already merged.
 > ✅ **Steps 1-4 VERIFIED 2026-10-04 on Paddle's own SANDBOX payloads (story 94.1, capture-and-replay).**
 > Three sandbox checkouts (test card), three refunds, an email change, two subscription simulations
 > and a real cancellation generated the events; their payloads were read back from Paddle's
-> notification log, scrubbed of emails only, committed as fixtures
+> notification log, scrubbed of emails only (and pretty-printed; the two simulation envelopes and the
+> customer-API wrappers were built by us, and one rejected refund is derived: all named in the MANIFEST), committed as fixtures
 > (`routes/api/webhooks/__tests__/fixtures/paddle-sandbox/`, see its `MANIFEST.md`) and replayed
 > through the real handler on PGlite by
 > `routes/api/webhooks/__tests__/paddle-webhook.sandbox-payloads.db.test.ts`.
@@ -76,10 +80,10 @@ account); the code it exercises is already merged.
 > Steps 5-7 are NOT re-run against Paddle; see each step.
 
 Everything in this section is covered by automated tests against real
-PostgreSQL (`routes/api/webhooks/__tests__/paddle-webhook.db.test.ts`). These
-steps confirm the same behaviour against **live Paddle**, where the payload
-shapes and retry timing are Paddle's rather than ours — which is precisely the
-gap the skip leaves open.
+PostgreSQL (`routes/api/webhooks/__tests__/paddle-webhook.db.test.ts`). Since
+story 94.1, steps 1-4 are also replayed on Paddle-generated sandbox payloads
+(banner above). What is still open is the **live** run: Paddle's real delivery,
+retry timing and live approval timing, which no replay can show.
 
 1. **Duplicate delivery.** In the Paddle dashboard, replay a delivered event
    from the notification log. Expect `200`, no change to the `users` row, and
@@ -93,8 +97,9 @@ gap the skip leaves open.
    replay: the real `subscription.created` after the real `subscription.canceled`).
 3. **Full refund.** Refund a lifetime purchase in full. Expect
    `subscriptionStatus` to move off `lifetime` and the premium gate to close on
-   the next request. ✅ 2026-10-04 (sandbox replay): access is kept while the refund
-   is `pending_approval` and revoked when Paddle's `adjustment.updated{approved}` lands.
+   the next request. ✅ 2026-10-04 (sandbox replay, DB status only): access is kept
+   while the refund is `pending_approval` and `subscriptionStatus` moves to `canceled`
+   when Paddle's `adjustment.updated{approved}` lands.
 4. **Partial refund.** Issue a small partial refund against a lifetime purchase
    on a separate test account. Expect access to be RETAINED and exactly one
    `paddleAdjustments` ledger row for that `adj_` id, so the refunded sum for the
@@ -154,6 +159,6 @@ Brevo-verified address — not the retired `budgetplanner.eu` domain.
 | Date | Result |
 |------|--------|
 | 2026-09-11 | Sandbox checkout confirmed end-to-end (open → pay with test card → `checkout.completed` → `successUrl` redirect) once the sandbox account's default payment link was set. See story 5-3 Dev Agent Record change log. |
-| 2026-09-16 | ⏭️ **§3a NOT verified — accepted-as-skipped by Lucas** on closing story 5-19. No live or sandbox round trip was run for retry idempotency, refund/chargeback revocation, identity collision or the entitled-user 403. Migration 0017 confirmed applied (run 35150867103). Reasoning and residual risk: story 5-19, Task 8. |
-| 2026-10-04 | ✅ **§3 and §3a steps 1-4 verified on Paddle-generated SANDBOX payloads** (story 94.1, capture-and-replay): fixtures `routes/api/webhooks/__tests__/fixtures/paddle-sandbox/`, test `paddle-webhook.sandbox-payloads.db.test.ts`. Found and fixed: refunds were applied at `pending_approval` (now only when `approved`). Not proven: retry timing, chargeback shapes, live approval timing, live `include_sensitive_fields`. Steps 5-6 covered by tests only. |
+| 2026-09-16 | ⏭️ (Steps 1-4 superseded by the 2026-10-04 row.) **§3a NOT verified — accepted-as-skipped by Lucas** on closing story 5-19. No live or sandbox round trip was run for retry idempotency, refund/chargeback revocation, identity collision or the entitled-user 403. Migration 0017 confirmed applied (run 35150867103). Reasoning and residual risk: story 5-19, Task 8. |
 | 2026-09-15 | ⚠️ On code BEFORE 5-19 (`c5931cf`, 2026-09-16), which rewrote the subscription semantics; re-verified by story 94.1. Live production round trip confirmed by Lucas: seller account approved, live products/prices/webhook registered, all Paddle + `EMAIL_FROM` secrets injected as Rapids runtime secrets, real webhook delivery verified, real checkout completed for both plans with the premium gate flipping on, cancellation/past-due downgrade and the lifetime no-downgrade guard confirmed, and the authenticated `/api/sync/*` round trip verified against the live managed database. |
+| 2026-10-04 | ✅ **§3 and §3a steps 1-4 verified on Paddle-generated SANDBOX payloads** (story 94.1, capture-and-replay): fixtures `routes/api/webhooks/__tests__/fixtures/paddle-sandbox/`, test `paddle-webhook.sandbox-payloads.db.test.ts`. Found and fixed: refunds were applied at `pending_approval` (now only when `approved`). Not proven: retry timing, chargeback shapes, live approval timing, live `include_sensitive_fields`. Steps 5-6 covered by tests only. |
