@@ -715,6 +715,9 @@ const tabs: { id: ForecastingTab; label: string; description: string }[] = [
  * label wraps between its words ("Scenario / Builder"), centred. `min-w-0` lets a
  * larger system font or text zoom squeeze the buttons rather than push the page
  * sideways (at 320 under DejaVu "Projections" then uses 0.9 px of its padding).
+ * The cost: a single word wider than its button overflows it on both sides and
+ * can overlap its neighbour (from ≈ 119 % text-only zoom at 320, REASONED; logged
+ * in deferred-work, 91.3 review).
  * Every token is `max-sm:`, so ≥ 640 px renders exactly as before.
  */
 const TAB_BUTTON_PHONE_CLASS = 'max-sm:flex-1 max-sm:min-w-0 max-sm:px-2'
