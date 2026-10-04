@@ -85,3 +85,63 @@ test('paid-sheet-320', async ({ page }) => {
     timeout: SHOT_TIMEOUT,
   })
 })
+
+/**
+ * `/report` (story 91.2, FR145): fits the window on screen at 320 and 1280, and
+ * prints every column. It is premium, hence this paid file.
+ *
+ * ⚠️ The browser clock is NOT fixed here, unlike every other shot. /report
+ * stamps "Generated <date>" on the server AND the client; a fixed browser date
+ * disagrees with the server's and hydration fails (88.4, MEASURED 5/5 widths).
+ * The stamp is MASKED instead, like the footer year, and no page error may
+ * occur. Nothing else on the page reads the clock (the seed's dates are fixed).
+ */
+async function openReport(page: Page, width: number) {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(String(error)))
+  await page.setViewportSize({ width, height: 900 })
+  await page.emulateMedia({ colorScheme: 'light' })
+  await seedFinanceRows(page)
+  await mockSignedIn(page, { email: PAID_EMAIL, subscriptionStatus: 'active' })
+  await page.goto('/report')
+  await page.waitForLoadState('networkidle')
+  await expectSignedInAs(page, PAID_EMAIL)
+  await expect(page.getByRole('heading', { level: 1, name: 'Financial summary' })).toBeVisible()
+  await chartsDrawn(page, 0)
+  expect(errors, 'no page error (a fixed clock fails hydration here)').toEqual([])
+}
+
+/** The report's date stamp, asserted to match exactly once (a mask on nothing passes). */
+async function reportDate(page: Page) {
+  const stamp = page
+    .locator('#financial-summary-report header p')
+    .filter({ hasText: /^Generated / })
+  await expect(stamp, 'the report date mask matched nothing').toHaveCount(1)
+  return stamp
+}
+
+for (const width of [320, 1280]) {
+  test(`report-${width}-light`, async ({ page }) => {
+    await openReport(page, width)
+    await expect(page).toHaveScreenshot(`report-${width}-light.png`, {
+      fullPage: true,
+      mask: [...(await copyrightYear(page)), await reportDate(page)],
+      timeout: SHOT_TIMEOUT,
+    })
+  })
+}
+
+test('report-print', async ({ page }) => {
+  // 794 px = A4's width at 96 dpi. `emulateMedia` applies the `@media print`
+  // rules but not paper size or margins: this pins the print CSS, not the PDF.
+  await openReport(page, 794)
+  // After `expectSignedInAs`: the header is `data-print-hide`, hidden in print.
+  await page.emulateMedia({ media: 'print', colorScheme: 'light' })
+  // The print rule hides every print button: the media switch took effect.
+  await expect(page.getByRole('button', { name: /print \/ save as pdf/i })).toHaveCount(0)
+  await expect(page).toHaveScreenshot('report-print.png', {
+    fullPage: true,
+    mask: [await reportDate(page)],
+    timeout: SHOT_TIMEOUT,
+  })
+})

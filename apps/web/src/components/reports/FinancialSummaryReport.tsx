@@ -58,6 +58,7 @@ import { useExpenses } from '../../stores/expenseStore'
 import { useIncomeSources } from '../../stores/incomeStore'
 import { useSavingsGoals } from '../../stores/savingsStore'
 import { GroupedAmount } from '../ui/GroupedAmount'
+import { RESPONSIVE_SCROLL_SHADOW_CLASS, RESPONSIVE_WRAPPER_CLASS } from '../ui/ResponsiveTable'
 
 /** How a frequency reads in the report's own prose. */
 const FREQUENCY_LABELS: Record<string, string> = {
@@ -121,7 +122,66 @@ const BUDGET_PERIODS = Object.keys(BUDGET_PERIOD_LABEL) as readonly BudgetPeriod
  */
 const BUDGET_PERIOD_LABEL_TEXT = 'Show the budget per'
 
-const TABLE_CLASS = 'mt-3 min-w-full divide-y divide-gray-200 dark:divide-gray-700'
+const TABLE_CLASS = 'min-w-full divide-y divide-gray-200 dark:divide-gray-700'
+
+/**
+ * The scroll region every report table sits in (story 91.2, FR145).
+ *
+ * MEASURED under CI's font (`91-2-evidence/`): a four-column table needs ~477 px
+ * at 320 even with short names, against a card ~254 px wide, so on a phone a
+ * table must scroll INSIDE its own box or the whole page scrolls sideways. This
+ * is the app's existing table-region pattern (`IncomePage.tsx`: the wrapper, its
+ * self-hiding scroll shadows, and a focus stop with a name), reused rather than
+ * copied. Where the table fits, the shadows paint nothing.
+ *
+ * ⚠️ `print:` resets are load-bearing: paper cannot scroll, so in print the
+ * region must not clip (`print:overflow-visible`), and the shadow GRADIENTS must
+ * not print (`print:bg-none`; the report's print rule in `global.css` forces only
+ * `background-color`). `mt-3` lives here, not on the table: inside the scroll box
+ * it would sit under the shadow covers.
+ */
+const TABLE_REGION_CLASS = `${RESPONSIVE_WRAPPER_CLASS} ${RESPONSIVE_SCROLL_SHADOW_CLASS} mt-3 print:overflow-visible print:bg-none`
+
+/**
+ * A row's free-text name may break anywhere (story 91.2, FR145).
+ *
+ * `break-word` would not do: it does not lower the cell's min-content, and an
+ * auto-layout table sizes to the longest unbroken run (MEASURED: a 138-character
+ * name made four tables ~1490 px wide). Deliberately NOT screen-only: on `main`
+ * the printed PDF lost every figure column of those tables past the paper edge
+ * (MEASURED, `91-2-evidence/`). Figures sit in their own cells and never get it.
+ *
+ * ⚠️ `max-sm:min-w-[8rem]` is the other half, and phone-only. `anywhere` drops
+ * EVERY name's min-content to one character, so at 320 the auto-layout table
+ * squeezed the Name column to ~45 px and split ordinary names mid-word
+ * (`Freel` / `ance`), the long one over 31 lines (MEASURED). The floor keeps
+ * names breaking between words; the table scrolls a little more inside its
+ * region instead. At ≥ 640 px the column is already wider, and print never
+ * matches `max-sm:` (MEASURED: 768/1024/1280 and both PDFs pixel-identical
+ * with and without it).
+ */
+const NAME_WRAP_CLASS = '[overflow-wrap:anywhere] max-sm:min-w-[8rem]'
+
+/** One report table inside its own scroll region (see {@link TABLE_REGION_CLASS}). */
+function TableRegion({
+  label,
+  children,
+}: {
+  label: string
+  children: React.ReactNode
+}): React.ReactElement {
+  return (
+    <div
+      className={TABLE_REGION_CLASS}
+      // biome-ignore lint/a11y/noNoninteractiveTabindex: scrollable region needs a focus stop (WCAG 2.1.1) — the only pointer-free way to scroll a table wider than the screen; the autofix would remove keyboard access
+      tabIndex={0}
+      role="region"
+      aria-label={label}
+    >
+      {children}
+    </div>
+  )
+}
 const TH_CLASS = 'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-label'
 const TH_NUMERIC_CLASS = `${TH_CLASS} text-right`
 const TD_CLASS = 'px-3 py-2 text-sm text-body'
@@ -183,28 +243,29 @@ function CashflowTable({
   period: BudgetPeriod
 }): React.ReactElement {
   return (
-    <table className={TABLE_CLASS}>
-      <caption className="text-left text-sm font-medium text-subheading">{caption}</caption>
-      <thead className="surface-inset">
-        <tr>
-          <th scope="col" className={TH_CLASS}>
-            Name
-          </th>
-          <th scope="col" className={TH_NUMERIC_CLASS}>
-            Amount
-          </th>
-          <th scope="col" className={TH_CLASS}>
-            Frequency
-          </th>
-          <th scope="col" className={TH_NUMERIC_CLASS}>
-            {BUDGET_PERIOD_LABEL[period].word}
-          </th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-        {rows.map((row) => (
-          <tr key={row.id}>
-            {/* Story 56.2 (UX-DR63): `text-left` is EXPLICIT here, and at the
+    <TableRegion label={`${caption} table`}>
+      <table className={TABLE_CLASS}>
+        <caption className="text-left text-sm font-medium text-subheading">{caption}</caption>
+        <thead className="surface-inset">
+          <tr>
+            <th scope="col" className={TH_CLASS}>
+              Name
+            </th>
+            <th scope="col" className={TH_NUMERIC_CLASS}>
+              Amount
+            </th>
+            <th scope="col" className={TH_CLASS}>
+              Frequency
+            </th>
+            <th scope="col" className={TH_NUMERIC_CLASS}>
+              {BUDGET_PERIOD_LABEL[period].word}
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+          {rows.map((row) => (
+            <tr key={row.id}>
+              {/* Story 56.2 (UX-DR63): `text-left` is EXPLICIT here, and at the
                 other two row-header sites in this file. (Deliberately worded
                 without the scope attribute literal, so grepping for that
                 attribute counts the three real call sites and nothing else.)
@@ -221,15 +282,15 @@ function CashflowTable({
                 by Tailwind's own emission order — correct today, and silently
                 dependent on a vendor internal. Sibling precedent:
                 `categories/CategoryBreakdown.tsx:390,411`. */}
-            <th scope="row" className={`${TD_CLASS} font-normal text-left`}>
-              {row.name}
-            </th>
-            {/* ⚠️ These two state what the user ENTERED, at the cadence they
+              <th scope="row" className={`${TD_CLASS} font-normal text-left ${NAME_WRAP_CLASS}`}>
+                {row.name}
+              </th>
+              {/* ⚠️ These two state what the user ENTERED, at the cadence they
                 entered it. They are inert under the period control — only the
                 derived column beside them moves (story 56.3). */}
-            <td className={TD_NUMERIC_CLASS}>{format(row.amountCents)}</td>
-            <td className={TD_CLASS}>{FREQUENCY_LABELS[row.frequency] ?? row.frequency}</td>
-            {/* ⚠️ When the selected period IS the row's own entered cadence,
+              <td className={TD_NUMERIC_CLASS}>{format(row.amountCents)}</td>
+              <td className={TD_CLASS}>{FREQUENCY_LABELS[row.frequency] ?? row.frequency}</td>
+              {/* ⚠️ When the selected period IS the row's own entered cadence,
                 print what the user typed — do not round-trip it through the
                 monthly canonical figure.
 
@@ -255,17 +316,18 @@ function CashflowTable({
                 contradicting its OWN entered amount is checkable at a glance
                 by the person who typed it, while a few cents across a column
                 is not. See the guard test naming both figures. */}
-            <td className={TD_NUMERIC_CLASS}>
-              {format(
-                period === row.frequency
-                  ? row.amountCents
-                  : denormalizeFromMonthly(row.monthlyCents, period)
-              )}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+              <td className={TD_NUMERIC_CLASS}>
+                {format(
+                  period === row.frequency
+                    ? row.amountCents
+                    : denormalizeFromMonthly(row.monthlyCents, period)
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </TableRegion>
   )
 }
 
@@ -393,7 +455,12 @@ export function FinancialSummaryReport({
   )
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10">
+    // `w-full` is load-bearing (story 91.2, MEASURED): this column is a direct
+    // child of the root's `flex-col`, and its auto side margins switch off
+    // stretching, so without it the column takes fit-content width, never
+    // narrower than its widest table (543 px at a 320 px window with short
+    // names). `max-w-3xl` still caps it and `mx-auto` still centres it.
+    <div className="mx-auto w-full max-w-3xl px-4 py-10">
       {/* `data-print-hide`: the control that triggers the print must not appear
           on the printed page itself. */}
       {/* Story 56.1 (UX-DR61): `justify-end`, not `justify-between`. The row
@@ -647,45 +714,50 @@ export function FinancialSummaryReport({
                 </p>
               ) : (
                 <>
-                  <table className={TABLE_CLASS}>
-                    <caption className="text-left text-sm font-medium text-subheading">
-                      Goals and accounts
-                    </caption>
-                    <thead className="surface-inset">
-                      <tr>
-                        <th scope="col" className={TH_CLASS}>
-                          Name
-                        </th>
-                        <th scope="col" className={TH_NUMERIC_CLASS}>
-                          Saved
-                        </th>
-                        <th scope="col" className={TH_NUMERIC_CLASS}>
-                          Target
-                        </th>
-                        <th scope="col" className={TH_NUMERIC_CLASS}>
-                          Progress
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                      {model.savings.goals.map((goal) => (
-                        <tr key={goal.id}>
-                          {/* `text-left`: see the note at `CashflowTable`'s
-                              row header — same UA default, same fix. */}
-                          <th scope="row" className={`${TD_CLASS} font-normal text-left`}>
-                            {goal.name}
+                  <TableRegion label="Goals and accounts table">
+                    <table className={TABLE_CLASS}>
+                      <caption className="text-left text-sm font-medium text-subheading">
+                        Goals and accounts
+                      </caption>
+                      <thead className="surface-inset">
+                        <tr>
+                          <th scope="col" className={TH_CLASS}>
+                            Name
                           </th>
-                          <td className={TD_NUMERIC_CLASS}>{format(goal.currentCents)}</td>
-                          <td className={TD_NUMERIC_CLASS}>
-                            {goal.targetCents === null ? '—' : format(goal.targetCents)}
-                          </td>
-                          <td className={TD_NUMERIC_CLASS}>
-                            {formatPercent(goal.progressPercent)}
-                          </td>
+                          <th scope="col" className={TH_NUMERIC_CLASS}>
+                            Saved
+                          </th>
+                          <th scope="col" className={TH_NUMERIC_CLASS}>
+                            Target
+                          </th>
+                          <th scope="col" className={TH_NUMERIC_CLASS}>
+                            Progress
+                          </th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {model.savings.goals.map((goal) => (
+                          <tr key={goal.id}>
+                            {/* `text-left`: see the note at `CashflowTable`'s
+                              row header — same UA default, same fix. */}
+                            <th
+                              scope="row"
+                              className={`${TD_CLASS} font-normal text-left ${NAME_WRAP_CLASS}`}
+                            >
+                              {goal.name}
+                            </th>
+                            <td className={TD_NUMERIC_CLASS}>{format(goal.currentCents)}</td>
+                            <td className={TD_NUMERIC_CLASS}>
+                              {goal.targetCents === null ? '—' : format(goal.targetCents)}
+                            </td>
+                            <td className={TD_NUMERIC_CLASS}>
+                              {formatPercent(goal.progressPercent)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </TableRegion>
                   <dl className="mt-4">
                     <TotalRow label="Total saved" value={format(model.savings.totalCurrentCents)} />
                     <TotalRow
@@ -765,30 +837,32 @@ function BalanceTable({
   format: (cents: number) => string
 }): React.ReactElement {
   return (
-    <table className={TABLE_CLASS}>
-      <caption className="text-left text-sm font-medium text-subheading">{caption}</caption>
-      <thead className="surface-inset">
-        <tr>
-          <th scope="col" className={TH_CLASS}>
-            Name
-          </th>
-          <th scope="col" className={TH_NUMERIC_CLASS}>
-            Balance
-          </th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-        {rows.map((row) => (
-          <tr key={row.id}>
-            {/* `text-left`: see the note at `CashflowTable`'s row header —
-                same UA default, same fix. */}
-            <th scope="row" className={`${TD_CLASS} font-normal text-left`}>
-              {row.name}
+    <TableRegion label={`${caption} table`}>
+      <table className={TABLE_CLASS}>
+        <caption className="text-left text-sm font-medium text-subheading">{caption}</caption>
+        <thead className="surface-inset">
+          <tr>
+            <th scope="col" className={TH_CLASS}>
+              Name
             </th>
-            <td className={TD_NUMERIC_CLASS}>{format(row.balanceCents)}</td>
+            <th scope="col" className={TH_NUMERIC_CLASS}>
+              Balance
+            </th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+          {rows.map((row) => (
+            <tr key={row.id}>
+              {/* `text-left`: see the note at `CashflowTable`'s row header —
+                same UA default, same fix. */}
+              <th scope="row" className={`${TD_CLASS} font-normal text-left ${NAME_WRAP_CLASS}`}>
+                {row.name}
+              </th>
+              <td className={TD_NUMERIC_CLASS}>{format(row.balanceCents)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </TableRegion>
   )
 }
