@@ -831,6 +831,15 @@ async function handleLifetimePurchase(
  *     needs no restore path, which is the whole reason not to revoke here.
  *   - anything else (`credit`, reversals) → no entitlement change.
  *
+ * A `refund` counts only once Paddle has APPROVED it (Story 94.1, decision D-A,
+ * Lucas 2026-10-04). MEASURED on Paddle's own sandbox payloads: every refund
+ * arrives first as `adjustment.created` with `status: "pending_approval"` and
+ * later as `adjustment.updated` with `"approved"` (or `"rejected"`). Before
+ * this, the ledger row was written and the grant revoked at REQUEST time, and a
+ * refund Paddle then rejected still counted. Pending and rejected refunds record
+ * nothing; each delivery has its own `event_id`, so the approved one is still
+ * processed when it comes.
+ *
  * This path deliberately PIERCES the `<> 'lifetime'` no-downgrade guard: that
  * guard exists to stop a subscription-lifecycle event from touching a lifetime
  * buyer, and it was the reason a refund could never be corrected.
@@ -844,10 +853,40 @@ async function handleAdjustment(
     adjustmentId?: string
     adjustmentTotal?: number
     transactionId?: string
+    /** Paddle's adjustment `status`: `pending_approval` | `approved` | `rejected` | `reversed`. */
+    status?: string
     occurredAt: number
   }
 ): Promise<WriteResult> {
-  const { customerId, action, adjustmentId, adjustmentTotal, transactionId, occurredAt } = params
+  const { customerId, action, adjustmentId, adjustmentTotal, transactionId, status, occurredAt } =
+    params
+
+  // Decision D-A (Story 94.1): a refund moves nothing until Paddle approves it.
+  // Checked BEFORE the ledger insert, so a pending or rejected refund is never
+  // summed, and before the customer lookup, so a pending refund for a buyer we
+  // have not created yet is not retried pointlessly (the approved delivery is).
+  if (action === 'refund' && status !== 'approved') {
+    if (status === undefined) {
+      // Paddle's schema makes `status` required; a refund without one is
+      // malformed. Not acting leaves access in place, so make it visible.
+      logger.error('Webhook: refund adjustment carries no status — not applied', {
+        customerId,
+        adjustmentId,
+      })
+      captureError(new Error('Webhook: refund adjustment without a status needs manual review'), {
+        scope: 'paddle-webhook',
+        customerId,
+        transactionId,
+      })
+    } else {
+      logger.info('Webhook: refund not approved (yet) — recorded nothing', {
+        customerId,
+        adjustmentId,
+        status,
+      })
+    }
+    return { ok: true, terminal: true }
+  }
 
   const [existing] = await tx
     .select({
@@ -1286,7 +1325,8 @@ interface PaddleEventData {
   customer_id?: string
   /**
    * Subscription status on `subscription.*`, transaction status on
-   * `transaction.*`, and `active | archived` on `customer.*` — where it is a
+   * `transaction.*`, the approval status on `adjustment.*` (Story 94.1, D-A),
+   * and `active | archived` on `customer.*` — where it is a
    * property of the CUSTOMER RECORD and must never be read as an entitlement
    * change (archiving a customer in Paddle does not cancel anything).
    */
@@ -1777,6 +1817,7 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
           ...(data.id ? { adjustmentId: data.id } : {}),
           ...(adjustmentTotal === undefined ? {} : { adjustmentTotal }),
           ...(data.transaction_id ? { transactionId: data.transaction_id } : {}),
+          ...(data.status ? { status: data.status.toLowerCase() } : {}),
           occurredAt,
         })
       )

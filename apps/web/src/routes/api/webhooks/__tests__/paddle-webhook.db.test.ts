@@ -194,6 +194,10 @@ function adjustmentEvent(overrides: Record<string, unknown> = {}) {
       customer_id: 'ctm_1',
       action: 'refund',
       transaction_id: 'txn_lifetime_1',
+      // Story 94.1 (AC 6): Paddle's real adjustments carry `status`, and a
+      // refund now counts only once `approved` (D-A). This hand-built shape had
+      // none. Pending/rejected cases live in the sandbox-payloads suite.
+      status: 'approved',
       totals: { total: LIFETIME_TOTAL },
       ...overrides,
     },
@@ -470,6 +474,25 @@ describe('AC-1 — refunds, chargebacks and disputes', () => {
     expect(res.status).toBe(200)
     const [row] = await readUser('ctm_1')
     expect(row.subscriptionStatus).toBe('canceled')
+  })
+
+  it('a refund with NO status is not applied, and is flagged for review (Story 94.1, D-A)', async () => {
+    // Paddle's schema makes `status` required; a refund without one is
+    // malformed. It must not revoke silently NOR vanish silently.
+    await grantLifetime()
+
+    const res = await post({
+      ...adjustmentEvent({ status: undefined, totals: { total: '9900' } }),
+      occurred_at: at(5),
+    })
+
+    expect(res.status).toBe(200)
+    expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('lifetime')
+    expect(await db.select().from(paddleAdjustments)).toHaveLength(0)
+    expect(captureError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('without a status') }),
+      expect.objectContaining({ customerId: 'ctm_1' })
+    )
   })
 
   it('a PARTIAL refund does NOT revoke access', async () => {
@@ -864,6 +887,7 @@ describe('review fixes — retry, duplicate adjustments and unrelated chargeback
         id: 'adj_same',
         customer_id: 'ctm_1',
         action: 'refund',
+        status: 'approved',
         transaction_id: 'txn_lifetime_1',
         totals: { total: '5000' },
       },
