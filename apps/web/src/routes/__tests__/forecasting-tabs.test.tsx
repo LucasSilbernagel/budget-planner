@@ -74,8 +74,23 @@ describe('forecasting tab strip below 640 px (story 91.3)', () => {
   it('shares the strip width and halves the padding on a phone, and keeps the desktop padding', async () => {
     for (const button of await renderTabs()) {
       expect(tokens(button)).toEqual(
-        expect.arrayContaining(['max-sm:flex-1', 'max-sm:min-w-0', 'max-sm:px-2', 'px-4'])
+        expect.arrayContaining(['max-sm:flex-1', 'max-sm:min-w-0', 'max-sm:px-1.5', 'px-4'])
       )
+      // Story 93.1 (D3 option B): px-1.5, not px-2. At px-2 "Projections" (76.5 px
+      // under DejaVu) did not fit its 74.7 px content box, so the label wrap below
+      // would split it at 100 % text size (MEASURED, `93-1-evidence/`).
+      expect(tokens(button)).not.toContain('max-sm:px-2')
+    }
+  })
+
+  it('lets a label that is wider than its button break inside a word, on a phone only (93.1)', async () => {
+    // MEASURED (story 93.1, DejaVu, 320 px): at 125 % text size "Projections" overflowed
+    // its button by 4.5 px each side, at 150 % it crossed both neighbours by 10.1 px.
+    // Breaking the word ends the overlap; `max-sm:` keeps >= 640 px as it was.
+    for (const button of await renderTabs()) {
+      const label = Array.from(button.querySelectorAll('span')).find((s) => s.children.length === 0)
+      expect(tokens(label as Element)).toContain('max-sm:[overflow-wrap:anywhere]')
+      expect(tokens(label as Element)).not.toContain('[overflow-wrap:anywhere]')
     }
   })
 

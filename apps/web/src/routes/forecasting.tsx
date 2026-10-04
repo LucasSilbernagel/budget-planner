@@ -711,19 +711,26 @@ const tabs: { id: ForecastingTab; label: string; description: string }[] = [
  * 288 px content box (DejaVu, `91-3-evidence/`): each button's min-content is its
  * longest word + `px-4` + a 16 px icon + `ml-2`, so the page scrolled sideways by
  * 80 px (still 25 px at 375). On a phone the icons go (they are `aria-hidden`, so
- * no tab is renamed), the padding halves, and the buttons share the strip, where a
- * label wraps between its words ("Scenario / Builder"), centred. `min-w-0` lets a
- * larger system font or text zoom squeeze the buttons rather than push the page
- * sideways (at 320 under DejaVu "Projections" then uses 0.9 px of its padding).
- * The cost: a single word wider than its button overflows it on both sides and
- * can overlap its neighbour (from ≈ 119 % text-only zoom at 320, REASONED; logged
- * in deferred-work, 91.3 review).
+ * no tab is renamed), the padding drops to `px-1.5`, and the buttons share the
+ * strip, where a label wraps between its words ("Scenario / Builder"), centred.
+ * `min-w-0` lets a larger system font or text zoom squeeze the buttons rather than
+ * push the page sideways.
+ *
+ * Story 93.1 (D3 option B, MEASURED under DejaVu at 320 px, `93-1-evidence/`):
+ * with `px-2` a single word wider than its button overflowed it on both sides
+ * under text-only zoom: "Projections" by 4.5 px each side at 125 %, and at 150 %
+ * it crossed both neighbours by 10.1 px. So the label may now break INSIDE a
+ * word ({@link TAB_LABEL_CLASS}). That alone split "Projection|s" at 100 % (the
+ * word is 76.5 px, the `px-2` content box 74.7 px), hence `px-1.5`: a 78.7 px
+ * box, and 100 % renders exactly as before. Mid-word breaks start at 125 %.
  * Every token is `max-sm:`, so ≥ 640 px renders exactly as before.
  */
-const TAB_BUTTON_PHONE_CLASS = 'max-sm:flex-1 max-sm:min-w-0 max-sm:px-2'
+const TAB_BUTTON_PHONE_CLASS = 'max-sm:flex-1 max-sm:min-w-0 max-sm:px-1.5'
 const TAB_CONTENT_CLASS = 'flex items-center max-sm:justify-center max-sm:text-center'
 const TAB_ICON_PHONE_CLASS = 'max-sm:hidden'
-const TAB_LABEL_CLASS = 'ml-2 max-sm:ml-0'
+/** `anywhere` (phone only, story 93.1): a word wider than its button breaks rather
+ * than overflowing into the neighbouring tab. See {@link TAB_BUTTON_PHONE_CLASS}. */
+const TAB_LABEL_CLASS = 'ml-2 max-sm:ml-0 max-sm:[overflow-wrap:anywhere]'
 
 function TabNavigation({
   activeTab,

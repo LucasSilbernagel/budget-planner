@@ -1,5 +1,5 @@
 # generated: 2026-06-18
-# last_updated: 2026-10-04j (**93.1 DEV, HALTED at Task 2.3 (D3)**: epic 93 in-progress; rest done, gates green.)
+# last_updated: 2026-10-04j (**93.1 DEV DONE -> review**: D3 option B applied; gates green.)
 # last_updated: 2026-10-04i (**correct-course**: epic 94 / 94.1 + 94.2 added as backlog; SCP 2026-10-04 approved.)
 # last_updated: 2026-10-04h (**BATCH 19 planned**: epic 93 / 1 story (93.1) added as backlog; baseline_commit reset to `bd12647`.)
 # last_updated: 2026-10-04g (**91.3 + EPIC 91 DONE; BATCH 18 COMPLETE**: PR #34 merged `4f9a632`, deploy 37222479830 green.)
@@ -1299,7 +1299,7 @@ development_status:
 
   # BATCH 19 (2026-10-04, from deferred-work-triage-2026-10-04.md decision 7 = value trim; FR149). One story by design; the rest ACCEPTED, old backlog ARCHIVED.
   epic-93: in-progress  # Less Friction for Keyboard and Zoom Users. FR149. Runs alongside launch-verification planning (correct-course 2026-10-04).
-  93-1-tab-only-where-it-matters-and-keep-two-fixes-fixed: in-progress  # DEV 2026-10-04 (worktree agent-a3f735579feb72c0e, not pushed): Tasks 0,1,3,4,5 done + gates ALL GREEN 3m30s (web 4373, core 1192, db 312/7, e2e 23). HALTED at Task 2.3 for Lucas (D3): forecasting tab labels MEASURED overflowing at 125/150 % text zoom, and the confirmed overflow-wrap:anywhere lean splits "Projection|s" at 100 %; options + numbers in 93-1-evidence/. Not shipped. CREATED 2026-10-04 at `73c2b43`; D1-D5 CONFIRMED by Lucas 2026-10-04 as recommended; D1-D5 await Lucas.
+  93-1-tab-only-where-it-matters-and-keep-two-fixes-fixed: review  # DEV DONE 2026-10-04 (worktree agent-a3f735579feb72c0e, branch worktree-agent-a3f735579feb72c0e, not pushed): `3a9c955` + D3 option B (Lucas). Gates ALL GREEN 3m52s (web 4374, core 1192, db 312/7, e2e 23). Forecasting tabs: no overflow at 320 @100/125/150 % or 375 @150 %; 100 % geometry identical (15/15 rows) -> forecasting-320-light predicted unchanged. Next: CI screenshots compare + code review.
   epic-93-retrospective: optional
   epic-94: in-progress  # Billing and Alerts Proven Before Launch. FR152, FR153. From sprint-change-proposal-2026-10-04.md (D1 capture-and-replay, D2 agent drives sandbox checkouts, D3 fix in 94.1). Parallel with 93.1. SANDBOX ONLY.
   94-1-the-webhook-is-proved-on-paddles-own-payloads: ready-for-dev  # CREATED 2026-10-04 at `73c2b43`; D-A..D-D CONFIRMED by Lucas 2026-10-04 as recommended; D-A..D-D await Lucas (D-A: refund revokes only when approved? handler ignores adjustment status).
