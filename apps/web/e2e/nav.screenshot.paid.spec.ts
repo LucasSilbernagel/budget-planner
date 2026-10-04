@@ -61,6 +61,17 @@ test('forecasting-1280-light', async ({ page }) => {
   })
 })
 
+// Story 91.3 (FR147): at 320 the tab strip fits the page (it scrolled 80 px
+// sideways before): no icons, half padding, two-line labels. Default tab.
+test('forecasting-320-light', async ({ page }) => {
+  await open(page, '/forecasting', 320, 0)
+  await expect(page).toHaveScreenshot('forecasting-320-light.png', {
+    fullPage: true,
+    mask: await copyrightYear(page),
+    timeout: SHOT_TIMEOUT,
+  })
+})
+
 for (const width of [768, 1280]) {
   test(`paid-header-${width}-light`, async ({ page }) => {
     await open(page, '/', width, 4)
