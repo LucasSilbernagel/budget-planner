@@ -706,6 +706,25 @@ const tabs: { id: ForecastingTab; label: string; description: string }[] = [
   },
 ]
 
+/**
+ * Below `sm` (story 91.3, FR147). At 320 px the three tabs measured 388 px in a
+ * 288 px content box (DejaVu, `91-3-evidence/`): each button's min-content is its
+ * longest word + `px-4` + a 16 px icon + `ml-2`, so the page scrolled sideways by
+ * 80 px (still 25 px at 375). On a phone the icons go (they are `aria-hidden`, so
+ * no tab is renamed), the padding halves, and the buttons share the strip, where a
+ * label wraps between its words ("Scenario / Builder"), centred. `min-w-0` lets a
+ * larger system font or text zoom squeeze the buttons rather than push the page
+ * sideways (at 320 under DejaVu "Projections" then uses 0.9 px of its padding).
+ * The cost: a single word wider than its button overflows it on both sides and
+ * can overlap its neighbour (from ≈ 119 % text-only zoom at 320, REASONED; logged
+ * in deferred-work, 91.3 review).
+ * Every token is `max-sm:`, so ≥ 640 px renders exactly as before.
+ */
+const TAB_BUTTON_PHONE_CLASS = 'max-sm:flex-1 max-sm:min-w-0 max-sm:px-2'
+const TAB_CONTENT_CLASS = 'flex items-center max-sm:justify-center max-sm:text-center'
+const TAB_ICON_PHONE_CLASS = 'max-sm:hidden'
+const TAB_LABEL_CLASS = 'ml-2 max-sm:ml-0'
+
 function TabNavigation({
   activeTab,
   onTabChange,
@@ -720,15 +739,15 @@ function TabNavigation({
             type="button"
             onClick={() => onTabChange(tab.id)}
             disabled={disabled}
-            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${
+            className={`px-4 ${TAB_BUTTON_PHONE_CLASS} py-2 text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${
               activeTab === tab.id
                 ? 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 shadow-sm'
                 : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 hover:text-gray-700 dark:hover:text-gray-100'
             }`}
           >
-            <span className="flex items-center">
+            <span className={TAB_CONTENT_CLASS}>
               {getTabIcon(tab.id, activeTab === tab.id)}
-              <span className="ml-2">{tab.label}</span>
+              <span className={TAB_LABEL_CLASS}>{tab.label}</span>
             </span>
           </button>
         ))}
@@ -744,7 +763,9 @@ function TabNavigation({
  * Get tab icon based on tab ID and active state
  */
 function getTabIcon(tabId: ForecastingTab, isActive: boolean): React.ReactElement {
-  const className = `w-4 h-4 ${isActive ? 'text-blue-600' : 'text-gray-400'}`
+  const className = `w-4 h-4 ${TAB_ICON_PHONE_CLASS} ${
+    isActive ? 'text-blue-600' : 'text-gray-400'
+  }`
 
   switch (tabId) {
     case 'scenarios':
