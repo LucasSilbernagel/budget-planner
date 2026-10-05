@@ -513,7 +513,18 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
                     the "Starting Net Worth" card rendered just below it. */}
                 <ReferenceLine
                   y={result?.summary.startingNetWorth}
-                  label={{ value: 'Starting', fill: chartColors.axis, fontSize: 10 }}
+                  // Above the line, right-aligned (DN1, story 97.2 review): a
+                  // centred label was struck through by the X-axis stroke when
+                  // the starting amount is the axis floor. `insideBottomRight`,
+                  // not `insideTopRight`: a horizontal line's label viewBox has
+                  // zero height, so "inside top" is y + offset, i.e. BELOW the
+                  // line, in the X tick labels (MEASURED; recharts Label.js).
+                  label={{
+                    value: 'Starting',
+                    position: 'insideBottomRight',
+                    fill: chartColors.axis,
+                    fontSize: 10,
+                  }}
                   stroke="#9ca3af"
                   strokeDasharray="3 3"
                 />

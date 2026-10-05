@@ -156,6 +156,35 @@ describe('the tooltip', () => {
   })
 })
 
+describe('the "Starting" reference line', () => {
+  it('puts its label above the line, never on it (DN1 (b), story 97.2 review)', () => {
+    // 7-digit shape whose starting net worth ($2.0M) IS the axis floor, so the
+    // reference line coincides with the X-axis stroke. jsdom measures no text:
+    // this pins only the label's position (Recharts' computed x/y/anchor from
+    // the `position` prop). That the glyph box clears the stroke is
+    // browser-measured (`97-2-evidence/review/out-dn1.jsonl`).
+    const seven: ForecastingResult = {
+      ...result('Buy a house'),
+      baseline: [row(1, 203_400_000), row(2, 225_000_000), row(3, 248_457_568)],
+      projection: [row(1, 203_400_000), row(2, 225_000_000), row(3, 248_457_568)],
+      summary: {
+        startingNetWorth: 200_000_000,
+        endingNetWorth: 248_457_568,
+        totalGrowth: 48_457_568,
+        averageAnnualGrowth: 16_152_522,
+      },
+    }
+    const { container } = render(<ProjectionChart result={seven} />)
+    const line = container.querySelector('.recharts-reference-line line') as Element
+    expect(line, 'the line is drawn at the floor').not.toBeNull()
+    const label = container.querySelector('.recharts-reference-line .recharts-label') as Element
+    expect(label.textContent).toBe('Starting')
+    // insideTopRight: right-aligned, and its y is above the stroke's y.
+    expect(label.getAttribute('text-anchor')).toBe('end')
+    expect(Number(label.getAttribute('y'))).toBeLessThan(Number(line.getAttribute('y1')))
+  })
+})
+
 for (const narrow of [false, true]) {
   describe(`the value axis (${narrow ? 'narrow' : 'wide'} viewport)`, () => {
     it('prints compact, distinct labels, never full amounts with cents', () => {
