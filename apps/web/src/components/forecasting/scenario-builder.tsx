@@ -26,7 +26,15 @@ import {
 } from '@budget-planner/core'
 import type { Frequency, NormalizableFinancialItem } from '@budget-planner/core/finance'
 import { Link } from '@tanstack/react-router'
-import React, { useState, useCallback, useMemo, useRef, useEffect, useId } from 'react'
+import React, {
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+  useEffect,
+  useId,
+  useLayoutEffect,
+} from 'react'
 import { useIsInitialSyncPending } from '../../hooks/useIsInitialSyncPending'
 import { useStoresHydrated } from '../../hooks/useStoresHydrated'
 import { isKnownFrequency } from '../../lib/readable-rows'
@@ -524,6 +532,12 @@ export function ScenarioBuilder({
   const readyToSeed = storesHydrated && !isInitialSyncPending
 
   const [hasSeeded, setHasSeeded] = useState<boolean>(() => Boolean(initialForecast))
+  // Whether the user has typed into Current Savings / Current Investments. The
+  // seed lands on a later commit than mount, and on a cold load the user can type
+  // before it does: the server-rendered field is live before hydration, and
+  // `InputField` adopts that text on mount. The seed must not overwrite it.
+  const savingsTouched = useRef(false)
+  const investmentsTouched = useRef(false)
 
   useEffect(() => {
     if (hasSeeded || !readyToSeed) return
@@ -534,8 +548,10 @@ export function ScenarioBuilder({
     // one corrupt row makes the whole total NaN. Every row `amount` is already
     // guarded in `itemsFromStore`; these two were not (code review 62.1). An
     // unguarded NaN reaches the money field AND the saved forecast's `inputs`.
-    setSavings(Number.isFinite(storeSavings) ? storeSavings : 0)
-    setInvestments(Number.isFinite(storeInvestments) ? storeInvestments : 0)
+    if (!savingsTouched.current) setSavings(Number.isFinite(storeSavings) ? storeSavings : 0)
+    if (!investmentsTouched.current) {
+      setInvestments(Number.isFinite(storeInvestments) ? storeInvestments : 0)
+    }
     setHasSeeded(true)
   }, [hasSeeded, readyToSeed, storeIncome, storeExpenses, storeSavings, storeInvestments])
 
@@ -762,6 +778,7 @@ export function ScenarioBuilder({
    */
   const handleSavingsChange = useCallback(
     (value: string | number) => {
+      savingsTouched.current = true
       setSavings(typeof value === 'number' ? value : parseFromInput(value, locale))
     },
     [locale]
@@ -772,6 +789,7 @@ export function ScenarioBuilder({
    */
   const handleInvestmentsChange = useCallback(
     (value: string | number) => {
+      investmentsTouched.current = true
       setInvestments(typeof value === 'number' ? value : parseFromInput(value, locale))
     },
     [locale]
@@ -1156,7 +1174,10 @@ export function ScenarioBuilder({
               `0.00` — correct data, wrong thing displayed, and no test of the
               state alone would see it.
               Safe because `hasSeeded` flips exactly once, on the commit after
-              mount, long before anyone can type. The income/expense rows need no
+              mount. On a cold load the user CAN type before then (into the
+              server-rendered field); `InputField` adopts that text on mount and
+              `savingsTouched` stops the seed from replacing it, so the remount
+              re-displays the typed value. The income/expense rows need no
               equivalent: their `key` is the item id, so seeding remounts them
               anyway. */}
           <InputField
@@ -1411,12 +1432,9 @@ function InputField({
     return sanitize ? sanitize(seeded) : seeded
   })
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Filter first, so the displayed value and the value lifted to the parent are
-    // derived from the same string. There is no blur re-formatter on this surface,
-    // which makes onChange the only filter point. `sanitizeWithCaret` also keeps
-    // the cursor in place when a character is rejected mid-string.
-    const rawValue = sanitize ? sanitizeWithCaret(e.target, sanitize) : e.target.value
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const commit = (rawValue: string) => {
     setInternalValue(rawValue)
 
     if (parseValue) {
@@ -1433,6 +1451,28 @@ function InputField({
     }
   }
 
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Filter first, so the displayed value and the value lifted to the parent are
+    // derived from the same string. There is no blur re-formatter on this surface,
+    // which makes onChange the only filter point. `sanitizeWithCaret` also keeps
+    // the cursor in place when a character is rejected mid-string.
+    commit(sanitize ? sanitizeWithCaret(e.target, sanitize) : e.target.value)
+  }
+
+  // Keep what the user typed BEFORE hydration. The server-rendered input is live
+  // as soon as it paints, and on a cold load that can be seconds before React
+  // takes over. Hydration leaves the typed DOM value in place but fires no
+  // onChange, so state still holds the server value, and the next re-render of
+  // this field (the store seed is one) writes that back over the user's text.
+  // Adopting the DOM value on mount closes that window. On an ordinary client
+  // mount the two are equal and this does nothing.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only by design
+  useLayoutEffect(() => {
+    const domValue = inputRef.current?.value
+    if (domValue === undefined || domValue === internalValue) return
+    commit(sanitize ? sanitize(domValue) : domValue)
+  }, [])
+
   // Associate the label with its control (story `forecast-2`). `useId` keeps the
   // pairing unique across the seven call sites without threading an id prop.
   const inputId = useId()
@@ -1444,6 +1484,7 @@ function InputField({
         {label}
       </label>
       <input
+        ref={inputRef}
         id={inputId}
         type={type}
         value={internalValue}
