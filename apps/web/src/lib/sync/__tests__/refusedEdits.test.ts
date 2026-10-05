@@ -357,3 +357,40 @@ describe('refusalNoticeStore', () => {
     expect(getRefusalNotices()).toEqual([])
   })
 })
+
+/**
+ * Story 99.2 (G13, AC-7, D9): a refused retirement plan edit is NAMED and the
+ * plan is NOT reverted: no tombstone, no re-pull (which would replace the user's
+ * whole plan with the server's older copy).
+ */
+describe('a refused retirement plan edit (story 99.2)', () => {
+  const planOp = (type: SyncOperation['type']) =>
+    op({ type, entityType: 'retirementPlan', entityId: 'u', data: { userId: 'u', plan: {} } })
+
+  it('is named "Your retirement plan", kind "retirement plan"', () => {
+    const notice = describeRefusedRow([planOp('update')], undefined)
+    expect(notice).toMatchObject({
+      entityType: 'retirementPlan',
+      name: null,
+      kind: 'retirement plan',
+      fallback: 'Your retirement plan',
+    })
+  })
+
+  it.each(['create', 'update'] as const)(
+    'a refused %s reverts NOTHING: no tombstone, no re-pull, still notified',
+    async (type) => {
+      const d = deps()
+      await handleRejectedOperations([planOp(type)], d)
+      expect(d.applyChanges).not.toHaveBeenCalled()
+      expect(d.requestFullRepull).not.toHaveBeenCalled()
+      expect(d.notify).toHaveBeenCalledTimes(1)
+    }
+  )
+
+  it('CONTROL: a refused expense update in the same sync still re-pulls', async () => {
+    const d = deps()
+    await handleRejectedOperations([planOp('update'), op({ type: 'update' })], d)
+    expect(d.requestFullRepull).toHaveBeenCalledTimes(1)
+  })
+})

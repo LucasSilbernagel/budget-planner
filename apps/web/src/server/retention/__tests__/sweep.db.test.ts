@@ -67,6 +67,7 @@ import {
   loginTokens,
   paddleWebhookEvents,
   rateLimits,
+  retirementPlans,
   savingsGoals,
   userProfiles,
   users,
@@ -145,6 +146,8 @@ async function seedAccount(opts: {
   await db
     .insert(forecastingProfiles)
     .values({ userId, profileId, name: 'Plan', scenarioData: '{}' })
+  // Story 99.2: the synced retirement plan (`id` = the user's id).
+  await db.insert(retirementPlans).values({ id: userId, userId, plan: { currentAgeInput: '40' } })
   await db.insert(loginTokens).values({
     userId,
     tokenHash: String(seq).padStart(64, '0'),
@@ -184,6 +187,9 @@ async function footprint(account: { userId: string; email: string; paddleId: str
     forecastingProfiles: await count(
       db.select().from(forecastingProfiles).where(eq(forecastingProfiles.userId, account.userId))
     ),
+    retirementPlans: await count(
+      db.select().from(retirementPlans).where(eq(retirementPlans.userId, account.userId))
+    ),
     loginTokens: await count(
       db.select().from(loginTokens).where(eq(loginTokens.userId, account.userId))
     ),
@@ -211,6 +217,7 @@ const INTACT = {
   savingsGoals: 1,
   balanceTracking: 1,
   forecastingProfiles: 1,
+  retirementPlans: 1,
   loginTokens: 1,
   syncBucket: 1,
   emailBucket: 1,
@@ -227,6 +234,7 @@ const ERASED = {
   savingsGoals: 0,
   balanceTracking: 0,
   forecastingProfiles: 0,
+  retirementPlans: 0,
   loginTokens: 0,
   syncBucket: 0,
   emailBucket: 0,
@@ -266,6 +274,7 @@ beforeEach(async () => {
   vi.clearAllMocks()
   sendRetentionNoticeEmail.mockResolvedValue('msg-1')
   await db.delete(forecastingProfiles)
+  await db.delete(retirementPlans)
   await db.delete(incomeSources)
   await db.delete(expenses)
   await db.delete(categories)

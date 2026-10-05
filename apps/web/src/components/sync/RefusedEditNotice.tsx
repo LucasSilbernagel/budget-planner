@@ -153,6 +153,12 @@ export function noticeHeading(notice: RefusalNotice): string {
  */
 export function refusalMessage(notice: RefusalNotice): string {
   const what = subject(notice)
+  // Story 99.2 (D9): a refused retirement plan edit is NOT reverted, so neither
+  // "removed" nor "changed back" would be true (`handleRejectedOperations` skips
+  // the plan's revert and re-pull).
+  if (notice.entityType === 'retirementPlan' && notice.outcome !== 'not-synced') {
+    return `${capitalise(what)} ${NOT_SAVED}. It is still saved on this device.`
+  }
   switch (notice.outcome) {
     case 'removed':
       // A profile's rows go with it (the tombstone cascades them), so say so.

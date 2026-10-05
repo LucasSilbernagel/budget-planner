@@ -9,14 +9,19 @@
  */
 
 import type { ServerChange } from '@budget-planner/core/sync'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useBalanceStore } from '../../../stores/balanceStore'
 import { useCategoryStore } from '../../../stores/categoryStore'
 import { useExpenseStore } from '../../../stores/expenseStore'
 import { useIncomeStore } from '../../../stores/incomeStore'
 import { useProfileStore } from '../../../stores/profileStore'
+import {
+  RETIREMENT_PLANNER_PARKED_KEY_PREFIX,
+  RETIREMENT_PLAN_DEFAULTS,
+  useRetirementPlannerStore,
+} from '../../../stores/retirementPlannerStore'
 import { useSavingsStore } from '../../../stores/savingsStore'
-import { applyServerChangesToStores } from '../applyServerChanges'
+import { applyServerChangesToStores, findLocalRow, stampSyncedOwner } from '../applyServerChanges'
 
 const UUID_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const UUID_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
@@ -659,5 +664,170 @@ describe('a pulled userProfile tombstone cascades locally (story 66.3)', () => {
     expect(useIncomeStore.getState().incomeSources.map((r) => r.id)).not.toContain('i-keeper')
     expect(useCategoryStore.getState().categories.map((r) => r.id)).toEqual(['c-doomed'])
     expect(useProfileStore.getState().profiles).toHaveLength(2)
+  })
+})
+
+/**
+ * Story 99.2 (G12, AC-3, AC-4, D9): the retirement plan is a SINGLETON, applied
+ * by plain `setState` (no store action, so no sync op), never through the
+ * collection machinery.
+ */
+describe('the retirement plan (story 99.2)', () => {
+  const PLAN = {
+    ...RETIREMENT_PLAN_DEFAULTS,
+    currentAgeInput: '41',
+    desiredIncomeInput: '55.000,00',
+    desiredIncomeTouched: true,
+    desiredIncomeLocale: 'de-DE',
+    model: 'perpetual' as const,
+  }
+  const LOCAL = { ...RETIREMENT_PLAN_DEFAULTS, currentAgeInput: '50' }
+  const OTHER_ACCOUNT = '22222222-2222-4222-8222-222222222222'
+
+  function planChange(overrides: Partial<ServerChange> = {}): ServerChange {
+    return {
+      entityType: 'retirementPlan',
+      entityId: SERVER_USER_ID,
+      data: {
+        id: SERVER_USER_ID,
+        userId: SERVER_USER_ID,
+        plan: PLAN,
+        isDeleted: false,
+        createdAt: '2026-10-05T00:00:00.000Z',
+        updatedAt: '2026-10-05T00:00:00.000Z',
+      },
+      updatedAt: Date.parse('2026-10-05T12:00:00.000Z'),
+      isDeleted: false,
+      ...overrides,
+    }
+  }
+
+  beforeEach(() => {
+    useRetirementPlannerStore.setState({
+      plan: { ...LOCAL },
+      ownerUserId: SERVER_USER_ID,
+      serverUpdatedAt: null,
+    })
+  })
+
+  it('AC-3: replaces the plan, owned by the session, stamped with the server version', () => {
+    applyServerChangesToStores([planChange()], SERVER_USER_ID)
+    const state = useRetirementPlannerStore.getState()
+    expect(state.plan).toEqual(PLAN)
+    expect(state.ownerUserId).toBe(SERVER_USER_ID)
+    expect(state.serverUpdatedAt).toBe('2026-10-05T12:00:00.000Z')
+  })
+
+  it('AC-3: rebuilds the pulled plan through coerceRetirementPlan (lenient pull, coerced fields)', () => {
+    applyServerChangesToStores(
+      [planChange({ data: { plan: { currentAgeInput: 7, model: 'hybrid', extra: 1 } } })],
+      SERVER_USER_ID
+    )
+    expect(useRetirementPlannerStore.getState().plan).toEqual(RETIREMENT_PLAN_DEFAULTS)
+  })
+
+  it('D9 / AC-7: a plan TOMBSTONE is a store no-op', () => {
+    // A full row, as a pulled tombstone carries one: the no-op must not depend on
+    // the payload being empty.
+    applyServerChangesToStores([planChange({ isDeleted: true })], SERVER_USER_ID)
+    applyServerChangesToStores([planChange({ isDeleted: true, data: {} })], SERVER_USER_ID)
+    expect(useRetirementPlannerStore.getState().plan).toEqual(LOCAL)
+    expect(useRetirementPlannerStore.getState().serverUpdatedAt).toBeNull()
+  })
+
+  it('AC-4: while a plan op is still queued, the local plan is NOT overwritten', () => {
+    const asked: [string, string][] = []
+    applyServerChangesToStores([planChange()], SERVER_USER_ID, {
+      hasPendingOperation: (entityType, entityId) => {
+        asked.push([entityType, entityId])
+        return true
+      },
+    })
+    expect(asked).toEqual([['retirementPlan', SERVER_USER_ID]])
+    expect(useRetirementPlannerStore.getState().plan).toEqual(LOCAL)
+  })
+
+  it('AC-4 CONTROL: with nothing queued, the same change applies', () => {
+    applyServerChangesToStores([planChange()], SERVER_USER_ID, {
+      hasPendingOperation: () => false,
+    })
+    expect(useRetirementPlannerStore.getState().plan).toEqual(PLAN)
+  })
+
+  it('refuses a plan whose id is not the session account (D3)', () => {
+    applyServerChangesToStores([planChange({ entityId: OTHER_ACCOUNT })], SERVER_USER_ID)
+    expect(useRetirementPlannerStore.getState().plan).toEqual(LOCAL)
+  })
+
+  it('never writes the DEFAULTS over the plan for a non-object plan (the coercion would)', () => {
+    applyServerChangesToStores([planChange({ data: { plan: null } })], SERVER_USER_ID)
+    expect(useRetirementPlannerStore.getState().plan).toEqual(LOCAL)
+  })
+
+  it("parks ANOTHER account's plan before overwriting it (90.1 boundary not yet applied)", () => {
+    const parked = `${RETIREMENT_PLANNER_PARKED_KEY_PREFIX}${OTHER_ACCOUNT}`
+    const stored = new Map<string, string>()
+    const storage = {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => stored.set(key, value),
+      removeItem: (key: string) => stored.delete(key),
+    }
+    vi.stubGlobal('localStorage', storage)
+    try {
+      useRetirementPlannerStore.setState({ ownerUserId: OTHER_ACCOUNT })
+      applyServerChangesToStores([planChange()], SERVER_USER_ID)
+      expect(JSON.parse(stored.get(parked) ?? 'null')).toEqual(LOCAL)
+      expect(useRetirementPlannerStore.getState().plan).toEqual(PLAN)
+      expect(useRetirementPlannerStore.getState().ownerUserId).toBe(SERVER_USER_ID)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('findLocalRow reads the plan for its owner only', () => {
+    expect(findLocalRow('retirementPlan', SERVER_USER_ID)).toEqual({
+      id: SERVER_USER_ID,
+      plan: LOCAL,
+    })
+    expect(findLocalRow('retirementPlan', OTHER_ACCOUNT)).toBeUndefined()
+  })
+
+  it('stampSyncedOwner leaves the plan alone (a singleton has no placeholder owner)', () => {
+    useRetirementPlannerStore.setState({ ownerUserId: '' })
+    stampSyncedOwner(
+      [
+        {
+          id: 'op-1',
+          type: 'update',
+          entityType: 'retirementPlan',
+          entityId: SERVER_USER_ID,
+          data: {},
+          timestamp: 1,
+          deviceId: 'd',
+          userId: SERVER_USER_ID,
+        },
+      ],
+      SERVER_USER_ID
+    )
+    expect(useRetirementPlannerStore.getState().ownerUserId).toBe('')
+  })
+
+  it('a plan in the same batch as a profile does not break the profile reconcile or re-home', () => {
+    useProfileStore.setState({ profiles: [], activeProfileId: null })
+    applyServerChangesToStores(
+      [
+        planChange(),
+        {
+          entityType: 'userProfile',
+          entityId: UUID_B,
+          data: { id: UUID_B, userId: SERVER_USER_ID, name: 'Main', isDefault: true },
+          updatedAt: 3000,
+          isDeleted: false,
+        },
+      ],
+      SERVER_USER_ID
+    )
+    expect(useProfileStore.getState().activeProfileId).toBe(UUID_B)
+    expect(useRetirementPlannerStore.getState().plan).toEqual(PLAN)
   })
 })

@@ -10,6 +10,10 @@
  */
 
 import type { SyncEntityType } from '@budget-planner/core/sync'
+import {
+  RETIREMENT_PLAN_STRING_MAX,
+  retirementPlanSyncSchema,
+} from '@budget-planner/core/sync/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   type SyncBridgeHandle,
@@ -19,6 +23,7 @@ import {
   syncEntityCreate,
   syncEntityDelete,
   syncEntityUpdate,
+  toServerPayload,
 } from '../syncBridge'
 
 const SESSION_USER_ID = '550e8400-e29b-41d4-a716-446655440000'
@@ -432,5 +437,101 @@ describe('syncBridge — an asset row reaches the queue (Story 43.4, gate 2 fals
     expect(payload).toHaveProperty('contributionRecordedAsExpense')
     expect(payload?.contributionRecordedAsExpense).toBe(false)
     expect(JSON.parse(JSON.stringify(payload))).toHaveProperty('contributionRecordedAsExpense')
+  })
+})
+
+/**
+ * Story 99.2 (G11): the retirement plan's payload. DORMANT in 99.2 (no app code
+ * queues one; story 99.3 adds the push), but compile-forced by the `never`
+ * default, and pinned here so the case cannot ship wrong.
+ */
+describe('toServerPayload — retirementPlan (story 99.2)', () => {
+  const PLAN = {
+    currentAgeInput: '',
+    lifeExpectancyInput: '87',
+    desiredIncomeInput: '55.000,00',
+    desiredIncomeTouched: true,
+    desiredIncomeLocale: 'de-DE',
+    adoptedMonthlyCents: null,
+    incomeBasis: 'monthly',
+    annualReturnInput: '5.5',
+    postRetirementReturnInput: '3.0',
+    postRetirementTouched: true,
+    model: 'perpetual',
+  }
+
+  it('sends the WHOLE plan and the session user, nothing else', () => {
+    const payload = toServerPayload(
+      'retirementPlan',
+      { id: SESSION_USER_ID, plan: PLAN } as never,
+      SESSION_USER_ID
+    )
+    expect(payload).toEqual({ plan: PLAN, userId: SESSION_USER_ID })
+  })
+
+  it("keeps '' (cleared) and null (never adopted) through JSON.stringify", () => {
+    const payload = toServerPayload(
+      'retirementPlan',
+      { id: SESSION_USER_ID, plan: PLAN } as never,
+      SESSION_USER_ID
+    )
+    const wire = JSON.parse(JSON.stringify(payload)) as { plan: Record<string, unknown> }
+    expect(wire.plan['currentAgeInput']).toBe('')
+    expect(Object.prototype.hasOwnProperty.call(wire.plan, 'adoptedMonthlyCents')).toBe(true)
+    expect(wire.plan['adoptedMonthlyCents']).toBeNull()
+    expect(Object.keys(wire.plan).sort()).toEqual(Object.keys(PLAN).sort())
+  })
+
+  it('coerces: a missing or malformed field is sent as its default, never as a dropped key', () => {
+    const payload = toServerPayload(
+      'retirementPlan',
+      { id: SESSION_USER_ID, plan: { currentAgeInput: 42, injected: 'x' } } as never,
+      SESSION_USER_ID
+    ) as { plan: Record<string, unknown> }
+    expect(payload.plan['currentAgeInput']).toBe('35')
+    expect(payload.plan).not.toHaveProperty('injected')
+    expect(Object.keys(payload.plan).sort()).toEqual(Object.keys(PLAN).sort())
+  })
+
+  it('an over-long string is clamped to the push gate’s bound, so the payload is always pushable (99.2 review)', () => {
+    // The plan's inputs have no maxLength and localStorage is user-editable, so a
+    // string past RETIREMENT_PLAN_STRING_MAX is reachable. Unclamped, core's G2
+    // gate throws a ZodError on every push of that plan, and it never syncs.
+    const long = '9'.repeat(RETIREMENT_PLAN_STRING_MAX + 45)
+    const payload = toServerPayload(
+      'retirementPlan',
+      {
+        id: SESSION_USER_ID,
+        plan: { ...PLAN, desiredIncomeInput: long, desiredIncomeLocale: long },
+      } as never,
+      SESSION_USER_ID
+    ) as { plan: Record<string, unknown> }
+    expect(retirementPlanSyncSchema.safeParse(payload.plan).success).toBe(true)
+    expect(payload.plan['desiredIncomeInput']).toBe(long.slice(0, RETIREMENT_PLAN_STRING_MAX))
+    expect(payload.plan['lifeExpectancyInput']).toBe('87')
+  })
+
+  it('a NUL, a lone surrogate, or a clamp through a surrogate pair still yields a pushable payload (99.2 review)', () => {
+    // jsonb refuses a NUL and a lone surrogate, so the gate refuses them too; the
+    // bridge must therefore never PRODUCE one, including by cutting an emoji in two
+    // at the length bound (255 is odd, so 200 pairs are cut mid-pair).
+    const emoji = '😀'.repeat(200)
+    const payload = toServerPayload(
+      'retirementPlan',
+      {
+        id: SESSION_USER_ID,
+        plan: {
+          ...PLAN,
+          currentAgeInput: '4\u00002',
+          lifeExpectancyInput: '\ud80087',
+          desiredIncomeInput: emoji,
+        },
+      } as never,
+      SESSION_USER_ID
+    ) as { plan: Record<string, unknown> }
+    expect(retirementPlanSyncSchema.safeParse(payload.plan).success).toBe(true)
+    expect(payload.plan['currentAgeInput']).toBe('42')
+    expect(payload.plan['lifeExpectancyInput']).toBe('\ufffd87')
+    expect(payload.plan['desiredIncomeInput']).toBe('😀'.repeat(127))
   })
 })

@@ -163,10 +163,17 @@ export function calculateRequiredAssets(monthlyIncome: number, annualReturnRate:
 }
 
 /**
+ * Every {@link IncomeBasis}, as ONE exported constant (story 99.2). The retirement
+ * store's coercion and the plan's sync schema (`sync/types.ts`) both read it, so
+ * the two cannot drift into a hand-mirrored enum (schema-as-gate trap 3).
+ */
+export const INCOME_BASES = ['monthly', 'annual'] as const
+
+/**
  * Whether a desired retirement-income figure is entered as a monthly or an
  * annual amount.
  */
-export type IncomeBasis = 'monthly' | 'annual'
+export type IncomeBasis = (typeof INCOME_BASES)[number]
 
 /**
  * Converts a desired retirement-income amount to the monthly figure the Safe
@@ -389,7 +396,13 @@ export function calculateCompoundingProjection(input: CompoundingInput): YearlyP
  * - `deplete`: the nest egg is drawn down to zero by life expectancy.
  * - `perpetual`: the nest egg is never depleted (safe-withdrawal in perpetuity).
  */
-export type RetirementModel = 'deplete' | 'perpetual'
+export type RetirementModel = (typeof RETIREMENT_MODELS)[number]
+
+/**
+ * Every {@link RetirementModel}, as ONE exported constant (story 99.2), for the
+ * same reason as {@link INCOME_BASES}.
+ */
+export const RETIREMENT_MODELS = ['deplete', 'perpetual'] as const
 
 /**
  * Longest retirement horizon (in years) the earliest-age search will scan.

@@ -16,6 +16,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   RETIREMENT_PLANNER_STORAGE_KEY,
   RETIREMENT_PLANNER_VERSION,
+  claimRetirementPlanFor,
   coerceRetirementPlan,
   useRetirementPlannerStore,
 } from '../retirementPlannerStore'
@@ -390,5 +391,80 @@ describe('the desired-income locale travels with its string (AC-5, code review)'
     const { plan } = useRetirementPlannerStore.getState()
     expect(plan.desiredIncomeTouched).toBe(true)
     expect(plan.desiredIncomeLocale).toBe('de-DE')
+  })
+})
+
+/**
+ * Story 99.2 (G16): `serverUpdatedAt`, the server version of the plan this device
+ * last pulled. ⚠️ Every test here resets it explicitly: the store is a module
+ * singleton and `resetPlan` (the file's `beforeEach`) leaves it alone.
+ */
+describe('serverUpdatedAt (story 99.2)', () => {
+  const OWNER = '11111111-1111-4111-8111-111111111111'
+  const OTHER = '22222222-2222-4222-8222-222222222222'
+  const PULLED = '2026-10-05T12:00:00.000Z'
+
+  beforeEach(() => {
+    useRetirementPlannerStore.setState({ ownerUserId: '', serverUpdatedAt: null })
+    localStorage.removeItem(RETIREMENT_PLANNER_STORAGE_KEY)
+  })
+
+  function persistedState(): Record<string, unknown> {
+    const raw = localStorage.getItem(RETIREMENT_PLANNER_STORAGE_KEY)
+    return (JSON.parse(raw ?? '{}') as { state: Record<string, unknown> }).state
+  }
+
+  it('is NOT persisted while null: a never-synced device writes the same keys as before 99.2', () => {
+    useRetirementPlannerStore.getState().setCurrentAgeInput('44')
+    expect(Object.keys(persistedState()).sort()).toEqual(['ownerUserId', 'plan'])
+  })
+
+  it('is persisted once set, and rehydrates', async () => {
+    useRetirementPlannerStore.setState({ ownerUserId: OWNER, serverUpdatedAt: PULLED })
+    expect(persistedState()['serverUpdatedAt']).toBe(PULLED)
+    // Clearing the in-memory value WRITES through persist (a blob without the
+    // field), so put the saved blob back before rehydrating from it.
+    const saved = localStorage.getItem(RETIREMENT_PLANNER_STORAGE_KEY) as string
+    useRetirementPlannerStore.setState({ serverUpdatedAt: null })
+    localStorage.setItem(RETIREMENT_PLANNER_STORAGE_KEY, saved)
+    await useRetirementPlannerStore.persist.rehydrate()
+    expect(useRetirementPlannerStore.getState().serverUpdatedAt).toBe(PULLED)
+  })
+
+  it.each([
+    ['a number', 1_696_000_000_000],
+    ['an unparseable string', 'yesterday-ish'],
+    ['an object', { at: PULLED }],
+  ])('a persisted %s rehydrates as null ("never pulled")', async (_label, value) => {
+    // In-memory value first: `setState` writes through persist.
+    useRetirementPlannerStore.setState({ serverUpdatedAt: PULLED })
+    localStorage.setItem(
+      RETIREMENT_PLANNER_STORAGE_KEY,
+      JSON.stringify({
+        state: { plan: {}, ownerUserId: OWNER, serverUpdatedAt: value },
+        version: RETIREMENT_PLANNER_VERSION,
+      })
+    )
+    await useRetirementPlannerStore.persist.rehydrate()
+    expect(useRetirementPlannerStore.getState().serverUpdatedAt).toBeNull()
+  })
+
+  it('claimRetirementPlanFor resets it on an owner change (another account)', () => {
+    useRetirementPlannerStore.setState({ ownerUserId: OWNER, serverUpdatedAt: PULLED })
+    claimRetirementPlanFor(OTHER)
+    expect(useRetirementPlannerStore.getState().ownerUserId).toBe(OTHER)
+    expect(useRetirementPlannerStore.getState().serverUpdatedAt).toBeNull()
+  })
+
+  it('claimRetirementPlanFor resets it when a session adopts an unclaimed plan', () => {
+    useRetirementPlannerStore.setState({ ownerUserId: '', serverUpdatedAt: PULLED })
+    claimRetirementPlanFor(OWNER)
+    expect(useRetirementPlannerStore.getState().serverUpdatedAt).toBeNull()
+  })
+
+  it('CONTROL: the same owner keeps it', () => {
+    useRetirementPlannerStore.setState({ ownerUserId: OWNER, serverUpdatedAt: PULLED })
+    claimRetirementPlanFor(OWNER)
+    expect(useRetirementPlannerStore.getState().serverUpdatedAt).toBe(PULLED)
   })
 })
