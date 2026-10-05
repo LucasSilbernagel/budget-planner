@@ -15,6 +15,7 @@ import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
 import { useStoresHydrated } from '../hooks/useStoresHydrated'
 import { useTableSort } from '../hooks/useTableSort'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
+import { investmentContributionItems } from '../lib/savings/investment-contribution-items'
 import { type SavingsSortKey, createSavingsSortExtractors } from '../lib/table-sort-keys'
 import {
   useExpenses,
@@ -129,19 +130,10 @@ export function SavingsPage() {
   // Story 45.1 (FR72): one mapping, used by BOTH the solver and the breakdown, so
   // the explanation can never describe a different set of rows than the one the
   // pool actually used.
+  // Story 100.1: the mapping lives in `lib/savings` so the forecast builder seeds
+  // its automatic rows from exactly the same solver inputs.
   const contributionItems = useMemo(
-    () =>
-      investmentEntries.map((entry) => ({
-        id: entry.id,
-        name: entry.name,
-        amount: entry.monthlyContribution,
-        // Degrade a corrupt persisted cadence to 'monthly' rather than letting the
-        // solver's validating normalizer throw during render (see KNOWN_FREQUENCIES).
-        frequency: KNOWN_FREQUENCIES.has(entry.frequency) ? entry.frequency : 'monthly',
-        // ⚠️ `=== true` mirrors the core rule exactly. A truthy check here would
-        // let a persisted `"false"` string silently cancel a real deduction.
-        recordedAsExpense: entry.contributionRecordedAsExpense === true,
-      })),
+    () => investmentContributionItems(investmentEntries),
     [investmentEntries]
   )
 

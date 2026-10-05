@@ -178,6 +178,31 @@ export function isValidGrowthRate(value: unknown): value is number {
 export const FORECAST_OUT_OF_RANGE = 'Forecast amounts are too large to project'
 
 /**
+ * One savings row the projection tracks separately (story 100.1, FR164): its
+ * starting `balance` and the `monthlyContribution` paid into it, both in cents.
+ *
+ * ⚠️ Rows SPLIT savings, they do not add to it. Every cent of a year's net income
+ * already lands in `savings` (`projSavings += totalNetIncome`), so a contribution
+ * only moves money from the unassigned remainder into a row. Totals, net worth,
+ * the baseline and the summary are identical with or without rows (pinned by the
+ * strip-and-`toEqual` tests in `__tests__/forecasting.test.ts`).
+ */
+export interface SavingsAccountInput {
+  balance: number
+  monthlyContribution: number
+}
+
+/**
+ * The refusal when the savings rows' balances do not add up to
+ * `currentData.savings` (story 100.1). The engine takes both and insists they
+ * agree, so two callers can never disagree about the starting figure.
+ */
+export const SAVINGS_ROWS_MISMATCH = 'Savings account balances must add up to the starting savings'
+
+/** The refusal for a negative savings row balance or contribution (story 100.1). */
+export const SAVINGS_ROW_NEGATIVE = 'Savings account balances and contributions must be 0 or more'
+
+/**
  * A one-time event's amount as whole cents, validated exactly as every recurring
  * amount is: `validateAmount` (throws on `NaN`, `±Infinity`, `null`, a
  * non-number), then `Math.round` — the same two steps `normalizeToMonthly`
@@ -244,6 +269,18 @@ export interface YearlyForecast {
   savings: number // Savings in cents
   investments: number // Investments in cents
   netWorth: number // Net worth in cents
+  /**
+   * Each savings row's CLOSING balance, in input order (story 100.1). Present on
+   * PROJECTION rows only, and only when `currentData.savingsAccounts` was given.
+   * `Σ savingsAccounts + unallocatedSavings === savings`, every year.
+   */
+  savingsAccounts?: number[]
+  /**
+   * The part of `savings` not assigned to any row: net income minus the rows'
+   * contributions, accumulated. Negative when the contributions exceed what is
+   * left over (they are still applied in full). Same presence rule as above.
+   */
+  unallocatedSavings?: number
 }
 
 /**
@@ -271,8 +308,11 @@ export interface ForecastingResult {
  * @throws Error if `years` is not a whole number of years in 1-30; if either
  *   growth rate is not a finite number from −1 to 1 (`GROWTH_RATE_OUT_OF_RANGE`);
  *   if the starting `savings` or `investments`, or a one-time event dated inside
- *   the window, is not a finite number (`validateAmount`); or if the projection's
- *   balance overflows (`FORECAST_OUT_OF_RANGE`)
+ *   the window, is not a finite number (`validateAmount`); if a savings row's
+ *   balance or contribution is not finite (`validateAmount`), negative
+ *   (`SAVINGS_ROW_NEGATIVE`), or the balances do not sum to `savings`
+ *   (`SAVINGS_ROWS_MISMATCH`); or if the projection's balance overflows
+ *   (`FORECAST_OUT_OF_RANGE`)
  */
 export function calculateFinancialForecast(
   currentData: {
@@ -280,6 +320,11 @@ export function calculateFinancialForecast(
     expenses: NormalizableFinancialItem[]
     savings: number // Current savings in cents
     investments: number // Current investments in cents
+    /**
+     * Optional per-account split of `savings` (story 100.1). When given, the
+     * balances must sum to `savings` exactly (`SAVINGS_ROWS_MISMATCH`).
+     */
+    savingsAccounts?: SavingsAccountInput[]
   },
   scenario: ForecastingScenario,
   years = DEFAULT_FORECAST_YEARS
@@ -310,6 +355,24 @@ export function calculateFinancialForecast(
   // to project"), which misdescribes a missing or corrupt starting figure.
   validateAmount(currentData.savings)
   validateAmount(currentData.investments)
+  // Savings rows (story 100.1): every money term validated like the totals above,
+  // never negative, and summing to `savings` exactly so the engine and its caller
+  // cannot disagree about where the projection starts.
+  const savingsAccounts = currentData.savingsAccounts
+  if (savingsAccounts) {
+    let balanceSum = 0
+    for (const account of savingsAccounts) {
+      validateAmount(account.balance)
+      validateAmount(account.monthlyContribution)
+      if (account.balance < 0 || account.monthlyContribution < 0) {
+        throw new Error(SAVINGS_ROW_NEGATIVE)
+      }
+      balanceSum += account.balance
+    }
+    if (balanceSum !== currentData.savings) {
+      throw new Error(SAVINGS_ROWS_MISMATCH)
+    }
+  }
 
   const baseline: YearlyForecast[] = []
   const projection: YearlyForecast[] = []
@@ -408,6 +471,14 @@ export function calculateFinancialForecast(
   // Calculate projection with scenario adjustments
   let projSavings = currentData.savings
   let projInvestments = currentData.investments
+  // Per-row closing balances and the unassigned remainder (story 100.1). Tracked
+  // in the PROJECTION loop only (D6): the baseline keeps one savings pot.
+  let rowBalances = savingsAccounts?.map((account) => account.balance)
+  const annualContributions = savingsAccounts?.map(
+    (account) => account.monthlyContribution * MONTHS_PER_YEAR
+  )
+  const annualContributionTotal = (annualContributions ?? []).reduce((sum, c) => sum + c, 0)
+  let unallocatedSavings = 0
 
   for (let year = 1; year <= years; year++) {
     // Adjust income and expenses by growth rates
@@ -477,6 +548,17 @@ export function calculateFinancialForecast(
     if (!Number.isFinite(projSavings + projInvestments)) {
       throw new Error(FORECAST_OUT_OF_RANGE)
     }
+    // The rows take the SAME position as the statements above (after this year's
+    // flow, before the row is pushed), so they report CLOSING balances too. The
+    // contributions are applied in full even when they exceed the year's net
+    // income; the remainder then goes negative and the totals are unaffected.
+    if (rowBalances && annualContributions) {
+      rowBalances = rowBalances.map((balance, i) => balance + (annualContributions[i] ?? 0))
+      unallocatedSavings += totalNetIncome - annualContributionTotal
+      if (!Number.isFinite(unallocatedSavings) || !rowBalances.every(Number.isFinite)) {
+        throw new Error(FORECAST_OUT_OF_RANGE)
+      }
+    }
 
     const yearProjection: YearlyForecast = {
       year,
@@ -486,6 +568,8 @@ export function calculateFinancialForecast(
       savings: projSavings,
       investments: projInvestments,
       netWorth: projSavings + projInvestments,
+      // Absent (not `undefined`) without rows, so existing `toEqual`s are unchanged.
+      ...(rowBalances ? { savingsAccounts: rowBalances, unallocatedSavings } : {}),
     }
     projection.push(yearProjection)
   }

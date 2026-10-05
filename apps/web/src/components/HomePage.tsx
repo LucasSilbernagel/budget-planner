@@ -1641,7 +1641,12 @@ function LockedTileContent({
  *      and simply added (`netIncome * MONTHS_PER_YEAR + oneTimeForYear`, `:278`); since story
  *      `forecast-1` the builder offers an explicit Money in / Money out direction,
  *      so an outflow is enterable.
- * ⚠️ `newIncome`/`newExpenses` are **not read by the CALCULATION** (`:114-115`) — they
+ *   4. `currentData.savingsAccounts` (story 100.1) — per-account balances and
+ *      monthly contributions. They only SPLIT savings across the user's own pots
+ *      (every cent of net income already lands in savings), so they change no
+ *      total, no net worth and no summary figure: only the per-row "After N
+ *      years" lines. Not scenario-expressive for this copy.
+ * ⚠️ `newIncome`/`newExpenses` are **not read by the CALCULATION** — they
  * are the SAVE FORMAT for the builder's rows, which reload depends on. Do not cite
  * them as scenario-expressive, and do not delete them as dead.
  *

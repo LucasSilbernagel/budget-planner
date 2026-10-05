@@ -30,7 +30,13 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { type ForecastingScenario, calculateFinancialForecast } from '../forecasting'
+import {
+  type ForecastingScenario,
+  SAVINGS_ROWS_MISMATCH,
+  SAVINGS_ROW_NEGATIVE,
+  type SavingsAccountInput,
+  calculateFinancialForecast,
+} from '../forecasting'
 
 /** 5000.00/mo in, 4000.00/mo out, 1000.00 saved, nothing invested. */
 const CURRENT_DATA = {
@@ -654,5 +660,191 @@ describe('calculateFinancialForecast — investment compounding, both loops', ()
     // overall. Without this, the assertion above could pass on a run that had
     // silently collapsed to the flat case.
     expect(r.baseline.map((b) => b.savings)).not.toEqual(r.projection.map((p) => p.savings))
+  })
+})
+
+/**
+ * Per-account savings rows (story 100.1, FR164, D2/D6).
+ *
+ * Contributions MOVE money between the user's own savings pots: every cent of a
+ * year's net income already lands in `savings`. So the rows can only SPLIT that
+ * figure, never change it. The invariant below is the whole contract, and the
+ * strip-and-`toEqual` test is what proves the totals did not move.
+ */
+describe('calculateFinancialForecast — savings account rows (100.1)', () => {
+  /** Hand-computable: 1000.00/mo net, two rows contributing 200.00 + 50.00/mo. */
+  const TWO_ROWS: SavingsAccountInput[] = [
+    { balance: 100000, monthlyContribution: 20000 },
+    { balance: 0, monthlyContribution: 5000 },
+  ]
+
+  const strip = (r: ReturnType<typeof calculateFinancialForecast>) => ({
+    ...r,
+    projection: r.projection.map(
+      ({ savingsAccounts: _a, unallocatedSavings: _u, ...rest }) => rest
+    ),
+  })
+
+  it("reports each row's CLOSING balance and the unassigned remainder, by hand", () => {
+    const r = calculateFinancialForecast(
+      { ...CURRENT_DATA, savingsAccounts: TWO_ROWS },
+      FLAT,
+      YEARS
+    )
+    // Year 1: each row gains its monthly contribution × 12; the 12,000.00 of net
+    // income minus the 3,000.00 contributed is not assigned to any row.
+    expect(r.projection.map((p) => p.savingsAccounts)).toEqual([
+      [340000, 60000],
+      [580000, 120000],
+      [820000, 180000],
+    ])
+    expect(r.projection.map((p) => p.unallocatedSavings)).toEqual([900000, 1800000, 2700000])
+  })
+
+  const FIXTURES: Array<{
+    label: string
+    rows: SavingsAccountInput[]
+    scenario: ForecastingScenario
+    investments?: number
+  }> = [
+    { label: 'one row', rows: [{ balance: 100000, monthlyContribution: 12345 }], scenario: FLAT },
+    {
+      label: 'three rows',
+      rows: [
+        { balance: 30000, monthlyContribution: 1 },
+        { balance: 30000, monthlyContribution: 33333 },
+        { balance: 40000, monthlyContribution: 0 },
+      ],
+      scenario: FLAT,
+    },
+    {
+      label: 'contributions bigger than the surplus',
+      rows: [{ balance: 100000, monthlyContribution: 500000 }],
+      scenario: FLAT,
+    },
+    {
+      label: 'a one-time event year, growth rates and investments',
+      rows: TWO_ROWS,
+      scenario: {
+        name: 'busy',
+        incomeGrowthRate: 0.05,
+        expenseGrowthRate: 0.03,
+        oneTimeEvents: [
+          { year: 2, amount: -5_000_000 },
+          { year: 3, amount: 777_777 },
+        ],
+      },
+      investments: 1_000_007,
+    },
+  ]
+
+  for (const { label, rows, scenario, investments } of FIXTURES) {
+    it(`rows + unassigned === savings in every year (${label})`, () => {
+      const data = { ...CURRENT_DATA, investments: investments ?? 0 }
+      const r = calculateFinancialForecast({ ...data, savingsAccounts: rows }, scenario, 10)
+      for (const p of r.projection) {
+        const rowSum = (p.savingsAccounts ?? []).reduce((sum, b) => sum + b, 0)
+        expect(rowSum + (p.unallocatedSavings ?? Number.NaN), `year ${p.year}`).toBe(p.savings)
+      }
+    })
+
+    it(`changes no total, no baseline and no summary (${label})`, () => {
+      const data = { ...CURRENT_DATA, investments: investments ?? 0 }
+      const withRows = calculateFinancialForecast({ ...data, savingsAccounts: rows }, scenario, 10)
+      const without = calculateFinancialForecast(data, scenario, 10)
+      expect(strip(withRows)).toEqual(without)
+      // Control: the rows really were reported, so the strip had something to strip.
+      expect(withRows.projection[0]?.savingsAccounts).toHaveLength(rows.length)
+    })
+  }
+
+  it('applies contributions in full when they exceed what is left over: unassigned goes negative', () => {
+    const r = calculateFinancialForecast(
+      { ...CURRENT_DATA, savingsAccounts: [{ balance: 100000, monthlyContribution: 150000 }] },
+      FLAT,
+      1
+    )
+    // 1,500.00 × 12 contributed against 1,000.00 × 12 of net income.
+    expect(r.projection[0]?.savingsAccounts).toEqual([1_900_000])
+    expect(r.projection[0]?.unallocatedSavings).toBe(-600_000)
+    expect(r.projection[0]?.savings).toBe(1_300_000)
+  })
+
+  it('leaves the baseline rows without the new fields (rows model the projection only, D6)', () => {
+    const r = calculateFinancialForecast(
+      { ...CURRENT_DATA, savingsAccounts: TWO_ROWS },
+      FLAT,
+      YEARS
+    )
+    for (const b of r.baseline) {
+      expect(Object.keys(b)).not.toContain('savingsAccounts')
+      expect(Object.keys(b)).not.toContain('unallocatedSavings')
+    }
+  })
+
+  it('adds no new key when no rows are given', () => {
+    const r = calculateFinancialForecast(CURRENT_DATA, FLAT, YEARS)
+    for (const p of r.projection) {
+      expect(Object.keys(p)).not.toContain('savingsAccounts')
+      expect(Object.keys(p)).not.toContain('unallocatedSavings')
+    }
+  })
+
+  it('accepts an empty row list when the starting savings are 0: everything is unassigned', () => {
+    const r = calculateFinancialForecast(
+      { ...CURRENT_DATA, savings: 0, savingsAccounts: [] },
+      FLAT,
+      1
+    )
+    expect(r.projection[0]?.savingsAccounts).toEqual([])
+    expect(r.projection[0]?.unallocatedSavings).toBe(r.projection[0]?.savings)
+  })
+
+  it('refuses rows whose balances do not add up to the starting savings', () => {
+    expect(() =>
+      calculateFinancialForecast(
+        { ...CURRENT_DATA, savings: 100001, savingsAccounts: TWO_ROWS },
+        FLAT,
+        YEARS
+      )
+    ).toThrow(SAVINGS_ROWS_MISMATCH)
+    expect(() =>
+      calculateFinancialForecast({ ...CURRENT_DATA, savingsAccounts: [] }, FLAT, YEARS)
+    ).toThrow(SAVINGS_ROWS_MISMATCH)
+  })
+
+  it('refuses a negative balance or contribution', () => {
+    expect(() =>
+      calculateFinancialForecast(
+        {
+          ...CURRENT_DATA,
+          savingsAccounts: [
+            { balance: 200000, monthlyContribution: 0 },
+            { balance: -100000, monthlyContribution: 0 },
+          ],
+        },
+        FLAT,
+        YEARS
+      )
+    ).toThrow(SAVINGS_ROW_NEGATIVE)
+    expect(() =>
+      calculateFinancialForecast(
+        { ...CURRENT_DATA, savingsAccounts: [{ balance: 100000, monthlyContribution: -1 }] },
+        FLAT,
+        YEARS
+      )
+    ).toThrow(SAVINGS_ROW_NEGATIVE)
+  })
+
+  it("refuses a non-finite balance or contribution with validateAmount's message", () => {
+    for (const bad of [
+      { balance: Number.NaN, monthlyContribution: 0 },
+      { balance: 100000, monthlyContribution: Number.POSITIVE_INFINITY },
+      { balance: 100000, monthlyContribution: null as unknown as number },
+    ]) {
+      expect(() =>
+        calculateFinancialForecast({ ...CURRENT_DATA, savingsAccounts: [bad] }, FLAT, YEARS)
+      ).toThrow('Amount must be a finite number')
+    }
   })
 })

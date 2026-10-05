@@ -6,7 +6,9 @@
  * Name typed in that window was overwritten). Hydration leaves the typed DOM
  * value in place but fires no onChange, so state still holds the server value,
  * and the next re-render writes it back. The store seed (62.1) is such a
- * re-render, and for Current Savings / Investments it also replaces the value.
+ * re-render, and for Current Investments it also replaces the value. (Savings
+ * are rows since story 100.1: none exist before the seed, so there is nothing
+ * to type into before hydration on a fresh builder.)
  *
  * RTL's `render()` has no hydration pass, so this needs `renderToString` +
  * `hydrateRoot`, as in `scenario-builder.seeding.dom.test.tsx`. Typing before
@@ -171,19 +173,20 @@ describe('typing before hydration is kept', () => {
     expect(saved.description).toBe('Two weeks away')
   })
 
-  it('does NOT adopt money typed before hydration: the store seed fills both money fields', async () => {
+  it('does NOT adopt money typed before hydration: the store seed fills the money field and the savings rows', async () => {
     // Decided 2026-10-05 (review of this fix): the hydration render parses with
     // the DEFAULT locale (the currency store is not read yet), so adopting
     // `1234,56` for a de-DE user would save 100x the amount. The money fields
     // keep the 62.1 seed instead.
     const onSave = vi.fn().mockResolvedValue({ success: true })
     await hydrateAfterTyping(onSave, (server) => {
-      typeRaw(server.getByLabelText('Current Savings'), '1234')
+      // Story 100.1: the server markup has no savings row to type into.
+      expect(server.queryByLabelText(/^Balance for /)).toBeNull()
       typeRaw(server.getByLabelText('Current Investments'), '5000')
     })
 
     expect(screen.getByDisplayValue('Consulting')).toBeInTheDocument()
-    expect(screen.getByLabelText('Current Savings')).toHaveValue('3456.00')
+    expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue(3456)
     expect(screen.getByLabelText('Current Investments')).toHaveValue('9876.00')
 
     const saved = await saveAndRead(onSave)
@@ -191,12 +194,13 @@ describe('typing before hydration is kept', () => {
     expect(saved.inputs.investments).toBe(987_600)
   })
 
-  it('turns browser autofill/form restore off on both money fields', async () => {
+  it('turns browser autofill/form restore off on the server-rendered money field', async () => {
     // A restored stale figure would otherwise sit in the field before hydration.
+    // (Story 100.1: Current Savings became client-seeded rows, which are not in
+    // the server markup, so Current Investments is the one such field left.)
     const onSave = vi.fn().mockResolvedValue({ success: true })
     await hydrateAfterTyping(onSave, () => {})
 
-    expect(screen.getByLabelText('Current Savings')).toHaveAttribute('autocomplete', 'off')
     expect(screen.getByLabelText('Current Investments')).toHaveAttribute('autocomplete', 'off')
   })
 
@@ -224,7 +228,7 @@ describe('typing before hydration is kept', () => {
     await hydrateAfterTyping(onSave, () => {})
 
     expect(screen.getByLabelText('Scenario Name')).toHaveValue('My Financial Forecast')
-    expect(screen.getByDisplayValue('3456.00')).toBeInTheDocument()
+    expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue(3456)
     expect(screen.getByDisplayValue('9876.00')).toBeInTheDocument()
 
     const saved = await saveAndRead(onSave)

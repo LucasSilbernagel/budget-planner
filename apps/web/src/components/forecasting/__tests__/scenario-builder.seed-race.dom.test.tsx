@@ -134,14 +134,22 @@ describe('edits made while the seed is still pending survive it', () => {
 
     expect(screen.getByDisplayValue('Consulting')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Rent')).toBeInTheDocument()
-    expect(screen.getByLabelText('Current Savings')).toHaveValue('3456.00')
+    // Story 100.1: savings are rows now, one per store row.
+    expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue(3456)
     expect(screen.getByLabelText('Current Investments')).toHaveValue('9876.00')
   })
 
-  it('does not remount a Current Savings field the user is typing in, nor replace its value', () => {
+  /**
+   * Story 100.1 replaced the single Current Savings field with rows, so this is
+   * now the row version of the old "field the user is typing in" case: a row
+   * added before the seed survives it, keeps its node and focus, and the store
+   * rows are NOT added on top (D8, parity with income rows).
+   */
+  it('keeps a savings row the user added and is typing in, and does not add the store rows on top (D8)', () => {
     const { rerender } = render(<ScenarioBuilder onSave={onSave} />)
 
-    const field = screen.getByLabelText('Current Savings') as HTMLInputElement
+    fireEvent.click(screen.getByRole('button', { name: '+ Add Account' }))
+    const field = screen.getByLabelText('Balance for New Account') as HTMLInputElement
     field.focus()
     fireEvent.change(field, { target: { value: '1234' } })
 
@@ -150,10 +158,13 @@ describe('edits made while the seed is still pending survive it', () => {
     // The seed landed (positive control) ...
     expect(screen.getByDisplayValue('Consulting')).toBeInTheDocument()
     expect(screen.getByLabelText('Current Investments')).toHaveValue('9876.00')
-    // ... and the savings field is the SAME node, still focused, still the typed text.
-    expect(screen.getByLabelText('Current Savings')).toBe(field)
+    // ... the user's row is the SAME node, still focused, still the typed text ...
+    expect(screen.getByLabelText('Balance for New Account')).toBe(field)
     expect(document.activeElement).toBe(field)
-    expect(field).toHaveValue('1234')
+    expect(field).toHaveValue(1234)
+    // ... and the store's row was not added beside it.
+    expect(screen.queryByDisplayValue('Emergency fund')).toBeNull()
+    expect(screen.getAllByRole('button', { name: /^Remove / })).toHaveLength(1)
   })
 
   it('does not remount a Current Investments field the user is typing in', () => {
@@ -165,7 +176,7 @@ describe('edits made while the seed is still pending survive it', () => {
 
     landSeed(rerender)
 
-    expect(screen.getByLabelText('Current Savings')).toHaveValue('3456.00')
+    expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue(3456)
     expect(screen.getByLabelText('Current Investments')).toBe(field)
     expect(document.activeElement).toBe(field)
     expect(field).toHaveValue('50')
