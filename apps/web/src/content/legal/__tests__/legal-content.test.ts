@@ -194,6 +194,19 @@ describe('privacy page: retention period (story 73.1)', () => {
     expect(lapsed).not.toMatch(/payment is being retried|lifetime license/)
   })
 
+  it('says, in the Premium sync section, that the retirement plan is synced (story 99.3, D8)', () => {
+    // 99.3 is the first story where a plan reaches the server, and it holds the
+    // most personal figures in the app, so the policy names them.
+    const content = PRIVACY_PAGE.content
+    const start = content.search(/^## Premium tier: EU-hosted sync$/m)
+    expect(start, 'privacy.md has no "## Premium tier: EU-hosted sync" section').toBeGreaterThan(-1)
+    const next = content.slice(start + 1).search(/^## /m)
+    const section = content.slice(start, next === -1 ? undefined : start + 1 + next)
+    expect(section).toContain(
+      'The synced data includes your retirement plan (your age, your life expectancy and the retirement income you want).'
+    )
+  })
+
   it('covers the Premium account and its synced data, not the free tier', () => {
     const section = retentionSection()
     // The account row (email, Paddle customer id) is personal data too, and it

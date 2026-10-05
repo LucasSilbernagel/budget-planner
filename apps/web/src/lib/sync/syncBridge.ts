@@ -95,6 +95,14 @@ export function isSyncActive(): boolean {
 }
 
 /**
+ * The wired paid session's account id, or `null` when none is (story 99.3: the
+ * retirement plan push checks the plan's owner against it, AC-6).
+ */
+export function getSyncSessionUserId(): string | null {
+  return handle === null ? null : handle.userId
+}
+
+/**
  * A client domain entity as the stores hold it: a uuid `id`, the domain fields,
  * and ISO-string timestamps. The bridge reads `id`/`updatedAt` and lets the
  * per-entity mapper pick the server-shaped fields.
@@ -337,7 +345,8 @@ export function toServerPayload(
       // store's `merge` uses, so a field the type says exists is always on the
       // wire: `''` (cleared) and `null` (never adopted) survive `JSON.stringify`,
       // where an `undefined` would drop the key. `entity.id` is the user's id (D3).
-      // ⚠️ DORMANT in 99.2: nothing queues a plan op yet (story 99.3 adds the push).
+      // Queued ONLY by `lib/sync/retirementPlanPush.ts` (story 99.3): debounced user
+      // edits as `update`, and the first-sign-in seed as `create`.
       return { plan: sanitizePlanStrings(coerceRetirementPlan(entity['plan'])), userId }
     default: {
       // ⚠️ Story 30.4a: this was previously the `userProfile` case itself, which

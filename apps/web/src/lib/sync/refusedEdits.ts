@@ -39,6 +39,7 @@
  */
 
 import type { ServerChange, SyncEntityType, SyncOperation } from '@budget-planner/core/sync'
+import { markLocalPlanDiverged } from '../../stores/retirementPlannerStore'
 import type { RefusalNotice, RefusalOutcome } from './refusalNoticeStore'
 
 /** Everything the handler touches, injected so it can be tested on its own. */
@@ -237,7 +238,17 @@ export async function handleRejectedOperations(
     // is nothing to revert to on this device, and the re-pull would replace the
     // user's whole plan with the server's older copy. (Its tombstone, for a
     // refused create, is a no-op in the applier anyway.) The notice says so.
+    //
+    // Story 99.3 (AC-12): core has already DROPPED the refused op, so the queue no
+    // longer protects the plan, and the next FULL pull (another refusal's re-pull
+    // below, a profile switch, any new session) would replace it with the server
+    // copy. The marker makes the applier skip the plan until a push succeeds.
     if (first.entityType === 'retirementPlan') {
+      try {
+        markLocalPlanDiverged(String(first.entityId))
+      } catch (error) {
+        console.error('[refusedEdits] could not mark the retirement plan as diverged:', error)
+      }
       continue
     }
     if (notice.outcome !== 'removed') {

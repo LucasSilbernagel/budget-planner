@@ -72,6 +72,7 @@ import { useIncomeStore } from '../../stores/incomeStore'
 import { useProfileStore } from '../../stores/profileStore'
 import {
   claimRetirementPlanFor,
+  clearLocalPlanDiverged,
   coerceRetirementPlan,
   useRetirementPlannerStore,
 } from '../../stores/retirementPlannerStore'
@@ -79,6 +80,7 @@ import { useSavingsStore } from '../../stores/savingsStore'
 import { stampMissingSortOrder } from '../ordering'
 import { cascadeProfileRowRemoval } from '../profile-cascade'
 import { isOwnedByAnotherAccount, isPlaceholderOwner } from './accountOwner'
+import { hasPendingPlanEdit, notePlanSynced } from './retirementPlanPush'
 
 /** Minimal structural view of a Zustand vanilla store used here. */
 interface StoreApi {
@@ -139,8 +141,13 @@ type EntityBinding = CollectionBinding | SingletonBinding
  *   plan's id IS its account's id, D3).
  * - While the queue still holds a plan op (AC-4) the local plan is NOT
  *   overwritten: that op is the user's newer edit, and core's causal LWW
- *   (`SynchronizationService.pull`) still decides its fate. The DEBOUNCE half of
- *   this protection is story 99.3's.
+ *   (`SynchronizationService.pull`) still decides its fate.
+ * - Nor while a user edit is still waiting out its push debounce (story 99.3,
+ *   AC-5: core protects QUEUED ops only), nor while a refused plan edit is still
+ *   only on this device (`localPlanDiverged`, AC-12). Both SKIPS record the
+ *   change's version as `serverUpdatedAt` (only ever moving it forward), which
+ *   the next push sends as its `baseVersion`: without that, core would drop the
+ *   push for this very change on the next pull.
  * - Otherwise the whole plan is REPLACED (Q5, whole-plan last-writer-wins),
  *   rebuilt field by field through `coerceRetirementPlan` (core's pull gate is
  *   deliberately lenient on fields), owned by the session, and stamped with the
@@ -161,6 +168,19 @@ function applyRetirementPlanChange(change: ServerChange, context: ApplyContext):
   if (context.hasPendingOperation?.('retirementPlan', change.entityId) === true) {
     return false
   }
+  const store = useRetirementPlannerStore.getState()
+  if (
+    store.ownerUserId === context.sessionUserId &&
+    (hasPendingPlanEdit() || store.localPlanDiverged)
+  ) {
+    const seen = store.serverUpdatedAt === null ? Number.NaN : Date.parse(store.serverUpdatedAt)
+    if (!(seen >= change.updatedAt)) {
+      useRetirementPlannerStore.setState({
+        serverUpdatedAt: new Date(change.updatedAt).toISOString(),
+      })
+    }
+    return false
+  }
   const plan = change.data['plan']
   if (typeof plan !== 'object' || plan === null || Array.isArray(plan)) {
     reportRefusedRow(change.entityType, change.entityId, ['plan:invalid_type'])
@@ -175,11 +195,14 @@ function applyRetirementPlanChange(change: ServerChange, context: ApplyContext):
       return false
     }
   }
+  const applied = coerceRetirementPlan(plan)
   useRetirementPlannerStore.setState({
-    plan: coerceRetirementPlan(plan),
+    plan: applied,
     ownerUserId: context.sessionUserId,
     serverUpdatedAt: new Date(change.updatedAt).toISOString(),
   })
+  // The server holds exactly this plan now: an edit back to it sends nothing.
+  notePlanSynced(context.sessionUserId, applied)
   return true
 }
 
@@ -296,6 +319,16 @@ export function stampSyncedOwner(
     idsByType.set(operation.entityType, ids)
   }
   for (const [entityType, ids] of idsByType) {
+    // An ACCEPTED plan push (story 99.3, AC-12): the server holds this device's
+    // plan again, so a refusal's "keep the local plan" marker is done.
+    if (entityType === 'retirementPlan' && ids.has(sessionUserId)) {
+      try {
+        clearLocalPlanDiverged(sessionUserId)
+      } catch (error) {
+        console.error('[sync] could not clear the retirement plan divergence marker:', error)
+      }
+      continue
+    }
     const binding = ENTITY_BINDINGS[entityType]
     // A singleton has no placeholder owner to stamp (story 99.2): the plan's
     // owner is written by the 90.1 claim and by the pull applier, never by a push.
