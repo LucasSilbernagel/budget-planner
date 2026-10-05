@@ -171,38 +171,33 @@ describe('typing before hydration is kept', () => {
     expect(saved.description).toBe('Two weeks away')
   })
 
-  it('keeps a Current Savings typed before hydration instead of seeding over it', async () => {
+  it('does NOT adopt money typed before hydration: the store seed fills both money fields', async () => {
+    // Decided 2026-10-05 (review of this fix): the hydration render parses with
+    // the DEFAULT locale (the currency store is not read yet), so adopting
+    // `1234,56` for a de-DE user would save 100x the amount. The money fields
+    // keep the 62.1 seed instead.
     const onSave = vi.fn().mockResolvedValue({ success: true })
     await hydrateAfterTyping(onSave, (server) => {
       typeRaw(server.getByLabelText('Current Savings'), '1234')
-    })
-
-    expect(screen.getByDisplayValue('Consulting')).toBeInTheDocument()
-    // The seeded $3,456 must NOT replace what the user typed.
-    expect(screen.queryByDisplayValue('3456.00')).toBeNull()
-    // And the field shows the typed amount, not a blank or 0.00 (code review).
-    expect(screen.getByLabelText('Current Savings')).toHaveValue('1234.00')
-    // Investments was not typed into, so it is still seeded.
-    expect(screen.getByLabelText('Current Investments')).toHaveValue('9876.00')
-
-    const saved = await saveAndRead(onSave)
-    expect(saved.inputs.savings).toBe(123_400)
-    expect(saved.inputs.investments).toBe(987_600)
-  })
-
-  it('keeps a Current Investments typed before hydration instead of seeding over it', async () => {
-    const onSave = vi.fn().mockResolvedValue({ success: true })
-    await hydrateAfterTyping(onSave, (server) => {
       typeRaw(server.getByLabelText('Current Investments'), '5000')
     })
 
     expect(screen.getByDisplayValue('Consulting')).toBeInTheDocument()
-    expect(screen.getByLabelText('Current Investments')).toHaveValue('5000.00')
     expect(screen.getByLabelText('Current Savings')).toHaveValue('3456.00')
+    expect(screen.getByLabelText('Current Investments')).toHaveValue('9876.00')
 
     const saved = await saveAndRead(onSave)
-    expect(saved.inputs.investments).toBe(500_000)
     expect(saved.inputs.savings).toBe(345_600)
+    expect(saved.inputs.investments).toBe(987_600)
+  })
+
+  it('turns browser autofill/form restore off on both money fields', async () => {
+    // A restored stale figure would otherwise sit in the field before hydration.
+    const onSave = vi.fn().mockResolvedValue({ success: true })
+    await hydrateAfterTyping(onSave, () => {})
+
+    expect(screen.getByLabelText('Current Savings')).toHaveAttribute('autocomplete', 'off')
+    expect(screen.getByLabelText('Current Investments')).toHaveAttribute('autocomplete', 'off')
   })
 
   it('keeps the years and growth rates typed before hydration', async () => {
@@ -222,21 +217,6 @@ describe('typing before hydration is kept', () => {
     expect(saved.inputs.years).toBe(25)
     expect(saved.scenario.incomeGrowthRate).toBeCloseTo(0.04)
     expect(saved.scenario.expenseGrowthRate).toBeCloseTo(0.025)
-  })
-
-  it('still seeds when the only pre-hydration edit is one the money filter rejects', async () => {
-    // `0.00a` sanitizes back to the server's `0.00`: nothing the field accepts
-    // was typed, so it must not count as a touch and block the seed.
-    const onSave = vi.fn().mockResolvedValue({ success: true })
-    await hydrateAfterTyping(onSave, (server) => {
-      typeRaw(server.getByLabelText('Current Savings'), '0.00a')
-    })
-
-    expect(screen.getByDisplayValue('Consulting')).toBeInTheDocument()
-    expect(screen.getByLabelText('Current Savings')).toHaveValue('3456.00')
-
-    const saved = await saveAndRead(onSave)
-    expect(saved.inputs.savings).toBe(345_600)
   })
 
   it('still seeds and keeps the defaults when nothing was typed (control)', async () => {

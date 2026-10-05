@@ -532,25 +532,39 @@ export function ScenarioBuilder({
   const readyToSeed = storesHydrated && !isInitialSyncPending
 
   const [hasSeeded, setHasSeeded] = useState<boolean>(() => Boolean(initialForecast))
-  // Whether the user has typed into Current Savings / Current Investments. The
-  // seed lands on a later commit than mount, and on a cold load the user can type
-  // before it does: the server-rendered field is live before hydration, and
-  // `InputField` adopts that text on mount. The seed must not overwrite it.
+  // Whether the user has edited each seeded part. The seed waits for
+  // `!isInitialSyncPending`, which on a paid user's first device can land
+  // seconds after hydration, and anything the user did in that window must
+  // survive it: a typed money value is neither replaced nor remounted (which
+  // would drop focus mid-edit), and income/expense rows they added, edited or
+  // deleted are not swapped for the store's. Set by the user-facing handlers
+  // only, never by the seed. (Money typed BEFORE hydration is not adopted at all,
+  // see `adoptPreHydrationValue`, so it never reaches these.)
   const savingsTouched = useRef(false)
   const investmentsTouched = useRef(false)
+  const incomeRowsTouched = useRef(false)
+  const expenseRowsTouched = useRef(false)
+  // Bumped only when the seed actually writes a money field, so the field
+  // remounts to show it. A touched field keeps its key: same node, same focus.
+  const [savingsSeedKey, setSavingsSeedKey] = useState(0)
+  const [investmentsSeedKey, setInvestmentsSeedKey] = useState(0)
 
   useEffect(() => {
     if (hasSeeded || !readyToSeed) return
-    setIncomeItems(itemsFromStore(storeIncome, 'income'))
-    setExpenseItems(itemsFromStore(storeExpenses, 'expense'))
+    if (!incomeRowsTouched.current) setIncomeItems(itemsFromStore(storeIncome, 'income'))
+    if (!expenseRowsTouched.current) setExpenseItems(itemsFromStore(storeExpenses, 'expense'))
     // ⚠️ Both totals are raw `reduce(sum + currentBalance)` over persisted rows
     // (`savingsStore.ts:70`, `balanceStore.ts:373`) with NO finiteness guard, so
     // one corrupt row makes the whole total NaN. Every row `amount` is already
     // guarded in `itemsFromStore`; these two were not (code review 62.1). An
     // unguarded NaN reaches the money field AND the saved forecast's `inputs`.
-    if (!savingsTouched.current) setSavings(Number.isFinite(storeSavings) ? storeSavings : 0)
+    if (!savingsTouched.current) {
+      setSavings(Number.isFinite(storeSavings) ? storeSavings : 0)
+      setSavingsSeedKey((k) => k + 1)
+    }
     if (!investmentsTouched.current) {
       setInvestments(Number.isFinite(storeInvestments) ? storeInvestments : 0)
+      setInvestmentsSeedKey((k) => k + 1)
     }
     setHasSeeded(true)
   }, [hasSeeded, readyToSeed, storeIncome, storeExpenses, storeSavings, storeInvestments])
@@ -798,8 +812,25 @@ export function ScenarioBuilder({
   /**
    * Add new income item
    */
+  // The user-facing row setters: same as the raw ones, but they record that the
+  // user changed the list, so the store seed leaves it alone.
+  const editIncomeItems: React.Dispatch<React.SetStateAction<LocalFinancialItem[]>> = useCallback(
+    (update) => {
+      incomeRowsTouched.current = true
+      setIncomeItems(update)
+    },
+    []
+  )
+  const editExpenseItems: React.Dispatch<React.SetStateAction<LocalFinancialItem[]>> = useCallback(
+    (update) => {
+      expenseRowsTouched.current = true
+      setExpenseItems(update)
+    },
+    []
+  )
+
   const addIncomeItem = useCallback(() => {
-    setIncomeItems((prev) => [
+    editIncomeItems((prev) => [
       ...prev,
       {
         id: generateId('income'),
@@ -808,13 +839,13 @@ export function ScenarioBuilder({
         frequency: 'monthly',
       },
     ])
-  }, [])
+  }, [editIncomeItems])
 
   /**
    * Add new expense item
    */
   const addExpenseItem = useCallback(() => {
-    setExpenseItems((prev) => [
+    editExpenseItems((prev) => [
       ...prev,
       {
         id: generateId('expense'),
@@ -823,7 +854,7 @@ export function ScenarioBuilder({
         frequency: 'monthly',
       },
     ])
-  }, [])
+  }, [editExpenseItems])
 
   /**
    * Update financial item
@@ -1173,17 +1204,19 @@ export function ScenarioBuilder({
               scenario, while the input on screen still reads the pre-seed
               `0.00` — correct data, wrong thing displayed, and no test of the
               state alone would see it.
-              Safe because `hasSeeded` flips exactly once, on the commit after
-              mount. On a cold load the user CAN type before then (into the
-              server-rendered field); `InputField` adopts that text on mount and
-              `savingsTouched` stops the seed from replacing it, so the remount
-              re-displays the typed AMOUNT, re-formatted (`1234` -> `1234.00`).
-              It still remounts, so a user mid-edit at that moment loses focus.
-              The income/expense rows need no
-              equivalent: their `key` is the item id, so seeding remounts them
-              anyway. */}
+              The key changes ONLY when the seed actually writes this field
+              (`savingsSeedKey`). If the user typed here first (the seed can land
+              seconds after hydration), `savingsTouched` skips the write AND the
+              remount, so the field keeps its node, focus and text.
+              Money typed BEFORE hydration is deliberately NOT adopted
+              (`adoptPreHydrationValue={false}`): the hydration render parses
+              with the default locale, so a de-DE `1234,56` would be saved 100x.
+              The seed overwrites it instead, as before this fix (decided
+              2026-10-05). `autoComplete="off"` keeps browsers from restoring a
+              stale figure into it. The income/expense rows need no key: their
+              `key` is the item id, so seeding remounts them anyway. */}
           <InputField
-            key={`savings-${hasSeeded}`}
+            key={`savings-${savingsSeedKey}`}
             label="Current Savings"
             value={savings}
             onChange={handleSavingsChange}
@@ -1192,12 +1225,14 @@ export function ScenarioBuilder({
             formatValue={(v) => formatCurrency(Number(v))}
             parseValue={(v) => parseFromInput(v, locale)}
             sanitize={(v) => sanitizeMoneyInput(v, locale)}
+            adoptPreHydrationValue={false}
+            autoComplete="off"
           />
 
           {/* Current Investments — remounted on seed for the same reason as
               Current Savings above. */}
           <InputField
-            key={`investments-${hasSeeded}`}
+            key={`investments-${investmentsSeedKey}`}
             label="Current Investments"
             value={investments}
             onChange={handleInvestmentsChange}
@@ -1206,6 +1241,8 @@ export function ScenarioBuilder({
             formatValue={(v) => formatCurrency(Number(v))}
             parseValue={(v) => parseFromInput(v, locale)}
             sanitize={(v) => sanitizeMoneyInput(v, locale)}
+            adoptPreHydrationValue={false}
+            autoComplete="off"
           />
         </div>
       </section>
@@ -1230,9 +1267,9 @@ export function ScenarioBuilder({
               item={item}
               frequencyOptions={FREQUENCY_OPTIONS}
               onUpdate={(field, value) =>
-                updateFinancialItem(incomeItems, setIncomeItems, item.id, field, value)
+                updateFinancialItem(incomeItems, editIncomeItems, item.id, field, value)
               }
-              onDelete={() => deleteFinancialItem(incomeItems, setIncomeItems, item.id)}
+              onDelete={() => deleteFinancialItem(incomeItems, editIncomeItems, item.id)}
               onValidityChange={setAmountRowValidity}
             />
           ))}
@@ -1259,9 +1296,9 @@ export function ScenarioBuilder({
               item={item}
               frequencyOptions={FREQUENCY_OPTIONS}
               onUpdate={(field, value) =>
-                updateFinancialItem(expenseItems, setExpenseItems, item.id, field, value)
+                updateFinancialItem(expenseItems, editExpenseItems, item.id, field, value)
               }
-              onDelete={() => deleteFinancialItem(expenseItems, setExpenseItems, item.id)}
+              onDelete={() => deleteFinancialItem(expenseItems, editExpenseItems, item.id)}
               onValidityChange={setAmountRowValidity}
             />
           ))}
@@ -1408,6 +1445,12 @@ interface InputFieldProps {
    * byte-identical.
    */
   error?: string
+  /**
+   * Adopt text typed into the server-rendered input before hydration (default
+   * true). The money fields opt out: see the comment at their call site.
+   */
+  adoptPreHydrationValue?: boolean
+  autoComplete?: 'off'
 }
 
 function InputField({
@@ -1424,6 +1467,8 @@ function InputField({
   parseValue,
   sanitize,
   error,
+  adoptPreHydrationValue = true,
+  autoComplete,
 }: InputFieldProps): React.ReactElement {
   const [internalValue, setInternalValue] = useState<string>(() => {
     // `formatValue` here is the symbol-bearing display formatter, so a money field
@@ -1468,14 +1513,13 @@ function InputField({
   // this field (the store seed is one) writes that back over the user's text.
   // Adopting the DOM value on mount closes that window. On an ordinary client
   // mount the two are equal and this does nothing.
-  // ⚠️ Compare AFTER filtering (code review). Text the filter rejects outright
-  // (`0.00a` -> `0.00`) is no edit at all, and committing it would call `onChange`
-  // and mark Current Savings/Investments touched, so the store seed was skipped
-  // and a user who typed nothing usable kept a 0. Just clean the DOM instead.
+  // Compare AFTER filtering: text the filter rejects outright (`0.00a` -> `0.00`)
+  // is no edit, so it only cleans the DOM and fires no `onChange`. (Today the only
+  // filtered fields, the money ones, opt out of adoption entirely.)
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only by design
   useLayoutEffect(() => {
     const input = inputRef.current
-    if (!input) return
+    if (!input || !adoptPreHydrationValue) return
     const adopted = sanitize ? sanitize(input.value) : input.value
     if (adopted !== internalValue) {
       commit(adopted)
@@ -1505,6 +1549,7 @@ function InputField({
         max={max}
         step={step}
         inputMode={inputMode}
+        autoComplete={autoComplete}
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? errorId : undefined}
         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
