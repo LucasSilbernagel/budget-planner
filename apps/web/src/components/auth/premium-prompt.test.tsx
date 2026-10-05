@@ -33,7 +33,9 @@ const CANONICAL_BENEFITS = [
   'Multi-Device Data Sync',
   'Advanced Forecasting — Raises, Rising Bills & One-Off Costs',
   'Custom User Profiles',
-  'Financial Summary Report',
+  // "Downloadable" is the prompt's decided exception (story 95.1, D1); every other
+  // surface keeps the plain name (pinned both ways in benefit-set-parity.test.tsx).
+  'Downloadable Financial Summary Report',
   'Custom Categories & Category Breakdown',
 ]
 
@@ -77,6 +79,24 @@ describe('PremiumPrompt benefit list (story 20-3)', () => {
     expect(within(dialog).queryByText(/coming soon/i)).not.toBeInTheDocument()
     expect(within(dialog).queryByText(/dark mode/i)).not.toBeInTheDocument()
     expect(within(dialog).queryByText(/no ads/i)).not.toBeInTheDocument()
+  })
+
+  // Story 95.1 (FR154): the footer states only where data is stored. Exact text
+  // (the old copy CONTAINED the new one, so a substring pin would pass on it), in
+  // both render modes, plus a scoped guard against the retired clause.
+  it('footer reads exactly "All data stored in Germany (EU)" in both modes (story 95.1)', async () => {
+    const { unmount } = renderWithRouter(<PremiumPrompt />)
+    await screen.findByRole('list')
+    // Inline mode renders nothing but the card, so the body IS the card's scope.
+    const inline = document.body
+    expect(within(inline).getByText('All data stored in Germany (EU)')).toBeInTheDocument()
+    expect(inline.textContent).not.toMatch(/CLOUD Act/)
+    unmount()
+
+    renderWithRouter(<PremiumPrompt asDialog onClose={vi.fn()} />)
+    const dialog = await screen.findByRole('dialog', { name: /go premium/i })
+    expect(within(dialog).getByText('All data stored in Germany (EU)')).toBeInTheDocument()
+    expect(dialog.textContent).not.toMatch(/CLOUD Act/)
   })
 
   it('closes the dialog on Escape via the shared Modal', async () => {

@@ -788,6 +788,17 @@ describe('AuthIndicator — account menu (story 59.3)', () => {
     expect(within(el).getAllByRole('link')).toHaveLength(1)
     expect(within(el).getAllByRole('button')).toHaveLength(1)
     expect(within(el).getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
+    // Story 96.3 (FR163): jsdom renders all three (no stylesheet), but below
+    // 640px the Settings row AND its separator are `max-sm:hidden` (the nav's
+    // More sheet is the phone route), so a phone's panel is Sign out alone.
+    // Token membership, not substring. Sign out must NOT carry it.
+    expect([...settings.classList], 'the Settings row shows on a phone').toContain('max-sm:hidden')
+    const hr = el.querySelector(':scope > hr') as HTMLElement
+    expect([...hr.classList], 'a phone panel would open on a separator').toContain('max-sm:hidden')
+    expect(
+      [...within(el).getByRole('button', { name: 'Sign out' }).classList],
+      'Sign out is hidden on a phone'
+    ).not.toContain('max-sm:hidden')
     // No email in the panel either (decision D2): only on /settings.
     expect(el.textContent).not.toContain('@')
     // The panel is not a second live region (e2e/clear-local-data.spec.ts:65).
@@ -1068,6 +1079,10 @@ describe('AuthIndicator — account menu (story 59.3)', () => {
  * (marked current, not dropped). It hides on `/login` only (decision D3), so the
  * sign-in page keeps the empty strip story 41.3 gave it.
  *
+ * ⚠️ AMENDED by story 96.3 (FR163): the gear is the >= 640px route only
+ * (`max-sm:hidden`). Below 640px the nav's More sheet holds Settings, last, for
+ * every session; the per-width complement is in `nav-account-row.test.tsx`.
+ *
  * Class TOKENS for size: jsdom has no layout. The rendered box, the width it
  * costs at 640px and its reachability at 320/1280px were e2e until stories
  * 84.2/84.3; its server-rendered link is in `auth-indicator.ssr.dom.test.tsx`.
@@ -1095,6 +1110,13 @@ describe('AuthIndicator — the signed-out Settings gear (story 69.2)', () => {
       expect([...(link as HTMLElement).classList]).toEqual(
         expect.arrayContaining(['h-7', 'w-7', 'shrink-0'])
       )
+      // Story 96.3 (FR163): a >= 640px route only. Below 640px the nav's More
+      // sheet holds Settings, so the gear is `max-sm:hidden` (token, not
+      // substring; jsdom applies no stylesheet).
+      expect([...(link as HTMLElement).classList], 'the gear shows on a phone').toContain(
+        'max-sm:hidden'
+      )
+      expect([...(link as HTMLElement).classList]).not.toContain('sm:hidden')
       expect(link).not.toHaveAttribute('aria-current')
     }
   )

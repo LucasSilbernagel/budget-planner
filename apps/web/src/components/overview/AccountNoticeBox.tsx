@@ -20,6 +20,11 @@ import {
  * `text-muted`) so it stays legible in dark mode, and it wraps rather than
  * overflowing at 320px.
  *
+ * Who sees it (story 95.1, D2, Lucas 2026-10-04): signed-out and unverified
+ * (`null` seed) sessions only. Any signed-in session skips it. The gate lives at
+ * the call site in `HomePage.tsx` (a seed `useState` initializer), so this
+ * component stays auth-blind and its own suites stay valid.
+ *
  * ⚠️ THE BORDER IS THE ONLY THING MAKING THIS A BOX IN LIGHT MODE (story 60.1,
  * FR91), AND IT IS DELIBERATELY A `surface-inset` OUTLIER.
  * `surface-inset`'s own docblock (`styles/global.css:52-54`) defines it as "a

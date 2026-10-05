@@ -18,7 +18,7 @@ import { renderWithRouter } from '@/test/utils'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { type SessionSeed, SessionSeedProvider } from '../../context/session-seed'
+import { SIGNED_OUT_SEED, type SessionSeed, SessionSeedProvider } from '../../context/session-seed'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
 import {
   useBalanceStore,
@@ -757,6 +757,64 @@ describe('HomePage privacy positioning (story 27-5)', () => {
     // to reach a server.
     expect(
       screen.getByText('No account needed · Optional sync is EU-hosted · No bank connection.')
+    ).toBeInTheDocument()
+  })
+})
+
+/**
+ * Story 95.1 (FR154, D2): the "No account needed …" notice is for visitors. ANY
+ * signed-in session (free included) skips it; signed-out and unverified (`null`
+ * seed) sessions still see it. The served-app test in `served-pages.served.test.ts`
+ * covers the SSR half; this covers the client render from the same seed.
+ *
+ * Every absence assertion leans on the subtitle as a positive anchor in the same
+ * render, so a blank render cannot pass.
+ */
+describe('95.1: the account notice is hidden for any signed-in session (D2)', () => {
+  const PILLARS = 'No account needed · Optional sync is EU-hosted · No bank connection.'
+  const SUBTITLE = 'Track your finances with privacy and control'
+
+  function renderWithSeed(seed: SessionSeed | null) {
+    return render(
+      <SessionSeedProvider seed={seed}>
+        <HomePage />
+      </SessionSeedProvider>
+    )
+  }
+
+  it.each(['free', 'active', 'lifetime', 'past_due', 'canceled'] as const)(
+    'renders no notice for a signed-in %s session',
+    (subscriptionStatus) => {
+      const entitled = subscriptionStatus === 'active' || subscriptionStatus === 'lifetime'
+      mockStatus({ hasAccess: entitled, subscriptionStatus, isAuthenticated: true })
+      renderWithSeed({
+        isAuthenticated: true,
+        userId: 'u1',
+        email: 'u1@example.test',
+        subscriptionStatus,
+      })
+
+      expect(screen.getByText(SUBTITLE)).toBeInTheDocument()
+      expect(screen.queryByText(PILLARS)).toBeNull()
+      expect(
+        screen.queryByText('Intentional budgeting without bank sync or AI integrations.')
+      ).toBeNull()
+    }
+  )
+
+  it.each([
+    ['signed-out', SIGNED_OUT_SEED],
+    ['unverified (null)', null],
+  ] as const)('still renders the notice for a %s seed', (_label, seed) => {
+    mockStatus({ hasAccess: false, subscriptionStatus: null, isAuthenticated: false })
+    renderWithSeed(seed)
+
+    expect(screen.getByText(SUBTITLE)).toBeInTheDocument()
+    expect(screen.getByText(PILLARS)).toBeInTheDocument()
+    // Presence twin of the signed-in arms' second absence check, so that check
+    // cannot pass on a string the box no longer renders.
+    expect(
+      screen.getByText('Intentional budgeting without bank sync or AI integrations.')
     ).toBeInTheDocument()
   })
 })

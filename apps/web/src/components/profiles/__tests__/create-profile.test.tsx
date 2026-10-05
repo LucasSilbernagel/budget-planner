@@ -1,3 +1,4 @@
+import { isProfileIcon } from '@/lib/profile-appearance'
 import { type SyncBridgeHandle, clearSyncBridge, registerSyncBridge } from '@/lib/sync/syncBridge'
 import { useProfileStore } from '@/stores/profileStore'
 import { renderWithProviders, screen, userEvent } from '@/test/utils'
@@ -105,41 +106,29 @@ describe('CreateProfileDialog viewport fit (story 31.3)', () => {
 })
 
 /**
- * Story 54.2 (FR78) — the create dialog must NOT stamp an icon.
+ * Story 98.1 (FR159) — the create dialog renders the picker and stores the choice.
  *
- * ⚠️ THIS IS THE REGRESSION TEST FOR A HIGH FOUND BY ALL THREE CODE-REVIEW LAYERS.
- * Story 54.2 added `icon` to the shared `ProfileFormState`, and this dialog does
- * `createProfile({ ...form, … })`. `EMPTY_PROFILE_FORM.icon` is `''`, so every new
- * profile persisted `icon: ''` — and `toServerPayload`'s guard is `!= null`, so
- * `''` shipped to the server too, giving the nullable column two different
- * "unset" encodings and contradicting the `null` = "never chosen" contract.
+ * ⚠️⚠️ THIS DESCRIBE INVERTS TWO 54.2 REGRESSION TESTS, ON PURPOSE. They were
+ * `describe('CreateProfileDialog does not stamp an icon …')` and asserted the
+ * created row and the queued create payload carried NO `icon` key. That was right
+ * while this dialog had no picker: `form.icon` was always `''`, and spreading it
+ * stored `icon: ''` (store AND wire, because `toServerPayload`'s guard is
+ * `!= null`), the 54.2 HIGH found by all three review layers.
  *
- * Nothing LOOKED wrong (`isProfileIcon('')` is false, so the hash fallback
- * rendered either way), which is exactly why 2815 passing tests missed it. The
- * assertions below are therefore about the absence of a KEY, not about rendering.
+ * Story 98.1 gives this dialog the SAME picker as edit, 🏠 pre-selected, so a
+ * created profile now carries a real, chosen icon by design. What the old tests
+ * protected is kept as the (c) assertion below: NO path yields `icon: ''` in the
+ * store or in the payload. The dialog guards the value with
+ * `isProfileIcon(...) ? … : DEFAULT_PROFILE_ICON`, so `''` is unrepresentable
+ * even if a future refactor resets the form wrongly.
  */
-describe('CreateProfileDialog does not stamp an icon (story 54.2, code review)', () => {
+describe('CreateProfileDialog icon picker (story 98.1)', () => {
   afterEach(() => {
     clearSyncBridge()
     useProfileStore.getState().reset()
   })
 
-  const submit = async () => {
-    const user = userEvent.setup()
-    await user.type(screen.getByLabelText(/profile name/i), 'Investments')
-    await user.click(screen.getByRole('button', { name: /create profile/i }))
-  }
-
-  it('stores a new profile with no icon key at all', async () => {
-    renderWithProviders(<CreateProfileDialog onClose={() => {}} />)
-    await submit()
-
-    const created = useProfileStore.getState().profiles.find((p) => p.name === 'Investments')
-    expect(created).toBeDefined()
-    expect(Object.hasOwn(created as object, 'icon')).toBe(false)
-  })
-
-  it('queues a create payload with no icon key', async () => {
+  const bridge = () => {
     const handle = {
       userId: '550e8400-e29b-41d4-a716-446655440000',
       queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
@@ -147,11 +136,109 @@ describe('CreateProfileDialog does not stamp an icon (story 54.2, code review)',
       queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
     }
     registerSyncBridge(handle)
-    renderWithProviders(<CreateProfileDialog onClose={() => {}} />)
-    await submit()
+    return handle
+  }
 
+  const checkedName = () =>
+    screen
+      .getAllByRole('radio')
+      .find((r) => r.getAttribute('aria-checked') === 'true')
+      ?.getAttribute('aria-label')
+
+  const submit = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.type(screen.getByLabelText(/profile name/i), 'Investments')
+    await user.click(screen.getByRole('button', { name: /create profile/i }))
+  }
+
+  const created = () => useProfileStore.getState().profiles.find((p) => p.name === 'Investments')
+
+  it('renders the eight icons as a radiogroup named Profile Icon, 🏠 pre-selected', () => {
+    renderWithProviders(<CreateProfileDialog onClose={() => {}} />)
+
+    expect(screen.getByRole('radiogroup', { name: 'Profile Icon' })).toBeInTheDocument()
+    expect(screen.getAllByRole('radio')).toHaveLength(8)
+    expect(checkedName()).toBe('Home')
+    expect(screen.getByRole('radio', { name: 'Home' })).toHaveTextContent('🏠')
+  })
+
+  it('(a) an untouched submit stores and queues icon 🏠', async () => {
+    const handle = bridge()
+    const user = userEvent.setup()
+    renderWithProviders(<CreateProfileDialog onClose={() => {}} />)
+    await submit(user)
+
+    expect(created()?.icon).toBe('🏠')
     expect(handle.queueCreate).toHaveBeenCalledTimes(1)
-    const payload = handle.queueCreate.mock.calls[0]?.[2]
-    expect(Object.hasOwn(payload, 'icon')).toBe(false)
+    expect(handle.queueCreate.mock.calls[0]?.[2]).toMatchObject({ icon: '🏠' })
+  })
+
+  it('(b) a CLICKED choice is stored and queued', async () => {
+    const handle = bridge()
+    const user = userEvent.setup()
+    renderWithProviders(<CreateProfileDialog onClose={() => {}} />)
+
+    await user.click(screen.getByRole('radio', { name: 'Briefcase' }))
+    await submit(user)
+
+    expect(created()?.icon).toBe('💼')
+    expect(handle.queueCreate.mock.calls[0]?.[2]).toMatchObject({ icon: '💼' })
+  })
+
+  it('(b) a KEYBOARD choice is stored and queued', async () => {
+    const handle = bridge()
+    const user = userEvent.setup()
+    renderWithProviders(<CreateProfileDialog onClose={() => {}} />)
+
+    await user.click(screen.getByRole('radio', { name: 'Home' }))
+    await user.keyboard('{ArrowRight}')
+    expect(checkedName()).toBe('Briefcase')
+    expect(screen.getByRole('radio', { name: 'Briefcase' })).toHaveFocus()
+    await submit(user)
+
+    expect(created()?.icon).toBe('💼')
+    expect(handle.queueCreate.mock.calls[0]?.[2]).toMatchObject({ icon: '💼' })
+  })
+
+  it('keeps the same keyboard contract as edit (wrap, Home/End, roving tabindex)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<CreateProfileDialog onClose={() => {}} />)
+
+    const options = screen.getAllByRole('radio')
+    expect(options.filter((o) => o.getAttribute('tabindex') === '0')).toHaveLength(1)
+    expect(options.filter((o) => o.getAttribute('tabindex') === '-1')).toHaveLength(7)
+
+    await user.click(screen.getByRole('radio', { name: 'Home' }))
+    await user.keyboard('{ArrowLeft}')
+    expect(checkedName()).toBe('Plane')
+    await user.keyboard('{Home}')
+    expect(checkedName()).toBe('Home')
+    await user.keyboard('{End}')
+    expect(checkedName()).toBe('Plane')
+  })
+
+  it("does not swallow Escape (preventDefault only for the group's own keys)", async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    renderWithProviders(<CreateProfileDialog onClose={onClose} />)
+
+    await user.click(screen.getByRole('radio', { name: 'Lock' }))
+    await user.keyboard('{Escape}')
+
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it("(c) no path yields icon '' in the store or the payload (54.2 HIGH, kept)", async () => {
+    const handle = bridge()
+    const user = userEvent.setup()
+    renderWithProviders(<CreateProfileDialog onClose={() => {}} />)
+    await submit(user)
+
+    const row = created()
+    expect(row).toBeDefined()
+    expect(row?.icon).not.toBe('')
+    expect(isProfileIcon(row?.icon)).toBe(true)
+    const payload = handle.queueCreate.mock.calls[0]?.[2] as Record<string, unknown> | undefined
+    expect(payload?.['icon']).not.toBe('')
+    expect(isProfileIcon(payload?.['icon'])).toBe(true)
   })
 })

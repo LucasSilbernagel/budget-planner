@@ -26,7 +26,15 @@ import {
 } from '@budget-planner/core'
 import type { Frequency, NormalizableFinancialItem } from '@budget-planner/core/finance'
 import { Link } from '@tanstack/react-router'
-import React, { useState, useCallback, useMemo, useRef, useEffect, useId } from 'react'
+import React, {
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+  useEffect,
+  useId,
+  useLayoutEffect,
+} from 'react'
 import { useIsInitialSyncPending } from '../../hooks/useIsInitialSyncPending'
 import { useStoresHydrated } from '../../hooks/useStoresHydrated'
 import { isKnownFrequency } from '../../lib/readable-rows'
@@ -524,18 +532,40 @@ export function ScenarioBuilder({
   const readyToSeed = storesHydrated && !isInitialSyncPending
 
   const [hasSeeded, setHasSeeded] = useState<boolean>(() => Boolean(initialForecast))
+  // Whether the user has edited each seeded part. The seed waits for
+  // `!isInitialSyncPending`, which on a paid user's first device can land
+  // seconds after hydration, and anything the user did in that window must
+  // survive it: a typed money value is neither replaced nor remounted (which
+  // would drop focus mid-edit), and income/expense rows they added, edited or
+  // deleted are not swapped for the store's. Set by the user-facing handlers
+  // only, never by the seed. (Money typed BEFORE hydration is not adopted at all,
+  // see `adoptPreHydrationValue`, so it never reaches these.)
+  const savingsTouched = useRef(false)
+  const investmentsTouched = useRef(false)
+  const incomeRowsTouched = useRef(false)
+  const expenseRowsTouched = useRef(false)
+  // Bumped only when the seed actually writes a money field, so the field
+  // remounts to show it. A touched field keeps its key: same node, same focus.
+  const [savingsSeedKey, setSavingsSeedKey] = useState(0)
+  const [investmentsSeedKey, setInvestmentsSeedKey] = useState(0)
 
   useEffect(() => {
     if (hasSeeded || !readyToSeed) return
-    setIncomeItems(itemsFromStore(storeIncome, 'income'))
-    setExpenseItems(itemsFromStore(storeExpenses, 'expense'))
+    if (!incomeRowsTouched.current) setIncomeItems(itemsFromStore(storeIncome, 'income'))
+    if (!expenseRowsTouched.current) setExpenseItems(itemsFromStore(storeExpenses, 'expense'))
     // ⚠️ Both totals are raw `reduce(sum + currentBalance)` over persisted rows
     // (`savingsStore.ts:70`, `balanceStore.ts:373`) with NO finiteness guard, so
     // one corrupt row makes the whole total NaN. Every row `amount` is already
     // guarded in `itemsFromStore`; these two were not (code review 62.1). An
     // unguarded NaN reaches the money field AND the saved forecast's `inputs`.
-    setSavings(Number.isFinite(storeSavings) ? storeSavings : 0)
-    setInvestments(Number.isFinite(storeInvestments) ? storeInvestments : 0)
+    if (!savingsTouched.current) {
+      setSavings(Number.isFinite(storeSavings) ? storeSavings : 0)
+      setSavingsSeedKey((k) => k + 1)
+    }
+    if (!investmentsTouched.current) {
+      setInvestments(Number.isFinite(storeInvestments) ? storeInvestments : 0)
+      setInvestmentsSeedKey((k) => k + 1)
+    }
     setHasSeeded(true)
   }, [hasSeeded, readyToSeed, storeIncome, storeExpenses, storeSavings, storeInvestments])
 
@@ -762,6 +792,7 @@ export function ScenarioBuilder({
    */
   const handleSavingsChange = useCallback(
     (value: string | number) => {
+      savingsTouched.current = true
       setSavings(typeof value === 'number' ? value : parseFromInput(value, locale))
     },
     [locale]
@@ -772,6 +803,7 @@ export function ScenarioBuilder({
    */
   const handleInvestmentsChange = useCallback(
     (value: string | number) => {
+      investmentsTouched.current = true
       setInvestments(typeof value === 'number' ? value : parseFromInput(value, locale))
     },
     [locale]
@@ -780,8 +812,25 @@ export function ScenarioBuilder({
   /**
    * Add new income item
    */
+  // The user-facing row setters: same as the raw ones, but they record that the
+  // user changed the list, so the store seed leaves it alone.
+  const editIncomeItems: React.Dispatch<React.SetStateAction<LocalFinancialItem[]>> = useCallback(
+    (update) => {
+      incomeRowsTouched.current = true
+      setIncomeItems(update)
+    },
+    []
+  )
+  const editExpenseItems: React.Dispatch<React.SetStateAction<LocalFinancialItem[]>> = useCallback(
+    (update) => {
+      expenseRowsTouched.current = true
+      setExpenseItems(update)
+    },
+    []
+  )
+
   const addIncomeItem = useCallback(() => {
-    setIncomeItems((prev) => [
+    editIncomeItems((prev) => [
       ...prev,
       {
         id: generateId('income'),
@@ -790,13 +839,13 @@ export function ScenarioBuilder({
         frequency: 'monthly',
       },
     ])
-  }, [])
+  }, [editIncomeItems])
 
   /**
    * Add new expense item
    */
   const addExpenseItem = useCallback(() => {
-    setExpenseItems((prev) => [
+    editExpenseItems((prev) => [
       ...prev,
       {
         id: generateId('expense'),
@@ -805,7 +854,7 @@ export function ScenarioBuilder({
         frequency: 'monthly',
       },
     ])
-  }, [])
+  }, [editExpenseItems])
 
   /**
    * Update financial item
@@ -1155,12 +1204,19 @@ export function ScenarioBuilder({
               scenario, while the input on screen still reads the pre-seed
               `0.00` — correct data, wrong thing displayed, and no test of the
               state alone would see it.
-              Safe because `hasSeeded` flips exactly once, on the commit after
-              mount, long before anyone can type. The income/expense rows need no
-              equivalent: their `key` is the item id, so seeding remounts them
-              anyway. */}
+              The key changes ONLY when the seed actually writes this field
+              (`savingsSeedKey`). If the user typed here first (the seed can land
+              seconds after hydration), `savingsTouched` skips the write AND the
+              remount, so the field keeps its node, focus and text.
+              Money typed BEFORE hydration is deliberately NOT adopted
+              (`adoptPreHydrationValue={false}`): the hydration render parses
+              with the default locale, so a de-DE `1234,56` would be saved 100x.
+              The seed overwrites it instead, as before this fix (decided
+              2026-10-05). `autoComplete="off"` keeps browsers from restoring a
+              stale figure into it. The income/expense rows need no key: their
+              `key` is the item id, so seeding remounts them anyway. */}
           <InputField
-            key={`savings-${hasSeeded}`}
+            key={`savings-${savingsSeedKey}`}
             label="Current Savings"
             value={savings}
             onChange={handleSavingsChange}
@@ -1169,12 +1225,14 @@ export function ScenarioBuilder({
             formatValue={(v) => formatCurrency(Number(v))}
             parseValue={(v) => parseFromInput(v, locale)}
             sanitize={(v) => sanitizeMoneyInput(v, locale)}
+            adoptPreHydrationValue={false}
+            autoComplete="off"
           />
 
           {/* Current Investments — remounted on seed for the same reason as
               Current Savings above. */}
           <InputField
-            key={`investments-${hasSeeded}`}
+            key={`investments-${investmentsSeedKey}`}
             label="Current Investments"
             value={investments}
             onChange={handleInvestmentsChange}
@@ -1183,6 +1241,8 @@ export function ScenarioBuilder({
             formatValue={(v) => formatCurrency(Number(v))}
             parseValue={(v) => parseFromInput(v, locale)}
             sanitize={(v) => sanitizeMoneyInput(v, locale)}
+            adoptPreHydrationValue={false}
+            autoComplete="off"
           />
         </div>
       </section>
@@ -1207,9 +1267,9 @@ export function ScenarioBuilder({
               item={item}
               frequencyOptions={FREQUENCY_OPTIONS}
               onUpdate={(field, value) =>
-                updateFinancialItem(incomeItems, setIncomeItems, item.id, field, value)
+                updateFinancialItem(incomeItems, editIncomeItems, item.id, field, value)
               }
-              onDelete={() => deleteFinancialItem(incomeItems, setIncomeItems, item.id)}
+              onDelete={() => deleteFinancialItem(incomeItems, editIncomeItems, item.id)}
               onValidityChange={setAmountRowValidity}
             />
           ))}
@@ -1236,9 +1296,9 @@ export function ScenarioBuilder({
               item={item}
               frequencyOptions={FREQUENCY_OPTIONS}
               onUpdate={(field, value) =>
-                updateFinancialItem(expenseItems, setExpenseItems, item.id, field, value)
+                updateFinancialItem(expenseItems, editExpenseItems, item.id, field, value)
               }
-              onDelete={() => deleteFinancialItem(expenseItems, setExpenseItems, item.id)}
+              onDelete={() => deleteFinancialItem(expenseItems, editExpenseItems, item.id)}
               onValidityChange={setAmountRowValidity}
             />
           ))}
@@ -1385,6 +1445,12 @@ interface InputFieldProps {
    * byte-identical.
    */
   error?: string
+  /**
+   * Adopt text typed into the server-rendered input before hydration (default
+   * true). The money fields opt out: see the comment at their call site.
+   */
+  adoptPreHydrationValue?: boolean
+  autoComplete?: 'off'
 }
 
 function InputField({
@@ -1401,6 +1467,8 @@ function InputField({
   parseValue,
   sanitize,
   error,
+  adoptPreHydrationValue = true,
+  autoComplete,
 }: InputFieldProps): React.ReactElement {
   const [internalValue, setInternalValue] = useState<string>(() => {
     // `formatValue` here is the symbol-bearing display formatter, so a money field
@@ -1411,12 +1479,9 @@ function InputField({
     return sanitize ? sanitize(seeded) : seeded
   })
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Filter first, so the displayed value and the value lifted to the parent are
-    // derived from the same string. There is no blur re-formatter on this surface,
-    // which makes onChange the only filter point. `sanitizeWithCaret` also keeps
-    // the cursor in place when a character is rejected mid-string.
-    const rawValue = sanitize ? sanitizeWithCaret(e.target, sanitize) : e.target.value
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const commit = (rawValue: string) => {
     setInternalValue(rawValue)
 
     if (parseValue) {
@@ -1433,6 +1498,36 @@ function InputField({
     }
   }
 
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Filter first, so the displayed value and the value lifted to the parent are
+    // derived from the same string. There is no blur re-formatter on this surface,
+    // which makes onChange the only filter point. `sanitizeWithCaret` also keeps
+    // the cursor in place when a character is rejected mid-string.
+    commit(sanitize ? sanitizeWithCaret(e.target, sanitize) : e.target.value)
+  }
+
+  // Keep what the user typed BEFORE hydration. The server-rendered input is live
+  // as soon as it paints, and on a cold load that can be seconds before React
+  // takes over. Hydration leaves the typed DOM value in place but fires no
+  // onChange, so state still holds the server value, and the next re-render of
+  // this field (the store seed is one) writes that back over the user's text.
+  // Adopting the DOM value on mount closes that window. On an ordinary client
+  // mount the two are equal and this does nothing.
+  // Compare AFTER filtering: text the filter rejects outright (`0.00a` -> `0.00`)
+  // is no edit, so it only cleans the DOM and fires no `onChange`. (Today the only
+  // filtered fields, the money ones, opt out of adoption entirely.)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only by design
+  useLayoutEffect(() => {
+    const input = inputRef.current
+    if (!input || !adoptPreHydrationValue) return
+    const adopted = sanitize ? sanitize(input.value) : input.value
+    if (adopted !== internalValue) {
+      commit(adopted)
+    } else if (input.value !== adopted) {
+      input.value = adopted
+    }
+  }, [])
+
   // Associate the label with its control (story `forecast-2`). `useId` keeps the
   // pairing unique across the seven call sites without threading an id prop.
   const inputId = useId()
@@ -1444,6 +1539,7 @@ function InputField({
         {label}
       </label>
       <input
+        ref={inputRef}
         id={inputId}
         type={type}
         value={internalValue}
@@ -1453,6 +1549,7 @@ function InputField({
         max={max}
         step={step}
         inputMode={inputMode}
+        autoComplete={autoComplete}
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? errorId : undefined}
         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"

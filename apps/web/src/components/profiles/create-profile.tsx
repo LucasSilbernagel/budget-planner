@@ -9,21 +9,31 @@
  */
 
 import { useProfileManager, useProfiles } from '@/hooks/useActiveProfile'
+import { DEFAULT_PROFILE_ICON, isProfileIcon } from '@/lib/profile-appearance'
 import { useEffect, useState } from 'react'
 import { Modal } from '../ui/Modal'
 import { EMPTY_PROFILE_FORM, type ProfileFormState, validateProfileForm } from './profile-form'
+import { ProfileIconPicker } from './profile-icon-picker'
 
 // ⚠️ No currency field (story 54.1, Lucas 2026-09-16). The picker this dialog
 // carried since story 8-2 was removed: a profile's currency is displayed nowhere
 // but the card row story 54.5 deletes, so choosing one had no effect. New profiles
 // are created with `'NONE'`, which was the picker's default.
 
+/**
+ * The form this dialog opens on (story 98.1, FR159): empty name/description, 🏠
+ * pre-selected in the picker. Used by BOTH the `useState` initialiser and the
+ * mount-reset effect below; resetting to `EMPTY_PROFILE_FORM` (icon `''`) in
+ * either place would silently drop the pre-selection.
+ */
+const INITIAL_CREATE_FORM: ProfileFormState = { ...EMPTY_PROFILE_FORM, icon: DEFAULT_PROFILE_ICON }
+
 interface CreateProfileDialogProps {
   onClose: () => void
 }
 
 export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
-  const [form, setForm] = useState<ProfileFormState>(EMPTY_PROFILE_FORM)
+  const [form, setForm] = useState<ProfileFormState>(INITIAL_CREATE_FORM)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
@@ -39,7 +49,7 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
 
   // Reset form when dialog opens (mount)
   useEffect(() => {
-    setForm(EMPTY_PROFILE_FORM)
+    setForm(INITIAL_CREATE_FORM)
     setErrors({})
     setSuccess(false)
     setIsSubmitting(false)
@@ -66,19 +76,17 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
       // For now, we use a temporary userId - in production this would come from auth
       const userId = localStorage.getItem('userId') || 'temp-user'
 
-      // ⚠️ `icon` is stripped, NOT spread (code review 54.2, HIGH — found by all
-      // three review layers). This dialog renders no icon picker, so `form.icon`
-      // is always `EMPTY_PROFILE_FORM`'s `''`. Spreading it stored `icon: ''` on
-      // the new profile AND shipped it to the server, because `toServerPayload`'s
-      // guard is `!= null` and `'' != null` is true — giving the column two
-      // different "unset" encodings and contradicting the `null` = "never chosen"
-      // contract documented in `packages/db/src/schema.ts`. Nothing rendered
-      // differently (`isProfileIcon('')` is false, so the hash fallback showed
-      // either way), which is precisely why the whole suite stayed green.
-      const { icon: _unusedIcon, ...formWithoutIcon } = form
-
       createProfile({
-        ...formWithoutIcon,
+        ...form,
+        // ⚠️ GUARDED, never the raw form value (story 98.1; 54.2 code-review HIGH).
+        // Before 98.1 this dialog had no picker, `form.icon` was always `''`, and
+        // spreading it stored `icon: ''` on the profile AND shipped it to the
+        // server (`toServerPayload`'s guard is `!= null`, and `'' != null`), so it
+        // was stripped. Now the picker always holds one of the eight icons, and
+        // this guard makes `''` (or any non-member) unrepresentable here even if a
+        // future refactor resets the form wrongly: it falls back to 🏠, the
+        // pre-selected default.
+        icon: isProfileIcon(form.icon) ? form.icon : DEFAULT_PROFILE_ICON,
         // No currency field any more (story 54.1): new profiles carry the
         // currency-less sentinel, the former picker's default.
         currency: 'NONE',
@@ -180,6 +188,13 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
           </div>
         ) : (
           <>
+            {/* Icon picker (story 98.1, FR159): the SAME component as edit */}
+            <ProfileIconPicker
+              idPrefix="create-profile"
+              value={form.icon}
+              onChange={(icon) => handleChange('icon', icon)}
+            />
+
             {/* Name field */}
             <div>
               <label htmlFor="profile-name" className="block text-sm font-medium text-label mb-1">

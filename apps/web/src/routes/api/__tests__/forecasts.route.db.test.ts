@@ -10,10 +10,12 @@
  * status: a refused write must leave no row.
  *
  * ⚠️ undici's `new Request(url, { body })` sets NO `content-length` (story 79.3,
- * MEASURED), so `post()` sets it by hand; without it the 413 guard is never reached.
+ * MEASURED), so `post()` and `put()` set it by hand; without it the 413 guard is
+ * never reached.
  */
 
 import type { PGlite } from '@electric-sql/pglite'
+import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/pglite'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -46,6 +48,7 @@ import {
   INVALID_REQUEST_ERROR,
   MAX_FORECAST_BODY_BYTES,
   POST,
+  PUT,
 } from '../forecasts'
 
 const USER = '11111111-1111-4111-8111-111111111111'
@@ -89,6 +92,20 @@ function post(body: unknown, headers: Record<string, string> = {}): Request {
   })
 }
 
+/** A PUT, with `content-length` set by hand like `post()` (story 97.1). */
+function put(query: string, body: unknown, headers: Record<string, string> = {}): Request {
+  const text = typeof body === 'string' ? body : JSON.stringify(body)
+  return new Request(`${BASE}${query}`, {
+    method: 'PUT',
+    body: text,
+    headers: {
+      'content-type': 'application/json',
+      'content-length': String(new TextEncoder().encode(text).byteLength),
+      ...headers,
+    },
+  })
+}
+
 const get = (query = '') => new Request(`${BASE}${query}`)
 const del = (query: string) => new Request(`${BASE}${query}`, { method: 'DELETE' })
 
@@ -99,6 +116,21 @@ function aSave(overrides: Record<string, unknown> = {}) {
     profileId: P,
     ...overrides,
   }
+}
+
+/** A PUT body: the shared fields only (story 97.1). */
+function anEdit(overrides: Record<string, unknown> = {}) {
+  return {
+    name: 'Plan A',
+    scenarioData: { scenario: { name: 'Plan A', incomeGrowthRate: 0.05 }, result: { summary: {} } },
+    ...overrides,
+  }
+}
+
+/** Every column a PUT may or may not touch, for before/after comparisons. */
+async function fullRow(id: number) {
+  const [row] = await db.select().from(forecastingProfiles).where(eq(forecastingProfiles.id, id))
+  return row
 }
 
 async function rows() {
@@ -153,6 +185,7 @@ describe('the session and premium gate, on every method', () => {
     ['GET', () => GET({ request: get() })],
     ['POST', () => POST({ request: post(aSave()) })],
     ['DELETE', () => DELETE({ request: del('?id=1') })],
+    ['PUT', () => PUT({ request: put('?id=1', anEdit()) })],
   ] as const
 
   it.each(handlers)(
@@ -460,5 +493,194 @@ describe('DELETE /api/forecasts', () => {
 
   it('accepts the largest int4 id (404 here, not 400)', async () => {
     expect((await DELETE({ request: del('?id=2147483647') })).status).toBe(404)
+  })
+})
+
+describe('PUT /api/forecasts (story 97.1, FR157)', () => {
+  const GONE =
+    'This forecast was deleted, so it was not saved. Save again to keep it as a new forecast.'
+  const DUPLICATE = 'A forecast with this name already exists for this profile.'
+
+  /** A forecast saved through POST, so it carries a real description/version/default. */
+  async function saved(overrides: Record<string, unknown> = {}) {
+    const res = await POST({
+      request: post(aSave({ description: 'first', isDefault: true, version: 2, ...overrides })),
+    })
+    const body = (await res.json()) as { data: { id: number } }
+    return body.data.id
+  }
+
+  it('updates the row IN PLACE: same id, createdAt and profileId, later updatedAt, one row', async () => {
+    const id = await saved()
+    const before = await fullRow(id)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+
+    const res = await PUT({ request: put(`?id=${id}`, anEdit({ description: 'second' })) })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { success: boolean; data: Record<string, unknown> }
+    expect(body.success).toBe(true)
+    expect(body.data).toMatchObject({ id, name: 'Plan A', profileId: P, profileName: 'Main' })
+
+    const after = await fullRow(id)
+    expect(after?.id).toBe(id)
+    expect(after?.userId).toBe(USER)
+    expect(after?.profileId).toBe(P)
+    expect(after?.createdAt.getTime()).toBe(before?.createdAt.getTime())
+    expect(Number(after?.updatedAt.getTime())).toBeGreaterThan(Number(before?.updatedAt.getTime()))
+    expect(JSON.parse(String(after?.scenarioData))).toEqual(anEdit().scenarioData)
+    expect(after?.description).toBe('second')
+    // Not in the PUT contract: unchanged.
+    expect(after?.isDefault).toBe(true)
+    expect(after?.version).toBe(2)
+    expect(await rows()).toHaveLength(1)
+  })
+
+  it('a version in the body is written', async () => {
+    const id = await saved()
+    expect((await PUT({ request: put(`?id=${id}`, anEdit({ version: 3 })) })).status).toBe(200)
+    expect((await fullRow(id))?.version).toBe(3)
+  })
+
+  it('an absent description is stored as null (a full replace, not a merge)', async () => {
+    const id = await saved()
+    expect((await PUT({ request: put(`?id=${id}`, anEdit()) })).status).toBe(200)
+    expect((await fullRow(id))?.description).toBeNull()
+  })
+
+  it('renames to a free name (200), storing the trimmed name', async () => {
+    const id = await saved()
+    const res = await PUT({ request: put(`?id=${id}`, anEdit({ name: '  Plan B ' })) })
+    expect(res.status).toBe(200)
+    expect((await fullRow(id))?.name).toBe('Plan B')
+  })
+
+  it("a rename onto another forecast's name is a 409 with the create's text, and BOTH rows are unchanged", async () => {
+    const a = await saved()
+    const b = await saved({ name: 'Plan B' })
+    const [beforeA, beforeB] = [await fullRow(a), await fullRow(b)]
+
+    const res = await PUT({ request: put(`?id=${b}`, anEdit({ name: 'Plan A' })) })
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({ success: false, error: DUPLICATE })
+    expect(await fullRow(a)).toEqual(beforeA)
+    expect(await fullRow(b)).toEqual(beforeB)
+  })
+
+  it("answers 404 for another user's forecast, which is unchanged", async () => {
+    const id = await insertForecast(OTHER, OTHER_P, 'Theirs')
+    const before = await fullRow(id)
+    const res = await PUT({ request: put(`?id=${id}`, anEdit({ name: 'Mine now' })) })
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ success: false, error: GONE })
+    expect(await fullRow(id)).toEqual(before)
+  })
+
+  it('answers 404 for an id that does not exist, and writes nothing', async () => {
+    const res = await PUT({ request: put('?id=999', anEdit()) })
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ success: false, error: GONE })
+    expect(await rows()).toEqual([])
+  })
+
+  it('reads neither profileId nor isDefault from the body (cannot move a forecast or flip the default)', async () => {
+    const id = await saved()
+    const res = await PUT({
+      request: put(`?id=${id}`, anEdit({ profileId: OTHER_P, isDefault: false, userId: OTHER })),
+    })
+    expect(res.status).toBe(200)
+    const after = await fullRow(id)
+    expect(after?.profileId).toBe(P)
+    expect(after?.userId).toBe(USER)
+    expect(after?.isDefault).toBe(true)
+  })
+
+  it.each([
+    '',
+    '?id=',
+    '?id=abc',
+    '?id=0',
+    '?id=-1',
+    '?id=1.5',
+    '?id=01',
+    '?id=2147483648',
+    '?id=1e3',
+  ])('%s is a 400 "Invalid request"', async (query) => {
+    const id = await saved()
+    const before = await fullRow(id)
+    const res = await PUT({ request: put(query, anEdit({ name: 'Changed' })) })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ success: false, error: INVALID_REQUEST_ERROR })
+    expect(await fullRow(id)).toEqual(before)
+  })
+
+  it.each([
+    ['a body that is not JSON', '{not json'],
+    ['a JSON array', [anEdit()]],
+    ['a non-string description', anEdit({ description: 7 })],
+    ['a fractional version', anEdit({ version: 1.5 })],
+    ['no scenarioData', anEdit({ scenarioData: undefined })],
+    ['a name that is not a string', anEdit({ name: 42 })],
+    ['a NUL in the name', anEdit({ name: 'Plan\u0000A' })],
+    ['a NUL in the description', anEdit({ description: 'x\u0000y' })],
+  ])('%s is a 400 "Invalid request", and changes nothing', async (_label, body) => {
+    const id = await saved()
+    const before = await fullRow(id)
+    const res = await PUT({ request: put(`?id=${id}`, body) })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ success: false, error: INVALID_REQUEST_ERROR })
+    expect(await fullRow(id)).toEqual(before)
+  })
+
+  it.each([
+    ['an empty name', anEdit({ name: '   ' }), 'Profile name is required'],
+    ['a missing name', anEdit({ name: undefined }), 'Profile name is required'],
+    [
+      'a 256-character name',
+      anEdit({ name: 'x'.repeat(256) }),
+      'Profile name must be 255 characters or less',
+    ],
+    ['scenarioData "null"', anEdit({ scenarioData: 'null' }), 'scenarioData must be a JSON object'],
+    [
+      'scenarioData that is a number',
+      anEdit({ scenarioData: 42 }),
+      'scenarioData must be a JSON object or a valid JSON string',
+    ],
+  ])('%s is a 400 with the core message, and changes nothing', async (_label, body, error) => {
+    const id = await saved()
+    const before = await fullRow(id)
+    const res = await PUT({ request: put(`?id=${id}`, body) })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ success: false, error })
+    expect(await fullRow(id)).toEqual(before)
+  })
+
+  it('refuses a body over the cap with 413 BEFORE parsing it', async () => {
+    const id = await saved()
+    const res = await PUT({
+      request: put(`?id=${id}`, '{not json', {
+        'content-length': String(MAX_FORECAST_BODY_BYTES + 1),
+      }),
+    })
+    expect(res.status).toBe(413)
+    expect(await res.json()).toEqual({ success: false, error: 'Request too large' })
+  })
+
+  it('an unexpected failure is a 500 with a fixed message, the row unchanged, the detail only in the log', async () => {
+    const id = await saved()
+    const before = await fullRow(id)
+    holder.db = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === 'update') throw new Error('connection reset by peer')
+        return Reflect.get(target, prop, receiver)
+      },
+    })
+    const res = await PUT({ request: put(`?id=${id}`, anEdit({ name: 'Changed' })) })
+    expect(res.status).toBe(500)
+    expect(await res.json()).toEqual({ success: false, error: 'Failed to save forecast' })
+    expect(vi.mocked(logger.error)).toHaveBeenCalledWith('[api/forecasts] PUT failed', {
+      error: 'connection reset by peer',
+    })
+    holder.db = db
+    expect(await fullRow(id)).toEqual(before)
   })
 })

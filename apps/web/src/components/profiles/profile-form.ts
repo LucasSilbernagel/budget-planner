@@ -30,8 +30,11 @@ export interface ProfileFormState {
    * a non-empty value here does NOT mean the user picked anything, which is why
    * the dialog sends `icon` only when it differs from the value captured at open.
    *
-   * The CREATE dialog does not render a picker (story 54.2 scope), so it leaves
-   * this at `''` and new profiles are stored with no icon at all.
+   * The CREATE dialog renders the same picker since story 98.1 (FR159) and opens
+   * on 🏠 (`DEFAULT_PROFILE_ICON`), so every created profile stores an explicit
+   * icon. `EMPTY_PROFILE_FORM.icon` stays `''` (validation tests use it for
+   * name/description cases); the create dialog seeds its own initial form with 🏠
+   * and guards the submitted value, so `''` never reaches `createProfile`.
    */
   icon: string
 }

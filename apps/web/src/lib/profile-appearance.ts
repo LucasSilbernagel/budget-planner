@@ -25,11 +25,21 @@
  * ## Story 54.2 (FR78): a STORED icon now wins over the hash
  *
  * A profile may carry a chosen `icon` (`userProfiles.icon`, nullable). When it
- * does, {@link resolveProfileIcon} returns it; when it does not — which is every
- * profile until its owner opens the picker — the hash below still decides, so the
- * rollout is invisible to anyone who never chooses one. That is why `profileIcon`
- * keeps its exact behaviour and a NEW function sits beside it rather than
- * replacing it.
+ * does, {@link resolveProfileIcon} returns it. `profileIcon` keeps its exact
+ * behaviour and a NEW function sits beside it rather than replacing it.
+ *
+ * ## Story 98.1 (FR159, D1): 🏠 for the DEFAULT profile, an icon on every create
+ *
+ * ⚠️ The 54.2 wording here used to say the hash decides for "every profile until
+ * its owner opens the picker". Since 98.1 that is false twice over:
+ * - a profile with no valid stored icon that IS the default (`isDefault === true`)
+ *   renders {@link DEFAULT_PROFILE_ICON} (🏠), not its hash emoji (D1, decided
+ *   2026-10-04). The rule follows the FLAG at render time and is never persisted:
+ *   a promoted never-iconed profile turns 🏠, the demoted one reverts to its hash.
+ * - the create dialog now renders the picker (🏠 pre-selected) and always stores
+ *   an explicit icon, so every profile created after 98.1 has one.
+ * The hash below still decides for a NON-default profile with no valid stored
+ * icon: legacy rows, webhook-created rows, and pulled rows holding `null`.
  *
  * ⚠️ `icon` has no CHECK constraint in the database, so a stored value can be any
  * string. ⚠️ The REASON changed with story 66.5 while the fact did not: CHECK
@@ -72,6 +82,12 @@ const PROFILE_COLORS = [
 export const PROFILE_ICONS = ['🏠', '💼', '💰', '🎯', '📈', '🔒', '🌱', '✈️'] as const
 
 export type ProfileIcon = (typeof PROFILE_ICONS)[number]
+
+/**
+ * The icon the DEFAULT profile renders when it has no valid stored one, and the
+ * icon the create dialog pre-selects (story 98.1, FR159, D1).
+ */
+export const DEFAULT_PROFILE_ICON: ProfileIcon = '🏠'
 
 /**
  * Accessible name for each icon (story 54.2).
@@ -122,13 +138,20 @@ export function isProfileIcon(value: unknown): value is ProfileIcon {
 }
 
 /**
- * The emoji to actually render for a profile: its chosen icon when it has a
- * valid one, otherwise the hash-derived fallback (story 54.2, FR78).
+ * The emoji to actually render for a profile (story 54.2, FR78; story 98.1, FR159):
+ * 1. its chosen icon, when it has a valid one;
+ * 2. else {@link DEFAULT_PROFILE_ICON} (🏠) when it is the default profile;
+ * 3. else the hash-derived fallback.
  *
- * Every avatar render site goes through this. A profile with `icon: null` — which
- * is every profile until someone picks one — renders exactly what it rendered
- * before this story existed.
+ * Every avatar render site goes through this. A NON-default profile with
+ * `icon: null` renders exactly what it rendered before either story existed.
  */
-export function resolveProfileIcon(profile: { id: string; icon?: string | null }): string {
-  return isProfileIcon(profile.icon) ? profile.icon : profileIcon(profile.id)
+export function resolveProfileIcon(profile: {
+  id: string
+  icon?: string | null
+  isDefault?: boolean
+}): string {
+  if (isProfileIcon(profile.icon)) return profile.icon
+  if (profile.isDefault === true) return DEFAULT_PROFILE_ICON
+  return profileIcon(profile.id)
 }

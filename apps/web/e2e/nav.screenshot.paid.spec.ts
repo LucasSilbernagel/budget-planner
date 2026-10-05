@@ -72,6 +72,32 @@ test('forecasting-320-light', async ({ page }) => {
   })
 })
 
+// Story 97.2 (FR158): the Projections tab, the only place the chart mounts.
+// The legend names the scenario (the builder's default "My Financial
+// Forecast", truncated at 320), the value axis is compact and unclipped, and
+// the legend sits above the plot. 3 surfaces = the chart + the two legend
+// icons (MEASURED, 97.2 evidence). The tab click retries: a click that lands
+// before hydration only focuses the server-rendered button (MEASURED at 97.2:
+// the builder stayed on screen with "Projections" focused).
+for (const width of [320, 1280]) {
+  test(`forecasting-projections-${width}-light`, async ({ page }) => {
+    await open(page, '/forecasting', width, 0)
+    const heading = page.getByRole('heading', { name: 'Forecast Projections' })
+    await expect(async () => {
+      if (!(await heading.isVisible())) {
+        await page.getByRole('button', { name: 'Projections' }).click({ timeout: 1000 })
+      }
+      await expect(heading).toBeVisible({ timeout: 1000 })
+    }).toPass({ timeout: SHOT_TIMEOUT })
+    await chartsDrawn(page, 3)
+    await expect(page).toHaveScreenshot(`forecasting-projections-${width}-light.png`, {
+      fullPage: true,
+      mask: await copyrightYear(page),
+      timeout: SHOT_TIMEOUT,
+    })
+  })
+}
+
 for (const width of [768, 1280]) {
   test(`paid-header-${width}-light`, async ({ page }) => {
     await open(page, '/', width, 4)
@@ -86,10 +112,16 @@ test('paid-sheet-320', async ({ page }) => {
   // 320x640: the phone the 6-row sheet's on-screen claims were measured at.
   await open(page, '/', 320, 4, 640)
   await openMore(page)
-  // The OPEN, PAID sheet, asserted: six visible rows (the free sheet has two).
-  await expect(page.locator('nav[aria-label="Primary"] details ul').getByRole('link')).toHaveCount(
-    6
-  )
+  // The OPEN, PAID sheet, asserted: seven visible rows (the free sheet has
+  // three). Was six until story 96.3 (FR163) put Settings LAST in the phone
+  // sheet; asserted by its own name, not by its neighbour's label.
+  const rows = page.locator('nav[aria-label="Primary"] details ul').getByRole('link')
+  await expect(rows).toHaveCount(7)
+  await expect(rows.last()).toHaveAccessibleName('Settings')
+  await expect(rows.last()).toBeVisible()
+  // On SCREEN at 320x640, not just rendered: `toBeVisible()` ignores clipping
+  // by the sheet's `max-h` scroll box (story 96.3 review, measured).
+  await expect(rows.last()).toBeInViewport({ ratio: 1 })
   // Viewport, not full page: the sheet is a fixed overlay above the bottom bar.
   await expect(page).toHaveScreenshot('paid-sheet-320.png', {
     mask: await copyrightYear(page),
