@@ -10,6 +10,10 @@
  */
 
 import type { SyncEntityType } from '@budget-planner/core/sync'
+import {
+  RETIREMENT_PLAN_STRING_MAX,
+  retirementPlanSyncSchema,
+} from '@budget-planner/core/sync/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   type SyncBridgeHandle,
@@ -487,5 +491,47 @@ describe('toServerPayload — retirementPlan (story 99.2)', () => {
     expect(payload.plan['currentAgeInput']).toBe('35')
     expect(payload.plan).not.toHaveProperty('injected')
     expect(Object.keys(payload.plan).sort()).toEqual(Object.keys(PLAN).sort())
+  })
+
+  it('an over-long string is clamped to the push gate’s bound, so the payload is always pushable (99.2 review)', () => {
+    // The plan's inputs have no maxLength and localStorage is user-editable, so a
+    // string past RETIREMENT_PLAN_STRING_MAX is reachable. Unclamped, core's G2
+    // gate throws a ZodError on every push of that plan, and it never syncs.
+    const long = '9'.repeat(RETIREMENT_PLAN_STRING_MAX + 45)
+    const payload = toServerPayload(
+      'retirementPlan',
+      {
+        id: SESSION_USER_ID,
+        plan: { ...PLAN, desiredIncomeInput: long, desiredIncomeLocale: long },
+      } as never,
+      SESSION_USER_ID
+    ) as { plan: Record<string, unknown> }
+    expect(retirementPlanSyncSchema.safeParse(payload.plan).success).toBe(true)
+    expect(payload.plan['desiredIncomeInput']).toBe(long.slice(0, RETIREMENT_PLAN_STRING_MAX))
+    expect(payload.plan['lifeExpectancyInput']).toBe('87')
+  })
+
+  it('a NUL, a lone surrogate, or a clamp through a surrogate pair still yields a pushable payload (99.2 review)', () => {
+    // jsonb refuses a NUL and a lone surrogate, so the gate refuses them too; the
+    // bridge must therefore never PRODUCE one, including by cutting an emoji in two
+    // at the length bound (255 is odd, so 200 pairs are cut mid-pair).
+    const emoji = '😀'.repeat(200)
+    const payload = toServerPayload(
+      'retirementPlan',
+      {
+        id: SESSION_USER_ID,
+        plan: {
+          ...PLAN,
+          currentAgeInput: '4\u00002',
+          lifeExpectancyInput: '\ud80087',
+          desiredIncomeInput: emoji,
+        },
+      } as never,
+      SESSION_USER_ID
+    ) as { plan: Record<string, unknown> }
+    expect(retirementPlanSyncSchema.safeParse(payload.plan).success).toBe(true)
+    expect(payload.plan['currentAgeInput']).toBe('42')
+    expect(payload.plan['lifeExpectancyInput']).toBe('\ufffd87')
+    expect(payload.plan['desiredIncomeInput']).toBe('😀'.repeat(127))
   })
 })

@@ -81,12 +81,19 @@ describe('AC-8: nothing queues a retirementPlan op in story 99.2', () => {
     s.setAnnualReturnInput('5.5')
     s.setPostRetirementReturn('3.0')
     s.setModel('perpetual')
+    // The setters really ran (99.2 review: this was claimed below, never checked).
+    expect(useRetirementPlannerStore.getState().plan).toMatchObject({
+      currentAgeInput: '410',
+      desiredIncomeInput: '55.000,00',
+      incomeBasis: 'monthly',
+      model: 'perpetual',
+    })
     s.resetPlan()
     claimRetirementPlanFor(OTHER)
     claimRetirementPlanFor(USER)
     claimRetirementPlanFor('')
 
-    // The setters really ran (the store moved), and nothing was queued.
+    // The claims really ran, and nothing was queued.
     expect(useRetirementPlannerStore.getState().ownerUserId).toBe('')
     expect(queuedEntityTypes()).toEqual([])
   })

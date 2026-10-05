@@ -308,6 +308,32 @@ export const userProfileSchema = z.object({
 export const RETIREMENT_PLAN_STRING_MAX = 255
 
 /**
+ * A NUL, or a UTF-16 surrogate without its pair: the two string contents the
+ * plan's jsonb column REFUSES (99.2 code review). MEASURED on PGlite: a NUL raises
+ * 22P05 ("unsupported Unicode escape sequence") and a lone surrogate 22P02
+ * ("invalid input syntax for type json"). Neither SQLSTATE is permanent in
+ * `server/api/sync-rejection.ts`, so an op carrying one stayed QUEUED and replayed
+ * until the circuit breaker stopped all sync for the account (schema-as-gate
+ * trap 5). Refused here instead: client-side that is a ZodError before
+ * `queue.add` (nothing queued); server-side the same schema answers 400
+ * `invalid-request`, which drops the op.
+ */
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/
+
+/** Whether jsonb can store this string: no NUL and no lone surrogate (see above). */
+export function isJsonbStorableString(value: string): boolean {
+  return !value.includes('\u0000') && !LONE_SURROGATE.test(value)
+}
+
+/** One plan string: bounded, and storable in jsonb (see above). */
+const retirementPlanString = z
+  .string()
+  .max(RETIREMENT_PLAN_STRING_MAX)
+  .refine(isJsonbStorableString, {
+    message: 'contains a character the server cannot store',
+  })
+
+/**
  * The largest `adoptedMonthlyCents` whose ×12 is still a safe integer: the bound
  * `coerceAdoptedCents` (`apps/web/src/lib/retirement-plan.ts`) applies, as a
  * number (story 99.2). Pinned against that coercion by a test.
@@ -333,17 +359,17 @@ export const RETIREMENT_ADOPTED_CENTS_MAX = Math.floor(Number.MAX_SAFE_INTEGER /
  * The server imports THIS schema (`server/api/sync.ts`); there is no second copy.
  */
 export const retirementPlanSyncSchema = z.object({
-  currentAgeInput: z.string().max(RETIREMENT_PLAN_STRING_MAX),
-  lifeExpectancyInput: z.string().max(RETIREMENT_PLAN_STRING_MAX),
-  desiredIncomeInput: z.string().max(RETIREMENT_PLAN_STRING_MAX),
+  currentAgeInput: retirementPlanString,
+  lifeExpectancyInput: retirementPlanString,
+  desiredIncomeInput: retirementPlanString,
   desiredIncomeTouched: z.boolean(),
-  desiredIncomeLocale: z.string().max(RETIREMENT_PLAN_STRING_MAX),
+  desiredIncomeLocale: retirementPlanString,
   // `.nullable()` because `null` is "never adopted", a reachable value that must
   // land as `null` on every device (AC-2c).
   adoptedMonthlyCents: z.number().int().min(0).max(RETIREMENT_ADOPTED_CENTS_MAX).nullable(),
   incomeBasis: z.enum(INCOME_BASES),
-  annualReturnInput: z.string().max(RETIREMENT_PLAN_STRING_MAX),
-  postRetirementReturnInput: z.string().max(RETIREMENT_PLAN_STRING_MAX),
+  annualReturnInput: retirementPlanString,
+  postRetirementReturnInput: retirementPlanString,
   postRetirementTouched: z.boolean(),
   model: z.enum(RETIREMENT_MODELS),
 })

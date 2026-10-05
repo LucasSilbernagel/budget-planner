@@ -32,9 +32,10 @@ describe('AC-5a: the push schema and the plan agree key for key', () => {
     )
   })
 
-  it('any plan the coercion can produce passes the push gate, every key kept', () => {
-    // The coercion is what `toServerPayload` sends, so its whole output range must
-    // be pushable; garbage in every field is the widest input it has.
+  it('a coerced plan of wrong-TYPED garbage passes the push gate, every key kept', () => {
+    // Wrong types and unknown enum values only. The coercion does NOT bound string
+    // LENGTH (the gate caps at RETIREMENT_PLAN_STRING_MAX): `toServerPayload`
+    // clamps that, pinned in `syncBridge.test.ts` (99.2 code review).
     const garbage = coerceRetirementPlan({
       currentAgeInput: 42,
       incomeBasis: 'weekly',
@@ -43,6 +44,16 @@ describe('AC-5a: the push schema and the plan agree key for key', () => {
       desiredIncomeTouched: 'yes',
     })
     expect(retirementPlanSyncSchema.parse(garbage)).toEqual(garbage)
+  })
+
+  it('refuses what jsonb cannot store, accepts a paired emoji (99.2 review)', () => {
+    const at = (desiredIncomeInput: string) =>
+      retirementPlanSyncSchema.safeParse({ ...RETIREMENT_PLAN_DEFAULTS, desiredIncomeInput })
+        .success
+    expect(at('1\u00002')).toBe(false)
+    expect(at('\ud800')).toBe(false)
+    expect(at('\udc00x')).toBe(false)
+    expect(at('😀 55,000')).toBe(true)
   })
 
   it('the adopted-cents bound is the coercion’s bound, at the edge', () => {

@@ -19,7 +19,43 @@
  */
 
 import type { SyncEntityType, SyncOperation } from '@budget-planner/core'
-import { coerceRetirementPlan } from '../retirement-plan'
+import { RETIREMENT_PLAN_STRING_MAX } from '@budget-planner/core/sync/types'
+import { type RetirementPlan, coerceRetirementPlan } from '../retirement-plan'
+
+/**
+ * Make every string field of a plan one the push gate accepts (99.2 code review).
+ *
+ * The coercion accepts any string, but `retirementPlanSyncSchema` refuses one
+ * over {@link RETIREMENT_PLAN_STRING_MAX} and one jsonb cannot store (a NUL or a
+ * lone surrogate, `isJsonbStorableString`). The inputs have no `maxLength`
+ * and localStorage is user-editable, so both are reachable, and either would make
+ * core's G2 gate throw on EVERY push of that plan: it would never sync. So:
+ * drop NULs, replace a lone surrogate with U+FFFD, then cut to the bound without
+ * splitting a surrogate pair (a cut pair is itself a lone surrogate). No real
+ * value (an age, a rate, a formatted amount, a locale tag) is touched.
+ */
+function sanitizePlanString(value: string): string {
+  let clean = value
+    .replaceAll('\u0000', '')
+    .replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, '\ufffd')
+  if (clean.length > RETIREMENT_PLAN_STRING_MAX) {
+    clean = clean.slice(0, RETIREMENT_PLAN_STRING_MAX)
+    if (/[\ud800-\udbff]$/.test(clean)) {
+      clean = clean.slice(0, -1)
+    }
+  }
+  return clean
+}
+
+function sanitizePlanStrings(plan: RetirementPlan): RetirementPlan {
+  const clean: Record<string, unknown> = { ...plan }
+  for (const [key, value] of Object.entries(clean)) {
+    if (typeof value === 'string') {
+      clean[key] = sanitizePlanString(value)
+    }
+  }
+  return clean as unknown as RetirementPlan
+}
 
 /** Queue functions the provider supplies (sourced from `useSync`). */
 export interface SyncBridgeHandle {
@@ -302,7 +338,7 @@ export function toServerPayload(
       // wire: `''` (cleared) and `null` (never adopted) survive `JSON.stringify`,
       // where an `undefined` would drop the key. `entity.id` is the user's id (D3).
       // ⚠️ DORMANT in 99.2: nothing queues a plan op yet (story 99.3 adds the push).
-      return { plan: coerceRetirementPlan(entity['plan']), userId }
+      return { plan: sanitizePlanStrings(coerceRetirementPlan(entity['plan'])), userId }
     default: {
       // ⚠️ Story 30.4a: this was previously the `userProfile` case itself, which
       // made adding a SyncEntityType a SILENT defect — a new entity fell through

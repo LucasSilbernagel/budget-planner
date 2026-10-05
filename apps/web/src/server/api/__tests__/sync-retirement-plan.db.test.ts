@@ -394,14 +394,50 @@ describe('AC-2: the plan round-trips through the real chain, both directions', (
 describe('AC-6: no rejection path can deadlock — each op has a FATE', () => {
   it('(a) client gate: an over-long field is a ZodError before queue.add — nothing queued, nothing sent', async () => {
     const sync = await startService()
+    // Straight to core, past the bridge: since the 99.2 review `toServerPayload`
+    // clamps strings to the gate's bound, so the bridge can no longer produce this
+    // payload. The gate itself must still refuse it.
     await expect(
-      queuePlan('update', { ...PLAN, currentAgeInput: 'x'.repeat(300) })
+      sync.queueUpdate(
+        'retirementPlan',
+        USER,
+        { plan: { ...PLAN, currentAgeInput: 'x'.repeat(300) }, userId: USER },
+        USER
+      )
     ).rejects.toThrow()
     await sync.forceSync()
     expect(sync.getQueue().getAll()).toEqual([])
     expect(persistedQueue()).toEqual([])
     expect(pushes()).toEqual([])
   })
+
+  it('(a2) through the bridge, an over-long field is CLAMPED and lands (99.2 review)', async () => {
+    const sync = await queuePlan('update', { ...PLAN, currentAgeInput: 'x'.repeat(300) })
+    await sync.forceSync()
+    expect(sync.getQueue().getAll()).toEqual([])
+    const row = await serverRow()
+    expect((row?.plan as Record<string, unknown>)['currentAgeInput']).toBe('x'.repeat(255))
+  })
+
+  it.each([
+    ['a NUL (jsonb 22P05)', 'abc\u0000'],
+    ['a lone surrogate (jsonb 22P02)', '\ud800'],
+  ])(
+    '(b2) a string jsonb cannot hold, %s, is DROPPED, never kept queued (99.2 review)',
+    async (_label, bad) => {
+      // Text columns take these; the plan's jsonb column refuses them with a
+      // SQLSTATE that is not permanent, so before the review the op stayed queued
+      // and replayed until the circuit breaker stopped all sync for the account.
+      const op = rawOp({ data: { plan: { ...PLAN, desiredIncomeInput: bad }, userId: USER } })
+      seedQueue([op])
+      const sync = await startService()
+      await sync.forceSync()
+
+      expect(persistedQueue().map((queued) => queued.id)).not.toContain(op.id)
+      expect(sync.getState().rejectedOperations.map((rejected) => rejected.id)).toContain(op.id)
+      expect(await serverRow()).toBeUndefined()
+    }
+  )
 
   it('(b) server zod refusal → 400 invalid-request → DROPPED', async () => {
     const { model: _model, ...partial } = PLAN
