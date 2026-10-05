@@ -6,6 +6,7 @@
  */
 
 import { z } from 'zod'
+import { INCOME_BASES, RETIREMENT_MODELS } from '../finance/retirement'
 import { FINANCE_TYPES } from '../services/balanceTracking'
 
 // ============================================================================
@@ -296,6 +297,79 @@ export const userProfileSchema = z.object({
 })
 
 /**
+ * The longest raw input string a synced retirement plan may carry (story 99.2).
+ *
+ * Every plan string is a value as TYPED on `/retirement` (an age, a rate, a
+ * formatted income) or a BCP 47 locale tag, so real values are a few characters
+ * long. The bound only stops a pathological payload. A plan over it is refused
+ * CLIENT-SIDE (a ZodError before `queue.add`, nothing queued), which is the one
+ * refusal in this product that cannot deadlock sync (schema-as-gate trap 5).
+ */
+export const RETIREMENT_PLAN_STRING_MAX = 255
+
+/**
+ * The largest `adoptedMonthlyCents` whose ×12 is still a safe integer: the bound
+ * `coerceAdoptedCents` (`apps/web/src/lib/retirement-plan.ts`) applies, as a
+ * number (story 99.2). Pinned against that coercion by a test.
+ */
+export const RETIREMENT_ADOPTED_CENTS_MAX = Math.floor(Number.MAX_SAFE_INTEGER / 12)
+
+/**
+ * The PUSH gate for a synced retirement plan (story 99.2, FR161): all eleven
+ * `RetirementPlan` fields (`apps/web/src/lib/retirement-plan.ts`), every one
+ * REQUIRED.
+ *
+ * ⚠️⚠️ No `.default()` and no `.optional()` inside the plan. The client always
+ * sends the WHOLE plan (`toServerPayload`), and the server writes the whole
+ * object into one jsonb column, so a missing key would be a field silently
+ * dropped from every other device.
+ *
+ * ⚠️⚠️ This object STRIPS undeclared keys (it is nested inside
+ * `syncOperationDataSchema`, and both are plain `z.object`s). A field added to
+ * `RetirementPlan` and not here would be removed from the payload before it is
+ * queued, with no error. That is why a test pins this schema's keys to
+ * `Object.keys(RETIREMENT_PLAN_DEFAULTS)` (story 99.2 AC-5a).
+ *
+ * The server imports THIS schema (`server/api/sync.ts`); there is no second copy.
+ */
+export const retirementPlanSyncSchema = z.object({
+  currentAgeInput: z.string().max(RETIREMENT_PLAN_STRING_MAX),
+  lifeExpectancyInput: z.string().max(RETIREMENT_PLAN_STRING_MAX),
+  desiredIncomeInput: z.string().max(RETIREMENT_PLAN_STRING_MAX),
+  desiredIncomeTouched: z.boolean(),
+  desiredIncomeLocale: z.string().max(RETIREMENT_PLAN_STRING_MAX),
+  // `.nullable()` because `null` is "never adopted", a reachable value that must
+  // land as `null` on every device (AC-2c).
+  adoptedMonthlyCents: z.number().int().min(0).max(RETIREMENT_ADOPTED_CENTS_MAX).nullable(),
+  incomeBasis: z.enum(INCOME_BASES),
+  annualReturnInput: z.string().max(RETIREMENT_PLAN_STRING_MAX),
+  postRetirementReturnInput: z.string().max(RETIREMENT_PLAN_STRING_MAX),
+  postRetirementTouched: z.boolean(),
+  model: z.enum(RETIREMENT_MODELS),
+})
+
+/**
+ * The PULL gate for a `retirementPlans` row (story 99.2). DELIBERATELY LENIENT,
+ * and the asymmetry with {@link retirementPlanSyncSchema} is the point.
+ *
+ * Only the envelope is checked: `plan` must be an object and `userId` a uuid.
+ * The plan's FIELDS are not, because the web applier rebuilds every one of them
+ * through `coerceRetirementPlan` (each field falls back to its default). A strict
+ * pull gate would refuse a WHOLE plan from a newer client for one field this
+ * client does not know, or one value it would have coerced anyway: a false
+ * rejection of the user's own data (schema-as-gate trap 4). A `plan` that is not
+ * an object (null, an array, a string) is refused: there is nothing to coerce,
+ * and the local plan is kept (AC-6g).
+ *
+ * `plan` is required (the column is NOT NULL); `.default()` is banned here, as on
+ * every read gate (trap 1).
+ */
+export const retirementPlanRowSchema = z.object({
+  plan: z.record(z.unknown()),
+  userId: z.string().uuid(),
+})
+
+/**
  * Schema for sync operation data validation
  * Validates data structure based on entityType
  *
@@ -393,6 +467,12 @@ export const syncOperationDataSchema = z.object({
   // above: a `null` is a legitimate value ("never chosen") that must survive a
   // pull, and an optional-only schema would reject it at the queue gate.
   icon: z.string().max(16).nullable().optional(),
+  // Story 99.2 (FR161): the `retirementPlan` entity's whole plan. ⚠️ A NESTED
+  // `z.object` strips undeclared nested keys, so the plan's own schema is pinned
+  // key-for-key to `RETIREMENT_PLAN_DEFAULTS` by a test. `.optional()` because the
+  // other entity types do not carry it; the per-entity refinement in
+  // `synchronization.ts` makes it REQUIRED for a plan op.
+  plan: retirementPlanSyncSchema.optional(),
   userId: z.string().uuid().optional(),
 })
 
@@ -417,9 +497,17 @@ export type SyncEntityType =
   //   - syncOperationDataSchema below — zod STRIPS undeclared keys
   //   - syncOperationSchema.entityType (server/api/sync.ts) — a hard-coded enum;
   //     an unknown value fails the whole batch, not just its own operation
-  //   - getSyncChanges (server/api/sync.ts) — five hard-coded per-entity blocks
+  //   - getSyncChanges (server/api/sync.ts) — seven hard-coded per-entity blocks
   // A green `tsc` is NOT evidence the contract is complete.
   | 'category'
+  // Story 99.2 (FR161): the account's ONE retirement plan (entityId = the user's
+  // id). A new ENTITY touches seventeen gates, not the two above: the inventory
+  // (G1-G17) and where each is pinned is story 99.2's "Gate inventory". Compile-
+  // forced: SERVER_ROW_SCHEMAS, ENTITY_BINDINGS (applyServerChanges.ts), KIND
+  // (refusedEdits.ts), toServerPayload's `never`, and the server `schemaFor` once
+  // the server enum has the value. Everything else fails SILENTLY; each is pinned
+  // by a test (`sync-retirement-plan.db.test.ts`, `sync-category-gates.test.ts`).
+  | 'retirementPlan'
 
 /**
  * Supported operation types for synchronization
@@ -546,6 +634,8 @@ export const SERVER_ROW_SCHEMAS: Record<SyncEntityType, z.ZodTypeAny> = {
   balanceTracking: balanceTrackingSchema,
   userProfile: userProfileSchema,
   category: categorySchema,
+  // Lenient on purpose: see `retirementPlanRowSchema` (story 99.2).
+  retirementPlan: retirementPlanRowSchema,
 }
 
 /** The verdict on one pulled row. `fields` is `path:code` and never a value. */

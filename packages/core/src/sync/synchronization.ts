@@ -41,7 +41,7 @@ import type {
   SyncStatusCallback,
 } from './types'
 import { SyncStatus } from './types'
-import { syncOperationDataSchema, validateServerRow } from './types'
+import { retirementPlanSyncSchema, syncOperationDataSchema, validateServerRow } from './types'
 
 /**
  * Default configuration for the synchronization service
@@ -150,6 +150,12 @@ function isStrandedByDeletedProfile(
 ): boolean {
   return (
     operation.entityType !== 'userProfile' &&
+    // Story 99.2: the retirement plan is ACCOUNT-scoped. Its op carries the active
+    // profile stamp like every op, but the server's `retirementPlans` table has no
+    // `profileId` column and never checks it, so deleting a profile changes
+    // nothing about whether the plan op can land. Dropping it would lose the
+    // user's plan edit because they deleted an unrelated profile.
+    operation.entityType !== 'retirementPlan' &&
     typeof operation.profileId === 'string' &&
     deletedProfileIds.has(operation.profileId)
   )
@@ -306,6 +312,12 @@ const perEntityRefinements: Partial<Record<SyncEntityType, z.ZodTypeAny>> = {
     // `parsed`), so removing it would change nothing today. It stays because it says
     // what this object is: a judgement on ONE declared field, not a second schema.
     .passthrough(),
+  // Story 99.2 (FR161): a plan op must carry the WHOLE plan. The shared schema can
+  // only declare `plan` optional (no other entity has one), so this is where it
+  // becomes required. Refused HERE, a plan op with no plan (or a delete, whose
+  // data is `{}`: the plan has no delete op) is a ZodError before `queue.add` and
+  // nothing is queued — the one refusal that cannot deadlock sync (AC-6a).
+  retirementPlan: z.object({ plan: retirementPlanSyncSchema }).passthrough(),
 }
 
 /**

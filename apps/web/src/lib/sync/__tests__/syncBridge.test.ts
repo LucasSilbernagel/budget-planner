@@ -19,6 +19,7 @@ import {
   syncEntityCreate,
   syncEntityDelete,
   syncEntityUpdate,
+  toServerPayload,
 } from '../syncBridge'
 
 const SESSION_USER_ID = '550e8400-e29b-41d4-a716-446655440000'
@@ -432,5 +433,59 @@ describe('syncBridge — an asset row reaches the queue (Story 43.4, gate 2 fals
     expect(payload).toHaveProperty('contributionRecordedAsExpense')
     expect(payload?.contributionRecordedAsExpense).toBe(false)
     expect(JSON.parse(JSON.stringify(payload))).toHaveProperty('contributionRecordedAsExpense')
+  })
+})
+
+/**
+ * Story 99.2 (G11): the retirement plan's payload. DORMANT in 99.2 (no app code
+ * queues one; story 99.3 adds the push), but compile-forced by the `never`
+ * default, and pinned here so the case cannot ship wrong.
+ */
+describe('toServerPayload — retirementPlan (story 99.2)', () => {
+  const PLAN = {
+    currentAgeInput: '',
+    lifeExpectancyInput: '87',
+    desiredIncomeInput: '55.000,00',
+    desiredIncomeTouched: true,
+    desiredIncomeLocale: 'de-DE',
+    adoptedMonthlyCents: null,
+    incomeBasis: 'monthly',
+    annualReturnInput: '5.5',
+    postRetirementReturnInput: '3.0',
+    postRetirementTouched: true,
+    model: 'perpetual',
+  }
+
+  it('sends the WHOLE plan and the session user, nothing else', () => {
+    const payload = toServerPayload(
+      'retirementPlan',
+      { id: SESSION_USER_ID, plan: PLAN } as never,
+      SESSION_USER_ID
+    )
+    expect(payload).toEqual({ plan: PLAN, userId: SESSION_USER_ID })
+  })
+
+  it("keeps '' (cleared) and null (never adopted) through JSON.stringify", () => {
+    const payload = toServerPayload(
+      'retirementPlan',
+      { id: SESSION_USER_ID, plan: PLAN } as never,
+      SESSION_USER_ID
+    )
+    const wire = JSON.parse(JSON.stringify(payload)) as { plan: Record<string, unknown> }
+    expect(wire.plan['currentAgeInput']).toBe('')
+    expect(Object.prototype.hasOwnProperty.call(wire.plan, 'adoptedMonthlyCents')).toBe(true)
+    expect(wire.plan['adoptedMonthlyCents']).toBeNull()
+    expect(Object.keys(wire.plan).sort()).toEqual(Object.keys(PLAN).sort())
+  })
+
+  it('coerces: a missing or malformed field is sent as its default, never as a dropped key', () => {
+    const payload = toServerPayload(
+      'retirementPlan',
+      { id: SESSION_USER_ID, plan: { currentAgeInput: 42, injected: 'x' } } as never,
+      SESSION_USER_ID
+    ) as { plan: Record<string, unknown> }
+    expect(payload.plan['currentAgeInput']).toBe('35')
+    expect(payload.plan).not.toHaveProperty('injected')
+    expect(Object.keys(payload.plan).sort()).toEqual(Object.keys(PLAN).sort())
   })
 })

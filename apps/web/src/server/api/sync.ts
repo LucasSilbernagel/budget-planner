@@ -29,7 +29,7 @@ import { checkDbRateLimit } from '@/server/rate-limit/db-window'
 import { FINANCE_TYPES } from '@budget-planner/core/services/balanceTracking'
 import type { ServerChange, SyncOperation, SyncStatus } from '@budget-planner/core/sync'
 import { SyncStatus as SyncStatusEnum } from '@budget-planner/core/sync'
-import { SYNC_CURRENCIES } from '@budget-planner/core/sync/types'
+import { SYNC_CURRENCIES, retirementPlanSyncSchema } from '@budget-planner/core/sync/types'
 import type { User } from '@budget-planner/db'
 import { db } from '@budget-planner/db'
 import {
@@ -38,6 +38,7 @@ import {
   expenses,
   forecastingProfiles,
   incomeSources,
+  retirementPlans,
   savingsGoals,
   userProfiles,
 } from '@budget-planner/db'
@@ -306,6 +307,21 @@ const userProfileSchema = z.object({
 })
 
 /**
+ * The server gate for a `retirementPlan` op's data (story 99.2, FR161).
+ *
+ * ⚠️ The plan schema is IMPORTED from core (`retirementPlanSyncSchema`), the same
+ * object the client queue gate runs, so the two cannot drift. (The userProfile
+ * gate above is a hand copy and documents exactly that drift.) Like every gate in
+ * `schemaFor` this one VALIDATES inside `superRefine` and does not strip; the
+ * write path (`writeRetirementPlan`) parses again and stores the PARSED plan, so
+ * an undeclared key never reaches the jsonb column.
+ */
+const retirementPlanOperationSchema = z.object({
+  plan: retirementPlanSyncSchema,
+  userId: z.string().uuid(),
+})
+
+/**
  * Zod schema for sync operation validation
  * Uses discriminated union to validate data based on entityType
  */
@@ -328,6 +344,9 @@ export const syncOperationSchema = z
       'balanceTracking',
       'userProfile',
       'category',
+      // Story 99.2 (FR161). Pinned BOTH ways against core's union by
+      // `sync-category-gates.test.ts` (AC-5b).
+      'retirementPlan',
     ]),
     // A uuid (story 75.1). Every entity table's `id` is a uuid column and every
     // client id generator mints a v4-shaped uuid (`lib/uuid.ts`, story 5-14), so a
@@ -388,6 +407,7 @@ export const syncOperationSchema = z
       balanceTracking: balanceTrackingSchema,
       userProfile: userProfileSchema,
       category: categorySchema,
+      retirementPlan: retirementPlanOperationSchema,
     } satisfies Record<typeof entityType, z.ZodTypeAny>
     const result = schemaFor[entityType].safeParse(entityData)
     if (!result.success) {
@@ -432,6 +452,10 @@ export const entityTableMap = {
   balanceTracking: balanceTracking,
   userProfile: userProfiles,
   category: categories,
+  // Story 99.2: one row per user, `id` = the user's id. No `profileId` column, so
+  // every `'profileId' in table` test below routes a plan op past the profile
+  // checks; `applyOperation` and `checkConflict` give it its own branch.
+  retirementPlan: retirementPlans,
 } as const
 
 /**
@@ -746,8 +770,12 @@ async function createEntity(
     // real, monotonic value for every mutation; set it here so create/update/
     // soft-delete are uniform and a freshly created row is always pull-visible.
     const insertData = { ...data, updatedAt: new Date() }
-    // @ts-expect-error - Dynamic table insert
-    await executor.insert(table).values(insertData)
+    // Dynamic table insert: `table` is a union, so its insert type is not one shape.
+    // ⚠️ A cast, not `@ts-expect-error`: adding `retirementPlans` (story 99.2, a
+    // jsonb column) made the union accept this call, the directive became an
+    // error itself, and whether it errors is an accident of the union's members.
+    // (The plan never reaches here: `writeRetirementPlan` has its own INSERT.)
+    await executor.insert(table).values(insertData as never)
     return { success: true }
   } catch (error) {
     return failureFromError(error, { entityType, entityId: data['id'], userId: data.userId })
@@ -892,6 +920,87 @@ async function createUserProfile(
       return error.result
     }
     return failureFromError(error, { entityType: 'userProfile', entityId, userId })
+  }
+}
+
+/**
+ * Why a `retirementPlan` op can NEVER be applied, or `null` (story 99.2, AC-6c/d).
+ *
+ * Both refusals carry `rejection: 'invalid'`: the route answers 422 and core DROPS
+ * the op. That is the point: the op's own shape is wrong and no replay changes it,
+ * so keeping it queued would replay it until the circuit breaker stopped all sync
+ * for the account (schema-as-gate trap 5).
+ *   - `entityId !== userId` (D3): a plan belongs to its account, and its row id IS
+ *     the user's id. Any other id would make a second row (and a 23505) possible.
+ *   - `delete`: the plan has no delete op (D5). Without this arm a delete of a
+ *     missing row is a `delete-update` CONFLICT, which is never removed.
+ */
+function retirementPlanRefusal(operation: SyncOperation): OperationResult | null {
+  if (operation.entityId !== operation.userId) {
+    return {
+      success: false,
+      error: 'A retirement plan is stored under its own account id',
+      rejection: 'invalid',
+    }
+  }
+  if (operation.type === 'delete') {
+    return { success: false, error: 'A retirement plan cannot be deleted', rejection: 'invalid' }
+  }
+  return null
+}
+
+/**
+ * Write a `retirementPlan` op (story 99.2, D5): ONE statement, no transaction.
+ *
+ * - `create` = insert-if-absent (`ON CONFLICT (id) DO NOTHING`), acknowledged
+ *   whether or not a row was already there. Story 99.3's first-sign-in seed relies
+ *   on it: a seed racing another device's plan leaves the server copy unchanged
+ *   (D4, "server wins"). `checkConflict` acknowledges the ordinary case (the row
+ *   exists) as `create-create` before this runs; the clause covers the race.
+ * - `update` = upsert (`ON CONFLICT (id) DO UPDATE`). Never `update-delete`: an
+ *   update for a row the server does not hold yet (a device that never pulled one)
+ *   creates it, instead of becoming a conflict that is never removed (AC-6e).
+ *
+ * ⚠️ The INSERT's values are built HERE, never spread from `operation.data`, so no
+ * stray key (`profileId`, which every op carries, or `isDeleted`/`createdAt`)
+ * can reach the statement, and the stored plan is the PARSED one (undeclared keys
+ * stripped). Whole-plan last-writer-wins (Q5): the update replaces every field.
+ *
+ * Logs nothing: a plan holds the user's age, life expectancy and income goal.
+ */
+async function writeRetirementPlan(operation: SyncOperation): Promise<OperationResult> {
+  const refusal = retirementPlanRefusal(operation)
+  if (refusal) {
+    return refusal
+  }
+  // Already validated by the request schema's `superRefine`, which does not strip;
+  // parsed again here for the stripped value. A failure is unreachable past that
+  // gate, and refused permanently rather than written.
+  const parsed = retirementPlanSyncSchema.safeParse(operation.data['plan'])
+  if (!parsed.success) {
+    return { success: false, error: 'Invalid retirement plan', rejection: 'invalid' }
+  }
+  const userId = operation.userId
+  const updatedAt = new Date()
+  try {
+    const insert = db
+      .insert(retirementPlans)
+      .values({ id: userId, userId, plan: parsed.data, updatedAt })
+    if (operation.type === 'create') {
+      await insert.onConflictDoNothing({ target: retirementPlans.id })
+    } else {
+      await insert.onConflictDoUpdate({
+        target: retirementPlans.id,
+        set: { plan: parsed.data, updatedAt },
+      })
+    }
+    return { success: true }
+  } catch (error) {
+    return failureFromError(error, {
+      entityType: 'retirementPlan',
+      entityId: operation.entityId,
+      userId,
+    })
   }
 }
 
@@ -1308,6 +1417,13 @@ async function applyOperation(operation: SyncOperation): Promise<OperationResult
   }
 
   try {
+    // Story 99.2: the account's retirement plan has its own write path and its own
+    // refusals, BEFORE every check below (none of which applies to it: it has no
+    // tombstones, no delete op and no profile). See `writeRetirementPlan`.
+    if (entityType === 'retirementPlan') {
+      return writeRetirementPlan(operation)
+    }
+
     // A create for an id this user already DELETED is a stale replay (e.g. a
     // device that had not yet pulled the tombstone). Acknowledge it without
     // resurrecting the row: deletion wins.
@@ -1536,6 +1652,20 @@ async function checkConflict(operation: SyncOperation): Promise<{
   }
 
   try {
+    // Story 99.2: a plan op that can never land is a permanent FAILURE (dropped),
+    // never a conflict (kept for ever); an update is an upsert, so it never
+    // conflicts with a missing row (AC-6e). A create falls through to the
+    // ordinary `create-create` acknowledgement below (AC-6f).
+    if (entityType === 'retirementPlan') {
+      const refusal = retirementPlanRefusal(operation)
+      if (refusal) {
+        return { hasConflict: false, failure: refusal }
+      }
+      if (operation.type === 'update') {
+        return { hasConflict: false }
+      }
+    }
+
     switch (operation.type) {
       case 'create': {
         // Conflict if entity already exists on server
@@ -1976,7 +2106,7 @@ interface SafeTablePage {
  *     as far as the pre-existing cross-table-only fix went.
  *
  * `safeWatermark` is this table's own contribution to the GLOBAL pull cursor:
- * `getSyncChanges` takes the MINIMUM watermark across all 6 tables, because a
+ * `getSyncChanges` takes the MINIMUM watermark across all 7 tables, because a
  * table that stopped early (its own cap, not exhaustion) has UNSEEN rows that
  * a cursor advanced past any other table's later timestamp would skip
  * forever — exactly the cross-table interaction the story's code review
@@ -2100,7 +2230,7 @@ export async function getSyncChanges(
 
     // Categories (profile-scoped, Story 30.4a)
     //
-    // ⚠️ This function is FIVE (now six) hand-written per-entity blocks, not a
+    // ⚠️ This function is SEVEN hand-written per-entity blocks (story 99.2), not a
     // table-driven loop. A new field rides along free because select() returns
     // the whole row — but a new ENTITY reaches no second device at all unless a
     // block like this is added. Silent: nothing fails, the data simply never
@@ -2263,8 +2393,38 @@ export async function getSyncChanges(
   changes.push(...profiles.changes)
   watermarks.push(profiles.safeWatermark)
 
+  // The account's retirement plan (story 99.2): user-scoped like profiles, so it
+  // is pulled whatever the active profile is, and outside the `profileId` branch
+  // above. One row per user at most. Its watermark joins the global minimum like
+  // every other table's; a missing block here is SILENT (the plan simply never
+  // reaches a second device), which is why the PGlite round trip pulls it.
+  const plans = await fetchTableChangesSafely(
+    'retirementPlan',
+    (pageLimit) =>
+      db
+        .select()
+        .from(retirementPlans)
+        .where(
+          and(
+            eq(retirementPlans.userId, userId),
+            sinceDate ? gt(retirementPlans.updatedAt, sinceDate) : undefined
+          )
+        )
+        .orderBy(asc(retirementPlans.updatedAt))
+        .limit(pageLimit),
+    (timestamp) =>
+      db
+        .select()
+        .from(retirementPlans)
+        .where(and(eq(retirementPlans.userId, userId), eq(retirementPlans.updatedAt, timestamp)))
+        .limit(MAX_BOUNDARY_GROUP_SIZE),
+    cappedLimit
+  )
+  changes.push(...plans.changes)
+  watermarks.push(plans.safeWatermark)
+
   // The GLOBAL cursor this pull can safely promise is the MINIMUM watermark
-  // across all 6 tables — the tightest constraint wins. A table with a lower
+  // across all 7 tables — the tightest constraint wins. A table with a lower
   // watermark than another has rows this pull never even looked at yet
   // (its own page ran out before reaching that far); advancing the cursor
   // past that point would make `gt(updatedAt, cursor)` skip them forever on
@@ -2280,7 +2440,7 @@ export async function getSyncChanges(
   // Merge across tables, order by the global cursor with a stable id tiebreaker,
   // then cap WITHOUT splitting a same-timestamp group across the boundary (P1).
   // (Every table's own page is already safe up to `safeCursor` above; this
-  // second pass bounds the TOTAL response size across all 6 tables combined.)
+  // second pass bounds the TOTAL response size across all 7 tables combined.)
   safeChanges.sort((a, b) => a.updatedAt - b.updatedAt || a.entityId.localeCompare(b.entityId))
   return capChangesAtTimestampBoundary(safeChanges, cappedLimit)
 }

@@ -8,6 +8,7 @@ import {
   check,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   serial,
@@ -712,6 +713,42 @@ export const forecastingProfiles = pgTable(
   })
 )
 
+// Retirement Plans table - one synced retirement plan per ACCOUNT (story 99.2, FR161).
+//
+// ⚠️ ONE ROW PER USER, and `id` IS the user's id (decision D3): the client always
+// sends `entityId = userId` and the sync server refuses any other id, so a user can
+// never hold a second row (no 23505 path) and no `defaultRandom()` is declared.
+//
+// ⚠️ `plan` is ONE jsonb column holding all eleven `RetirementPlan` fields
+// (decision D1), validated by core's `retirementPlanSyncSchema` on push and coerced
+// field by field on pull. NO `check()` here, deliberately (schema-as-gate trap 5):
+// in this product a database rejection on the push path is kept queued and replays
+// until the circuit breaker stops ALL sync for the account.
+//
+// ⚠️ NO `profileId` column, and its absence is load-bearing: the sync server's
+// `'profileId' in table` tests route a plan op past every profile-ownership check.
+// `isDeleted` is never set true (there is no delete op); it exists because the pull
+// (`fetchTableChangesSafely`) and `tombstoneExists` read it on every synced table.
+//
+// FK is RESTRICT like every other: account erasure (`eraseAccountRows`) deletes
+// this row before `users`, or erasure and the retention purge THROW.
+export const retirementPlans = pgTable(
+  'retirementPlans',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('userId')
+      .references(() => users.id)
+      .notNull(),
+    plan: jsonb('plan').notNull(),
+    isDeleted: boolean('isDeleted').default(false).notNull(),
+    createdAt: timestamp('createdAt').defaultNow().notNull(),
+    updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index('retirementPlans_userId_idx').on(table.userId),
+  })
+)
+
 // Login Tokens table - single-use magic-link tokens for passwordless re-auth (Story 5-16)
 //
 // Authentication is APP-OWNED email magic-link (ADR-003): a returning paid user
@@ -864,6 +901,9 @@ export type NewRateLimit = InferInsertModel<typeof rateLimits>
 export type ForecastingProfile = InferSelectModel<typeof forecastingProfiles>
 export type NewForecastingProfile = InferInsertModel<typeof forecastingProfiles>
 
+export type RetirementPlanRow = InferSelectModel<typeof retirementPlans>
+export type NewRetirementPlanRow = InferInsertModel<typeof retirementPlans>
+
 export type LoginToken = InferSelectModel<typeof loginTokens>
 export type NewLoginToken = InferInsertModel<typeof loginTokens>
 
@@ -903,6 +943,7 @@ export const allTables = {
   userProfiles,
   rateLimits,
   forecastingProfiles,
+  retirementPlans,
   loginTokens,
   categories,
   paddleWebhookEvents,

@@ -19,6 +19,7 @@
  */
 
 import type { SyncEntityType, SyncOperation } from '@budget-planner/core'
+import { coerceRetirementPlan } from '../retirement-plan'
 
 /** Queue functions the provider supplies (sourced from `useSync`). */
 export interface SyncBridgeHandle {
@@ -294,6 +295,14 @@ export function toServerPayload(
       }
       return payload
     }
+    case 'retirementPlan':
+      // Story 99.2 (FR161): the account's WHOLE plan, every field, every time (D2;
+      // whole-plan last-writer-wins, Q5). Coerced through the same function the
+      // store's `merge` uses, so a field the type says exists is always on the
+      // wire: `''` (cleared) and `null` (never adopted) survive `JSON.stringify`,
+      // where an `undefined` would drop the key. `entity.id` is the user's id (D3).
+      // ⚠️ DORMANT in 99.2: nothing queues a plan op yet (story 99.3 adds the push).
+      return { plan: coerceRetirementPlan(entity['plan']), userId }
     default: {
       // ⚠️ Story 30.4a: this was previously the `userProfile` case itself, which
       // made adding a SyncEntityType a SILENT defect — a new entity fell through

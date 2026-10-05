@@ -363,12 +363,18 @@ describe('clean-slate migration replay', () => {
   it('applies every journal migration onto an empty database, in one transaction', () => {
     // beforeAll throws on the first failing statement, so reaching here IS the
     // replay passing; these assert the run was the full chain, not a no-op.
-    // Story 73.2: 24 -> 25 journal entries and 159 -> 165 statements, for
+    // Story 99.2 (2026-10-05): 25 -> 26 journal entries and 165 -> 168 statements,
+    // for migration 0025 (journal idx 25): `CREATE TABLE retirementPlans`, its
+    // `userId` FK (a `DO $$` block) and `CREATE INDEX retirementPlans_userId_idx`.
+    // MEASURED: the run reported 26 and 168 against the old pins of 25 and 165, and
+    // 0025 holds exactly those three statements, so 0020's CHECKs and 0024's two
+    // hand-appended statements still replay. No CHECK on the new table (trap 5).
+    // (Story 73.2 before it: 24 -> 25 journal entries and 159 -> 165 statements, for
     // migration 0024: `CREATE TABLE jobRuns`, three `ALTER TABLE users ADD
     // COLUMN` (`accessEndedAt`, `retentionNoticeSentAt`,
     // `retentionNoticeAttemptedAt`), and two HAND-APPENDED data statements (the
     // lapsed-row backfill and the `jobRuns` seed). MEASURED: 165. A
-    // regeneration that dropped the two hand-appended statements would land at 163.
+    // regeneration that dropped the two hand-appended statements would land at 163.)
     // (Story 70.1 before it: 23 -> 24 journal entries and 157 -> 159 statements, for
     // migration 0023's `CREATE TYPE billingInterval` + `ALTER TABLE users ADD
     // COLUMN billingInterval` — the plan the user bought. MEASURED: the run
@@ -395,8 +401,8 @@ describe('clean-slate migration replay', () => {
     // ⚠️ They matter more since 0020 than before it: that migration is
     // hand-authored and `drizzle-kit generate` cannot reproduce it, so a
     // regeneration that drops all eight statements shows up HERE first.
-    expect(journal.entries.length).toBe(25)
-    expect(appliedStatements).toBe(165)
+    expect(journal.entries.length).toBe(26)
+    expect(appliedStatements).toBe(168)
   })
 
   it('runs on the same PostgreSQL major version as the managed instance', async () => {
