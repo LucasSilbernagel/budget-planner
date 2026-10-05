@@ -246,6 +246,8 @@ test('the production server routes /api/profiles and /api/forecasts to their han
     ['GET', '/api/profiles'],
     ['GET', '/api/forecasts'],
     ['POST', '/api/forecasts'],
+    // Story 97.1 (FR157): saving over a loaded forecast.
+    ['PUT', '/api/forecasts?id=1'],
     ['DELETE', '/api/forecasts?id=1'],
   ] as const
 

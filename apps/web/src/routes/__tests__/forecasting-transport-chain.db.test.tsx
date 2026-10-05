@@ -55,6 +55,7 @@ import {
   DELETE as forecastsDELETE,
   GET as forecastsGET,
   POST as forecastsPOST,
+  PUT as forecastsPUT,
 } from '@/routes/api/forecasts'
 import { GET as profilesGET } from '@/routes/api/profiles'
 import { getCurrentUserSession } from '@/server/api/auth/paddle'
@@ -96,7 +97,9 @@ async function routeFetch(input: RequestInfo | URL, init?: RequestInit): Promise
             ? forecastsPOST
             : url.pathname === '/api/forecasts' && method === 'DELETE'
               ? forecastsDELETE
-              : null
+              : url.pathname === '/api/forecasts' && method === 'PUT'
+                ? forecastsPUT
+                : null
   if (!handler) throw new Error(`unrouted fetch ${method} ${url}`)
   const response = await handler({ request })
   served.push(`${method} ${url.pathname}${url.search} → ${response.status}`)
@@ -128,6 +131,95 @@ async function storedForecasts() {
     })
     .from(forecastingProfiles)
 }
+
+/** Every stored forecast, oldest id first, with the columns story 97.1 pins. */
+async function storedRows() {
+  return db
+    .select({
+      id: forecastingProfiles.id,
+      profileId: forecastingProfiles.profileId,
+      name: forecastingProfiles.name,
+      scenarioData: forecastingProfiles.scenarioData,
+      createdAt: forecastingProfiles.createdAt,
+      updatedAt: forecastingProfiles.updatedAt,
+    })
+    .from(forecastingProfiles)
+    .orderBy(forecastingProfiles.id)
+}
+
+type View = ReturnType<typeof import('@/test/utils').renderWithRouter>
+
+/** Wait for Save to be enabled and press it. */
+async function pressSave(view: View) {
+  const save = await view.findByRole('button', { name: 'Save Forecast' }, { timeout: 5000 })
+  await rtl.waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(false), {
+    timeout: 5000,
+  })
+  rtl.fireEvent.click(save)
+}
+
+/**
+ * Type into a text field so React's `onChange` sees it.
+ *
+ * ⚠️ A bare `fireEvent.change` is IGNORED here (MEASURED, story 97.1: the DOM
+ * value changed, the builder's state did not). `react-dom` is first loaded by
+ * `vitest.setup.ts` BEFORE this file stubs `window`, so its `canUseDOM` is false
+ * and its ChangeEventPlugin takes the old-IE "input event polyfill" path for text
+ * inputs: it tracks the focused element via `focusin` + `attachEvent` and reads
+ * the value on `keyup`. So: give the node a no-op `attachEvent`/`detachEvent`,
+ * focus it, set the value, and release a key.
+ */
+function typeInto(field: HTMLElement, value: string) {
+  const node = field as HTMLElement & { attachEvent?: () => void; detachEvent?: () => void }
+  node.attachEvent ??= () => {}
+  node.detachEvent ??= () => {}
+  rtl.fireEvent.focusIn(node)
+  rtl.fireEvent.change(node, { target: { value } })
+  rtl.fireEvent.keyUp(node)
+  rtl.fireEvent.focusOut(node)
+}
+
+/** Type an income growth rate (percent) and let the 500 ms debounced recompute run. */
+async function setIncomeGrowth(view: View, percent: string) {
+  const field = await view.findByLabelText('Income Growth Rate')
+  typeInto(field, percent)
+  await new Promise((resolve) => setTimeout(resolve, 800))
+}
+
+const DUPLICATE = 'A forecast with this name already exists for this profile.'
+const GONE =
+  'This forecast was deleted, so it was not saved. Save again to keep it as a new forecast.'
+const OPENING = [
+  'GET /api/auth/me → 200',
+  'GET /api/profiles → 200',
+  `GET /api/forecasts?profileId=${PROFILE} → 200`,
+]
+const LIST = `GET /api/forecasts?profileId=${PROFILE} → 200`
+
+/** Render, save the default forecast once, and Load it back into the builder. */
+async function saveThenLoad() {
+  const view = renderWithRouter(<ForecastingPage />)
+  await pressSave(view)
+  await view.findByTestId('save-success', {}, { timeout: 5000 })
+  const [first] = await storedRows()
+  if (!first) throw new Error('the first save stored no row')
+  rtl.fireEvent.click(
+    await view.findByRole('button', { name: 'Load My Financial Forecast' }, { timeout: 5000 })
+  )
+  return { view, first }
+}
+
+function setName(view: View, name: string) {
+  const field = view.getByLabelText('Scenario Name') as HTMLInputElement
+  typeInto(field, name)
+  expect(field.value).toBe(name)
+}
+
+const savedScenario = (row: { scenarioData: string } | undefined) =>
+  JSON.parse(String(row?.scenarioData)) as {
+    scenario: { name: string; incomeGrowthRate: number }
+    result: { summary: { endingNetWorth: number } }
+  }
 
 beforeAll(async () => {
   pg = await migratedPglite()
@@ -320,4 +412,238 @@ describe('the forecasting page against the real routes (story 83.1)', () => {
     ).toBeTruthy()
     expect(served).toEqual(['GET /api/auth/me → 200'])
   })
+})
+
+describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
+  it('Load → change → Save updates the SAME row with a PUT, not a POST that 409s (AC-1, AC-2)', async () => {
+    const view = renderWithRouter(<ForecastingPage />)
+    await pressSave(view)
+    expect(await view.findByTestId('save-success', {}, { timeout: 5000 })).toBeTruthy()
+    const [first, ...others] = await storedRows()
+    expect(others).toEqual([])
+    const listRowBefore = (
+      await view.findByRole('button', { name: 'Load My Financial Forecast' })
+    ).closest('tr')?.textContent
+
+    rtl.fireEvent.click(view.getByRole('button', { name: 'Load My Financial Forecast' }))
+    await setIncomeGrowth(view, '5')
+    await pressSave(view)
+
+    // The second save's request, first: on `ae1b5ce` it was `POST /api/forecasts → 409`.
+    await rtl.waitFor(() => expect(served.length).toBeGreaterThanOrEqual(6), { timeout: 5000 })
+    expect(served[5]).toBe(`PUT /api/forecasts?id=${first?.id} → 200`)
+    const success = await view.findByTestId('save-success', {}, { timeout: 5000 })
+    expect(success.textContent).toBe('Saved "My Financial Forecast" to My Forecasts.')
+    expect(view.queryByTestId('save-outcome')).toBeNull()
+
+    const [row, ...rest] = await storedRows()
+    expect(rest, 'still exactly one row').toEqual([])
+    expect(row?.id).toBe(first?.id)
+    expect(row?.profileId).toBe(PROFILE)
+    expect(row?.createdAt.getTime()).toBe(first?.createdAt.getTime())
+    expect(Number(row?.updatedAt.getTime())).toBeGreaterThan(Number(first?.updatedAt.getTime()))
+    const before = savedScenario(first)
+    const after = savedScenario(row)
+    expect(before.scenario.incomeGrowthRate).toBe(0)
+    expect(after.scenario.incomeGrowthRate).toBeCloseTo(0.05, 12)
+    expect(after.result.summary.endingNetWorth).not.toBe(before.result.summary.endingNetWorth)
+
+    // "My Forecasts" lists ONE entry, now showing the new values.
+    const loads = await view.findAllByRole('button', { name: 'Load My Financial Forecast' })
+    expect(loads).toHaveLength(1)
+    await rtl.waitFor(() => expect(loads[0]?.closest('tr')?.textContent).not.toBe(listRowBefore))
+
+    expect(served).toEqual([
+      'GET /api/auth/me → 200',
+      'GET /api/profiles → 200',
+      `GET /api/forecasts?profileId=${PROFILE} → 200`,
+      'POST /api/forecasts → 200',
+      `GET /api/forecasts?profileId=${PROFILE} → 200`,
+      `PUT /api/forecasts?id=${first?.id} → 200`,
+      `GET /api/forecasts?profileId=${PROFILE} → 200`,
+    ])
+  }, 20_000)
+
+  it('re-saving a forecast this builder just CREATED updates it too (AC-3)', async () => {
+    const view = renderWithRouter(<ForecastingPage />)
+    await pressSave(view)
+    await view.findByTestId('save-success', {}, { timeout: 5000 })
+    const [first] = await storedRows()
+
+    rtl.fireEvent.click(view.getByRole('button', { name: /Scenario Builder/ }))
+    await setIncomeGrowth(view, '3')
+    await pressSave(view)
+    expect(await view.findByTestId('save-success', {}, { timeout: 5000 })).toBeTruthy()
+
+    const [row, ...rest] = await storedRows()
+    expect(rest).toEqual([])
+    expect(row?.id).toBe(first?.id)
+    expect(savedScenario(row).scenario.incomeGrowthRate).toBeCloseTo(0.03, 12)
+    expect(served).toEqual([
+      ...OPENING,
+      'POST /api/forecasts → 200',
+      LIST,
+      `PUT /api/forecasts?id=${first?.id} → 200`,
+      LIST,
+    ])
+  }, 20_000)
+
+  it('a NEW forecast under a taken name still gets the 409 text beside Save, and writes nothing (AC-4a)', async () => {
+    await db.insert(forecastingProfiles).values({
+      userId: USER,
+      profileId: PROFILE,
+      name: 'My Financial Forecast',
+      scenarioData: '{}',
+    })
+    const [seeded] = await storedRows()
+    const view = renderWithRouter(<ForecastingPage />)
+    await pressSave(view)
+
+    const outcome = await view.findByTestId('save-outcome', {}, { timeout: 5000 })
+    expect(outcome.textContent).toBe(DUPLICATE)
+    expect(view.queryByTestId('save-success')).toBeNull()
+    expect(await storedRows()).toEqual([seeded])
+    expect(served).toEqual([...OPENING, 'POST /api/forecasts → 409'])
+  }, 20_000)
+
+  it('a loaded forecast saved under a NEW name is a new forecast; the original is kept (D2(c))', async () => {
+    const { view, first } = await saveThenLoad()
+    setName(view, 'Plan B')
+    await setIncomeGrowth(view, '4')
+    await pressSave(view)
+    const success = await view.findByTestId('save-success', {}, { timeout: 5000 })
+    expect(success.textContent).toBe('Saved "Plan B" to My Forecasts.')
+
+    const stored = await storedRows()
+    expect(stored.map((r) => [r.id, r.name])).toEqual([
+      [first.id, 'My Financial Forecast'],
+      [expect.any(Number), 'Plan B'],
+    ])
+    expect(stored[0]?.scenarioData).toBe(first.scenarioData)
+    expect(served).toEqual([
+      ...OPENING,
+      'POST /api/forecasts → 200',
+      LIST,
+      'POST /api/forecasts → 200',
+      LIST,
+    ])
+  }, 20_000)
+
+  it('a trailing space on the loaded name is still the same forecast: PUT, one row (M4)', async () => {
+    const { view, first } = await saveThenLoad()
+    setName(view, 'My Financial Forecast ')
+    await setIncomeGrowth(view, '2')
+    await pressSave(view)
+    expect(await view.findByTestId('save-success', {}, { timeout: 5000 })).toBeTruthy()
+
+    const [row, ...rest] = await storedRows()
+    expect(rest).toEqual([])
+    expect(row?.id).toBe(first.id)
+    expect(row?.name).toBe('My Financial Forecast')
+    expect(served).toEqual([
+      ...OPENING,
+      'POST /api/forecasts → 200',
+      LIST,
+      `PUT /api/forecasts?id=${first.id} → 200`,
+      LIST,
+    ])
+  }, 20_000)
+
+  it('deleting the loaded forecast in My Forecasts drops it as the target: the next Save creates (AC-6)', async () => {
+    const { view, first } = await saveThenLoad()
+    rtl.fireEvent.click(view.getByRole('button', { name: /My Forecasts/ }))
+    rtl.fireEvent.click(await view.findByRole('button', { name: 'Delete My Financial Forecast' }))
+    rtl.fireEvent.click(
+      rtl.within(await view.findByRole('alertdialog')).getByRole('button', { name: 'Delete' })
+    )
+    await rtl.waitFor(() =>
+      expect(view.queryByRole('button', { name: 'Delete My Financial Forecast' })).toBeNull()
+    )
+    expect(await storedRows()).toEqual([])
+
+    rtl.fireEvent.click(view.getByRole('button', { name: /Scenario Builder/ }))
+    await pressSave(view)
+    expect(await view.findByTestId('save-success', {}, { timeout: 5000 })).toBeTruthy()
+
+    const [row, ...rest] = await storedRows()
+    expect(rest).toEqual([])
+    expect(row?.id).not.toBe(first.id)
+    expect(served).toEqual([
+      ...OPENING,
+      'POST /api/forecasts → 200',
+      LIST,
+      `DELETE /api/forecasts?id=${first.id} → 200`,
+      LIST,
+      'POST /api/forecasts → 200',
+      LIST,
+    ])
+  }, 20_000)
+
+  it('a BULK delete that includes the loaded forecast drops it as the target too (AC-6)', async () => {
+    // Code review of 97.1: AC-6 says "single or bulk", and bulk goes through
+    // `forecast-list.tsx`'s per-id `onDelete` loop, a different path from the
+    // single-row button above.
+    const { view, first } = await saveThenLoad()
+    rtl.fireEvent.click(view.getByRole('button', { name: /My Forecasts/ }))
+    rtl.fireEvent.click(await view.findByRole('checkbox', { name: 'Select all' }))
+    rtl.fireEvent.click(view.getByRole('button', { name: 'Delete Selected' }))
+    rtl.fireEvent.click(
+      rtl.within(await view.findByRole('alertdialog')).getByRole('button', { name: 'Delete' })
+    )
+    await rtl.waitFor(() =>
+      expect(view.queryByRole('button', { name: 'Delete My Financial Forecast' })).toBeNull()
+    )
+    expect(await storedRows()).toEqual([])
+
+    rtl.fireEvent.click(view.getByRole('button', { name: /Scenario Builder/ }))
+    await pressSave(view)
+    expect(await view.findByTestId('save-success', {}, { timeout: 5000 })).toBeTruthy()
+
+    const [row, ...rest] = await storedRows()
+    expect(rest).toEqual([])
+    expect(row?.id).not.toBe(first.id)
+    expect(served).toEqual([
+      ...OPENING,
+      'POST /api/forecasts → 200',
+      LIST,
+      `DELETE /api/forecasts?id=${first.id} → 200`,
+      LIST,
+      'POST /api/forecasts → 200',
+      LIST,
+    ])
+  }, 20_000)
+
+  it('a PUT that answers 404 (deleted on another device) says so, and the next Save creates it (AC-6, D3)', async () => {
+    const { view, first } = await saveThenLoad()
+    // Deleted behind the page's back.
+    await db.delete(forecastingProfiles)
+    await pressSave(view)
+
+    const outcome = await view.findByTestId('save-outcome', {}, { timeout: 5000 })
+    expect(outcome.textContent).toBe(GONE)
+    expect(await storedRows()).toEqual([])
+    // The list is refetched (code review of 97.1): the gone forecast leaves My
+    // Forecasts, so it cannot be Loaded again only to 404 a second time.
+    // (The list is only rendered on its own tab, so look there.)
+    rtl.fireEvent.click(view.getByRole('button', { name: /My Forecasts/ }))
+    await rtl.waitFor(() =>
+      expect(view.queryByRole('button', { name: 'Load My Financial Forecast' })).toBeNull()
+    )
+    rtl.fireEvent.click(view.getByRole('button', { name: /Scenario Builder/ }))
+
+    await pressSave(view)
+    expect(await view.findByTestId('save-success', {}, { timeout: 5000 })).toBeTruthy()
+    const [row, ...rest] = await storedRows()
+    expect(rest).toEqual([])
+    expect(row?.name).toBe('My Financial Forecast')
+    expect(served).toEqual([
+      ...OPENING,
+      'POST /api/forecasts → 200',
+      LIST,
+      `PUT /api/forecasts?id=${first.id} → 404`,
+      LIST,
+      'POST /api/forecasts → 200',
+      LIST,
+    ])
+  }, 20_000)
 })

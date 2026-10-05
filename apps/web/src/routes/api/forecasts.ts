@@ -5,7 +5,8 @@
  *
  * Endpoints:
  *   GET    /api/forecasts[?profileId=<uuid>]  list (all, or one profile's)
- *   POST   /api/forecasts                     save (JSON body, below)
+ *   POST   /api/forecasts                     save a new one (JSON body, below)
+ *   PUT    /api/forecasts?id=<int>            save over one (story 97.1, FR157)
  *   DELETE /api/forecasts?id=<int>            delete one
  *
  * ⚠️ Why this route exists: the forecasting page used to call
@@ -33,9 +34,11 @@ import { requirePremiumSession } from '@/server/api/auth/require-premium'
 import {
   type CreateForecastingProfileInput,
   type ForecastResult,
+  type UpdateForecastingProfileInput,
   createForecastingProfile,
   deleteForecastingProfile,
   getForecastingProfiles,
+  updateForecastingProfile,
 } from '@/server/functions/forecastingProfiles'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
@@ -94,15 +97,13 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
 /**
- * The save input, taken field by field from the parsed body (nothing is spread
- * through). `null` = the body is not a valid request. `name` is passed on as a
- * string either way, so a missing name gets the core's own message
- * ("Profile name is required").
+ * The fields a create and an update share, taken field by field from the parsed
+ * body (nothing is spread through). `null` = the body is not a valid request.
+ * `name` is passed on as a string either way, so a missing name gets the core's
+ * own message ("Profile name is required").
  */
-function parseCreateInput(body: unknown): CreateForecastingProfileInput | null {
-  if (!isRecord(body)) return null
-  const { name, description, scenarioData, profileId, isDefault, version } = body
-  if (typeof profileId !== 'string' || !UUID_PATTERN.test(profileId)) return null
+function parseSharedFields(body: Record<string, unknown>): UpdateForecastingProfileInput | null {
+  const { name, description, scenarioData, version } = body
   // A MISSING name falls through to the core's own message; a name of the wrong
   // TYPE is a malformed request.
   if (name !== undefined && typeof name !== 'string') return null
@@ -111,7 +112,6 @@ function parseCreateInput(body: unknown): CreateForecastingProfileInput | null {
     return null
   }
   if (typeof description === 'string' && hasNul(description)) return null
-  if (isDefault !== undefined && typeof isDefault !== 'boolean') return null
   if (
     version !== undefined &&
     !(
@@ -128,11 +128,44 @@ function parseCreateInput(body: unknown): CreateForecastingProfileInput | null {
     name: typeof name === 'string' ? name : '',
     ...(typeof description === 'string' ? { description } : {}),
     scenarioData,
-    profileId,
-    ...(isDefault === undefined ? {} : { isDefault }),
     ...(version === undefined ? {} : { version }),
   }
 }
+
+/** The create input: the shared fields, plus `profileId` and `isDefault`. */
+function parseCreateInput(body: unknown): CreateForecastingProfileInput | null {
+  if (!isRecord(body)) return null
+  const { profileId, isDefault } = body
+  if (typeof profileId !== 'string' || !UUID_PATTERN.test(profileId)) return null
+  if (isDefault !== undefined && typeof isDefault !== 'boolean') return null
+  const shared = parseSharedFields(body)
+  if (!shared) return null
+  return { ...shared, profileId, ...(isDefault === undefined ? {} : { isDefault }) }
+}
+
+/**
+ * The update input: the shared fields ONLY (story 97.1). `profileId` and
+ * `isDefault` in a PUT body are never read, so an update cannot move a forecast
+ * to another profile or change the default flag.
+ */
+function parseUpdateInput(body: unknown): UpdateForecastingProfileInput | null {
+  if (!isRecord(body)) return null
+  return parseSharedFields(body)
+}
+
+/** `?id=<int>` of a DELETE or PUT: a positive int4, else `null` (a 400). */
+function parseForecastId(request: Request): number | null {
+  const idParam = new URL(request.url).searchParams.get('id') ?? ''
+  const id = /^[1-9]\d{0,9}$/.test(idParam) ? Number(idParam) : Number.NaN
+  return id <= INT4_MAX ? id : null
+}
+
+const tooLarge = (request: Request): boolean => {
+  const contentLength = request.headers.get('content-length')
+  return Boolean(contentLength && Number.parseInt(contentLength, 10) > MAX_FORECAST_BODY_BYTES)
+}
+
+const requestTooLarge = () => json({ success: false, error: 'Request too large' }, { status: 413 })
 
 export const GET = async ({ request }: { request: Request }): Promise<Response> =>
   noStore(await listForecasts(request))
@@ -160,10 +193,7 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
   const gate = await requirePremiumSession(request, FORECASTS_PREMIUM_ERROR)
   if (!gate.ok) return gate.response
 
-  const contentLength = request.headers.get('content-length')
-  if (contentLength && Number.parseInt(contentLength, 10) > MAX_FORECAST_BODY_BYTES) {
-    return json({ success: false, error: 'Request too large' }, { status: 413 })
-  }
+  if (tooLarge(request)) return requestTooLarge()
 
   let body: unknown
   try {
@@ -183,13 +213,39 @@ export const DELETE = async ({ request }: { request: Request }): Promise<Respons
   const gate = await requirePremiumSession(request, FORECASTS_PREMIUM_ERROR)
   if (!gate.ok) return gate.response
 
-  const idParam = new URL(request.url).searchParams.get('id') ?? ''
-  const id = /^[1-9]\d{0,9}$/.test(idParam) ? Number(idParam) : Number.NaN
-  if (!(id <= INT4_MAX)) return invalidRequest()
+  const id = parseForecastId(request)
+  if (id === null) return invalidRequest()
 
   const result = await deleteForecastingProfile(gate.user.userId, id)
   if (!result.success) return failureResponse(result, 'Failed to delete forecast', 'DELETE')
   return json({ success: true })
+}
+
+/**
+ * Save over one of the caller's forecasts (story 97.1, FR157). Same gate, id rule,
+ * cap and status mapping as the other methods; a foreign or missing id is a 404.
+ */
+export const PUT = async ({ request }: { request: Request }): Promise<Response> => {
+  const gate = await requirePremiumSession(request, FORECASTS_PREMIUM_ERROR)
+  if (!gate.ok) return gate.response
+
+  const id = parseForecastId(request)
+  if (id === null) return invalidRequest()
+
+  if (tooLarge(request)) return requestTooLarge()
+
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return invalidRequest()
+  }
+  const input = parseUpdateInput(body)
+  if (!input) return invalidRequest()
+
+  const result = await updateForecastingProfile(gate.user.userId, id, input)
+  if (!result.success) return failureResponse(result, 'Failed to save forecast', 'PUT')
+  return json({ success: true, data: result.data })
 }
 
 export const Route = createFileRoute('/api/forecasts')({
@@ -197,6 +253,7 @@ export const Route = createFileRoute('/api/forecasts')({
     handlers: {
       GET,
       POST,
+      PUT,
       DELETE,
     },
   },

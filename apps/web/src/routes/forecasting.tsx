@@ -31,6 +31,7 @@ import {
   fetchForecasts,
   fetchProfiles,
   saveForecast,
+  updateForecast,
 } from '../lib/forecasting/forecast-api'
 
 // ============================================================================
@@ -228,6 +229,15 @@ function ForecastingPage(): React.ReactElement {
   // Bumped on every Load so the builder remounts even when the SAME forecast is
   // re-loaded (an id-only key would not change → stale edits would survive).
   const [loadNonce, setLoadNonce] = useState(0)
+  /**
+   * The saved forecast a Save under the SAME name writes over (story 97.1, FR157,
+   * D2(c)): the one last loaded, or the one this builder last saved. A different
+   * name saves a NEW forecast. `name` is the SERVER's (trimmed) name.
+   *
+   * ⚠️ Separate from `loadedForecast` on purpose: that one keys the builder's
+   * remount, so setting it after a save would throw away the builder's state.
+   */
+  const [saveTarget, setSaveTarget] = useState<{ id: string; name: string } | null>(null)
 
   // Handle tab change. Retires the save confirmation: it names a specific
   // forecast, and leaving it up while the user works elsewhere lets it outlive
@@ -364,7 +374,8 @@ function ForecastingPage(): React.ReactElement {
     }
   }, [status.hasAccess, status.isAuthenticated])
 
-  // Handle saving a forecast - `POST /api/forecasts`
+  // Handle saving a forecast: `PUT /api/forecasts?id=` over the save target when
+  // the name is unchanged (story 97.1), else `POST /api/forecasts` (a new one)
   const handleSaveForecast = useCallback(
     async (forecast: {
       name: string
@@ -408,11 +419,23 @@ function ForecastingPage(): React.ReactElement {
           profileId: defaultProfileId,
         }
 
-        // `POST /api/forecasts` (story 83.1). A refusal's `error` is the server's
+        // The same name as the forecast last loaded or saved: save OVER it (`PUT`,
+        // story 97.1, D2(c)). Compared TRIMMED against the SERVER's name, which is
+        // stored trimmed: "Plan " after loading "Plan" is still that forecast.
+        // Any other name is a new forecast (`POST`, story 83.1), so a different
+        // forecast is never overwritten. A refusal's `error` is the server's
         // message (duplicate name, deleted profile, …) and is shown verbatim.
-        const result = await saveForecast(input)
+        const isUpdate = saveTarget !== null && forecast.name.trim() === saveTarget.name
+        const result = isUpdate
+          ? await updateForecast(saveTarget.id, {
+              name: input.name,
+              description: input.description,
+              scenarioData: input.scenarioData,
+            })
+          : await saveForecast(input)
 
         if (result.success && result.data) {
+          setSaveTarget({ id: String(result.data.id), name: result.data.name })
           // Reload forecasts (scoped to the same profile) to get the updated list
           const getResult = await fetchForecasts(defaultProfileId)
 
@@ -435,6 +458,18 @@ function ForecastingPage(): React.ReactElement {
         // user and invisible to the gate — `forecasting-intro.test.tsx:41-49`
         // records, measured, that this suite does not fail on console errors. Do
         // not cite either of these as "the user is informed".
+        // The forecast was deleted elsewhere (story 97.1, D3): it is no longer the
+        // target, so the next Save creates it. The server's message says so.
+        // The list is refetched too (code review of 97.1): otherwise My Forecasts
+        // keeps showing the gone forecast, and Loading it re-targets a dead id.
+        // A failed refetch must not replace the 404's message, hence the catch.
+        if (isUpdate && 'status' in result && result.status === 404) {
+          setSaveTarget(null)
+          const listResult = await fetchForecasts(defaultProfileId).catch(() => null)
+          if (listResult?.success && listResult.data) {
+            setServerForecasts(listResult.data)
+          }
+        }
         const error = result.error || 'Failed to save forecast'
         console.error('Failed to save forecast:', error)
         return { success: false, error }
@@ -444,7 +479,7 @@ function ForecastingPage(): React.ReactElement {
         return { success: false, error: message }
       }
     },
-    [defaultProfileId, profileState.kind]
+    [defaultProfileId, profileState.kind, saveTarget]
   )
 
   // Handle deleting a forecast - `DELETE /api/forecasts`
@@ -457,6 +492,9 @@ function ForecastingPage(): React.ReactElement {
         const result = await deleteForecast(id)
 
         if (result.success) {
+          // A deleted forecast is no longer the save target, so the next Save
+          // creates a new one (story 97.1, D3). Bulk delete calls this per id.
+          setSaveTarget((target) => (target?.id === id ? null : target))
           // Reload forecasts (scoped to the same profile) to get the updated list
           const getResult = await fetchForecasts(defaultProfileId ?? undefined)
 
@@ -480,6 +518,8 @@ function ForecastingPage(): React.ReactElement {
     // Reopening a different scenario retires the previous save confirmation.
     setSaveSuccess(null)
     setLoadedForecast(forecast)
+    // `forecast.name` is the server's row name (`mapToSavedForecast`).
+    setSaveTarget({ id: forecast.id, name: forecast.name })
     setLoadNonce((n) => n + 1)
     setScenarioResult(forecast.result)
     setActiveTab('scenarios')

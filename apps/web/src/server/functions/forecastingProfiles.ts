@@ -4,9 +4,10 @@
  * Server-side CRUD operations for premium forecasting profiles.
  * Only available for paid tier users (subscriptionStatus 'active' or 'lifetime').
  *
- * ⚠️ Since story 83.1 (FR136) the three functions the app uses,
- * `getForecastingProfiles`, `createForecastingProfile` and
- * `deleteForecastingProfile`, are USER-SCOPED CORES: they take a `userId` the
+ * ⚠️ Since story 83.1 (FR136) the functions the app uses,
+ * `getForecastingProfiles`, `createForecastingProfile`, `updateForecastingProfile`
+ * (story 97.1, FR157) and `deleteForecastingProfile`, are USER-SCOPED CORES: they
+ * take a `userId` the
  * caller has already authenticated and authorised, and `routes/api/forecasts.ts`
  * is that caller (session → 503/401, premium → 403). They report a refusal with a
  * `reason` the route maps to a status. They used to take the `Request`, and the
@@ -14,8 +15,8 @@
  * and failed there on `Buffer` (story 80.1 Fact R). Never import this module from
  * client code; call the route (`lib/forecasting/forecast-api.ts`).
  *
- * The remaining request-taking functions below (`getForecastingProfileById`,
- * `updateForecastingProfile`, `setDefaultForecastingProfile`) have no caller.
+ * The two remaining request-taking functions below (`getForecastingProfileById`,
+ * `setDefaultForecastingProfile`) have no caller.
  *
  * Architecture: TanStack Start Server Functions
  * Database: Drizzle ORM with DanubeData PostgreSQL (Germany - EU)
@@ -50,15 +51,18 @@ export interface CreateForecastingProfileInput {
 }
 
 /**
- * Input type for updating a forecasting profile
+ * Input for updating one of the user's forecasts (story 97.1, FR157: `PUT
+ * /api/forecasts?id=`). A FULL replace of the editable fields: an absent
+ * `description` clears it, an absent `version` keeps the stored one.
+ *
+ * ⚠️ No `id` (it travels in the URL), no `profileId` and no `isDefault`: an update
+ * can neither move a forecast to another profile nor change the default flag.
  */
 export interface UpdateForecastingProfileInput {
-  id: number
-  name?: string
+  name: string
   description?: string
-  scenarioData?: unknown // Will be validated as JSON string
+  scenarioData: unknown // Will be validated as JSON string
   version?: number
-  isDefault?: boolean
 }
 
 /**
@@ -180,6 +184,54 @@ function isUniqueViolation(error: unknown): boolean {
   )
 }
 
+/**
+ * The input checks create and update share (story 97.1: one rule, one place).
+ * They touch no row. A refusal carries `reason: 'invalid-input'`; otherwise the
+ * stringified `scenarioData`.
+ */
+function checkForecastInput(input: {
+  name: string
+  scenarioData: unknown
+}): { ok: true; scenarioDataString: string } | { ok: false; refusal: ForecastResult<never> } {
+  if (!input.name || typeof input.name !== 'string' || input.name.trim() === '') {
+    return {
+      ok: false,
+      refusal: { success: false, error: 'Profile name is required', reason: 'invalid-input' },
+    }
+  }
+
+  if (input.name.length > 255) {
+    return {
+      ok: false,
+      refusal: {
+        success: false,
+        error: 'Profile name must be 255 characters or less',
+        reason: 'invalid-input',
+      },
+    }
+  }
+
+  // Its throw is a refusal of the INPUT (400), not an unexpected failure.
+  try {
+    return { ok: true, scenarioDataString: validateScenarioData(input.scenarioData) }
+  } catch (error) {
+    return {
+      ok: false,
+      refusal: {
+        success: false,
+        error: error instanceof Error ? error.message : 'scenarioData is invalid',
+        reason: 'invalid-input',
+      },
+    }
+  }
+}
+
+const DUPLICATE_NAME_ERROR = 'A forecast with this name already exists for this profile.'
+
+/** The 404 text of an update whose forecast is gone (story 97.1, D3). */
+export const FORECAST_GONE_ERROR =
+  'This forecast was deleted, so it was not saved. Save again to keep it as a new forecast.'
+
 // ============================================================================
 // Server Functions
 // ============================================================================
@@ -202,36 +254,11 @@ export async function createForecastingProfile(
   input: CreateForecastingProfileInput
 ): Promise<ForecastResult<ForecastingProfileOutput>> {
   try {
-    // Validate input
-    if (!input.name || typeof input.name !== 'string' || input.name.trim() === '') {
-      return {
-        success: false,
-        error: 'Profile name is required',
-        reason: 'invalid-input',
-      }
-    }
-
-    if (input.name.length > 255) {
-      return {
-        success: false,
-        error: 'Profile name must be 255 characters or less',
-        reason: 'invalid-input',
-      }
-    }
-
-    // Validate and stringify scenarioData BEFORE the transaction: it touches no
-    // row. Its throw is a refusal of the INPUT (400), not an unexpected failure,
-    // so it is caught here and not by the outer catch.
-    let scenarioDataString: string
-    try {
-      scenarioDataString = validateScenarioData(input.scenarioData)
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'scenarioData is invalid',
-        reason: 'invalid-input',
-      }
-    }
+    // Validate the input (and stringify scenarioData) BEFORE the transaction: it
+    // touches no row.
+    const checked = checkForecastInput(input)
+    if (!checked.ok) return checked.refusal
+    const { scenarioDataString } = checked
 
     // ⚠️⚠️ ONE transaction, behind the per-user lock (story 80.1, FR131). The
     // ownership check used to run in autocommit before an unguarded INSERT, so a
@@ -318,11 +345,7 @@ export async function createForecastingProfile(
     }
   } catch (error) {
     if (isUniqueViolation(error)) {
-      return {
-        success: false,
-        error: 'A forecast with this name already exists for this profile.',
-        reason: 'conflict',
-      }
+      return { success: false, error: DUPLICATE_NAME_ERROR, reason: 'conflict' }
     }
     return {
       success: false,
@@ -456,102 +479,62 @@ export async function getForecastingProfileById(
 }
 
 /**
- * Update a forecasting profile
- * Requires authentication and ownership validation
+ * Update one of `userId`'s forecasts in place (story 97.1, FR157: `PUT
+ * /api/forecasts?id=`).
+ *
+ * The caller has authenticated `userId` and checked premium access
+ * (`routes/api/forecasts.ts`). A FULL replace of name, description and
+ * scenarioData (`UpdateForecastingProfileInput`); `profileId`, `isDefault`,
+ * `createdAt` and the owner never change.
+ *
+ * ONE statement, `UPDATE … WHERE id AND userId RETURNING`: a forecast that does
+ * not exist and one owned by another user are the same 404 (no existence
+ * oracle, as DELETE). It takes no `lockUserProfileSet`: it changes no
+ * `profileId`, so it cannot leave an orphan, and a profile cascade that
+ * hard-deletes the row either runs first (0 rows → 404) or waits on this row
+ * lock and deletes the updated row. A rename onto another forecast's name trips
+ * the unique index (23505) → the same `conflict` as create, and nothing changes.
  */
 export async function updateForecastingProfile(
-  request: Request,
+  userId: string,
+  id: number,
   input: UpdateForecastingProfileInput
-): Promise<ApiResult<ForecastingProfileOutput>> {
+): Promise<ForecastResult<ForecastingProfileOutput>> {
   try {
-    // Check authentication
-    const userResult = await getCurrentUserSession(request)
+    const checked = checkForecastInput(input)
+    if (!checked.ok) return checked.refusal
 
-    if (!userResult.success) {
-      return {
-        success: false,
-        error: userResult.error || 'Authentication check failed',
-      }
-    }
-
-    const user = userResult.data
-
-    if (!user) {
-      return {
-        success: false,
-        error: 'Authentication required',
-      }
-    }
-
-    // Get the existing profile to validate ownership
-    const [existingProfile] = await db
-      .select()
-      .from(forecastingProfiles)
-      .where(and(eq(forecastingProfiles.id, input.id), eq(forecastingProfiles.userId, user.userId)))
-      .limit(1)
-
-    if (!existingProfile) {
-      return {
-        success: false,
-        error: 'Forecasting profile not found or access denied',
-      }
-    }
-
-    // Handle isDefault flag
-    if (input.isDefault !== undefined && input.isDefault) {
-      // Ensure only one default per user/profile
-      await ensureSingleDefault(user.userId, existingProfile.profileId, input.id)
-    }
-
-    // Validate and stringify scenarioData if provided
-    let scenarioDataString = existingProfile.scenarioData
-    if (input.scenarioData !== undefined) {
-      scenarioDataString = validateScenarioData(input.scenarioData)
-    }
-
-    // Update the profile
-    const [updatedProfile] = await db
+    const [updated] = await db
       .update(forecastingProfiles)
       .set({
-        name: input.name?.trim() ?? existingProfile.name,
-        description: input.description?.trim(),
-        scenarioData: scenarioDataString,
-        version: input.version ?? existingProfile.version,
-        isDefault: input.isDefault ?? existingProfile.isDefault,
-        // ⚠️ `new Date()`, not `.toISOString()`. The column is
-        // `timestamp('updatedAt')` (`packages/db/src/schema.ts`), and drizzle's date
-        // mapper calls `.toISOString()` on the value it is given — so handing it a
-        // STRING throws at runtime. Every other `.set()` in the codebase passes a
-        // `Date` (e.g. `server/api/sync.ts:698,826`); these were the odd
-        // ones out.
+        name: input.name.trim(),
+        // ⚠️ `null`, never `undefined`: drizzle DROPS undefined keys from `.set()`
+        // (`mapUpdateSet`), so a cleared description would silently survive.
+        description: input.description?.trim() ?? null,
+        scenarioData: checked.scenarioDataString,
+        // Absent → the key is left out → the stored version stays.
+        ...(input.version === undefined ? {} : { version: input.version }),
+        // A Date, never a string: drizzle's timestamp mapper calls `.toISOString()`.
         updatedAt: new Date(),
       })
-      .where(eq(forecastingProfiles.id, input.id))
+      .where(and(eq(forecastingProfiles.id, id), eq(forecastingProfiles.userId, userId)))
       .returning()
 
-    // Get the profile name
+    if (!updated) {
+      return { success: false, error: FORECAST_GONE_ERROR, reason: 'not-found' }
+    }
+
     const [userProfile] = await db
       .select({ name: userProfiles.name })
       .from(userProfiles)
-      .where(eq(userProfiles.id, existingProfile.profileId))
+      .where(eq(userProfiles.id, updated.profileId))
       .limit(1)
 
-    // ⚠️ `.returning()` yields an array, so the destructured row is
-    // possibly-undefined. Without this guard, spreading `undefined` produced a
-    // "success" payload carrying only `profileName` — a malformed row the caller
-    // would have taken at face value. A write that returns nothing is a failure.
-    if (!updatedProfile) {
-      return { success: false, error: 'Failed to update forecasting profile' }
-    }
-
-    return {
-      success: true,
-      data: {
-        ...updatedProfile,
-        profileName: userProfile?.name,
-      },
-    }
+    return { success: true, data: { ...updated, profileName: userProfile?.name } }
   } catch (error) {
+    if (isUniqueViolation(error)) {
+      return { success: false, error: DUPLICATE_NAME_ERROR, reason: 'conflict' }
+    }
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to update forecasting profile',
