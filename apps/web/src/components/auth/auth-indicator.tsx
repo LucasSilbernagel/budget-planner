@@ -330,7 +330,17 @@ export function AuthIndicator() {
         // which carries that border, a 32px region made the 320px strip 33px
         // in every state. 31px of region plus the row's 1px border restores
         // exactly 32. At 640px and up there is no border and it stays 32px.
-        className="flex min-h-[2rem] shrink-0 items-center justify-end gap-2 sm:gap-1 max-sm:min-h-[calc(2rem-1px)]"
+        //
+        // `max-sm:min-h-[44px]` (story 96.1, FR156, decisions D1 + D2): the
+        // phone strip GROWS to hold 44 x 44px targets. 44px of region plus the
+        // row's 1px border = 45px, and it is this reserve (not the controls)
+        // that holds 45px in EVERY state, the loading placeholder and the
+        // deliberately empty `/login` strip included, so no state is shorter
+        // than another (story 13.2's layout-shift rule). It replaced
+        // `max-sm:min-h-[calc(2rem-1px)]`; the 59.3 arithmetic above is why
+        // that value was 31px. The row's own `min-h-[2rem]` is now dominated
+        // below 640px and stays as the >= 640px reserve.
+        className="flex min-h-[2rem] shrink-0 items-center justify-end gap-2 sm:gap-1 max-sm:min-h-[44px]"
       >
         {authState.status === 'loading' && (
           // Neutral placeholder: identical on server + first client render, holds
@@ -397,7 +407,7 @@ export function AuthIndicator() {
             {!isOnPricingPage && !isOnLoginPage && (
               <Link
                 to={PRICING_PATH}
-                className="rounded-md px-3 py-1 font-medium sm:px-1.5 text-green-700 transition-colors hover:bg-green-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-green-400 dark:hover:bg-gray-700"
+                className={`rounded-md px-3 py-1 font-medium sm:px-1.5 ${PHONE_TARGET_CLASS} text-green-700 transition-colors hover:bg-green-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-green-400 dark:hover:bg-gray-700`}
               >
                 Upgrade
               </Link>
@@ -405,7 +415,7 @@ export function AuthIndicator() {
             {!isOnLoginPage && (
               <Link
                 to={LOGIN_PATH}
-                className="rounded-md px-3 py-1 font-medium sm:px-1.5 text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+                className={`rounded-md px-3 py-1 font-medium sm:px-1.5 ${PHONE_TARGET_CLASS} text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100`}
               >
                 Sign in
               </Link>
@@ -512,6 +522,17 @@ export function AuthIndicator() {
 }
 
 /**
+ * "Upgrade" and "Sign in" below 640px: a 44 x 44px target (story 96.1, FR156,
+ * D1). Shared so the two links cannot drift. `max-sm:inline-flex` +
+ * `items-center justify-center`: `min-height` alone would leave the label at
+ * the top of a 44px box, so the flex container centres it. Every token is
+ * `max-sm:`, so the >= 640px strip (the 640px width ladder, 69.2/69.3) is
+ * unchanged. The rendered boxes are asserted in the 320px screenshot tests.
+ */
+const PHONE_TARGET_CLASS =
+  'max-sm:inline-flex max-sm:min-h-[44px] max-sm:min-w-[44px] max-sm:items-center max-sm:justify-center'
+
+/**
  * The signed-out Settings gear (story 69.2). `h-7 w-7` is a 28x28px box, the
  * project's target floor, with the 16px glyph centred. `shrink-0` because, like
  * "Sign in", it must never give way. Raw `gray-*` with `dark:` variants and an
@@ -557,9 +578,15 @@ const GEAR_ACTIVE_CLASS = 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:
  * truncate; with nothing left to truncate it only let the button shrink BELOW
  * its avatar + chevron under a squeeze, overflowing its own box. Without it the
  * button holds its 64px and the squeeze goes where the row decides.
+ *
+ * `max-sm:min-h-[44px] max-sm:min-w-[44px]` (story 96.1, FR156, D1 44px): the
+ * "28px, not 32" rule above is the >= 640px rule now. Below 640px the strip
+ * grows to 45px (the status region's `max-sm:min-h-[44px]`) so the trigger can
+ * be a 44 x 44px target; it is already `flex items-center`, so the avatar and
+ * chevron stay centred. Its 64px width already clears the 44px floor.
  */
 const ACCOUNT_TRIGGER_CLASS =
-  'flex min-h-[1.75rem] items-center gap-2 rounded-md px-2 font-medium text-gray-900 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-gray-100 dark:hover:bg-gray-700'
+  'flex min-h-[1.75rem] max-sm:min-h-[44px] max-sm:min-w-[44px] items-center gap-2 rounded-md px-2 font-medium text-gray-900 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-gray-100 dark:hover:bg-gray-700'
 
 /**
  * The panel. Below 640px it hangs DOWN from the top strip, full width (the
@@ -586,9 +613,15 @@ const ACCOUNT_PANEL_CLASS =
  * the 28px floor. The ring is inset so the panel's edge cannot clip it.
  * The Settings page's own Sign out is a standalone button in page content and
  * is outlined like one (story 70.2). It does not use this row style on purpose.
+ *
+ * `max-sm:min-h-[44px] max-sm:py-3` (story 96.1, FR156): below 640px the row
+ * is a 44px target, the same pair as the nav sheet's `SHEET_ROW_CLASS`
+ * (`GlobalNav.tsx`). `py-3` keeps the label centred in a `block` row (12 + 20
+ * line + 12 = 44 at the default font); `min-h` holds the floor at other fonts.
+ * Only Sign out is visible there (the Settings row is `max-sm:hidden`, 96.3).
  */
 const PANEL_ROW_CLASS =
-  'block w-full px-4 py-2 text-left text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-green-500 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100'
+  'block w-full px-4 py-2 max-sm:min-h-[44px] max-sm:py-3 text-left text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-green-500 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100'
 
 /** The Sign out row: the shared row, plus its in-flight (`disabled`) state. */
 const SIGN_OUT_CLASS = `${PANEL_ROW_CLASS} disabled:cursor-wait disabled:opacity-60`

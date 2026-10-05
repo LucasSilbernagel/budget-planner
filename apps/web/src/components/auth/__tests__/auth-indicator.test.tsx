@@ -1040,10 +1040,21 @@ describe('AuthIndicator — account menu (story 59.3)', () => {
   it('carries the target-size and panel-placement tokens', async () => {
     await renderSignedIn()
     const user = userEvent.setup()
-    // 28px, not 32: a 32px trigger grew the 320px strip from 32 to 33px
-    // (measured in e2e), which is the layout shift story 13-2 reserves against.
-    expect([...trigger().classList]).toEqual(expect.arrayContaining(['min-h-[1.75rem]', 'px-2']))
+    // >= 640px: 28px, not 32: a 32px trigger grew the 320px strip from 32 to
+    // 33px (measured in e2e), which is the layout shift story 13-2 reserves
+    // against. That is the >= 640px rule since story 96.1 (FR156, D1): below
+    // 640px the strip grows to 45px to hold a 44 x 44px target.
+    expect([...trigger().classList]).toEqual(
+      expect.arrayContaining([
+        'min-h-[1.75rem]',
+        'px-2',
+        'max-sm:min-h-[44px]',
+        'max-sm:min-w-[44px]',
+      ])
+    )
     expect([...trigger().classList]).not.toContain('min-h-[2rem]')
+    // The phone floor never leaks to >= 640px.
+    expect([...trigger().classList]).not.toContain('min-h-[44px]')
     await user.click(trigger())
     const tokens = [...(panel() as HTMLElement).classList]
     expect(tokens).toEqual(
@@ -1063,9 +1074,94 @@ describe('AuthIndicator — account menu (story 59.3)', () => {
         'dark:bg-gray-800',
       ])
     )
-    expect([
+    // Sign out: `py-2` (about 36px) at >= 640px; below 640px it is the one
+    // visible panel row and gets the 44px phone floor (story 96.1), the same
+    // pair as the nav sheet's `SHEET_ROW_CLASS`.
+    const signOutTokens = [
       ...within(panel() as HTMLElement).getByRole('button', { name: 'Sign out' }).classList,
-    ]).toEqual(expect.arrayContaining(['py-2', 'text-sm']))
+    ]
+    expect(signOutTokens).toEqual(
+      expect.arrayContaining(['py-2', 'text-sm', 'max-sm:min-h-[44px]', 'max-sm:py-3'])
+    )
+    expect(signOutTokens).not.toContain('min-h-[44px]')
+  })
+})
+
+/**
+ * Story 96.1 (FR156, D1 44px, D2 grow the strip): phone tap targets.
+ *
+ * Class TOKENS only: jsdom applies no Tailwind, so `min-h-[44px]` is an inert
+ * string here. The rendered 44 x 44px boxes and the 45px strip are asserted in
+ * a real browser inside the existing 320px screenshot tests
+ * (`e2e/pages.screenshot.spec.ts`, `e2e/nav.screenshot.paid.spec.ts`).
+ * Membership via `classList`, never substring (`max-sm:min-h-[44px]` contains
+ * `min-h-[44px]`).
+ */
+describe('AuthIndicator — phone tap targets (story 96.1)', () => {
+  const PHONE_TARGET_TOKENS = [
+    'max-sm:inline-flex',
+    'max-sm:min-h-[44px]',
+    'max-sm:min-w-[44px]',
+    'max-sm:items-center',
+    'max-sm:justify-center',
+  ]
+  const tokensOf = (el: Element) => [...el.classList]
+
+  it.each(['Upgrade', 'Sign in'])('"%s" is a 44 x 44px target below 640px only', async (name) => {
+    stubFetch({ user: null })
+    renderWithRouter(<AuthIndicator />)
+    const link = await screen.findByRole('link', { name })
+    expect(tokensOf(link)).toEqual(expect.arrayContaining(PHONE_TARGET_TOKENS))
+    // The >= 640px half: nothing unprefixed, so the desktop strip (the 640px
+    // width ladder from 69.2/69.3) is unchanged.
+    for (const token of ['min-h-[44px]', 'min-w-[44px]', 'inline-flex']) {
+      expect(tokensOf(link), `${name} carries an unprefixed ${token}`).not.toContain(token)
+    }
+    // The existing >= 640px tokens stay.
+    expect(tokensOf(link)).toEqual(expect.arrayContaining(['px-3', 'py-1', 'sm:px-1.5']))
+  })
+
+  /** The status region's reserve: 44px of content + the row's 1px border = 45px. */
+  function expectPhoneReserve(region: HTMLElement, state: string) {
+    expect(tokensOf(region), `${state}: no 44px phone reserve`).toContain('max-sm:min-h-[44px]')
+    expect(tokensOf(region), `${state}: the old 31px reserve`).not.toContain(
+      'max-sm:min-h-[calc(2rem-1px)]'
+    )
+    // >= 640px reserve unchanged.
+    expect(tokensOf(region)).toContain('min-h-[2rem]')
+  }
+
+  it('reserves the 45px phone strip signed out', async () => {
+    stubFetch({ user: null })
+    renderWithRouter(<AuthIndicator />)
+    await screen.findByRole('link', { name: 'Sign in' })
+    expectPhoneReserve(accountStatus(), 'signed out')
+  })
+
+  it('reserves the 45px phone strip signed in', async () => {
+    stubFetch({ user: { userId: 'u', email: 'user@example.com', subscriptionStatus: 'free' } })
+    renderWithRouter(<AuthIndicator />)
+    await within(await findAccountStatus()).findByText('user@example.com')
+    expectPhoneReserve(accountStatus(), 'signed in')
+  })
+
+  it('reserves the 45px phone strip while loading', async () => {
+    stubFetchPending()
+    renderWithRouter(<AuthIndicator />)
+    const region = await findAccountStatus()
+    // Positive control: this IS the loading state (its placeholder exists).
+    expect(region.querySelector('span[aria-hidden="true"]')).not.toBeNull()
+    expectPhoneReserve(region, 'loading')
+  })
+
+  it('reserves the 45px phone strip on /login (the deliberately empty strip)', async () => {
+    stubFetch({ user: null })
+    renderWithRouter(<AuthIndicator />, { path: '/login' })
+    const region = await findAccountStatus()
+    // Wait for the resolved (empty) state, not the loading placeholder.
+    await waitFor(() => expect(region.querySelector('span[aria-hidden="true"]')).toBeNull())
+    expect(region.children).toHaveLength(0)
+    expectPhoneReserve(region, '/login')
   })
 })
 
@@ -1118,6 +1214,8 @@ describe('AuthIndicator — the signed-out Settings gear (story 69.2)', () => {
       )
       expect([...(link as HTMLElement).classList]).not.toContain('sm:hidden')
       expect(link).not.toHaveAttribute('aria-current')
+      // Story 96.1: the gear is hidden below 640px, so it gets NO phone floor.
+      expect([...(link as HTMLElement).classList]).not.toContain('max-sm:min-h-[44px]')
     }
   )
 

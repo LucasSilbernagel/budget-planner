@@ -43,3 +43,79 @@ export async function copyrightYear(page: Page): Promise<Locator[]> {
 export async function chartsDrawn(page: Page, count: number): Promise<void> {
   await expect(page.locator('.recharts-surface')).toHaveCount(count, { timeout: SHOT_TIMEOUT })
 }
+
+/** 44 x 44 CSS px, decided for phone targets in story 96.1 (FR156, D1). */
+export const PHONE_TARGET_PX = 44
+
+/**
+ * The phone top strip's height (story 96.1, D2): 44px of content plus its 1px
+ * bottom border. Pinned outright in each state, never as an equality between
+ * two states (an equality cannot catch both drifting together).
+ */
+export const PHONE_STRIP_PX = 45
+
+export interface Box {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/**
+ * Assert a control's rendered box is at least `min` CSS px (story 96.1). jsdom
+ * cannot measure this (no Tailwind loads in the unit suite), so it runs in the
+ * screenshot tests, before the shot.
+ *
+ * `toHaveCount(1)` FIRST: `toBeVisible()`/`boundingBox()` on a locator that
+ * matches nothing is the vacuous shape story 96.3's review measured.
+ * `sides: 'height'` is for full-width rows and inline links, where the width is
+ * not the claim.
+ */
+export async function expectTarget(
+  locator: Locator,
+  label: string,
+  { min = PHONE_TARGET_PX, sides = 'both' }: { min?: number; sides?: 'both' | 'height' } = {}
+): Promise<Box> {
+  await expect(locator, `${label}: expected exactly one match`).toHaveCount(1)
+  await expect(locator, `${label}: not visible`).toBeVisible()
+  const box = await locator.boundingBox()
+  expect(box, `${label}: no layout box`).not.toBeNull()
+  const b = box as Box
+  expect(b.height, `${label} is ${b.height}px tall, under ${min}`).toBeGreaterThanOrEqual(min)
+  if (sides === 'both') {
+    expect(b.width, `${label} is ${b.width}px wide, under ${min}`).toBeGreaterThanOrEqual(min)
+  }
+  return b
+}
+
+/**
+ * The phone top strip (`[data-auth-indicator]`) is exactly `PHONE_STRIP_PX`
+ * tall and the page does not scroll sideways at `width` (story 96.1, AC 1-2).
+ */
+export async function expectPhoneStrip(page: Page, width: number): Promise<void> {
+  const strip = page.locator('[data-auth-indicator]')
+  await expect(strip).toHaveCount(1)
+  const box = await strip.boundingBox()
+  expect(box?.height, 'the phone top strip height').toBe(PHONE_STRIP_PX)
+  const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+  expect(scrollWidth, 'the page scrolls sideways').toBeLessThanOrEqual(width)
+}
+
+/**
+ * Every VISIBLE bottom-bar cell (tab links + the More `<summary>`) is a
+ * 44 x 44px target (story 96.1, AC 4). Cells hidden at this width are skipped,
+ * and the visible count is asserted so an empty sweep cannot pass.
+ */
+export async function expectBarCells(page: Page, expectedVisible: number): Promise<void> {
+  const cells = page.locator(
+    'nav[aria-label="Primary"] > ul > li > a, nav[aria-label="Primary"] > ul > li > details > summary'
+  )
+  let visible = 0
+  for (const cell of await cells.all()) {
+    if (!(await cell.isVisible())) continue
+    visible += 1
+    const name = ((await cell.textContent()) ?? '').trim()
+    await expectTarget(cell, `bar cell "${name}"`)
+  }
+  expect(visible, 'visible bottom-bar cells').toBe(expectedVisible)
+}

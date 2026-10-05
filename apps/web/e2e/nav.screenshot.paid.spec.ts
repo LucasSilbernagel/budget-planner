@@ -1,7 +1,14 @@
 import { type Page, type Route, expect, test } from '@playwright/test'
-import { expectSignedInAs } from './helpers/account-menu'
+import { accountTrigger, expectSignedInAs } from './helpers/account-menu'
 import { mockSignedIn, openMore } from './helpers/nav-more'
-import { FIXED_NOW, SHOT_TIMEOUT, chartsDrawn, copyrightYear } from './helpers/screenshot'
+import {
+  FIXED_NOW,
+  SHOT_TIMEOUT,
+  chartsDrawn,
+  copyrightYear,
+  expectPhoneStrip,
+  expectTarget,
+} from './helpers/screenshot'
 import { seedFinanceRows } from './helpers/seed-finance-rows'
 
 /**
@@ -111,12 +118,19 @@ for (const width of [768, 1280]) {
 test('paid-sheet-320', async ({ page }) => {
   // 320x640: the phone the 6-row sheet's on-screen claims were measured at.
   await open(page, '/', 320, 4, 640)
+  // Story 96.1 (FR156): signed in PAID (Premium pill beside it), the trigger is
+  // a 44 x 44px target and the strip is exactly 45px with nothing scrolling
+  // sideways. `open` already gated on the mocked identity.
+  await expectTarget(accountTrigger(page), 'Account menu trigger')
+  await expectPhoneStrip(page, 320)
   await openMore(page)
   // The OPEN, PAID sheet, asserted: seven visible rows (the free sheet has
   // three). Was six until story 96.3 (FR163) put Settings LAST in the phone
   // sheet; asserted by its own name, not by its neighbour's label.
   const rows = page.locator('nav[aria-label="Primary"] details ul').getByRole('link')
   await expect(rows).toHaveCount(7)
+  // Story 96.1: every one of the seven rows is a >= 44 x 44px target.
+  for (let i = 0; i < 7; i++) await expectTarget(rows.nth(i), `paid sheet row ${i + 1}`)
   await expect(rows.last()).toHaveAccessibleName('Settings')
   await expect(rows.last()).toBeVisible()
   // On SCREEN at 320x640, not just rendered: `toBeVisible()` ignores clipping
