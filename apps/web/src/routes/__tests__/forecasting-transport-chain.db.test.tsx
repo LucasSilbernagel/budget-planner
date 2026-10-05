@@ -579,6 +579,40 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
     ])
   }, 20_000)
 
+  it('a BULK delete that includes the loaded forecast drops it as the target too (AC-6)', async () => {
+    // Code review of 97.1: AC-6 says "single or bulk", and bulk goes through
+    // `forecast-list.tsx`'s per-id `onDelete` loop, a different path from the
+    // single-row button above.
+    const { view, first } = await saveThenLoad()
+    rtl.fireEvent.click(view.getByRole('button', { name: /My Forecasts/ }))
+    rtl.fireEvent.click(await view.findByRole('checkbox', { name: 'Select all' }))
+    rtl.fireEvent.click(view.getByRole('button', { name: 'Delete Selected' }))
+    rtl.fireEvent.click(
+      rtl.within(await view.findByRole('alertdialog')).getByRole('button', { name: 'Delete' })
+    )
+    await rtl.waitFor(() =>
+      expect(view.queryByRole('button', { name: 'Delete My Financial Forecast' })).toBeNull()
+    )
+    expect(await storedRows()).toEqual([])
+
+    rtl.fireEvent.click(view.getByRole('button', { name: /Scenario Builder/ }))
+    await pressSave(view)
+    expect(await view.findByTestId('save-success', {}, { timeout: 5000 })).toBeTruthy()
+
+    const [row, ...rest] = await storedRows()
+    expect(rest).toEqual([])
+    expect(row?.id).not.toBe(first.id)
+    expect(served).toEqual([
+      ...OPENING,
+      'POST /api/forecasts → 200',
+      LIST,
+      `DELETE /api/forecasts?id=${first.id} → 200`,
+      LIST,
+      'POST /api/forecasts → 200',
+      LIST,
+    ])
+  }, 20_000)
+
   it('a PUT that answers 404 (deleted on another device) says so, and the next Save creates it (AC-6, D3)', async () => {
     const { view, first } = await saveThenLoad()
     // Deleted behind the page's back.
@@ -588,6 +622,14 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
     const outcome = await view.findByTestId('save-outcome', {}, { timeout: 5000 })
     expect(outcome.textContent).toBe(GONE)
     expect(await storedRows()).toEqual([])
+    // The list is refetched (code review of 97.1): the gone forecast leaves My
+    // Forecasts, so it cannot be Loaded again only to 404 a second time.
+    // (The list is only rendered on its own tab, so look there.)
+    rtl.fireEvent.click(view.getByRole('button', { name: /My Forecasts/ }))
+    await rtl.waitFor(() =>
+      expect(view.queryByRole('button', { name: 'Load My Financial Forecast' })).toBeNull()
+    )
+    rtl.fireEvent.click(view.getByRole('button', { name: /Scenario Builder/ }))
 
     await pressSave(view)
     expect(await view.findByTestId('save-success', {}, { timeout: 5000 })).toBeTruthy()
@@ -599,6 +641,7 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
       'POST /api/forecasts → 200',
       LIST,
       `PUT /api/forecasts?id=${first.id} → 404`,
+      LIST,
       'POST /api/forecasts → 200',
       LIST,
     ])

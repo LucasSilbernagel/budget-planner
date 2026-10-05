@@ -460,8 +460,15 @@ function ForecastingPage(): React.ReactElement {
         // not cite either of these as "the user is informed".
         // The forecast was deleted elsewhere (story 97.1, D3): it is no longer the
         // target, so the next Save creates it. The server's message says so.
+        // The list is refetched too (code review of 97.1): otherwise My Forecasts
+        // keeps showing the gone forecast, and Loading it re-targets a dead id.
+        // A failed refetch must not replace the 404's message, hence the catch.
         if (isUpdate && 'status' in result && result.status === 404) {
           setSaveTarget(null)
+          const listResult = await fetchForecasts(defaultProfileId).catch(() => null)
+          if (listResult?.success && listResult.data) {
+            setServerForecasts(listResult.data)
+          }
         }
         const error = result.error || 'Failed to save forecast'
         console.error('Failed to save forecast:', error)
