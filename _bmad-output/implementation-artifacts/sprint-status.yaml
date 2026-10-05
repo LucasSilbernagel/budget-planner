@@ -1,5 +1,5 @@
 # generated: 2026-06-18
-# last_updated: 2026-10-05e (100.1 -> review: dev done, branch pushed, screenshots compare 27/27). Earlier: **EPIC 100 added** (FR164-166, 3 stories); 100.1 created -> ready-for-dev, epic-100 in-progress; D5-D8 decided.)
+# last_updated: 2026-10-05f (100.1 -> done: code review applied aadb512, compare 27/27; branch pushed, no PR). Earlier: **EPIC 100 added** (FR164-166, 3 stories); 100.1 created -> ready-for-dev, epic-100 in-progress; D5-D8 decided.)
 # last_updated: 2026-10-05b (**BATCH 20 wave 1 created**: 95.1, 96.2, 96.3, 97.1, 97.2, 98.1, 99.1 -> ready-for-dev; epics 95-99 in-progress.)
 # last_updated: 2026-10-05 (**96.3 added** as backlog: phone Settings moves to the bottom of More, FR163.)
 # last_updated: 2026-10-04m (**BATCH 20 planned**: epics 95-99 / 9 stories added as backlog from Lucas app review; D-lists decided; baseline `39ad798`.)
@@ -1333,7 +1333,7 @@ development_status:
   99-3-retirement-plan-edits-push-from-every-device: done  # Part B (client push); added 2026-10-05; depends on 99.2 merged
   epic-99-retrospective: optional
   epic-100: in-progress  # Added 2026-10-05 (baseline a3aa0bd): Forecasts Built From My Real Accounts. Source: Lucas request 2026-10-05 (what-if per-account savings/balance rows + contributions; investment return rate nice-to-have). D-lists DECIDED 2026-10-05 (epics.md; rate seed 6%).
-  100-1-my-savings-accounts-are-rows-i-can-tweak-in-the-forecast: review  # CREATED 2026-10-05 at a3aa0bd; D0-D8 DECIDED; DEV DONE 2026-10-05 on branch story/100-1-savings-account-rows (466c853, pushed, no PR): gates green (core 1241, web 4712, e2e 23), screenshots compare 27/27. OPEN: v1 negative-savings reload (deferred-work)
+  100-1-my-savings-accounts-are-rows-i-can-tweak-in-the-forecast: done  # CREATED 2026-10-05 at a3aa0bd; DEV + CODE REVIEW DONE 2026-10-05 (fable 3 layers: 1 decision + 6 patches applied aadb512, 4 deferred, 11 dismissed). Branch story/100-1-savings-account-rows pushed, NO PR yet. Gates green (core 1241, web 4719, e2e 23); screenshots compare 27/27 (run 37389026776).
   100-2-my-balances-are-rows-i-can-tweak-in-the-forecast: backlog  # after 100.1
   100-3-each-investment-has-its-own-return-rate: backlog  # after 100.2
   epic-100-retrospective: optional
