@@ -1,6 +1,6 @@
 import { useSync } from '@/hooks/useSync'
 import { dropAnotherAccountsLocalData } from '@/lib/sync/dropAnotherAccountsLocalData'
-import { seedRetirementPlanIfServerHasNone } from '@/lib/sync/retirementPlanPush'
+import { reconcilePlanAfterInitialPull } from '@/lib/sync/retirementPlanPush'
 import { seedOnce } from '@/lib/sync/seedLocalData'
 import { clearSyncBridge, registerSyncBridge } from '@/lib/sync/syncBridge'
 import { useProfileStore } from '@/stores/profileStore'
@@ -155,28 +155,27 @@ function ActiveSyncEngine({ userId }: { userId: string }): ReactElement {
       })
   }, [activeProfileReconciled, userId])
 
-  // First sign-in retirement plan seed (story 99.3, AC-7, D4: server wins). Runs
-  // AFTER the initial pull has been APPLIED, by awaiting that pull above, not by
-  // inference from the profile gate: a seed `create` queued before the pull would
-  // win locally by last-writer-wins while the server acknowledged it as a no-op
+  // The retirement plan after the initial pull (story 99.3, AC-7 / D4, AC-12).
+  // Runs AFTER that pull has been APPLIED, by awaiting it above, not by inference
+  // from the profile gate: a seed `create` queued before the pull would win
+  // locally by last-writer-wins while the server acknowledged it as a no-op
   // (insert-if-absent), and the device would show its own plan instead of the
-  // server's until its next edit. The pull has replaced a local plan with the
-  // server's if the server had one; only if it had none (`serverUpdatedAt` still
-  // `null`) is this device's plan uploaded, once. Also gated on the bridge being
-  // registered (the profile gate), since the create goes through it.
+  // server's until its next edit. Also gated on the bridge being registered (the
+  // profile gate), since the ops go through it. A plan marked as not on the
+  // server is pushed; otherwise, if the server has none, it is seeded once.
   //
   // ⚠️ Deliberately NOT `seedOnce`'s per-user marker: that is set on any browser
   // that synced before 99.3, and the plan never reached the server then.
-  // ⚠️ If the initial pull fails there is no seed this mount; the plan still
-  // reaches the server on its next edit (an update is an upsert).
+  // ⚠️ ONE attempt per mount, no retry: if the initial pull fails, or the queue
+  // add fails (which marks the plan as not on the server), the next session tries
+  // again; an edit before then upserts anyway.
   useEffect(() => {
     if (planSeedRef.current || !initialPullApplied || !activeProfileReconciled) {
       return
     }
     planSeedRef.current = true
-    seedRetirementPlanIfServerHasNone().catch((error) => {
-      planSeedRef.current = false
-      console.error('[SyncProvider] seeding the retirement plan failed:', error)
+    reconcilePlanAfterInitialPull().catch((error) => {
+      console.error('[SyncProvider] syncing the retirement plan failed:', error)
     })
   }, [initialPullApplied, activeProfileReconciled])
 

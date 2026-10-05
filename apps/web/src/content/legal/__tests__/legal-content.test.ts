@@ -203,7 +203,7 @@ describe('privacy page: retention period (story 73.1)', () => {
     const next = content.slice(start + 1).search(/^## /m)
     const section = content.slice(start, next === -1 ? undefined : start + 1 + next)
     expect(section).toContain(
-      'The synced data includes your retirement plan (your age, your life expectancy and the retirement income you want).'
+      'The synced data also covers your retirement plan, including your age, your life expectancy, the retirement income you want and your expected investment returns.'
     )
   })
 

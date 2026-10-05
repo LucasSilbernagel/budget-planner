@@ -121,20 +121,26 @@ interface RetirementPlannerStoreState {
    */
   serverUpdatedAt: string | null
   /**
-   * A plan edit the server REFUSED is still only on this device (story 99.3,
-   * AC-12). Core drops a refused op, so the queue no longer protects the plan,
-   * and the next full pull would replace it with the server's older copy while
-   * the refusal notice says "It is still saved on this device". While this is
-   * set the pull applier skips the plan.
+   * This device holds {@link ownerUserId}'s plan and the server may NOT (story
+   * 99.3, AC-12 and code review 2026-10-05, Lucas's decision). Set when:
+   * - the server REFUSED a plan edit (core drops a refused op, so the queue no
+   *   longer protects the plan, and the next full pull would replace it with the
+   *   server's older copy while the notice says "It is still saved on this device");
+   * - the owner edited the plan with no paid session to queue it (free period,
+   *   before the bridge registers, a sign-out inside the push debounce);
+   * - a queue add failed.
    *
-   * Set by `handleRejectedOperations` ({@link markLocalPlanDiverged}); cleared
-   * only when a plan push SUCCEEDS ({@link clearLocalPlanDiverged}), on an owner
-   * change ({@link claimRetirementPlanFor}) and by `resetPlan` (Clear local data).
+   * While set the pull applier skips the plan, and after the next session's
+   * initial pull `reconcilePlanAfterInitialPull` pushes it. Cleared when a plan
+   * UPDATE is accepted, on an owner change ({@link claimRetirementPlanFor}) and by
+   * `resetPlan` (Clear local data). An unclaimed (`''`) plan is never marked, so
+   * D4 ("server wins at first sign-in") still holds for it. All writes go
+   * through `lib/sync/retirementPlanPush.ts`.
    *
    * ⚠️ No ceiling (decided in 99.3): a refusal that recurs keeps this device on
-   * its own plan until a push lands. Ending it by time or count would overwrite
-   * the user's work with the older server copy, the loss this flag exists to
-   * prevent; every refused push shows the notice again, so it is not silent.
+   * its own plan; each session re-sends it and the refusal notice shows again.
+   * Ending it by time or count would overwrite the user's work with the older
+   * server copy.
    *
    * ⚠️ Persisted ONLY when set, like `serverUpdatedAt`.
    */
@@ -437,6 +443,7 @@ export function claimRetirementPlanFor(sessionUserId: string): void {
       serverUpdatedAt: null,
       localPlanDiverged: false,
     })
+    forgetSyncedPlan()
     return
   }
   // Park first: if storage refuses, keep the plan on screen rather than lose it.
@@ -461,36 +468,21 @@ export function claimRetirementPlanFor(sessionUserId: string): void {
     serverUpdatedAt: null,
     localPlanDiverged: false,
   })
+  forgetSyncedPlan()
 }
 
-/**
- * The server permanently refused a plan edit for `userId` (story 99.3, AC-12):
- * keep the local plan until a plan push succeeds. Ignored when the plan on screen
- * is not `userId`'s. Plain `setState`, never an action: it must not push.
- */
-export function markLocalPlanDiverged(userId: string): void {
-  if (useRetirementPlannerStore.getState().ownerUserId === userId) {
-    forgetSyncedPlan()
-    useRetirementPlannerStore.setState({ localPlanDiverged: true })
-  }
-}
-
-/**
- * A plan push for `userId` succeeded (story 99.3, AC-12): the server holds this
- * device's plan again, so pulls apply again. Ignored for another owner.
- */
-export function clearLocalPlanDiverged(userId: string): void {
-  const { ownerUserId, localPlanDiverged } = useRetirementPlannerStore.getState()
-  if (ownerUserId === userId && localPlanDiverged) {
-    useRetirementPlannerStore.setState({ localPlanDiverged: false })
-  }
-}
-
-// Story 99.3: the push reads the store through this binding, so it imports no
-// store (stores → push → bridge, never back).
-bindRetirementPlanSource(() => {
-  const { plan, ownerUserId, serverUpdatedAt } = useRetirementPlannerStore.getState()
-  return { plan, ownerUserId, serverUpdatedAt }
+// Story 99.3: the push reads the store, and writes `localPlanDiverged`, through
+// this binding, so it imports no store (stores → push → bridge, never back).
+// Plain `setState`, never an action: nothing here pushes.
+bindRetirementPlanSource({
+  read: () => {
+    const { plan, ownerUserId, serverUpdatedAt, localPlanDiverged } =
+      useRetirementPlannerStore.getState()
+    return { plan, ownerUserId, serverUpdatedAt, localPlanDiverged }
+  },
+  setDiverged: (localPlanDiverged) => {
+    useRetirementPlannerStore.setState({ localPlanDiverged })
+  },
 })
 
 /**

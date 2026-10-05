@@ -820,8 +820,18 @@ function RetirementAccumulationPlannerInner() {
   // Re-express rather than reformat blindly: parse under the locale the string
   // was WRITTEN in, then format under the current one, so the magnitude is
   // carried across rather than reinterpreted.
+  //
+  // ⚠️ Story 99.3: this runs for an UNTOUCHED value too. "An untouched seed is
+  // rewritten by the effect above" holds only when `locale` or the prefill
+  // changes on THIS device. A plan pulled from another device (story 99.2/99.3
+  // sync) can bring a seeded string written under ITS locale while neither
+  // changes here, or while this device has no income to seed from (prefill
+  // null). Left alone, '66.000,00' (de-DE) would be read under en-US. Measured
+  // by `cross-device-sync.db.test.tsx` AC-3 (seed-effect case). The seed effect
+  // above runs first in a commit when its own inputs change, so a re-seed and a
+  // re-expression never disagree for long: both end in this device's locale.
   useEffect(() => {
-    if (!desiredIncomeTouched || desiredIncomeLocale === '' || desiredIncomeLocale === locale) {
+    if (desiredIncomeLocale === '' || desiredIncomeLocale === locale) {
       return
     }
     let next: string
@@ -838,13 +848,7 @@ function RetirementAccumulationPlannerInner() {
       return
     }
     setDesiredIncomeForLocale(next, locale)
-  }, [
-    locale,
-    desiredIncomeLocale,
-    desiredIncomeTouched,
-    desiredIncomeInput,
-    setDesiredIncomeForLocale,
-  ])
+  }, [locale, desiredIncomeLocale, desiredIncomeInput, setDesiredIncomeForLocale])
 
   // Re-echo a currency field in grouped, locale-aware form on blur. Uses the
   // non-throwing core parser so it can never throw inside the state updater. Both

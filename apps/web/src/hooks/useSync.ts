@@ -47,6 +47,7 @@ import {
   resetRefusalNotices,
 } from '../lib/sync/refusalNoticeStore'
 import { describeNotSyncedRows, handleRejectedOperations } from '../lib/sync/refusedEdits'
+import { notePlanOpRefused } from '../lib/sync/retirementPlanPush'
 import { setLastPullTimestamp } from '../lib/sync/sessionStatusStore'
 import { toServerPayload } from '../lib/sync/syncBridge'
 import { useProfileStore } from '../stores/profileStore'
@@ -492,6 +493,7 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
         lookupLocalRow: findLocalRow,
         requestFullRepull,
         notify: addRefusalNotices,
+        markPlanRefused: notePlanOpRefused,
       }).catch((error) => {
         console.error('Handling refused sync edits failed:', error)
       })

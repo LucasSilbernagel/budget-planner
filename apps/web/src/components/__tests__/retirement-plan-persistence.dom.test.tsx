@@ -451,3 +451,27 @@ describe('the authored latch is not tripped by a rejected keystroke (code review
     expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('12,000.00')
   })
 })
+
+describe('an UNTOUCHED seeded figure written under another locale (story 99.3: a plan pulled from another device)', () => {
+  it('is re-expressed in this device’s locale even with no income to seed from', async () => {
+    // A seeded figure from a de-DE device, pulled into an en-US device that has
+    // no income rows (so the seed effect cannot rewrite it). Read raw under
+    // en-US, '66.000,00' is 6,600 cents: a 1000x error on the plan's central figure.
+    seedStoredPlan({
+      ...SAVED_PLAN,
+      desiredIncomeInput: '66.000,00',
+      desiredIncomeLocale: 'de-DE',
+      desiredIncomeTouched: false,
+    })
+    await rehydrate()
+    useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
+
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('66,000.00')
+    expect(useRetirementPlannerStore.getState().plan).toMatchObject({
+      desiredIncomeLocale: 'en-US',
+      desiredIncomeTouched: false,
+    })
+  })
+})

@@ -644,12 +644,21 @@ describe('two accounts on one browser (story 86.3, real engine, real routes, rea
 
 // ---------------------------------------------------------------------------
 // Story 99.3: the retirement plan follows the account (real push, real routes).
+// Every test uses its OWN account, so each runs alone (`-t`) or in any order.
 // ---------------------------------------------------------------------------
 
-const PLAN_1 = '99399399-1111-4111-8111-111111111111'
-const PLAN_2 = '99399399-2222-4222-8222-222222222222'
-const PLAN_3 = '99399399-3333-4333-8333-333333333333'
-const PLAN_4 = '99399399-4444-4444-8444-444444444444'
+const PLAN_ACCOUNTS = {
+  aToB: '99399399-1111-4111-8111-111111111111',
+  parkedOther: '99399399-2222-4222-8222-222222222222',
+  currencies: '99399399-3333-4333-8333-333333333333',
+  currenciesSeed: '99399399-3333-4333-8333-33333333333a',
+  clearLocal: '99399399-4444-4444-8444-444444444444',
+  unclaimed: '99399399-5555-4555-8555-555555555555',
+  reconciled: '99399399-6666-4666-8666-666666666666',
+  returningOwner: '99399399-7777-4777-8777-777777777777',
+  freePeriod: '99399399-8888-4888-8888-888888888888',
+  firstDevice: '99399399-9999-4999-8999-999999999999',
+} as const
 
 type Plan = import('@/stores/retirementPlannerStore').RetirementPlan
 
@@ -676,6 +685,15 @@ async function serverPlan(userId: string): Promise<Plan | undefined> {
     userId,
   ])
   return rows.rows[0]?.plan
+}
+
+/** Put a plan on the server directly (another device wrote it earlier). */
+async function putServerPlan(userId: string, value: Plan): Promise<void> {
+  await pg.query(
+    `insert into "retirementPlans" (id, "userId", plan, "updatedAt") values ($1, $1, $2, now())
+     on conflict (id) do update set plan = excluded.plan, "updatedAt" = now()`,
+    [userId, JSON.stringify(value)]
+  )
 }
 
 /** The plan ops POSTed for `userId`. */
@@ -737,7 +755,7 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
   beforeAll(async () => {
     const db = holder.db as ReturnType<typeof drizzle>
     await db.insert(users).values(
-      [PLAN_1, PLAN_2, PLAN_3, PLAN_4].map((id, index) => ({
+      Object.values(PLAN_ACCOUNTS).map((id, index) => ({
         id,
         email: `p${index}@example.test`,
         paddleId: `ctm_p${index}`,
@@ -752,11 +770,12 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
   })
 
   it('AC-1: device A edits every field; a fresh device B shows the identical plan after its first sync', async () => {
+    const id = PLAN_ACCOUNTS.aToB
     freshDevice()
-    signIn(PLAN_1)
-    await waitForInitialPull(PLAN_1)
+    signIn(id)
+    await waitForInitialPull(id)
     // The first device of an account with no plan seeds the defaults (AC-7).
-    expect(planOpsFor(PLAN_1)).toEqual([`create retirementPlan ${PLAN_1}`])
+    expect(planOpsFor(id)).toEqual([`create retirementPlan ${id}`])
 
     // Device A authors every field through the intent setters, as the page does.
     const s = plan()
@@ -771,188 +790,253 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
     s.setAdoptedMonthlyCents(240_000)
     const authored = { ...AUTHORED, adoptedMonthlyCents: 240_000 }
     expect(plan().plan).toEqual(authored)
-    await rtl.waitFor(async () => expect(await serverPlan(PLAN_1)).toEqual(authored), {
+    await rtl.waitFor(async () => expect(await serverPlan(id)).toEqual(authored), {
       timeout: 15_000,
     })
     // Nine setter calls in one burst: ONE update (AC-4).
-    expect(planOpsFor(PLAN_1)).toEqual([
-      `create retirementPlan ${PLAN_1}`,
-      `update retirementPlan ${PLAN_1}`,
-    ])
+    expect(planOpsFor(id)).toEqual([`create retirementPlan ${id}`, `update retirementPlan ${id}`])
 
     // Device B: brand-new browser, same account.
     freshDevice()
-    signIn(PLAN_1)
+    signIn(id)
     await rtl.waitFor(() => expect(plan().plan).toEqual(authored), { timeout: 15_000 })
-    await waitForInitialPull(PLAN_1)
+    await waitForInitialPull(id)
     // B pushed nothing: the pull is not an edit, and the server had a plan.
-    expect(planOpsFor(PLAN_1)).toHaveLength(2)
-    expect(plan().ownerUserId).toBe(PLAN_1)
+    expect(planOpsFor(id)).toHaveLength(2)
+    expect(plan().ownerUserId).toBe(id)
   }, 90_000)
 
   it('AC-7: a device with an UNCLAIMED local plan signs in to an account that has one: the server plan wins', async () => {
-    const server = await serverPlan(PLAN_1)
-    expect(server, 'needs the AC-1 test first').toBeDefined()
+    const id = PLAN_ACCOUNTS.unclaimed
+    await putServerPlan(id, AUTHORED)
     freshDevice()
     // Authored signed out (owner ''), adopted by the 90.1 claim at sign-in.
     planStore.useRetirementPlannerStore.setState({
       plan: { ...planStore.RETIREMENT_PLAN_DEFAULTS, currentAgeInput: '29', model: 'perpetual' },
     })
-    const opsBefore = planOpsFor(PLAN_1).length
-    signIn(PLAN_1)
-    expect(plan().ownerUserId).toBe(PLAN_1)
-    await rtl.waitFor(() => expect(plan().plan).toEqual(server), { timeout: 15_000 })
-    await waitForInitialPull(PLAN_1)
-    expect(planOpsFor(PLAN_1)).toHaveLength(opsBefore)
-    expect(await serverPlan(PLAN_1)).toEqual(server)
+    signIn(id)
+    expect(plan().ownerUserId).toBe(id)
+    await rtl.waitFor(() => expect(plan().plan).toEqual(AUTHORED), { timeout: 15_000 })
+    await waitForInitialPull(id)
+    expect(planOpsFor(id)).toEqual([])
+    expect(await serverPlan(id)).toEqual(AUTHORED)
   }, 60_000)
 
-  it('AC-7: on a browser that synced BEFORE 99.3 (profile already reconciled at mount), the seed still waits for the initial pull, so the server plan wins', async () => {
-    const server = await serverPlan(PLAN_1)
-    expect(server, 'needs the AC-1 test first').toBeDefined()
+  it('AC-7: on a browser that synced BEFORE 99.3 (profile already reconciled at mount), the reconcile still waits for the initial pull, so the server plan wins', async () => {
+    const id = PLAN_ACCOUNTS.reconciled
+    // A first visit backfills the account's server profile.
+    freshDevice()
+    signIn(id)
+    await waitForInitialPull(id)
+    const profileId = (await serverDefaultProfile(id)) as string
+    await putServerPlan(id, AUTHORED)
+    const opsBefore = planOpsFor(id).length
+
     freshDevice()
     // The engine's profile gate is open from the first render here, so only the
-    // explicit wait for the initial pull keeps the seed after it (AC-7).
-    const profileId = (await serverDefaultProfile(PLAN_1)) as string
+    // explicit wait for the initial pull keeps the reconcile after it (AC-7).
     useProfileStore.setState({
       profiles: [
-        { id: profileId, userId: PLAN_1, name: 'Main Profile', isDefault: true, currency: 'NONE' },
+        { id: profileId, userId: id, name: 'Main Profile', isDefault: true, currency: 'NONE' },
       ],
       activeProfileId: profileId,
     })
     planStore.useRetirementPlannerStore.setState({
       plan: { ...planStore.RETIREMENT_PLAN_DEFAULTS, currentAgeInput: '33', model: 'perpetual' },
-      ownerUserId: PLAN_1,
+      ownerUserId: id,
     })
-    const opsBefore = planOpsFor(PLAN_1).length
-    signIn(PLAN_1)
-    await rtl.waitFor(() => expect(plan().plan).toEqual(server), { timeout: 15_000 })
-    await waitForInitialPull(PLAN_1)
-    expect(plan().plan).toEqual(server)
-    expect(planOpsFor(PLAN_1)).toHaveLength(opsBefore)
+    signIn(id)
+    await rtl.waitFor(() => expect(plan().plan).toEqual(AUTHORED), { timeout: 15_000 })
+    await waitForInitialPull(id)
+    expect(plan().plan).toEqual(AUTHORED)
+    expect(planOpsFor(id)).toHaveLength(opsBefore)
   }, 60_000)
 
   it('AC-7: the first device of an account with NO server plan uploads its local plan once', async () => {
+    const id = PLAN_ACCOUNTS.firstDevice
     freshDevice()
-    planStore.useRetirementPlannerStore.setState({
-      plan: { ...AUTHORED },
-    })
-    signIn(PLAN_2)
-    await rtl.waitFor(async () => expect(await serverPlan(PLAN_2)).toEqual(AUTHORED), {
+    planStore.useRetirementPlannerStore.setState({ plan: { ...AUTHORED } })
+    signIn(id)
+    await rtl.waitFor(async () => expect(await serverPlan(id)).toEqual(AUTHORED), {
       timeout: 15_000,
     })
-    await waitForInitialPull(PLAN_2)
-    expect(planOpsFor(PLAN_2)).toEqual([`create retirementPlan ${PLAN_2}`])
+    await waitForInitialPull(id)
+    expect(planOpsFor(id)).toEqual([`create retirementPlan ${id}`])
     expect(plan().plan).toEqual(AUTHORED)
   }, 60_000)
 
-  it('AC-3: two devices with DIFFERENT currencies on /retirement settle to ZERO plan ops over 3 pull cycles each, with the same desired-income magnitude', async () => {
-    const { RetirementAccumulationPlanner } = await import(
-      '@/components/RetirementAccumulationPlanner'
-    )
-    const { useCurrencyStore } = await import('@/stores/currencyStore')
-    const { parseCurrencyToCents } = await import('@/lib/retirement-parsers')
-    const planner = <RetirementAccumulationPlanner />
-
-    // Device A (USD) authors the plan and syncs it.
+  it('review decision: plan edits made while FREE are kept and pushed when the owner is paid again', async () => {
+    const id = PLAN_ACCOUNTS.freePeriod
     freshDevice()
-    useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
     planStore.useRetirementPlannerStore.setState({ plan: { ...AUTHORED } })
-    signIn(PLAN_3, planner)
-    await rtl.waitFor(async () => expect(await serverPlan(PLAN_3)).toEqual(AUTHORED), {
+    signIn(id)
+    await rtl.waitFor(async () => expect(await serverPlan(id)).toEqual(AUTHORED), {
       timeout: 15_000,
     })
-    await waitForInitialPull(PLAN_3)
-    planPush.flushPendingPlanPush()
-    let deviceA = snapshotDevice()
+    await waitForInitialPull(id)
 
-    // Device B (EUR): a fresh browser on the same account.
-    freshDevice()
-    useCurrencyStore.setState({ mode: 'symbol', currency: 'EUR' })
-    signIn(PLAN_3, planner)
-    await rtl.waitFor(() => expect(plan().plan.currentAgeInput).toBe(AUTHORED.currentAgeInput), {
+    // Downgraded: the sync engine is gone, the plan stays this account's (90.1).
+    rtl.cleanup()
+    resetSyncStore()
+    plan().setCurrentAgeInput('57')
+    expect(plan().localPlanDiverged).toBe(true)
+
+    // Premium again: the pull must not put the older server plan back.
+    await loadDevice(snapshotDevice())
+    signIn(id)
+    await rtl.waitFor(async () => expect((await serverPlan(id))?.currentAgeInput).toBe('57'), {
       timeout: 15_000,
     })
-    await waitForInitialPull(PLAN_3)
-    planPush.flushPendingPlanPush()
-    let deviceB = snapshotDevice()
+    await waitForInitialPull(id)
+    expect(plan().plan.currentAgeInput).toBe('57')
+    expect(plan().localPlanDiverged).toBe(false)
+    expect(planOpsFor(id)).toEqual([`create retirementPlan ${id}`, `update retirementPlan ${id}`])
+  }, 90_000)
 
-    // The initial settle is over: from here on, NOTHING may push the plan.
-    const settled = planOpsFor(PLAN_3).length
-    expect(settled).toBe(1) // A's seed create only.
-    const magnitudes: number[] = []
-    for (let cycle = 1; cycle <= 3; cycle += 1) {
-      for (const device of ['A', 'B'] as const) {
-        await loadDevice(device === 'A' ? deviceA : deviceB)
-        signIn(PLAN_3, planner)
-        await waitForInitialPull(PLAN_3)
-        planPush.flushPendingPlanPush()
-        // Nothing pushed, nothing waiting in the durable queue either.
-        expect(planOpsFor(PLAN_3), `cycle ${cycle}, device ${device}`).toHaveLength(settled)
-        expect(queued(PLAN_3).filter((op) => op.includes('retirementPlan'))).toEqual([])
-        const { desiredIncomeInput, desiredIncomeLocale } = plan().plan
-        magnitudes.push(parseCurrencyToCents(desiredIncomeInput, desiredIncomeLocale))
-        if (device === 'A') {
-          deviceA = snapshotDevice()
-        } else {
-          deviceB = snapshotDevice()
-          // The locales really differ, so the re-expression effect really ran.
-          expect(desiredIncomeLocale).not.toBe('en-US')
+  it.each([
+    ['an AUTHORED income (the locale re-expression effect)', 'authored'],
+    ['a never-authored income seeded from the income rows (the seed effect)', 'seeded'],
+  ] as const)(
+    'AC-3: two devices with DIFFERENT currencies on /retirement, %s, settle to ZERO plan ops over 3 pull cycles each, with the same desired-income magnitude',
+    async (_, kind) => {
+      const id = kind === 'authored' ? PLAN_ACCOUNTS.currencies : PLAN_ACCOUNTS.currenciesSeed
+      const { RetirementAccumulationPlanner } = await import(
+        '@/components/RetirementAccumulationPlanner'
+      )
+      const { useCurrencyStore } = await import('@/stores/currencyStore')
+      const { parseCurrencyToCents } = await import('@/lib/retirement-parsers')
+      const planner = <RetirementAccumulationPlanner />
+      const start: Plan =
+        kind === 'authored'
+          ? { ...AUTHORED }
+          : {
+              ...AUTHORED,
+              desiredIncomeInput: '',
+              desiredIncomeTouched: false,
+              desiredIncomeLocale: '',
+            }
+
+      // Device A (USD) authors the plan (and, for the seed, an income row) and syncs.
+      freshDevice()
+      useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
+      if (kind === 'seeded') {
+        useIncomeStore
+          .getState()
+          .addIncomeSource({ name: 'Salary', amount: 600_000, frequency: 'monthly' })
+      }
+      planStore.useRetirementPlannerStore.setState({ plan: start })
+      signIn(id, planner)
+      await rtl.waitFor(async () => expect(await serverPlan(id)).toBeDefined(), {
+        timeout: 15_000,
+      })
+      await waitForInitialPull(id)
+      planPush.flushPendingPlanPush()
+      let deviceA = snapshotDevice()
+
+      // Device B (EUR): a fresh browser on the same account.
+      freshDevice()
+      useCurrencyStore.setState({ mode: 'symbol', currency: 'EUR' })
+      signIn(id, planner)
+      await rtl.waitFor(() => expect(plan().plan.currentAgeInput).toBe(AUTHORED.currentAgeInput), {
+        timeout: 15_000,
+      })
+      if (kind === 'seeded') {
+        await rtl.waitFor(() => expect(useIncomeStore.getState().incomeSources).toHaveLength(1), {
+          timeout: 15_000,
+        })
+      }
+      await waitForInitialPull(id)
+      planPush.flushPendingPlanPush()
+      let deviceB = snapshotDevice()
+
+      // The initial settle is over: from here on, NOTHING may push the plan.
+      const settled = planOpsFor(id).length
+      expect(settled).toBe(1) // A's seed create only.
+      const magnitudes: number[] = []
+      for (let cycle = 1; cycle <= 3; cycle += 1) {
+        for (const device of ['A', 'B'] as const) {
+          await loadDevice(device === 'A' ? deviceA : deviceB)
+          signIn(id, planner)
+          await waitForInitialPull(id)
+          planPush.flushPendingPlanPush()
+          // Nothing pushed, nothing waiting in the durable queue either.
+          expect(planOpsFor(id), `cycle ${cycle}, device ${device}`).toHaveLength(settled)
+          expect(queued(id).filter((op) => op.includes('retirementPlan'))).toEqual([])
+          const { desiredIncomeInput, desiredIncomeLocale, desiredIncomeTouched } = plan().plan
+          expect(desiredIncomeTouched).toBe(kind === 'authored')
+          magnitudes.push(parseCurrencyToCents(desiredIncomeInput, desiredIncomeLocale))
+          if (device === 'A') {
+            deviceA = snapshotDevice()
+          } else {
+            deviceB = snapshotDevice()
+            // The locales really differ, so the effect really ran on B.
+            expect(desiredIncomeLocale).not.toBe('en-US')
+          }
         }
       }
-    }
-    expect(new Set(magnitudes)).toEqual(new Set([5_500_000]))
-  }, 180_000)
+      expect(new Set(magnitudes).size).toBe(1)
+      expect(magnitudes[0]).toBeGreaterThan(0)
+      if (kind === 'authored') {
+        expect(magnitudes[0]).toBe(5_500_000)
+      }
+    },
+    180_000
+  )
 
-  it('AC-9: Clear local data resets the local plan, pushes nothing, and the next full pull restores the server copy', async () => {
+  it('AC-9: Clear local data resets the local plan and pushes nothing; the server copy comes back in the same session and on the next load', async () => {
+    const id = PLAN_ACCOUNTS.clearLocal
     const { purgeLocalFinancialData } = await import('@/lib/account/purge-local-financial-data')
     freshDevice()
     planStore.useRetirementPlannerStore.setState({ plan: { ...AUTHORED } })
-    signIn(PLAN_4)
-    await rtl.waitFor(async () => expect(await serverPlan(PLAN_4)).toEqual(AUTHORED), {
+    signIn(id)
+    await rtl.waitFor(async () => expect(await serverPlan(id)).toEqual(AUTHORED), {
       timeout: 15_000,
     })
-    await waitForInitialPull(PLAN_4)
+    await waitForInitialPull(id)
 
-    await purgeLocalFinancialData(PLAN_4)
-    expect(plan().plan).toEqual(planStore.RETIREMENT_PLAN_DEFAULTS)
+    await purgeLocalFinancialData(id)
+    // Without a reload, the full re-pull the purge triggers restores the plan.
+    await rtl.waitFor(() => expect(plan().plan).toEqual(AUTHORED), { timeout: 15_000 })
     planPush.flushPendingPlanPush()
     await sleep(2500)
-    expect(planOpsFor(PLAN_4)).toEqual([`create retirementPlan ${PLAN_4}`])
-    expect(await serverPlan(PLAN_4)).toEqual(AUTHORED)
+    expect(planOpsFor(id)).toEqual([`create retirementPlan ${id}`])
+    expect(await serverPlan(id)).toEqual(AUTHORED)
 
     // The next document load: a full pull brings the plan back, and the seed
     // does not upload the purged defaults over it.
+    await purgeLocalFinancialData(id)
     await loadDevice(snapshotDevice())
-    signIn(PLAN_4)
+    expect(plan().plan).toEqual(planStore.RETIREMENT_PLAN_DEFAULTS)
+    signIn(id)
     await rtl.waitFor(() => expect(plan().plan).toEqual(AUTHORED), { timeout: 15_000 })
-    await waitForInitialPull(PLAN_4)
-    expect(planOpsFor(PLAN_4)).toEqual([`create retirementPlan ${PLAN_4}`])
+    await waitForInitialPull(id)
+    expect(planOpsFor(id)).toEqual([`create retirementPlan ${id}`])
   }, 90_000)
 
   it('AC-8: a returning owner whose PARKED plan is stale ends on the server copy after the initial pull', async () => {
-    const server = await serverPlan(PLAN_1)
-    expect(server, 'needs the AC-1 test first').toBeDefined()
+    const id = PLAN_ACCOUNTS.returningOwner
+    const other = PLAN_ACCOUNTS.parkedOther
+    await putServerPlan(id, AUTHORED)
     freshDevice()
-    // PLAN_1 used this browser before; PLAN_2 is on it now (its plan on screen).
+    // `id` used this browser before; `other` is on it now (its plan on screen).
     localStorage.setItem(
-      `${planStore.RETIREMENT_PLANNER_PARKED_KEY_PREFIX}${PLAN_1}`,
+      `${planStore.RETIREMENT_PLANNER_PARKED_KEY_PREFIX}${id}`,
       JSON.stringify({ ...planStore.RETIREMENT_PLAN_DEFAULTS, currentAgeInput: '30' })
     )
     planStore.useRetirementPlannerStore.setState({
       plan: { ...AUTHORED, currentAgeInput: '61' },
-      ownerUserId: PLAN_2,
+      ownerUserId: other,
     })
-    const opsBefore = pushedOps.length
-    signIn(PLAN_1)
-    // The claim parked PLAN_2's plan and brought PLAN_1's stale one back...
+    signIn(id)
+    // The claim parked `other`'s plan and brought `id`'s stale one back...
     expect(plan().plan.currentAgeInput).toBe('30')
     expect(
-      localStorage.getItem(`${planStore.RETIREMENT_PLANNER_PARKED_KEY_PREFIX}${PLAN_2}`)
+      localStorage.getItem(`${planStore.RETIREMENT_PLANNER_PARKED_KEY_PREFIX}${other}`)
     ).toContain('"61"')
     // ...and the initial pull replaced it with the server copy.
-    await rtl.waitFor(() => expect(plan().plan).toEqual(server), { timeout: 15_000 })
-    await waitForInitialPull(PLAN_1)
-    expect(pushedOps.slice(opsBefore).filter((op) => op.includes('retirementPlan'))).toEqual([])
+    await rtl.waitFor(() => expect(plan().plan).toEqual(AUTHORED), { timeout: 15_000 })
+    await waitForInitialPull(id)
+    expect(planOpsFor(id)).toEqual([])
+    expect(planOpsFor(other)).toEqual([])
   }, 60_000)
 })

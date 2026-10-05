@@ -39,7 +39,6 @@
  */
 
 import type { ServerChange, SyncEntityType, SyncOperation } from '@budget-planner/core/sync'
-import { markLocalPlanDiverged } from '../../stores/retirementPlannerStore'
 import type { RefusalNotice, RefusalOutcome } from './refusalNoticeStore'
 
 /** Everything the handler touches, injected so it can be tested on its own. */
@@ -62,6 +61,11 @@ export interface RefusalHandlerDeps {
   requestFullRepull: () => void
   /** `addRefusalNotices`. */
   notify: (notices: RefusalNotice[]) => void
+  /**
+   * `notePlanOpRefused` (story 99.3, AC-12): mark the retirement plan as not on
+   * the server. Optional so callers that never see a plan op need not pass it.
+   */
+  markPlanRefused?: (op: SyncOperation) => void
 }
 
 const KIND: Record<SyncEntityType, { kind: string; fallback: string }> = {
@@ -245,9 +249,12 @@ export async function handleRejectedOperations(
     // copy. The marker makes the applier skip the plan until a push succeeds.
     if (first.entityType === 'retirementPlan') {
       try {
-        markLocalPlanDiverged(String(first.entityId))
+        // The NEWEST refused op for the plan: an older one must not outrank an
+        // update the server accepted after it.
+        const newest = rowOps.reduce((a, b) => (b.timestamp > a.timestamp ? b : a))
+        deps.markPlanRefused?.(newest)
       } catch (error) {
-        console.error('[refusedEdits] could not mark the retirement plan as diverged:', error)
+        console.error('[refusedEdits] could not mark the retirement plan as not synced:', error)
       }
       continue
     }

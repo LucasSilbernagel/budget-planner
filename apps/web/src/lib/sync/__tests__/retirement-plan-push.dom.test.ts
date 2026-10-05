@@ -1,16 +1,20 @@
 /**
  * The retirement plan's client push (story 99.3, FR161), driven through the REAL
- * retirement store, push module, sync bridge and pull applier, with fake timers
- * and a recording bridge handle.
+ * retirement store, push module, sync bridge, pull applier and refusal handler,
+ * with fake timers and a recording bridge handle.
  *
  * Story 99.2 shipped this file as a DORMANCY test (no client path queued a plan
  * op). 99.3 inverts its setter half, as 99.2 directed: the intent setters push.
- * `resetPlan`, the claim, the applier, `setDesiredIncomeForLocale` (the planner's
- * effects) and `seedOnce` still queue nothing.
+ * `resetPlan`, the claim, the applier's ordinary apply, `setDesiredIncomeForLocale`
+ * (the planner's effects) and `seedOnce` still queue nothing.
  *
  * ⚠️ POSITIVE ANCHORS: every "queues nothing" test either shows a pushing control
  * on the same bridge, or the seed's income row, so "zero plan ops" cannot pass
  * because the bridge recorded nothing at all.
+ *
+ * ⚠️ The queue add is ASYNC (the bridge hands back its promise), so every timer
+ * advance here is `advanceTimersByTimeAsync`, which also runs the microtasks
+ * that settle it.
  */
 
 import type { ServerChange, SyncOperation } from '@budget-planner/core/sync'
@@ -28,8 +32,9 @@ import { type RefusalHandlerDeps, handleRejectedOperations } from '../refusedEdi
 import {
   PLAN_PUSH_DEBOUNCE_MS,
   hasPendingPlanEdit,
+  notePlanOpRefused,
+  reconcilePlanAfterInitialPull,
   resetRetirementPlanPushForTests,
-  seedRetirementPlanIfServerHasNone,
 } from '../retirementPlanPush'
 import { seedOnce } from '../seedLocalData'
 import { type SyncBridgeHandle, clearSyncBridge, registerSyncBridge } from '../syncBridge'
@@ -48,7 +53,7 @@ function makeHandle() {
 
 let handle: ReturnType<typeof makeHandle>
 
-/** Every entity type the bridge was asked to queue, as `<type> <entityType>`. */
+/** Every op the bridge was asked to queue, as `<type> <entityType>`. */
 function queued(): string[] {
   return [
     ...handle.queueCreate.mock.calls.map((call) => `create ${call[0]}`),
@@ -68,8 +73,8 @@ function planUpdates(): { entityId: string; plan: RetirementPlan; baseVersion?: 
     }))
 }
 
-function quiet(): void {
-  vi.advanceTimersByTime(PLAN_PUSH_DEBOUNCE_MS)
+async function quiet(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(PLAN_PUSH_DEBOUNCE_MS)
 }
 
 function pulledPlan(plan: RetirementPlan, updatedAt: number, id = USER): ServerChange {
@@ -80,6 +85,20 @@ function pulledPlan(plan: RetirementPlan, updatedAt: number, id = USER): ServerC
     updatedAt,
     isDeleted: false,
   }
+}
+
+function planOp(overrides: Partial<SyncOperation> = {}): SyncOperation {
+  return {
+    id: 'op-plan',
+    type: 'update',
+    entityType: 'retirementPlan',
+    entityId: USER,
+    data: { userId: USER, plan: { ...RETIREMENT_PLAN_DEFAULTS } },
+    timestamp: 3_000,
+    deviceId: 'd',
+    userId: USER,
+    ...overrides,
+  } as SyncOperation
 }
 
 const store = () => useRetirementPlannerStore.getState()
@@ -118,30 +137,33 @@ describe('AC-2: only the user-intent setters push', () => {
     ['setModel', () => store().setModel('perpetual')],
   ]
 
-  it.each(intent)('%s queues ONE update of the whole plan, under the account id', (_, edit) => {
-    edit()
-    expect(queued()).toEqual([])
-    quiet()
-    expect(queued()).toEqual(['update retirementPlan'])
-    const [update] = planUpdates()
-    expect(update?.entityId).toBe(USER)
-    // The plan on the wire is the plan on screen, which really moved.
-    expect(update?.plan).toEqual(store().plan)
-    expect(store().plan).not.toEqual(RETIREMENT_PLAN_DEFAULTS)
-  })
+  it.each(intent)(
+    '%s queues ONE update of the whole plan, under the account id',
+    async (_, edit) => {
+      edit()
+      expect(queued()).toEqual([])
+      await quiet()
+      expect(queued()).toEqual(['update retirementPlan'])
+      const [update] = planUpdates()
+      expect(update?.entityId).toBe(USER)
+      // The plan on the wire is the plan on screen, which really moved.
+      expect(update?.plan).toEqual(store().plan)
+      expect(store().plan).not.toEqual(RETIREMENT_PLAN_DEFAULTS)
+    }
+  )
 
-  it('setDesiredIncomeForLocale (the effects’ writer) queues nothing; an intent setter after it does', () => {
+  it('setDesiredIncomeForLocale (the effects’ writer) queues nothing; an intent setter after it does', async () => {
     store().setDesiredIncomeForLocale('55.000,00', 'de-DE')
-    quiet()
+    await quiet()
     expect(store().plan.desiredIncomeInput).toBe('55.000,00')
     expect(queued()).toEqual([])
     // Positive control on the same bridge.
     store().setModel('perpetual')
-    quiet()
+    await quiet()
     expect(queued()).toEqual(['update retirementPlan'])
   })
 
-  it('resetPlan, the claim and the pull applier queue nothing', () => {
+  it('resetPlan, the claim and the pull applier queue nothing', async () => {
     store().setDesiredIncomeForLocale('1', 'en-US')
     store().resetPlan()
     claimRetirementPlanFor(OTHER)
@@ -153,39 +175,48 @@ describe('AC-2: only the user-intent setters push', () => {
       [pulledPlan({ ...RETIREMENT_PLAN_DEFAULTS, model: 'perpetual' }, 2_000)],
       USER
     )
-    quiet()
+    await quiet()
     // The applier really ran.
     expect(store().plan.model).toBe('perpetual')
     expect(queued()).toEqual([])
   })
 
-  it('resetPlan DROPS a pending edit (AC-9: Clear local data never pushes)', () => {
+  it('resetPlan DROPS a pending edit (AC-9: Clear local data never pushes)', async () => {
     store().setModel('perpetual')
     expect(hasPendingPlanEdit()).toBe(true)
     store().resetPlan()
-    quiet()
+    await quiet()
     expect(hasPendingPlanEdit()).toBe(false)
     expect(queued()).toEqual([])
   })
 
-  it('an owner change DROPS a pending edit (AC-8): the plan it brings back is never pushed by it', () => {
-    // An unclaimed plan edited under this session's bridge (its flush would skip:
-    // not the session's), then the claim brings back the session's PARKED plan.
-    // Without the drop the old timer would push that parked plan as an "edit".
+  it('an owner change DROPS a pending edit (AC-8): the plan it brings back is never pushed by it', async () => {
+    // A pending edit, then the session's account changes and the claim brings
+    // back that account's PARKED plan. Without the drop the old timer would push
+    // the parked plan as an "edit".
     localStorage.setItem(
-      `${RETIREMENT_PLANNER_STORAGE_KEY}:${USER}`,
+      `${RETIREMENT_PLANNER_STORAGE_KEY}:${OTHER}`,
       JSON.stringify({ ...RETIREMENT_PLAN_DEFAULTS, currentAgeInput: '58' })
     )
+    store().setModel('perpetual')
+    expect(hasPendingPlanEdit()).toBe(true)
+    claimRetirementPlanFor(OTHER)
+    registerSyncBridge({ ...handle, userId: OTHER })
+    expect(store().plan.currentAgeInput).toBe('58')
+    await quiet()
+    expect(queued()).toEqual([])
+    // CONTROL: the new session's own next edit does push.
+    store().setModel('perpetual')
+    await quiet()
+    expect(queued()).toEqual(['update retirementPlan'])
+  })
+
+  it('an edit to a plan the session does not own arms no timer (it would block the seed)', async () => {
     useRetirementPlannerStore.setState({ ownerUserId: '' })
     store().setModel('perpetual')
-    claimRetirementPlanFor(USER)
-    expect(store().plan.currentAgeInput).toBe('58')
-    quiet()
+    expect(hasPendingPlanEdit()).toBe(false)
+    await quiet()
     expect(queued()).toEqual([])
-    // CONTROL: the session's own next edit does push.
-    store().setModel('perpetual')
-    quiet()
-    expect(queued()).toEqual(['update retirementPlan'])
   })
 
   it('the free → paid seed uploads local rows but never the plan', async () => {
@@ -212,49 +243,62 @@ describe('AC-2: only the user-intent setters push', () => {
 })
 
 describe('AC-4: keystrokes coalesce', () => {
-  it('20 keystrokes inside the window queue exactly ONE op, carrying the LAST value', () => {
+  it('20 keystrokes inside the window queue exactly ONE op, carrying the LAST value', async () => {
     for (let i = 1; i <= 20; i += 1) {
       store().setDesiredIncomeInput((previous) => `${previous}${i % 10}`)
-      vi.advanceTimersByTime(PLAN_PUSH_DEBOUNCE_MS - 1)
+      await vi.advanceTimersByTimeAsync(PLAN_PUSH_DEBOUNCE_MS - 1)
     }
     expect(queued()).toEqual([])
-    vi.advanceTimersByTime(1)
+    await vi.advanceTimersByTimeAsync(1)
     expect(queued()).toEqual(['update retirementPlan'])
     expect(planUpdates()[0]?.plan.desiredIncomeInput).toBe('12345678901234567890')
   })
 
-  it('a blur re-echo that formats to the same string queues nothing', () => {
+  it('a blur re-echo that formats to the same string queues nothing', async () => {
     applyServerChangesToStores(
       [pulledPlan({ ...RETIREMENT_PLAN_DEFAULTS, desiredIncomeInput: '55,000.00' }, 2_000)],
       USER
     )
     // `reEcho` calls the setter with an updater that returns the same string.
     store().setDesiredIncomeInput((previous) => previous)
-    quiet()
+    await quiet()
     expect(queued()).toEqual([])
     // CONTROL: a real change after it does push.
     store().setDesiredIncomeInput('56,000.00')
-    quiet()
+    await quiet()
     expect(queued()).toEqual(['update retirementPlan'])
   })
 
-  it('a plan equal to the last one PUSHED queues nothing; a change after it does', () => {
+  it('a plan equal to the last one PUSHED queues nothing; a change after it does', async () => {
     store().setModel('perpetual')
-    quiet()
+    await quiet()
     store().setModel('perpetual')
-    quiet()
+    await quiet()
     expect(queued()).toEqual(['update retirementPlan'])
     store().setModel('deplete')
-    quiet()
+    await quiet()
     expect(queued()).toEqual(['update retirementPlan', 'update retirementPlan'])
   })
 
-  it('an edit back to the plan last PULLED queues nothing', () => {
+  it('an edit back to the plan last PULLED queues nothing, whatever the key order of the local object', async () => {
     applyServerChangesToStores([pulledPlan({ ...RETIREMENT_PLAN_DEFAULTS }, 2_000)], USER)
+    // The defaults list the fields in a different order from the coercion.
+    useRetirementPlannerStore.setState({ plan: { ...RETIREMENT_PLAN_DEFAULTS } })
     store().setModel('perpetual')
     store().setModel('deplete')
-    quiet()
+    await quiet()
     expect(queued()).toEqual([])
+  })
+
+  it('a FAILED queue add does not make the plan look sent: the same plan is sent again, and it is marked not on the server', async () => {
+    handle.queueUpdate.mockRejectedValueOnce(new Error('storage full'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    store().setModel('perpetual')
+    await quiet()
+    expect(store().localPlanDiverged).toBe(true)
+    store().setModel('perpetual')
+    await quiet()
+    expect(queued()).toEqual(['update retirementPlan', 'update retirementPlan'])
   })
 
   it.each([
@@ -266,14 +310,14 @@ describe('AC-4: keystrokes coalesce', () => {
         document.dispatchEvent(new Event('visibilitychange'))
       },
     ],
-  ])('%s flushes a pending edit into the queue at once', (_, leave) => {
+  ])('%s hands a pending edit to the queue at once', async (_, leave) => {
     store().setModel('perpetual')
     leave()
     expect(queued()).toEqual(['update retirementPlan'])
-    expect(hasPendingPlanEdit()).toBe(false)
     // Nothing is sent twice when the timer would have fired.
-    quiet()
+    await quiet()
     expect(queued()).toEqual(['update retirementPlan'])
+    expect(hasPendingPlanEdit()).toBe(false)
   })
 
   it('visibilitychange while still VISIBLE flushes nothing', () => {
@@ -286,10 +330,10 @@ describe('AC-4: keystrokes coalesce', () => {
 })
 
 describe('AC-5: a pull never overwrites un-pushed typing', () => {
-  it('type → push → type again → a pull of this device’s OWN earlier write: the newer value stays and is what is sent, based on that write', () => {
+  it('type → push → type again → a pull of this device’s OWN earlier write: the newer value stays and is what is sent, based on that write', async () => {
     useRetirementPlannerStore.setState({ serverUpdatedAt: new Date(1_000).toISOString() })
     store().setCurrentAgeInput('40')
-    quiet()
+    await quiet()
     const first = planUpdates()[0]
     expect(first?.plan.currentAgeInput).toBe('40')
     expect(first?.baseVersion).toBe(1_000)
@@ -299,11 +343,33 @@ describe('AC-5: a pull never overwrites un-pushed typing', () => {
     applyServerChangesToStores([pulledPlan(first?.plan as RetirementPlan, 5_000)], USER)
     expect(store().plan.currentAgeInput).toBe('41')
 
-    quiet()
+    await quiet()
     const second = planUpdates()[1]
     expect(second?.plan.currentAgeInput).toBe('41')
     // Core keeps this op over the change the applier skipped (`5000 <= base`).
     expect(second?.baseVersion).toBe(5_000)
+  })
+
+  it('the gap between the flush and the queue holding the op is protected too', async () => {
+    let settle: () => void = () => {}
+    handle.queueUpdate.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          settle = resolve
+        })
+    )
+    store().setCurrentAgeInput('44')
+    await quiet()
+    // Flushed, but the queue's add has not settled: still pending.
+    expect(hasPendingPlanEdit()).toBe(true)
+    applyServerChangesToStores(
+      [pulledPlan({ ...RETIREMENT_PLAN_DEFAULTS, currentAgeInput: '30' }, 5_000)],
+      USER
+    )
+    expect(store().plan.currentAgeInput).toBe('44')
+    settle()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(hasPendingPlanEdit()).toBe(false)
   })
 
   it('a skip never moves the recorded server version BACKWARDS', () => {
@@ -311,6 +377,16 @@ describe('AC-5: a pull never overwrites un-pushed typing', () => {
     store().setModel('perpetual')
     applyServerChangesToStores([pulledPlan({ ...RETIREMENT_PLAN_DEFAULTS }, 4_000)], USER)
     expect(store().serverUpdatedAt).toBe(new Date(9_000).toISOString())
+  })
+
+  it('a skip for an op still in the QUEUE records the version as well (so the seed does not think the server is empty)', () => {
+    applyServerChangesToStores(
+      [pulledPlan({ ...RETIREMENT_PLAN_DEFAULTS, currentAgeInput: '30' }, 4_000)],
+      USER,
+      { hasPendingOperation: () => true }
+    )
+    expect(store().plan).toEqual(RETIREMENT_PLAN_DEFAULTS)
+    expect(store().serverUpdatedAt).toBe(new Date(4_000).toISOString())
   })
 
   it('CONTROL: with nothing pending the same pull IS applied', () => {
@@ -323,45 +399,92 @@ describe('AC-5: a pull never overwrites un-pushed typing', () => {
   })
 })
 
-describe('AC-6: owner and session', () => {
-  it('a plan owned by another account is never queued under this session', () => {
-    useRetirementPlannerStore.setState({ ownerUserId: OTHER })
-    store().setModel('perpetual')
-    quiet()
-    expect(queued()).toEqual([])
+describe('own echo (code review 2026-10-05, HIGH): core dropped the newer queued edit', () => {
+  it('a pulled plan this device pushed, while the screen shows a newer one, is skipped and the screen plan re-queued based on the echo', async () => {
+    useRetirementPlannerStore.setState({ serverUpdatedAt: new Date(1_000).toISOString() })
+    store().setCurrentAgeInput('40')
+    await quiet()
+    store().setCurrentAgeInput('41')
+    await quiet()
+    // Edit 2 was queued with the stale base 1000; the echo of edit 1 (t=5000)
+    // beats it in core, which drops it and hands the applier the echo.
+    applyServerChangesToStores([pulledPlan(planUpdates()[0]?.plan as RetirementPlan, 5_000)], USER)
+    expect(store().plan.currentAgeInput).toBe('41')
+    const requeued = planUpdates()[2]
+    expect(requeued?.plan.currentAgeInput).toBe('41')
+    expect(requeued?.baseVersion).toBe(5_000)
   })
 
-  it('an unclaimed plan (owner "") is never queued', () => {
-    useRetirementPlannerStore.setState({ ownerUserId: '' })
-    store().setModel('perpetual')
-    quiet()
-    expect(queued()).toEqual([])
+  it('CONTROL: an echo equal to the screen plan is simply applied, and nothing is sent', async () => {
+    store().setCurrentAgeInput('40')
+    await quiet()
+    applyServerChangesToStores([pulledPlan(planUpdates()[0]?.plan as RetirementPlan, 5_000)], USER)
+    expect(store().serverUpdatedAt).toBe(new Date(5_000).toISOString())
+    expect(queued()).toEqual(['update retirementPlan'])
   })
 
-  it('free / signed out (no bridge): no timer, no op, the edit stays local', () => {
-    clearSyncBridge()
-    store().setModel('perpetual')
-    expect(hasPendingPlanEdit()).toBe(false)
-    quiet()
-    expect(store().plan.model).toBe('perpetual')
+  it('CONTROL: a plan this device never pushed is applied (an effect-rewritten screen plan is not an echo)', () => {
+    store().setDesiredIncomeForLocale('55.000,00', 'de-DE')
+    applyServerChangesToStores(
+      [pulledPlan({ ...RETIREMENT_PLAN_DEFAULTS, currentAgeInput: '50' }, 5_000)],
+      USER
+    )
+    expect(store().plan.currentAgeInput).toBe('50')
     expect(queued()).toEqual([])
-  })
-
-  it('downgraded mid-debounce: nothing is queued and the local plan is kept', () => {
-    store().setModel('perpetual')
-    clearSyncBridge()
-    quiet()
-    expect(queued()).toEqual([])
-    expect(store().plan.model).toBe('perpetual')
   })
 })
 
-describe('AC-7: the first-sign-in seed', () => {
+describe('AC-6: owner and session', () => {
+  it('the owner is checked again when the debounce FIRES, not only when it is armed', async () => {
+    store().setModel('perpetual')
+    // The owner changes without the claim (which would also cancel the timer).
+    useRetirementPlannerStore.setState({ ownerUserId: OTHER })
+    await quiet()
+    expect(queued()).toEqual([])
+  })
+
+  it('a plan owned by another account is never queued under this session', async () => {
+    useRetirementPlannerStore.setState({ ownerUserId: OTHER })
+    store().setModel('perpetual')
+    await quiet()
+    expect(queued()).toEqual([])
+  })
+
+  it('free (signed in, no bridge): no timer, no op; the OWNED edit is kept as not on the server', async () => {
+    clearSyncBridge()
+    store().setModel('perpetual')
+    expect(hasPendingPlanEdit()).toBe(false)
+    await quiet()
+    expect(store().plan.model).toBe('perpetual')
+    expect(store().localPlanDiverged).toBe(true)
+    expect(queued()).toEqual([])
+  })
+
+  it('signed out (an unclaimed plan): no op, and NOT marked (D4: server wins at sign-in)', async () => {
+    clearSyncBridge()
+    useRetirementPlannerStore.setState({ ownerUserId: '' })
+    store().setModel('perpetual')
+    await quiet()
+    expect(store().localPlanDiverged).toBe(false)
+    expect(queued()).toEqual([])
+  })
+
+  it('downgraded or signed out mid-debounce: nothing is queued, the plan is kept and marked', async () => {
+    store().setModel('perpetual')
+    clearSyncBridge()
+    await quiet()
+    expect(queued()).toEqual([])
+    expect(store().plan.model).toBe('perpetual')
+    expect(store().localPlanDiverged).toBe(true)
+  })
+})
+
+describe('AC-7 / AC-12: after the initial pull', () => {
   it('the server has no plan (`serverUpdatedAt` null after the pull): ONE create with the whole plan', async () => {
     useRetirementPlannerStore.setState({
       plan: { ...RETIREMENT_PLAN_DEFAULTS, currentAgeInput: '44' },
     })
-    await expect(seedRetirementPlanIfServerHasNone()).resolves.toBe(true)
+    await expect(reconcilePlanAfterInitialPull()).resolves.toBe('seeded')
     expect(queued()).toEqual(['create retirementPlan'])
     const [, entityId, data] = handle.queueCreate.mock.calls[0] ?? []
     expect(entityId).toBe(USER)
@@ -369,42 +492,50 @@ describe('AC-7: the first-sign-in seed', () => {
     // The seeded plan counts as synced: an edit back to it sends nothing.
     store().setModel('perpetual')
     store().setModel('deplete')
-    quiet()
+    await quiet()
     expect(queued()).toEqual(['create retirementPlan'])
   })
 
   it('the server has a plan (the pull set `serverUpdatedAt`): nothing is sent', async () => {
     applyServerChangesToStores([pulledPlan({ ...RETIREMENT_PLAN_DEFAULTS }, 2_000)], USER)
-    await expect(seedRetirementPlanIfServerHasNone()).resolves.toBe(false)
+    await expect(reconcilePlanAfterInitialPull()).resolves.toBe('none')
     expect(queued()).toEqual([])
   })
 
-  it('another owner’s plan, no session, or a pending edit: nothing is seeded', async () => {
+  it('a plan marked as not on the server is pushed as an UPDATE, even though the server has one', async () => {
+    useRetirementPlannerStore.setState({
+      plan: { ...RETIREMENT_PLAN_DEFAULTS, currentAgeInput: '52' },
+      serverUpdatedAt: new Date(2_000).toISOString(),
+      localPlanDiverged: true,
+    })
+    // The initial pull skipped the server copy.
+    applyServerChangesToStores([pulledPlan({ ...RETIREMENT_PLAN_DEFAULTS }, 3_000)], USER)
+    expect(store().plan.currentAgeInput).toBe('52')
+    await expect(reconcilePlanAfterInitialPull()).resolves.toBe('pushed')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(queued()).toEqual(['update retirementPlan'])
+    expect(planUpdates()[0]?.baseVersion).toBe(3_000)
+  })
+
+  it('a failed seed add marks the plan as not on the server (the next session pushes it)', async () => {
+    handle.queueCreate.mockRejectedValueOnce(new Error('storage full'))
+    await expect(reconcilePlanAfterInitialPull()).rejects.toThrow('storage full')
+    expect(store().localPlanDiverged).toBe(true)
+  })
+
+  it('another owner’s plan, no session, or a pending edit: nothing', async () => {
     useRetirementPlannerStore.setState({ ownerUserId: OTHER })
-    await expect(seedRetirementPlanIfServerHasNone()).resolves.toBe(false)
+    await expect(reconcilePlanAfterInitialPull()).resolves.toBe('none')
     useRetirementPlannerStore.setState({ ownerUserId: USER })
     store().setModel('perpetual')
-    await expect(seedRetirementPlanIfServerHasNone()).resolves.toBe(false)
+    await expect(reconcilePlanAfterInitialPull()).resolves.toBe('none')
     expect(queued()).toEqual([])
     clearSyncBridge()
-    await expect(seedRetirementPlanIfServerHasNone()).resolves.toBe(false)
+    await expect(reconcilePlanAfterInitialPull()).resolves.toBe('none')
   })
 })
 
-describe('AC-12: a refused plan edit stays on this device until a push succeeds', () => {
-  function refusedPlanOp(): SyncOperation {
-    return {
-      id: 'op-plan',
-      type: 'update',
-      entityType: 'retirementPlan',
-      entityId: USER,
-      data: { userId: USER, plan: store().plan },
-      timestamp: 3_000,
-      deviceId: 'd',
-      userId: USER,
-    } as SyncOperation
-  }
-
+describe('AC-12: a refused plan edit stays on this device until a plan update is accepted', () => {
   function refusalDeps(): RefusalHandlerDeps {
     return {
       queue: {
@@ -416,30 +547,35 @@ describe('AC-12: a refused plan edit stays on this device until a push succeeds'
       lookupLocalRow: vi.fn(() => undefined),
       requestFullRepull: vi.fn(),
       notify: vi.fn(),
+      markPlanRefused: notePlanOpRefused,
     }
   }
 
-  async function refuseTheLocalPlan(): Promise<RetirementPlan> {
+  async function refuseTheLocalPlan(deps = refusalDeps()): Promise<RetirementPlan> {
     useRetirementPlannerStore.setState({
       plan: { ...RETIREMENT_PLAN_DEFAULTS, currentAgeInput: '47' },
       serverUpdatedAt: new Date(1_000).toISOString(),
     })
-    await handleRejectedOperations([refusedPlanOp()], refusalDeps())
+    await handleRejectedOperations([planOp()], deps)
     return store().plan
   }
 
-  it('refusal → full pull: the local plan is unchanged (the notice stays true)', async () => {
-    const local = await refuseTheLocalPlan()
+  it('refusal → full pull: the local plan is unchanged, and the notice says it is still on this device', async () => {
+    const deps = refusalDeps()
+    const local = await refuseTheLocalPlan(deps)
     expect(store().localPlanDiverged).toBe(true)
+    expect(deps.notify).toHaveBeenCalledWith([
+      expect.objectContaining({ entityType: 'retirementPlan', fallback: 'Your retirement plan' }),
+    ])
     applyServerChangesToStores([pulledPlan({ ...RETIREMENT_PLAN_DEFAULTS }, 4_000)], USER)
     expect(store().plan).toEqual(local)
     // The skipped version is recorded, so the healing push is based on it.
     expect(store().serverUpdatedAt).toBe(new Date(4_000).toISOString())
   })
 
-  it('a later SUCCESSFUL plan push clears the marker, and the next pull applies again', async () => {
+  it('a later ACCEPTED plan update clears the marker, and the next pull applies again', async () => {
     await refuseTheLocalPlan()
-    stampSyncedOwner([{ ...refusedPlanOp(), id: 'op-plan-2' }], USER)
+    stampSyncedOwner([planOp({ id: 'op-plan-2', timestamp: 4_000 })], USER)
     expect(store().localPlanDiverged).toBe(false)
     applyServerChangesToStores(
       [pulledPlan({ ...RETIREMENT_PLAN_DEFAULTS, currentAgeInput: '60' }, 6_000)],
@@ -448,13 +584,22 @@ describe('AC-12: a refused plan edit stays on this device until a push succeeds'
     expect(store().plan.currentAgeInput).toBe('60')
   })
 
-  it('an accepted op of ANOTHER entity, or another account’s plan op, does not clear it', async () => {
+  it('one sync: an OLDER op refused after a NEWER update was accepted leaves the marker clear', async () => {
+    useRetirementPlannerStore.setState({ localPlanDiverged: false })
+    // Core reports accepted before refused within one sync.
+    stampSyncedOwner([planOp({ id: 'new', timestamp: 5_000 })], USER)
+    await handleRejectedOperations([planOp({ id: 'old', timestamp: 3_000 })], refusalDeps())
+    expect(store().localPlanDiverged).toBe(false)
+  })
+
+  it('an accepted CREATE (insert-if-absent, may have changed nothing), another entity, or another account’s op does not clear it', async () => {
     await refuseTheLocalPlan()
     stampSyncedOwner(
       [
-        { ...refusedPlanOp(), id: 'x', entityType: 'expense', entityId: 'row' },
-        { ...refusedPlanOp(), id: 'y', entityId: OTHER, userId: OTHER },
-      ] as SyncOperation[],
+        planOp({ id: 'c', type: 'create', timestamp: 9_000 }),
+        planOp({ id: 'x', entityType: 'expense', entityId: 'row', timestamp: 9_000 }),
+        planOp({ id: 'y', entityId: OTHER, userId: OTHER, timestamp: 9_000 }),
+      ],
       USER
     )
     expect(store().localPlanDiverged).toBe(true)
@@ -463,11 +608,11 @@ describe('AC-12: a refused plan edit stays on this device until a push succeeds'
   it('the same plan typed again after a refusal IS pushed (the refused one is not "synced")', async () => {
     useRetirementPlannerStore.setState({ serverUpdatedAt: new Date(1_000).toISOString() })
     store().setCurrentAgeInput('47')
-    quiet()
+    await quiet()
     expect(queued()).toEqual(['update retirementPlan'])
-    await handleRejectedOperations([refusedPlanOp()], refusalDeps())
+    await handleRejectedOperations([planOp({ timestamp: Date.now() + 1 })], refusalDeps())
     store().setCurrentAgeInput('47')
-    quiet()
+    await quiet()
     expect(queued()).toEqual(['update retirementPlan', 'update retirementPlan'])
   })
 
@@ -484,7 +629,7 @@ describe('AC-12: a refused plan edit stays on this device until a push succeeds'
 
   it('a refusal of ANOTHER account’s plan op marks nothing', async () => {
     useRetirementPlannerStore.setState({ ownerUserId: OTHER })
-    await handleRejectedOperations([refusedPlanOp()], refusalDeps())
+    await handleRejectedOperations([planOp()], refusalDeps())
     expect(store().localPlanDiverged).toBe(false)
   })
 
