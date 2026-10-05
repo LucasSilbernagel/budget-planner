@@ -79,6 +79,12 @@ import { useSavingsStore } from '../../stores/savingsStore'
 import { stampMissingSortOrder } from '../ordering'
 import { cascadeProfileRowRemoval } from '../profile-cascade'
 import { isOwnedByAnotherAccount, isPlaceholderOwner } from './accountOwner'
+import {
+  classifyPulledPlan,
+  notePlanOpsAccepted,
+  notePlanSynced,
+  requeueAfterOwnEcho,
+} from './retirementPlanPush'
 
 /** Minimal structural view of a Zustand vanilla store used here. */
 interface StoreApi {
@@ -139,8 +145,16 @@ type EntityBinding = CollectionBinding | SingletonBinding
  *   plan's id IS its account's id, D3).
  * - While the queue still holds a plan op (AC-4) the local plan is NOT
  *   overwritten: that op is the user's newer edit, and core's causal LWW
- *   (`SynchronizationService.pull`) still decides its fate. The DEBOUNCE half of
- *   this protection is story 99.3's.
+ *   (`SynchronizationService.pull`) still decides its fate.
+ * - Nor while a user edit has not reached the queue yet (story 99.3, AC-5: core
+ *   protects QUEUED ops only), nor while the plan is not on the server
+ *   (`localPlanDiverged`, AC-12), nor when the change is this device's OWN echo
+ *   while the screen plan has moved on; that one also re-queues the screen plan
+ *   (see `retirementPlanPush.ts`, code review 2026-10-05). EVERY skip, the
+ *   queued-op one included, records the change's version as `serverUpdatedAt`
+ *   (only ever forwards), which the next push sends as its `baseVersion`: without
+ *   that, core would drop the push for this very change on the next pull, and
+ *   the first-sign-in seed would read "the server has no plan".
  * - Otherwise the whole plan is REPLACED (Q5, whole-plan last-writer-wins),
  *   rebuilt field by field through `coerceRetirementPlan` (core's pull gate is
  *   deliberately lenient on fields), owned by the session, and stamped with the
@@ -158,12 +172,27 @@ function applyRetirementPlanChange(change: ServerChange, context: ApplyContext):
     reportRefusedRow(change.entityType, change.entityId, ['entityId:not_the_session_account'])
     return false
   }
-  if (context.hasPendingOperation?.('retirementPlan', change.entityId) === true) {
-    return false
-  }
   const plan = change.data['plan']
   if (typeof plan !== 'object' || plan === null || Array.isArray(plan)) {
     reportRefusedRow(change.entityType, change.entityId, ['plan:invalid_type'])
+    return false
+  }
+  const pulled = coerceRetirementPlan(plan)
+  const queued = context.hasPendingOperation?.('retirementPlan', change.entityId) === true
+  const verdict = queued ? 'skip' : classifyPulledPlan(context.sessionUserId, pulled)
+  if (verdict !== 'apply') {
+    const store = useRetirementPlannerStore.getState()
+    if (store.ownerUserId === context.sessionUserId) {
+      const seen = store.serverUpdatedAt === null ? Number.NaN : Date.parse(store.serverUpdatedAt)
+      if (!(seen >= change.updatedAt)) {
+        useRetirementPlannerStore.setState({
+          serverUpdatedAt: new Date(change.updatedAt).toISOString(),
+        })
+      }
+    }
+    if (verdict === 'own-echo') {
+      requeueAfterOwnEcho(context.sessionUserId)
+    }
     return false
   }
   // Normally a no-op: the 90.1 boundary claimed the plan before sync started. If
@@ -175,11 +204,14 @@ function applyRetirementPlanChange(change: ServerChange, context: ApplyContext):
       return false
     }
   }
+  const applied = pulled
   useRetirementPlannerStore.setState({
-    plan: coerceRetirementPlan(plan),
+    plan: applied,
     ownerUserId: context.sessionUserId,
     serverUpdatedAt: new Date(change.updatedAt).toISOString(),
   })
+  // The server holds exactly this plan now: an edit back to it sends nothing.
+  notePlanSynced(context.sessionUserId, applied)
   return true
 }
 
@@ -281,6 +313,15 @@ export function stampSyncedOwner(
   operations: readonly SyncOperation[],
   sessionUserId: string
 ): void {
+  // Story 99.3 (AC-12): an accepted plan UPDATE clears the not-on-server marker.
+  try {
+    notePlanOpsAccepted(
+      operations.filter((operation) => operation.userId === sessionUserId),
+      sessionUserId
+    )
+  } catch (error) {
+    console.error('[sync] could not record an accepted retirement plan push:', error)
+  }
   const idsByType = new Map<SyncEntityType, Set<string>>()
   for (const operation of operations) {
     if (operation.type !== 'create' && operation.type !== 'update') {
@@ -296,6 +337,11 @@ export function stampSyncedOwner(
     idsByType.set(operation.entityType, ids)
   }
   for (const [entityType, ids] of idsByType) {
+    // An accepted plan push (story 99.3, AC-12): `notePlanOpsAccepted` (below)
+    // decides whether the not-on-server marker clears.
+    if (entityType === 'retirementPlan') {
+      continue
+    }
     const binding = ENTITY_BINDINGS[entityType]
     // A singleton has no placeholder owner to stamp (story 99.2): the plan's
     // owner is written by the 90.1 claim and by the pull applier, never by a push.

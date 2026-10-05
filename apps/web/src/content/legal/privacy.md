@@ -19,6 +19,7 @@ Clearing your browser data clears your Longhand Budget data.
 ## Premium tier: EU-hosted sync
 
 If you create a Premium account, your financial data is stored so it can be synced across your devices.
+The synced data also covers your retirement plan, including your age, your life expectancy, the retirement income you want and your expected investment returns.
 **Your financial data is hosted exclusively on DanubeData infrastructure in Germany (EU); we do not store or process it in the United States.**
 Some third parties we rely on operate outside the EU — most notably our payment processor, **Paddle (United Kingdom)** — and handle only the limited data needed for their function, as described below.
 

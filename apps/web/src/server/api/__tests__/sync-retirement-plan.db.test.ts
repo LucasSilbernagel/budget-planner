@@ -21,9 +21,9 @@
  * persisted queue DIRECTLY: they model a queue written by another build or a
  * loosened gate. The test is about what the SERVER and transport do with them.
  *
- * Dormancy note: no app code queues a plan op in story 99.2 (AC-8, pinned by
- * `retirement-plan-dormant.dom.test.ts`); this file queues them through the core
- * service directly, which is what story 99.3's push will do.
+ * This file queues plan ops through the core service directly. The app's own
+ * push (story 99.3, `lib/sync/retirementPlanPush.ts`) is pinned by
+ * `retirement-plan-push.dom.test.ts` and `cross-device-sync.db.test.tsx`.
  */
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'

@@ -6,6 +6,12 @@ import {
   type RetirementPlan,
   coerceRetirementPlan,
 } from '../lib/retirement-plan'
+import {
+  bindRetirementPlanSource,
+  cancelPendingPlanPush,
+  forgetSyncedPlan,
+  schedulePlanPush,
+} from '../lib/sync/retirementPlanPush'
 
 // Story 99.2: the plan's shape, defaults and coercion live in the store-free
 // `lib/retirement-plan.ts` (the sync bridge needs them and must import no store).
@@ -39,10 +45,14 @@ export type { RetirementPlan }
  * ⚠️ It is no longer device-only (story 99.2). Premium accounts have a server copy:
  * one `retirementPlans` row per account, pulled into this store by
  * `lib/sync/applyServerChanges.ts` (plain `setState`, which also records
- * {@link RetirementPlannerStoreState.serverUpdatedAt}). The client PUSH is story
- * 99.3's: as of 99.2 no setter here queues a sync op, and a test pins that
- * (`retirement-plan-dormant.dom.test.ts`). Free and signed-out use is unchanged:
- * no network, the same key, the same persisted bytes.
+ * {@link RetirementPlannerStoreState.serverUpdatedAt}), and pushed by
+ * `lib/sync/retirementPlanPush.ts` (story 99.3). ONLY the user-intent setters
+ * push (D6): every one except `setDesiredIncomeForLocale`, which the planner's
+ * effects call to rewrite the plan from device-local inputs, and `resetPlan`
+ * (Clear local data must never wipe the server copy). The claim and the applier
+ * use plain `setState` and never push either. Pinned by
+ * `retirement-plan-push.dom.test.ts`. Free and signed-out use is unchanged: no
+ * network, the same key, the same persisted bytes.
  *
  * ## ⚠️ `merge` is the load-bearing coercion, NOT `migrate`
  *
@@ -97,17 +107,44 @@ interface RetirementPlannerStoreState {
    */
   ownerUserId: string
   /**
-   * The server `updatedAt` (ISO) of the plan this device last PULLED for
-   * {@link ownerUserId}, or `null` when this plan has never come from the server
-   * (story 99.2). Written by the pull applier, reset to `null` by
-   * {@link claimRetirementPlanFor} on every owner change. Story 99.3 reads it as
-   * the push's `baseVersion` and, after the initial pull, as "the server has no
-   * plan yet" (`null`).
+   * The newest server `updatedAt` (ISO) this device has seen for
+   * {@link ownerUserId}'s plan, or `null` when it has seen none (story 99.2).
+   * Written by the pull applier when it applies a plan, AND when it skips one in
+   * favour of a local edit not yet on the server (story 99.3, AC-5 / AC-12): the
+   * push sends it as its `baseVersion`, so core does not drop that newer edit for
+   * the change it already skipped. Reset to `null` by
+   * {@link claimRetirementPlanFor} on every owner change. After the initial pull,
+   * `null` means "the server has no plan yet" (the first-sign-in seed, AC-7).
    *
    * ⚠️ Persisted ONLY when set: a device that never synced writes exactly the
    * bytes it wrote before 99.2. No version bump; `merge` coerces it.
    */
   serverUpdatedAt: string | null
+  /**
+   * This device holds {@link ownerUserId}'s plan and the server may NOT (story
+   * 99.3, AC-12 and code review 2026-10-05, Lucas's decision). Set when:
+   * - the server REFUSED a plan edit (core drops a refused op, so the queue no
+   *   longer protects the plan, and the next full pull would replace it with the
+   *   server's older copy while the notice says "It is still saved on this device");
+   * - the owner edited the plan with no paid session to queue it (free period,
+   *   before the bridge registers, a sign-out inside the push debounce);
+   * - a queue add failed.
+   *
+   * While set the pull applier skips the plan, and after the next session's
+   * initial pull `reconcilePlanAfterInitialPull` pushes it. Cleared when a plan
+   * UPDATE is accepted, on an owner change ({@link claimRetirementPlanFor}) and by
+   * `resetPlan` (Clear local data). An unclaimed (`''`) plan is never marked, so
+   * D4 ("server wins at first sign-in") still holds for it. All writes go
+   * through `lib/sync/retirementPlanPush.ts`.
+   *
+   * ⚠️ No ceiling (decided in 99.3): a refusal that recurs keeps this device on
+   * its own plan; each session re-sends it and the refusal notice shows again.
+   * Ending it by time or count would overwrite the user's work with the older
+   * server copy.
+   *
+   * ⚠️ Persisted ONLY when set, like `serverUpdatedAt`.
+   */
+  localPlanDiverged: boolean
   setCurrentAgeInput: StringSetter
   setLifeExpectancyInput: StringSetter
   setDesiredIncomeInput: StringSetter
@@ -123,6 +160,11 @@ interface RetirementPlannerStoreState {
    * Used by the seed effect and by the locale-migration effect. Both halves must
    * move together or the string and its stated locale disagree, which is the
    * bug this field exists to prevent.
+   *
+   * ⚠️ The ONE setter that never pushes (story 99.3, D6): the effects that call it
+   * rewrite the plan from device-local inputs (income, currency). The adopt
+   * handler also calls it, beside `markDesiredIncomeAuthored` and
+   * `setAdoptedMonthlyCents`, which push.
    */
   setDesiredIncomeForLocale: (value: string, locale: string) => void
   /**
@@ -141,7 +183,11 @@ interface RetirementPlannerStoreState {
    */
   setPostRetirementReturn: StringSetter
   setModel: (model: RetirementModel) => void
-  /** Return the whole plan to {@link RETIREMENT_PLAN_DEFAULTS}. */
+  /**
+   * Return the whole plan to {@link RETIREMENT_PLAN_DEFAULTS}. Never pushes, and
+   * drops a pending push (story 99.3, AC-9): Clear local data calls it, and must
+   * not wipe the plan on every other device.
+   */
   resetPlan: () => void
 }
 
@@ -159,7 +205,12 @@ export const useRetirementPlannerStore = create<RetirementPlannerStoreState>()(
       plan: { ...RETIREMENT_PLAN_DEFAULTS },
       ownerUserId: '',
       serverUpdatedAt: null,
+      localPlanDiverged: false,
 
+      // Every setter below except `setDesiredIncomeForLocale` and `resetPlan` is a
+      // user-intent setter and schedules a push (story 99.3, D6). The push reads
+      // the plan when it fires and skips a plan equal to the last one synced, so
+      // a setter that changed nothing costs nothing.
       setCurrentAgeInput: (value) => {
         set((current) => ({
           plan: {
@@ -167,6 +218,7 @@ export const useRetirementPlannerStore = create<RetirementPlannerStoreState>()(
             currentAgeInput: applyString(current.plan.currentAgeInput, value),
           },
         }))
+        schedulePlanPush()
       },
 
       setLifeExpectancyInput: (value) => {
@@ -176,6 +228,7 @@ export const useRetirementPlannerStore = create<RetirementPlannerStoreState>()(
             lifeExpectancyInput: applyString(current.plan.lifeExpectancyInput, value),
           },
         }))
+        schedulePlanPush()
       },
 
       setDesiredIncomeInput: (value) => {
@@ -185,6 +238,7 @@ export const useRetirementPlannerStore = create<RetirementPlannerStoreState>()(
             desiredIncomeInput: applyString(current.plan.desiredIncomeInput, value),
           },
         }))
+        schedulePlanPush()
       },
 
       markDesiredIncomeAuthored: (locale) => {
@@ -193,6 +247,7 @@ export const useRetirementPlannerStore = create<RetirementPlannerStoreState>()(
             ? current
             : { plan: { ...current.plan, desiredIncomeTouched: true, desiredIncomeLocale: locale } }
         )
+        schedulePlanPush()
       },
 
       setDesiredIncomeForLocale: (value, locale) => {
@@ -207,10 +262,12 @@ export const useRetirementPlannerStore = create<RetirementPlannerStoreState>()(
             ? current
             : { plan: { ...current.plan, adoptedMonthlyCents: cents } }
         )
+        schedulePlanPush()
       },
 
       setIncomeBasis: (basis) => {
         set((current) => ({ plan: { ...current.plan, incomeBasis: basis } }))
+        schedulePlanPush()
       },
 
       setAnnualReturnInput: (value) => {
@@ -220,6 +277,7 @@ export const useRetirementPlannerStore = create<RetirementPlannerStoreState>()(
             annualReturnInput: applyString(current.plan.annualReturnInput, value),
           },
         }))
+        schedulePlanPush()
       },
 
       setPostRetirementReturn: (value) => {
@@ -232,14 +290,18 @@ export const useRetirementPlannerStore = create<RetirementPlannerStoreState>()(
             postRetirementTouched: true,
           },
         }))
+        schedulePlanPush()
       },
 
       setModel: (model) => {
         set((current) => ({ plan: { ...current.plan, model } }))
+        schedulePlanPush()
       },
 
       resetPlan: () => {
-        set({ plan: { ...RETIREMENT_PLAN_DEFAULTS } })
+        cancelPendingPlanPush()
+        forgetSyncedPlan()
+        set({ plan: { ...RETIREMENT_PLAN_DEFAULTS }, localPlanDiverged: false })
       },
     }),
     {
@@ -252,6 +314,8 @@ export const useRetirementPlannerStore = create<RetirementPlannerStoreState>()(
         ownerUserId: state.ownerUserId,
         // Only when set (story 99.2): a never-synced device persists the same bytes.
         ...(state.serverUpdatedAt !== null ? { serverUpdatedAt: state.serverUpdatedAt } : {}),
+        // Only when set (story 99.3), for the same reason.
+        ...(state.localPlanDiverged ? { localPlanDiverged: true } : {}),
       }),
       version: RETIREMENT_PLANNER_VERSION,
       // The seam for a future shape change. See the module docblock: this is NOT
@@ -267,6 +331,9 @@ export const useRetirementPlannerStore = create<RetirementPlannerStoreState>()(
           ),
           // The persisted shape (`partialize`) omits it when unset.
           ...(serverUpdatedAt !== null ? { serverUpdatedAt } : {}),
+          ...((persisted as { localPlanDiverged?: unknown } | undefined)?.localPlanDiverged === true
+            ? { localPlanDiverged: true }
+            : {}),
         }
       },
       // Runs on EVERY rehydrate. This is the guard: a corrupt, absent or foreign
@@ -281,6 +348,9 @@ export const useRetirementPlannerStore = create<RetirementPlannerStoreState>()(
         serverUpdatedAt: coerceServerUpdatedAt(
           (persisted as { serverUpdatedAt?: unknown } | undefined)?.serverUpdatedAt
         ),
+        // `=== true`: localStorage is user-editable, and a `"false"` string is truthy.
+        localPlanDiverged:
+          (persisted as { localPlanDiverged?: unknown } | undefined)?.localPlanDiverged === true,
       }),
     }
   )
@@ -341,7 +411,10 @@ function removeParkedPlan(userId: string): void {
  *
  * Every owner change resets `serverUpdatedAt` to `null` (story 99.2): the server
  * version it recorded was the PREVIOUS owner's, and the plan now on screen did not
- * come from this account's server copy.
+ * come from this account's server copy. It also clears `localPlanDiverged` and
+ * DROPS a pending push (story 99.3, AC-8 / AC-12): both were the previous owner's,
+ * and flushing that push would send the plan now on screen (this owner's parked
+ * plan, or the defaults) over this owner's server copy.
  *
  * ⚠️ Must run AFTER rehydrate: it writes the persisted store, and a write before
  * rehydrate replaces the saved plan with the defaults (`StoreHydration` calls it).
@@ -353,6 +426,7 @@ export function claimRetirementPlanFor(sessionUserId: string): void {
   if (ownerUserId === sessionUserId) {
     return
   }
+  cancelPendingPlanPush()
   if (ownerUserId === '') {
     // A signed-in session's own parked plan WINS over an unclaimed one (90.1
     // review R-D2 (a), Lucas 2026-10-03): otherwise a plan edited while signed
@@ -367,7 +441,9 @@ export function claimRetirementPlanFor(sessionUserId: string): void {
       ownerUserId: sessionUserId,
       plan: parked ?? plan,
       serverUpdatedAt: null,
+      localPlanDiverged: false,
     })
+    forgetSyncedPlan()
     return
   }
   // Park first: if storage refuses, keep the plan on screen rather than lose it.
@@ -390,8 +466,24 @@ export function claimRetirementPlanFor(sessionUserId: string): void {
     ownerUserId: sessionUserId,
     plan: own ?? { ...RETIREMENT_PLAN_DEFAULTS },
     serverUpdatedAt: null,
+    localPlanDiverged: false,
   })
+  forgetSyncedPlan()
 }
+
+// Story 99.3: the push reads the store, and writes `localPlanDiverged`, through
+// this binding, so it imports no store (stores → push → bridge, never back).
+// Plain `setState`, never an action: nothing here pushes.
+bindRetirementPlanSource({
+  read: () => {
+    const { plan, ownerUserId, serverUpdatedAt, localPlanDiverged } =
+      useRetirementPlannerStore.getState()
+    return { plan, ownerUserId, serverUpdatedAt, localPlanDiverged }
+  },
+  setDiverged: (localPlanDiverged) => {
+    useRetirementPlannerStore.setState({ localPlanDiverged })
+  },
+})
 
 /**
  * The whole plan.

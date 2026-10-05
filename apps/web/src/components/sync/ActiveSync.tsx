@@ -1,5 +1,6 @@
 import { useSync } from '@/hooks/useSync'
 import { dropAnotherAccountsLocalData } from '@/lib/sync/dropAnotherAccountsLocalData'
+import { reconcilePlanAfterInitialPull } from '@/lib/sync/retirementPlanPush'
 import { seedOnce } from '@/lib/sync/seedLocalData'
 import { clearSyncBridge, registerSyncBridge } from '@/lib/sync/syncBridge'
 import { useProfileStore } from '@/stores/profileStore'
@@ -73,6 +74,10 @@ function ActiveSyncEngine({ userId }: { userId: string }): ReactElement {
   const sync = useSync({ userId, autoSync: true, autoPull: true })
   const initialPullRef = useRef(false)
   const backfillRef = useRef(false)
+  const planSeedRef = useRef(false)
+  // True once the initial pull below has resolved SUCCESSFULLY, i.e. its changes
+  // are applied (story 99.3, AC-7: the plan seed waits for exactly that).
+  const [initialPullApplied, setInitialPullApplied] = useState(false)
   // True once the active profile is a REAL server-backed profile (non-empty
   // userId) — i.e. the reconciling pull has landed. BOTH the push bridge and the
   // backlog seed gate on this so neither runs while config.profileId is still the
@@ -116,9 +121,15 @@ function ActiveSyncEngine({ userId }: { userId: string }): ReactElement {
       return
     }
     initialPullRef.current = true
-    forcePull().catch((error) => {
-      console.error('[SyncProvider] initial pull failed:', error)
-    })
+    forcePull()
+      .then((result) => {
+        if (result?.success) {
+          setInitialPullApplied(true)
+        }
+      })
+      .catch((error) => {
+        console.error('[SyncProvider] initial pull failed:', error)
+      })
   }, [forcePull])
 
   // Free→paid backlog seed (Task 5): once the active profile is reconciled (so the
@@ -143,6 +154,30 @@ function ActiveSyncEngine({ userId }: { userId: string }): ReactElement {
         console.error('[SyncProvider] seeding failed:', error)
       })
   }, [activeProfileReconciled, userId])
+
+  // The retirement plan after the initial pull (story 99.3, AC-7 / D4, AC-12).
+  // Runs AFTER that pull has been APPLIED, by awaiting it above, not by inference
+  // from the profile gate: a seed `create` queued before the pull would win
+  // locally by last-writer-wins while the server acknowledged it as a no-op
+  // (insert-if-absent), and the device would show its own plan instead of the
+  // server's until its next edit. Also gated on the bridge being registered (the
+  // profile gate), since the ops go through it. A plan marked as not on the
+  // server is pushed; otherwise, if the server has none, it is seeded once.
+  //
+  // ⚠️ Deliberately NOT `seedOnce`'s per-user marker: that is set on any browser
+  // that synced before 99.3, and the plan never reached the server then.
+  // ⚠️ ONE attempt per mount, no retry: if the initial pull fails, or the queue
+  // add fails (which marks the plan as not on the server), the next session tries
+  // again; an edit before then upserts anyway.
+  useEffect(() => {
+    if (planSeedRef.current || !initialPullApplied || !activeProfileReconciled) {
+      return
+    }
+    planSeedRef.current = true
+    reconcilePlanAfterInitialPull().catch((error) => {
+      console.error('[SyncProvider] syncing the retirement plan failed:', error)
+    })
+  }, [initialPullApplied, activeProfileReconciled])
 
   // Story 75.2: the only UI the sync engine has — a notice naming each edit the
   // server permanently refused, and (story 79.2) each edit that keeps failing to

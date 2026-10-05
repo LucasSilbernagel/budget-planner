@@ -61,6 +61,11 @@ export interface RefusalHandlerDeps {
   requestFullRepull: () => void
   /** `addRefusalNotices`. */
   notify: (notices: RefusalNotice[]) => void
+  /**
+   * `notePlanOpRefused` (story 99.3, AC-12): mark the retirement plan as not on
+   * the server. Optional so callers that never see a plan op need not pass it.
+   */
+  markPlanRefused?: (op: SyncOperation) => void
 }
 
 const KIND: Record<SyncEntityType, { kind: string; fallback: string }> = {
@@ -237,7 +242,20 @@ export async function handleRejectedOperations(
     // is nothing to revert to on this device, and the re-pull would replace the
     // user's whole plan with the server's older copy. (Its tombstone, for a
     // refused create, is a no-op in the applier anyway.) The notice says so.
+    //
+    // Story 99.3 (AC-12): core has already DROPPED the refused op, so the queue no
+    // longer protects the plan, and the next FULL pull (another refusal's re-pull
+    // below, a profile switch, any new session) would replace it with the server
+    // copy. The marker makes the applier skip the plan until a push succeeds.
     if (first.entityType === 'retirementPlan') {
+      try {
+        // The NEWEST refused op for the plan: an older one must not outrank an
+        // update the server accepted after it.
+        const newest = rowOps.reduce((a, b) => (b.timestamp > a.timestamp ? b : a))
+        deps.markPlanRefused?.(newest)
+      } catch (error) {
+        console.error('[refusedEdits] could not mark the retirement plan as not synced:', error)
+      }
       continue
     }
     if (notice.outcome !== 'removed') {
