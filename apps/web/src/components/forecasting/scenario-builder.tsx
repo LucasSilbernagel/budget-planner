@@ -425,14 +425,26 @@ function savingsFromStore(
  * (pre-bug-3) has neither, so it starts at 0, as before.
  */
 function savingsFromSaved(inputs: ScenarioInputs | undefined): LocalSavingsAccount[] {
-  if (inputs?.savingsAccounts) {
-    return inputs.savingsAccounts.map((account, index) => ({
-      id: `savings-loaded-${index}`,
-      name: typeof account.name === 'string' ? account.name : '',
-      balance: nonNegativeCents(account.balance),
-      monthlyContribution: nonNegativeCents(account.monthlyContribution),
-    }))
+  // Defensive on its own (code review 100.1): `mapToSavedForecast` already
+  // coerces, but this is the builder's boundary, so a caller that skips the route
+  // (a test, a future caller) cannot crash it with a `null` entry or a non-array.
+  const saved: unknown = inputs?.savingsAccounts
+  if (Array.isArray(saved)) {
+    return saved.map((entry: unknown, index) => {
+      const account =
+        typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : {}
+      return {
+        id: `savings-loaded-${index}`,
+        name: typeof account['name'] === 'string' ? account['name'] : '',
+        balance: nonNegativeCents(account['balance']),
+        monthlyContribution: nonNegativeCents(account['monthlyContribution']),
+      }
+    })
   }
+  // ⚠️ A NEGATIVE v1 total is kept as it is, not clamped (Lucas, code review
+  // 100.1): the old field accepted `-5`. The row's field then flags it from the
+  // start (`useMoneyDraft`), which holds Save and the recompute until the user
+  // fixes it, so the starting figure never changes behind their back.
   if (inputs && Number.isFinite(inputs.savings) && inputs.savings !== 0) {
     return [
       { id: 'savings-loaded-0', name: 'Savings', balance: inputs.savings, monthlyContribution: 0 },
@@ -711,7 +723,16 @@ export function ScenarioBuilder({
    * them back by id means a row removed or added since the last recompute can
    * never show another row's figure while the debounce is pending.
    */
-  const [resultSavingsRowIds, setResultSavingsRowIds] = useState<readonly string[]>([])
+  //
+  // A loaded forecast whose SAVED result already covers its rows (same count)
+  // starts mapped, so its per-row lines show before the first recompute (code
+  // review 100.1). `savingsFromSaved` ids are deterministic, so they match.
+  const [resultSavingsRowIds, setResultSavingsRowIds] = useState<readonly string[]>(() => {
+    if (!initialForecast) return []
+    const rows = savingsFromSaved(initialForecast.inputs)
+    const saved = initialForecast.result?.projection?.at(-1)?.savingsAccounts
+    return Array.isArray(saved) && saved.length === rows.length ? rows.map((row) => row.id) : []
+  })
   const [isCalculating, setIsCalculating] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -1243,8 +1264,27 @@ export function ScenarioBuilder({
       const balance = last.savingsAccounts?.[index]
       if (balance !== undefined) byRowId.set(id, balance)
     })
-    return { years: result.projection.length, byRowId, unallocated: last.unallocatedSavings }
-  }, [result, resultSavingsRowIds])
+    // The section-level line describes the WHOLE list, so it shows only while the
+    // result was computed for exactly the rows on screen (code review 100.1):
+    // never under an empty list, and never with a stale year count while a
+    // debounced recompute for an added/removed row is pending.
+    const currentIds = savingsAccounts.map((account) => account.id)
+    const coversRows =
+      currentIds.length > 0 &&
+      currentIds.length === resultSavingsRowIds.length &&
+      currentIds.every((id, index) => id === resultSavingsRowIds.at(index))
+    // Contributions are what the amber line blames, so it needs some (code
+    // review 100.1): a negative remainder with nothing contributed is a deficit
+    // in the income itself, not over-contribution.
+    const contributing = savingsAccounts.some((account) => account.monthlyContribution > 0)
+    return {
+      years: result.projection.length,
+      byRowId,
+      unallocated: last.unallocatedSavings,
+      coversRows,
+      contributing,
+    }
+  }, [result, resultSavingsRowIds, savingsAccounts])
 
   // Calculate summary statistics
   const summary = useMemo(() => {
@@ -1474,12 +1514,13 @@ export function ScenarioBuilder({
           <p className="text-muted text-sm">{NO_SAVINGS_ACCOUNTS}</p>
         ) : (
           <div className="space-y-4">
-            {savingsAccounts.map((account) => {
+            {savingsAccounts.map((account, index) => {
               const closing = savingsOutcome?.byRowId.get(account.id)
               return (
                 <SavingsAccountRow
                   key={account.id}
                   account={account}
+                  position={index + 1}
                   onUpdate={updateSavingsAccount}
                   onDelete={deleteSavingsAccount}
                   onValidityChange={setAmountRowValidity}
@@ -1497,8 +1538,8 @@ export function ScenarioBuilder({
           </div>
         )}
 
-        {savingsOutcome &&
-          (savingsOutcome.unallocated < 0 ? (
+        {savingsOutcome?.coversRows &&
+          (savingsOutcome.unallocated < 0 && savingsOutcome.contributing ? (
             <p
               data-testid="savings-unassigned"
               className="text-sm text-amber-800 dark:text-amber-200"
@@ -2324,6 +2365,8 @@ function OneTimeEventRow({
  */
 interface SavingsAccountRowProps {
   account: LocalSavingsAccount
+  /** 1-based place in the list, so the name field is told apart even when two rows share a name. */
+  position: number
   onUpdate: (
     id: string,
     field: 'name' | 'balance' | 'monthlyContribution',
@@ -2357,7 +2400,17 @@ function useMoneyDraft(
   write: (cents: number) => void
 ) {
   const [draft, setDraft] = useState<string>(() => String(cents / 100))
-  const [error, setError] = useState<string | null>(null)
+  // A negative value can ARRIVE, not only be typed: a forecast saved when the old
+  // Current Savings field accepted `-5` (Lucas, code review 100.1). Flag it from
+  // the first render and report it, exactly as if typed, so Save and the
+  // recompute are held until it is fixed.
+  const [error, setError] = useState<string | null>(() =>
+    cents < 0 ? AMOUNT_NEGATIVE_MESSAGE : null
+  )
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only — reports the value the row ARRIVED with; later changes report from `onChange`.
+  useEffect(() => {
+    if (cents < 0) onValidityChange(validityKey, false)
+  }, [])
   useWithdrawValidityOnUnmount(validityKey, onValidityChange)
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value
@@ -2383,6 +2436,7 @@ function useMoneyDraft(
 
 function SavingsAccountRow({
   account,
+  position,
   onUpdate,
   onDelete,
   onValidityChange,
@@ -2433,6 +2487,7 @@ function SavingsAccountRow({
           min={0}
           step={0.01}
           aria-label={`${label} for ${rowLabel}`}
+          autoComplete="off"
           aria-invalid={field.error ? true : undefined}
           aria-describedby={field.error ? `${id}-error` : undefined}
           className={`w-full ${
@@ -2462,6 +2517,11 @@ function SavingsAccountRow({
             type="text"
             value={account.name}
             onChange={(e) => onUpdate(account.id, 'name', e.target.value)}
+            // The visible label is the same on every row; its position tells
+            // them apart (AC-16, code review 100.1). Not the row name itself:
+            // this field IS the name, so it would rename itself while typed in.
+            aria-label={`Account Name, row ${position}`}
+            autoComplete="off"
             className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
             placeholder="Savings account or goal"
           />

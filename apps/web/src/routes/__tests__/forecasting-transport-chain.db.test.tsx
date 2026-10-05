@@ -721,7 +721,7 @@ describe('savings rows round-trip through the real routes (story 100.1, AC-11)',
     const value = (label: string) => (view.getByLabelText(label) as HTMLInputElement).value
     await rtl.waitFor(() => expect(value('Balance for Emergency fund')).toBe('1000'))
     expect(
-      view.getAllByLabelText('Account Name').map((el) => (el as HTMLInputElement).value)
+      view.getAllByLabelText(/^Account Name, row \d+$/).map((el) => (el as HTMLInputElement).value)
     ).toEqual(['Emergency fund', 'House fund'])
     expect(value('Monthly Contribution for Emergency fund')).toBe('200')
     expect(value('Balance for House fund')).toBe('2500.01')

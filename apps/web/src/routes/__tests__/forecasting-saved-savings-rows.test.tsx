@@ -103,7 +103,7 @@ function rows(): [string, number, number][] {
   const balances = screen.queryAllByLabelText(/^Balance for /)
   const contributions = screen.queryAllByLabelText(/^Monthly Contribution for /)
   return screen
-    .queryAllByLabelText('Account Name')
+    .queryAllByLabelText(/^Account Name, row \d+$/)
     .map((name, i) => [
       value(name),
       Number(value(balances[i] as HTMLElement)),

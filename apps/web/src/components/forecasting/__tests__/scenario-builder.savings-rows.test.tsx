@@ -11,8 +11,10 @@
  */
 
 import { renderWithProviders } from '@/test/utils'
+import { solveAutomaticAllocations } from '@budget-planner/core'
 import { fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { SavedForecast } from '../../../routes/forecasting'
 import { useBalanceStore, useTotalInvestmentBalance } from '../../../stores/balanceStore'
 import { useFormattedAmount } from '../../../stores/currencyStore'
 import { useExpenseStore } from '../../../stores/expenseStore'
@@ -161,7 +163,7 @@ describe('rows replace the single savings total (AC-1, AC-9)', () => {
     // Store display order, goals and target-less accounts alike, and only the
     // active profile's rows.
     const names = within(section)
-      .getAllByLabelText('Account Name')
+      .getAllByLabelText(/^Account Name, row \d+$/)
       .map((input) => (input as HTMLInputElement).value)
     expect(names).toEqual(['Emergency fund', 'House fund'])
     expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue(3456)
@@ -299,6 +301,16 @@ describe('contributions seed from the same figures /savings shows (AC-3)', () =>
         goal({ id: 'auto-1', name: 'Auto one', sortOrder: 1 }),
       ],
     })
+    // Positive control (review): the solver really throws for this fixture, so
+    // the builder's `catch` is the path under test.
+    expect(() =>
+      solveAutomaticAllocations({
+        incomeSources: useIncomeStore.getState().incomeSources,
+        expenses: [],
+        investmentContributions: [],
+        savingsAccounts: useSavingsStore.getState().savingsGoals,
+      })
+    ).toThrow()
     render(<ScenarioBuilder onSave={vi.fn()} />)
 
     expect(screen.getByLabelText('Scenario Name')).toBeInTheDocument()
@@ -584,3 +596,190 @@ describe('save writes the rows and the total (AC-11)', () => {
     expect(inputs.savings).toBe(350_001)
   })
 })
+
+/** A saved forecast for the builder's `initialForecast`, with the given inputs and result. */
+function savedForecast(inputs: unknown, result?: SavedForecast['result']): SavedForecast {
+  return {
+    id: 'saved-1',
+    name: 'Plan',
+    scenario: {
+      name: 'Plan',
+      incomeGrowthRate: 0,
+      expenseGrowthRate: 0,
+      newIncome: [{ amount: 500_000, frequency: 'monthly' }],
+    },
+    result: result ?? {
+      scenario: { name: 'Plan', incomeGrowthRate: 0, expenseGrowthRate: 0 },
+      baseline: [],
+      projection: [],
+      summary: { startingNetWorth: 0, endingNetWorth: 0, totalGrowth: 0, averageAnnualGrowth: 0 },
+    },
+    inputs: inputs as SavedForecast['inputs'],
+    createdAt: ISO,
+    updatedAt: ISO,
+  }
+}
+
+describe('code review fixes (2026-10-05)', () => {
+  it('flags a negative saved balance on the field from the start, and holds Save and the engine (Lucas decision)', async () => {
+    // A v1 forecast saved when the old Current Savings field accepted `-5`.
+    render(
+      <ScenarioBuilder
+        onSave={vi.fn()}
+        initialForecast={savedForecast({ savings: -500, investments: 0, years: 10 })}
+      />
+    )
+    const balance = screen.getByLabelText('Balance for Savings')
+    expect(balance).toHaveValue(-5)
+    expect(balance).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByText('Enter an amount of 0 or more.')).toBeInTheDocument()
+    // The saved result is on screen, so the Save area renders: blocked, with the reason.
+    expect(screen.getByTestId('save-blocked-reason').textContent).toBe(
+      'Fix the highlighted fields to save'
+    )
+    // The recompute is held, so no engine refusal banner either.
+    await new Promise((resolve) => setTimeout(resolve, 700))
+    expect(screen.queryByTestId('calculation-error')).toBeNull()
+
+    // Fixing the field releases both.
+    fireEvent.change(balance, { target: { value: '5' } })
+    expect(balance).not.toHaveAttribute('aria-invalid')
+    expect(screen.queryByTestId('save-blocked-reason')).toBeNull()
+  })
+
+  it('does not blame contributions when net income itself is negative and nothing is contributed', async () => {
+    useIncomeStore.setState({ incomeSources: [income(400_000)] })
+    useExpenseStore.setState({ expenses: [expense(500_000)] })
+    useSavingsStore.setState({
+      savingsGoals: [
+        goal({
+          id: 'g-1',
+          name: 'House fund',
+          currentBalance: 100_000,
+          allocationMode: 'manual',
+          monthlyAllocation: 0,
+        }),
+      ],
+    })
+    const format = formatter()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+
+    const line = screen.getByTestId('savings-unassigned')
+    // (4,000.00 − 5,000.00) × 12 × 10 = −120,000.00, none of it contributed.
+    expect(line.textContent).toBe(
+      `Not assigned to an account after 10 years: ${format(-12_000_000)}`
+    )
+    expect(line.className).not.toContain('text-amber')
+  })
+
+  it('shows no not-assigned line when the scenario has no savings rows', async () => {
+    useIncomeStore.setState({ incomeSources: [income(500_000)] })
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+    expect(screen.getByText('No savings accounts in this scenario')).toBeInTheDocument()
+    expect(screen.queryByTestId('savings-unassigned')).toBeNull()
+  })
+
+  it('hides the not-assigned line while the result no longer matches the rows', async () => {
+    useIncomeStore.setState({ incomeSources: [income(500_000)] })
+    useSavingsStore.setState({
+      savingsGoals: [goal({ id: 'g-1', name: 'House fund', currentBalance: 100_000 })],
+    })
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+    expect(screen.getByTestId('savings-unassigned')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Add Account' }))
+    // Before the debounced recompute: the result describes one row, the list has two.
+    expect(screen.queryByTestId('savings-unassigned')).toBeNull()
+    await waitFor(() => expect(screen.getByTestId('savings-unassigned')).toBeInTheDocument(), {
+      timeout: 3000,
+    })
+  })
+
+  it('shows a loaded forecast per-row lines straight away, from its saved result', () => {
+    const rows = [{ name: 'House fund', balance: 100_000, monthlyContribution: 20_000 }]
+    const projection = [
+      {
+        year: 1,
+        income: 0,
+        expenses: 0,
+        netIncome: 0,
+        savings: 340_000,
+        investments: 0,
+        netWorth: 340_000,
+        savingsAccounts: [340_000],
+        unallocatedSavings: 0,
+      },
+    ]
+    const format = formatter()
+    render(
+      <ScenarioBuilder
+        onSave={vi.fn()}
+        initialForecast={savedForecast(
+          { savings: 100_000, investments: 0, years: 1, savingsAccounts: rows },
+          {
+            scenario: { name: 'Plan', incomeGrowthRate: 0, expenseGrowthRate: 0 },
+            baseline: [],
+            projection,
+            summary: {
+              startingNetWorth: 100_000,
+              endingNetWorth: 340_000,
+              totalGrowth: 240_000,
+              averageAnnualGrowth: 240_000,
+            },
+          }
+        )}
+      />
+    )
+    // No waiting for the debounce: the saved result already covers these rows.
+    expect(screen.getByText(/^After 1 year:/).textContent).toBe(`After 1 year: ${format(340_000)}`)
+    expect(screen.getByTestId('savings-unassigned')).toBeInTheDocument()
+  })
+
+  it('survives a null entry and a non-array savingsAccounts handed straight to the builder', () => {
+    render(
+      <ScenarioBuilder
+        onSave={vi.fn()}
+        initialForecast={savedForecast({
+          savings: 1_000,
+          investments: 0,
+          years: 10,
+          savingsAccounts: [null, { name: 'Ok', balance: 1_000, monthlyContribution: 0 }],
+        })}
+      />
+    )
+    expect(screen.getByLabelText('Balance for Ok')).toHaveValue(10)
+    expect(screen.getAllByLabelText(/^Account Name, row \d+$/)).toHaveLength(2)
+    cleanupAndRender(
+      savedForecast({ savings: 1_234, investments: 0, years: 10, savingsAccounts: 'oops' })
+    )
+    // Not an array: loads as the v1 total.
+    expect(screen.getByLabelText('Balance for Savings')).toHaveValue(12.34)
+  })
+
+  it('names each row name field by its position and turns autofill off on every row input', () => {
+    useSavingsStore.setState({
+      savingsGoals: [
+        goal({ id: 'g-1', name: 'Same name', sortOrder: 0 }),
+        goal({ id: 'g-2', name: 'Same name', sortOrder: 1 }),
+      ],
+    })
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    expect(screen.getByLabelText('Account Name, row 1')).toHaveValue('Same name')
+    expect(screen.getByLabelText('Account Name, row 2')).toHaveValue('Same name')
+    const section = screen.getByRole('region', { name: 'Savings Accounts' })
+    for (const input of within(section).getAllByRole('textbox')) {
+      expect(input).toHaveAttribute('autocomplete', 'off')
+    }
+    for (const input of within(section).getAllByRole('spinbutton')) {
+      expect(input).toHaveAttribute('autocomplete', 'off')
+    }
+  })
+})
+
+function cleanupAndRender(forecast: SavedForecast): void {
+  document.body.innerHTML = ''
+  render(<ScenarioBuilder onSave={vi.fn()} initialForecast={forecast} />)
+}
