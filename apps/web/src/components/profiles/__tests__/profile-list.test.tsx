@@ -118,22 +118,33 @@ describe('ProfileList avatar icon (story 54.2)', () => {
     expect(profileIcon('main')).not.toBe('✈️')
   })
 
+  /*
+   * ⚠️ REWRITTEN BY STORY 98.1 (FR159, D1), deliberately. The three fallback tests
+   * below used the DEFAULT `main` fixture. D1 makes a default profile with no
+   * valid stored icon render 🏠 instead of its hash emoji, so they now use a
+   * NON-default fixture (`biz`), which is where the hash fallback still applies,
+   * and the default-profile half is pinned separately as 🏠. The hash literal
+   * pins in `profile-appearance.test.ts` are unchanged.
+   */
+  const biz = { id: 'biz', userId: 'u1', name: 'Business', isDefault: false, currency: 'NONE' }
+
   it('falls back to exactly the hash icon when no icon is stored (AC-8)', () => {
-    useProfileStore.setState({ profiles: [main], activeProfileId: 'main' })
+    useProfileStore.setState({ profiles: [biz], activeProfileId: 'biz' })
     renderWithProviders(<ProfileList />)
 
-    expect(screen.getByText(profileIcon('main'))).toBeInTheDocument()
+    expect(profileIcon('biz')).not.toBe('🏠')
+    expect(screen.getByText(profileIcon('biz'))).toBeInTheDocument()
   })
 
   it('ignores a stored value that is not one of the eight icons', () => {
     useProfileStore.setState({
-      profiles: [{ ...main, icon: '🦄' }],
-      activeProfileId: 'main',
+      profiles: [{ ...biz, icon: '🦄' }],
+      activeProfileId: 'biz',
     })
     renderWithProviders(<ProfileList />)
 
     expect(screen.queryByText('🦄')).toBeNull()
-    expect(screen.getByText(profileIcon('main'))).toBeInTheDocument()
+    expect(screen.getByText(profileIcon('biz'))).toBeInTheDocument()
   })
 
   /**
@@ -144,12 +155,29 @@ describe('ProfileList avatar icon (story 54.2)', () => {
    */
   it('renders the hash fallback for a profile whose stored icon is explicitly null', () => {
     useProfileStore.setState({
-      profiles: [{ ...main, icon: null }],
-      activeProfileId: 'main',
+      profiles: [{ ...biz, icon: null }],
+      activeProfileId: 'biz',
     })
     renderWithProviders(<ProfileList />)
 
-    expect(screen.getByText(profileIcon('main'))).toBeInTheDocument()
+    expect(screen.getByText(profileIcon('biz'))).toBeInTheDocument()
+  })
+
+  it('renders 🏠 for the DEFAULT profile with no valid stored icon (story 98.1, D1)', () => {
+    // Discriminating: 'main' does not hash to 🏠.
+    expect(profileIcon('main')).not.toBe('🏠')
+    for (const icon of [undefined, null, '🦄']) {
+      useProfileStore.setState({
+        profiles: [{ ...main, icon }, biz],
+        activeProfileId: 'main',
+      })
+      const view = renderWithProviders(<ProfileList />)
+      expect(screen.getByText('🏠')).toBeInTheDocument()
+      expect(screen.queryByText(profileIcon('main'))).toBeNull()
+      // The non-default sibling keeps its hash emoji.
+      expect(screen.getByText(profileIcon('biz'))).toBeInTheDocument()
+      view.unmount()
+    }
   })
 })
 /**

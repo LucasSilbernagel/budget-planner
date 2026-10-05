@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DEFAULT_PROFILE_ICON,
   PROFILE_ICONS,
   isProfileIcon,
   profileColor,
@@ -119,6 +120,51 @@ describe('resolveProfileIcon (story 54.2)', () => {
     expect(resolveProfileIcon({ id: UUID, icon: '🎯' })).toBe(
       resolveProfileIcon({ id: UUID, icon: '🎯' })
     )
+  })
+})
+
+/**
+ * Story 98.1 (FR159, D1 decided 2026-10-04): 🏠 for the DEFAULT profile only.
+ *
+ * A stored valid icon still wins. With no valid stored icon, `isDefault === true`
+ * renders 🏠; every other profile keeps the hash fallback above, unchanged. The
+ * rule follows the FLAG, not the profile: a promoted never-iconed profile turns
+ * 🏠 and the demoted one reverts to its hash emoji (no persistence, by D1).
+ */
+describe('resolveProfileIcon: 🏠 for the default profile (story 98.1)', () => {
+  const UUID_HASH_ICON = profileIcon(UUID)
+
+  it('exports 🏠 as the default-profile icon, a member of the fixed set', () => {
+    expect(DEFAULT_PROFILE_ICON).toBe('🏠')
+    expect(isProfileIcon(DEFAULT_PROFILE_ICON)).toBe(true)
+  })
+
+  it('renders 🏠 for the default profile with no stored icon', () => {
+    // Discriminating: this uuid hashes to 🔒, not 🏠 (pinned above).
+    expect(UUID_HASH_ICON).not.toBe('🏠')
+    expect(resolveProfileIcon({ id: UUID, isDefault: true })).toBe('🏠')
+    expect(resolveProfileIcon({ id: UUID, icon: null, isDefault: true })).toBe('🏠')
+    expect(resolveProfileIcon({ id: UUID, icon: undefined, isDefault: true })).toBe('🏠')
+  })
+
+  it('lets a stored valid icon win over 🏠 on the default profile', () => {
+    expect(resolveProfileIcon({ id: UUID, icon: '✈️', isDefault: true })).toBe('✈️')
+  })
+
+  it.each(['', 'x', '🦄'])(
+    'renders 🏠 for the default profile holding an invalid icon (%s)',
+    (bad) => {
+      expect(resolveProfileIcon({ id: UUID, icon: bad, isDefault: true })).toBe('🏠')
+    }
+  )
+
+  it('keeps the hash fallback for a NON-default profile with no stored icon', () => {
+    expect(resolveProfileIcon({ id: UUID, icon: null, isDefault: false })).toBe(UUID_HASH_ICON)
+    expect(resolveProfileIcon({ id: UUID, icon: null, isDefault: false })).toBe('🔒')
+  })
+
+  it('keeps the hash fallback when isDefault is absent', () => {
+    expect(resolveProfileIcon({ id: UUID, icon: null })).toBe('🔒')
   })
 })
 
