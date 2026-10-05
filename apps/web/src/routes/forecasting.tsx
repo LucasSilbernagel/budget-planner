@@ -688,22 +688,12 @@ interface TabNavigationProps {
   disabled?: boolean
 }
 
-const tabs: { id: ForecastingTab; label: string; description: string }[] = [
-  {
-    id: 'scenarios',
-    label: 'Scenario Builder',
-    description: 'Create and model financial scenarios',
-  },
-  {
-    id: 'projections',
-    label: 'Projections',
-    description: 'View forecast visualizations',
-  },
-  {
-    id: 'saved',
-    label: 'My Forecasts',
-    description: 'Saved scenarios and results',
-  },
+// Story 95.1 (FR154, D3): the per-tab descriptions that sat beside the strip at
+// ≥ 640 px ("Create and model financial scenarios" …) were filler and are gone.
+const tabs: { id: ForecastingTab; label: string }[] = [
+  { id: 'scenarios', label: 'Scenario Builder' },
+  { id: 'projections', label: 'Projections' },
+  { id: 'saved', label: 'My Forecasts' },
 ]
 
 /**
@@ -758,9 +748,6 @@ function TabNavigation({
             </span>
           </button>
         ))}
-      </div>
-      <div className="text-sm text-muted hidden sm:block">
-        {tabs.find((t) => t.id === activeTab)?.description}
       </div>
     </div>
   )

@@ -1160,11 +1160,10 @@ export function BalancePage() {
                       id="contribution-recorded-as-expense-help"
                       className="mt-1 text-muted text-xs"
                     >
-                      Tick this if the contribution comes out of your pay and the income you entered
-                      is the amount that reaches your bank account — or if you also list this
-                      contribution on your Expenses page. Either way your figures already allow for
-                      it, and counting it again would reduce the money left over on the Savings page
-                      twice. If both are true, take the line off your Expenses page as well.
+                      Tick this if the contribution is already counted — it comes out of your pay
+                      before the income you entered, or it's listed on your Expenses page — so the
+                      Savings page doesn't subtract it twice. If it's both, delete the Expenses
+                      line.
                     </p>
                   </div>
                 )}

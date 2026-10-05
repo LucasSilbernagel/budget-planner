@@ -158,6 +158,26 @@ describe('the /forecasting page intro (57.1, AC-3)', () => {
     expect((tabStrip as HTMLElement).contains(intro)).toBe(false)
   })
 
+  it('keeps all three tabs but renders none of the old per-tab descriptions (story 95.1, D3)', async () => {
+    mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
+    renderWithRouter(<ForecastingPage />)
+
+    // Positive anchors first (awaited, so the absence below is not vacuous).
+    expect(await screen.findByRole('button', { name: /scenario builder/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /projections/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /my forecasts/i })).toBeInTheDocument()
+
+    // jsdom applies no Tailwind, so the old `hidden sm:block` description WAS in
+    // this DOM; these are red on the pre-95.1 code.
+    for (const description of [
+      'Create and model financial scenarios',
+      'View forecast visualizations',
+      'Saved scenarios and results',
+    ]) {
+      expect(screen.queryByText(description), `"${description}" must be gone`).toBeNull()
+    }
+  })
+
   it('reads standalone for a nav arrival: it does not depend on the Overview copy', async () => {
     mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
     renderWithRouter(<ForecastingPage />)

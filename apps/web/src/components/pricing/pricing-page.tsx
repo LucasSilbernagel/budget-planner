@@ -119,7 +119,6 @@ const FREE_FEATURES: readonly string[] = [
   'Net income and savings-capacity calculations',
   'Income-vs-expense and balances breakdown charts',
   'Retirement modelling',
-  'Dark mode',
   'Private local storage — your data never leaves your device',
 ]
 

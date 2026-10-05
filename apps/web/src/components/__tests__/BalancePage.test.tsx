@@ -1586,9 +1586,14 @@ describe('BalancePage — the contribution control serves both populations (Stor
     // its keep only if it asks about the ENTERED INCOME as well as the deduction.
     // A disjunctive arm ("tick this if it comes out of your pay") is true for them
     // and ships a new wrong number — the opposite direction of error from FR72.
+    // Story 95.1 (D4) shortened the copy; the conjunction survives as "comes out of
+    // your pay BEFORE the income you entered", anchored on that whole clause, never
+    // on "comes out of your pay" alone (which would accept the disjunctive form).
     expect(help.textContent).toMatch(
-      /comes\s+out\s+of\s+your\s+pay\s+and\s+the\s+income\s+you\s+entered\s+is\s+the\s+amount\s+that\s+reaches\s+your\s+bank\s+account/i
+      /comes\s+out\s+of\s+your\s+pay\s+before\s+the\s+income\s+you\s+entered/i
     )
+    // Old-copy guard (story 95.1): the long "reaches your bank account" phrasing is gone.
+    expect(help.textContent).not.toMatch(/reaches\s+your\s+bank\s+account/)
 
     // ⚠️ PRESENCE IS NOT EXCLUSIVITY. Code review: the containment pin above cannot
     // fail against copy that keeps this sentence AND appends a disjunctive escape
@@ -1602,16 +1607,12 @@ describe('BalancePage — the contribution control serves both populations (Stor
     const dialog = await openInvestmentForm()
     const help = within(dialog).getByText(/Tick this if the contribution/i)
 
-    expect(help.textContent).toMatch(
-      /also\s+list\s+this\s+contribution\s+on\s+your\s+Expenses\s+page/i
-    )
+    expect(help.textContent).toMatch(/listed\s+on\s+your\s+Expenses\s+page/i)
     // Ticking alone leaves a both-at-once user still wrong by the contribution —
     // their expense line subtracts money that was never in their take-home income.
-    expect(help.textContent).toMatch(
-      /If\s+both\s+are\s+true,\s+take\s+the\s+line\s+off\s+your\s+Expenses\s+page/i
-    )
+    expect(help.textContent).toMatch(/If\s+it's\s+both,\s+delete\s+the\s+Expenses\s+line/i)
     // The counting claim must name where the counting happens, not "here".
-    expect(help.textContent).toMatch(/money\s+left\s+over\s+on\s+the\s+Savings\s+page/i)
+    expect(help.textContent).toMatch(/Savings\s+page\s+doesn't\s+subtract\s+it\s+twice/i)
   })
 
   it('AC-2: the control never says "net" (story 46.1 removed that word from income copy)', async () => {
@@ -1634,7 +1635,7 @@ describe('BalancePage — the contribution control serves both populations (Stor
     // review found exactly that hole.
     expect(
       within(dialog).getByTestId('balance-contribution-recorded-as-expense')
-    ).toHaveAccessibleDescription(/Tick this if the contribution comes out of your pay/i)
+    ).toHaveAccessibleDescription(/Tick this if the contribution is already counted/i)
   })
 })
 
