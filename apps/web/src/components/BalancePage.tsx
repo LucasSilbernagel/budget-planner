@@ -1161,9 +1161,9 @@ export function BalancePage() {
                       className="mt-1 text-muted text-xs"
                     >
                       Tick this if the contribution is already counted — it comes out of your pay
-                      before the income you entered, or it's listed on your Expenses page — so the
-                      Savings page doesn't subtract it twice. If it's both, delete the Expenses
-                      line.
+                      and the income you entered is your take-home pay, or it's listed on your
+                      Expenses page — so the Savings page doesn't subtract it twice. If it's both,
+                      delete the Expenses line.
                     </p>
                   </div>
                 )}

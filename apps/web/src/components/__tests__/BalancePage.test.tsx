@@ -1586,12 +1586,16 @@ describe('BalancePage — the contribution control serves both populations (Stor
     // its keep only if it asks about the ENTERED INCOME as well as the deduction.
     // A disjunctive arm ("tick this if it comes out of your pay") is true for them
     // and ships a new wrong number — the opposite direction of error from FR72.
-    // Story 95.1 (D4) shortened the copy; the conjunction survives as "comes out of
-    // your pay BEFORE the income you entered", anchored on that whole clause, never
-    // on "comes out of your pay" alone (which would accept the disjunctive form).
+    // Story 95.1 shortened the copy. Its first wording ("comes out of your pay
+    // BEFORE the income you entered") was flagged in review as readable as timing,
+    // i.e. true for a gross-income user; Lucas tightened it (2026-10-05) to ask
+    // outright that the entered income is TAKE-HOME pay. Anchored on that whole
+    // clause, never on "comes out of your pay" alone (which accepts the disjunctive
+    // form), and the superseded "before" wording is rejected.
     expect(help.textContent).toMatch(
-      /comes\s+out\s+of\s+your\s+pay\s+before\s+the\s+income\s+you\s+entered/i
+      /comes\s+out\s+of\s+your\s+pay\s+and\s+the\s+income\s+you\s+entered\s+is\s+your\s+take-home\s+pay/i
     )
+    expect(help.textContent).not.toMatch(/before\s+the\s+income\s+you\s+entered/i)
     // Old-copy guard (story 95.1): the long "reaches your bank account" phrasing is gone.
     expect(help.textContent).not.toMatch(/reaches\s+your\s+bank\s+account/i)
 
