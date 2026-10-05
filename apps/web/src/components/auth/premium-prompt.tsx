@@ -75,13 +75,13 @@ export interface PremiumPromptProps {
  *
  * ⚠️ ONE DECIDED EXCEPTION to "one feature, one name" (story 95.1, D1, Lucas
  * 2026-10-04): this list says "Downloadable Financial Summary Report", while the
- * Overview `featureName`, the `/settings` tile and the `/report` gate keep the
+ * Overview `featureName`, the `/settings` tile and the `/financial-summary` gate keep the
  * plain "Financial Summary Report" (`/pricing` words it as a sentence, "Financial
- * summary report — save … as a PDF from your browser"; the nav says "Report").
+ * summary report — save … as a PDF from your browser"; the nav says "Financial Summary", story 95.2).
  * The exception covers this card in BOTH render modes (the dialog and the inline
- * locked-route card are one component), so on the locked `/report` card the
+ * locked-route card are one component), so on the locked `/financial-summary` card the
  * heading names the plain `featureName` and the list row says "Downloadable …":
- * two wordings in one card, accepted as part of D1. "Downloadable" is true in the browser's sense: `/report`
+ * two wordings in one card, accepted as part of D1. "Downloadable" is true in the browser's sense: `/financial-summary`
  * calls `window.print()` and the file comes from the browser's own "Save as PDF"
  * (see `pricing-page.tsx`); the app generates no file itself. Do not "correct" the
  * wording back, and do not spread it to the other surfaces.

@@ -67,8 +67,14 @@ const FOOTER_LINKS: readonly FooterLink[] = [
 ]
 
 // Inactive link style (unchanged from before story 21-1): muted, underlined.
+// Story 96.1 (FR156, D1 44px, D3 grid): below 640px each link fills its grid
+// cell as a 44px-tall flex box with the label centred, so the whole cell is the
+// target (an inline `<a>` ignores `min-height`; as a grid item it is
+// blockified, and `flex` centres the label). All `max-sm:`, so the >= 640px
+// inline links are unchanged. `ACTIVE_LINK_CLASS` (below) sets colour and
+// underline only, so it does not conflict with these box tokens.
 const LINK_CLASS =
-  'text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+  'text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 max-sm:flex max-sm:min-h-[44px] max-sm:items-center max-sm:justify-center'
 
 // Active (current-page) style. Reuses the app's green accent (as GlobalNav does)
 // and drops the underline so the current page reads as distinct without the
@@ -99,7 +105,9 @@ export function Footer() {
       {/* At 320px this stacks vertically (story 18-2): the base `gap-3` gives the
           three groups — brand, the legal-link cluster, and copyright —
           comfortable vertical rhythm. At >=640px `sm:flex-row sm:flex-wrap
-          sm:gap-x-3 sm:gap-y-1` restores the single wrapping row. */}
+          sm:gap-x-3 sm:gap-y-1` restores the single wrapping row.
+          Story 96.1: the legal links inside are a two-column grid of 44px
+          cells below 640px; the >= 640px row is unchanged. */}
       <div className="flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap sm:gap-x-3 sm:gap-y-1">
         {/* Brand text node (story 21-1 dropped the trailing build version).
             Formal form "Longhand Budget" rather than the short "Longhand"
@@ -109,8 +117,13 @@ export function Footer() {
         {/* Legal/nav links grouped as a comfortably-spaced cluster on the 320px
             stacked layout (story 18-2). `sm:contents` dissolves this wrapper at
             >=640px (display: contents) so the six links rejoin the outer wrapping
-            row exactly as before — the desktop footer layout is unchanged. */}
-        <div className="flex flex-col items-center gap-2 sm:contents">
+            row exactly as before — the desktop footer layout is unchanged.
+            Story 96.1 (FR156, D3): below 640px this is a two-column grid,
+            three rows of 44px cells (was a column of 16px links at a 24px
+            pitch). `w-full` because the outer column is `items-center` and
+            would shrink the grid to its content. Under `sm:contents` the box
+            tokens are inert, so >= 640px is unaffected. */}
+        <div className="grid w-full grid-cols-2 gap-x-2 sm:contents">
           {FOOTER_LINKS.map((link) => (
             <Link
               key={link.to}
@@ -135,7 +148,9 @@ export function Footer() {
             (target/rel + an aria-label ending in "(opens in a new tab)").
             suppressHydrationWarning covers the negligible case where an SSR
             render and client hydration straddle New Year midnight and the year
-            differs — the value still updates, this just silences the warning. */}
+            differs — the value still updates, this just silences the warning.
+            Story 96.1 (D5): the author link gets the 44px phone floor too
+            (`max-sm:inline-flex` so `min-height` applies to an inline link). */}
         <span className="mt-2 sm:ml-3 sm:mt-0" suppressHydrationWarning>
           Copyright {new Date().getFullYear()}{' '}
           <a
@@ -143,7 +158,7 @@ export function Footer() {
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Lucas Silbernagel's website (opens in a new tab)"
-            className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 max-sm:inline-flex max-sm:min-h-[44px] max-sm:items-center"
           >
             Lucas Silbernagel
           </a>

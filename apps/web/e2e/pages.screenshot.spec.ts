@@ -1,7 +1,16 @@
 import { type Locator, type Page, expect, test } from '@playwright/test'
-import { expectSignedInAs, openAccountMenu } from './helpers/account-menu'
+import { accountTrigger, expectSignedInAs, openAccountMenu } from './helpers/account-menu'
 import { mockSignedIn, openMore } from './helpers/nav-more'
-import { FIXED_NOW, SHOT_TIMEOUT, chartsDrawn, copyrightYear } from './helpers/screenshot'
+import {
+  type Box,
+  FIXED_NOW,
+  SHOT_TIMEOUT,
+  chartsDrawn,
+  copyrightYear,
+  expectBarCells,
+  expectPhoneStrip,
+  expectTarget,
+} from './helpers/screenshot'
 import { seedFinanceRows } from './helpers/seed-finance-rows'
 
 /**
@@ -84,6 +93,51 @@ async function open(
   await chartsDrawn(page, charts)
 }
 
+const FOOTER_LABELS = [
+  'Pricing',
+  'Documentation',
+  'Terms of Service',
+  'Privacy Policy',
+  'Refund Policy',
+  'Contact',
+]
+
+/**
+ * Story 96.1 (FR156, D3 grid, D5 author link), in a real browser at 320px: the
+ * six footer links are >= 44 x 44px cells of a two-column grid (three rows of
+ * two, no two boxes overlapping), and the author link is >= 44px tall.
+ */
+async function expectPhoneFooter(page: Page) {
+  const footer = page.getByRole('contentinfo')
+  const boxes: Box[] = []
+  for (const label of FOOTER_LABELS) {
+    boxes.push(
+      await expectTarget(
+        footer.getByRole('link', { name: label, exact: true }),
+        `footer "${label}"`
+      )
+    )
+  }
+  for (let i = 0; i < boxes.length; i++) {
+    for (let j = i + 1; j < boxes.length; j++) {
+      const [a, b] = [boxes[i], boxes[j]]
+      const overlap =
+        a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+      expect(overlap, `footer "${FOOTER_LABELS[i]}" overlaps "${FOOTER_LABELS[j]}"`).toBe(false)
+    }
+  }
+  const perRow = new Map<number, number>()
+  for (const b of boxes) perRow.set(Math.round(b.y), (perRow.get(Math.round(b.y)) ?? 0) + 1)
+  expect([...perRow.values()], 'footer links are not three rows of two').toEqual([2, 2, 2])
+  await expectTarget(
+    footer.getByRole('link', { name: /Lucas Silbernagel/ }),
+    'footer author link',
+    {
+      sides: 'height',
+    }
+  )
+}
+
 for (const shot of PAGE_SHOTS) {
   test(shot.name, async ({ page }) => {
     await open(page, shot)
@@ -93,6 +147,7 @@ for (const shot of PAGE_SHOTS) {
       // scope; the 320 shots assert it hidden).
       await expect(page.locator('[data-auth-indicator] a[href="/settings"]')).toBeVisible()
     }
+    if (shot.name === 'income-320-light') await expectPhoneFooter(page)
     await expect(page).toHaveScreenshot(`${shot.name}.png`, {
       fullPage: true,
       mask: await copyrightYear(page),
@@ -112,10 +167,19 @@ test('nav-more-sheet-320-light', async ({ page }) => {
   await expect(gear).toBeHidden()
   // ...positive control that the signed-out cluster rendered at all.
   await expect(page.getByRole('link', { name: 'Sign in', exact: true })).toBeVisible()
+  // Story 96.1 (FR156, D1 + D2), real-browser sizes: Upgrade and Sign in are
+  // 44 x 44px targets, the strip is exactly 45px, nothing scrolls sideways,
+  // and the bottom bar's five visible cells are >= 44 x 44px.
+  await expectTarget(page.getByRole('link', { name: 'Upgrade', exact: true }), 'Upgrade')
+  await expectTarget(page.getByRole('link', { name: 'Sign in', exact: true }), 'Sign in')
+  await expectPhoneStrip(page, 320)
+  await expectBarCells(page, 5)
   await openMore(page)
   // ...and the open sheet's LAST row is Settings, visible.
   const rows = page.locator('nav[aria-label="Primary"] details ul').getByRole('link')
   await expect(rows).toHaveCount(3)
+  // Story 96.1: every sheet row is a >= 44 x 44px target.
+  for (let i = 0; i < 3; i++) await expectTarget(rows.nth(i), `sheet row ${i + 1}`)
   await expect(rows.last()).toHaveAccessibleName('Settings')
   await expect(rows.last()).toBeVisible()
   // On SCREEN, not just rendered: `toBeVisible()` ignores clipping by the
@@ -138,10 +202,19 @@ test('account-menu-320-open', async ({ page }) => {
   await mockSignedIn(page, { email: SIGNED_IN_EMAIL, subscriptionStatus: 'free' })
   await open(page, { path: '/', width: 320, height: 640, charts: 4 })
   await expectSignedInAs(page, SIGNED_IN_EMAIL)
+  // Story 96.1 (FR156): signed in free, the trigger is a 44 x 44px target and
+  // the strip is exactly 45px, measured before opening.
+  await expectTarget(accountTrigger(page), 'Account menu trigger')
+  await expectPhoneStrip(page, 320)
   const panel = await openAccountMenu(page)
   // The OPEN state, asserted: a shot of the closed menu would be a vacuous
   // baseline. Sign out visible is the positive control that it is open.
   await expect(panel.getByRole('button', { name: 'Sign out' })).toBeVisible()
+  // Story 96.1: Sign out, the one visible panel row on a phone, is >= 44px
+  // tall (full width, so the height is the claim).
+  await expectTarget(panel.getByRole('button', { name: 'Sign out' }), 'Sign out', {
+    sides: 'height',
+  })
   // Story 96.3 (FR163): below 640px the panel's Settings row and its separator
   // are hidden (the nav's More sheet is the phone route). Until 96.3 this
   // asserted the Settings row VISIBLE here.

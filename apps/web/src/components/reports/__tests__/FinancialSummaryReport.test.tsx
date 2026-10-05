@@ -307,7 +307,7 @@ describe('FinancialSummaryReport — content', () => {
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
     // Positive anchor: the report really did render its figures.
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Financial summary')
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Financial Summary$/)
     expect(totalFor('Monthly income')).toHaveTextContent('5,433.33')
 
     // UX-DR62 as amended: the date is RETAINED — a filed printout has to be
@@ -581,7 +581,7 @@ describe('FinancialSummaryReport — printing and privacy', () => {
     const article = container.querySelector('#financial-summary-report')
     expect(article).not.toBeNull()
     expect(within(article as HTMLElement).getByRole('heading', { level: 1 })).toHaveTextContent(
-      'Financial summary'
+      /^Financial Summary$/
     )
   })
 })
@@ -947,7 +947,7 @@ describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', (
 
   /** Re-anchor after a switch: the report really is still rendering figures. */
   function expectReportStillRendered(): void {
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Financial summary')
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Financial Summary$/)
     expect(screen.getAllByRole('table').length).toBeGreaterThan(0)
   }
 

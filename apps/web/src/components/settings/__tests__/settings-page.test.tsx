@@ -161,7 +161,7 @@ describe('SettingsPage', () => {
     render(<SettingsPage />)
     expect(screen.getByRole('link', { name: /financial summary report/i })).toHaveAttribute(
       'href',
-      '/report'
+      '/financial-summary'
     )
   })
 
@@ -263,11 +263,11 @@ describe('58.2: the premium Settings sections are tier-conditional (D2)', () => 
     }
   )
 
-  it('takes the report privacy sentence with it — NOT re-homed to /report (AC-5)', () => {
+  it('takes the report privacy sentence with it — NOT re-homed to /financial-summary (AC-5)', () => {
     // ⚠️⚠️ THE TRAP THIS TEST GUARDS. Removing this section takes away the line
     // "The summary is assembled in your browser — nothing is sent anywhere to
     // produce it" for a paid user, and the obvious fix is to move it onto the
-    // /report page — which is exactly what story 57.1 correctly did for
+    // /financial-summary page — which is exactly what story 57.1 correctly did for
     // /forecasting. It is WRONG here: story 56.1 / UX-DR62 removed that
     // disclaimer from the report deliberately, and
     // `reports/__tests__/FinancialSummaryReport.test.tsx` PINS ITS ABSENCE with
@@ -316,7 +316,7 @@ describe('58.2: the premium Settings sections are tier-conditional (D2)', () => 
 
   it('⚠️ FAILS OPEN on a null seed — the OPPOSITE of the nav, deliberately', () => {
     // Same asymmetry as the Overview gate: after story 58.2 the nav is the only
-    // paid route to /report and /categories (their Settings tiles were the last
+    // paid route to /financial-summary and /categories (their Settings tiles were the last
     // fallback), so failing CLOSED on an unverified seed would strand a paid
     // user with no route at all. Showing them a section they do not need is
     // merely redundant. Do not "harmonise" this with GlobalNav's direction.
@@ -334,7 +334,7 @@ describe('58.2: the premium Settings sections are tier-conditional (D2)', () => 
     // would have passed against two inert sections (code review, 2026-09-21).
     expect(screen.getByRole('link', { name: /financial summary report/i })).toHaveAttribute(
       'href',
-      '/report'
+      '/financial-summary'
     )
     expect(screen.getByRole('link', { name: /custom categories/i })).toHaveAttribute(
       'href',

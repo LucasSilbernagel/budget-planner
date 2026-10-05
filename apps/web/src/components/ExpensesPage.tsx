@@ -545,37 +545,47 @@ export function ExpensesPage() {
                         <tr key={expense.id} className={RESPONSIVE_ROW_CLASS}>
                           <td className={RESPONSIVE_CELL_CLASS}>
                             <FieldLabel>Name</FieldLabel>
-                            <div className="text-sm font-medium text-heading">{expense.name}</div>
-                            {/* Story 65.2 (FR101): marked rows are distinguishable
-                                without opening the form.
+                            {/* Story 96.1 (FR156): ONE wrapper around the name and
+                                its marker. Below `sm` the cell is a flex row
+                                (`RESPONSIVE_CELL_CLASS`, `ResponsiveTable.tsx`), so
+                                as separate children the marker sat BESIDE the name,
+                                both squeezed onto two lines. Wrapped, the pair is a
+                                single flex item and the inline marker drops below
+                                the block name. At >= 640px a block wrapper in a
+                                table cell lays out exactly as before. */}
+                            <div>
+                              <div className="text-sm font-medium text-heading">{expense.name}</div>
+                              {/* Story 65.2 (FR101): marked rows are distinguishable
+                                  without opening the form.
 
-                                ⚠️ INSIDE the Name cell, NOT a new column, and that
-                                is a hard constraint rather than a preference:
-                                `category-assignment.test.tsx:615,636` pins the
-                                header array EXACTLY, inside a loop over both this
-                                page and IncomePage x four entitlement states, each
-                                followed by an `expectColumnParity` <th>/<td> count
-                                check. A sixth column breaks eight tests on a page
-                                this story does not otherwise touch — and the
-                                Category column is already premium-gated, so the
-                                count legitimately varies by tier.
+                                  ⚠️ INSIDE the Name cell, NOT a new column, and that
+                                  is a hard constraint rather than a preference:
+                                  `category-assignment.test.tsx:615,636` pins the
+                                  header array EXACTLY, inside a loop over both this
+                                  page and IncomePage x four entitlement states, each
+                                  followed by an `expectColumnParity` <th>/<td> count
+                                  check. A sixth column breaks eight tests on a page
+                                  this story does not otherwise touch — and the
+                                  Category column is already premium-gated, so the
+                                  count legitimately varies by tier.
 
-                                ⚠️ Carries TEXT, not colour alone (WCAG 1.4.1), and
-                                `=== true` rather than truthy because pre-65.2 rows
-                                have no key and localStorage is user-editable.
+                                  ⚠️ Carries TEXT, not colour alone (WCAG 1.4.1), and
+                                  `=== true` rather than truthy because pre-65.2 rows
+                                  have no key and localStorage is user-editable.
 
-                                Story 71.1 (FR113): hidden while the planner is off —
-                                the badge names retirement just as the form's help
-                                text does. The stored mark is untouched, so the badge
-                                returns on the same rows when the planner does. */}
-                            {showRetirementPlanner && expense.endsBeforeRetirement === true && (
-                              <span
-                                className="mt-1 px-2 py-0.5 inline-flex text-xs leading-5 font-medium rounded-full bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
-                                data-testid="expense-row-ends-before-retirement"
-                              >
-                                Ends before retirement
-                              </span>
-                            )}
+                                  Story 71.1 (FR113): hidden while the planner is off —
+                                  the badge names retirement just as the form's help
+                                  text does. The stored mark is untouched, so the badge
+                                  returns on the same rows when the planner does. */}
+                              {showRetirementPlanner && expense.endsBeforeRetirement === true && (
+                                <span
+                                  className="mt-1 px-2 py-0.5 inline-flex text-xs leading-5 font-medium rounded-full bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+                                  data-testid="expense-row-ends-before-retirement"
+                                >
+                                  Ends before retirement
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className={RESPONSIVE_CELL_CLASS}>
                             <FieldLabel>Amount</FieldLabel>

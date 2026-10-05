@@ -1038,7 +1038,7 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
   const PREMIUM: readonly [label: string, href: string][] = [
     ['Forecasting', '/forecasting'],
     ['Profiles', '/profiles'],
-    ['Report', '/report'],
+    ['Financial Summary', '/financial-summary'],
     ['Categories', '/categories'],
   ]
 
@@ -1049,7 +1049,7 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
     'Retirement',
     'Forecasting',
     'Profiles',
-    'Report',
+    'Financial Summary',
     'Categories',
     'Settings',
   ]
@@ -1111,7 +1111,7 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
         '/retirement',
         '/forecasting',
         '/profiles',
-        '/report',
+        '/financial-summary',
         '/categories',
         // The phone-only Settings row, last (story 96.3).
         '/settings',
@@ -1246,7 +1246,7 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
         'Balances',
         'Forecasting',
         'Profiles',
-        'Report',
+        'Financial Summary',
         'Categories',
         'Settings',
       ])

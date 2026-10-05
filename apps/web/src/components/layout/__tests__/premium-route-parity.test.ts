@@ -32,7 +32,8 @@ import { PREMIUM_NAV_ROUTES } from '../GlobalNav'
  * FR88 anticipated:
  *
  *   - it removed the Overview cards for an entitled session (FR88), and
- *   - it removed the `/settings` tiles for `/report` and `/categories` (D2),
+ *   - it removed the `/settings` tiles for the report (`/financial-summary` since
+ *     story 95.2) and `/categories` (D2),
  *     which had been those two routes' only other entry point.
  *
  * **So the nav is now the ONLY route a paying user has to all four pages.** There
@@ -93,8 +94,8 @@ describe('58.2 AC-1: the nav and the Overview agree on the four premium routes',
     // ⚠️⚠️ THE HOLE THE SET-EQUALITY TEST ABOVE CANNOT SEE, and the one that
     // matters most now that the nav is a paid user's ONLY route to these pages.
     // Both lists are hand-written — `NavPath` is a literal union and
-    // `OverviewBenefit.href` is a bare `string` — so renaming `/report` to
-    // `/reports` on BOTH sides keeps them in perfect agreement, keeps the count
+    // `OverviewBenefit.href` is a bare `string` — so renaming `/financial-summary`
+    // to `/financial-summaries` on BOTH sides keeps them in perfect agreement, keeps the count
     // at four, and leaves the suite green while every paid user's only route to
     // the report 404s. Agreement between two wrong lists is not correctness.
     // (Code review, 2026-09-21.)

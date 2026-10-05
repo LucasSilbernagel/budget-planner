@@ -25,7 +25,7 @@ import {
  *   its own (MEASURED in Chromium, 93.1 review), so it is the figures, not the
  *   Actions column, that need the stop.
  *   A region that fits has nothing to scroll, so as a Tab stop it only costs a
- *   keystroke: at ≥ 768 px no seeded table scrolls, which left `/report` with 6
+ *   keystroke: at ≥ 768 px no seeded table scrolls, which left `/financial-summary` with 6
  *   dead stops and each finance page with 1 (91.2 review).
  *
  * This REVERSES story 42.2's choice to make the focus stop unconditional

@@ -4,7 +4,7 @@
  * Management itself lives at `/categories`; this is the discoverable way in.
  * Wrapped in {@link PremiumFeatureGate} so a free visitor sees the feature
  * exists and is locked rather than not seeing it at all (FR24) — the same
- * treatment `/report` gets. The `/categories` route gates independently, so this
+ * treatment `/financial-summary` gets. The `/categories` route gates independently, so this
  * presentation layer is never the only thing between a free user and the page.
  *
  * ⚠️ Two shape constraints, both inherited from `report-section.tsx`:

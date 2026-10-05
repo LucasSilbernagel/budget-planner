@@ -199,4 +199,40 @@ describe('Footer', () => {
       expect.arrayContaining(['/pricing', '/docs', '/terms', '/privacy', '/refund', '/contact'])
     )
   })
+
+  // Story 96.1 (FR156, D3 two-column grid, D5 author link included): below
+  // 640px the six links are a two-column grid of 44px cells, each link filling
+  // its cell. Class TOKENS: jsdom applies no Tailwind; the rendered boxes
+  // (>= 44 x 44, three rows of two, no overlap) are asserted in a real browser
+  // in `e2e/pages.screenshot.spec.ts` (`income-320-light`).
+  it('lays the legal links out as a two-column grid of 44px phone targets (story 96.1)', async () => {
+    renderWithRouter(<Footer />)
+    const contact = await screen.findByRole('link', { name: /^contact$/i })
+    const group = contact.parentElement as HTMLElement
+    const groupTokens = [...group.classList]
+    expect(groupTokens).toEqual(expect.arrayContaining(['grid', 'grid-cols-2', 'w-full']))
+    // The desktop row is unchanged: the wrapper still dissolves at >= 640px.
+    expect(groupTokens).toContain('sm:contents')
+    const links = within(group).getAllByRole('link')
+    expect(links).toHaveLength(6)
+    for (const link of links) {
+      const tokens = [...link.classList]
+      expect(tokens, `${link.textContent} is not a 44px phone cell`).toEqual(
+        expect.arrayContaining([
+          'max-sm:flex',
+          'max-sm:min-h-[44px]',
+          'max-sm:items-center',
+          'max-sm:justify-center',
+        ])
+      )
+      // Nothing unprefixed: the >= 640px inline links are untouched.
+      expect(tokens).not.toContain('min-h-[44px]')
+      expect(tokens).toContain('underline')
+    }
+    const author = screen.getByRole('link', { name: /lucas silbernagel.*opens in a new tab/i })
+    expect([...author.classList]).toEqual(
+      expect.arrayContaining(['max-sm:inline-flex', 'max-sm:min-h-[44px]', 'max-sm:items-center'])
+    )
+    expect([...author.classList]).not.toContain('min-h-[44px]')
+  })
 })

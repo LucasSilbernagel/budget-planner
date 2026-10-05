@@ -121,7 +121,7 @@ describe('GlobalNav — the server HTML (JavaScript off, story 59.2 AC-4)', () =
       '/retirement',
       '/forecasting',
       '/profiles',
-      '/report',
+      '/financial-summary',
       '/categories',
       // The phone-only Settings row, last (story 96.3).
       '/settings',
