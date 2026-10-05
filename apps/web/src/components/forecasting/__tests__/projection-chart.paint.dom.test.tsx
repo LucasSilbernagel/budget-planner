@@ -116,7 +116,7 @@ describe('the legend names the scenario', () => {
     )
   })
 
-  it('the legend wrapper has no fixed height, so the plot starts below a wrapped legend', () => {
+  it('the legend wrapper has no fixed height (Recharts then offsets the plot by its measured height)', () => {
     // Recharts offsets the plot by the wrapper's measured height; a fixed
     // 36 px let a two-row legend paint over the top tick at 320 px (MEASURED,
     // `97-2-evidence/measure-before.jsonl`). An inline style, so jsdom reads it.
@@ -170,6 +170,33 @@ for (const narrow of [false, true]) {
         '.recharts-yAxis .recharts-cartesian-axis-tick text'
       ) as Element
       expect(tickText.getAttribute('font-size')).toBe(narrow ? '10' : '12')
+    })
+
+    it('sizes the gutter to the widest label, for a 3-letter symbol too', () => {
+      // Tick labels are right-aligned (text-anchor end) at x, so the label's
+      // left edge is x - width. Widths MEASURED under DejaVu (story 97.2
+      // review): "$350.0M" 43.6 / 52.3 px, "CHF350.0M" 57.5 / 69.0 px at
+      // 10 / 12 px. jsdom lays the axis out from props, so x is exact here.
+      matchNarrow(narrow)
+      for (const [currency, width] of [
+        ['USD', narrow ? 43.6 : 52.3],
+        ['CHF', narrow ? 57.5 : 69.0],
+      ] as const) {
+        useCurrencyStore.setState({ mode: 'symbol', currency })
+        const { container, unmount } = render(<ProjectionChart result={result('Buy a house')} />)
+        const texts = [
+          ...container.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick text'),
+        ]
+        expect(texts.length, currency).toBeGreaterThanOrEqual(2)
+        expect(texts.at(-1)?.textContent, currency).toMatch(/^(\$|CHF)350\.0M$/)
+        for (const t of texts) {
+          expect(
+            Number(t.getAttribute('x')) - width,
+            `${currency} ${t.textContent}`
+          ).toBeGreaterThanOrEqual(0)
+        }
+        unmount()
+      }
     })
 
     it('has no rotated "Net Worth" title in the SVG', () => {

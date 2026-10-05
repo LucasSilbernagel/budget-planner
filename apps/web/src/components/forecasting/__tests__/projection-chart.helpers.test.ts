@@ -54,26 +54,36 @@ describe('projectionSeriesName', () => {
 })
 
 describe('getProjectionChartChrome', () => {
-  // Widest compact tick of the seed's axis, MEASURED under the CI font
-  // (DejaVu) in `97-2-evidence/measure-after.jsonl`: "$350.0M" is 52.3 px at
-  // 12 px and 43.6 px at 10 px. Recharts draws the label after a 6 px tick
-  // line and a 2 px gap, so the gutter must be at least text + 8. (At 52 px the
-  // narrow tick's left edge measured 0.4 px inside the SVG: too tight.)
-  it('wide: 12 px ticks in a gutter that holds "$350.0M"', () => {
-    const chrome = getProjectionChartChrome(false)
-    expect(chrome.tickFontSize).toBe(12)
-    expect(chrome.yAxisWidth).toBeGreaterThanOrEqual(61)
-    expect(chrome.marginRight).toBeGreaterThanOrEqual(24)
-    expect(chrome.marginLeft).toBeGreaterThanOrEqual(0)
+  // Label widths MEASURED under the CI font (DejaVu, getBBox, story 97.2
+  // review): at 10 px "$350.0M" 43.6, "$1000.0M" 50.0, "R$350.0M" 50.6,
+  // "CHF350.0M" 57.5; at 12 px "$350.0M" 52.3, "CHF350.0M" 69.0,
+  // "CHF1000.0M" 76.7. Recharts right-aligns a tick label 8 px (6 px tick line
+  // + 2 px gap) inside the gutter, so a label of width w stays inside the SVG
+  // iff yAxisWidth + marginLeft - 8 >= w (MEASURED in the browser: narrow
+  // "$350.0M" left edge 55.4 = svg 49 + 58 - 8 - 43.6).
+  const room = (c: { yAxisWidth: number; marginLeft: number }) => c.yAxisWidth + c.marginLeft - 8
+
+  it('wide: 12 px ticks; a "$" axis keeps the measured 72 px gutter', () => {
+    const chrome = getProjectionChartChrome(false, '$350.0M'.length)
+    expect(chrome).toEqual({ yAxisWidth: 72, tickFontSize: 12, marginLeft: 8, marginRight: 30 })
   })
 
-  it('narrow: 10 px ticks in a gutter that holds "$350.0M"', () => {
-    const chrome = getProjectionChartChrome(true)
-    expect(chrome.tickFontSize).toBe(10)
-    expect(chrome.yAxisWidth).toBeGreaterThanOrEqual(56)
-    // A phone's plot needs the room: the gutter + margins leave at least
-    // 150 px of a 230 px chart for the lines.
-    expect(chrome.yAxisWidth + chrome.marginLeft + chrome.marginRight).toBeLessThanOrEqual(80)
+  it('narrow: 10 px ticks; a "$" axis keeps the measured 58 px gutter, which holds "$1000.0M"', () => {
+    const chrome = getProjectionChartChrome(true, '$350.0M'.length)
+    expect(chrome).toEqual({ yAxisWidth: 58, tickFontSize: 10, marginLeft: 0, marginRight: 12 })
+    expect(room(chrome)).toBeGreaterThanOrEqual(50.0)
+  })
+
+  it('narrow: the gutter grows for a longer currency symbol (CHF, R$)', () => {
+    // At 58 px, MEASURED in the browser at 320 px: CHF ticks 7/7 and R$ ticks
+    // 6/7 clipped by the SVG edge.
+    expect(room(getProjectionChartChrome(true, 'R$350.0M'.length))).toBeGreaterThanOrEqual(50.6)
+    expect(room(getProjectionChartChrome(true, 'CHF350.0M'.length))).toBeGreaterThanOrEqual(57.5)
+  })
+
+  it('wide: the gutter grows for a 10-character label', () => {
+    expect(room(getProjectionChartChrome(false, 'CHF350.0M'.length))).toBeGreaterThanOrEqual(69.0)
+    expect(room(getProjectionChartChrome(false, 'CHF1000.0M'.length))).toBeGreaterThanOrEqual(76.7)
   })
 })
 

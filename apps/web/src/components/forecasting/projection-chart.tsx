@@ -107,8 +107,8 @@ export function projectionSeriesName(result: ForecastingResult | null): string {
  * The Y axis used to have Recharts' default 60 px gutter for full amounts with
  * cents ("$310,101,483.69", ~100 px), so every tick was clipped by the SVG
  * edge at every width (story 97.2). The ticks are compact now and the gutter
- * holds the widest one; `projection-chart.helpers.test.ts` pins the floors
- * against label widths MEASURED under the CI font.
+ * holds the widest one; `projection-chart.helpers.test.ts` pins it against
+ * label widths MEASURED under the CI font.
  */
 export interface ProjectionChartChrome {
   yAxisWidth: number
@@ -117,13 +117,35 @@ export interface ProjectionChartChrome {
   marginRight: number
 }
 
-export function getProjectionChartChrome(isNarrow: boolean): ProjectionChartChrome {
-  return isNarrow
-    ? // 58 = the 7-char "$350.0M" (43.6 px at 10 px) + Recharts' 8 px tick
-      // line and gap, plus room for one more character ("$1000.0M").
-      { yAxisWidth: 58, tickFontSize: 10, marginLeft: 0, marginRight: 12 }
-    : // 72 = "$350.0M" (52.3 px at 12 px) + 8 px, plus one more character.
-      { yAxisWidth: 72, tickFontSize: 12, marginLeft: 8, marginRight: 30 }
+/**
+ * Upper bounds on one tick character's width (digits, ".", "M", currency
+ * symbols) at the narrow and wide tick sizes, from widths MEASURED under the
+ * CI font (DejaVu): the widest per-character ratio was "CHF350.0M", 57.5 px / 9
+ * at 10 px and 69.0 px / 9 at 12 px.
+ */
+const TICK_CHAR_PX = { narrow: 6.5, wide: 7.8 }
+/** Recharts draws a tick label after a 6 px tick line and a 2 px gap. */
+const TICK_LINE_AND_GAP = 8
+
+/**
+ * `widestLabelChars` is the longest formatted tick label. A "$" axis keeps the
+ * measured 58 / 72 px gutters (a label of width w fits iff yAxisWidth +
+ * marginLeft - 8 >= w; narrow 58 holds "$1000.0M", 50.0 px); a longer currency
+ * symbol ("CHF350.0M", "R$350.0M") widens it, or its ticks clip again (story
+ * 97.2 review: MEASURED 7/7 CHF ticks clipped at 320 px with a fixed 58).
+ */
+export function getProjectionChartChrome(
+  isNarrow: boolean,
+  widestLabelChars = 0
+): ProjectionChartChrome {
+  const base = isNarrow
+    ? { yAxisWidth: 58, tickFontSize: 10, marginLeft: 0, marginRight: 12 }
+    : { yAxisWidth: 72, tickFontSize: 12, marginLeft: 8, marginRight: 30 }
+  const needed =
+    Math.ceil(widestLabelChars * (isNarrow ? TICK_CHAR_PX.narrow : TICK_CHAR_PX.wide)) +
+    TICK_LINE_AND_GAP -
+    base.marginLeft
+  return { ...base, yAxisWidth: Math.max(base.yAxisWidth, needed) }
 }
 
 /** Padding around the plotted values, in cents ($1,000): the old domain's. */
@@ -316,13 +338,18 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
   const formatCurrency = useFormattedAmount()
   const { mode, currency } = useCurrencyPreferences()
   const chartColors = useChartColors()
-  const chrome = getProjectionChartChrome(useIsNarrowViewport())
+  const isNarrow = useIsNarrowViewport()
   const [config, setConfig] = useState<ChartConfig>(DEFAULT_CONFIG)
 
   const chartData = convertToChartData(result)
   const scenarioName = projectionSeriesName(result)
   const yAxis = projectionYAxis(
     chartData.flatMap((point) => [point.baselineNetWorth, point.scenarioNetWorth])
+  )
+  const formatYTick = (value: number) => formatProjectionAxisTick(value, yAxis.step, mode, currency)
+  const chrome = getProjectionChartChrome(
+    isNarrow,
+    Math.max(0, ...yAxis.ticks.map((tick) => formatYTick(tick).length))
   )
 
   // Calculate chart dimensions
@@ -422,9 +449,7 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
                     tooltip keeps the precise amount. No axis title: the
                     subtitle above names the measure. */}
                 <YAxis
-                  tickFormatter={(value: number) =>
-                    formatProjectionAxisTick(value, yAxis.step, mode, currency)
-                  }
+                  tickFormatter={formatYTick}
                   ticks={yAxis.ticks}
                   tick={{ fontSize: chrome.tickFontSize, fill: chartColors.axis }}
                   stroke={chartColors.axis}
