@@ -86,10 +86,16 @@ test('paid-sheet-320', async ({ page }) => {
   // 320x640: the phone the 6-row sheet's on-screen claims were measured at.
   await open(page, '/', 320, 4, 640)
   await openMore(page)
-  // The OPEN, PAID sheet, asserted: six visible rows (the free sheet has two).
-  await expect(page.locator('nav[aria-label="Primary"] details ul').getByRole('link')).toHaveCount(
-    6
-  )
+  // The OPEN, PAID sheet, asserted: seven visible rows (the free sheet has
+  // three). Was six until story 96.3 (FR163) put Settings LAST in the phone
+  // sheet; asserted by its own name, not by its neighbour's label.
+  const rows = page.locator('nav[aria-label="Primary"] details ul').getByRole('link')
+  await expect(rows).toHaveCount(7)
+  await expect(rows.last()).toHaveAccessibleName('Settings')
+  await expect(rows.last()).toBeVisible()
+  // On SCREEN at 320x640, not just rendered: `toBeVisible()` ignores clipping
+  // by the sheet's `max-h` scroll box (story 96.3 review, measured).
+  await expect(rows.last()).toBeInViewport({ ratio: 1 })
   // Viewport, not full page: the sheet is a fixed overlay above the bottom bar.
   await expect(page).toHaveScreenshot('paid-sheet-320.png', {
     mask: await copyrightYear(page),

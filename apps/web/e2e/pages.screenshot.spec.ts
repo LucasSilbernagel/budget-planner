@@ -87,6 +87,12 @@ async function open(
 for (const shot of PAGE_SHOTS) {
   test(shot.name, async ({ page }) => {
     await open(page, shot)
+    if (shot.name === 'income-768-light') {
+      // Story 96.3: the header gear is hidden below 640px ONLY. At 768 it is
+      // the signed-out route to Settings (positive control for the `max-sm:`
+      // scope; the 320 shots assert it hidden).
+      await expect(page.locator('[data-auth-indicator] a[href="/settings"]')).toBeVisible()
+    }
     await expect(page).toHaveScreenshot(`${shot.name}.png`, {
       fullPage: true,
       mask: await copyrightYear(page),
@@ -97,7 +103,24 @@ for (const shot of PAGE_SHOTS) {
 
 test('nav-more-sheet-320-light', async ({ page }) => {
   await open(page, { path: '/', width: 320, charts: 4 })
+  // Story 96.3 (FR163), in a real browser (jsdom sees every route at once):
+  // below 640px the header gear is hidden... `toHaveCount(1)` first: a
+  // `toBeHidden()` on a locator that matches NOTHING passes, so without it a
+  // deleted gear would read as a hidden one (story 96.3 review, measured).
+  const gear = page.locator('[data-auth-indicator] a[href="/settings"]')
+  await expect(gear).toHaveCount(1)
+  await expect(gear).toBeHidden()
+  // ...positive control that the signed-out cluster rendered at all.
+  await expect(page.getByRole('link', { name: 'Sign in', exact: true })).toBeVisible()
   await openMore(page)
+  // ...and the open sheet's LAST row is Settings, visible.
+  const rows = page.locator('nav[aria-label="Primary"] details ul').getByRole('link')
+  await expect(rows).toHaveCount(3)
+  await expect(rows.last()).toHaveAccessibleName('Settings')
+  await expect(rows.last()).toBeVisible()
+  // On SCREEN, not just rendered: `toBeVisible()` ignores clipping by the
+  // sheet's `max-h` scroll box (story 96.3 review, measured).
+  await expect(rows.last()).toBeInViewport({ ratio: 1 })
   // Viewport, not full page (unlike D1's other shots): the sheet is a fixed
   // overlay, and what matters is how it sits over the first screen.
   await expect(page).toHaveScreenshot('nav-more-sheet-320-light.png', {
@@ -116,9 +139,22 @@ test('account-menu-320-open', async ({ page }) => {
   await open(page, { path: '/', width: 320, height: 640, charts: 4 })
   await expectSignedInAs(page, SIGNED_IN_EMAIL)
   const panel = await openAccountMenu(page)
-  // The OPEN state, asserted: a shot of the closed menu would be a vacuous baseline.
-  await expect(panel.getByRole('link', { name: 'Settings', exact: true })).toBeVisible()
+  // The OPEN state, asserted: a shot of the closed menu would be a vacuous
+  // baseline. Sign out visible is the positive control that it is open.
   await expect(panel.getByRole('button', { name: 'Sign out' })).toBeVisible()
+  // Story 96.3 (FR163): below 640px the panel's Settings row and its separator
+  // are hidden (the nav's More sheet is the phone route). Until 96.3 this
+  // asserted the Settings row VISIBLE here.
+  // CSS locators with `toHaveCount(1)` first, not `getByRole`: a role query
+  // already skips a `display:none` element, and `toBeHidden()` passes on zero
+  // matches, so the old form stayed green with the row and `<hr>` DELETED
+  // (story 96.3 review, measured).
+  const panelSettings = panel.locator('a[href="/settings"]')
+  await expect(panelSettings).toHaveCount(1)
+  await expect(panelSettings).toBeHidden()
+  const separator = panel.locator('hr')
+  await expect(separator).toHaveCount(1)
+  await expect(separator).toBeHidden()
   // Viewport, not full page: the panel is an overlay hanging from the top strip.
   await expect(page).toHaveScreenshot('account-menu-320-open.png', {
     mask: await copyrightYear(page),

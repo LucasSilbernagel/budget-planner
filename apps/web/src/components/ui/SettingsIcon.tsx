@@ -10,6 +10,10 @@ import type React from 'react'
  * glyph is drawn now. Kept beside `ChevronDownIcon.tsx`, the precedent for a
  * shared header glyph.
  *
+ * ⚠️ AMENDED by story 96.3 (FR163): it is drawn in the nav again too, as the
+ * icon of the phone-only Settings row at the bottom of the More sheet
+ * (`GlobalNav.tsx`); the account-cluster gear is the >= 640px route.
+ *
  * Hand-rolled inline SVG, the app's house style (see `ui/RowActionIcons.tsx`).
  * Decorative: `aria-hidden`, so the link that wraps it carries the name. `rest`
  * is spread FIRST so no caller can undo that (the same rule `ChevronDownIcon`

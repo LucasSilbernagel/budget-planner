@@ -1,7 +1,18 @@
 import { act, fireEvent, renderWithRouter, screen, userEvent, waitFor, within } from '@/test/utils'
+import {
+  RouterProvider,
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+} from '@tanstack/react-router'
+import { renderToString } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { SessionSeedProvider } from '../../../context/session-seed'
+import {
+  SIGNED_OUT_SEED,
+  type SessionSeed,
+  SessionSeedProvider,
+} from '../../../context/session-seed'
 import { AuthIndicator } from '../../auth/auth-indicator'
 import { GlobalNav } from '../GlobalNav'
 
@@ -31,8 +42,9 @@ import { GlobalNav } from '../GlobalNav'
  * it would break this same invariant just as thoroughly as folding it into the
  * bar. Both are asserted below.
  *
- * ⚠️ The link counts here are 8 since story 69.3 (6 destinations + the two
- * promoted row copies, `hidden lg:block`), and they count DOM PRESENCE, not
+ * ⚠️ The link counts here are 9 since story 96.3 (6 destinations + the two
+ * promoted row copies, `hidden lg:block`, story 69.3, + the phone-only
+ * Settings sheet row, `sm:hidden`; 8 until 96.3), and they count DOM PRESENCE, not
  * reachability. Since story 59.2 the More destinations sit inside a native
  * `<details>` at EVERY width, and a closed `<details>` hides them from a real
  * browser's accessibility tree. jsdom does not: its default stylesheet has no
@@ -96,25 +108,41 @@ describe('Nav + account row (story 19-3)', () => {
     const navs = await screen.findAllByRole('navigation', { name: /primary/i })
     expect(navs).toHaveLength(1)
     // The Sign-in link must not inflate the nav's link set (story 11-1 / 19-2).
-    // Eight DOM anchors: six destinations + the two promoted row copies (story
-    // 69.3), which jsdom sees because it applies no stylesheet.
-    expect(within(navs[0]).getAllByRole('link')).toHaveLength(8)
+    // Nine DOM anchors: six destinations + the two promoted row copies (story
+    // 69.3) + the phone-only Settings row (story 96.3; eight until then), which
+    // jsdom sees because it applies no stylesheet.
+    expect(within(navs[0]).getAllByRole('link')).toHaveLength(9)
   })
 
   // Story 69.2 (FR109). The same invariant, the other way round: Settings moved
-  // OUT of the nav into this row, and it must not drift back in. A signed-out
-  // visitor's route to it is the gear link beside "Sign in", which is a sibling
-  // of the live region (it is navigation), not inside it and not inside <nav>.
+  // OUT of the nav into this row. A signed-out visitor's route to it is the
+  // gear link beside "Sign in", which is a sibling of the live region (it is
+  // navigation), not inside it and not inside <nav>.
+  // ⚠️ AMENDED by story 96.3 (FR163): that is the >= 640px route. Below 640px
+  // the nav's More sheet holds Settings (last, `sm:hidden`) and the gear is
+  // `max-sm:hidden`. The nav's /settings link is therefore expected, and must be
+  // exactly that phone-only sheet row (the per-width rule: see the complement
+  // test at the bottom of this file).
   it('puts the signed-out Settings gear in the account row, outside the nav and the live region', async () => {
-    renderWithRouter(<NavAccountRow />)
+    const { container } = renderWithRouter(<NavAccountRow />)
 
     const nav = await screen.findByRole('navigation', { name: /primary/i })
     await screen.findByRole('link', { name: /sign in/i })
-    const gear = screen.getByRole('link', { name: 'Settings' })
+    const row = container.querySelector('[data-auth-indicator]') as HTMLElement
+    expect(row, 'the account row did not render').not.toBeNull()
+    const gear = within(row).getByRole('link', { name: 'Settings' })
 
     expect(gear).toHaveAttribute('href', '/settings')
     expect(nav.contains(gear), 'the Settings gear was folded into <nav>').toBe(false)
-    expect(nav.querySelector('a[href="/settings"]')).toBeNull()
+    expect([...gear.classList], 'the gear shows on a phone too').toContain('max-sm:hidden')
+    const navSettings = nav.querySelectorAll('a[href="/settings"]')
+    expect(navSettings, 'the nav holds more than its phone-only Settings row').toHaveLength(1)
+    const navRow = navSettings[0]?.closest('li') as HTMLElement
+    expect(
+      navRow.closest('details > ul'),
+      'the nav Settings link is not a sheet row'
+    ).not.toBeNull()
+    expect([...navRow.classList], 'the nav Settings row shows at >= 640px').toContain('sm:hidden')
     const status = screen.getByRole('status', { name: /account status/i })
     expect(status.contains(gear), 'the Settings gear is inside the live region').toBe(false)
     expect(gear.closest('[data-auth-indicator]')).not.toBeNull()
@@ -149,8 +177,9 @@ describe('Nav + account row (story 19-3)', () => {
     expect(nav.className.split(/\s+/), 'this nav is not the mobile bottom bar').toContain(
       'max-sm:fixed'
     )
-    // 6 destinations + 2 promoted row copies (story 69.3).
-    expect(within(nav).getAllByRole('link')).toHaveLength(8)
+    // 6 destinations + 2 promoted row copies (story 69.3) + the Settings row
+    // (story 96.3; 8 until then).
+    expect(within(nav).getAllByRole('link')).toHaveLength(9)
     expect(nav.contains(signIn)).toBe(false)
     const status = screen.getByRole('status', { name: /account status/i })
     expect(status.contains(signIn)).toBe(true)
@@ -174,8 +203,9 @@ describe('Nav + account row (story 19-3)', () => {
     expect(sheet.contains(signIn), 'Sign in was folded into the More sheet').toBe(false)
     expect(
       [...sheet.querySelectorAll('a')].map((a) => a.getAttribute('href')),
-      'the More sheet holds something other than its two destinations'
-    ).toEqual(['/balance', '/retirement'])
+      'the More sheet holds something other than its two destinations and Settings'
+      // + the phone-only Settings row, last (story 96.3).
+    ).toEqual(['/balance', '/retirement', '/settings'])
   })
 })
 
@@ -215,8 +245,11 @@ describe('Nav + account row, signed in (story 59.3)', () => {
     const trigger = await screen.findByRole('button', { name: 'Account menu' })
     await user.click(trigger)
     const signOut = screen.getByRole('button', { name: 'Sign out' })
-    // Story 69.2: the panel's Settings link is the signed-in route to /settings.
-    const settings = screen.getByRole('link', { name: 'Settings' })
+    // Story 69.2: the panel's Settings link is the signed-in route to /settings
+    // (at >= 640px since story 96.3). Scoped to the panel: the nav's phone-only
+    // Settings sheet row has the same name.
+    const accountPanel = signOut.parentElement as HTMLElement
+    const settings = within(accountPanel).getByRole('link', { name: 'Settings' })
 
     expect(nav.contains(trigger), 'the account menu trigger was folded into <nav>').toBe(false)
     expect(nav.contains(settings), 'the menu’s Settings link was folded into <nav>').toBe(false)
@@ -227,8 +260,9 @@ describe('Nav + account row, signed in (story 59.3)', () => {
     const lists = [...nav.querySelectorAll('ul')]
     expect(lists, 'expected the bar list and the nested More sheet').toHaveLength(2)
     expect(lists[1].contains(signOut), 'Sign out was folded into the More sheet').toBe(false)
-    // 6 destinations + 2 promoted row copies (story 69.3).
-    expect(within(nav).getAllByRole('link')).toHaveLength(8)
+    // 6 destinations + 2 promoted row copies (story 69.3) + the Settings row
+    // (story 96.3; 8 until then).
+    expect(within(nav).getAllByRole('link')).toHaveLength(9)
     // ZERO, and that is the right number. The nav's only control, More, is a
     // `<summary>`, which has NO role in testing-library (story 59.2, measured),
     // so it is not counted. Both account-menu controls are real `<button>`s, so
@@ -243,7 +277,16 @@ describe('Nav + account row, signed in (story 59.3)', () => {
     expect(status.contains(settings)).toBe(false)
     // No gear for a signed-in user: the menu is their route, so the cluster
     // holds exactly one link to /settings (the one inside the open panel).
-    expect(document.querySelectorAll('a[href="/settings"]')).toHaveLength(1)
+    // ⚠️ TWO in the document since story 96.3 (was exactly one): that panel row,
+    // `max-sm:hidden`, and the nav's phone-only sheet row, `sm:hidden`. A
+    // real browser renders exactly one of them at any width.
+    const all = [...document.querySelectorAll('a[href="/settings"]')]
+    expect(all).toHaveLength(2)
+    expect(all).toContain(settings)
+    expect([...settings.classList]).toContain('max-sm:hidden')
+    const navRow = all.find((a) => nav.contains(a))?.closest('li') as HTMLElement
+    expect(navRow, 'the nav has no Settings row').toBeTruthy()
+    expect([...navRow.classList]).toContain('sm:hidden')
   })
 })
 
@@ -374,4 +417,168 @@ describe('Nav + account row, two disclosures (story 59.3)', () => {
       expect(link).toHaveAttribute('href', href)
     }
   })
+})
+
+/**
+ * Story 96.3 (FR163): per width, a visitor has ONE place for Settings.
+ *
+ * Below 640px it is the nav's More sheet (last row, `sm:hidden` on its `<li>`);
+ * at 640px and up it is the account cluster (the gear, the `<noscript>` gear,
+ * the account menu's row, each `max-sm:hidden`). jsdom applies no stylesheet,
+ * so it sees every route at once: the rule can only be pinned here as
+ * COMPLEMENTARY TOKENS, by `classList` membership (`max-sm:hidden` contains
+ * `sm:hidden` as a substring). Which one a browser actually paints is asserted
+ * in the 320px screenshot tests before their shots.
+ *
+ * The `<noscript>` gear is collected from the SERVER HTML: React 19 renders
+ * `<noscript>` children on the server only (measured at 69.3), so a client
+ * render leaves it empty.
+ */
+describe('Nav + account row, the per-width Settings route (story 96.3)', () => {
+  const FREE = { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'free' as const }
+  const PAID = { ...FREE, subscriptionStatus: 'active' as const }
+  type Me = { userId: string; email: string; subscriptionStatus: 'free' | 'active' }
+
+  function stubMe(user: Me | null | 'pending') {
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      if (String(input).includes('/api/auth/me')) {
+        if (user === 'pending') return new Promise<Response>(() => {})
+        return Promise.resolve(new Response(JSON.stringify({ user }), { status: 200 }))
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    }) as typeof global.fetch
+  }
+
+  function Row({ seed }: { seed: SessionSeed | null }) {
+    return (
+      <SessionSeedProvider seed={seed}>
+        <div className="sm:mx-auto sm:flex sm:max-w-6xl sm:items-center sm:justify-between">
+          <GlobalNav />
+          <AuthIndicator />
+        </div>
+      </SessionSeedProvider>
+    )
+  }
+
+  /** The `/settings` anchors inside the SERVER HTML's `<noscript>` elements. */
+  async function serverNoscriptRoutes(seed: SessionSeed | null, path: string) {
+    const router = createRouter({
+      routeTree: createRootRoute({ component: () => <Row seed={seed} /> }),
+      history: createMemoryHistory({ initialEntries: [path] }),
+    })
+    await router.load()
+    const html = renderToString(<RouterProvider router={router} />)
+    expect(html, 'the server HTML has no nav (unresolved router?)').toContain(
+      'aria-label="Primary"'
+    )
+    const routes: Element[] = []
+    for (const match of html.matchAll(/<noscript>([\s\S]*?)<\/noscript>/g)) {
+      const template = document.createElement('template')
+      template.innerHTML = match[1] as string
+      routes.push(...template.content.querySelectorAll('a[href="/settings"]'))
+    }
+    return routes
+  }
+
+  /** Where a route's width classes live: the nav row's `<li>`, else the link itself. */
+  const widthScope = (a: Element): Element => a.closest('li[data-nav-settings]') ?? a
+  const has = (el: Element, token: string) => el.classList.contains(token)
+
+  const CASES: readonly {
+    name: string
+    seed: SessionSeed | null
+    me: Me | null | 'pending'
+    path: string
+    openPanel: boolean
+    desktopRoute: boolean
+  }[] = [
+    {
+      name: 'signed out',
+      seed: SIGNED_OUT_SEED,
+      me: null,
+      path: '/',
+      openPanel: false,
+      desktopRoute: true,
+    },
+    // /login keeps its empty strip (69.2 D3): no >= 640px route there.
+    {
+      name: 'signed out on /login',
+      seed: SIGNED_OUT_SEED,
+      me: null,
+      path: '/login',
+      openPanel: false,
+      desktopRoute: false,
+    },
+    {
+      name: 'signed in, free (panel open)',
+      seed: { isAuthenticated: true, ...FREE },
+      me: FREE,
+      path: '/',
+      openPanel: true,
+      desktopRoute: true,
+    },
+    {
+      name: 'signed in, entitled (panel open)',
+      seed: { isAuthenticated: true, ...PAID },
+      me: PAID,
+      path: '/',
+      openPanel: true,
+      desktopRoute: true,
+    },
+    // Unverified seed, session still loading: the cluster renders no route.
+    {
+      name: 'a null seed, loading',
+      seed: null,
+      me: 'pending',
+      path: '/',
+      openPanel: false,
+      desktopRoute: false,
+    },
+  ]
+
+  it.each(CASES)(
+    'a phone has exactly one Settings route and a desktop keeps its own: $name',
+    async ({ seed, me, path, openPanel, desktopRoute }) => {
+      stubMe(me)
+      renderWithRouter(<Row seed={seed} />, { path })
+      const nav = await screen.findByRole('navigation', { name: /primary/i })
+      if (openPanel) {
+        await userEvent.setup().click(await screen.findByRole('button', { name: 'Account menu' }))
+        // Positive control: the panel really opened (Sign out is in it).
+        expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
+      } else if (me === null && path === '/') {
+        // Positive control: the signed-out cluster really rendered.
+        await screen.findByRole('link', { name: /sign in/i })
+      } else {
+        await screen.findByRole('status', { name: /account status/i })
+      }
+
+      const routes = [
+        ...document.querySelectorAll('a[href="/settings"]'),
+        ...(seed?.isAuthenticated ? await serverNoscriptRoutes(seed, path) : []),
+      ]
+      const phone = routes.filter((a) => has(widthScope(a), 'sm:hidden'))
+      const desktop = routes.filter((a) => has(widthScope(a), 'max-sm:hidden'))
+
+      // Neither, or both, is the defect. Exactly one phone route...
+      expect(phone, 'a phone has no Settings route, or more than one').toHaveLength(1)
+      expect(nav.contains(phone[0] as Node), 'the phone route is not the nav row').toBe(true)
+      // ...and every other route is a >= 640px one, never shown on a phone.
+      for (const a of routes) {
+        if (a === phone[0]) continue
+        expect(
+          desktop.includes(a),
+          `a /settings route outside the nav shows on a phone: ${a.outerHTML}`
+        ).toBe(true)
+        expect(has(widthScope(a), 'sm:hidden'), 'a route carries both tokens').toBe(false)
+      }
+      expect(desktop.length > 0, 'the >= 640px route set is wrong for this session').toBe(
+        desktopRoute
+      )
+      if (seed?.isAuthenticated) {
+        // Both signed-in >= 640px routes: the open panel's row and the JS-off gear.
+        expect(desktop).toHaveLength(2)
+      }
+    }
+  )
 })

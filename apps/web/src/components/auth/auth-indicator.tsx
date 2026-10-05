@@ -63,6 +63,14 @@ import { SettingsIcon } from '../ui/SettingsIcon'
  * The structure, and why the trigger and the gear sit OUTSIDE the live region,
  * is recorded at the return statement below.
  *
+ * ⚠️ AMENDED by story 96.3 (FR163, 2026-10-05): all of the above is the
+ * >= 640px picture. BELOW 640px the route to `/settings` is the LAST row of the
+ * nav's More sheet, for every session (`layout/GlobalNav.tsx`), and this
+ * cluster's Settings routes are `max-sm:hidden`: the gear, the `<noscript>`
+ * gear, the account menu's Settings row AND its separator (so a phone's open
+ * panel holds Sign out alone). CSS only, no width read: a phone has exactly one
+ * Settings route and a desktop keeps its own (`nav-account-row.test.tsx`).
+ *
  * First-paint resolution (story UX-1): the strip's initial state is seeded from
  * the session the root loader resolves server-side (see context/session-seed), so
  * the server HTML and the first client render already show the correct state — no
@@ -450,6 +458,9 @@ export function AuthIndicator() {
         //   project's target floor; its width cost at 640px is what the `sm:`
         //   padding cuts on this row and the links above pay for (measured in
         //   `e2e/nav-responsive-css.spec.ts`, the one width record).
+        // - ⚠️ AMENDED by story 96.3 (FR163): a >= 640px route only.
+        //   `GEAR_LINK_CLASS` carries `max-sm:hidden`; below 640px the nav's
+        //   More sheet holds Settings, last, for every session.
         <Link
           to={SETTINGS_PATH}
           aria-label="Settings"
@@ -480,6 +491,9 @@ export function AuthIndicator() {
         //   runs, and with it on this content is never parsed into elements.
         // - Not route-aware, like the rest of this branch (see the 41.3 note).
         // - Marked current on `/settings`, like the signed-out gear.
+        // - ⚠️ AMENDED by story 96.3 (FR163): >= 640px only, through the
+        //   shared `GEAR_LINK_CLASS`. Below 640px a JS-off visitor opens the
+        //   nav's native More `<details>` and takes its Settings row.
         <noscript>
           <a
             href={SETTINGS_PATH}
@@ -504,9 +518,15 @@ export function AuthIndicator() {
  * INSET ring, matching the account panel's rows: the gear is a tight 28px box
  * beside other controls at `sm:gap-1`, and an outset ring would paint over its
  * neighbour. (Not because of the viewport edge: `sm:pr-2` leaves room there.)
+ *
+ * `max-sm:hidden` (story 96.3, FR163): shared by the live gear and the
+ * `<noscript>` gear, so one token takes both off a phone, where the nav's More
+ * sheet is the route. `flex` is unprefixed and Tailwind emits `max-sm:` rules
+ * after it (source order, not specificity), so the hide wins below 640px; the
+ * 320px screenshot tests assert it in a real browser.
  */
 const GEAR_LINK_CLASS =
-  'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-green-500 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100'
+  'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-green-500 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100 max-sm:hidden'
 
 /** The gear's `aria-current` treatment on `/settings`: `GlobalNav.tsx`'s `ACTIVE_CLASS` tone. */
 const GEAR_ACTIVE_CLASS = 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300'
@@ -581,8 +601,19 @@ const SIGN_OUT_CLASS = `${PANEL_ROW_CLASS} disabled:cursor-wait disabled:opacity
 const PANEL_ROW_ACTIVE_CLASS = 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300'
 
 /**
+ * Story 96.3 (FR163): the panel's Settings row and its separator are >= 640px
+ * only. Below 640px the nav's More sheet is the route, so a phone's open panel
+ * is Sign out alone (no leading separator). Appended to the Settings row and
+ * the `<hr>` only, never to `PANEL_ROW_CLASS` itself: `SIGN_OUT_CLASS` is built
+ * from it, and Sign out must stay visible on a phone.
+ */
+const HIDDEN_BELOW_SM = 'max-sm:hidden'
+
+/**
  * The account menu (story 59.3, FR99): a signed-in user signs out here, and
- * since story 69.2 (FR109) reaches Settings here.
+ * since story 69.2 (FR109) reaches Settings here, at >= 640px only since story
+ * 96.3 (FR163): below 640px the row and its separator are `max-sm:hidden` and
+ * the nav's More sheet is the route.
  *
  * Mounted ONLY in the authenticated branch. So the open state cannot survive
  * a sign-out and come back open at the next sign-in: leaving the branch
@@ -779,13 +810,15 @@ function AccountMenu({
             // Marked from the lowercased read, like the gear (`/Settings`).
             aria-current={isOnSettingsPage ? 'page' : undefined}
             className={
-              isOnSettingsPage ? `${PANEL_ROW_CLASS} ${PANEL_ROW_ACTIVE_CLASS}` : PANEL_ROW_CLASS
+              isOnSettingsPage
+                ? `${PANEL_ROW_CLASS} ${PANEL_ROW_ACTIVE_CLASS} ${HIDDEN_BELOW_SM}`
+                : `${PANEL_ROW_CLASS} ${HIDDEN_BELOW_SM}`
             }
             activeProps={{}}
           >
             Settings
           </Link>
-          <hr className="border-gray-200 dark:border-gray-700" />
+          <hr className={`border-gray-200 dark:border-gray-700 ${HIDDEN_BELOW_SM}`} />
           <button
             type="button"
             onClick={handleSignOut}
