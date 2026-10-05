@@ -249,8 +249,12 @@ describe('the canonical Premium benefit set is the same on every surface', () =>
 
   it('"Downloadable" is the upgrade prompt\'s wording only; other surfaces keep the plain name (story 95.1, D1)', () => {
     // Pinned BOTH ways. The prompt-order test above derives its expectation from
-    // PROMPT_COPY, so it cannot see this wording at all; and nothing else stops the
-    // word spreading to the Overview / settings / report surfaces.
+    // PROMPT_COPY, so it cannot see this wording at all. This pins the Overview
+    // `featureName`; the other plain-name surfaces are pinned exactly in their own
+    // suites: `/settings` tile `report-section.test.tsx` (locked button name
+    // 'Financial Summary Report — premium, locked'), `/report` gate
+    // `ReportPage.test.tsx` (anchored featureName). `/pricing` and the Overview
+    // label stay under the download fence below.
     expect(PROMPT_COPY.report).toBe('Downloadable Financial Summary Report')
     const overviewReport = OVERVIEW_BENEFITS.report
     if (overviewReport.activation === 'none') throw new Error('report must be activatable')

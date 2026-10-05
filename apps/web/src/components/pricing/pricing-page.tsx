@@ -39,8 +39,9 @@ import { PremiumCheckoutButton } from './premium-checkout-button'
  * review, which is why the inventory above is spelled out rather than gestured
  * at.) A version before THAT claimed the page was light because
  * "dark mode is a Premium in-app toggle that this page's free-tier audience does
- * not have"; that was false — story 25-3 made dark mode FREE, and this file's own
- * `FREE_FEATURES` lists it. Do not act on the retired rationale.
+ * not have"; that was false — story 25-3 made dark mode FREE (and since story
+ * 95.1 the theme just follows the device, so neither card lists it). Do not act
+ * on the retired rationale.
  */
 export function PricingPageView(): React.ReactElement {
   return (

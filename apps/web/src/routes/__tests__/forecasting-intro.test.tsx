@@ -29,7 +29,7 @@
  * it to be rediscovered as a bug.
  */
 
-import { renderWithRouter, screen } from '@/test/utils'
+import { fireEvent, renderWithRouter, screen } from '@/test/utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
 import { Route } from '../forecasting'
@@ -168,12 +168,17 @@ describe('the /forecasting page intro (57.1, AC-3)', () => {
     expect(screen.getByRole('button', { name: /my forecasts/i })).toBeInTheDocument()
 
     // jsdom applies no Tailwind, so the old `hidden sm:block` description WAS in
-    // this DOM; these are red on the pre-95.1 code.
-    for (const description of [
-      'Create and model financial scenarios',
-      'View forecast visualizations',
-      'Saved scenarios and results',
-    ]) {
+    // this DOM — but only the ACTIVE tab's one. So each tab is activated in turn
+    // and its own description checked while it is the one that would render;
+    // asserting all three on the default tab would be vacuous for two of them
+    // (story 95.1 code review).
+    const descriptionByTab: [RegExp, string][] = [
+      [/scenario builder/i, 'Create and model financial scenarios'],
+      [/projections/i, 'View forecast visualizations'],
+      [/my forecasts/i, 'Saved scenarios and results'],
+    ]
+    for (const [tabName, description] of descriptionByTab) {
+      fireEvent.click(screen.getByRole('button', { name: tabName }))
       expect(screen.queryByText(description), `"${description}" must be gone`).toBeNull()
     }
   })

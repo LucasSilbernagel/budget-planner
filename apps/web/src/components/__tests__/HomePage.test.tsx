@@ -811,6 +811,11 @@ describe('95.1: the account notice is hidden for any signed-in session (D2)', ()
 
     expect(screen.getByText(SUBTITLE)).toBeInTheDocument()
     expect(screen.getByText(PILLARS)).toBeInTheDocument()
+    // Presence twin of the signed-in arms' second absence check, so that check
+    // cannot pass on a string the box no longer renders.
+    expect(
+      screen.getByText('Intentional budgeting without bank sync or AI integrations.')
+    ).toBeInTheDocument()
   })
 })
 

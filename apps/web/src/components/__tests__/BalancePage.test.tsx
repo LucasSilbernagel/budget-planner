@@ -1593,7 +1593,7 @@ describe('BalancePage — the contribution control serves both populations (Stor
       /comes\s+out\s+of\s+your\s+pay\s+before\s+the\s+income\s+you\s+entered/i
     )
     // Old-copy guard (story 95.1): the long "reaches your bank account" phrasing is gone.
-    expect(help.textContent).not.toMatch(/reaches\s+your\s+bank\s+account/)
+    expect(help.textContent).not.toMatch(/reaches\s+your\s+bank\s+account/i)
 
     // ⚠️ PRESENCE IS NOT EXCLUSIVITY. Code review: the containment pin above cannot
     // fail against copy that keeps this sentence AND appends a disjunctive escape
