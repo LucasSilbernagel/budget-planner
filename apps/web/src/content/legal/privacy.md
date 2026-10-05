@@ -1,6 +1,6 @@
 _This page is informational and does not constitute legal advice._
 
-_Last updated: 28 September 2026_
+_Last updated: 5 October 2026_
 
 This Privacy Policy explains what data Longhand Budget ("we", "the Service") handles and how.
 We have designed the Service to collect as little personal data as possible.
@@ -43,7 +43,7 @@ What we store on your device falls into a few strictly-necessary or functional c
 - **Sign-in cookies (Premium only)** — when you log in, we set a `session` cookie and a short-lived `ml_csrf` login-security cookie.
   Both are `HttpOnly`, `SameSite=Lax`, and `Secure` in production, and exist only to keep you signed in and protect the login flow.
 - **Your free-tier data** — as described above, your budget data is stored on your own device because on-device storage *is* the free service you asked for.
-- **Display preferences** — your theme and currency choices are saved locally so the app remembers them.
+- **Display preferences** — your currency choice is saved locally so the app remembers it. The light or dark theme simply follows your device's setting; nothing is stored for it.
 - **Analytics marker** — our privacy-friendly analytics writes a single non-identifying `_swa` marker (see "Analytics" below).
 
 Because every one of these is either strictly necessary, a service you explicitly requested, a functional preference you set, or privacy-preserving audience measurement, **we do not show a cookie-consent banner**.

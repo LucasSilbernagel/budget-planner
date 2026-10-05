@@ -72,7 +72,9 @@ describe('ReportPage', () => {
     mockStatus({ hasAccess: false, subscriptionStatus, isAuthenticated: isAuth })
     render(<ReportPage />)
 
-    expect(screen.getByTestId('premium-prompt')).toHaveTextContent('Financial Summary Report')
+    // Exact (anchored), not a substring: the gate's `featureName` keeps the PLAIN
+    // name. Only the prompt's own benefit list says "Downloadable …" (story 95.1, D1).
+    expect(screen.getByTestId('premium-prompt')).toHaveTextContent(/^Financial Summary Report$/)
     expect(screen.queryByTestId('financial-summary-report')).not.toBeInTheDocument()
   })
 

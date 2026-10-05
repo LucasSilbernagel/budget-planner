@@ -80,6 +80,11 @@ async function servedHead(path: string, status = 200) {
 }
 
 describe('per-route metadata in the served head (was e2e page-metadata, story 40.1)', () => {
+  it('the Overview is titled by its page name alone (story 95.1, FR154)', async () => {
+    const { title } = await servedHead('/')
+    expect(title).toBe('Overview · Longhand Budget')
+  })
+
   it('a route that had no head before story 40.1 names itself', async () => {
     const { title, description } = await servedHead('/income')
     expect(title).toBe('Income · Longhand Budget')
@@ -243,6 +248,33 @@ describe('loading state: the server response (was e2e loading-state, story 38.2)
     ]) {
       expect(html, `/ lost static content: ${markup}`).toContain(markup)
     }
+  })
+
+  /**
+   * Story 95.1 (FR154, D2): a signed-in session (free included) is served NO
+   * "No account needed …" notice. The test above is the paired signed-out control.
+   *
+   * ⚠️ The dev-only seed seam reads `E2E_SESSION_SEED` per request, so it is set
+   * for this one request and restored in `finally`; a leak would turn every later
+   * test in this file into a signed-in render.
+   */
+  it('a signed-in FREE session is served no account notice on / (story 95.1, D2)', async () => {
+    process.env['E2E_SESSION_SEED'] = JSON.stringify({
+      isAuthenticated: true,
+      userId: 'u-95-1',
+      email: 'u-95-1@example.test',
+      subscriptionStatus: 'free',
+    })
+    let html: string
+    try {
+      html = (await app.get('/')).body
+    } finally {
+      process.env['E2E_SESSION_SEED'] = ''
+    }
+    expect(html).toContain('>Track your finances with privacy and control</p>')
+    expect(html).not.toContain(
+      '>No account needed · Optional sync is EU-hosted · No bank connection.</p>'
+    )
   })
 })
 

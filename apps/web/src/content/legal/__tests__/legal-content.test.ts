@@ -304,3 +304,32 @@ describe('privacy page: the retention warning email is disclosed (story 73.2)', 
     expect(section).toMatch(/never receives your financial data/)
   })
 })
+
+/**
+ * Story 95.1 (FR154): the theme is no longer stored (story 61.1 deleted the theme
+ * store; it follows `prefers-color-scheme`), so the privacy policy must not say it
+ * is saved. Scoped to the Display-preferences bullet, and it must NOT claim currency
+ * is the ONLY thing stored locally (other UI preferences are).
+ */
+describe('privacy page: display preferences (story 95.1)', () => {
+  function displayPreferencesBullet(): string {
+    const lines = PRIVACY_PAGE.content
+      .split('\n')
+      .filter((line) => line.startsWith('- **Display preferences**'))
+    expect(lines, 'privacy.md must have exactly one Display preferences bullet').toHaveLength(1)
+    return lines[0] ?? ''
+  }
+
+  it('says the currency choice is saved and the theme follows the device', () => {
+    const bullet = displayPreferencesBullet()
+    expect(bullet).toMatch(/currency\s+choice\s+is\s+saved\s+locally/i)
+    expect(bullet).toMatch(/theme\s+simply\s+follows\s+your\s+device's\s+setting/i)
+    expect(bullet).toMatch(/nothing\s+is\s+stored\s+for\s+it/i)
+  })
+
+  it('no longer claims the theme is saved, nor that currency is the only thing saved', () => {
+    const bullet = displayPreferencesBullet()
+    expect(bullet).not.toMatch(/theme\s+and\s+currency\s+choices\s+are\s+saved/i)
+    expect(bullet).not.toMatch(/only\s+(your\s+)?currency/i)
+  })
+})

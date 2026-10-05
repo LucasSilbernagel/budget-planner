@@ -247,6 +247,20 @@ describe('the canonical Premium benefit set is the same on every surface', () =>
     expect(dialogItems.map((li) => li.textContent?.trim())).toEqual(expected)
   })
 
+  it('"Downloadable" is the upgrade prompt\'s wording only; other surfaces keep the plain name (story 95.1, D1)', () => {
+    // Pinned BOTH ways. The prompt-order test above derives its expectation from
+    // PROMPT_COPY, so it cannot see this wording at all. This pins the Overview
+    // `featureName`; the other plain-name surfaces are pinned exactly in their own
+    // suites: `/settings` tile `report-section.test.tsx` (locked button name
+    // 'Financial Summary Report — premium, locked'), `/report` gate
+    // `ReportPage.test.tsx` (anchored featureName). `/pricing` and the Overview
+    // label stay under the download fence below.
+    expect(PROMPT_COPY.report).toBe('Downloadable Financial Summary Report')
+    const overviewReport = OVERVIEW_BENEFITS.report
+    if (overviewReport.activation === 'none') throw new Error('report must be activatable')
+    expect(overviewReport.featureName).toBe('Financial Summary Report')
+  })
+
   it('points each openable benefit at its own route', () => {
     // ⚠️ WRITTEN OUT INDEPENDENTLY, and that is the entire point. Every other href
     // assertion in the suite derives its expected value from `OVERVIEW_BENEFITS`
@@ -474,11 +488,21 @@ describe('the benefit copy claims only what ships', () => {
     // The button calls `window.print()`. Any PDF comes from the user's own browser
     // print dialog — "save … as a PDF from your browser" is true, "generate a PDF"
     // or "download your report" is not.
-    assertEverySurface('report', (copy, surface) =>
-      expect(copy, `${surface} attributes the PDF to the app`).not.toMatch(
+    //
+    // ⚠️ ONE DECIDED CARVE-OUT (story 95.1, D1, Lucas 2026-10-04): the upgrade
+    // prompt's row reads "Downloadable Financial Summary Report" (the download being
+    // the browser's Save-as-PDF). Only that exact word on that one surface is
+    // exempt; the rest of its copy, and every other surface, stay fenced. The
+    // both-ways pin above keeps the word from spreading.
+    assertEverySurface('report', (copy, surface) => {
+      const fenced =
+        surface === 'upgrade prompt'
+          ? copy.replace(/^downloadable financial summary report$/, 'financial summary report')
+          : copy
+      expect(fenced, `${surface} attributes the PDF to the app`).not.toMatch(
         /generates? a pdf|download/
       )
-    )
+    })
   })
 
   it('never claims categories sync across devices', () => {

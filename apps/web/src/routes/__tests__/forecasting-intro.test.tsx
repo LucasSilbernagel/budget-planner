@@ -29,7 +29,7 @@
  * it to be rediscovered as a bug.
  */
 
-import { renderWithRouter, screen } from '@/test/utils'
+import { fireEvent, renderWithRouter, screen } from '@/test/utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
 import { Route } from '../forecasting'
@@ -156,6 +156,31 @@ describe('the /forecasting page intro (57.1, AC-3)', () => {
     expect(position & Node.DOCUMENT_POSITION_CONTAINED_BY).toBeFalsy()
     expect(intro.contains(tabStrip as Node)).toBe(false)
     expect((tabStrip as HTMLElement).contains(intro)).toBe(false)
+  })
+
+  it('keeps all three tabs but renders none of the old per-tab descriptions (story 95.1, D3)', async () => {
+    mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
+    renderWithRouter(<ForecastingPage />)
+
+    // Positive anchors first (awaited, so the absence below is not vacuous).
+    expect(await screen.findByRole('button', { name: /scenario builder/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /projections/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /my forecasts/i })).toBeInTheDocument()
+
+    // jsdom applies no Tailwind, so the old `hidden sm:block` description WAS in
+    // this DOM — but only the ACTIVE tab's one. So each tab is activated in turn
+    // and its own description checked while it is the one that would render;
+    // asserting all three on the default tab would be vacuous for two of them
+    // (story 95.1 code review).
+    const descriptionByTab: [RegExp, string][] = [
+      [/scenario builder/i, 'Create and model financial scenarios'],
+      [/projections/i, 'View forecast visualizations'],
+      [/my forecasts/i, 'Saved scenarios and results'],
+    ]
+    for (const [tabName, description] of descriptionByTab) {
+      fireEvent.click(screen.getByRole('button', { name: tabName }))
+      expect(screen.queryByText(description), `"${description}" must be gone`).toBeNull()
+    }
   })
 
   it('reads standalone for a nav arrival: it does not depend on the Overview copy', async () => {

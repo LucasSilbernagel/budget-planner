@@ -194,6 +194,12 @@ export function HomePage() {
    */
   const sessionSeed = useSessionSeed()
   const [reachesPremiumFromNav] = useState(() => isEntitledSeed(sessionSeed))
+  // Story 95.1 (FR154, D2): the "No account needed …" notice is for visitors, so
+  // ANY signed-in session (free included, so NOT `isEntitledSeed`) skips it. Same
+  // initializer-only seed read as above: SSR and the first client frame agree, so
+  // there is no flash and no hydration mismatch. `null` (unverified) still shows
+  // it, which is the harmless direction.
+  const [isSignedIn] = useState(() => sessionSeed?.isAuthenticated === true)
 
   const incomeSources = useIncomeSources()
   const expenses = useExpenses()
@@ -647,8 +653,10 @@ export function HomePage() {
                 file for why the two <p> text nodes must stay byte-identical
                 (an SSR HTML substring assertion pins them) and why dismissal
                 needs BOTH a pre-paint <head> bootstrap and this component's
-                effect. */}
-            <AccountNoticeBox />
+                effect. Since story 95.1 (D2) it renders for signed-out and
+                unverified sessions only; the gate lives here so the box itself
+                stays auth-blind. */}
+            {!isSignedIn && <AccountNoticeBox />}
           </div>
         </header>
 
@@ -1742,7 +1750,9 @@ function CustomProfilesFeatureLabel(): React.ReactElement {
  * The name matches the shipped `/settings` tile and the route's `featureName`
  * ("Financial summary report" / "Financial Summary Report") rather than
  * `features.md`'s former "Printable summary report" — one feature must not have two
- * names, which is the drift this whole story exists to remove.
+ * names, which is the drift this whole story exists to remove. The one decided
+ * exception is the upgrade prompt's benefit list, which says "Downloadable
+ * Financial Summary Report" (story 95.1, D1); see `premium-prompt.tsx`.
  */
 function ReportFeatureLabel(): React.ReactElement {
   return (
@@ -1841,7 +1851,8 @@ type OverviewBenefit =
  *
  * `featureName` values match the shipped `/settings` tiles exactly
  * ("Financial Summary Report", "Custom Categories") so one feature does not gain a
- * second accessible name.
+ * second accessible name. (The upgrade prompt's benefit list is the decided
+ * exception: "Downloadable Financial Summary Report", story 95.1 D1.)
  */
 export const OVERVIEW_BENEFITS: Record<PremiumBenefitId, OverviewBenefit> = {
   // Activatable, but not a route: there is no /sync page to send anyone to, so

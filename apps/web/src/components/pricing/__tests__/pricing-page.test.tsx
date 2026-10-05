@@ -9,7 +9,9 @@
  *     (five since story 33.2 / FR56: multi-device sync · advanced forecasting ·
  *     custom profiles · financial summary report · custom categories), never Dark
  *     mode or No ads.
- *   - Dark mode is a FREE feature (story 25-3).
+ *   - Dark mode is free for everyone (story 25-3), but since story 95.1 (FR154)
+ *     the Free card no longer lists it either: the theme simply follows the
+ *     device, so it is not a plan feature on either card.
  *
  * Story 33.2 added the COUNT assertion this file was missing. Cross-surface parity
  * (no surface omitting or inventing a benefit) is asserted once, centrally, in
@@ -80,9 +82,12 @@ describe('PricingPageView benefit lists', () => {
     expect(premium.queryByText(/no ads/i)).not.toBeInTheDocument()
   })
 
-  it('lists Dark mode under the Free plan (story 25-3)', () => {
+  it('does not list dark mode under the Free plan either (story 95.1, FR154)', () => {
     render(<PricingPageView />)
-    expect(within(card('Free')).getByText('Dark mode')).toBeInTheDocument()
+    const free = within(card('Free'))
+    // Positive anchor in the same card, so the absence cannot pass on an empty card.
+    expect(free.getByText('Retirement modelling')).toBeInTheDocument()
+    expect(free.queryByText(/dark mode/i)).not.toBeInTheDocument()
   })
 })
 
