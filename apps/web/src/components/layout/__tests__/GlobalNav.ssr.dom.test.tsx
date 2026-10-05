@@ -47,7 +47,7 @@ function Mismatch() {
   return renderingOnClient ? <i>client</i> : <b>server</b>
 }
 
-async function makeRouter(seed: SessionSeed, path: string, withMismatch = false) {
+async function makeRouter(seed: SessionSeed | null, path: string, withMismatch = false) {
   const rootRoute = createRootRoute({
     component: () => (
       <SessionSeedProvider seed={seed}>
@@ -69,7 +69,7 @@ async function makeRouter(seed: SessionSeed, path: string, withMismatch = false)
 }
 
 /** The server HTML, parsed into a detached container for querying. */
-async function serverNav(seed: SessionSeed, path = '/') {
+async function serverNav(seed: SessionSeed | null, path = '/') {
   const router = await makeRouter(seed, path)
   const html = renderToString(<RouterProvider router={router} />)
   const container = document.createElement('div')
@@ -99,7 +99,8 @@ describe('GlobalNav — the server HTML (JavaScript off, story 59.2 AC-4)', () =
 
   it('puts every free More destination in the server HTML as a real link inside the disclosure', async () => {
     const { nav } = await serverNav(SIGNED_OUT)
-    expect(panelHrefs(nav)).toEqual(['/balance', '/retirement'])
+    // + `/settings`, last: the phone-only Settings row (story 96.3).
+    expect(panelHrefs(nav)).toEqual(['/balance', '/retirement', '/settings'])
     // Not a React-only control: plain anchors, no button anywhere in the nav.
     expect(nav.querySelectorAll('button')).toHaveLength(0)
   })
@@ -121,9 +122,45 @@ describe('GlobalNav — the server HTML (JavaScript off, story 59.2 AC-4)', () =
       '/profiles',
       '/report',
       '/categories',
+      // The phone-only Settings row, last (story 96.3).
+      '/settings',
     ])
     expect(nav.querySelector('details')).not.toHaveAttribute('open')
   })
+
+  /**
+   * Story 96.3 (FR163, AC 4): with JavaScript off on a phone, every visitor
+   * reaches `/settings` through the native More `<details>`. The nav does not
+   * read the session for this row, so it is the same for a signed-out, an
+   * entitled and an UNVERIFIED (`null` seed) visitor; the last one is the state
+   * in which the account cluster renders neither "Sign in" nor a gear.
+   * The native toggle and the click are the browser's: the one-off JS-off
+   * probe is recorded in the story's Debug Log.
+   */
+  it.each([
+    ['a signed-out', SIGNED_OUT],
+    ['an entitled', ENTITLED],
+    ['an unverified (null seed)', null],
+  ] as const)(
+    'serves %s visitor the Settings row as a real link, last in the closed disclosure',
+    async (_who, seed) => {
+      const { nav } = await serverNav(seed)
+      const details = nav.querySelector('details') as HTMLDetailsElement
+      expect(details, 'no <details> in the server HTML').not.toBeNull()
+      expect(details).not.toHaveAttribute('open')
+      const last = details.querySelector(':scope > ul > li:last-child') as HTMLElement
+      expect(last, 'the panel has no rows').not.toBeNull()
+      const link = last.querySelector(':scope > a')
+      expect(link, 'the last row is not a link').not.toBeNull()
+      expect(link).toHaveAttribute('href', '/settings')
+      expect(link?.textContent).toBe('Settings')
+      // Phones only, as a token (jsdom applies no stylesheet).
+      expect([...last.classList]).toContain('sm:hidden')
+      expect([...last.classList]).not.toContain('max-sm:hidden')
+      // The only /settings link in the server nav.
+      expect(nav.querySelectorAll('a[href="/settings"]')).toHaveLength(1)
+    }
+  )
 })
 
 describe('GlobalNav — a panel opened BEFORE hydration (story 59.2 AC-5)', () => {
@@ -193,7 +230,7 @@ describe('GlobalNav — a panel opened BEFORE hydration (story 59.2 AC-5)', () =
  * directly under the hydration root, MEASURED, so a control is required).
  */
 describe('GlobalNav — hydration', () => {
-  async function hydrate(seed: SessionSeed, withMismatch: boolean) {
+  async function hydrate(seed: SessionSeed | null, withMismatch: boolean) {
     renderingOnClient = false
     const container = document.createElement('div')
     container.innerHTML = renderToString(
@@ -216,9 +253,12 @@ describe('GlobalNav — hydration', () => {
     return { recoverable, anchors }
   }
 
+  // 9 / 13 anchors: was 8 / 12 until story 96.3 added the phone-only Settings
+  // sheet row, which is session-independent (so the null seed has it too).
   it.each([
-    ['a signed-out', SIGNED_OUT, 8],
-    ['an entitled', ENTITLED, 12],
+    ['a signed-out', SIGNED_OUT, 9],
+    ['an entitled', ENTITLED, 13],
+    ['an unverified (null seed)', null, 9],
   ] as const)(
     'hydrates %s session’s nav with no recoverable error',
     async (_tier, seed, anchors) => {

@@ -99,6 +99,9 @@ describe('AuthIndicator — server HTML, signed out (story 69.2, JS off)', () =>
       expect(row.querySelector('[role="status"]')?.contains(gear[0] as Node)).toBe(false)
       // Not wrapped in <noscript>: this is the live link, for every visitor.
       expect(gear[0]?.closest('noscript')).toBeNull()
+      // >= 640px only since story 96.3 (FR163): the nav's More sheet is the
+      // phone route, JS off included (`GlobalNav.ssr.dom.test.tsx`).
+      expect([...(gear[0] as Element).classList]).toContain('max-sm:hidden')
     }
   )
 })
@@ -141,6 +144,11 @@ describe('AuthIndicator — server HTML, signed in (stories 59.3, 69.3)', () => 
     expect(noscripts, 'expected exactly one <noscript> in the cluster').toHaveLength(1)
     expect(noscripts[0]).toMatch(/<a [^>]*href="\/settings"/)
     expect(noscripts[0]).toMatch(/aria-label="Settings"/)
+    // Story 96.3 (FR163): >= 640px only, via the shared gear class. Token-
+    // bounded match on the anchor's class attribute (`max-sm:hidden`, never a
+    // bare substring hit inside another token).
+    const anchorClass = (noscripts[0] as string).match(/<a [^>]*class="([^"]*)"/)?.[1] ?? ''
+    expect(anchorClass.split(/\s+/), 'the JS-off gear shows on a phone').toContain('max-sm:hidden')
     // And no live /settings link outside it while the menu is closed.
     expect(html.replace(noscripts[0] as string, '')).not.toContain('href="/settings"')
   })

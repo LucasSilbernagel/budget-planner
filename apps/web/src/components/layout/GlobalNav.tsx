@@ -5,6 +5,7 @@ import { useSessionSeed } from '../../context/session-seed'
 import { isEntitledSeed } from '../../lib/premium/entitlement'
 import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
 import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon'
+import { SettingsIcon } from '../ui/SettingsIcon'
 
 /**
  * Persistent global navigation (story 11-1, Epic 11 UX review P0-a).
@@ -22,10 +23,18 @@ import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon
  * Categories. Every "six" below describes the free nav unless it says otherwise;
  * a "seven" or "eleven" in a story's history note is the pre-69.2 count.
  *
+ * ⚠️ AMENDED by story 96.3 (FR163, 2026-10-05): BELOW 640px Settings is back,
+ * as the LAST row of the More sheet, for EVERY session (and the account
+ * cluster's Settings routes hide there). It is a width-scoped row, not a
+ * destination of either list: the destination counts above (six / ten) are
+ * unchanged, and the sheet row is the one documented exception. See
+ * `SETTINGS_SHEET_CELL_CLASS`.
+ *
  * ⚠️ A destination COUNT is not an anchor count since story 69.3: Balances and
  * Retirement have two DOM copies (see "Balances and Retirement on the row from
  * `lg`" below), so the DOM holds eight anchors for a free session and twelve
- * for an entitled one.
+ * for an entitled one. ~~eight / twelve~~ NINE / THIRTEEN since story 96.3:
+ * the phone-only Settings sheet row is one more anchor in every session.
  *
  * ⚠️ This REVERSES a named scope decision, and the reversal is recorded rather
  * than the old text being quietly deleted. Until 2026-09-14 this docblock read:
@@ -56,9 +65,10 @@ import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon
  * ## Responsive: ONE DOM subtree, switched by CSS alone (stories 31.4, 31.5)
  *
  * There is exactly one `<nav>`, one OUTER `<ul>`, one More `<details>` with its
- * `<summary>` (a `<button>` until story 59.2) and — since story 69.3 — eight
- * `<a>` for a free session or twelve for an entitled one (six and ten from
- * story 69.2 until 69.3 added the two `lg` row copies), in the DOM at every
+ * `<summary>` (a `<button>` until story 59.2) and — since story 96.3 — nine
+ * `<a>` for a free session or thirteen for an entitled one (six and ten from
+ * story 69.2 until 69.3 added the two `lg` row copies; eight and twelve until
+ * 96.3 added the `sm:hidden` Settings sheet row), in the DOM at every
  * viewport. The COUNT varies by tier; the STRUCTURE never does.
  * Desktop (>= 640px) is the unprefixed cascade —
  * an in-flow top bar; below `sm` the SAME elements become a fixed bottom tab
@@ -136,9 +146,12 @@ import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon
  * (overflowing). So the bar shows FIVE cells — Overview, Income, Expenses,
  * Savings and a "More" trigger — and the remaining destinations live in a
  * sheet that More discloses: two for a free session, six for an entitled one
- * (three and seven from story 58.1 until story 69.2 took Settings out). The bar
- * is now 56.75px, and the tier cannot change that — 58.1 and 69.2 touched only
- * the sheet list, never `PRIMARY_TABS`.
+ * (three and seven from story 58.1 until story 69.2 took Settings out). Since
+ * story 96.3 (FR163) the PHONE sheet holds one more, Settings, last: three rows
+ * for a free session and seven for an entitled one below `sm` (the dropdown at
+ * `sm` and up still holds two / six). The bar is now 56.75px, and the tier
+ * cannot change that — 58.1, 69.2 and 96.3 touched only the sheet, never
+ * `PRIMARY_TABS`.
  *
  * ⚠️ The structure that makes this legal is a NESTED `<ul>` inside the fifth
  * `<li>`. The obvious alternative — leaving every `<li>` in the bar and
@@ -331,6 +344,14 @@ const MORE_DESTINATIONS: readonly NavItem[] = [
   // one, so no session is left without a route to `/settings`. This REVERSES
   // FR90's "Settings STAYS in the nav" (amended in place in `epics.md`). Do not
   // put it back here without taking the account-cluster route out.
+  //
+  // ⚠️ AMENDED by story 96.3 (FR163, decision Lucas 2026-10-05): below 640px
+  // Settings IS back in the nav, as the last row of the More sheet, and the
+  // account-cluster routes ARE taken out there (`max-sm:hidden`), so the
+  // condition above is honoured, per width. It is still NOT in this list: this
+  // list is also `PROMOTED_PATHS`, so an entry here would give Settings an `lg`
+  // ROW copy (a desktop nav anchor) and More's `max-lg:` cue. It is one extra
+  // `<li>` after the sheet's list instead; see `SETTINGS_SHEET_CELL_CLASS`.
 ]
 
 /**
@@ -405,6 +426,10 @@ export const PREMIUM_NAV_ROUTES: readonly string[] = PREMIUM_DESTINATIONS.map((i
  * removed from `MORE_DESTINATIONS`. Story 69.2 removed it on purpose (Settings
  * lives in the account cluster now), so both the splice and its guard went with
  * it. There is no longer a fixed last row to protect.
+ *
+ * ⚠️ AMENDED by story 96.3 (FR163): below 640px there IS a fixed last row
+ * again, Settings, for every session. It is rendered AFTER this list, not in
+ * it, so the concatenation stays plain and nothing here needs guarding.
  */
 const MORE_DESTINATIONS_ENTITLED: readonly NavItem[] = [
   ...MORE_DESTINATIONS,
@@ -515,6 +540,47 @@ const LG_MEDIA_QUERY = '(min-width: 1024px)'
 
 const PROMOTED_ACTIVE_BELOW_LG_CLASS =
   'max-lg:bg-green-50 max-lg:text-green-700 dark:max-lg:bg-green-900/30 dark:max-lg:text-green-300'
+
+/** The route of the phone-only Settings sheet row (story 96.3). */
+const SETTINGS_PATH = '/settings'
+
+/**
+ * The phone-only Settings sheet row's `<li>` (story 96.3, FR163).
+ *
+ * Below 640px Settings is the LAST row of the More sheet for EVERY session
+ * (signed out, loading, free, paid), and the account cluster's Settings routes
+ * (the gear, the `<noscript>` gear, the account menu's row and its separator)
+ * are `max-sm:hidden` in `auth/auth-indicator.tsx`. At 640px and up this row
+ * is not rendered (`sm:hidden`), so the dropdown, and a free session's
+ * trigger-less `lg` row, are exactly as they were. A mobile-only ELEMENT, so
+ * base classes + `sm:hidden` (the composition rule in the docblock).
+ *
+ * ⚠️⚠️ Deliberately NOT an entry of any destination list: the "ONE list, read
+ * TWICE" invariant's one documented exception. It is a WIDTH-scoped row, not a
+ * tier- or preference-scoped one. MEASURED by story 96.3's mutation arms:
+ *  - in `visibleMoreDestinations` (not promoted), it makes `moreNeededAtLg`
+ *    true for every free session, un-hiding an EMPTY More at `lg` (and
+ *    disarming the lg-resize close effect), and it would light More with the
+ *    unprefixed `ACTIVE_CLASS` on `/settings` at every width;
+ *  - in `MORE_DESTINATIONS`, it becomes a PROMOTED path, so it gains an `lg`
+ *    row copy, i.e. a desktop nav anchor beside the account cluster's route.
+ * `GlobalNav.test.tsx` goes red on both.
+ *
+ * It does not depend on the session at all, so the server and first client
+ * render agree (no tier, no viewport, no width read).
+ */
+const SETTINGS_SHEET_CELL_CLASS = 'max-sm:min-w-0 sm:hidden'
+
+/**
+ * More's "you are here" on `/settings` (story 96.3, decision Q1 = yes):
+ * `ACTIVE_CLASS`, scoped `max-sm:`, because Settings is behind More only below
+ * 640px. At `sm` and up the account cluster is its route and More must not
+ * light. The same deliberate exception as `PROMOTED_ACTIVE_BELOW_LG_CLASS`
+ * (the More trigger is not a link). ⚠️ The pale tint is below the screenshots'
+ * 0.2 threshold, so only the token pin in `GlobalNav.test.tsx` can see it.
+ */
+const SETTINGS_ACTIVE_BELOW_SM_CLASS =
+  'max-sm:bg-green-50 max-sm:text-green-700 dark:max-sm:bg-green-900/30 dark:max-sm:text-green-300'
 
 /**
  * The More trigger, a `<summary>`, at EVERY width since story 59.2.
@@ -782,6 +848,21 @@ export function GlobalNav() {
    * destination would otherwise be unreachable at `lg` with nothing red.
    */
   const moreNeededAtLg = visibleMoreDestinations.some((item) => !PROMOTED_PATHS.has(item.to))
+
+  /**
+   * Whether this is the settings page, for the phone-only Settings row and
+   * More's `max-sm:` cue (story 96.3). LOWERCASED, like the account cluster's
+   * gear (`auth-indicator.tsx`): `/Settings` serves the page, but TanStack's
+   * active match is case-sensitive (measured in 69.2's review). Computed apart
+   * from `activeMoreItem` on purpose: see `SETTINGS_SHEET_CELL_CLASS`.
+   */
+  const isOnSettingsPage = pathname.toLowerCase() === SETTINGS_PATH
+  const triggerActiveClass = [
+    moreActiveClass,
+    isOnSettingsPage ? SETTINGS_ACTIVE_BELOW_SM_CLASS : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   /**
    * Close the sheet.
@@ -1155,7 +1236,9 @@ export function GlobalNav() {
                 setIsMoreOpen((open) => !open)
               }}
               className={
-                moreActiveClass ? `${MORE_TRIGGER_CLASS} ${moreActiveClass}` : MORE_TRIGGER_CLASS
+                triggerActiveClass
+                  ? `${MORE_TRIGGER_CLASS} ${triggerActiveClass}`
+                  : MORE_TRIGGER_CLASS
               }
             >
               <MoreIcon className="h-6 w-6 sm:hidden" />
@@ -1189,6 +1272,31 @@ export function GlobalNav() {
                   </Link>
                 </li>
               ))}
+              {/* Settings, LAST, phones only (story 96.3, FR163). Outside every
+                  derived list on purpose: see `SETTINGS_SHEET_CELL_CLASS`. Marked
+                  from the lowercased read, so `activeProps={{}}` stops TanStack
+                  adding its own class (it still adds `aria-current` on an
+                  exact-case match, which agrees). `ACTIVE_CLASS` stays
+                  unprefixed, like every link colour here. */}
+              <li
+                className={SETTINGS_SHEET_CELL_CLASS}
+                data-nav-path={SETTINGS_PATH}
+                data-nav-settings
+              >
+                <Link
+                  to={SETTINGS_PATH}
+                  aria-current={isOnSettingsPage ? 'page' : undefined}
+                  className={
+                    isOnSettingsPage ? `${SHEET_ROW_CLASS} ${ACTIVE_CLASS}` : SHEET_ROW_CLASS
+                  }
+                  activeProps={{}}
+                  // Same-route click on /settings: see the sheet rows above.
+                  onClick={() => closeMore()}
+                >
+                  <SettingsIcon className="h-6 w-6 sm:hidden" />
+                  <span data-nav-label>Settings</span>
+                </Link>
+              </li>
             </ul>
           </details>
         </li>

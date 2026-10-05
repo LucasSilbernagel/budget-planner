@@ -53,7 +53,9 @@ import { GlobalNav } from '../GlobalNav'
  * below still passes. Before 59.2 the same count had a different reason: jsdom
  * applies no media queries. (It was EIGHT until story 43.3 removed
  * `/net-worth-projection`, and SEVEN until story 69.2 removed `/settings`; the
- * count follows the nav, never the viewport.)
+ * count follows the nav, never the viewport.) Story 96.3 (FR163) added ONE
+ * anchor that is not a destination of `SECTIONS`: the phone-only Settings
+ * sheet row (`SETTINGS_ROW` below), so every DOM anchor count gains one.
  *
  * Where openness DOES matter, this file uses jest-dom's `toBeVisible()`, which
  * respects `details[open]`. That is the story 59.2 block at the bottom. What a
@@ -90,6 +92,16 @@ const SECTIONS: readonly [label: RegExp, href: string][] = [...PRIMARY_TABS, ...
  * only by the screenshots since stories 84.2/84.3 (FR137).
  */
 const PROMOTED_COPIES = MORE_DESTINATIONS.length
+
+/**
+ * Story 96.3 (FR163): the phone-only Settings row, the LAST `<li>` of the More
+ * sheet for EVERY session, `sm:hidden`. It is NOT one of `SECTIONS` (it is a
+ * width-scoped row outside the nav's destination lists, see `GlobalNav.tsx`'s
+ * `SETTINGS_SHEET_CELL_CLASS`), but it IS one more DOM anchor, which jsdom
+ * (no stylesheet) sees at every width. Every count below that adds it says
+ * "was N until story 96.3".
+ */
+const SETTINGS_ROW = 1
 
 /** The More panel's list. Non-null asserted, so a scoped query cannot pass on nothing. */
 const sheetOf = (nav: HTMLElement): HTMLElement => {
@@ -189,38 +201,82 @@ describe('GlobalNav', () => {
     for (const link of links) expect(link).toHaveAttribute('href', href)
   })
 
-  it('exposes exactly the six top-level sections, as eight DOM anchors (no premium entry)', async () => {
+  it('exposes exactly the six top-level sections, as nine DOM anchors (no premium entry)', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
-    // Eight DOM anchors: six destinations + the two promoted row copies (69.3).
-    expect(within(nav).getAllByRole('link')).toHaveLength(SECTIONS.length + PROMOTED_COPIES)
+    // Nine DOM anchors: six destinations + the two promoted row copies (69.3)
+    // + the phone-only Settings row (was eight until story 96.3).
+    expect(within(nav).getAllByRole('link')).toHaveLength(
+      SECTIONS.length + PROMOTED_COPIES + SETTINGS_ROW
+    )
     expect(
       new Set(
         within(nav)
           .getAllByRole('link')
           .map((a) => a.getAttribute('href'))
       ).size
-    ).toBe(SECTIONS.length)
+    ).toBe(SECTIONS.length + SETTINGS_ROW)
     // Forecasting stays surfaced-but-locked on Home (story 7-2), not in the nav.
     expect(within(nav).queryByRole('link', { name: /forecast/i })).not.toBeInTheDocument()
   })
 
-  // Story 69.2 (FR109): Settings left the nav for the account cluster (the
-  // account menu signed in, a gear link signed out). The count above cannot
-  // say WHICH destination went; this says it by route, so a rename or a
-  // swap cannot pass it. The route to /settings that replaced this one is
-  // asserted in `auth-indicator.test.tsx` and `auth-indicator.ssr.dom.test.tsx`.
-  it('carries no link to /settings, in any form', async () => {
-    renderWithRouter(<GlobalNav />, { path: '/settings' })
+  // ⚠️ REWRITTEN by story 96.3 (FR163). Story 69.2 (FR109) took Settings out of
+  // the nav for the account cluster, and this test was "carries no link to
+  // /settings, in any form". Below 640px it is back, as the LAST sheet row for
+  // every session, and the account cluster's routes are `max-sm:hidden` there.
+  // jsdom applies no stylesheet, so the per-width rule is pinned as TOKENS
+  // (`sm:hidden` here; the complement is in `nav-account-row.test.tsx`), by
+  // `classList` membership: `max-sm:hidden` contains `sm:hidden` as a substring.
+  it('carries exactly one /settings link: the LAST sheet row, phones only', async () => {
+    renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
-    expect(nav.querySelector('a[href="/settings"]')).toBeNull()
-    expect(within(nav).queryByRole('link', { name: /settings/i })).toBeNull()
-    // Nothing in the nav is current on /settings, the More tab included: it is
-    // not a nav destination any more.
-    expect(nav.querySelector('[aria-current]')).toBeNull()
-    const summary = nav.querySelector('details > summary') as HTMLElement
-    expect(tokens(summary)).not.toContain('bg-green-50')
+    const links = nav.querySelectorAll('a[href="/settings"]')
+    expect(links, 'expected exactly one /settings link in the nav').toHaveLength(1)
+    expect(within(nav).getAllByRole('link', { name: 'Settings' })).toHaveLength(1)
+    const link = links[0] as HTMLAnchorElement
+    const sheet = sheetOf(nav)
+    const li = sheet.lastElementChild as HTMLElement
+    expect(li.contains(link), 'Settings is not the LAST row of the sheet').toBe(true)
+    expect(li.tagName).toBe('LI')
+    expect(li.parentElement, 'Settings is not a direct row of the sheet').toBe(sheet)
+    // Phones only: `sm:hidden`, and NOT the desktop-only mirror or the lg hide.
+    const liTokens = tokens(li)
+    expect(liTokens, 'the Settings row reaches >= 640px').toContain('sm:hidden')
+    expect(liTokens).not.toContain('max-sm:hidden')
+    expect(liTokens).not.toContain('lg:hidden')
+    // Not a promoted destination: no row copy, and no `data-nav-promoted`.
+    expect(li).not.toHaveAttribute('data-nav-promoted')
+    expect(rowCopiesOf(nav).map((a) => a.getAttribute('href'))).not.toContain('/settings')
+    // Styled like the other sheet rows: the shared row class (a 44px target),
+    // the gear icon (mobile-only like every icon) and a wrapped label.
+    expect(tokens(link)).toEqual(
+      expect.arrayContaining(['max-sm:min-h-[44px]', 'max-sm:flex', 'max-sm:gap-3', 'sm:block'])
+    )
+    const balancesRow = within(sheet).getByRole('link', { name: /^balances$/i })
+    expect(tokens(link)).toEqual(tokens(balancesRow))
+    const icon = link.querySelector(ICON_SVG)
+    expect(icon, 'the Settings row has no gear icon').not.toBeNull()
+    expect(tokens(icon as Element)).toContain('sm:hidden')
+    expect(link.querySelector('[data-nav-label]')?.textContent).toBe('Settings')
+    // Not current away from /settings.
+    expect(link).not.toHaveAttribute('aria-current')
+    expect(tokens(link)).not.toContain('bg-green-50')
   })
+
+  it.each(['/settings', '/Settings'])(
+    'marks the Settings row, and only it, current on %s',
+    async (path) => {
+      renderWithRouter(<GlobalNav />, { path })
+      const nav = await screen.findByRole('navigation', { name: /primary/i })
+      const link = within(sheetOf(nav)).getByRole('link', { name: 'Settings' })
+      expect(link).toHaveAttribute('aria-current', 'page')
+      // The unprefixed active treatment, like every link here (the colour guard
+      // below forbids a `max-*` colour on a link).
+      expect(tokens(link)).toContain('bg-green-50')
+      const current = [...nav.querySelectorAll('[aria-current]')]
+      expect(current, 'something else in the nav is current on /settings').toEqual([link])
+    }
+  )
 
   it('marks the current section with aria-current="page"', async () => {
     renderWithRouter(<GlobalNav />, { path: '/expenses' })
@@ -258,7 +314,10 @@ describe('GlobalNav', () => {
     const list = nav.querySelector('ul')
     expect(list).not.toBeNull()
 
-    expect(within(nav).getAllByRole('link')).toHaveLength(SECTIONS.length + PROMOTED_COPIES)
+    // + the Settings row (story 96.3).
+    expect(within(nav).getAllByRole('link')).toHaveLength(
+      SECTIONS.length + PROMOTED_COPIES + SETTINGS_ROW
+    )
     // The single <nav> carries the mobile bar's own positioning...
     expect(tokens(nav)).toContain('max-sm:fixed')
     // ...while the same <ul> carries BOTH the desktop flex row and the mobile grid.
@@ -340,7 +399,12 @@ describe('GlobalNav', () => {
       'Expenses',
       'Savings',
     ])
-    expect(sheetAnchors.map((a) => a.textContent?.trim())).toEqual(['Balances', 'Retirement'])
+    // + Settings, last, phones only (was two rows until story 96.3).
+    expect(sheetAnchors.map((a) => a.textContent?.trim())).toEqual([
+      'Balances',
+      'Retirement',
+      'Settings',
+    ])
     expect(rowCopiesOf(nav).map((a) => a.textContent?.trim())).toEqual(['Balances', 'Retirement'])
 
     // ⚠️ REVERSED by story 69.3 (decision D2, Lucas 2026-09-25). Until then
@@ -516,10 +580,11 @@ describe('GlobalNav', () => {
     // ICONS only: the desktop disclosure chevron (story 69.1) is the one svg
     // that must NOT carry `sm:hidden`, and it has its own test below.
     const icons = [...nav.querySelectorAll(ICON_SVG)]
-    // Seven: one per bar tab (4), one for More, one per sheet row (2). Was NINE
-    // until story 43.3 removed the Net Worth destination and its icon, and
-    // EIGHT until story 69.2 removed Settings and its gear.
-    expect(icons, 'expected one icon per destination plus the More trigger').toHaveLength(7)
+    // Eight: one per bar tab (4), one for More, one per sheet row (3, Settings
+    // included). Was NINE until story 43.3 removed the Net Worth destination
+    // and its icon, EIGHT until story 69.2 removed Settings and its gear, and
+    // seven until story 96.3 put the gear back as the phone-only sheet row.
+    expect(icons, 'expected one icon per destination plus the More trigger').toHaveLength(8)
     for (const icon of icons) {
       expect(
         tokens(icon),
@@ -531,9 +596,9 @@ describe('GlobalNav', () => {
 
     // Each label is wrapped so the e2e line-count probe can scope a Range to the
     // TEXT — over the whole anchor it measures 3 rects on a correct cell.
-    // Nine labels: the seven above + the two promoted row copies (story 69.3),
-    // which carry a label and NO icon, so the icon count stays seven.
-    expect(nav.querySelectorAll('[data-nav-label]')).toHaveLength(9)
+    // Ten labels: the eight above + the two promoted row copies (story 69.3),
+    // which carry a label and NO icon (was nine until story 96.3).
+    expect(nav.querySelectorAll('[data-nav-label]')).toHaveLength(10)
   })
 
   // Story 18-2 (review follow-ups), still true of the 31.5 single-row bar: the
@@ -697,6 +762,8 @@ describe('GlobalNav', () => {
         expect.arrayContaining(['max-lg:bg-green-50', 'max-lg:text-green-700'])
       )
       expect(triggerTokens, `the More tab is active at lg on ${href}`).not.toContain('bg-green-50')
+      // The /settings cue is not this route's (story 96.3).
+      expect(triggerTokens).not.toContain('max-sm:bg-green-50')
     })
 
     it.each(PRIMARY_TABS)('is NOT active on %s (%s)', async (_label, href) => {
@@ -708,6 +775,33 @@ describe('GlobalNav', () => {
         'bg-green-50'
       )
       expect(triggerTokens).not.toContain('max-lg:bg-green-50')
+      expect(triggerTokens, `the /settings cue leaked onto ${href}`).not.toContain(
+        'max-sm:bg-green-50'
+      )
+    })
+
+    // Story 96.3 (FR163, decision Q1): Settings is behind More below 640px only,
+    // so More's cue on /settings is `max-sm:`-scoped. NOT unprefixed (at >= 640px
+    // the account cluster is the route) and NOT the `max-lg:` promoted cue
+    // (640-1023px, Settings is not behind More). Token-only: the pale tint is
+    // below the screenshots' 0.2 threshold (84.2).
+    it.each(['/settings', '/Settings'])('is active below sm only on %s', async (path) => {
+      renderWithRouter(<GlobalNav />, { path })
+      const nav = await screen.findByRole('navigation', { name: /primary/i })
+      await within(sheetOf(nav)).findByRole('link', { name: 'Settings' })
+      const triggerTokens = tokens(moreTrigger(nav))
+      expect(triggerTokens, `the More tab is not marked active on ${path}`).toEqual(
+        expect.arrayContaining([
+          'max-sm:bg-green-50',
+          'max-sm:text-green-700',
+          'dark:max-sm:bg-green-900/30',
+          'dark:max-sm:text-green-300',
+        ])
+      )
+      expect(triggerTokens, 'More lights at >= 640px on /settings').not.toContain('bg-green-50')
+      expect(triggerTokens, 'More lights at 640-1023px on /settings').not.toContain(
+        'max-lg:bg-green-50'
+      )
     })
 
     // Anti-vacuity: `bg-green-50` must actually be the token the active
@@ -757,12 +851,13 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
     ).not.toContain('/retirement')
     // Five destinations, not six: the node is not rendered, rather than hidden
     // by CSS. Plus ONE promoted row copy (Balances): the Retirement row copy is
-    // filtered with its sheet row (story 69.3). 5 + 1 = 6.
-    expect(within(nav).getAllByRole('link')).toHaveLength(SECTIONS.length - 1 + 1)
+    // filtered with its sheet row (story 69.3). Plus the Settings row, which no
+    // preference filters (story 96.3; was 6 until then). 5 + 1 + 1 = 7.
+    expect(within(nav).getAllByRole('link')).toHaveLength(SECTIONS.length - 1 + 1 + SETTINGS_ROW)
     expect(rowCopiesOf(nav).map((a) => a.textContent?.trim())).toEqual(['Balances'])
   })
 
-  it('leaves the sheet holding exactly its other destination', async () => {
+  it('leaves the sheet holding exactly its other destination, then Settings', async () => {
     hidePlanner()
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
@@ -771,7 +866,8 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
     const sheet = [...lists][1]
     expect(
       [...sheet.querySelectorAll(':scope > li > a')].map((a) => a.textContent?.trim())
-    ).toEqual(['Balances'])
+      // Settings stays last with the planner hidden (story 96.3, AC 1).
+    ).toEqual(['Balances', 'Settings'])
   })
 
   it('drops exactly one icon and one label with the entry', async () => {
@@ -779,12 +875,13 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
 
-    // Six icons: four bar tabs, the More trigger, one sheet row. (Eight until
-    // story 43.3 removed the Net Worth destination; seven until story 69.2
-    // removed Settings.) Seven labels: those six + the Balances row copy, which
-    // has a label and no icon (story 69.3).
-    expect([...nav.querySelectorAll(ICON_SVG)]).toHaveLength(6)
-    expect(nav.querySelectorAll('[data-nav-label]')).toHaveLength(7)
+    // Seven icons: four bar tabs, the More trigger, two sheet rows (Balances,
+    // Settings). (Eight until story 43.3 removed the Net Worth destination;
+    // seven until story 69.2 removed Settings; six until story 96.3 put the
+    // phone-only Settings row back.) Eight labels: those seven + the Balances
+    // row copy, which has a label and no icon (story 69.3).
+    expect([...nav.querySelectorAll(ICON_SVG)]).toHaveLength(7)
+    expect(nav.querySelectorAll('[data-nav-label]')).toHaveLength(8)
   })
 
   it('leaves the four bar tabs and the More trigger untouched', async () => {
@@ -832,8 +929,11 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
     // ⚠️ Assert the BEFORE state too. Checking only the restored render would
     // pass identically on a component that never filters anything — the test
     // could not tell the feature from its absence.
-    // 5 destinations + the Balances row copy (story 69.3).
-    expect(within(hiddenNav).getAllByRole('link')).toHaveLength(SECTIONS.length - 1 + 1)
+    // 5 destinations + the Balances row copy (story 69.3) + the Settings row
+    // (story 96.3).
+    expect(within(hiddenNav).getAllByRole('link')).toHaveLength(
+      SECTIONS.length - 1 + 1 + SETTINGS_ROW
+    )
     unmount()
 
     usePlannerVisibilityStore.setState({ showRetirementPlanner: true })
@@ -845,7 +945,9 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
       '/retirement'
     )
     expect(rowCopiesOf(nav).map((a) => a.getAttribute('href'))).toEqual(['/balance', '/retirement'])
-    expect(within(nav).getAllByRole('link')).toHaveLength(SECTIONS.length + PROMOTED_COPIES)
+    expect(within(nav).getAllByRole('link')).toHaveLength(
+      SECTIONS.length + PROMOTED_COPIES + SETTINGS_ROW
+    )
   })
 
   /**
@@ -866,7 +968,8 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
     // DOM order: the four tabs, the two promoted ROW copies (story 69.3), then
     // the sheet rows. The row copies MUST be tagged: the pre-paint rule hides
     // `[data-nav-path='/retirement']`, and an untagged row copy would paint a
-    // hidden planner at lg on the first frame (AC-5).
+    // hidden planner at lg on the first frame (AC-5). `/settings` last: the
+    // phone-only sheet row (story 96.3).
     expect(tagged).toEqual([
       '/',
       '/income',
@@ -876,6 +979,7 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
       '/retirement',
       '/balance',
       '/retirement',
+      '/settings',
     ])
   })
 })
@@ -935,16 +1039,26 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
     ['Categories', '/categories'],
   ]
 
-  const FREE_SHEET = ['Balances', 'Retirement']
-  const PAID_SHEET = ['Balances', 'Retirement', 'Forecasting', 'Profiles', 'Report', 'Categories']
+  // Story 96.3: Settings is the LAST row in both tiers (phones only, `sm:hidden`).
+  const FREE_SHEET = ['Balances', 'Retirement', 'Settings']
+  const PAID_SHEET = [
+    'Balances',
+    'Retirement',
+    'Forecasting',
+    'Profiles',
+    'Report',
+    'Categories',
+    'Settings',
+  ]
 
   describe('an entitled session', () => {
-    // Twelve DOM anchors: ten destinations + the two promoted row copies
-    // (story 69.3). The premium rows have no row copy: they stay behind More.
-    it('renders ten destinations as twelve anchors', async () => {
+    // Thirteen DOM anchors: ten destinations + the two promoted row copies
+    // (story 69.3) + the phone-only Settings row (story 96.3; was twelve).
+    // The premium rows have no row copy: they stay behind More.
+    it('renders ten destinations as thirteen anchors', async () => {
       renderWithSeed(seedWith())
       const navEl = await nav()
-      expect(within(navEl).getAllByRole('link')).toHaveLength(12)
+      expect(within(navEl).getAllByRole('link')).toHaveLength(13)
       expect(rowCopiesOf(navEl).map((a) => a.textContent?.trim())).toEqual([
         'Balances',
         'Retirement',
@@ -953,7 +1067,8 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
 
     // Story 58.1's D3 spliced these in BEFORE Settings so it stayed last. Story
     // 69.2 took Settings out of the nav, so the premium block now simply follows
-    // the free rows. The ORDER is still the assertion, not the count.
+    // the free rows. The ORDER is still the assertion, not the count. Story
+    // 96.3 put Settings back LAST, after the premium block, phones only.
     it('appends the four premium rows after the free rows, in order', async () => {
       renderWithSeed(seedWith())
       const navEl = await nav()
@@ -972,7 +1087,8 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
 
     it('treats a lifetime purchase as entitled too', async () => {
       renderWithSeed(seedWith({ subscriptionStatus: 'lifetime' }))
-      expect(within(await nav()).getAllByRole('link')).toHaveLength(12)
+      // Was 12 until story 96.3 (the Settings row).
+      expect(within(await nav()).getAllByRole('link')).toHaveLength(13)
     })
 
     it('tags every new <li> with its route for the pre-paint CSS hook', async () => {
@@ -994,6 +1110,8 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
         '/profiles',
         '/report',
         '/categories',
+        // The phone-only Settings row, last (story 96.3).
+        '/settings',
       ])
     })
 
@@ -1001,17 +1119,18 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
       renderWithSeed(seedWith())
       const navEl = await nav()
       const icons = [...navEl.querySelectorAll(ICON_SVG)]
-      // Eleven: 4 bar tabs + More + 6 sheet rows (twelve until story 69.2 took
-      // Settings out). Without `sm:hidden` each new icon grows the DESKTOP nav,
-      // and nothing else in the suite would catch it.
-      expect(icons).toHaveLength(11)
+      // Twelve: 4 bar tabs + More + 7 sheet rows (twelve until story 69.2 took
+      // Settings out, eleven until story 96.3 put it back for phones). Without
+      // `sm:hidden` each new icon grows the DESKTOP nav, and nothing else in the
+      // suite would catch it.
+      expect(icons).toHaveLength(12)
       for (const icon of icons) {
         expect(tokens(icon), 'a premium icon is missing `sm:hidden`').toContain('sm:hidden')
         expect(icon).toHaveAttribute('aria-hidden', 'true')
       }
-      // Thirteen labels: the eleven above + the two promoted row copies, which
-      // have no icon (story 69.3).
-      expect(navEl.querySelectorAll('[data-nav-label]')).toHaveLength(13)
+      // Fourteen labels: the twelve above + the two promoted row copies, which
+      // have no icon (story 69.3; thirteen until story 96.3).
+      expect(navEl.querySelectorAll('[data-nav-label]')).toHaveLength(14)
     })
 
     it.each(PREMIUM)('marks the More trigger active on %s', async (label, href) => {
@@ -1027,6 +1146,7 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
       const summary = navEl.querySelector('details > summary')
       expect(summary, 'the More <summary> is missing').not.toBeNull()
       expect(tokens(summary as HTMLElement)).toContain('bg-green-50')
+      expect(tokens(summary as HTMLElement)).not.toContain('max-sm:bg-green-50')
     })
   })
 
@@ -1051,19 +1171,42 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
       ],
     ]
 
-    // Six destinations, eight DOM anchors (the two promoted row copies, story
-    // 69.3).
+    // Six destinations, nine DOM anchors (the two promoted row copies, story
+    // 69.3, and the phone-only Settings row, story 96.3; eight until then).
     it.each(NOT_ENTITLED)(
       'gives %s the unchanged six-destination free nav',
       async (_name, seed) => {
         renderWithSeed(seed)
         const navEl = await nav()
-        expect(within(navEl).getAllByRole('link')).toHaveLength(8)
+        expect(within(navEl).getAllByRole('link')).toHaveLength(9)
         expect(sheetLabels(navEl)).toEqual(FREE_SHEET)
         // Story 69.3: with nothing left behind More at lg, a free session's More
         // cell is `lg:hidden`. Token-level; e2e proves the render.
+        // ⚠️ Story 96.3's trap: the Settings sheet row must NOT un-hide this
+        // (a free desktop at lg would get a More over an EMPTY dropdown, its
+        // only extra row being `sm:hidden`). Pinned on its own in the next test.
         const cell = navEl.querySelector('details')?.parentElement as HTMLElement
         expect(tokens(cell), 'a free session keeps a More trigger at lg').toContain('lg:hidden')
+      }
+    )
+
+    // Story 96.3 (Read-first #1), on its own so no count above can fail first:
+    // the phone-only Settings row is in the sheet, AND a free session still has
+    // NO More at lg. Mutation-proved: Settings appended to the derived
+    // `visibleMoreDestinations` instead of the extra `<li>` turns
+    // `moreNeededAtLg` true and this red. (As a `MORE_DESTINATIONS` entry it
+    // becomes a PROMOTED path instead, gains an lg row copy, and the anchor
+    // counts and sheet lists above go red.)
+    it.each(NOT_ENTITLED)(
+      'keeps %s free of a More trigger at lg despite the Settings row',
+      async (_name, seed) => {
+        renderWithSeed(seed)
+        const navEl = await nav()
+        expect(sheetLabels(navEl).at(-1), 'the sheet lost its Settings row').toBe('Settings')
+        const cell = navEl.querySelector('details')?.parentElement as HTMLElement
+        expect(tokens(cell), 'Settings un-hid a free More at lg (empty dropdown)').toContain(
+          'lg:hidden'
+        )
       }
     )
 
@@ -1093,14 +1236,16 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
       renderWithSeed(seedWith())
       const navEl = await nav()
 
-      // Nine destinations + the Balances row copy (story 69.3) = ten anchors.
-      expect(within(navEl).getAllByRole('link')).toHaveLength(10)
+      // Nine destinations + the Balances row copy (story 69.3) + the Settings
+      // row (story 96.3) = eleven anchors (ten until 96.3).
+      expect(within(navEl).getAllByRole('link')).toHaveLength(11)
       expect(sheetLabels(navEl)).toEqual([
         'Balances',
         'Forecasting',
         'Profiles',
         'Report',
         'Categories',
+        'Settings',
       ])
     })
 
