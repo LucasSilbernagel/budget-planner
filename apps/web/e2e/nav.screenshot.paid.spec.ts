@@ -72,6 +72,32 @@ test('forecasting-320-light', async ({ page }) => {
   })
 })
 
+// Story 97.2 (FR158): the Projections tab, the only place the chart mounts.
+// The legend names the scenario (the builder's default "My Financial
+// Forecast", truncated at 320), the value axis is compact and unclipped, and
+// the legend sits above the plot. 3 surfaces = the chart + the two legend
+// icons (MEASURED, 97.2 evidence). The tab click retries: a click that lands
+// before hydration only focuses the server-rendered button (MEASURED at 97.2:
+// the builder stayed on screen with "Projections" focused).
+for (const width of [320, 1280]) {
+  test(`forecasting-projections-${width}-light`, async ({ page }) => {
+    await open(page, '/forecasting', width, 0)
+    const heading = page.getByRole('heading', { name: 'Forecast Projections' })
+    await expect(async () => {
+      if (!(await heading.isVisible())) {
+        await page.getByRole('button', { name: 'Projections' }).click({ timeout: 1000 })
+      }
+      await expect(heading).toBeVisible({ timeout: 1000 })
+    }).toPass({ timeout: SHOT_TIMEOUT })
+    await chartsDrawn(page, 3)
+    await expect(page).toHaveScreenshot(`forecasting-projections-${width}-light.png`, {
+      fullPage: true,
+      mask: await copyrightYear(page),
+      timeout: SHOT_TIMEOUT,
+    })
+  })
+}
+
 for (const width of [768, 1280]) {
   test(`paid-header-${width}-light`, async ({ page }) => {
     await open(page, '/', width, 4)

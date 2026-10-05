@@ -9,6 +9,11 @@
  */
 
 import type { ForecastingResult } from '@budget-planner/core'
+import {
+  type CurrencyCode,
+  type CurrencyMode,
+  currencySymbol,
+} from '@budget-planner/core/format/currency'
 import React, { useState } from 'react'
 import {
   CartesianGrid,
@@ -21,8 +26,10 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { useIsNarrowViewport } from '../../hooks/useIsNarrowViewport'
+import { niceAxisTicks } from '../../lib/chart-axis'
 import { useChartColors } from '../../lib/chartTheme'
-import { useFormattedAmount } from '../../stores/currencyStore'
+import { useCurrencyPreferences, useFormattedAmount } from '../../stores/currencyStore'
 import { ErrorBoundary } from '../ErrorBoundary'
 import { GroupedAmount } from '../ui/GroupedAmount'
 
@@ -74,6 +81,151 @@ const CHART_COLORS = {
 // ============================================================================
 
 /**
+ * Legend/tooltip name for a scenario whose name is blank (story 97.2, D1). Only
+ * an emptied Scenario Name field reaches it: an unsaved builder carries
+ * "My Financial Forecast", and the server rejects a blank name on save.
+ */
+export const SCENARIO_FALLBACK_NAME = 'Scenario'
+
+/**
+ * The scenario series' name: the scenario's own name, trimmed (story 97.2,
+ * FR158). Read from the RESULT, which the builder fills from its Scenario Name
+ * field and a loaded forecast carries, so the chart follows both paths without
+ * a prop. Defensive because a saved result is parsed JSON whose
+ * `scenario.name` type nothing validates. A scenario literally named
+ * "Baseline" is left alone (two "Baseline" entries is the user's choice).
+ */
+export function projectionSeriesName(result: ForecastingResult | null): string {
+  const name: unknown = result?.scenario?.name
+  const trimmed = typeof name === 'string' ? name.trim() : ''
+  return trimmed ? trimmed : SCENARIO_FALLBACK_NAME
+}
+
+/**
+ * Recharts chrome that CSS cannot drive, switched at the narrow breakpoint
+ * (the `get<X>Chrome` pattern of `RetirementTimelineChart.tsx`, story 24.1).
+ * The Y axis used to have Recharts' default 60 px gutter for full amounts with
+ * cents ("$310,101,483.69", ~100 px), so every tick was clipped by the SVG
+ * edge at every width (story 97.2). The ticks are compact now and the gutter
+ * holds the widest one; `projection-chart.helpers.test.ts` pins it against
+ * label widths MEASURED under the CI font.
+ */
+export interface ProjectionChartChrome {
+  yAxisWidth: number
+  tickFontSize: number
+  marginLeft: number
+  marginRight: number
+}
+
+/**
+ * Upper bounds on one tick character's width (digits, ".", "M", currency
+ * symbols) at the narrow and wide tick sizes, from widths MEASURED under the
+ * CI font (DejaVu): the widest per-character ratio was "CHF350.0M", 57.5 px / 9
+ * at 10 px and 69.0 px / 9 at 12 px.
+ */
+const TICK_CHAR_PX = { narrow: 6.5, wide: 7.8 }
+/** Recharts draws a tick label after a 6 px tick line and a 2 px gap. */
+const TICK_LINE_AND_GAP = 8
+
+/**
+ * `widestLabelChars` is the longest formatted tick label. A "$" axis keeps the
+ * measured 58 / 72 px gutters (a label of width w fits iff yAxisWidth +
+ * marginLeft - 8 >= w; narrow 58 holds "$1000.0M", 50.0 px); a longer currency
+ * symbol ("CHF350.0M", "R$350.0M") widens it, or its ticks clip again (story
+ * 97.2 review: MEASURED 7/7 CHF ticks clipped at 320 px with a fixed 58).
+ */
+export function getProjectionChartChrome(
+  isNarrow: boolean,
+  widestLabelChars = 0
+): ProjectionChartChrome {
+  const base = isNarrow
+    ? { yAxisWidth: 58, tickFontSize: 10, marginLeft: 0, marginRight: 12 }
+    : { yAxisWidth: 72, tickFontSize: 12, marginLeft: 8, marginRight: 30 }
+  const needed =
+    Math.ceil(widestLabelChars * (isNarrow ? TICK_CHAR_PX.narrow : TICK_CHAR_PX.wide)) +
+    TICK_LINE_AND_GAP -
+    base.marginLeft
+  return { ...base, yAxisWidth: Math.max(base.yAxisWidth, needed) }
+}
+
+/** Padding around the plotted values, in cents ($1,000): the old domain's. */
+const Y_DOMAIN_PADDING = 100_000
+/**
+ * A flat or slow-growing net worth must not get an axis so fine that its
+ * labels need many decimals: the tick range spans at least this share of the
+ * largest value.
+ */
+const Y_MIN_SPAN_RATIO = 0.05
+
+/**
+ * The value axis' ticks and domain (story 97.2), from EVERY plotted value
+ * (both series), in cents. Round "nice" ticks via the shared `niceAxisTicks`;
+ * the domain is exactly the tick range, so every tick is drawn and every value
+ * is inside it.
+ */
+export function projectionYAxis(values: number[]): {
+  ticks: number[]
+  domain: [number, number]
+  step: number
+} {
+  const finite = values.filter((v) => Number.isFinite(v))
+  let min = (finite.length ? Math.min(...finite) : 0) - Y_DOMAIN_PADDING
+  let max = (finite.length ? Math.max(...finite) : 0) + Y_DOMAIN_PADDING
+  const minSpan = Math.max(Math.abs(min), Math.abs(max)) * Y_MIN_SPAN_RATIO
+  if (max - min < minSpan) {
+    const mid = (min + max) / 2
+    min = mid - minSpan / 2
+    max = mid + minSpan / 2
+  }
+  const ticks = niceAxisTicks(min, max, 5)
+  const first = ticks[0] ?? 0
+  const last = ticks[ticks.length - 1] ?? first
+  const step = ticks.length > 1 ? (ticks[1] as number) - first : Y_DOMAIN_PADDING
+  return { ticks, domain: [first, last], step }
+}
+
+/** Decimals a label needs in `unit` so ticks `stepUnits` apart print distinct. */
+function decimalsFor(stepUnits: number, unit: number, min: number): number {
+  if (!(stepUnits > 0)) return min
+  const needed = Math.ceil(-Math.log10(stepUnits / unit) - 1e-9)
+  return Math.min(3, Math.max(min, needed))
+}
+
+/**
+ * Compact value-axis label for a tick in CENTS, `stepCents` from its
+ * neighbours (story 97.2). Same K/M style and currency handling as the shared
+ * `formatCompactAxisTick` the other charts use, with one difference: it prints
+ * as many decimals as the step needs, because a fixed one decimal turns ticks
+ * $10,000 apart around $1.2M into "$1.2M" three times. Local on purpose: three
+ * other charts read the shared helper.
+ */
+export function formatProjectionAxisTick(
+  cents: number,
+  stepCents: number,
+  mode: CurrencyMode,
+  currency: CurrencyCode
+): string {
+  const value = Number.isFinite(cents) ? cents / 100 : 0
+  const step = Number.isFinite(stepCents) ? Math.abs(stepCents) / 100 : 0
+  const kDecimals = decimalsFor(step, 1_000, 0)
+  let compact: string
+  // A K value that ROUNDS to 1,000K rolls over to the M band.
+  if (
+    Math.abs(value) >= 1_000_000 ||
+    Math.abs(Number((value / 1_000).toFixed(kDecimals))) >= 1_000
+  ) {
+    compact = `${(value / 1_000_000).toFixed(decimalsFor(step, 1_000_000, 1))}M`
+  } else if (Math.abs(value) >= 1_000) {
+    compact = `${(value / 1_000).toFixed(kDecimals)}K`
+  } else {
+    compact = value === 0 ? '0' : value.toFixed(decimalsFor(step, 1, 0))
+  }
+  return mode === 'symbol' && currency !== 'NONE'
+    ? `${currencySymbol(currency)}${compact}`
+    : compact
+}
+
+/**
  * Format year for X-axis
  */
 function formatYear(year: number): string {
@@ -121,7 +273,16 @@ interface CustomTooltipProps {
   label?: string
 }
 
-function CustomTooltip({ active, payload, label }: CustomTooltipProps): React.ReactElement | null {
+/**
+ * Exported for a direct render test (story 97.2). The row name is the
+ * `<Line name>`, i.e. the FULL scenario name: the box has a max width and the
+ * row wraps, so a long name never widens the tooltip past the chart.
+ */
+export function CustomTooltip({
+  active,
+  payload,
+  label,
+}: CustomTooltipProps): React.ReactElement | null {
   const formatCurrency = useFormattedAmount()
   // Theme-aware fallback so a series without an explicit color stays legible on
   // the dark tooltip surface (gray-700 default would be near-invisible there).
@@ -129,13 +290,13 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps): React.Re
   if (!active || !payload || !payload.length) return null
 
   return (
-    <div className="bg-white dark:bg-gray-800 dark:text-gray-100 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-3">
+    <div className="max-w-[16rem] whitespace-normal bg-white dark:bg-gray-800 dark:text-gray-100 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-3">
       <p className="text-muted text-sm">{formatYear(Number(label))}</p>
       <div className="mt-2 space-y-1">
         {payload.map((entry) => (
           <p
             key={entry.dataKey}
-            className="text-sm"
+            className="text-sm break-words"
             style={{ color: entry.color || chartColors.tooltipText }}
           >
             <span
@@ -175,10 +336,21 @@ export interface ProjectionChartProps {
 export function ProjectionChart({ result }: ProjectionChartProps): React.ReactElement {
   // Display amounts respect the user's currency mode (currency-less vs symbols).
   const formatCurrency = useFormattedAmount()
+  const { mode, currency } = useCurrencyPreferences()
   const chartColors = useChartColors()
+  const isNarrow = useIsNarrowViewport()
   const [config, setConfig] = useState<ChartConfig>(DEFAULT_CONFIG)
 
   const chartData = convertToChartData(result)
+  const scenarioName = projectionSeriesName(result)
+  const yAxis = projectionYAxis(
+    chartData.flatMap((point) => [point.baselineNetWorth, point.scenarioNetWorth])
+  )
+  const formatYTick = (value: number) => formatProjectionAxisTick(value, yAxis.step, mode, currency)
+  const chrome = getProjectionChartChrome(
+    isNarrow,
+    Math.max(0, ...yAxis.ticks.map((tick) => formatYTick(tick).length))
+  )
 
   // Calculate chart dimensions
   const chartHeight = 400
@@ -194,7 +366,12 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
         {/* Header */}
         <div className="mb-4">
           <h2 className="text-2xl font-bold text-subheading">Forecast Projections</h2>
-          <p className="text-muted mt-1">Visual comparison of baseline vs. scenario projections</p>
+          {/* Names the measure (the Y axis has no title since story 97.2: a
+              rotated "Net Worth" sat across the tick labels) and carries the
+              full, wrapping scenario name. */}
+          <p className="text-muted mt-1 break-words">
+            Net worth by year: Baseline vs. {scenarioName}
+          </p>
         </div>
 
         {/* Chart Controls */}
@@ -242,7 +419,15 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={chartHeight}>
-              <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+              <LineChart
+                data={chartData}
+                margin={{
+                  top: 20,
+                  right: chrome.marginRight,
+                  left: chrome.marginLeft,
+                  bottom: 20,
+                }}
+              >
                 {config.showGrid && (
                   <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
                 )}
@@ -260,23 +445,38 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
                   stroke={chartColors.axis}
                 />
 
+                {/* Compact labels sized to the gutter (story 97.2); the
+                    tooltip keeps the precise amount. No axis title: the
+                    subtitle above names the measure. */}
                 <YAxis
-                  tickFormatter={formatCurrency}
-                  label={{
-                    value: 'Net Worth',
-                    angle: -90,
-                    position: 'insideLeft',
-                    fill: chartColors.axis,
-                  }}
-                  tick={{ fontSize: 12, fill: chartColors.axis }}
+                  tickFormatter={formatYTick}
+                  ticks={yAxis.ticks}
+                  tick={{ fontSize: chrome.tickFontSize, fill: chartColors.axis }}
                   stroke={chartColors.axis}
-                  domain={['dataMin - 100000', 'dataMax + 100000']}
+                  domain={yAxis.domain}
+                  width={chrome.yAxisWidth}
                 />
 
                 {config.showTooltip && <Tooltip content={<CustomTooltip />} />}
 
                 {config.showLegend && (
-                  <Legend verticalAlign="top" height={36} wrapperStyle={{ paddingBottom: 20 }} />
+                  // No fixed `height` (story 97.2): Recharts offsets the plot by
+                  // the wrapper's MEASURED height, so a fixed 36 px let a
+                  // two-row legend paint over the top tick at 320 px. A long
+                  // scenario name truncates (full name in `title`, in the text
+                  // node for screen readers, and in the tooltip).
+                  <Legend
+                    verticalAlign="top"
+                    wrapperStyle={{ paddingBottom: 20 }}
+                    formatter={(value: string) => (
+                      <span
+                        className="inline-block max-w-[5rem] sm:max-w-[16rem] truncate align-bottom"
+                        title={value}
+                      >
+                        {value}
+                      </span>
+                    )}
+                  />
                 )}
 
                 {/* Baseline Line */}
@@ -295,7 +495,7 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
                 <Line
                   type="monotone"
                   dataKey="scenarioNetWorth"
-                  name="Scenario"
+                  name={scenarioName}
                   stroke={CHART_COLORS.scenario}
                   strokeWidth={2}
                   dot={{ r: 4 }}
@@ -313,7 +513,18 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
                     the "Starting Net Worth" card rendered just below it. */}
                 <ReferenceLine
                   y={result?.summary.startingNetWorth}
-                  label={{ value: 'Starting', fill: chartColors.axis, fontSize: 10 }}
+                  // Above the line, right-aligned (DN1, story 97.2 review): a
+                  // centred label was struck through by the X-axis stroke when
+                  // the starting amount is the axis floor. `insideBottomRight`,
+                  // not `insideTopRight`: a horizontal line's label viewBox has
+                  // zero height, so "inside top" is y + offset, i.e. BELOW the
+                  // line, in the X tick labels (MEASURED; recharts Label.js).
+                  label={{
+                    value: 'Starting',
+                    position: 'insideBottomRight',
+                    fill: chartColors.axis,
+                    fontSize: 10,
+                  }}
                   stroke="#9ca3af"
                   strokeDasharray="3 3"
                 />
