@@ -647,3 +647,97 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
     ])
   }, 20_000)
 })
+
+describe('savings rows round-trip through the real routes (story 100.1, AC-11)', () => {
+  const ISO = '2026-10-05T00:00:00.000Z'
+
+  async function seedSavingsRows() {
+    const { useSavingsStore } = await import('@/stores/savingsStore')
+    useSavingsStore.setState({
+      savingsGoals: [
+        {
+          id: 'g-1',
+          profileId: PROFILE,
+          name: 'Emergency fund',
+          targetAmount: null,
+          currentBalance: 100_000,
+          allocationMode: 'manual',
+          monthlyAllocation: 20_000,
+          sortOrder: 0,
+          createdAt: ISO,
+          updatedAt: ISO,
+        },
+        {
+          id: 'g-2',
+          profileId: PROFILE,
+          name: 'House fund',
+          targetAmount: 5_000_000,
+          currentBalance: 250_001,
+          allocationMode: 'manual',
+          monthlyAllocation: 5,
+          sortOrder: 1,
+          createdAt: ISO,
+          updatedAt: ISO,
+        },
+      ] as never,
+    })
+    return useSavingsStore
+  }
+
+  afterEach(async () => {
+    const { useSavingsStore } = await import('@/stores/savingsStore')
+    useSavingsStore.setState({ savingsGoals: [] })
+  })
+
+  it('POST and PUT store version 2 with the rows and their sum, and Load brings the rows back', async () => {
+    await seedSavingsRows()
+    const view = renderWithRouter(<ForecastingPage />)
+    await pressSave(view)
+    await view.findByTestId('save-success', {}, { timeout: 5000 })
+
+    const versioned = () =>
+      db
+        .select({
+          version: forecastingProfiles.version,
+          scenarioData: forecastingProfiles.scenarioData,
+        })
+        .from(forecastingProfiles)
+    const [created, ...more] = await versioned()
+    expect(more).toEqual([])
+    expect(created?.version).toBe(2)
+    const inputs = (
+      JSON.parse(String(created?.scenarioData)) as { inputs: Record<string, unknown> }
+    ).inputs
+    expect(inputs.savingsAccounts).toEqual([
+      { name: 'Emergency fund', balance: 100_000, monthlyContribution: 20_000 },
+      { name: 'House fund', balance: 250_001, monthlyContribution: 5 },
+    ])
+    // Kept for an older cached client that reads only the total (D4).
+    expect(inputs.savings).toBe(350_001)
+
+    rtl.fireEvent.click(
+      await view.findByRole('button', { name: 'Load My Financial Forecast' }, { timeout: 5000 })
+    )
+    const value = (label: string) => (view.getByLabelText(label) as HTMLInputElement).value
+    await rtl.waitFor(() => expect(value('Balance for Emergency fund')).toBe('1000'))
+    expect(
+      view.getAllByLabelText(/^Account Name, row \d+$/).map((el) => (el as HTMLInputElement).value)
+    ).toEqual(['Emergency fund', 'House fund'])
+    expect(value('Monthly Contribution for Emergency fund')).toBe('200')
+    expect(value('Balance for House fund')).toBe('2500.01')
+    expect(value('Monthly Contribution for House fund')).toBe('0.05')
+
+    // Save over it (PUT): still version 2.
+    await setIncomeGrowth(view, '1')
+    await pressSave(view)
+    await rtl.waitFor(() => expect(served.some((line) => line.startsWith('PUT '))).toBe(true), {
+      timeout: 5000,
+    })
+    const [updated] = await versioned()
+    expect(updated?.version).toBe(2)
+    expect(
+      (JSON.parse(String(updated?.scenarioData)) as { inputs: { savingsAccounts: unknown[] } })
+        .inputs.savingsAccounts
+    ).toHaveLength(2)
+  }, 20_000)
+})

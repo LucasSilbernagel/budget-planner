@@ -33,6 +33,7 @@ import {
   saveForecast,
   updateForecast,
 } from '../lib/forecasting/forecast-api'
+import { FORECAST_SAVE_VERSION } from '../lib/forecasting/forecast-version'
 
 // ============================================================================
 // Route Configuration
@@ -95,14 +96,31 @@ export const Route = createFileRoute('/forecasting')({
 type ForecastingTab = 'scenarios' | 'projections' | 'saved'
 
 /**
+ * One what-if savings row as a saved forecast stores it (story 100.1). Money in
+ * cents.
+ */
+export interface SavedSavingsAccount {
+  name: string
+  balance: number
+  monthlyContribution: number
+}
+
+/**
  * Builder inputs that are NOT part of ForecastingScenario but are needed to
  * faithfully reopen a saved forecast (savings/investments/years). Persisted in
  * the scenarioData JSON blob alongside { scenario, result } (story bug-3).
+ *
+ * ⚠️ `savings` is still written beside `savingsAccounts` (story 100.1, D4), as
+ * their sum: an older cached client (PWA) reads only `savings`, and must still
+ * reopen a v2 forecast at the right starting figure. On load the ROWS win when
+ * the two disagree (D7, `mapToSavedForecast`).
  */
 export interface ScenarioInputs {
   savings: number
   investments: number
   years: number
+  /** Absent on forecasts saved before story 100.1 (version 1). */
+  savingsAccounts?: SavedSavingsAccount[]
 }
 
 /**
@@ -129,15 +147,32 @@ export interface SavedForecast {
   scenario: ForecastingScenario
   result: ForecastingResult
   /**
-   * Starting inputs the scenario type doesn't carry (savings/investments/years).
-   * Optional because forecasts saved before story bug-3 won't have it — reload
-   * defaults those fields in that case.
+   * Starting inputs the scenario type doesn't carry (savings/investments/years,
+   * and since story 100.1 the savings rows). Optional because forecasts saved
+   * before story bug-3 won't have it — reload defaults those fields in that case.
    */
   inputs?: ScenarioInputs
   /** Schema/model version from the persisted forecastingProfiles row. */
   version?: number
   createdAt: string
   updatedAt: string
+}
+
+/**
+ * A saved savings row coerced like the builder's `itemsFromSaved` (story 100.1,
+ * AC-13): a non-string name becomes `''` and a non-finite or negative amount 0.
+ * `unknown` because the row comes from parsed JSON a client wrote.
+ */
+function savedSavingsAccount(entry: unknown): SavedSavingsAccount {
+  const record =
+    typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : {}
+  const money = (value: unknown) =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0
+  return {
+    name: typeof record['name'] === 'string' ? record['name'] : '',
+    balance: money(record['balance']),
+    monthlyContribution: money(record['monthlyContribution']),
+  }
 }
 
 /**
@@ -150,7 +185,7 @@ function mapToSavedForecast(profile: ForecastWire): SavedForecast | null {
     const parsed = JSON.parse(profile.scenarioData) as {
       scenario?: ForecastingScenario
       result?: ForecastingResult
-      inputs?: ScenarioInputs
+      inputs?: Omit<ScenarioInputs, 'savingsAccounts'> & { savingsAccounts?: unknown }
     }
     // Validate the nested shape the saved-list UI actually dereferences
     // (result.summary.endingNetWorth / totalGrowth). A row that parses but is
@@ -175,15 +210,31 @@ function mapToSavedForecast(profile: ForecastWire): SavedForecast | null {
     // alone also dropped their savings/investments, so the reopened forecast
     // silently re-baselined to a starting net worth of 0 (the thing 62.1 AC-7
     // forbids). Non-finite money still discards `inputs`, as before.
-    const inputs =
-      parsed.inputs &&
-      Number.isFinite(parsed.inputs.savings) &&
-      Number.isFinite(parsed.inputs.investments)
+    //
+    // ⚠️ Savings rows (story 100.1, AC-13): a `savingsAccounts` that is not an
+    // array is IGNORED (the forecast loads as v1, from `savings`), and a bad entry
+    // is coerced, never a reason to drop `inputs` (the same P1 lesson as `years`).
+    // When the rows' sum disagrees with `savings`, the ROWS win and `savings` is
+    // recomputed from them (D7), so the builder and the engine agree on the start.
+    const savedInputs = parsed.inputs
+    const savingsAccounts = Array.isArray(savedInputs?.savingsAccounts)
+      ? savedInputs.savingsAccounts.map(savedSavingsAccount)
+      : undefined
+    const savings = savingsAccounts
+      ? savingsAccounts.reduce((sum, account) => sum + account.balance, 0)
+      : savedInputs?.savings
+    const inputs: ScenarioInputs | undefined =
+      savedInputs &&
+      typeof savings === 'number' &&
+      Number.isFinite(savings) &&
+      Number.isFinite(savedInputs.investments)
         ? {
-            ...parsed.inputs,
-            years: isValidForecastYears(parsed.inputs.years)
-              ? parsed.inputs.years
+            savings,
+            investments: savedInputs.investments,
+            years: isValidForecastYears(savedInputs.years)
+              ? savedInputs.years
               : DEFAULT_FORECAST_YEARS,
+            ...(savingsAccounts ? { savingsAccounts } : {}),
           }
         : undefined
     return {
@@ -431,8 +482,9 @@ function ForecastingPage(): React.ReactElement {
               name: input.name,
               description: input.description,
               scenarioData: input.scenarioData,
+              version: FORECAST_SAVE_VERSION,
             })
-          : await saveForecast(input)
+          : await saveForecast({ ...input, version: FORECAST_SAVE_VERSION })
 
         if (result.success && result.data) {
           setSaveTarget({ id: String(result.data.id), name: result.data.name })

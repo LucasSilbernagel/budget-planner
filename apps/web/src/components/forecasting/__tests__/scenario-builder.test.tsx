@@ -175,13 +175,20 @@ describe('ScenarioBuilder amount prefix (bug-3 AC-1)', () => {
   })
 })
 
+/**
+ * ⚠️ Story 100.1 moved savings to per-account ROWS, which are number inputs with
+ * their own draft parsing (no `parseFromInput`). These cases therefore drive
+ * Current Investments, the money field that still takes the `parseFromInput`
+ * path they pin. The assertions are unchanged in meaning: a typed figure reaches
+ * the save as exact cents.
+ */
 describe('ScenarioBuilder savings/investments parsing (bug-3 AC-2)', () => {
-  it('stores a typed savings amount as exact cents, without the double-×100 bug', async () => {
+  it('stores a typed investments amount as exact cents, without the double-×100 bug', async () => {
     const onSave = vi.fn().mockResolvedValue({ success: true })
     render(<ScenarioBuilder onSave={onSave} />)
 
-    // Default savings renders as 5000.00; change it to 7500.
-    fireEvent.change(screen.getByDisplayValue('5000.00'), { target: { value: '7500' } })
+    // Seeded investments render as 10000.00; change it to 7500.
+    fireEvent.change(screen.getByDisplayValue('10000.00'), { target: { value: '7500' } })
 
     // The Save button appears only once the debounced forecast has computed.
     const saveButton = await screen.findByRole(
@@ -194,14 +201,14 @@ describe('ScenarioBuilder savings/investments parsing (bug-3 AC-2)', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalled())
     // 7500 → 750000 cents. The old parseFloat + ×100-in-handler bug produced
     // 75000000 ($500,000).
-    expect(onSave.mock.calls[0][0].inputs.savings).toBe(750000)
+    expect(onSave.mock.calls[0][0].inputs.investments).toBe(750000)
   })
 
-  // Helper: type `typed` into Current Savings, save, and return the persisted cents.
-  async function savingsCentsAfterTyping(typed: string): Promise<number> {
+  // Helper: type `typed` into Current Investments, save, and return the persisted cents.
+  async function investmentCentsAfterTyping(typed: string): Promise<number> {
     const onSave = vi.fn().mockResolvedValue({ success: true })
     render(<ScenarioBuilder onSave={onSave} />)
-    fireEvent.change(screen.getByDisplayValue('5000.00'), { target: { value: typed } })
+    fireEvent.change(screen.getByDisplayValue('10000.00'), { target: { value: typed } })
     const saveButton = await screen.findByRole(
       'button',
       { name: /save forecast/i },
@@ -209,13 +216,13 @@ describe('ScenarioBuilder savings/investments parsing (bug-3 AC-2)', () => {
     )
     fireEvent.click(saveButton)
     await waitFor(() => expect(onSave).toHaveBeenCalled())
-    return onSave.mock.calls[0][0].inputs.savings
+    return onSave.mock.calls[0][0].inputs.investments
   }
 
   it('parses a GROUPED value without the parseFloat truncation bug', async () => {
     // The exact case AC-2 calls out: parseFloat('12,345.67') === 12 (truncates at
     // the comma). parseFromInput must strip grouping → 1234567 cents.
-    expect(await savingsCentsAfterTyping('12,345.67')).toBe(1234567)
+    expect(await investmentCentsAfterTyping('12,345.67')).toBe(1234567)
   })
 
   it('parses a symbol- and group-formatted value in symbol mode', async () => {
@@ -223,7 +230,7 @@ describe('ScenarioBuilder savings/investments parsing (bug-3 AC-2)', () => {
     // core parser strips both. €7,500.50 → 750050 cents (not NaN, not truncated).
     mockCurrency.mode = 'symbol'
     mockCurrency.currency = 'EUR'
-    expect(await savingsCentsAfterTyping('€7,500.50')).toBe(750050)
+    expect(await investmentCentsAfterTyping('€7,500.50')).toBe(750050)
   })
 })
 
@@ -265,8 +272,9 @@ describe('ScenarioBuilder reload hydration (bug-3 AC-4)', () => {
     expect(screen.getByDisplayValue('Consulting')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Rent')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Bonus')).toBeInTheDocument()
-    // savings 1234500 → 12345.00, investments 6789000 → 67890.00 (mock formatter)
-    expect(screen.getByDisplayValue('12345.00')).toBeInTheDocument()
+    // savings 1234500 → one v1 `Savings` row of 12345 (story 100.1, AC-12);
+    // investments 6789000 → 67890.00 (mock formatter)
+    expect(screen.getByLabelText('Balance for Savings')).toHaveValue(12345)
     expect(screen.getByDisplayValue('67890.00')).toBeInTheDocument()
     // years seeded from inputs
     expect(screen.getByDisplayValue('15')).toBeInTheDocument()
@@ -287,7 +295,9 @@ describe('ScenarioBuilder reload hydration (bug-3 AC-4)', () => {
     // saved months ago to today's figures, which 62.1 AC-7 forbids. `years`
     // still falls back to `DEFAULT_FORM.years`, which survives.
     expect(screen.getByDisplayValue('My Saved Plan')).toBeInTheDocument()
-    expect(screen.getAllByDisplayValue('0.00').length).toBeGreaterThanOrEqual(2)
+    // No savings rows and zeroed investments (story 100.1).
+    expect(screen.getByText('No savings accounts in this scenario')).toBeInTheDocument()
+    expect(screen.getByLabelText('Current Investments')).toHaveValue('0.00')
     expect(screen.getByDisplayValue('10')).toBeInTheDocument()
     // The live stores did not leak in.
     expect(screen.queryByDisplayValue('5000.00')).toBeNull()
@@ -303,13 +313,20 @@ describe('ScenarioBuilder reload hydration (bug-3 AC-4)', () => {
  * something inferred from `inputMode`/`type` inside the component.
  */
 describe('ScenarioBuilder money inputs reject non-numeric characters (story 28-1)', () => {
-  it('strips letters and symbols from Current Savings', () => {
+  /**
+   * Story 100.1 replaced Current Savings with per-account rows. Their money
+   * fields are `type="number"`, like the income/expense amounts, so the browser
+   * is the character filter there and no `sanitize` is passed. Pinned so a row
+   * field cannot quietly become a free-text money field with no filter at all.
+   */
+  it('makes the savings row money fields number inputs, the filter they rely on', () => {
     render(<ScenarioBuilder onSave={vi.fn()} />)
 
-    const savingsInput = screen.getByDisplayValue('5000.00')
-    fireEvent.change(savingsInput, { target: { value: '$7,500abc' } })
-
-    expect(savingsInput).toHaveValue('7,500')
+    for (const label of ['Balance for Savings', 'Monthly Contribution for Savings']) {
+      const input = screen.getByLabelText(label)
+      expect(input).toHaveAttribute('type', 'number')
+      expect(input).toHaveAttribute('min', '0')
+    }
   })
 
   it('strips letters and symbols from Current Investments', () => {
@@ -325,7 +342,8 @@ describe('ScenarioBuilder money inputs reject non-numeric characters (story 28-1
     const onSave = vi.fn().mockResolvedValue({ success: true })
     render(<ScenarioBuilder onSave={onSave} />)
 
-    fireEvent.change(screen.getByDisplayValue('5000.00'), { target: { value: '12,345.67abc' } })
+    // Current Investments since story 100.1 (savings are rows, see above).
+    fireEvent.change(screen.getByDisplayValue('10000.00'), { target: { value: '12,345.67abc' } })
     const saveButton = await screen.findByRole(
       'button',
       { name: /save forecast/i },
@@ -334,7 +352,7 @@ describe('ScenarioBuilder money inputs reject non-numeric characters (story 28-1
     fireEvent.click(saveButton)
 
     await waitFor(() => expect(onSave).toHaveBeenCalled())
-    expect(onSave.mock.calls[0][0].inputs.savings).toBe(1234567)
+    expect(onSave.mock.calls[0][0].inputs.investments).toBe(1234567)
   })
 
   it('leaves the non-money Scenario Name field accepting letters', () => {
@@ -606,7 +624,12 @@ describe('One-time events can be an outflow (story forecast-1, AC-1/AC-3)', () =
     // and this query is kept BY CHOICE: display value is what distinguishes the
     // salary row from the three expense rows, which a shared `/^amount$/i` label
     // cannot.
-    const salaryAmount = screen.getByDisplayValue('5000') // DEFAULT_INCOME, cents/100
+    // Scoped to Income Sources since story 100.1: the seeded savings row's
+    // balance is also 5000.
+    const incomeSection = screen
+      .getByRole('heading', { name: 'Income Sources' })
+      .closest('section') as HTMLElement
+    const salaryAmount = within(incomeSection).getByDisplayValue('5000') // DEFAULT_INCOME, cents/100
     fireEvent.change(salaryAmount, { target: { value: '-500' } })
     // ⚠️ Story 81.1 (D5, confirmed by Lucas) REPLACED the silent clamp to 0: a
     // negative is now refused ON THE FIELD. The typed text stays so it can be
