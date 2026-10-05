@@ -363,12 +363,6 @@ const MORE_DESTINATIONS: readonly NavItem[] = [
  * them "Custom Profiles", "Financial Summary Report" and "Custom Categories";
  * the nav calls them Profiles, Report and Categories. That is not drift:
  *
- * ⚠️ AMENDED by story 95.2 (FR155, Lucas 2026-10-04): the report row is now
- * "Financial Summary" at `/financial-summary`, REVERSING D1's short "Report"
- * label for that one row — the nav, URL and page heading name the page what it
- * is. Profiles and Categories keep D1's short labels, and the benefit name stays
- * "Financial Summary Report" (95.1). The history below is kept as written.
- *
  *   - A nav label names the DESTINATION as briefly as it can be named, not the
  *     benefit pitch. This nav has always spoken that way (`Savings`, not
  *     "Savings Goals"; `Income`, not "Income Sources").
@@ -382,6 +376,15 @@ const MORE_DESTINATIONS: readonly NavItem[] = [
  *     height for every paying user on every page. Since story 59.2 they are
  *     rows of the More panel, which is as wide as its longest label. Brevity
  *     still pays; it no longer decides the row count.
+ *
+ * ⚠️ AMENDED by story 95.2 (FR155, Lucas 2026-10-04): the report row is now
+ * "Financial Summary" at `/financial-summary`, REVERSING D1's short "Report"
+ * label for that one row — the nav, URL and page heading name the page what it
+ * is. Profiles and Categories keep D1's short labels, and the benefit name stays
+ * "Financial Summary Report" (95.1). The history above is kept as written; its
+ * "these 35" characters are 46 since this row changed. The label is now a
+ * prefix of the benefit name, so a substring query for it (Playwright's default)
+ * also finds the "Financial Summary Report" links: query it with `exact: true`.
  *
  * Verified when this shipped: `benefit-set-parity.test.tsx` polices the canonical
  * benefit set across /pricing, the upgrade prompt, the Overview grid, the route

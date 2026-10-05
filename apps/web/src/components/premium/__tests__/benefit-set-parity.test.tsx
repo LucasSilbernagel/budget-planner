@@ -266,7 +266,8 @@ describe('the canonical Premium benefit set is the same on every surface', () =>
     // assertion in the suite derives its expected value from `OVERVIEW_BENEFITS`
     // itself — `HomePage.test.tsx` builds its route table by mapping over the same
     // record it is checking. Mutation-proved during story 33.2: swapping the
-    // report and `/categories` hrefs left the whole suite GREEN (78/78), because
+    // `/report` (now `/financial-summary`) and `/categories` hrefs left the whole
+    // suite GREEN (78/78), because
     // a mutated map produces a mutated expectation that agrees with it perfectly.
     //
     // A guard derived from the thing it guards cannot fail. So this table restates
