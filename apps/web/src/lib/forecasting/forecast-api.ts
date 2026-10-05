@@ -23,6 +23,7 @@ import type { ApiResult } from '../../server/api/result'
 import type {
   CreateForecastingProfileInput,
   ForecastingProfileOutput,
+  UpdateForecastingProfileInput,
 } from '../../server/functions/forecastingProfiles'
 
 /**
@@ -84,6 +85,26 @@ export async function saveForecast(
     body: JSON.stringify(input),
   })
   return readResult<ForecastWire>(response, 'Failed to save forecast')
+}
+
+/**
+ * Save over one saved forecast: `PUT /api/forecasts?id=` (story 97.1, FR157).
+ * It also returns the HTTP `status`: a `404` means the forecast is gone (deleted
+ * on another device), and the page then stops treating it as the save target.
+ */
+export async function updateForecast(
+  id: string,
+  input: UpdateForecastingProfileInput
+): Promise<ApiResult<ForecastWire> & { status: number }> {
+  const response = await fetch(`/api/forecasts?id=${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { ...JSON_ACCEPT, 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return {
+    ...(await readResult<ForecastWire>(response, 'Failed to save forecast')),
+    status: response.status,
+  }
 }
 
 export async function deleteForecast(id: string): Promise<ApiResult<void>> {

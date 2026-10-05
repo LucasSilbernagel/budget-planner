@@ -9,7 +9,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { deleteForecast, fetchForecasts, fetchProfiles, saveForecast } from '../forecast-api'
+import {
+  deleteForecast,
+  fetchForecasts,
+  fetchProfiles,
+  saveForecast,
+  updateForecast,
+} from '../forecast-api'
 
 const fetchMock = vi.fn()
 
@@ -34,6 +40,7 @@ describe('requests', () => {
     await fetchForecasts()
     await fetchForecasts('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
     await saveForecast({ name: 'Plan', scenarioData: { a: 1 }, profileId: 'p' })
+    await updateForecast('7', { name: 'Plan', scenarioData: { a: 1 } })
     await deleteForecast('42')
 
     expect(fetchMock.mock.calls.map(([url, init]) => [url, init?.method ?? 'GET'])).toEqual([
@@ -41,6 +48,7 @@ describe('requests', () => {
       ['/api/forecasts', 'GET'],
       ['/api/forecasts?profileId=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'GET'],
       ['/api/forecasts', 'POST'],
+      ['/api/forecasts?id=7', 'PUT'],
       ['/api/forecasts?id=42', 'DELETE'],
     ])
   })
@@ -56,10 +64,50 @@ describe('requests', () => {
     expect(JSON.parse(String(init.body))).toEqual(input)
   })
 
+  it('an update sends the input as a JSON body (story 97.1)', async () => {
+    fetchMock.mockResolvedValue(answer({ success: true, data: { id: 7 } }))
+    const input = { name: 'Plan', description: 'd', scenarioData: { scenario: {} } }
+
+    await updateForecast('7', input)
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(new Headers(init.headers).get('content-type')).toBe('application/json')
+    expect(JSON.parse(String(init.body))).toEqual(input)
+  })
+
   it('query values are encoded', async () => {
     fetchMock.mockResolvedValue(answer({ success: true }))
     await deleteForecast('1&id=2')
-    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/forecasts?id=1%26id%3D2')
+    await updateForecast('1&id=2', { name: 'x', scenarioData: {} })
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/forecasts?id=1%26id%3D2',
+      '/api/forecasts?id=1%26id%3D2',
+    ])
+  })
+
+  it("an update's refusal carries the server's message, and a network failure rejects", async () => {
+    fetchMock.mockResolvedValueOnce(answer({ success: false, error: 'gone' }, 404))
+    expect(await updateForecast('7', { name: 'x', scenarioData: {} })).toEqual({
+      success: false,
+      error: 'gone',
+      status: 404,
+    })
+    fetchMock.mockResolvedValueOnce(answer('<html>502</html>', 502))
+    expect(await updateForecast('7', { name: 'x', scenarioData: {} })).toEqual({
+      success: false,
+      error: 'Failed to save forecast',
+      status: 502,
+    })
+    fetchMock.mockResolvedValueOnce(answer({ success: true, data: { id: 7 } }))
+    expect(await updateForecast('7', { name: 'x', scenarioData: {} })).toEqual({
+      success: true,
+      data: { id: 7 },
+      status: 200,
+    })
+    fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await expect(updateForecast('7', { name: 'x', scenarioData: {} })).rejects.toThrow(
+      'Failed to fetch'
+    )
   })
 })
 
