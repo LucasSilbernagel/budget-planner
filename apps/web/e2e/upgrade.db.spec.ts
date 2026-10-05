@@ -82,7 +82,7 @@ test('F10: buy Premium on /pricing, the webhook lands, sign in, and Premium is t
     'step 1: the primary nav did not render'
   ).toBeAttached()
   await expect(
-    page.getByRole('navigation', { name: 'Primary' }).locator('a[href="/report"]'),
+    page.getByRole('navigation', { name: 'Primary' }).locator('a[href="/financial-summary"]'),
     'step 1: the visitor must start on the FREE nav (a control for step 10)'
   ).toHaveCount(0)
   // The stub's localized total, not the static `€39/yr` fallback: proves
@@ -189,7 +189,7 @@ test('F10: buy Premium on /pricing, the webhook lands, sign in, and Premium is t
     timeout: SESSION_SETTLE_MS,
   })
   await expect(
-    page.getByRole('navigation', { name: 'Primary' }).locator('a[href="/report"]'),
+    page.getByRole('navigation', { name: 'Primary' }).locator('a[href="/financial-summary"]'),
     'step 10: the nav is not the paid nav'
   ).toHaveCount(1)
   // The paid Overview drops the "Premium Features" upsell (F5's claim), next

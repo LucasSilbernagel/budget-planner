@@ -33,7 +33,7 @@ test('a signed-in user signs out from the paid chrome too, at 2400px', async ({ 
     session.signedOut = true
     await route.fulfill({ json: { success: true } })
   })
-  await page.goto('/report')
+  await page.goto('/financial-summary')
   const panel = await openAccountMenu(page, { acrossHydration: true })
   await panel.getByRole('button', { name: 'Sign out' }).click()
 

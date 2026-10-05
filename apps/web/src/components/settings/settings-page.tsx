@@ -44,7 +44,7 @@ export function SettingsPage() {
    * client round-trip resolved.
    *
    * ⚠️⚠️ FAILS **OPEN**, the opposite of `GlobalNav` — on purpose. After story
-   * 58.2 the nav is the ONLY route a paid user has to /report and /categories,
+   * 58.2 the nav is the ONLY route a paid user has to /financial-summary and /categories,
    * because these tiles were their last remaining fallback. Failing CLOSED on an
    * unverified seed would therefore leave a paid user with no route to either
    * page; showing them a section they do not need is merely redundant.
@@ -120,7 +120,7 @@ export function SettingsPage() {
       <LocalDataSection />
 
       {/* Premium financial summary report — story 30-3. Surfaced-but-locked for
-          free visitors (the /report route gates independently), and placed after
+          free visitors (the /financial-summary route gates independently), and placed after
           Local data so the two data-facing controls sit together.
 
           ⚠️ FREE-TIER ONLY SINCE STORY 58.2 (decision D2). Story 58.1 put Report
@@ -128,7 +128,7 @@ export function SettingsPage() {
           they already have. What survives here is the discovery + upgrade pitch,
           which only has a job for someone who has not bought it yet.
 
-          ⚠️⚠️ DO NOT MOVE THIS SECTION'S PRIVACY SENTENCE ONTO /report. Hiding
+          ⚠️⚠️ DO NOT MOVE THIS SECTION'S PRIVACY SENTENCE ONTO /financial-summary. Hiding
           this section takes "The summary is assembled in your browser — nothing
           is sent anywhere to produce it" away from a paid user, and re-homing it
           to the report page is the obvious repair — it is what story 57.1

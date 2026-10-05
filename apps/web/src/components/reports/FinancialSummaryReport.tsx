@@ -466,7 +466,7 @@ export function FinancialSummaryReport({
       <article id="financial-summary-report" aria-labelledby="report-heading">
         <header>
           <h1 id="report-heading" className="text-2xl font-bold text-heading">
-            Financial summary
+            Financial Summary
           </h1>
           {/* Story 56.1 / UX-DR62 as AMENDED (Lucas, 2026-09-17): the currency
               note that shared this line is gone, but the date stays. This is a

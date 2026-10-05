@@ -1,11 +1,11 @@
 /**
  * "Financial summary report" entry point on `/settings` (story 30-3, FR53).
  *
- * The report itself lives at `/report`; this is the discoverable way in. It is
+ * The report itself lives at `/financial-summary`; this is the discoverable way in. It is
  * wrapped in {@link PremiumFeatureGate} so a free visitor sees the feature
  * exists and is locked, rather than not seeing it at all — the same
  * surfaced-but-locked treatment the overview gives Advanced Forecasting and
- * Custom Profiles. The `/report` route gates independently, so this presentation
+ * Custom Profiles. The `/financial-summary` route gates independently, so this presentation
  * layer can never be the only thing standing between a free user and the report.
  *
  * ⚠️ Two shape constraints, both learned the hard way:
@@ -45,7 +45,7 @@ export function ReportSection(): React.ReactElement {
         id="settings-report-heading"
         className="text-lg font-semibold text-gray-900 dark:text-gray-100"
       >
-        Financial summary
+        Financial Summary
       </h2>
       <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
         Build a print-ready summary of the figures stored on this device and save it as a PDF
@@ -60,7 +60,7 @@ export function ReportSection(): React.ReactElement {
           locked={<ReportFeatureLabel />}
         >
           <a
-            href="/report"
+            href="/financial-summary"
             className="border-default surface-interactive flex w-full items-center justify-between gap-3 rounded-lg border p-3 text-left"
           >
             <ReportFeatureLabel />

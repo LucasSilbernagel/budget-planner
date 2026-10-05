@@ -76,7 +76,7 @@ The app has 19 pages.
 | `/settings` | Currency, theme, planner visibility, local data, account | Free |
 | `/forecasting` | Advanced forecasting scenario builder | Premium |
 | `/profiles` | Custom profiles | Premium |
-| `/report` | Financial summary report | Premium |
+| `/financial-summary` | Financial Summary | Premium |
 | `/categories` | Custom categories and per-category breakdown | Premium |
 | `/login` | Sign in via emailed magic link | - |
 | `/pricing` | Pricing | - |

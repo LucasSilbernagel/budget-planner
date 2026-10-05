@@ -9,7 +9,7 @@ import { createFileRoute } from '@tanstack/react-router'
  *
  * Deliberately absent from `GlobalNav` — the nav is already tight at 320px, and
  * `GlobalNav`'s `NavPath` is a closed union that a new entry would have to widen.
- * `/settings` carries the (gated) entry point, following `/report` and
+ * `/settings` carries the (gated) entry point, following `/financial-summary` and
  * `/profiles`, so this is reachable without being a nav orphan.
  */
 export const Route = createFileRoute('/categories')({

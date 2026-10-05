@@ -7,7 +7,7 @@
  *   - loading  → neither the link nor the lock (a tier that is not yet known
  *                must never leak the paid affordance)
  *   - locked   → an inert button, no link
- *   - unlocked → the link to /report, no lock
+ *   - unlocked → the link to /financial-summary, no lock
  *
  * ⚠️ Accessible-name mechanics, which are NOT symmetrical between the states:
  * the locked branch puts `aria-label={`${featureName} — premium, locked`}` on
@@ -55,9 +55,11 @@ describe('ReportSection', () => {
     mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
     render(<ReportSection />)
 
+    // Story 95.2 (Q2): the h2 names the page, in its Title Case. The `/i` query
+    // above and in settings-page.test.tsx cannot see the casing; this pin can.
     expect(
       screen.getByRole('heading', { level: 2, name: /^financial summary$/i })
-    ).toBeInTheDocument()
+    ).toHaveTextContent(/^Financial Summary$/)
     expect(screen.getByText(/nothing is sent anywhere to produce it/i)).toBeInTheDocument()
   })
 
@@ -66,7 +68,7 @@ describe('ReportSection', () => {
     render(<ReportSection />)
 
     const link = screen.getByRole('link', { name: /financial summary report/i })
-    expect(link).toHaveAttribute('href', '/report')
+    expect(link).toHaveAttribute('href', '/financial-summary')
     // Unlocked ⇒ no lock affordance at all.
     expect(screen.queryByTestId('premium-gate-locked')).not.toBeInTheDocument()
   })
@@ -76,7 +78,7 @@ describe('ReportSection', () => {
     render(<ReportSection />)
     expect(screen.getByRole('link', { name: /financial summary report/i })).toHaveAttribute(
       'href',
-      '/report'
+      '/financial-summary'
     )
   })
 

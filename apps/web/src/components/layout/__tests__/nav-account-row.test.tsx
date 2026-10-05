@@ -409,7 +409,7 @@ describe('Nav + account row, two disclosures (story 59.3)', () => {
     for (const [label, href] of [
       ['Forecasting', '/forecasting'],
       ['Profiles', '/profiles'],
-      ['Report', '/report'],
+      ['Financial Summary', '/financial-summary'],
       ['Categories', '/categories'],
     ] as const) {
       const link = within(more().panel).getByRole('link', { name: label })

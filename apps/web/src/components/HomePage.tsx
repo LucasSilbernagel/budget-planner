@@ -1737,7 +1737,7 @@ function CustomProfilesFeatureLabel(): React.ReactElement {
  * Shared label for the Financial summary report premium entry (story 33.2, FR56 /
  * FR53), rendered identically in the locked and unlocked states.
  *
- * ⚠️ The subtitle is bounded by what `/report` actually does, which is LESS than
+ * ⚠️ The subtitle is bounded by what `/financial-summary` actually does, which is LESS than
  * FR53's own wording promises. FR53 says "budget, net worth, and retirement
  * outlook"; story 30-3 formally narrowed it, and the shipped report covers budget,
  * CURRENT net worth and savings only — the retirement and forward-projection inputs
@@ -1878,7 +1878,7 @@ export const OVERVIEW_BENEFITS: Record<PremiumBenefitId, OverviewBenefit> = {
   report: {
     activation: 'route',
     label: ReportFeatureLabel,
-    href: '/report',
+    href: '/financial-summary',
     featureName: 'Financial Summary Report',
   },
   categories: {
