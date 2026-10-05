@@ -1329,7 +1329,7 @@ development_status:
   epic-99: in-progress  # Batch 20 (2026-10-04, baseline 39ad798): Signed-In State Shows Up Right Away and Follows Me. Source: Lucas app review 2026-10-04; D-lists DECIDED (epics.md).
   99-1-premium-navigation-appears-on-first-sign-in-without-a-refresh: ready-for-dev
   99-2-retirement-inputs-sync-across-my-devices: done  # Part A (server/contract, dormant push); split 2026-10-05
-  99-3-retirement-plan-edits-push-from-every-device: review  # Part B (client push); added 2026-10-05; depends on 99.2 merged
+  99-3-retirement-plan-edits-push-from-every-device: done  # Part B (client push); added 2026-10-05; depends on 99.2 merged
   epic-99-retrospective: optional
 
 action_items:
