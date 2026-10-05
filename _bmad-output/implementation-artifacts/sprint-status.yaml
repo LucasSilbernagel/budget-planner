@@ -1310,12 +1310,12 @@ development_status:
   94-1-the-webhook-is-proved-on-paddles-own-payloads: done  # DONE 2026-10-04: MERGED `05528fb` (PR #37), CI green. DEV DONE 2026-10-04 (worktree): 17 Paddle sandbox fixtures replayed; D-A fix (refund counts only when approved) RED->GREEN; gates ALL GREEN 4m34s. CODE REVIEW 2026-10-04: patched on branch; D1 done (fixtures 06a/12a), D2-D4 accepted by Lucas; rebased onto dda1541. CREATED 2026-10-04 at `73c2b43`; D-A..D-D CONFIRMED by Lucas 2026-10-04 as recommended.
   94-2-an-outage-alert-reaches-me: done  # DONE 2026-10-04: MERGED (PR #36). DEV DONE 2026-10-04 ✅: DOWN + recovered emails received (inbox, within the minute); routing per-person account-level; docs-only. Do first (smallest; needs Lucas at the dashboard + inbox). Story drafted 2026-10-04: both permanent checks MEASURED notification_channels=null.
   epic-94-retrospective: optional
-  epic-95: in-progress  # Batch 20 (2026-10-04, baseline 39ad798): Words That Say Exactly What They Mean. Source: Lucas app review 2026-10-04; D-lists DECIDED (epics.md).
+  epic-95: done  # Batch 20 (2026-10-04, baseline 39ad798): Words That Say Exactly What They Mean. Source: Lucas app review 2026-10-04; D-lists DECIDED (epics.md).
   95-1-copy-pass-from-the-2026-10-04-review: done
-  95-2-report-becomes-financial-summary: backlog
+  95-2-report-becomes-financial-summary: done
   epic-95-retrospective: optional
-  epic-96: in-progress  # Batch 20 (2026-10-04, baseline 39ad798): Comfortable on Every Device. Source: Lucas app review 2026-10-04; D-lists DECIDED (epics.md).
-  96-1-bigger-phone-tap-targets-a-tidier-footer-the-expense-marker-below-the-name: backlog
+  epic-96: done  # Batch 20 (2026-10-04, baseline 39ad798): Comfortable on Every Device. Source: Lucas app review 2026-10-04; D-lists DECIDED (epics.md).
+  96-1-bigger-phone-tap-targets-a-tidier-footer-the-expense-marker-below-the-name: done
   96-2-the-installed-app-shows-its-logo-on-ubuntu: done
   96-3-on-a-phone-settings-lives-at-the-bottom-of-more: done  # added 2026-10-05 (FR163); do before or with 96.1
   epic-96-retrospective: optional
@@ -1328,7 +1328,8 @@ development_status:
   epic-98-retrospective: optional
   epic-99: in-progress  # Batch 20 (2026-10-04, baseline 39ad798): Signed-In State Shows Up Right Away and Follows Me. Source: Lucas app review 2026-10-04; D-lists DECIDED (epics.md).
   99-1-premium-navigation-appears-on-first-sign-in-without-a-refresh: ready-for-dev
-  99-2-retirement-inputs-sync-across-my-devices: backlog
+  99-2-retirement-inputs-sync-across-my-devices: done  # Part A (server/contract, dormant push); split 2026-10-05
+  99-3-retirement-plan-edits-push-from-every-device: ready-for-dev  # Part B (client push); added 2026-10-05; depends on 99.2 merged
   epic-99-retrospective: optional
 
 action_items:
