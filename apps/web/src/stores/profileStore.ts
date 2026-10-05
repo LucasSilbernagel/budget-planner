@@ -428,8 +428,12 @@ export const useProfileStore = create<ProfileState>()(
 // this boundary rather than in the store array, so every write path (pulled
 // remove-then-append, local create, reconcile, rehydrate) is covered. The store
 // ARRAY order and its `[0]` fallbacks are deliberately untouched. ⚠️ `useShallow`
-// is load-bearing: the sort returns a NEW array on every call, which without a
-// shallow compare makes `useSyncExternalStore` re-render forever.
+// is load-bearing: the sort returns a NEW array on every call, so without it every
+// store change (even an unrelated one, e.g. `activeProfileId`) hands consumers a
+// fresh array and re-renders them, and the result is not referentially stable
+// across renders (effect deps). MEASURED in review on zustand 4.5.7: no render
+// loop without it (its `useSyncExternalStoreWithSelector` memoises per snapshot);
+// zustand v5 has no such memo and WOULD loop, so keep `useShallow` on any upgrade.
 export const useProfiles = () =>
   useProfileStore(useShallow((state) => sortProfilesOldestFirst(state.profiles)))
 

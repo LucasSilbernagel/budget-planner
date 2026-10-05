@@ -201,12 +201,24 @@ describe('profiles read oldest → newest through the real store (story 98.1)', 
     expect(readNames()).toEqual(['First id', 'Second id', 'Third id'])
   })
 
-  it('returns a stable array between renders while the store is unchanged (no render loop)', () => {
+  it('returns the same array across renders and unrelated store changes (useShallow)', () => {
     useProfileStore.setState({ profiles: [NEWEST, OLDEST], activeProfileId: A })
 
-    const { result, rerender, unmount } = renderHook(() => useProfiles())
+    let renders = 0
+    const { result, rerender, unmount } = renderHook(() => {
+      renders++
+      return useProfiles()
+    })
     const first = result.current
     rerender()
+    expect(result.current).toBe(first)
+
+    // An unrelated store change must neither re-render nor hand out a new array.
+    const before = renders
+    act(() => {
+      useProfileStore.setState({ activeProfileId: C })
+    })
+    expect(renders).toBe(before)
     expect(result.current).toBe(first)
     unmount()
   })
