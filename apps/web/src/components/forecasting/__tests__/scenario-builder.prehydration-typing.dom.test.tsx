@@ -45,7 +45,7 @@ function clearStores(): void {
   useBalanceStore.setState({ entries: [] })
 }
 
-/** Income plus $3,456 of savings, so the seed re-renders AND sets savings. */
+/** Income, $3,456 of savings and $9,876 of investments: the seed re-renders AND sets both. */
 function fillStores(): void {
   useIncomeStore.setState({
     incomeSources: [
@@ -72,6 +72,22 @@ function fillStores(): void {
         currentBalance: 345_600,
         allocationMode: 'manual' as const,
         monthlyAllocation: null,
+        sortOrder: 0,
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+    ],
+  })
+  useBalanceStore.setState({
+    entries: [
+      {
+        id: 'entry-1',
+        profileId: PROFILE_A,
+        type: 'investment' as const,
+        name: 'Index fund',
+        currentBalance: 987_600,
+        monthlyContribution: 0,
+        frequency: 'monthly' as const,
         sortOrder: 0,
         createdAt: NOW,
         updatedAt: NOW,
@@ -164,9 +180,63 @@ describe('typing before hydration is kept', () => {
     expect(screen.getByDisplayValue('Consulting')).toBeInTheDocument()
     // The seeded $3,456 must NOT replace what the user typed.
     expect(screen.queryByDisplayValue('3456.00')).toBeNull()
+    // And the field shows the typed amount, not a blank or 0.00 (code review).
+    expect(screen.getByLabelText('Current Savings')).toHaveValue('1234.00')
+    // Investments was not typed into, so it is still seeded.
+    expect(screen.getByLabelText('Current Investments')).toHaveValue('9876.00')
 
     const saved = await saveAndRead(onSave)
     expect(saved.inputs.savings).toBe(123_400)
+    expect(saved.inputs.investments).toBe(987_600)
+  })
+
+  it('keeps a Current Investments typed before hydration instead of seeding over it', async () => {
+    const onSave = vi.fn().mockResolvedValue({ success: true })
+    await hydrateAfterTyping(onSave, (server) => {
+      typeRaw(server.getByLabelText('Current Investments'), '5000')
+    })
+
+    expect(screen.getByDisplayValue('Consulting')).toBeInTheDocument()
+    expect(screen.getByLabelText('Current Investments')).toHaveValue('5000.00')
+    expect(screen.getByLabelText('Current Savings')).toHaveValue('3456.00')
+
+    const saved = await saveAndRead(onSave)
+    expect(saved.inputs.investments).toBe(500_000)
+    expect(saved.inputs.savings).toBe(345_600)
+  })
+
+  it('keeps the years and growth rates typed before hydration', async () => {
+    const onSave = vi.fn().mockResolvedValue({ success: true })
+    await hydrateAfterTyping(onSave, (server) => {
+      typeRaw(server.getByLabelText('Projection Period (years)'), '25')
+      typeRaw(server.getByLabelText('Income Growth Rate'), '4')
+      typeRaw(server.getByLabelText('Expense Growth Rate'), '2.5')
+    })
+
+    expect(screen.getByDisplayValue('Consulting')).toBeInTheDocument()
+    expect(screen.getByLabelText('Projection Period (years)')).toHaveValue(25)
+    expect(screen.getByLabelText('Income Growth Rate')).toHaveValue('4')
+    expect(screen.getByLabelText('Expense Growth Rate')).toHaveValue('2.5')
+
+    const saved = await saveAndRead(onSave)
+    expect(saved.inputs.years).toBe(25)
+    expect(saved.scenario.incomeGrowthRate).toBeCloseTo(0.04)
+    expect(saved.scenario.expenseGrowthRate).toBeCloseTo(0.025)
+  })
+
+  it('still seeds when the only pre-hydration edit is one the money filter rejects', async () => {
+    // `0.00a` sanitizes back to the server's `0.00`: nothing the field accepts
+    // was typed, so it must not count as a touch and block the seed.
+    const onSave = vi.fn().mockResolvedValue({ success: true })
+    await hydrateAfterTyping(onSave, (server) => {
+      typeRaw(server.getByLabelText('Current Savings'), '0.00a')
+    })
+
+    expect(screen.getByDisplayValue('Consulting')).toBeInTheDocument()
+    expect(screen.getByLabelText('Current Savings')).toHaveValue('3456.00')
+
+    const saved = await saveAndRead(onSave)
+    expect(saved.inputs.savings).toBe(345_600)
   })
 
   it('still seeds and keeps the defaults when nothing was typed (control)', async () => {
@@ -175,9 +245,11 @@ describe('typing before hydration is kept', () => {
 
     expect(screen.getByLabelText('Scenario Name')).toHaveValue('My Financial Forecast')
     expect(screen.getByDisplayValue('3456.00')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('9876.00')).toBeInTheDocument()
 
     const saved = await saveAndRead(onSave)
     expect(saved.name).toBe('My Financial Forecast')
     expect(saved.inputs.savings).toBe(345_600)
+    expect(saved.inputs.investments).toBe(987_600)
   })
 })

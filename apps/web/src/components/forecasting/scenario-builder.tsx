@@ -1177,7 +1177,9 @@ export function ScenarioBuilder({
               mount. On a cold load the user CAN type before then (into the
               server-rendered field); `InputField` adopts that text on mount and
               `savingsTouched` stops the seed from replacing it, so the remount
-              re-displays the typed value. The income/expense rows need no
+              re-displays the typed AMOUNT, re-formatted (`1234` -> `1234.00`).
+              It still remounts, so a user mid-edit at that moment loses focus.
+              The income/expense rows need no
               equivalent: their `key` is the item id, so seeding remounts them
               anyway. */}
           <InputField
@@ -1466,11 +1468,20 @@ function InputField({
   // this field (the store seed is one) writes that back over the user's text.
   // Adopting the DOM value on mount closes that window. On an ordinary client
   // mount the two are equal and this does nothing.
+  // ⚠️ Compare AFTER filtering (code review). Text the filter rejects outright
+  // (`0.00a` -> `0.00`) is no edit at all, and committing it would call `onChange`
+  // and mark Current Savings/Investments touched, so the store seed was skipped
+  // and a user who typed nothing usable kept a 0. Just clean the DOM instead.
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only by design
   useLayoutEffect(() => {
-    const domValue = inputRef.current?.value
-    if (domValue === undefined || domValue === internalValue) return
-    commit(sanitize ? sanitize(domValue) : domValue)
+    const input = inputRef.current
+    if (!input) return
+    const adopted = sanitize ? sanitize(input.value) : input.value
+    if (adopted !== internalValue) {
+      commit(adopted)
+    } else if (input.value !== adopted) {
+      input.value = adopted
+    }
   }, [])
 
   // Associate the label with its control (story `forecast-2`). `useId` keeps the
