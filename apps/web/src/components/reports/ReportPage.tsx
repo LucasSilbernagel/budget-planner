@@ -1,5 +1,5 @@
 /**
- * `/report` page shell — the Premium gate around the financial summary
+ * `/financial-summary` page shell — the Premium gate around the financial summary
  * (Story 30.3, FR53).
  *
  * Three render states, following the `/profiles` precedent (story 13-3) exactly

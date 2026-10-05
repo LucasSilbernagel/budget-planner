@@ -57,6 +57,10 @@ import { useBalanceStore } from '../../../stores/balanceStore'
 import { useExpenseStore } from '../../../stores/expenseStore'
 import { useIncomeStore } from '../../../stores/incomeStore'
 import { useProfileStore } from '../../../stores/profileStore'
+import {
+  RETIREMENT_PLAN_DEFAULTS,
+  useRetirementPlannerStore,
+} from '../../../stores/retirementPlannerStore'
 import { useSavingsStore } from '../../../stores/savingsStore'
 import { netWorthFromTotals } from '../../net-worth'
 import { applyServerChangesToStores, reportRefusedServerChanges } from '../applyServerChanges'
@@ -606,5 +610,44 @@ describe('story 75.4: the applier itself no longer validates — ONE validator, 
     } finally {
       warn.mockRestore()
     }
+  })
+})
+
+/**
+ * Story 99.2 (G4, AC-6g): the plan's pull gate is LENIENT on fields and strict
+ * on the envelope — through core's real `pull()`, into the real store.
+ */
+describe('the retirement plan through core pull (story 99.2)', () => {
+  const LOCAL = { ...RETIREMENT_PLAN_DEFAULTS, currentAgeInput: '50' }
+  const planChange = (plan: unknown): ServerChange => ({
+    entityType: 'retirementPlan',
+    entityId: USER_ID,
+    data: { id: USER_ID, userId: USER_ID, plan, isDeleted: false },
+    updatedAt: 3000,
+    isDeleted: false,
+  })
+
+  beforeEach(() => {
+    useRetirementPlannerStore.setState({ plan: { ...LOCAL }, ownerUserId: USER_ID })
+  })
+
+  it('AC-6g: a non-object plan is REFUSED by core; the local plan is kept', async () => {
+    const result = await pullThrough([planChange('not a plan')])
+    expect(result.refused).toEqual([
+      { entityType: 'retirementPlan', entityId: USER_ID, fields: ['plan:invalid_type'] },
+    ])
+    expect(useRetirementPlannerStore.getState().plan).toEqual(LOCAL)
+  })
+
+  it('a plan from a NEWER client (unknown field, unknown model) is applied, coerced', async () => {
+    const result = await pullThrough([
+      planChange({ ...LOCAL, currentAgeInput: '44', model: 'hybrid', futureField: 1 }),
+    ])
+    expect(result.refused).toEqual([])
+    expect(useRetirementPlannerStore.getState().plan).toEqual({
+      ...LOCAL,
+      currentAgeInput: '44',
+      model: 'deplete',
+    })
   })
 })

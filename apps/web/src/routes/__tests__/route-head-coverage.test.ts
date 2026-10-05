@@ -69,6 +69,7 @@ const EXPECTED_ROUTE_PATHS = [
   '/docs',
   '/docs/$docId',
   '/expenses',
+  '/financial-summary',
   '/forecasting',
   '/income',
   '/login',
@@ -76,7 +77,6 @@ const EXPECTED_ROUTE_PATHS = [
   '/privacy',
   '/profiles',
   '/refund',
-  '/report',
   '/retirement',
   '/savings',
   '/settings',
@@ -278,7 +278,9 @@ describe('pre-existing titles are unchanged (story 40.1, AC-2)', () => {
   const PINNED: Record<string, string> = {
     '/categories': 'Categories · Longhand Budget',
     '/settings': 'Settings · Longhand Budget',
-    '/report': 'Financial summary · Longhand Budget',
+    // Deliberately changed by story 95.2 (FR155): the page and its path were
+    // renamed, so this pin moved with them (was "Financial summary").
+    '/financial-summary': 'Financial Summary · Longhand Budget',
     '/contact': 'Contact · Longhand Budget',
     '/pricing': 'Pricing · Longhand Budget',
     '/terms': 'Terms of Service · Longhand Budget',

@@ -24,6 +24,7 @@ import {
   incomeSources,
   loginTokens,
   rateLimits,
+  retirementPlans,
   savingsGoals,
   userProfiles,
   users,
@@ -151,6 +152,10 @@ export async function eraseAccountRows(
   await tx.delete(categories).where(eq(categories.userId, userId))
   await tx.delete(savingsGoals).where(eq(savingsGoals.userId, userId))
   await tx.delete(balanceTracking).where(eq(balanceTracking.userId, userId))
+  // Story 99.2: the synced retirement plan (one row per user, references only
+  // users.id). ⚠️ Missing it here makes erasure AND the retention purge throw on
+  // the RESTRICT FK as soon as a premium user has synced a plan.
+  await tx.delete(retirementPlans).where(eq(retirementPlans.userId, userId))
   await tx.delete(loginTokens).where(eq(loginTokens.userId, userId))
   await tx.delete(rateLimits).where(eq(rateLimits.userId, userId))
   // Story 74.2: the magic-link throttle is written with a NULL `userId`

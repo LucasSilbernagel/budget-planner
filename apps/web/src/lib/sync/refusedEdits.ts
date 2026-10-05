@@ -70,6 +70,9 @@ const KIND: Record<SyncEntityType, { kind: string; fallback: string }> = {
   balanceTracking: { kind: 'balance', fallback: 'A balance entry' },
   userProfile: { kind: 'profile', fallback: 'A profile' },
   category: { kind: 'category', fallback: 'A category' },
+  // Story 99.2: a plan op carries no `name`, so the notice always uses the
+  // fallback. The plan is never reverted (D9): see `handleRejectedOperations`.
+  retirementPlan: { kind: 'retirement plan', fallback: 'Your retirement plan' },
 }
 
 /** `balanceTracking` rows are an investment or a debt; say which when we know. */
@@ -230,6 +233,13 @@ export async function handleRejectedOperations(
   for (const notice of notices) {
     const rowOps = byRow.get(notice.key) as SyncOperation[]
     const first = rowOps[0] as SyncOperation
+    // Story 99.2 (D9): a refused retirement plan edit KEEPS the local plan. There
+    // is nothing to revert to on this device, and the re-pull would replace the
+    // user's whole plan with the server's older copy. (Its tombstone, for a
+    // refused create, is a no-op in the applier anyway.) The notice says so.
+    if (first.entityType === 'retirementPlan') {
+      continue
+    }
     if (notice.outcome !== 'removed') {
       // One full re-pull covers every refused update and delete in this sync.
       needsRepull = true

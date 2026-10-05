@@ -45,7 +45,7 @@ test('F9: request a magic link, follow it, confirm, and land signed in', async (
     timeout: SESSION_SETTLE_MS,
   })
   await expect(
-    page.getByRole('navigation', { name: 'Primary' }).locator('a[href="/report"]'),
+    page.getByRole('navigation', { name: 'Primary' }).locator('a[href="/financial-summary"]'),
     'step 5: the nav is not the paid nav'
   ).toHaveCount(1)
   const session = (await context.cookies()).find((cookie) => cookie.name === 'session')

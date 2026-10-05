@@ -252,7 +252,7 @@ describe('the canonical Premium benefit set is the same on every surface', () =>
     // PROMPT_COPY, so it cannot see this wording at all. This pins the Overview
     // `featureName`; the other plain-name surfaces are pinned exactly in their own
     // suites: `/settings` tile `report-section.test.tsx` (locked button name
-    // 'Financial Summary Report — premium, locked'), `/report` gate
+    // 'Financial Summary Report — premium, locked'), `/financial-summary` gate
     // `ReportPage.test.tsx` (anchored featureName). `/pricing` and the Overview
     // label stay under the download fence below.
     expect(PROMPT_COPY.report).toBe('Downloadable Financial Summary Report')
@@ -266,7 +266,8 @@ describe('the canonical Premium benefit set is the same on every surface', () =>
     // assertion in the suite derives its expected value from `OVERVIEW_BENEFITS`
     // itself — `HomePage.test.tsx` builds its route table by mapping over the same
     // record it is checking. Mutation-proved during story 33.2: swapping the
-    // `/report` and `/categories` hrefs left the whole suite GREEN (78/78), because
+    // `/report` (now `/financial-summary`) and `/categories` hrefs left the whole
+    // suite GREEN (78/78), because
     // a mutated map produces a mutated expectation that agrees with it perfectly.
     //
     // A guard derived from the thing it guards cannot fail. So this table restates
@@ -294,7 +295,11 @@ describe('the canonical Premium benefit set is the same on every surface', () =>
         featureName: 'Advanced Forecasting',
       },
       profiles: { activation: 'route', href: '/profiles', featureName: 'Custom Profiles' },
-      report: { activation: 'route', href: '/report', featureName: 'Financial Summary Report' },
+      report: {
+        activation: 'route',
+        href: '/financial-summary',
+        featureName: 'Financial Summary Report',
+      },
       categories: { activation: 'route', href: '/categories', featureName: 'Custom Categories' },
     }
 

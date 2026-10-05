@@ -444,10 +444,15 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       }
     })
 
+    // Story 99.2 (AC-4): the applier asks the LIVE queue before overwriting the
+    // retirement plan, so a still-queued plan edit is never clobbered by a pull.
+    const hasPendingOperation = (entityType: SyncEntityType, entityId: string) =>
+      service.getQueue().hasPendingOperations(entityType, entityId)
+
     // Subscribe to pulled changes: write them into the UI stores (Story 4-18).
     // The core emits applied changes; the web layer owns the store writes.
     const unsubscribeChanges = syncServiceRef.current.onChangesPulled((changes: ServerChange[]) => {
-      applyServerChangesToStores(changes, userId)
+      applyServerChangesToStores(changes, userId, { hasPendingOperation })
       const svc = syncServiceRef.current
       store.getState().setState({
         lastPullTimestamp: svc ? svc.getState().lastPullTimestamp : null,
@@ -482,7 +487,8 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
         queue: service.getQueue(),
         discardOperationsForDeletedProfile: (profileId) =>
           service.discardOperationsForDeletedProfile(profileId),
-        applyChanges: (changes) => applyServerChangesToStores(changes, userId),
+        applyChanges: (changes) =>
+          applyServerChangesToStores(changes, userId, { hasPendingOperation }),
         lookupLocalRow: findLocalRow,
         requestFullRepull,
         notify: addRefusalNotices,

@@ -2,7 +2,7 @@
  * ReportPage tests (story 30-3, FR53).
  *
  * The route-level gate. This is the boundary that matters: the `/settings`
- * entry point is presentation, but a user can navigate straight to `/report`,
+ * entry point is presentation, but a user can navigate straight to `/financial-summary`,
  * and this must refuse them independently — following the `/profiles` precedent
  * (story 13-3).
  *

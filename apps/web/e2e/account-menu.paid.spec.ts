@@ -33,7 +33,13 @@ test('a signed-in user signs out from the paid chrome too, at 2400px', async ({ 
     session.signedOut = true
     await route.fulfill({ json: { success: true } })
   })
-  await page.goto('/report')
+  await page.goto('/financial-summary')
+  // Anchor the page (95.2 review): a stale path lands on the branded 404, which
+  // carries the same paid chrome, so the sign-out below passed there too
+  // (MEASURED with `goto('/report')` after the rename: 1 passed).
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'Financial Summary', exact: true })
+  ).toBeVisible()
   const panel = await openAccountMenu(page, { acrossHydration: true })
   await panel.getByRole('button', { name: 'Sign out' }).click()
 

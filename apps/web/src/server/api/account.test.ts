@@ -80,6 +80,7 @@ import {
   incomeSources,
   loginTokens,
   rateLimits,
+  retirementPlans,
   savingsGoals,
   userProfiles,
   users,
@@ -102,6 +103,8 @@ const EXPECTED_ORDER = [
   categories,
   savingsGoals,
   balanceTracking,
+  // Story 99.2: the synced retirement plan, before `users` (RESTRICT FK).
+  retirementPlans,
   loginTokens,
   rateLimits,
   // Story 74.2: again, by the email `subject` — the magic-link throttle.

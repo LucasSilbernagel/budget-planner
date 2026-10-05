@@ -85,6 +85,12 @@ describe('per-route metadata in the served head (was e2e page-metadata, story 40
     expect(title).toBe('Overview · Longhand Budget')
   })
 
+  it('the premium summary page is Financial Summary at /financial-summary (story 95.2, FR155)', async () => {
+    const { title, description } = await servedHead('/financial-summary')
+    expect(title).toBe('Financial Summary · Longhand Budget')
+    expect(description).toBe('A printable summary of your income, expenses, savings and net worth.')
+  })
+
   it('a route that had no head before story 40.1 names itself', async () => {
     const { title, description } = await servedHead('/income')
     expect(title).toBe('Income · Longhand Budget')
@@ -144,6 +150,17 @@ describe('the global not-found page (was e2e not-found, story 6-4)', () => {
     // The root layout's footer wraps it (not a bare fallback).
     expect(body).toMatch(/<footer[\s>]/)
     expect(body).toMatch(/<a [^>]*href="\/"[^>]*>Go home<\/a>/)
+  })
+
+  // Story 95.2 D2: the old path is NOT redirected or aliased — pre-launch, no
+  // bookmarks to keep. Its presence twin is the 200 for `/financial-summary`
+  // in the metadata describe above.
+  it('the pre-95.2 path /report is a plain branded 404, not a redirect', async () => {
+    const response = await app.get('/report')
+    expect(response.status).toBe(404)
+    const h1s = bodyOf(response.body).match(/<h1[\s>][\s\S]*?<\/h1>/g) ?? []
+    expect(h1s).toHaveLength(1)
+    expect(h1s[0]).toMatch(/>\s*Page not found\s*<\/h1>$/)
   })
 })
 

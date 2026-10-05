@@ -1,7 +1,14 @@
 import { type Page, type Route, expect, test } from '@playwright/test'
-import { expectSignedInAs } from './helpers/account-menu'
+import { accountTrigger, expectSignedInAs } from './helpers/account-menu'
 import { mockSignedIn, openMore } from './helpers/nav-more'
-import { FIXED_NOW, SHOT_TIMEOUT, chartsDrawn, copyrightYear } from './helpers/screenshot'
+import {
+  FIXED_NOW,
+  SHOT_TIMEOUT,
+  chartsDrawn,
+  copyrightYear,
+  expectPhoneStrip,
+  expectTarget,
+} from './helpers/screenshot'
 import { seedFinanceRows } from './helpers/seed-finance-rows'
 
 /**
@@ -111,12 +118,19 @@ for (const width of [768, 1280]) {
 test('paid-sheet-320', async ({ page }) => {
   // 320x640: the phone the 6-row sheet's on-screen claims were measured at.
   await open(page, '/', 320, 4, 640)
+  // Story 96.1 (FR156): signed in PAID (Premium pill beside it), the trigger is
+  // a 44 x 44px target and the strip is exactly 45px with nothing scrolling
+  // sideways. `open` already gated on the mocked identity.
+  await expectTarget(accountTrigger(page), 'Account menu trigger')
+  await expectPhoneStrip(page, 320)
   await openMore(page)
   // The OPEN, PAID sheet, asserted: seven visible rows (the free sheet has
   // three). Was six until story 96.3 (FR163) put Settings LAST in the phone
   // sheet; asserted by its own name, not by its neighbour's label.
   const rows = page.locator('nav[aria-label="Primary"] details ul').getByRole('link')
   await expect(rows).toHaveCount(7)
+  // Story 96.1: every one of the seven rows is a >= 44 x 44px target.
+  for (let i = 0; i < 7; i++) await expectTarget(rows.nth(i), `paid sheet row ${i + 1}`)
   await expect(rows.last()).toHaveAccessibleName('Settings')
   await expect(rows.last()).toBeVisible()
   // On SCREEN at 320x640, not just rendered: `toBeVisible()` ignores clipping
@@ -130,10 +144,11 @@ test('paid-sheet-320', async ({ page }) => {
 })
 
 /**
- * `/report` (story 91.2, FR145): fits the window on screen at 320 and 1280, and
+ * `/financial-summary` (story 91.2, FR145; path and shot names renamed by
+ * story 95.2, FR155): fits the window on screen at 320 and 1280, and
  * prints every column. It is premium, hence this paid file.
  *
- * ⚠️ The browser clock is NOT fixed here, unlike every other shot. /report
+ * ⚠️ The browser clock is NOT fixed here, unlike every other shot. The page
  * stamps "Generated <date>" on the server AND the client; a fixed browser date
  * disagrees with the server's and hydration fails (88.4, MEASURED 5/5 widths).
  * The stamp is MASKED instead, like the footer year, and no page error may
@@ -146,10 +161,12 @@ async function openReport(page: Page, width: number) {
   await page.emulateMedia({ colorScheme: 'light' })
   await seedFinanceRows(page)
   await mockSignedIn(page, { email: PAID_EMAIL, subscriptionStatus: 'active' })
-  await page.goto('/report')
+  await page.goto('/financial-summary')
   await page.waitForLoadState('networkidle')
   await expectSignedInAs(page, PAID_EMAIL)
-  await expect(page.getByRole('heading', { level: 1, name: 'Financial summary' })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'Financial Summary', exact: true })
+  ).toBeVisible()
   await chartsDrawn(page, 0)
   expect(errors, 'no page error (a fixed clock fails hydration here)').toEqual([])
 }
@@ -164,9 +181,9 @@ async function reportDate(page: Page) {
 }
 
 for (const width of [320, 1280]) {
-  test(`report-${width}-light`, async ({ page }) => {
+  test(`financial-summary-${width}-light`, async ({ page }) => {
     await openReport(page, width)
-    await expect(page).toHaveScreenshot(`report-${width}-light.png`, {
+    await expect(page).toHaveScreenshot(`financial-summary-${width}-light.png`, {
       fullPage: true,
       mask: [...(await copyrightYear(page)), await reportDate(page)],
       timeout: SHOT_TIMEOUT,
@@ -174,7 +191,7 @@ for (const width of [320, 1280]) {
   })
 }
 
-test('report-print', async ({ page }) => {
+test('financial-summary-print', async ({ page }) => {
   // 794 px = A4's width at 96 dpi. `emulateMedia` applies the `@media print`
   // rules but not paper size or margins: this pins the print CSS, not the PDF.
   await openReport(page, 794)
@@ -182,7 +199,7 @@ test('report-print', async ({ page }) => {
   await page.emulateMedia({ media: 'print', colorScheme: 'light' })
   // The print rule hides every print button: the media switch took effect.
   await expect(page.getByRole('button', { name: /print \/ save as pdf/i })).toHaveCount(0)
-  await expect(page).toHaveScreenshot('report-print.png', {
+  await expect(page).toHaveScreenshot('financial-summary-print.png', {
     fullPage: true,
     mask: [await reportDate(page)],
     timeout: SHOT_TIMEOUT,

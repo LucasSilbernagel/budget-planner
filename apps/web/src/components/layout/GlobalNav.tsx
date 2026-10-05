@@ -50,7 +50,7 @@ import { SettingsIcon } from '../ui/SettingsIcon'
  * "second premium gate" it feared is deliberately not what shipped: this
  * component gates nothing. It reads the already-resolved SSR seed and chooses a
  * LIST. Every route keeps its own server-side gate, unchanged — a user who
- * reaches `/report` by typing the URL is authorised there, not here.
+ * reaches `/financial-summary` by typing the URL is authorised there, not here.
  *
  * `Multi-device sync` is the one premium benefit still absent: it has no route to
  * link to, so it stays Overview-only in both tiers.
@@ -269,7 +269,7 @@ type NavPath =
   | '/retirement'
   | '/forecasting'
   | '/profiles'
-  | '/report'
+  | '/financial-summary'
   | '/categories'
 
 interface NavItem {
@@ -377,6 +377,15 @@ const MORE_DESTINATIONS: readonly NavItem[] = [
  *     rows of the More panel, which is as wide as its longest label. Brevity
  *     still pays; it no longer decides the row count.
  *
+ * ⚠️ AMENDED by story 95.2 (FR155, Lucas 2026-10-04): the report row is now
+ * "Financial Summary" at `/financial-summary`, REVERSING D1's short "Report"
+ * label for that one row — the nav, URL and page heading name the page what it
+ * is. Profiles and Categories keep D1's short labels, and the benefit name stays
+ * "Financial Summary Report" (95.1). The history above is kept as written; its
+ * "these 35" characters are 46 since this row changed. The label is now a
+ * prefix of the benefit name, so a substring query for it (Playwright's default)
+ * also finds the "Financial Summary Report" links: query it with `exact: true`.
+ *
  * Verified when this shipped: `benefit-set-parity.test.tsx` polices the canonical
  * benefit set across /pricing, the upgrade prompt, the Overview grid, the route
  * map, `features.md` and `pricing.md` — it does not reference this file, so the
@@ -389,7 +398,7 @@ const MORE_DESTINATIONS: readonly NavItem[] = [
 const PREMIUM_DESTINATIONS: readonly NavItem[] = [
   { label: 'Forecasting', to: '/forecasting', Icon: ForecastingIcon },
   { label: 'Profiles', to: '/profiles', Icon: ProfilesIcon },
-  { label: 'Report', to: '/report', Icon: ReportIcon },
+  { label: 'Financial Summary', to: '/financial-summary', Icon: ReportIcon },
   { label: 'Categories', to: '/categories', Icon: CategoriesIcon },
 ]
 

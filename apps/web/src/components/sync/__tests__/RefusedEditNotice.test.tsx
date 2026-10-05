@@ -335,3 +335,23 @@ describe('the not-synced notice (story 79.2, FR128)', () => {
     expect(first).toHaveTextContent('Deleting “Rent” (expense)')
   })
 })
+
+describe('a refused retirement plan edit (story 99.2, D9)', () => {
+  it.each(['removed', 'changed-back'] as const)(
+    'says the plan is still on this device, never that it was %s',
+    (outcome) => {
+      const message = refusalMessage(
+        notice({
+          entityType: 'retirementPlan',
+          name: null,
+          kind: 'retirement plan',
+          fallback: 'Your retirement plan',
+          outcome,
+        })
+      )
+      expect(message).toBe(
+        "Your retirement plan couldn't be saved to your account. It is still saved on this device."
+      )
+    }
+  )
+})

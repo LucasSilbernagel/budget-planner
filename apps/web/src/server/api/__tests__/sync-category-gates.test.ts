@@ -201,9 +201,12 @@ describe('a cashflow operation may carry a categoryId (AC-5)', () => {
  * the map cannot drift from the set of entities the client can actually queue.
  */
 describe('entityTableMap — every syncable entity resolves to a table (AC-6)', () => {
-  // Exhaustive by construction: `satisfies` makes tsc reject this array if a
-  // SyncEntityType is missing or misspelled, so the runtime loop below is
-  // guaranteed to walk the whole union.
+  // ⚠️ Exhaustive in BOTH directions (story 99.2, AC-5c). `satisfies readonly
+  // SyncEntityType[]` alone only rejects a MISSPELLED member: it accepts a SUBSET,
+  // so a new union member could be left out of this list and out of the map, and
+  // every assertion below would still pass. The `Missing` check makes tsc reject
+  // a list that omits any member. (The comment that stood here claimed the
+  // `satisfies` did that; it never did.)
   const ALL_SYNC_ENTITIES = [
     'incomeSource',
     'expense',
@@ -211,9 +214,13 @@ describe('entityTableMap — every syncable entity resolves to a table (AC-6)', 
     'balanceTracking',
     'userProfile',
     'category',
+    'retirementPlan',
   ] as const satisfies readonly SyncEntityType[]
+  type Missing = Exclude<SyncEntityType, (typeof ALL_SYNC_ENTITIES)[number]>
+  const listIsExhaustive: [Missing] extends [never] ? true : false = true
 
   it('has an entry for every SyncEntityType', () => {
+    expect(listIsExhaustive).toBe(true)
     for (const entityType of ALL_SYNC_ENTITIES) {
       // MUTATION KILLED: delete `category: categories` from entityTableMap.
       expect(entityTableMap[entityType], `no table mapped for '${entityType}'`).toBeDefined()
@@ -224,6 +231,18 @@ describe('entityTableMap — every syncable entity resolves to a table (AC-6)', 
     // A present-but-wrong mapping (e.g. pointing at `expenses`) is as broken as
     // a missing one, and the assertion above would not notice.
     expect(getTableName(entityTableMap.category)).toBe('categories')
+  })
+
+  it('maps retirementPlan to the retirementPlans table specifically (story 99.2)', () => {
+    expect(getTableName(entityTableMap.retirementPlan)).toBe('retirementPlans')
+  })
+
+  it('the server entityType enum is EXACTLY the core union, both ways (story 99.2, AC-5b)', () => {
+    // The server enum is hand-written, and ONE op with a value it lacks fails the
+    // WHOLE batch. Compared as sets against the exhaustive list above, so a value
+    // missing on either side fails.
+    const serverEnum = syncOperationSchema.innerType().shape.entityType.options
+    expect([...serverEnum].sort()).toEqual([...ALL_SYNC_ENTITIES].sort())
   })
 
   it('contains no entry that is not a SyncEntityType', () => {

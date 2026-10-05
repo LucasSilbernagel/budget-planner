@@ -70,6 +70,11 @@ import { useCategoryStore } from '../../stores/categoryStore'
 import { useExpenseStore } from '../../stores/expenseStore'
 import { useIncomeStore } from '../../stores/incomeStore'
 import { useProfileStore } from '../../stores/profileStore'
+import {
+  claimRetirementPlanFor,
+  coerceRetirementPlan,
+  useRetirementPlannerStore,
+} from '../../stores/retirementPlannerStore'
 import { useSavingsStore } from '../../stores/savingsStore'
 import { stampMissingSortOrder } from '../ordering'
 import { cascadeProfileRowRemoval } from '../profile-cascade'
@@ -81,41 +86,146 @@ interface StoreApi {
   setState: (partial: Record<string, unknown>) => void
 }
 
-interface EntityBinding {
+/** An entity held as an ARRAY of rows in one store collection. */
+interface CollectionBinding {
+  kind: 'collection'
   /** The store holding this entity type. */
   store: StoreApi
   /** The state field that holds the entity array. */
   collection: string
 }
 
+/** What one pull hands every applier, beyond the change itself. */
+interface ApplyContext {
+  /** The signed-in account (story 86.2). */
+  sessionUserId: string
+  /**
+   * Whether the sync queue still holds an op for this entity (story 99.2, AC-4):
+   * `SyncQueue.hasPendingOperations`, injected by `hooks/useSync.ts`. Absent means
+   * "none pending".
+   */
+  hasPendingOperation?: (entityType: SyncEntityType, entityId: string) => boolean
+}
+
 /**
- * Map each syncable entity type to its store + collection. Every entity id is a
- * uuid string now (Story 5-14), so no per-entity id-kind flag is needed.
+ * An entity this device holds as ONE value, not a collection of rows (story
+ * 99.2): the account's retirement plan. It is not a row in an array, so the
+ * collection consumers (re-sort, re-home, owner stamp) skip it, and it brings
+ * its own read and apply.
+ */
+interface SingletonBinding {
+  kind: 'singleton'
+  /** This device's value as a "row" for `id` (naming a refused edit), or `undefined`. */
+  read: (id: string) => Record<string, unknown> | undefined
+  /** Apply one pulled change. Returns whether the store was written. */
+  apply: (change: ServerChange, context: ApplyContext) => boolean
+}
+
+/**
+ * ⚠️ A discriminated union, so EVERY consumer below must narrow on `kind` before
+ * it touches `store`/`collection`: a singleton cannot be silently treated as an
+ * array by a consumer that forgot it (story 99.2).
+ */
+type EntityBinding = CollectionBinding | SingletonBinding
+
+/**
+ * Apply a pulled retirement plan (story 99.2, AC-3/AC-4, D9). Plain `setState`,
+ * never a store action, so nothing here can queue a sync op.
+ *
+ * - A TOMBSTONE is a no-op (D9). The server never writes one (there is no plan
+ *   delete); the only source is story 75.2's revert of a refused create, and the
+ *   local plan is the user's own work, not a row the server never had.
+ * - A plan for any id but the session's is not this account's plan: refused (a
+ *   plan's id IS its account's id, D3).
+ * - While the queue still holds a plan op (AC-4) the local plan is NOT
+ *   overwritten: that op is the user's newer edit, and core's causal LWW
+ *   (`SynchronizationService.pull`) still decides its fate. The DEBOUNCE half of
+ *   this protection is story 99.3's.
+ * - Otherwise the whole plan is REPLACED (Q5, whole-plan last-writer-wins),
+ *   rebuilt field by field through `coerceRetirementPlan` (core's pull gate is
+ *   deliberately lenient on fields), owned by the session, and stamped with the
+ *   server version it came from.
+ *
+ * ⚠️ The `plan` object check is not a second validator (core already refuses a
+ * non-object `plan`, AC-6g). It guards THIS write: `coerceRetirementPlan` turns a
+ * non-object into the DEFAULTS, so writing one would silently wipe the plan.
+ */
+function applyRetirementPlanChange(change: ServerChange, context: ApplyContext): boolean {
+  if (change.isDeleted) {
+    return false
+  }
+  if (change.entityId !== context.sessionUserId) {
+    reportRefusedRow(change.entityType, change.entityId, ['entityId:not_the_session_account'])
+    return false
+  }
+  if (context.hasPendingOperation?.('retirementPlan', change.entityId) === true) {
+    return false
+  }
+  const plan = change.data['plan']
+  if (typeof plan !== 'object' || plan === null || Array.isArray(plan)) {
+    reportRefusedRow(change.entityType, change.entityId, ['plan:invalid_type'])
+    return false
+  }
+  // Normally a no-op: the 90.1 boundary claimed the plan before sync started. If
+  // it did not, park another account's plan first rather than overwrite it.
+  if (useRetirementPlannerStore.getState().ownerUserId !== context.sessionUserId) {
+    claimRetirementPlanFor(context.sessionUserId)
+    if (useRetirementPlannerStore.getState().ownerUserId !== context.sessionUserId) {
+      // Storage refused the park (the claim fails open): keep that plan on screen.
+      return false
+    }
+  }
+  useRetirementPlannerStore.setState({
+    plan: coerceRetirementPlan(plan),
+    ownerUserId: context.sessionUserId,
+    serverUpdatedAt: new Date(change.updatedAt).toISOString(),
+  })
+  return true
+}
+
+/**
+ * Map each syncable entity type to where this device holds it. Every entity id is
+ * a uuid string now (Story 5-14), so no per-entity id-kind flag is needed.
  */
 const ENTITY_BINDINGS: Record<SyncEntityType, EntityBinding> = {
   incomeSource: {
+    kind: 'collection',
     store: useIncomeStore as unknown as StoreApi,
     collection: 'incomeSources',
   },
   expense: {
+    kind: 'collection',
     store: useExpenseStore as unknown as StoreApi,
     collection: 'expenses',
   },
   savingsGoal: {
+    kind: 'collection',
     store: useSavingsStore as unknown as StoreApi,
     collection: 'savingsGoals',
   },
   balanceTracking: {
+    kind: 'collection',
     store: useBalanceStore as unknown as StoreApi,
     collection: 'entries',
   },
   userProfile: {
+    kind: 'collection',
     store: useProfileStore as unknown as StoreApi,
     collection: 'profiles',
   },
   category: {
+    kind: 'collection',
     store: useCategoryStore as unknown as StoreApi,
     collection: 'categories',
+  },
+  // Story 99.2 (FR161): ONE plan per account, id = the account's id.
+  retirementPlan: {
+    kind: 'singleton',
+    read: (id) => {
+      const { ownerUserId, plan } = useRetirementPlannerStore.getState()
+      return ownerUserId === id ? { id, plan } : undefined
+    },
+    apply: applyRetirementPlanChange,
   },
 }
 
@@ -131,6 +241,9 @@ export function findLocalRow(
   const binding = ENTITY_BINDINGS[entityType]
   if (!binding) {
     return undefined
+  }
+  if (binding.kind === 'singleton') {
+    return binding.read(id)
   }
   const rows = (binding.store.getState()[binding.collection] ?? []) as (Record<string, unknown> & {
     id: string
@@ -184,7 +297,9 @@ export function stampSyncedOwner(
   }
   for (const [entityType, ids] of idsByType) {
     const binding = ENTITY_BINDINGS[entityType]
-    if (!binding) {
+    // A singleton has no placeholder owner to stamp (story 99.2): the plan's
+    // owner is written by the 90.1 claim and by the pull applier, never by a push.
+    if (!binding || binding.kind !== 'collection') {
       continue
     }
     const { store, collection } = binding
@@ -213,12 +328,15 @@ export function stampSyncedOwner(
  * Apply a single pulled change to its store: remove on tombstone, otherwise
  * replace-or-insert by the shared uuid id.
  */
-function applyOne(change: ServerChange): boolean {
+function applyOne(change: ServerChange, context: ApplyContext): boolean {
   const binding = ENTITY_BINDINGS[change.entityType]
   if (!binding) {
     // Unknown entity type — ignore defensively rather than throw (a future
     // server-side type should not crash an older client).
     return false
+  }
+  if (binding.kind === 'singleton') {
+    return binding.apply(change, context)
   }
 
   const { store, collection } = binding
@@ -405,7 +523,7 @@ const ORDERED_ENTITY_TYPES: ReadonlySet<SyncEntityType> = new Set<SyncEntityType
  */
 function resortCollection(entityType: SyncEntityType): void {
   const binding = ENTITY_BINDINGS[entityType]
-  if (!binding) {
+  if (!binding || binding.kind !== 'collection') {
     return
   }
   const { store, collection } = binding
@@ -510,8 +628,11 @@ function rehomePlaceholderRows(placeholderIds: ReadonlySet<string>, targetId: st
   if (placeholderIds.size === 0) {
     return
   }
+  // Collections only: a singleton (the retirement plan, story 99.2) is not a row
+  // and carries no `profileId`.
   const bindings = Object.values(ENTITY_BINDINGS).filter(
-    (binding) => binding.collection !== 'profiles'
+    (binding): binding is CollectionBinding =>
+      binding.kind === 'collection' && binding.collection !== 'profiles'
   )
   for (const { store, collection } of bindings) {
     const current = (store.getState()[collection] as Record<string, unknown>[] | undefined) ?? []
@@ -538,14 +659,23 @@ function rehomePlaceholderRows(placeholderIds: ReadonlySet<string>, targetId: st
  * `sessionUserId` is the signed-in account (story 86.2): a profile owned by any
  * other account is never made active (`reconcileActiveProfile`). Required, so a
  * new caller cannot forget it.
+ *
+ * `options.hasPendingOperation` is the live queue's `hasPendingOperations` (story
+ * 99.2, AC-4): a pulled retirement plan does not overwrite a plan edit that is
+ * still queued. `hooks/useSync.ts` passes it at both of its call sites.
  */
-export function applyServerChangesToStores(changes: ServerChange[], sessionUserId: string): void {
+export function applyServerChangesToStores(
+  changes: ServerChange[],
+  sessionUserId: string,
+  options: Pick<ApplyContext, 'hasPendingOperation'> = {}
+): void {
+  const context: ApplyContext = { sessionUserId, ...options }
   let appliedProfile = false
   // Story 34.1a: which ordered collections this batch actually touched.
   const touchedOrdered = new Set<SyncEntityType>()
   for (const change of changes) {
     try {
-      const applied = applyOne(change)
+      const applied = applyOne(change, context)
       if (!applied) {
         // Skipped defensively (unknown entity type, or a change with no id).
         // Must NOT count as touched, or a batch that changed nothing still

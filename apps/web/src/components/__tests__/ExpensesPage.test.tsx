@@ -1147,6 +1147,48 @@ describe('ExpensesPage — "ends before I retire" (65.2, FR101)', () => {
     expect(norm(row as HTMLElement)).toContain('Mortgage')
   })
 
+  // Story 96.1 (FR156): below 640px the Name cell is a flex ROW
+  // (`RESPONSIVE_CELL_CLASS`: FieldLabel | value), so a marker that is the
+  // cell's third child sat BESIDE the name, both squeezed onto two lines.
+  // Name + marker share ONE wrapper, so the pair is a single flex item and the
+  // inline marker drops below the block name. jsdom has no layout: this pins
+  // the STRUCTURE; the stacked boxes were measured in a real browser (story
+  // Debug Log, one-off probe at 320/375/640).
+  it("the marker sits inside the name's own block, so a phone row stacks it below the name", async () => {
+    useExpenseStore.getState().addExpense({
+      name: 'Mortgage',
+      amount: 180_000,
+      frequency: 'monthly',
+      endsBeforeRetirement: true,
+    })
+    useExpenseStore
+      .getState()
+      .addExpense({ name: 'Groceries', amount: 40_000, frequency: 'monthly' })
+    const { container } = renderWithProviders(<ExpensesPage />)
+
+    const badge = container.querySelector(
+      '[data-testid="expense-row-ends-before-retirement"]'
+    ) as HTMLElement
+    expect(badge).not.toBeNull()
+    const row = badge.closest('tr') as HTMLElement
+    const name = within(row).getByText('Mortgage')
+    const wrapper = name.parentElement as HTMLElement
+    expect(badge.parentElement, 'marker and name do not share one parent').toBe(wrapper)
+    const cell = wrapper.parentElement as HTMLElement
+    expect(cell.tagName).toBe('TD')
+    // The cell holds exactly the FieldLabel and the wrapper: two flex items.
+    expect(cell.children).toHaveLength(2)
+    expect(cell.children[1]).toBe(wrapper)
+    expect(cell.children[0]).toHaveTextContent('Name')
+
+    // Unmarked rows: the same wrapper, holding the name only.
+    const groceries = within(container).getByText('Groceries')
+    const plainWrapper = groceries.parentElement as HTMLElement
+    expect(plainWrapper.children).toHaveLength(1)
+    expect(plainWrapper.parentElement?.tagName).toBe('TD')
+    expect(plainWrapper.parentElement?.children).toHaveLength(2)
+  })
+
   it.each([
     [
       'free',
