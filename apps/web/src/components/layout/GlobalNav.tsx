@@ -150,8 +150,8 @@ import { SettingsIcon } from '../ui/SettingsIcon'
  * story 96.3 (FR163) the PHONE sheet holds one more, Settings, last: three rows
  * for a free session and seven for an entitled one below `sm` (the dropdown at
  * `sm` and up still holds two / six). The bar is now 56.75px, and the tier
- * cannot change that — 58.1, 69.2 and 96.3 touched only the sheet, never
- * `PRIMARY_TABS`.
+ * cannot change that — 58.1 and 69.2 touched only the sheet list, and 96.3 only
+ * the sheet (one row after the list), never `PRIMARY_TABS`.
  *
  * ⚠️ The structure that makes this legal is a NESTED `<ul>` inside the fifth
  * `<li>`. The obvious alternative — leaving every `<li>` in the bar and
@@ -757,6 +757,11 @@ export function GlobalNav() {
    * the sheet it discloses is empty of it: an orientation cue pointing at
    * nothing. Keeping the two in agreement by discipline is exactly the kind of
    * invariant that rots, so they are not separately computable.
+   *
+   * ⚠️ AMENDED by story 96.3 (FR163): the phone-only Settings sheet row is the
+   * one documented exception. It is rendered AFTER this list, not from it, and
+   * More's `/settings` cue is computed apart (`isOnSettingsPage`). Why: see
+   * `SETTINGS_SHEET_CELL_CLASS`.
    *
    * This is the post-hydration half of the feature. The FIRST frame is handled
    * before React runs, by the `<head>` script in

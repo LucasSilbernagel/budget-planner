@@ -99,7 +99,8 @@ describe('GlobalNav — the server HTML (JavaScript off, story 59.2 AC-4)', () =
 
   it('puts every free More destination in the server HTML as a real link inside the disclosure', async () => {
     const { nav } = await serverNav(SIGNED_OUT)
-    // + `/settings`, last: the phone-only Settings row (story 96.3).
+    // + `/settings`, last: the phone-only Settings row (was
+    // ['/balance', '/retirement'] until story 96.3).
     expect(panelHrefs(nav)).toEqual(['/balance', '/retirement', '/settings'])
     // Not a React-only control: plain anchors, no button anywhere in the nav.
     expect(nav.querySelectorAll('button')).toHaveLength(0)

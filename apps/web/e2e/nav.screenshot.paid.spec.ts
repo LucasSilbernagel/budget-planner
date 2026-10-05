@@ -93,6 +93,9 @@ test('paid-sheet-320', async ({ page }) => {
   await expect(rows).toHaveCount(7)
   await expect(rows.last()).toHaveAccessibleName('Settings')
   await expect(rows.last()).toBeVisible()
+  // On SCREEN at 320x640, not just rendered: `toBeVisible()` ignores clipping
+  // by the sheet's `max-h` scroll box (story 96.3 review, measured).
+  await expect(rows.last()).toBeInViewport({ ratio: 1 })
   // Viewport, not full page: the sheet is a fixed overlay above the bottom bar.
   await expect(page).toHaveScreenshot('paid-sheet-320.png', {
     mask: await copyrightYear(page),

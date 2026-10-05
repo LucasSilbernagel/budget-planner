@@ -215,6 +215,8 @@ describe('GlobalNav', () => {
           .getAllByRole('link')
           .map((a) => a.getAttribute('href'))
       ).size
+      // Seven unique hrefs: the six destinations + /settings (was six until
+      // story 96.3; the row copies repeat hrefs, so they add none).
     ).toBe(SECTIONS.length + SETTINGS_ROW)
     // Forecasting stays surfaced-but-locked on Home (story 7-2), not in the nav.
     expect(within(nav).queryByRole('link', { name: /forecast/i })).not.toBeInTheDocument()
@@ -314,7 +316,7 @@ describe('GlobalNav', () => {
     const list = nav.querySelector('ul')
     expect(list).not.toBeNull()
 
-    // + the Settings row (story 96.3).
+    // Nine: was eight until story 96.3 added the phone-only Settings row.
     expect(within(nav).getAllByRole('link')).toHaveLength(
       SECTIONS.length + PROMOTED_COPIES + SETTINGS_ROW
     )
@@ -929,8 +931,8 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
     // ⚠️ Assert the BEFORE state too. Checking only the restored render would
     // pass identically on a component that never filters anything — the test
     // could not tell the feature from its absence.
-    // 5 destinations + the Balances row copy (story 69.3) + the Settings row
-    // (story 96.3).
+    // 5 destinations + the Balances row copy (story 69.3) + the Settings row:
+    // seven, was six until story 96.3.
     expect(within(hiddenNav).getAllByRole('link')).toHaveLength(
       SECTIONS.length - 1 + 1 + SETTINGS_ROW
     )
@@ -945,6 +947,7 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
       '/retirement'
     )
     expect(rowCopiesOf(nav).map((a) => a.getAttribute('href'))).toEqual(['/balance', '/retirement'])
+    // Nine: was eight until story 96.3 added the phone-only Settings row.
     expect(within(nav).getAllByRole('link')).toHaveLength(
       SECTIONS.length + PROMOTED_COPIES + SETTINGS_ROW
     )
@@ -1119,8 +1122,8 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
       renderWithSeed(seedWith())
       const navEl = await nav()
       const icons = [...navEl.querySelectorAll(ICON_SVG)]
-      // Twelve: 4 bar tabs + More + 7 sheet rows (twelve until story 69.2 took
-      // Settings out, eleven until story 96.3 put it back for phones). Without
+      // 12 now: 4 bar tabs + More + 7 sheet rows. History: 12 until story 69.2
+      // took Settings out, then 11 until story 96.3 put it back for phones. Without
       // `sm:hidden` each new icon grows the DESKTOP nav, and nothing else in the
       // suite would catch it.
       expect(icons).toHaveLength(12)
