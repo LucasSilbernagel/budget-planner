@@ -1453,21 +1453,22 @@ export function ScenarioBuilder({
         className="surface-inset rounded-xl p-6 space-y-4"
         aria-labelledby={savingsHeadingId}
       >
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h3 id={savingsHeadingId} className="text-lg font-semibold text-subheading">
-              Savings Accounts
-            </h3>
-            <p className="text-muted text-sm mt-1">{SAVINGS_WHAT_IF_NOTE}</p>
-          </div>
+        {/* The note sits BELOW the heading row, at full width: beside the
+            heading it squeezed the row at 320px and pushed the button past the
+            section's edge (CI screenshot, story 100.1). */}
+        <div className="flex items-center justify-between">
+          <h3 id={savingsHeadingId} className="text-lg font-semibold text-subheading">
+            Savings Accounts
+          </h3>
           <button
             type="button"
             onClick={addSavingsAccount}
-            className="shrink-0 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
           >
             + Add Account
           </button>
         </div>
+        <p className="text-muted text-sm">{SAVINGS_WHAT_IF_NOTE}</p>
 
         {savingsAccounts.length === 0 ? (
           <p className="text-muted text-sm">{NO_SAVINGS_ACCOUNTS}</p>
