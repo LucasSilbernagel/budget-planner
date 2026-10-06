@@ -689,7 +689,7 @@ describe('savings rows round-trip through the real routes (story 100.1, AC-11)',
     useSavingsStore.setState({ savingsGoals: [] })
   })
 
-  it('POST and PUT store version 2 with the rows and their sum, and Load brings the rows back', async () => {
+  it('POST and PUT store the current version (3 since story 100.2) with the rows and their sum, and Load brings the rows back', async () => {
     await seedSavingsRows()
     const view = renderWithRouter(<ForecastingPage />)
     await pressSave(view)
@@ -704,7 +704,7 @@ describe('savings rows round-trip through the real routes (story 100.1, AC-11)',
         .from(forecastingProfiles)
     const [created, ...more] = await versioned()
     expect(more).toEqual([])
-    expect(created?.version).toBe(2)
+    expect(created?.version).toBe(3)
     const inputs = (
       JSON.parse(String(created?.scenarioData)) as { inputs: Record<string, unknown> }
     ).inputs
@@ -727,17 +727,144 @@ describe('savings rows round-trip through the real routes (story 100.1, AC-11)',
     expect(value('Balance for House fund')).toBe('2500.01')
     expect(value('Monthly Contribution for House fund')).toBe('0.05')
 
-    // Save over it (PUT): still version 2.
+    // Save over it (PUT): same version.
     await setIncomeGrowth(view, '1')
     await pressSave(view)
     await rtl.waitFor(() => expect(served.some((line) => line.startsWith('PUT '))).toBe(true), {
       timeout: 5000,
     })
     const [updated] = await versioned()
-    expect(updated?.version).toBe(2)
+    expect(updated?.version).toBe(3)
     expect(
       (JSON.parse(String(updated?.scenarioData)) as { inputs: { savingsAccounts: unknown[] } })
         .inputs.savingsAccounts
     ).toHaveLength(2)
+  }, 20_000)
+})
+
+describe('investment/debt rows round-trip through the real routes (story 100.2, AC-12, AC-13)', () => {
+  const ISO = '2026-10-05T00:00:00.000Z'
+
+  afterEach(async () => {
+    const { useBalanceStore } = await import('@/stores/balanceStore')
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  it('POST stores version 3 with the rows and the investment sum, and Load brings every field back', async () => {
+    const { useBalanceStore } = await import('@/stores/balanceStore')
+    useBalanceStore.setState({
+      entries: [
+        {
+          id: 'b-1',
+          profileId: PROFILE,
+          type: 'investment',
+          name: 'Pension',
+          currentBalance: 1_000_001,
+          monthlyContribution: 25_000,
+          frequency: 'biweekly',
+          contributionRecordedAsExpense: true,
+          sortOrder: 0,
+          createdAt: ISO,
+          updatedAt: ISO,
+        },
+        {
+          id: 'b-2',
+          profileId: PROFILE,
+          type: 'debt',
+          name: 'Car loan',
+          currentBalance: -500_000,
+          monthlyContribution: 30_000,
+          frequency: 'monthly',
+          sortOrder: 1,
+          createdAt: ISO,
+          updatedAt: ISO,
+        },
+        {
+          id: 'b-3',
+          profileId: PROFILE,
+          type: 'investment',
+          name: 'ISA',
+          currentBalance: 200_000,
+          monthlyContribution: 120_000,
+          frequency: 'annually',
+          sortOrder: 2,
+          createdAt: ISO,
+          updatedAt: ISO,
+        },
+      ] as never,
+    })
+    const view = renderWithRouter(<ForecastingPage />)
+    await pressSave(view)
+    await view.findByTestId('save-success', {}, { timeout: 5000 })
+
+    const [created, ...more] = await db
+      .select({
+        version: forecastingProfiles.version,
+        scenarioData: forecastingProfiles.scenarioData,
+      })
+      .from(forecastingProfiles)
+    expect(more).toEqual([])
+    expect(created?.version).toBe(3)
+    const inputs = (
+      JSON.parse(String(created?.scenarioData)) as { inputs: Record<string, unknown> }
+    ).inputs
+    expect(inputs.balanceAccounts).toEqual([
+      {
+        name: 'Pension',
+        type: 'investment',
+        balance: 1_000_001,
+        contribution: 25_000,
+        frequency: 'biweekly',
+        contributionRecordedAsExpense: true,
+      },
+      // The stored negative debt seeds as its magnitude (D6).
+      {
+        name: 'Car loan',
+        type: 'debt',
+        balance: 500_000,
+        contribution: 30_000,
+        frequency: 'monthly',
+        contributionRecordedAsExpense: false,
+      },
+      {
+        name: 'ISA',
+        type: 'investment',
+        balance: 200_000,
+        contribution: 120_000,
+        frequency: 'annually',
+        contributionRecordedAsExpense: false,
+      },
+    ])
+    // Kept for an older cached client: the INVESTMENT rows' sum, debts excluded.
+    expect(inputs.investments).toBe(1_200_001)
+
+    // Change the live store so a reload that read it would show different rows.
+    useBalanceStore.setState({ entries: [] })
+    rtl.fireEvent.click(
+      await view.findByRole('button', { name: 'Load My Financial Forecast' }, { timeout: 5000 })
+    )
+    const value = (label: string) => (view.getByLabelText(label) as HTMLInputElement).value
+    await rtl.waitFor(() => expect(value('Balance for Pension')).toBe('10000.01'))
+    const section = view.getByRole('region', { name: 'Investments & Debts' })
+    expect(
+      rtl
+        .within(section)
+        .getAllByLabelText(/^Balance Name, row \d+$/)
+        .map((el) => (el as HTMLInputElement).value)
+    ).toEqual(['Pension', 'Car loan', 'ISA'])
+    expect(value('Type for Pension')).toBe('investment')
+    expect(value('Contribution for Pension')).toBe('250')
+    expect(value('Frequency for Pension')).toBe('biweekly')
+    expect(
+      view.getByLabelText('Not taken from the money left over, for Pension') as HTMLInputElement
+    ).toBeChecked()
+    expect(value('Type for Car loan')).toBe('debt')
+    expect(value('Balance for Car loan')).toBe('5000')
+    expect(value('Contribution for Car loan')).toBe('300')
+    expect(value('Frequency for Car loan')).toBe('monthly')
+    expect(value('Frequency for ISA')).toBe('annually')
+    expect(
+      view.getByLabelText('Not taken from the money left over, for ISA') as HTMLInputElement
+    ).not.toBeChecked()
   }, 20_000)
 })

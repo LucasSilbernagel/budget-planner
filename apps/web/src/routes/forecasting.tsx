@@ -18,6 +18,7 @@ import {
   type ForecastingScenario,
   isValidForecastYears,
 } from '@budget-planner/core'
+import type { Frequency } from '@budget-planner/core/finance'
 import { createFileRoute } from '@tanstack/react-router'
 import React, { useState, useEffect, useCallback } from 'react'
 import { PremiumPrompt } from '../components/auth/premium-prompt'
@@ -34,6 +35,7 @@ import {
   updateForecast,
 } from '../lib/forecasting/forecast-api'
 import { FORECAST_SAVE_VERSION } from '../lib/forecasting/forecast-version'
+import { isKnownFrequency } from '../lib/readable-rows'
 
 // ============================================================================
 // Route Configuration
@@ -106,6 +108,20 @@ export interface SavedSavingsAccount {
 }
 
 /**
+ * One what-if investment or debt row as a saved forecast stores it (story
+ * 100.2). Money in cents; `balance` is a positive magnitude for both types and
+ * `contribution` is the amount at `frequency` cadence.
+ */
+export interface SavedBalanceAccount {
+  name: string
+  type: 'investment' | 'debt'
+  balance: number
+  contribution: number
+  frequency: Frequency
+  contributionRecordedAsExpense: boolean
+}
+
+/**
  * Builder inputs that are NOT part of ForecastingScenario but are needed to
  * faithfully reopen a saved forecast (savings/investments/years). Persisted in
  * the scenarioData JSON blob alongside { scenario, result } (story bug-3).
@@ -113,7 +129,11 @@ export interface SavedSavingsAccount {
  * ⚠️ `savings` is still written beside `savingsAccounts` (story 100.1, D4), as
  * their sum: an older cached client (PWA) reads only `savings`, and must still
  * reopen a v2 forecast at the right starting figure. On load the ROWS win when
- * the two disagree (D7, `mapToSavedForecast`).
+ * the two disagree (D7, `mapToSavedForecast`). `investments` is likewise written
+ * beside `balanceAccounts` (story 100.2) as the INVESTMENT rows' sum, with the
+ * same rows-win rule. (An older client that reads only `investments` reopens a v3
+ * forecast without its debts and contributions; its starting investments are
+ * still right.)
  */
 export interface ScenarioInputs {
   savings: number
@@ -121,6 +141,8 @@ export interface ScenarioInputs {
   years: number
   /** Absent on forecasts saved before story 100.1 (version 1). */
   savingsAccounts?: SavedSavingsAccount[]
+  /** Absent on forecasts saved before story 100.2 (versions 1 and 2). */
+  balanceAccounts?: SavedBalanceAccount[]
 }
 
 /**
@@ -148,7 +170,8 @@ export interface SavedForecast {
   result: ForecastingResult
   /**
    * Starting inputs the scenario type doesn't carry (savings/investments/years,
-   * and since story 100.1 the savings rows). Optional because forecasts saved
+   * since story 100.1 the savings rows, and since story 100.2 the investment and
+   * debt rows). Optional because forecasts saved
    * before story bug-3 won't have it — reload defaults those fields in that case.
    */
   inputs?: ScenarioInputs
@@ -176,6 +199,32 @@ function savedSavingsAccount(entry: unknown): SavedSavingsAccount {
 }
 
 /**
+ * A saved investment/debt row coerced like `savedSavingsAccount` (story 100.2,
+ * AC-14): a non-string name becomes `''`, non-finite or negative money 0, an
+ * unknown frequency `monthly`, and the flag is kept only `=== true` on an
+ * investment. Returns `null` for a row that is neither an investment nor a debt:
+ * its sign is unknowable, so it is DROPPED rather than guessed.
+ */
+function savedBalanceAccount(entry: unknown): SavedBalanceAccount | null {
+  const record =
+    typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : {}
+  const type = record['type']
+  if (type !== 'investment' && type !== 'debt') return null
+  const money = (value: unknown) =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0
+  const frequency = record['frequency']
+  return {
+    name: typeof record['name'] === 'string' ? record['name'] : '',
+    type,
+    balance: money(record['balance']),
+    contribution: money(record['contribution']),
+    frequency: isKnownFrequency(frequency) ? frequency : 'monthly',
+    contributionRecordedAsExpense:
+      type === 'investment' && record['contributionRecordedAsExpense'] === true,
+  }
+}
+
+/**
  * Map a server-side forecasting profile to the client SavedForecast shape.
  * scenarioData is a JSON string of { scenario, result }; returns null if it
  * cannot be parsed into the expected shape so a corrupt row can't crash the UI.
@@ -185,7 +234,10 @@ function mapToSavedForecast(profile: ForecastWire): SavedForecast | null {
     const parsed = JSON.parse(profile.scenarioData) as {
       scenario?: ForecastingScenario
       result?: ForecastingResult
-      inputs?: Omit<ScenarioInputs, 'savingsAccounts'> & { savingsAccounts?: unknown }
+      inputs?: Omit<ScenarioInputs, 'savingsAccounts' | 'balanceAccounts'> & {
+        savingsAccounts?: unknown
+        balanceAccounts?: unknown
+      }
     }
     // Validate the nested shape the saved-list UI actually dereferences
     // (result.summary.endingNetWorth / totalGrowth). A row that parses but is
@@ -223,18 +275,35 @@ function mapToSavedForecast(profile: ForecastWire): SavedForecast | null {
     const savings = savingsAccounts
       ? savingsAccounts.reduce((sum, account) => sum + account.balance, 0)
       : savedInputs?.savings
+    // Investment/debt rows (story 100.2, AC-14), the same rules: a non-array is
+    // ignored (the forecast loads as v1/v2, from `investments`), entries are
+    // coerced, an entry of an unknown type is DROPPED, and when the investment
+    // rows' sum disagrees with `investments` the ROWS win.
+    const balanceAccounts = Array.isArray(savedInputs?.balanceAccounts)
+      ? savedInputs.balanceAccounts
+          .map(savedBalanceAccount)
+          .filter((account): account is SavedBalanceAccount => account !== null)
+      : undefined
+    const investments = balanceAccounts
+      ? balanceAccounts.reduce(
+          (sum, account) => (account.type === 'investment' ? sum + account.balance : sum),
+          0
+        )
+      : savedInputs?.investments
     const inputs: ScenarioInputs | undefined =
       savedInputs &&
       typeof savings === 'number' &&
       Number.isFinite(savings) &&
-      Number.isFinite(savedInputs.investments)
+      typeof investments === 'number' &&
+      Number.isFinite(investments)
         ? {
             savings,
-            investments: savedInputs.investments,
+            investments,
             years: isValidForecastYears(savedInputs.years)
               ? savedInputs.years
               : DEFAULT_FORECAST_YEARS,
             ...(savingsAccounts ? { savingsAccounts } : {}),
+            ...(balanceAccounts ? { balanceAccounts } : {}),
           }
         : undefined
     return {

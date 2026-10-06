@@ -25,7 +25,7 @@
  * too.
  */
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -40,9 +40,22 @@ import {
   isValidForecastYears,
 } from '../forecasting'
 
-const FINANCE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-/** Every module `forecasting.ts` reaches, transitively. */
-const ENGINE_MODULES = ['forecasting', 'netIncome', 'normalization'] as const
+const SRC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+/**
+ * Every module `forecasting.ts` reaches, transitively, as paths under `src/`.
+ * The directory layout is kept in the temp dir so relative `require`s resolve.
+ * Story 100.2 added the `services/balanceTracking` chain (the contribution
+ * chokepoint, `monthlyContributionCents`); its `@budget-planner/db` import is
+ * type-only and is erased by the transpile.
+ */
+const ENGINE_MODULES = [
+  'finance/forecasting',
+  'finance/netIncome',
+  'finance/normalization',
+  'services/balanceTracking',
+  'utils/balanceCalculations',
+  'utils/uuid',
+] as const
 /** Generous for a 30-iteration loop; a non-terminating one never finishes. */
 const CHILD_TIMEOUT_MS = 5000
 const RANGE_MESSAGE = 'Projection period must be a whole number of years from 1 to 30'
@@ -52,11 +65,13 @@ let engineDir = ''
 beforeAll(() => {
   engineDir = mkdtempSync(join(tmpdir(), 'forecast-engine-'))
   for (const name of ENGINE_MODULES) {
-    const source = readFileSync(join(FINANCE_DIR, `${name}.ts`), 'utf8')
+    const source = readFileSync(join(SRC_DIR, `${name}.ts`), 'utf8')
     const { outputText } = ts.transpileModule(source, {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 },
     })
-    writeFileSync(join(engineDir, `${name}.js`), outputText)
+    const target = join(engineDir, `${name}.js`)
+    mkdirSync(dirname(target), { recursive: true })
+    writeFileSync(target, outputText)
   }
 })
 
@@ -71,7 +86,7 @@ afterAll(() => {
 function runEngineInChild(yearsExpression: string) {
   const script = `
     const { calculateFinancialForecast } = require(${JSON.stringify(
-      join(engineDir, 'forecasting.js')
+      join(engineDir, 'finance', 'forecasting.js')
     )})
     try {
       calculateFinancialForecast(

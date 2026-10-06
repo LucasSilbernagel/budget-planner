@@ -8,7 +8,7 @@
  * window can be held open and then closed on demand.
  */
 
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useBalanceStore } from '../../../stores/balanceStore'
 import { useExpenseStore } from '../../../stores/expenseStore'
@@ -136,7 +136,8 @@ describe('edits made while the seed is still pending survive it', () => {
     expect(screen.getByDisplayValue('Rent')).toBeInTheDocument()
     // Story 100.1: savings are rows now, one per store row.
     expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue(3456)
-    expect(screen.getByLabelText('Current Investments')).toHaveValue('9876.00')
+    // Story 100.2: investments are rows too.
+    expect(screen.getByLabelText('Balance for Index fund')).toHaveValue(9876)
   })
 
   /**
@@ -157,29 +158,44 @@ describe('edits made while the seed is still pending survive it', () => {
 
     // The seed landed (positive control) ...
     expect(screen.getByDisplayValue('Consulting')).toBeInTheDocument()
-    expect(screen.getByLabelText('Current Investments')).toHaveValue('9876.00')
+    expect(screen.getByLabelText('Balance for Index fund')).toHaveValue(9876)
     // ... the user's row is the SAME node, still focused, still the typed text ...
     expect(screen.getByLabelText('Balance for New Account')).toBe(field)
     expect(document.activeElement).toBe(field)
     expect(field).toHaveValue(1234)
     // ... and the store's row was not added beside it.
     expect(screen.queryByDisplayValue('Emergency fund')).toBeNull()
-    expect(screen.getAllByRole('button', { name: /^Remove / })).toHaveLength(1)
+    const savings = screen.getByRole('region', { name: 'Savings Accounts' })
+    expect(within(savings).getAllByRole('button', { name: /^Remove / })).toHaveLength(1)
   })
 
-  it('does not remount a Current Investments field the user is typing in', () => {
+  /**
+   * Story 100.2 replaced the Current Investments field with investment/debt rows,
+   * so this is now the row version of the old "Current Investments field the user
+   * is typing in" case, with the same D8 rule as the savings rows: a row added
+   * before the seed survives it, keeps its node and focus, and the store's rows
+   * are NOT added on top.
+   */
+  it('keeps an investment/debt row the user added and is typing in, and does not add the store rows on top (D8)', () => {
     const { rerender } = render(<ScenarioBuilder onSave={onSave} />)
 
-    const field = screen.getByLabelText('Current Investments') as HTMLInputElement
+    fireEvent.click(screen.getByRole('button', { name: '+ Add Balance' }))
+    const field = screen.getByLabelText('Balance for New Investment') as HTMLInputElement
     field.focus()
     fireEvent.change(field, { target: { value: '50' } })
 
     landSeed(rerender)
 
+    // The seed landed (positive control) ...
     expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue(3456)
-    expect(screen.getByLabelText('Current Investments')).toBe(field)
+    // ... the user's row is the same node, focused, with the typed value ...
+    expect(screen.getByLabelText('Balance for New Investment')).toBe(field)
     expect(document.activeElement).toBe(field)
-    expect(field).toHaveValue('50')
+    expect(field).toHaveValue(50)
+    // ... and the store's Index fund was not added beside it.
+    expect(screen.queryByDisplayValue('Index fund')).toBeNull()
+    const balances = screen.getByRole('region', { name: 'Investments & Debts' })
+    expect(within(balances).getAllByRole('button', { name: /^Remove / })).toHaveLength(1)
   })
 
   it('keeps income rows the user added and edited instead of replacing them', () => {

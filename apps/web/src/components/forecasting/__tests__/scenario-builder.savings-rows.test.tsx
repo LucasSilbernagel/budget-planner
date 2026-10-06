@@ -170,9 +170,10 @@ describe('rows replace the single savings total (AC-1, AC-9)', () => {
     expect(screen.getByLabelText('Monthly Contribution for Emergency fund')).toHaveValue(200)
     expect(screen.getByLabelText('Balance for House fund')).toHaveValue(2500)
 
-    // The single total is gone; Current Investments stays (100.2 replaces it).
+    // The single total is gone. (Current Investments went too, in story 100.2:
+    // `scenario-builder.balance-rows.test.tsx`.)
     expect(screen.queryByLabelText('Current Savings')).toBeNull()
-    expect(screen.getByLabelText('Current Investments')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Investments & Debts' })).toBeInTheDocument()
   })
 
   it('carries the what-if note under the heading (copy pin, AC-9)', () => {

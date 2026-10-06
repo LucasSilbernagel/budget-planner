@@ -141,6 +141,8 @@ test.describe('a fresh scenario seeds from the user own finances (62.1)', () => 
     expect(values).toContain('Lucas Mortgage')
     // Story 100.1: the savings row is seeded as its own what-if row.
     expect(values).toContain('Emergency fund')
+    // Story 100.2: the investment is seeded as its own what-if row.
+    expect(values).toContain('Index fund')
     // The retired demo rows are gone for good. `Rent/Mortgage` is the exact old
     // string, and is distinct from the seeded 'Lucas Mortgage' above.
     expect(values).not.toContain('Salary')

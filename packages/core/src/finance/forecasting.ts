@@ -7,13 +7,14 @@
  * Architecture Requirement: FR5 - Core calculations (premium features)
  */
 
+import { monthlyContributionCents } from '../services/balanceTracking'
 import {
   type NormalizableFinancialItem,
   calculateGrossPeriodIncome,
   calculateNetPeriodIncome,
   calculateTotalPeriodExpenses,
 } from './netIncome'
-import { validateAmount } from './normalization'
+import { type Frequency, validateAmount } from './normalization'
 
 /**
  * ⚠️ THE UNIT BRIDGE OF THIS WHOLE MODULE. Read before touching either loop.
@@ -184,8 +185,13 @@ export const FORECAST_OUT_OF_RANGE = 'Forecast amounts are too large to project'
  * ⚠️ Rows SPLIT savings, they do not add to it. Every cent of a year's net income
  * already lands in `savings` (`projSavings += totalNetIncome`), so a contribution
  * only moves money from the unassigned remainder into a row. Totals, net worth,
- * the baseline and the summary are identical with or without rows (pinned by the
- * strip-and-`toEqual` tests in `__tests__/forecasting.test.ts`).
+ * the baseline and the summary are identical with or without SAVINGS rows (pinned
+ * by the strip-and-`toEqual` tests in `__tests__/forecasting.test.ts`).
+ *
+ * ⚠️ Since story 100.2 that is no longer true of the totals as a whole: a counted
+ * contribution to an INVESTMENT row (`BalanceAccountInput`) moves money out of
+ * savings, so `savings` and the remainder both fall by it. The savings rows still
+ * only split whatever `savings` is.
  */
 export interface SavingsAccountInput {
   balance: number
@@ -201,6 +207,77 @@ export const SAVINGS_ROWS_MISMATCH = 'Savings account balances must add up to th
 
 /** The refusal for a negative savings row balance or contribution (story 100.1). */
 export const SAVINGS_ROW_NEGATIVE = 'Savings account balances and contributions must be 0 or more'
+
+/**
+ * One investment or debt the projection tracks separately (story 100.2, FR165).
+ * Money in cents. `balance` is a positive MAGNITUDE for both types (a debt of
+ * 5,000.00 is `500000`, never `-500000`). `contribution` is the amount at
+ * `frequency` cadence, as `/balance` stores it, and is normalised through
+ * `monthlyContributionCents` (the single chokepoint), never read raw.
+ *
+ * Each year, after the year's net income and before the row is taken:
+ *   - investment: `round(balance × 1.07) + annual contribution` (growth on the
+ *     opening balance, then the contributions, D7). A contribution NOT flagged
+ *     `contributionRecordedAsExpense === true` also leaves savings; a flagged one
+ *     does not, because net income already lost it (story 45.1, FR72).
+ *   - debt: `max(0, balance − annual payment)`. No interest (D2). Savings is not
+ *     touched: `/balance` tells debt holders to record the payment on Expenses,
+ *     so net income already lost it (D4).
+ */
+export interface BalanceAccountInput {
+  type: 'investment' | 'debt'
+  balance: number
+  contribution: number
+  frequency: Frequency
+  contributionRecordedAsExpense?: boolean
+}
+
+/** The refusal for a negative investment/debt balance or contribution (story 100.2). */
+export const BALANCE_ROW_NEGATIVE =
+  'Investment and debt balances and contributions must be 0 or more'
+
+/**
+ * The refusal when the investment rows' balances do not add up to
+ * `currentData.investments` (story 100.2), the same rule as `SAVINGS_ROWS_MISMATCH`.
+ * Debt rows are not part of that sum.
+ */
+export const BALANCE_ROWS_MISMATCH = 'Investment balances must add up to the starting investments'
+
+/**
+ * The refusal for a balance row that is neither an investment nor a debt (story
+ * 100.2). Typed API, but its input can come from parsed JSON.
+ */
+export const BALANCE_ROW_TYPE = 'Each balance row must be an investment or a debt'
+
+/** Investment growth per year, the same 7% both loops have always used. */
+const INVESTMENT_GROWTH = 1.07
+
+/**
+ * One year of the balance rows (story 100.2): each row's CLOSING balance from its
+ * opening balance. Shared by BOTH loops (D5), so baseline and projection cannot
+ * model them differently.
+ */
+function stepBalanceRows(
+  rows: readonly BalanceAccountInput[],
+  balances: readonly number[],
+  annualContributions: readonly number[]
+): number[] {
+  return balances.map((balance, i) => {
+    const annual = annualContributions[i] ?? 0
+    return rows[i]?.type === 'investment'
+      ? Math.round(balance * INVESTMENT_GROWTH) + annual
+      : Math.max(0, balance - annual)
+  })
+}
+
+/** Σ of the rows of one type. */
+function sumRows(
+  rows: readonly BalanceAccountInput[],
+  balances: readonly number[],
+  type: BalanceAccountInput['type']
+): number {
+  return balances.reduce((sum, balance, i) => (rows[i]?.type === type ? sum + balance : sum), 0)
+}
 
 /**
  * A one-time event's amount as whole cents, validated exactly as every recurring
@@ -281,6 +358,14 @@ export interface YearlyForecast {
    * left over (they are still applied in full). Same presence rule as above.
    */
   unallocatedSavings?: number
+  /**
+   * Σ of the debt rows' closing balances (story 100.2). Present on BASELINE and
+   * PROJECTION rows (D5), only when `currentData.balanceAccounts` was given.
+   * `netWorth === savings + investments − debts`.
+   */
+  debts?: number
+  /** Each investment/debt row's CLOSING balance, in input order. Same presence rule. */
+  balanceAccounts?: number[]
 }
 
 /**
@@ -311,7 +396,11 @@ export interface ForecastingResult {
  *   the window, is not a finite number (`validateAmount`); if a savings row's
  *   balance or contribution is not finite (`validateAmount`), negative
  *   (`SAVINGS_ROW_NEGATIVE`), or the balances do not sum to `savings`
- *   (`SAVINGS_ROWS_MISMATCH`); or if the projection's balance overflows
+ *   (`SAVINGS_ROWS_MISMATCH`); if an investment/debt row is neither type
+ *   (`BALANCE_ROW_TYPE`), has a non-finite balance or contribution
+ *   (`validateAmount`), a negative one (`BALANCE_ROW_NEGATIVE`), or the investment
+ *   rows do not sum to `investments` (`BALANCE_ROWS_MISMATCH`); or if the
+ *   projection's balance, investment total or debt total overflows
  *   (`FORECAST_OUT_OF_RANGE`)
  */
 export function calculateFinancialForecast(
@@ -325,6 +414,13 @@ export function calculateFinancialForecast(
      * balances must sum to `savings` exactly (`SAVINGS_ROWS_MISMATCH`).
      */
     savingsAccounts?: SavingsAccountInput[]
+    /**
+     * Optional investment and debt rows (story 100.2). When given, the investment
+     * rows' balances must sum to `investments` exactly (`BALANCE_ROWS_MISMATCH`),
+     * and the debt rows lower net worth. When absent, the output is identical to
+     * before the story (no new keys).
+     */
+    balanceAccounts?: BalanceAccountInput[]
   },
   scenario: ForecastingScenario,
   years = DEFAULT_FORECAST_YEARS
@@ -373,6 +469,43 @@ export function calculateFinancialForecast(
       throw new Error(SAVINGS_ROWS_MISMATCH)
     }
   }
+  // Investment and debt rows (story 100.2), validated the same way. Each row's
+  // contribution goes through the chokepoint once, here, so neither loop can read
+  // it raw. `countedContributionTotal` is what leaves savings each year: investment
+  // contributions NOT already in expenses (`=== true`, strict, as the savings
+  // solver reads the flag). Debt payments never count (D4).
+  const balanceAccounts = currentData.balanceAccounts
+  let balanceAnnualContributions: number[] | undefined
+  let countedContributionTotal = 0
+  let startingDebts = 0
+  if (balanceAccounts) {
+    let investmentSum = 0
+    balanceAnnualContributions = balanceAccounts.map((account) => {
+      if (account.type !== 'investment' && account.type !== 'debt') {
+        throw new Error(BALANCE_ROW_TYPE)
+      }
+      validateAmount(account.balance)
+      validateAmount(account.contribution)
+      if (account.balance < 0 || account.contribution < 0) {
+        throw new Error(BALANCE_ROW_NEGATIVE)
+      }
+      const annual =
+        monthlyContributionCents({
+          monthlyContribution: account.contribution,
+          frequency: account.frequency,
+        }) * MONTHS_PER_YEAR
+      if (account.type === 'investment') {
+        investmentSum += account.balance
+        if (account.contributionRecordedAsExpense !== true) countedContributionTotal += annual
+      } else {
+        startingDebts += account.balance
+      }
+      return annual
+    })
+    if (investmentSum !== currentData.investments) {
+      throw new Error(BALANCE_ROWS_MISMATCH)
+    }
+  }
 
   const baseline: YearlyForecast[] = []
   const projection: YearlyForecast[] = []
@@ -380,6 +513,11 @@ export function calculateFinancialForecast(
   // Calculate baseline (current trends without scenario adjustments)
   let currentSavings = currentData.savings
   let currentInvestments = currentData.investments
+  // Investment/debt rows (story 100.2) are modelled in THIS loop too (D5), with
+  // the same `stepBalanceRows`, so a flat scenario still gives baseline ===
+  // projection. Undefined without rows, so that path is untouched.
+  let baselineRowBalances = balanceAccounts?.map((account) => account.balance)
+  let currentDebts = startingDebts
   // Every figure a baseline row reports is ANNUAL: the monthly-normalized totals
   // are lifted to a year once, here, rather than per iteration.
   const baselineAnnualIncome = calculateGrossPeriodIncome(currentData.income) * MONTHS_PER_YEAR
@@ -448,13 +586,32 @@ export function calculateFinancialForecast(
     // records it as a FOURTH logging (three before this story, re-anchored by it).
     // Fixing it means deciding whether forecasting exposes its own rate control —
     // its own story, not this one.
+    //
+    // ⚠️ SUPERSEDED IN PART by story 100.2 (FR165): "no scenario lever touches
+    // investments" and "investments get no contributions" are no longer true
+    // when `balanceAccounts` is given. Then each investment row compounds on its
+    // own and gains its contribution, a counted contribution leaves savings, and
+    // debts fall by their payment (`stepBalanceRows`, used by BOTH loops, D5).
+    // Per-row `Math.round` can differ from one compounded total by a cent a year
+    // (D7, pinned). Without rows, the single statement below runs, unchanged.
     currentSavings += baselineAnnualNetIncome
-    // Compound investments at the SAME 7% the projection uses, in the SAME
-    // position (after the flow, before the row is taken) and with the SAME
-    // per-year `Math.round` as the projection's `projInvestments` statement
-    // (search that identifier — deliberately not cited by line).
-    // Any of the three drifting apart reopens the divergence this story closed.
-    currentInvestments = Math.round(currentInvestments * 1.07)
+    if (balanceAccounts && baselineRowBalances && balanceAnnualContributions) {
+      baselineRowBalances = stepBalanceRows(
+        balanceAccounts,
+        baselineRowBalances,
+        balanceAnnualContributions
+      )
+      currentSavings -= countedContributionTotal
+      currentInvestments = sumRows(balanceAccounts, baselineRowBalances, 'investment')
+      currentDebts = sumRows(balanceAccounts, baselineRowBalances, 'debt')
+    } else {
+      // Compound investments at the SAME 7% the projection uses, in the SAME
+      // position (after the flow, before the row is taken) and with the SAME
+      // per-year `Math.round` as the projection's `projInvestments` statement
+      // (search that identifier — deliberately not cited by line).
+      // Any of the three drifting apart reopens the divergence this story closed.
+      currentInvestments = Math.round(currentInvestments * 1.07)
+    }
 
     const baselineYear: YearlyForecast = {
       year,
@@ -463,7 +620,9 @@ export function calculateFinancialForecast(
       netIncome: baselineAnnualNetIncome,
       savings: currentSavings,
       investments: currentInvestments,
-      netWorth: currentSavings + currentInvestments,
+      netWorth: currentSavings + currentInvestments - currentDebts,
+      // Absent (not `undefined`) without rows, so existing `toEqual`s are unchanged.
+      ...(baselineRowBalances ? { debts: currentDebts, balanceAccounts: baselineRowBalances } : {}),
     }
     baseline.push(baselineYear)
   }
@@ -479,6 +638,9 @@ export function calculateFinancialForecast(
   )
   const annualContributionTotal = (annualContributions ?? []).reduce((sum, c) => sum + c, 0)
   let unallocatedSavings = 0
+  // Investment/debt rows (story 100.2), the same model as the baseline loop's.
+  let projRowBalances = balanceAccounts?.map((account) => account.balance)
+  let projDebts = startingDebts
 
   for (let year = 1; year <= years; year++) {
     // Adjust income and expenses by growth rates
@@ -540,12 +702,32 @@ export function calculateFinancialForecast(
      * see the `MONTHS_PER_YEAR` docblock for which term it may and may not touch.
      */
     projSavings += totalNetIncome
-    // Investment growth with compounding
-    projInvestments = Math.round(projInvestments * 1.07) // Assume 7% return
+    if (balanceAccounts && projRowBalances && balanceAnnualContributions) {
+      // Story 100.2: per-row growth/contribution and pay-down, in the SAME
+      // position as the single statement below (closing balances), and the
+      // counted contributions leave savings. See the baseline loop.
+      projRowBalances = stepBalanceRows(
+        balanceAccounts,
+        projRowBalances,
+        balanceAnnualContributions
+      )
+      projSavings -= countedContributionTotal
+      projInvestments = sumRows(balanceAccounts, projRowBalances, 'investment')
+      projDebts = sumRows(balanceAccounts, projRowBalances, 'debt')
+    } else {
+      // Investment growth with compounding
+      projInvestments = Math.round(projInvestments * 1.07) // Assume 7% return
+    }
     // Refuse, not clamp (D1), once the balance leaves finite numbers — several
     // individually valid events can sum past MAX_VALUE. Checked on the SUM, so an
     // overflow in either term (Infinity, or Infinity + -Infinity = NaN) is caught.
-    if (!Number.isFinite(projSavings + projInvestments)) {
+    // The investment and debt totals are checked on their own too (story 100.2):
+    // two individually finite debts can sum to Infinity.
+    if (
+      !Number.isFinite(projSavings + projInvestments) ||
+      !Number.isFinite(projInvestments) ||
+      !Number.isFinite(projDebts)
+    ) {
       throw new Error(FORECAST_OUT_OF_RANGE)
     }
     // The rows take the SAME position as the statements above (after this year's
@@ -554,7 +736,9 @@ export function calculateFinancialForecast(
     // income; the remainder then goes negative and the totals are unaffected.
     if (rowBalances && annualContributions) {
       rowBalances = rowBalances.map((balance, i) => balance + (annualContributions[i] ?? 0))
-      unallocatedSavings += totalNetIncome - annualContributionTotal
+      // A counted investment contribution (story 100.2) has left savings, so it
+      // leaves the unassigned remainder too, keeping rows + remainder === savings.
+      unallocatedSavings += totalNetIncome - annualContributionTotal - countedContributionTotal
       if (!Number.isFinite(unallocatedSavings) || !rowBalances.every(Number.isFinite)) {
         throw new Error(FORECAST_OUT_OF_RANGE)
       }
@@ -567,15 +751,17 @@ export function calculateFinancialForecast(
       netIncome: totalNetIncome,
       savings: projSavings,
       investments: projInvestments,
-      netWorth: projSavings + projInvestments,
+      netWorth: projSavings + projInvestments - projDebts,
       // Absent (not `undefined`) without rows, so existing `toEqual`s are unchanged.
       ...(rowBalances ? { savingsAccounts: rowBalances, unallocatedSavings } : {}),
+      ...(projRowBalances ? { debts: projDebts, balanceAccounts: projRowBalances } : {}),
     }
     projection.push(yearProjection)
   }
 
   // Calculate summary
-  const startingNetWorth = currentData.savings + currentData.investments
+  // Debts count against the start (story 100.2, D1); 0 without debt rows.
+  const startingNetWorth = currentData.savings + currentData.investments - startingDebts
   // `projection` has one entry per year and the guard at the top makes `years`
   // at least 1, so it is never empty here. The fallback is kept only as a
   // defensive default; it is no longer reachable (it was, for `years = 0`,

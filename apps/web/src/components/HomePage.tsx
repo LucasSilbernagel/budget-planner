@@ -1646,6 +1646,13 @@ function LockedTileContent({
  *      (every cent of net income already lands in savings), so they change no
  *      total, no net worth and no summary figure: only the per-row "After N
  *      years" lines. Not scenario-expressive for this copy.
+ *   5. `currentData.balanceAccounts` (story 100.2) — per-investment and per-debt
+ *      balances, contributions and frequencies. These ARE scenario-expressive:
+ *      raising an investment contribution moves money from savings into
+ *      investments (7%), and paying a debt down lowers it each year (no interest
+ *      modelled). So "raise my pension contribution" and "pay down a loan" are
+ *      expressible. Debts also lower the starting net worth. (The copy below does
+ *      not name them yet; that is a copy decision, not an engine limit.)
  * ⚠️ `newIncome`/`newExpenses` are **not read by the CALCULATION** — they
  * are the SAVE FORMAT for the builder's rows, which reload depends on. Do not cite
  * them as scenario-expressive, and do not delete them as dead.
