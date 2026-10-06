@@ -12,6 +12,13 @@ export interface InvestmentContributionItem {
   amount: number
   frequency: Frequency
   recordedAsExpense: boolean
+  /**
+   * The stored contribution was not a finite number (NaN, ±Infinity, `null`, a
+   * string), so `amount` was coerced to 0. The /savings breakdown discloses it
+   * rather than silently showing $0.00 (`readable-rows.ts`: disclose, do not
+   * invent).
+   */
+  unreadable: boolean
 }
 
 /**
@@ -30,17 +37,26 @@ export function investmentContributionItems(
     contributionRecordedAsExpense?: boolean
   }[]
 ): InvestmentContributionItem[] {
-  return entries.map((entry) => ({
-    id: entry.id,
-    name: entry.name,
-    amount: entry.monthlyContribution,
-    // Degrade a corrupt persisted cadence to 'monthly' rather than letting the
-    // solver's validating normalizer throw during render. localStorage is
-    // user-editable and the balance-store migrate only backfills a NULLISH
-    // frequency, so a non-null legacy string can reach here.
-    frequency: isKnownFrequency(entry.frequency) ? entry.frequency : 'monthly',
-    // ⚠️ `=== true` mirrors the core rule exactly. A truthy check here would
-    // let a persisted `"false"` string silently cancel a real deduction.
-    recordedAsExpense: entry.contributionRecordedAsExpense === true,
-  }))
+  return entries.map((entry) => {
+    // ⚠️ `Number.isFinite`, not `?? 0` or `typeof`: NaN/±Infinity are numbers and
+    // `null` is what NaN becomes after a JSON round trip. Core's normalizer
+    // throws on all of them, and every consumer (solver, breakdown, both
+    // duplicate detectors, the forecast seed) reads THIS amount. The validating
+    // normalizer stays strict; the degrade happens here, once.
+    const unreadable = !Number.isFinite(entry.monthlyContribution)
+    return {
+      id: entry.id,
+      name: entry.name,
+      amount: unreadable ? 0 : entry.monthlyContribution,
+      // Degrade a corrupt persisted cadence to 'monthly' rather than letting the
+      // solver's validating normalizer throw during render. localStorage is
+      // user-editable and the balance-store migrate only backfills a NULLISH
+      // frequency, so a non-null legacy string can reach here.
+      frequency: isKnownFrequency(entry.frequency) ? entry.frequency : 'monthly',
+      // ⚠️ `=== true` mirrors the core rule exactly. A truthy check here would
+      // let a persisted `"false"` string silently cancel a real deduction.
+      recordedAsExpense: entry.contributionRecordedAsExpense === true,
+      unreadable,
+    }
+  })
 }
