@@ -376,5 +376,11 @@ describe('balanceStore — a negative balance never reaches the sync queue (Stor
     ).toBeNull()
     expect(useBalanceStore.getState().entries[0]?.currentBalance).toBe(400_000)
     expect(handle.queueUpdate).not.toHaveBeenCalled()
+    // Positive control (code review 103.1): a valid update over the same bridge
+    // IS queued, so the `not.toHaveBeenCalled` above is not vacuous.
+    expect(
+      useBalanceStore.getState().updateBalanceEntry(created.id, { currentBalance: 1 })
+    ).not.toBeNull()
+    expect(handle.queueUpdate).toHaveBeenCalledTimes(1)
   })
 })

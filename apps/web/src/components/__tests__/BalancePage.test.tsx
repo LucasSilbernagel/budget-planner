@@ -961,6 +961,12 @@ describe('BalancePage — sort by column (34.2)', () => {
     renderWithProviders(<BalancePage />)
     await user.click(sortBy('Current Balance/Value'))
     expect(orderIn(entriesTable())).toEqual(['Zeta', 'Mid', 'Alpha', 'Beta'])
+    // Code review 103.1: descending too, so a key that is the magnitude one way
+    // and raw the other cannot pass (raw -500 would sort Alpha LAST here).
+    // Zeta and Mid tie at 300 and keep manual order in both directions.
+    await user.click(sortBy('Current Balance/Value'))
+    expect(header('Current Balance/Value')).toHaveAttribute('aria-sort', 'descending')
+    expect(orderIn(entriesTable())).toEqual(['Beta', 'Alpha', 'Zeta', 'Mid'])
   })
 
   it('keeps at most one column active', async () => {

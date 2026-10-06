@@ -208,8 +208,11 @@ export async function seedFinanceRows(page: Page): Promise<void> {
                 type: 'debt',
                 name: 'Mortgage',
                 // Story 103.1 (FR171, D4): a debt is stored as the positive
-                // amount owed. Was -98765432100, which the store write path
-                // now refuses (this seed writes localStorage directly).
+                // amount owed, the only sign the store write path now accepts.
+                // Was -98765432100. This seed writes localStorage directly, so
+                // the old value was never refused; it was flipped because after
+                // 103.1 a negative debt renders exactly like a positive one, so
+                // as a legacy fixture it tested nothing the unit tests don't.
                 currentBalance: 98765432100,
                 monthlyContribution: 0,
                 frequency: 'monthly',
