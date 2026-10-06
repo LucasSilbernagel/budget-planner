@@ -1,4 +1,5 @@
 import { type Page, expect, test } from '@playwright/test'
+import { mockSignedIn } from './helpers/nav-more'
 
 /**
  * The Overview premium surface, on a REAL paid session (story 58.2, AC-9).
@@ -75,6 +76,12 @@ async function assertOverviewRendered(page: Page): Promise<void> {
 
 test.describe('the paid Overview drops the Premium Features section (D1)', () => {
   test('no heading, no boxes, and the page is demonstrably rendered', async ({ page }) => {
+    // The :5174 seam's SSR seed is entitled, but its real `/api/auth/me` answers
+    // signed-out (no real session). Since story 101.2 the Overview section
+    // follows that definitive answer, as the nav has since 99.1, so without an
+    // AGREEING answer the section reappears after hydration (MEASURED: RED with
+    // "Expected 0, Received 1" on the heading before this line was added).
+    await mockSignedIn(page, { subscriptionStatus: 'active' })
     await goto(page, '/')
     await assertOverviewRendered(page)
 

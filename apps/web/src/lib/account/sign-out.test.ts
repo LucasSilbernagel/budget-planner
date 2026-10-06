@@ -17,6 +17,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { APP_SHELL_PURGE_TIMEOUT_MS } from '../pwa/app-shell-cache'
 import { resetSignOutStateForTests, returnToSignedOutHome, signOut } from './sign-out'
 
 const assign = vi.fn()
@@ -110,6 +111,102 @@ describe('signOut', () => {
     ) as typeof global.fetch
 
     await signOut()
+    expect(assign).toHaveBeenCalledWith('/')
+  })
+})
+
+/**
+ * Story 101.1 (FR167, AC 4/6): sign-out deletes the service worker's page
+ * cache (`app-shell`) AFTER the logout POST settles and BEFORE the document
+ * load, whatever the POST did, and a purge that misbehaves never stops the
+ * user leaving. The node environment has no `caches`, so each case stubs it;
+ * the tests above run without one, which is the "no Cache Storage" path.
+ */
+describe('signOut purges the app-shell page cache', () => {
+  function stubCaches(remove: (name: string) => Promise<boolean>) {
+    const del = vi.fn(remove)
+    vi.stubGlobal('caches', { delete: del })
+    return del
+  }
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('POST, then the purge SETTLES, then the document load', async () => {
+    const order: string[] = []
+    global.fetch = vi.fn(async () => {
+      order.push('fetch')
+      return new Response('{"success":true}', { status: 200 })
+    }) as typeof global.fetch
+    const del = stubCaches(async () => {
+      order.push('purge-start')
+      // Settle on a later task, so a purge that is not awaited shows up as
+      // `assign` before `purge-settled`.
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      order.push('purge-settled')
+      return true
+    })
+    assign.mockImplementation(() => order.push('assign'))
+
+    await expect(signOut()).resolves.toBeUndefined()
+
+    expect(del).toHaveBeenCalledWith('app-shell')
+    expect(order).toEqual(['fetch', 'purge-start', 'purge-settled', 'assign'])
+  })
+
+  it('purges even when the POST rejects (offline), then leaves', async () => {
+    global.fetch = vi.fn(() => Promise.reject(new TypeError('network down'))) as typeof global.fetch
+    const del = stubCaches(async () => true)
+
+    await expect(signOut()).resolves.toBeUndefined()
+
+    expect(del).toHaveBeenCalledWith('app-shell')
+    expect(assign).toHaveBeenCalledWith('/')
+    expect(del.mock.invocationCallOrder[0]).toBeLessThan(assign.mock.invocationCallOrder[0])
+  })
+
+  it('purges when the server answers with an error status, then leaves', async () => {
+    global.fetch = vi.fn(
+      async () => new Response('{"success":false}', { status: 500 })
+    ) as typeof global.fetch
+    const del = stubCaches(async () => true)
+
+    await expect(signOut()).resolves.toBeUndefined()
+
+    expect(del).toHaveBeenCalledWith('app-shell')
+    expect(assign).toHaveBeenCalledWith('/')
+  })
+
+  it('leaves at the bound, not before, when the purge never settles', async () => {
+    vi.useFakeTimers()
+    global.fetch = vi.fn(async () => new Response('{}', { status: 200 })) as typeof global.fetch
+    stubCaches(() => new Promise<boolean>(() => {}))
+    let resolved = false
+    void signOut().then(() => {
+      resolved = true
+    })
+
+    await vi.advanceTimersByTimeAsync(APP_SHELL_PURGE_TIMEOUT_MS - 1)
+    expect(assign, 'left before the purge bound').not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(assign).toHaveBeenCalledWith('/')
+    expect(resolved).toBe(true)
+  })
+
+  it('leaves when the purge rejects', async () => {
+    global.fetch = vi.fn(async () => new Response('{}', { status: 200 })) as typeof global.fetch
+    stubCaches(() => Promise.reject(new Error('quota')))
+
+    await expect(signOut()).resolves.toBeUndefined()
+    expect(assign).toHaveBeenCalledWith('/')
+  })
+
+  it('leaves when there is no Cache Storage API', async () => {
+    global.fetch = vi.fn(async () => new Response('{}', { status: 200 })) as typeof global.fetch
+    expect(typeof (globalThis as { caches?: unknown }).caches).toBe('undefined')
+
+    await expect(signOut()).resolves.toBeUndefined()
     expect(assign).toHaveBeenCalledWith('/')
   })
 })

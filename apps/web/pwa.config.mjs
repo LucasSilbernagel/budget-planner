@@ -54,6 +54,18 @@ export const pwaGlobPatterns = ['**/*.{js,css,svg,png,ico,webmanifest,woff,woff2
 // then serves it from cache when the network is unavailable. `/api/*` server
 // routes (sync, health, calc) are never cached — they must always hit the
 // network. Same-origin only: no third-party/CDN caching (NFR1/NFR2).
+//
+// The cache is used ONLY when the network request FAILS (offline, DNS, connection
+// refused). A slow network waits for the server (FR167, correct-course
+// 2026-10-05). There is deliberately NO `networkTimeoutSeconds`: the old 3 s
+// fallback served whatever document was cached, which could belong to another
+// session (signed out after a sign-in, or the previous user's signed-in page
+// after a sign-out; story 99.1's measured evidence `99-1-evidence/c1-run.txt`).
+// The accepted cost is a connected-but-very-slow network: no cached shell after
+// 3 s, the user waits for the server. The client deletes this cache on sign-out
+// and account deletion (`src/lib/pwa/app-shell-cache.ts`, whose cache-name
+// constant a parity test pins to `cacheName` below). The route's behaviour is
+// pinned by `src/lib/pwa/__tests__/app-shell-strategy.test.ts`.
 export const pwaRuntimeCaching = [
   {
     urlPattern: ({ request, url }) =>
@@ -67,7 +79,6 @@ export const pwaRuntimeCaching = [
     handler: 'NetworkFirst',
     options: {
       cacheName: 'app-shell',
-      networkTimeoutSeconds: 3,
       expiration: { maxEntries: 32, maxAgeSeconds: 60 * 60 * 24 * 7 },
       cacheableResponse: { statuses: [200] },
     },
