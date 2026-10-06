@@ -1722,7 +1722,7 @@ export function ScenarioBuilder({
             type="text"
             inputMode="decimal"
             formatValue={formatPercentage}
-            parseValue={(v) => parseFloat(v) / 100}
+            parseValue={parsePercentText}
             error={incomeGrowthValid ? undefined : GROWTH_INVALID_MESSAGE}
           />
 
@@ -1754,7 +1754,7 @@ export function ScenarioBuilder({
             type="text"
             inputMode="decimal"
             formatValue={formatPercentage}
-            parseValue={(v) => parseFloat(v) / 100}
+            parseValue={parsePercentText}
             error={expenseGrowthValid ? undefined : GROWTH_INVALID_MESSAGE}
           />
           {/* Story 100.2 replaced Current Investments (the last money
@@ -2783,6 +2783,17 @@ function useMoneyDraft(
 /** A plain decimal, optionally signed, optionally ending in `%` (story 100.3 review). */
 const PERCENT_TEXT = /^\s*[-+]?(?:\d+\.?\d*|\.\d+)\s*%?\s*$/
 
+/**
+ * A typed percentage as a decimal rate (`5`, `5%`, `5.00%` → 0.05), or NaN when the
+ * WHOLE text is not a plain number with an optional `%`. `parseFloat` alone reads a
+ * PREFIX: `5abc` → 5, `1,5` → 1 (a decimal comma silently dropped), `1e2` → 100.
+ * Shared by the Annual return field and both growth-rate fields; the caller's
+ * `isValidGrowthRate` turns the NaN into the field's message.
+ */
+function parsePercentText(raw: string): number {
+  return PERCENT_TEXT.test(raw) ? parseFloat(raw) / 100 : Number.NaN
+}
+
 function usePercentDraft(
   rate: number,
   validityKey: string,
@@ -2801,10 +2812,9 @@ function usePercentDraft(
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value
     setDraft(raw)
-    // `parseFloat` alone reads a PREFIX: `5abc` → 5, `1,5` → 1 (a decimal comma
-    // silently dropped), `1e2` → 100. The whole text must be a plain number with an
-    // optional `%` (code review 100.3), else it is refused, never written.
-    const parsed = PERCENT_TEXT.test(raw) ? parseFloat(raw) / 100 : Number.NaN
+    // The whole text must be a plain number with an optional `%` (code review
+    // 100.3), else it is refused, never written.
+    const parsed = parsePercentText(raw)
     const problem = isValidGrowthRate(parsed) ? null : RETURN_INVALID_MESSAGE
     if (problem === null) write(parsed)
     setError(problem)
