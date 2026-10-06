@@ -67,6 +67,14 @@ import { hasPremiumFeatures } from './access-statuses'
  * seed is authoritative for the first paint; reading it once means a later
  * provider value cannot clobber a consumer's resolved state, and the surface does
  * not flip after hydration.
+ *
+ * ⚠️ AMENDED by story 99.1: "authoritative for the first paint" is not "for the
+ * life of the document". `GlobalNav` ALSO applies this predicate to the
+ * client-verified session (`lib/session/verifiedSession.ts`, written by
+ * `AuthIndicator` from a definitive `/api/auth/me` answer) and follows it when it
+ * disagrees with the seed. That is a second INPUT to this one predicate, not a
+ * reactive seed read: the seed is still read once. The Overview and Settings
+ * gates still follow the seed only (story 99.1, decision D4: out of scope).
  */
 export function isEntitledSeed(seed: SessionSeed | null): boolean {
   return seed?.isAuthenticated === true && hasPremiumFeatures(seed.subscriptionStatus)

@@ -1,8 +1,14 @@
 import { signOut } from '@/lib/account/sign-out'
 import { hasPremiumFeatures } from '@/lib/premium/access-statuses'
+import { setVerifiedSession } from '@/lib/session/verifiedSession'
 import { Link, useRouterState } from '@tanstack/react-router'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { type SessionSeed, useSessionSeed } from '../../context/session-seed'
+import {
+  SIGNED_OUT_SEED,
+  type SeedSubscriptionStatus,
+  type SessionSeed,
+  useSessionSeed,
+} from '../../context/session-seed'
 import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon'
 import { SettingsIcon } from '../ui/SettingsIcon'
 
@@ -151,22 +157,47 @@ function isPremium(subscriptionStatus: string): boolean {
   return hasPremiumFeatures(subscriptionStatus)
 }
 
-async function fetchCurrentUser(): Promise<CurrentUser | null> {
+/**
+ * What `/api/auth/me` said. `definitive` (story 99.1, decision D2) is true ONLY
+ * for an HTTP 200 whose body parses as `{ user: null }` or a user with an email;
+ * a non-200, a malformed body or an email-less user is NOT an answer. The strip
+ * still DISPLAYS every non-definitive answer as signed-out (unchanged), but only
+ * a definitive one is shared with the nav via `setVerifiedSession`.
+ */
+type MeAnswer = { definitive: true; user: CurrentUser | null } | { definitive: false }
+
+async function fetchCurrentUser(): Promise<MeAnswer> {
   const response = await fetch('/api/auth/me')
   if (!response.ok) {
-    return null
+    return { definitive: false }
   }
-  const data = (await response.json()) as { user?: CurrentUser | null }
-  const user = data.user
+  const data = (await response.json()) as { user?: CurrentUser | null } | null
+  const user = data?.user
+  if (user === null) {
+    return { definitive: true, user: null }
+  }
   // Defensive: a user object without a usable email is treated as signed-out.
   // The render path derefs `user.email` (avatar initial + the status region's
   // announced copy), so an endpoint contract drift that dropped `email` would
   // otherwise throw during render at the app root — above any error boundary —
   // and white-screen every route.
   if (!user || typeof user.email !== 'string' || user.email.length === 0) {
-    return null
+    return { definitive: false }
   }
-  return user
+  return { definitive: true, user }
+}
+
+/** A definitive answer as the seed shape the nav's predicate reads. */
+function answerToSeed(user: CurrentUser | null): SessionSeed {
+  if (!user) {
+    return SIGNED_OUT_SEED
+  }
+  return {
+    isAuthenticated: true,
+    userId: user.userId,
+    email: user.email,
+    subscriptionStatus: user.subscriptionStatus as SeedSubscriptionStatus,
+  }
 }
 
 export function AuthIndicator() {
@@ -174,8 +205,7 @@ export function AuthIndicator() {
   // already correct (story UX-1). Read once as an initializer — the per-navigation
   // fetch below owns freshness thereafter.
   const seed = useSessionSeed()
-  const [authState, setAuthState] = useState<AuthState>(() => seedToAuthState(seed))
-  // Re-resolve on every navigation so the strip never shows a stale identity
+  const [authState, setAuthState] = useState<AuthState>(() => seedToAuthState(seed)) // Re-resolve on every navigation so the strip never shows a stale identity
   // after a client-side sign-out (which navigates without remounting the root).
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   // Story 41.3 (UX-DR51). Which URLs count as "the sign-in page", all three
@@ -221,11 +251,19 @@ export function AuthIndicator() {
   useEffect(() => {
     let active = true
     fetchCurrentUser()
-      .then((user) => {
+      .then((answer) => {
         if (!active) {
           return
         }
+        const user = answer.definitive ? answer.user : null
         setAuthState(user ? { status: 'authenticated', user } : { status: 'unauthenticated' })
+        // Story 99.1: share a DEFINITIVE answer with `GlobalNav`, so the nav and
+        // the Premium marker follow the same verified session. Unknown (non-200,
+        // malformed) writes nothing: the nav keeps what its seed gave it. Only
+        // ever written here, in an effect, so never during a server render.
+        if (answer.definitive) {
+          setVerifiedSession(answerToSeed(answer.user))
+        }
       })
       .catch(() => {
         // Fail closed: any failure resolving the session shows the signed-out state.

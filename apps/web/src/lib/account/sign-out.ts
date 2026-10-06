@@ -26,6 +26,15 @@
  *
  * ⚠️ Do NOT "fix" the nav instead by making it read the seed reactively. That
  * re-creates the first-paint flash `GlobalNav`'s docblock exists to prevent.
+ *
+ * ⚠️ AMENDED by story 99.1: the nav no longer stays signed-in until a document
+ * load. It still reads the seed only once, but it ALSO follows
+ * `AuthIndicator`'s last definitive `/api/auth/me` answer
+ * (`lib/session/verifiedSession.ts`), so after a client navigation the two
+ * halves of the header agree. The document load stays the sign-out instrument
+ * anyway, for the store-state reason above and for every OTHER seed consumer
+ * (`usePremiumAccess`, the Overview and Settings gates), which still follow the
+ * seed only.
  */
 
 /** How long to wait for the logout POST before leaving anyway. */
