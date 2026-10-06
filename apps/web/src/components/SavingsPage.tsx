@@ -14,6 +14,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
 import { useStoresHydrated } from '../hooks/useStoresHydrated'
 import { useTableSort } from '../hooks/useTableSort'
+import { exceedsMoneyLimit, moneyLimitMessage } from '../lib/money-limit'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import { investmentContributionItems } from '../lib/savings/investment-contribution-items'
 import { type SavingsSortKey, createSavingsSortExtractors } from '../lib/table-sort-keys'
@@ -330,11 +331,17 @@ export function SavingsPage() {
       const targetInCents = parseFromInput(targetAmount, locale)
       if (targetInCents <= 0) {
         next.targetAmount = 'Please enter a valid positive target amount'
+      } else if (exceedsMoneyLimit(targetInCents)) {
+        // Story 106.1 (FR174): above the int32 sync limit the row would be saved
+        // here and silently refused at enqueue, so refuse it before saving.
+        next.targetAmount = moneyLimitMessage({ mode, currency, locale })
       }
     }
     const balanceInCents = parseFromInput(currentBalance, locale)
     if (balanceInCents < 0) {
       next.currentBalance = 'Please enter a valid non-negative current balance'
+    } else if (exceedsMoneyLimit(balanceInCents)) {
+      next.currentBalance = moneyLimitMessage({ mode, currency, locale })
     }
     // Manual allocation must be non-negative. An automatic row ignores any
     // amount, so the check is skipped entirely in automatic mode.
@@ -350,10 +357,22 @@ export function SavingsPage() {
       const allocationInCents = parseFromInput(monthlyAllocation, locale)
       if (allocationInCents < 0) {
         next.monthlyAllocation = 'Please enter a valid non-negative monthly allocation'
+      } else if (exceedsMoneyLimit(allocationInCents)) {
+        next.monthlyAllocation = moneyLimitMessage({ mode, currency, locale })
       }
     }
     return next
-  }, [name, isAccount, targetAmount, currentBalance, allocationMode, monthlyAllocation, locale])
+  }, [
+    name,
+    isAccount,
+    targetAmount,
+    currentBalance,
+    allocationMode,
+    monthlyAllocation,
+    mode,
+    currency,
+    locale,
+  ])
 
   const clearErrors = () => {
     setErrors({})

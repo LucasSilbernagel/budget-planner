@@ -10,6 +10,7 @@ import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
 import { usePremiumAccess } from '../hooks/usePremiumAccess'
 import { useStoresHydrated } from '../hooks/useStoresHydrated'
 import { useTableSort } from '../hooks/useTableSort'
+import { exceedsMoneyLimit, moneyLimitMessage } from '../lib/money-limit'
 import { summarizeReadableRows } from '../lib/readable-rows'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import { type FlowSortKey, createFlowSortExtractors } from '../lib/table-sort-keys'
@@ -230,9 +231,13 @@ export function ExpensesPage() {
     const amountInCents = parseFromInput(amount, locale)
     if (amountInCents <= 0) {
       next.amount = 'Please enter a valid positive amount'
+    } else if (exceedsMoneyLimit(amountInCents)) {
+      // Story 106.1 (FR174): above the int32 sync limit the row would be saved
+      // here and silently refused at enqueue, so refuse it before saving.
+      next.amount = moneyLimitMessage({ mode, currency, locale })
     }
     return next
-  }, [name, amount, locale])
+  }, [name, amount, mode, currency, locale])
 
   const clearErrors = () => {
     setErrors({})

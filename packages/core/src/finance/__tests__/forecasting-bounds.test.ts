@@ -46,10 +46,12 @@ const SRC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
  * The directory layout is kept in the temp dir so relative `require`s resolve.
  * Story 100.2 added the `services/balanceTracking` chain (the contribution
  * chokepoint, `monthlyContributionCents`); its `@budget-planner/db` import is
- * type-only and is erased by the transpile.
+ * type-only and is erased by the transpile. Story 106.1 added
+ * `finance/money-limits` (`balanceTracking`'s money bound).
  */
 const ENGINE_MODULES = [
   'finance/forecasting',
+  'finance/money-limits',
   'finance/netIncome',
   'finance/normalization',
   'services/balanceTracking',

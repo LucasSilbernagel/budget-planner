@@ -12,6 +12,7 @@
  */
 
 import type { BalanceTracking as DbBalanceTracking, FinanceType } from '@budget-planner/db'
+import { MAX_MONEY_CENTS } from '../finance/money-limits'
 import { type Frequency, normalizeToMonthly } from '../finance/normalization'
 import {
   DebtCalculationResult,
@@ -536,23 +537,29 @@ export function validateBalanceTracking(
         message: 'Monthly contribution cannot be negative',
         value: input.monthlyContribution,
       })
-    } else if (Math.abs(input.monthlyContribution) > Number.MAX_SAFE_INTEGER / 100) {
+    } else if (input.monthlyContribution > MAX_MONEY_CENTS) {
+      // Story 106.1 (FR174): was `MAX_SAFE_INTEGER / 100`, far above what the
+      // int32 column and the sync gate accept, so a larger value was stored here
+      // and then silently refused at enqueue. Now the same bound as the gate.
       errors.push({
         field: 'monthlyContribution',
-        message: 'Monthly contribution exceeds safe integer bounds',
+        message: 'Monthly contribution exceeds the largest amount that can sync',
         value: input.monthlyContribution,
       })
     }
   }
 
-  // Bounds validation for currentBalance (already validated as integer above)
+  // Bounds validation for currentBalance (already validated as integer above).
+  // Story 106.1 (FR174): the sync gate's int32 bound, not `MAX_SAFE_INTEGER / 100`
+  // (see `monthlyContribution` above). `Math.abs` keeps a huge NEGATIVE value
+  // refused here too, beside the sign rule (story 103.1).
   if (
-    input.currentBalance !== undefined &&
-    Math.abs(input.currentBalance) > Number.MAX_SAFE_INTEGER / 100
+    typeof input.currentBalance === 'number' &&
+    Math.abs(input.currentBalance) > MAX_MONEY_CENTS
   ) {
     errors.push({
       field: 'currentBalance',
-      message: 'Current balance exceeds safe integer bounds',
+      message: 'Current balance exceeds the largest amount that can sync',
       value: input.currentBalance,
     })
   }
