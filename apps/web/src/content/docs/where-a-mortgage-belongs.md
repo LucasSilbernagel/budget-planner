@@ -21,6 +21,8 @@ property as well as the loan against it.
 - The **amount still owed** goes on the [Balance Tracking](/balance) page, as an
   entry of type **Debt**, in the *Current Balance/Value* field. Enter it as a positive
   number — Longhand Budget subtracts what you owe for you.
+- In that Debt entry's *Paid by* field, pick the payment you recorded on the
+  Expenses page. The debt then shows that payment, so you enter it only once.
 - The **property itself** goes on the same page, as a separate entry of type
   **Asset**, with what it is worth today in the *Current Balance/Value* field.
 

@@ -275,6 +275,15 @@ const balanceTrackingSchema = z.object({
   // it twice. Server gate — must mirror the client gate in
   // packages/core/src/sync/types.ts and the syncBridge payload whitelist.
   contributionRecordedAsExpense: z.boolean().default(false),
+  // Story 102.1 (FR169): the expense that pays a debt. Server gate, mirroring the
+  // client gate (`syncOperationDataSchema`) and the syncBridge payload.
+  // ⚠️ `.nullable().optional()`, NOT `.default(null)` (D2): the bridge always
+  // sends the key, and the `superRefine` discards this parse anyway, but a default
+  // would claim that an omitted key clears the link, which a partial `.set()`
+  // never does.
+  // ⚠️ No existence check, ever: the column has no FK on purpose, and a link to
+  // an expense the server does not hold is a normal state (pull is paginated).
+  paymentExpenseId: z.string().uuid().nullable().optional(),
   // Story 34.1a (FR60): explicit display position; see incomeSourceSchema above.
   sortOrder: z.number().int().min(0).max(2_147_483_647).optional(),
   userId: z.string().uuid(),

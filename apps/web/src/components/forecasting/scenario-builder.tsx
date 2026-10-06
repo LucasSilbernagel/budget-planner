@@ -22,6 +22,7 @@ import {
   currencySymbol,
   isValidForecastYears,
   isValidGrowthRate,
+  resolveDebtPaymentExpense,
   solveAutomaticAllocations,
 } from '@budget-planner/core'
 import type { Frequency, NormalizableFinancialItem } from '@budget-planner/core/finance'
@@ -522,6 +523,11 @@ function balanceRowType(type: unknown): LocalBalanceAccount['type'] | null {
  *
  * - `contribution` is the entry's RAW `monthlyContribution` at its own
  *   `frequency`, so the row shows what `/balance` shows; the engine normalises it.
+ * - A DEBT's contribution (story 102.1, FR169, D5) is its LINKED EXPENSE's amount
+ *   at that expense's frequency, never its own stored contribution, which
+ *   `/balance` no longer shows or writes. No link (or one that does not resolve
+ *   in `expenses`, the active profile's) seeds 0. The 100.2 D4 math is unchanged:
+ *   the linked expense stays among the expense rows (102.2 moves it).
  * - Balance sign (D6): a debt seeds `|balance|`, because a debt can be stored
  *   negative (the screenshot seed's mortgage, sync-applied rows) while the row
  *   holds a positive magnitude. A negative or non-finite investment seeds 0, as a
@@ -533,7 +539,10 @@ function balanceRowType(type: unknown): LocalBalanceAccount['type'] | null {
  * ⚠️ Fields mapped explicitly, as in `itemsFromStore`: a spread would carry
  * `profileId` and friends into the saved JSON.
  */
-function balanceFromStore(entries: readonly ClientBalanceTracking[]): LocalBalanceAccount[] {
+function balanceFromStore(
+  entries: readonly ClientBalanceTracking[],
+  expenses: readonly { id: string; amount: unknown; frequency: unknown }[]
+): LocalBalanceAccount[] {
   const rows: LocalBalanceAccount[] = []
   for (const entry of entries) {
     const type = balanceRowType(entry.type)
@@ -549,14 +558,34 @@ function balanceFromStore(entries: readonly ClientBalanceTracking[]): LocalBalan
             ? Math.abs(raw)
             : 0
           : nonNegativeCents(raw),
-      contribution: nonNegativeCents(entry.monthlyContribution),
-      frequency: isKnownFrequency(entry.frequency) ? entry.frequency : 'monthly',
+      ...(type === 'debt'
+        ? debtPaymentFromExpense(resolveDebtPaymentExpense(entry, expenses))
+        : {
+            contribution: nonNegativeCents(entry.monthlyContribution),
+            frequency: isKnownFrequency(entry.frequency) ? entry.frequency : 'monthly',
+          }),
       contributionRecordedAsExpense:
         type === 'investment' && entry.contributionRecordedAsExpense === true,
       annualReturn: DEFAULT_INVESTMENT_RETURN,
     })
   }
   return rows
+}
+
+/**
+ * A debt row's seeded payment from its linked expense (story 102.1): the same
+ * coercion as every other seeded money value (finite and >= 0, else 0; an
+ * unknown frequency reads monthly). No expense: 0, monthly.
+ */
+function debtPaymentFromExpense(expense: { amount: unknown; frequency: unknown } | null): {
+  contribution: number
+  frequency: Frequency
+} {
+  if (expense === null) return { contribution: 0, frequency: 'monthly' }
+  return {
+    contribution: nonNegativeCents(expense.amount),
+    frequency: isKnownFrequency(expense.frequency) ? expense.frequency : 'monthly',
+  }
 }
 
 /**
@@ -884,7 +913,10 @@ export function ScenarioBuilder({
     // Investment/debt rows (story 100.2). Each balance is coerced per row in
     // `balanceFromStore` (a corrupt one seeds 0), which also closes the 62.1
     // review hazard of one non-finite row turning the old single total into NaN.
-    if (!balanceRowsTouched.current) setBalanceAccounts(balanceFromStore(storeBalanceEntries))
+    // Story 102.1: debts seed their payment from the linked expense.
+    if (!balanceRowsTouched.current) {
+      setBalanceAccounts(balanceFromStore(storeBalanceEntries, storeExpenses))
+    }
     setHasSeeded(true)
   }, [
     hasSeeded,

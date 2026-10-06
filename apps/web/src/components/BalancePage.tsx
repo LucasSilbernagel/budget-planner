@@ -1,3 +1,4 @@
+import { resolveDebtPaymentExpense } from '@budget-planner/core'
 import {
   currencySymbol,
   formatForInputDisplay,
@@ -5,16 +6,21 @@ import {
 } from '@budget-planner/core/format/currency'
 import type { ClientBalanceTracking } from '@budget-planner/core/services/balanceTracking'
 import type { Frequency } from '@budget-planner/db'
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
 import { useNetWorth } from '../hooks/useNetWorth'
 import { useStoresHydrated } from '../hooks/useStoresHydrated'
 import { useTableSort } from '../hooks/useTableSort'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
-import { type BalanceSortKey, createBalanceSortExtractors } from '../lib/table-sort-keys'
+import {
+  type BalanceRow,
+  type BalanceSortKey,
+  createBalanceSortExtractors,
+} from '../lib/table-sort-keys'
 import {
   useBalanceEntries,
   useBalanceStore,
+  useExpenses,
   useTotalAssetBalance as useTotalAssets,
   useTotalDebtBalance as useTotalDebts,
   useTotalInvestmentBalance as useTotalInvestments,
@@ -177,14 +183,75 @@ const frequencyLabel = (frequency: Frequency): string =>
   FREQUENCY_OPTIONS.find((option) => option.value === frequency)?.label ?? frequency
 
 /**
+ * Story 102.1 (FR169, D9): a debt row's Contribution cell. The linked expense's
+ * amount and cadence plus a "Paid by" line, or "Not linked". An unreadable amount
+ * keeps the "Paid by" line and drops the figure rather than showing "NaN".
+ */
+function DebtPaymentCell({
+  expense,
+  formatAmount,
+}: {
+  expense: { name: unknown; amount: unknown; frequency: unknown } | null
+  formatAmount: (cents: number) => string
+}) {
+  if (expense === null) {
+    return <div className="text-muted text-sm">Not linked</div>
+  }
+  const name = typeof expense.name === 'string' ? expense.name : ''
+  return (
+    <div>
+      {typeof expense.amount === 'number' && Number.isFinite(expense.amount) && (
+        <>
+          <div className={`text-muted text-sm ${RESPONSIVE_AMOUNT_CLASS}`}>
+            <GroupedAmount text={formatAmount(expense.amount)} />
+          </div>
+          <div className="text-faint text-xs">{untrustedFrequencyLabel(expense.frequency)}</div>
+        </>
+      )}
+      <div className="text-faint text-xs">Paid by {name}</div>
+    </div>
+  )
+}
+
+/**
+ * Story 102.1 (D7): the "Paid by" option value for a stored link this device
+ * cannot resolve. It contains spaces, which no client-generated id has (every
+ * expense id is a `generateUUID()` uuid), so it cannot be mistaken for a real
+ * expense option.
+ */
+const PAYMENT_LINK_UNAVAILABLE = 'linked expense unavailable'
+
+/**
+ * Story 102.1 (code review): a linked expense's cadence label. The expense row is
+ * as untrusted as its name and amount (localStorage is user-editable), and
+ * `frequencyLabel` falls back to the RAW value, so a non-string would reach React
+ * as a child and throw. A non-string shows nothing.
+ */
+function untrustedFrequencyLabel(frequency: unknown): string {
+  return typeof frequency === 'string' ? frequencyLabel(frequency as Frequency) : ''
+}
+
+/**
+ * Story 102.1: one "Paid by" option, `name — amount / frequency`. An unreadable
+ * amount shows the name alone rather than "NaN" (a corrupt persisted row must
+ * never blank the form, the #46-#48 lesson).
+ */
+function paymentOptionLabel(
+  expense: { name: unknown; amount: unknown; frequency: unknown },
+  formatAmount: (cents: number) => string
+): string {
+  const name = typeof expense.name === 'string' ? expense.name : ''
+  const cadence = untrustedFrequencyLabel(expense.frequency)
+  return typeof expense.amount === 'number' && Number.isFinite(expense.amount)
+    ? `${name} — ${formatAmount(expense.amount)}${cadence ? ` / ${cadence}` : ''}`
+    : name
+}
+
+/**
  * Column labels for the sortable header cells and the mobile sort control's
  * options, so the two cannot drift apart (story 34.2; the mobile consumer became
  * `TableSortControl` in story 48.1).
  */
-/** Module scope: the factory takes no arguments and closes over nothing, so a
- * per-instance `useMemo` would allocate an identical object on every mount. */
-const BALANCE_SORT_EXTRACTORS = createBalanceSortExtractors()
-
 const SORT_COLUMN_LABELS: Record<BalanceSortKey, string> = {
   type: 'Type',
   name: 'Name',
@@ -240,7 +307,20 @@ export function BalancePage() {
   // ⚠️ Only `contribution` is frequency-normalized. `currentBalance` is a
   // point-in-time STOCK (and may be negative for a debt), so normalizing it
   // would contradict the stat cards above.
-  const sortExtractors = BALANCE_SORT_EXTRACTORS
+  //
+  // Story 102.1 (FR169): a debt's Contribution cell shows its LINKED EXPENSE, so
+  // the extractors read the active profile's expenses and are rebuilt when they
+  // change (useTableSort's memo contract: an expense edit must re-sort the table
+  // even though no balance row changed).
+  const expenses = useExpenses()
+  const sortExtractors = useMemo(
+    () =>
+      createBalanceSortExtractors((row: BalanceRow) => {
+        const expense = resolveDebtPaymentExpense(row, expenses)
+        return expense === null ? null : { amount: expense.amount, frequency: expense.frequency }
+      }),
+    [expenses]
+  )
   const sort = useTableSort('balance', balanceEntries, sortExtractors)
   const sortedRows = sort.rows
   // Amounts are stored in cents; the formatter respects the user's currency
@@ -275,6 +355,41 @@ export function BalancePage() {
   // their pay before it reaches them, or because they also list it on the Expenses page —
   // so the Savings distributable pool must not deduct it a second time.
   const [contributionRecordedAsExpense, setContributionRecordedAsExpense] = useState(false)
+  // Story 102.1 (FR169): the expense that pays a DEBT, or null for "Not linked".
+  // `storedPaymentExpenseId` is the link the edited row held when the form opened,
+  // kept so a link this device cannot resolve survives a save untouched (D7).
+  const [paymentExpenseId, setPaymentExpenseId] = useState<string | null>(null)
+  const [storedPaymentExpenseId, setStoredPaymentExpenseId] = useState<string | null>(null)
+
+  // Story 102.1 (FR169): the "Paid by" picker's options. One expense pays at most
+  // one debt (D6), so an expense another debt already resolves to is left out;
+  // the edited debt's own current choice always stays in the list.
+  const linkedToOtherDebts = useMemo(() => {
+    const ids = new Set<string>()
+    for (const entry of balanceEntries) {
+      if (entry.id === editingId) continue
+      const expense = resolveDebtPaymentExpense(entry, expenses)
+      if (expense !== null) ids.add(expense.id)
+    }
+    return ids
+  }, [balanceEntries, editingId, expenses])
+  const paymentOptions = useMemo(
+    () =>
+      expenses.filter(
+        (expense) => expense.id === paymentExpenseId || !linkedToOtherDebts.has(expense.id)
+      ),
+    [expenses, linkedToOtherDebts, paymentExpenseId]
+  )
+  // D7: a stored link this device cannot resolve (not yet pulled, deleted, other
+  // profile) is shown as its own selected option and kept on save unless the
+  // user picks something else. Showing "Not linked" and clearing it on save
+  // would silently erase a link made on another device.
+  // Code review: keyed on the STORED link, not the current choice, so the option
+  // stays in the list after the user picks something else and the stored link
+  // can be restored without cancelling the form.
+  const storedLinkUnavailable =
+    storedPaymentExpenseId !== null &&
+    !expenses.some((expense) => expense.id === storedPaymentExpenseId)
 
   // Inline field-validation error state (replaces browser alert() popups).
   // Mirrors the app's canonical inline-validation pattern: an errors map plus
@@ -301,7 +416,9 @@ export function BalancePage() {
     }
     // Story 43.4 (D2): the contribution field is hidden for assets, so never
     // block an asset submit on a stale value left over from a type switch.
-    if (type !== 'asset') {
+    // Story 102.1 (FR169): hidden for debts too (their payment is the linked
+    // expense), so only an investment validates it.
+    if (type === 'investment') {
       const monthlyInCents = parseFromInput(monthlyContribution, locale)
       if (monthlyInCents < 0) {
         next.monthlyContribution = 'Please enter a valid non-negative monthly contribution'
@@ -325,6 +442,8 @@ export function BalancePage() {
         setCurrentBalance('')
         setMonthlyContribution('')
         setContributionRecordedAsExpense(false)
+        setPaymentExpenseId(null)
+        setStoredPaymentExpenseId(null)
       }
       // Editing: fields are set by openEditModal
     }
@@ -364,6 +483,7 @@ export function BalancePage() {
       | 'monthlyContribution'
       | 'frequency'
       | 'contributionRecordedAsExpense'
+      | 'paymentExpenseId'
     >
   ) => {
     setEditingId(entry.id)
@@ -374,6 +494,14 @@ export function BalancePage() {
     setFrequency(entry.frequency ?? 'monthly')
     // Story 45.1: absent ⇒ unticked ⇒ deducted, matching the pool's own default.
     setContributionRecordedAsExpense(entry.contributionRecordedAsExpense === true)
+    // Story 102.1: a non-string stored value is "not linked" (localStorage is
+    // user-editable); a string is kept even if it resolves to nothing (D7).
+    const storedLink =
+      entry.type === 'debt' && typeof entry.paymentExpenseId === 'string' && entry.paymentExpenseId
+        ? entry.paymentExpenseId
+        : null
+    setPaymentExpenseId(storedLink)
+    setStoredPaymentExpenseId(storedLink)
     clearErrors()
     setIsModalOpen(true)
   }
@@ -388,6 +516,8 @@ export function BalancePage() {
     setMonthlyContribution('')
     setFrequency('monthly')
     setContributionRecordedAsExpense(false)
+    setPaymentExpenseId(null)
+    setStoredPaymentExpenseId(null)
     clearErrors()
   }
 
@@ -427,19 +557,26 @@ export function BalancePage() {
       // contribution over to `asset` and saving zeroes it, and switching back does
       // not restore it — the same one-way behaviour the limit gate above has for
       // investment→debt.
-      const isAsset = type === 'asset'
+      //
+      // Story 102.1 (FR169): a debt carries no contribution either. Its payment
+      // is the linked Expenses row, so the same two NOT NULL values are written
+      // (D4) and `paymentExpenseId` holds the link. Every other type writes
+      // `null`, so a link left over from a debt→investment switch is never saved
+      // (the 45.1 D8 persistence-gate pattern below).
+      const hasContribution = type === 'investment'
       const newEntry = {
         type,
         name: name.trim(),
         currentBalance: parseFromInput(currentBalance, locale),
-        monthlyContribution: isAsset ? 0 : parseFromInput(monthlyContribution, locale),
-        frequency: isAsset ? ('monthly' as const) : frequency,
+        monthlyContribution: hasContribution ? parseFromInput(monthlyContribution, locale) : 0,
+        frequency: hasContribution ? frequency : ('monthly' as const),
         // Story 45.1 (D8): only an investment contribution reaches the pool, so
         // the flag is forced false for every other type. The control is hidden
         // for them too, but this is the PERSISTENCE gate — a stale `true` left
         // over from switching investment→debt would otherwise be saved, and
         // `validateBalanceTracking` would reject the whole write.
         contributionRecordedAsExpense: type === 'investment' && contributionRecordedAsExpense,
+        paymentExpenseId: type === 'debt' ? paymentExpenseId : null,
       }
 
       if (editingId !== null) {
@@ -764,8 +901,17 @@ export function BalancePage() {
                                   matching sort key so the column sorts by what the
                                   CELL SHOWS. (The em-dash convention was shared with
                                   the Remaining Room cell, removed by story 49.1.) */}
+                              {/* Story 102.1 (FR169, D9): a debt shows its LINKED
+                                  expense's payment, never its own stored
+                                  contribution; "Not linked" when there is none
+                                  or the link does not resolve on this device. */}
                               {entry.type === 'asset' ? (
                                 <div className="text-muted text-sm">—</div>
+                              ) : entry.type === 'debt' ? (
+                                <DebtPaymentCell
+                                  expense={resolveDebtPaymentExpense(entry, expenses)}
+                                  formatAmount={formatAmount}
+                                />
                               ) : (
                                 <div>
                                   <div className={`text-muted text-sm ${RESPONSIVE_AMOUNT_CLASS}`}>
@@ -997,9 +1143,9 @@ export function BalancePage() {
               {type === 'debt' && (
                 <p className="mt-1 text-xs text-muted" data-testid="balance-debt-hint">
                   Enter what you still owe today. Record the recurring payment on the Expenses page
-                  — that's where it counts against your cash flow. If the loan bought something you
-                  still have, record that as an Asset entry too, so your net worth reflects both
-                  sides.{' '}
+                  — that's where it counts against your cash flow — then pick it under Paid by. If
+                  the loan bought something you still have, record that as an Asset entry too, so
+                  your net worth reflects both sides.{' '}
                   <a
                     href="/docs/where-a-mortgage-belongs"
                     className="text-blue-600 underline hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
@@ -1040,12 +1186,62 @@ export function BalancePage() {
               )}
             </div>
 
+            {/* Story 102.1 (FR169): a debt's payment is the Expenses row that
+                pays it, picked here, so it is entered once. Replaces the debt's
+                Contribution/Frequency fields. Plain-text options (no icons). */}
+            {type === 'debt' && (
+              <div>
+                <label
+                  htmlFor="paymentExpenseId"
+                  className="block mb-1 font-medium text-label text-sm"
+                >
+                  Paid by
+                </label>
+                <select
+                  id="paymentExpenseId"
+                  value={
+                    paymentExpenseId === null
+                      ? ''
+                      : storedLinkUnavailable && paymentExpenseId === storedPaymentExpenseId
+                        ? PAYMENT_LINK_UNAVAILABLE
+                        : paymentExpenseId
+                  }
+                  onChange={(e) => {
+                    const value = e.target.value
+                    setPaymentExpenseId(
+                      value === ''
+                        ? null
+                        : value === PAYMENT_LINK_UNAVAILABLE
+                          ? storedPaymentExpenseId
+                          : value
+                    )
+                  }}
+                  className="shadow-sm px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 focus:border-purple-500 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 w-full"
+                  data-testid="balance-payment-expense-select"
+                >
+                  <option value="">Not linked</option>
+                  {storedLinkUnavailable && (
+                    <option value={PAYMENT_LINK_UNAVAILABLE}>
+                      Linked expense not on this device
+                    </option>
+                  )}
+                  {paymentOptions.map((expense) => (
+                    <option key={expense.id} value={expense.id}>
+                      {paymentOptionLabel(expense, formatAmount)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* Story 43.4 (D2): an asset has no contribution concept, so the
                 Contribution amount and its Frequency are both hidden for it. The
                 persistence gate writes
                 `monthlyContribution: 0` / `frequency: 'monthly'` (both columns
-                are NOT NULL), so hiding the field never omits the value. */}
-            {type !== 'asset' && (
+                are NOT NULL), so hiding the field never omits the value.
+                Story 102.1 (FR169): the same for a debt, whose payment is the
+                linked expense above. */}
+            {type === 'investment' && (
               <>
                 <div>
                   <label

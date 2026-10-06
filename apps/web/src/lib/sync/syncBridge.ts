@@ -20,6 +20,7 @@
 
 import type { SyncEntityType, SyncOperation } from '@budget-planner/core'
 import { RETIREMENT_PLAN_STRING_MAX } from '@budget-planner/core/sync/types'
+import { z } from 'zod'
 import { type RetirementPlan, coerceRetirementPlan } from '../retirement-plan'
 
 /**
@@ -111,6 +112,9 @@ export function getSyncSessionUserId(): string | null {
 // item types are plain interfaces (no index signature) and would not be assignable
 // to such an intersection. The mapper casts to a record for its field reads.
 type ClientEntity = { id: string; updatedAt?: string }
+
+/** The queue gate's uuid rule (`syncOperationDataSchema.paymentExpenseId`), story 102.1. */
+const UUID_SCHEMA = z.string().uuid()
 
 /**
  * Parse an ISO timestamp into a Unix-ms epoch for `baseVersion` (4-18 D1), or
@@ -285,6 +289,19 @@ export function toServerPayload(
         // place — the user unticks the box and the change never lands. Coercing
         // to `false` here means the key is always on the wire.
         contributionRecordedAsExpense: entity['contributionRecordedAsExpense'] ?? false,
+        // Story 102.1 (FR169): the expense that pays a debt. Emitted
+        // UNCONDITIONALLY, as `null` when unlinked: `updateEntity` does a PARTIAL
+        // `.set()`, so an omitted key would leave the old link on every other
+        // device and an unlink would never land.
+        // ⚠️ Only a uuid is forwarded; anything else (a hand-edited localStorage
+        // value) becomes `null`. Forwarded unchanged, it would fail the client
+        // queue gate's uuid check and drop the WHOLE operation, rename and balance
+        // included (the 65.2 `"false"`-string lesson). Every reader already treats
+        // such a value as not linked, so `null` loses nothing. The check is the
+        // queue gate's own `z.string().uuid()`, so the two cannot disagree.
+        paymentExpenseId: UUID_SCHEMA.safeParse(entity['paymentExpenseId']).success
+          ? entity['paymentExpenseId']
+          : null,
         // Story 16-2: forward the contribution cadence, else paid-tier syncs silently
         // drop it and the server defaults every synced entry to 'monthly'.
         frequency: entity['frequency'] ?? 'monthly',

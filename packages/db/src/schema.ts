@@ -463,6 +463,17 @@ export const balanceTracking = pgTable(
     contributionRecordedAsExpense: boolean('contributionRecordedAsExpense')
       .notNull()
       .default(false),
+    // Story 102.1 (FR169): the expense row that pays this DEBT, so the payment is
+    // entered once (on Expenses) and the debt reads its amount from there. Null =
+    // not linked. Only a debt carries one (`validateBalanceTracking`).
+    // ⚠️⚠️ DELIBERATELY NO `.references()`. `expenses.categoryId` is a real FK and
+    // its sync is still pinned to null (`syncBridge.ts` `cashflowPayload`): a 23503
+    // comes back as a 200 envelope, stays queued and opens the circuit breaker for
+    // ALL of the account's sync. Pull is paginated by `updatedAt`, so a device can
+    // legitimately hold a link to an expense it has not pulled yet, or one that was
+    // deleted. A dangling value is therefore a NORMAL state: every reader resolves
+    // it against the active profile's expenses and treats a miss as "not linked".
+    paymentExpenseId: uuid('paymentExpenseId'),
     // Explicit display order (Story 34.1a, FR60); see incomeSources note above.
     // ⚠️ Like savingsGoals, this list was newest-first via `sortByCreationDate` and
     // is normalized to oldest-first here — the backfill reverses it once.

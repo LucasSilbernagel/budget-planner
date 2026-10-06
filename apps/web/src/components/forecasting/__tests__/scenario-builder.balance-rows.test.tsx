@@ -66,17 +66,26 @@ function income(amount: number) {
   }
 }
 
-function expense(amount: number) {
+function expense(
+  amount: number,
+  over: {
+    id?: string
+    name?: string
+    frequency?: 'weekly' | 'biweekly' | 'monthly' | 'annually'
+    profileId?: string
+  } = {}
+) {
   return {
     id: 'exp-1',
     profileId: PROFILE,
     userId: 0,
     name: 'Rent',
     amount,
-    frequency: 'monthly' as const,
+    frequency: 'monthly' as 'weekly' | 'biweekly' | 'monthly' | 'annually',
     categoryId: null,
     createdAt: ISO,
     updatedAt: ISO,
+    ...over,
   }
 }
 
@@ -88,6 +97,7 @@ function entry(over: {
   monthlyContribution?: number
   frequency?: string
   contributionRecordedAsExpense?: boolean
+  paymentExpenseId?: unknown
   profileId?: string
   sortOrder?: number
 }) {
@@ -322,6 +332,89 @@ describe('the seed (AC-6)', () => {
   })
 })
 
+describe('a debt seeds its payment from its linked expense (story 102.1, AC-10)', () => {
+  it('seeds the linked expense amount at the expense’s own frequency', () => {
+    useExpenseStore.setState({
+      expenses: [expense(15_000, { id: 'exp-car', name: 'Car payment', frequency: 'biweekly' })],
+    })
+    setEntries([
+      entry({
+        id: 'e-1',
+        name: 'Car loan',
+        type: 'debt',
+        currentBalance: 900_000,
+        paymentExpenseId: 'exp-car',
+      }),
+    ])
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    expect(screen.getByLabelText('Contribution for Car loan')).toHaveValue(150)
+    expect(screen.getByLabelText('Frequency for Car loan')).toHaveValue('biweekly')
+  })
+
+  it('⚠️ never seeds a debt from its own stored contribution (pre-102.1 rows)', () => {
+    setEntries([
+      entry({
+        id: 'e-1',
+        name: 'Old loan',
+        type: 'debt',
+        currentBalance: 900_000,
+        monthlyContribution: 30_000,
+      }),
+    ])
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    expect(screen.getByLabelText('Contribution for Old loan')).toHaveValue(0)
+  })
+
+  it.each([
+    ['a deleted or never-pulled expense', 'exp-gone'],
+    ['another profile’s expense', 'exp-other'],
+    ['a corrupt non-string value', 7],
+  ])('seeds 0 for a link to %s', (_case, paymentExpenseId) => {
+    useExpenseStore.setState({
+      expenses: [expense(15_000, { id: 'exp-other', profileId: 'someone-else' })],
+    })
+    setEntries([
+      entry({ id: 'e-1', name: 'Loan', type: 'debt', currentBalance: 900_000, paymentExpenseId }),
+    ])
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    expect(screen.getByLabelText('Contribution for Loan')).toHaveValue(0)
+  })
+
+  it('seeds 0 for a linked expense whose stored amount is unreadable', () => {
+    useExpenseStore.setState({
+      expenses: [expense(Number.NaN, { id: 'exp-car', name: 'Car payment' })],
+    })
+    setEntries([
+      entry({
+        id: 'e-1',
+        name: 'Loan',
+        type: 'debt',
+        currentBalance: 900_000,
+        paymentExpenseId: 'exp-car',
+      }),
+    ])
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    expect(screen.getByLabelText('Contribution for Loan')).toHaveValue(0)
+  })
+
+  it('keeps the linked expense among the expense rows (moving it out is story 102.2)', () => {
+    useExpenseStore.setState({
+      expenses: [expense(15_000, { id: 'exp-car', name: 'Car payment' })],
+    })
+    setEntries([
+      entry({
+        id: 'e-1',
+        name: 'Loan',
+        type: 'debt',
+        currentBalance: 900_000,
+        paymentExpenseId: 'exp-car',
+      }),
+    ])
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    expect(screen.getByDisplayValue('Car payment')).toBeInTheDocument()
+  })
+})
+
 describe('the starting figures (AC-2)', () => {
   it('investment rows add up to the investment total, and Starting Net Worth subtracts the debts', async () => {
     useSavingsStore.setState({
@@ -450,10 +543,15 @@ describe('the per-row outcome and the totals (AC-10)', () => {
    *   Savings: 2 × (12,000.00 − 1,200.00 counted) = 21,600.00.
    *   Ending net worth: 21,600.00 + 3,595.60 − 500.00 = 24,695.60.
    *   Starting: 0 + 1,000.00 − 3,500.00 = −2,500.00.
+   *
+   * Story 102.1: the Loan's 200.00 payment is its LINKED Expenses row, so Rent is
+   * 3,800.00 and the two still total 4,000.00 a month: every figure above holds.
    */
   function fillOutcomeFixture(): void {
     useIncomeStore.setState({ incomeSources: [income(500_000)] })
-    useExpenseStore.setState({ expenses: [expense(400_000)] })
+    useExpenseStore.setState({
+      expenses: [expense(380_000), expense(20_000, { id: 'exp-loan', name: 'Loan payment' })],
+    })
     setEntries([
       entry({ id: 'e-1', name: 'Fund', currentBalance: 100_000, monthlyContribution: 10_000 }),
       entry({
@@ -461,7 +559,7 @@ describe('the per-row outcome and the totals (AC-10)', () => {
         name: 'Loan',
         type: 'debt',
         currentBalance: 300_000,
-        monthlyContribution: 20_000,
+        paymentExpenseId: 'exp-loan',
       }),
       entry({ id: 'e-3', name: 'Card', type: 'debt', currentBalance: 50_000 }),
     ])
@@ -722,14 +820,18 @@ describe('save writes the rows and the investment total (AC-12)', () => {
         frequency: 'weekly',
         contributionRecordedAsExpense: true,
       }),
+      // Story 102.1: the debt's payment comes from its linked expense.
       entry({
         id: 'e-2',
         name: 'Loan',
         type: 'debt',
         currentBalance: 300_000,
-        monthlyContribution: 20_000,
+        paymentExpenseId: 'exp-loan',
       }),
     ])
+    useExpenseStore.setState({
+      expenses: [expense(20_000, { id: 'exp-loan', name: 'Loan payment' })],
+    })
     const onSave = vi.fn().mockResolvedValue({ success: true })
     render(<ScenarioBuilder onSave={onSave} />)
     fireEvent.click(
