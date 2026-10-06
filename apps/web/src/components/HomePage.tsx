@@ -1646,11 +1646,24 @@ function LockedTileContent({
  *      (every cent of net income already lands in savings), so they change no
  *      total, no net worth and no summary figure: only the per-row "After N
  *      years" lines. Not scenario-expressive for this copy.
+ *   5. `currentData.balanceAccounts` (story 100.2) — per-investment and per-debt
+ *      balances, contributions and frequencies. These ARE scenario-expressive:
+ *      raising an investment contribution moves money from savings into
+ *      investments (7%), and paying a debt down lowers it each year (no interest
+ *      modelled). So "raise my pension contribution" and "pay down a loan" are
+ *      expressible. Debts also lower the starting net worth. The copy names both
+ *      (Lucas 2026-10-05, story 100.2): "saving more each month" holds through
+ *      INVESTMENT contributions only (savings-row contributions only split
+ *      savings, item 4), and under 100.2 D4 a debt's payment is already an
+ *      Expenses line, so an honest "pay it down faster" what-if raises the
+ *      matching expense too (raising the row alone lowers the debt without
+ *      taking the extra out of savings).
  * ⚠️ `newIncome`/`newExpenses` are **not read by the CALCULATION** — they
  * are the SAVE FORMAT for the builder's rows, which reload depends on. Do not cite
  * them as scenario-expressive, and do not delete them as dead.
  *
- * So a raise, rising bills, a one-off windfall and a one-off cost are expressible.
+ * So a raise, rising bills, a one-off windfall, a one-off cost, paying down a loan
+ * and saving more each month are expressible.
  * **A house purchase and an early retirement are NOT** — each needs a RECURRING
  * change dated to a chosen year (a mortgage from year 5; income stopping at
  * retirement), and recurring items carry no start or end year. (`/retirement` is a
@@ -1692,7 +1705,8 @@ function PremiumFeatureLabel(): React.ReactElement {
     <span className="flex flex-col">
       <span className="font-medium text-subheading">Advanced Forecasting</span>
       <span className="text-sm text-muted">
-        See how a raise, rising bills or a big one-off cost plays out over the years ahead
+        See how a raise, rising bills, a big one-off cost, paying down a loan or saving more each
+        month plays out over the years ahead
       </span>
     </span>
   )

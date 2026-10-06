@@ -176,20 +176,24 @@ describe('ScenarioBuilder amount prefix (bug-3 AC-1)', () => {
 })
 
 /**
- * ⚠️ Story 100.1 moved savings to per-account ROWS, which are number inputs with
- * their own draft parsing (no `parseFromInput`). These cases therefore drive
- * Current Investments, the money field that still takes the `parseFromInput`
- * path they pin. The assertions are unchanged in meaning: a typed figure reaches
- * the save as exact cents.
+ * ⚠️ Story 100.1 moved savings, and story 100.2 moved investments, to per-account
+ * ROWS: `type="number"` inputs with their own draft parsing (`useMoneyDraft`). The
+ * `parseFromInput` money path these cases used to pin (a TEXT field that could
+ * hold `12,345.67` or `€7,500.50`) no longer exists in the builder: no money
+ * `InputField` is left. So the grouped and symbol cases are REPLACED, not
+ * dropped: a number input cannot hold grouping or a symbol (the browser is the
+ * filter, pinned in the 28-1 block below), the symbol is a prefix OUTSIDE the
+ * input, and what remains to pin is that a typed decimal reaches the save as
+ * exact cents, in both currency modes.
  */
 describe('ScenarioBuilder savings/investments parsing (bug-3 AC-2)', () => {
-  it('stores a typed investments amount as exact cents, without the double-×100 bug', async () => {
+  // Helper: type `typed` into the seeded Investments row, save, and return the inputs.
+  async function inputsAfterTyping(typed: string) {
     const onSave = vi.fn().mockResolvedValue({ success: true })
     render(<ScenarioBuilder onSave={onSave} />)
-
-    // Seeded investments render as 10000.00; change it to 7500.
-    fireEvent.change(screen.getByDisplayValue('10000.00'), { target: { value: '7500' } })
-
+    fireEvent.change(screen.getByLabelText('Balance for Investments'), {
+      target: { value: typed },
+    })
     // The Save button appears only once the debounced forecast has computed.
     const saveButton = await screen.findByRole(
       'button',
@@ -197,40 +201,32 @@ describe('ScenarioBuilder savings/investments parsing (bug-3 AC-2)', () => {
       { timeout: 2000 }
     )
     fireEvent.click(saveButton)
-
     await waitFor(() => expect(onSave).toHaveBeenCalled())
-    // 7500 → 750000 cents. The old parseFloat + ×100-in-handler bug produced
-    // 75000000 ($500,000).
-    expect(onSave.mock.calls[0][0].inputs.investments).toBe(750000)
-  })
-
-  // Helper: type `typed` into Current Investments, save, and return the persisted cents.
-  async function investmentCentsAfterTyping(typed: string): Promise<number> {
-    const onSave = vi.fn().mockResolvedValue({ success: true })
-    render(<ScenarioBuilder onSave={onSave} />)
-    fireEvent.change(screen.getByDisplayValue('10000.00'), { target: { value: typed } })
-    const saveButton = await screen.findByRole(
-      'button',
-      { name: /save forecast/i },
-      { timeout: 2000 }
-    )
-    fireEvent.click(saveButton)
-    await waitFor(() => expect(onSave).toHaveBeenCalled())
-    return onSave.mock.calls[0][0].inputs.investments
+    return onSave.mock.calls[0][0].inputs
   }
 
-  it('parses a GROUPED value without the parseFloat truncation bug', async () => {
-    // The exact case AC-2 calls out: parseFloat('12,345.67') === 12 (truncates at
-    // the comma). parseFromInput must strip grouping → 1234567 cents.
-    expect(await investmentCentsAfterTyping('12,345.67')).toBe(1234567)
+  it('stores a typed investments amount as exact cents, without the double-×100 bug', async () => {
+    // 7500 → 750000 cents. The old parseFloat + ×100-in-handler bug produced
+    // 75000000 ($500,000).
+    const inputs = await inputsAfterTyping('7500')
+    expect(inputs.investments).toBe(750000)
+    expect(inputs.balanceAccounts[0].balance).toBe(750000)
   })
 
-  it('parses a symbol- and group-formatted value in symbol mode', async () => {
-    // In symbol mode the field can display/edit a symbol+grouping string; the
-    // core parser strips both. €7,500.50 → 750050 cents (not NaN, not truncated).
+  it('keeps the cents of a typed decimal (replaces the GROUPED-value case)', async () => {
+    // The old case typed `12,345.67`; a number input cannot hold the comma, so
+    // the cents are what is left to pin: 12345.67 → 1234567, not 1234500.
+    expect((await inputsAfterTyping('12345.67')).investments).toBe(1234567)
+  })
+
+  it('keeps the cents in symbol mode, with the symbol outside the field (replaces the symbol case)', async () => {
     mockCurrency.mode = 'symbol'
     mockCurrency.currency = 'EUR'
-    expect(await investmentCentsAfterTyping('€7,500.50')).toBe(750050)
+    expect((await inputsAfterTyping('7500.50')).investments).toBe(750050)
+    // The prefix is a sibling of the input, not part of its value.
+    const input = screen.getByLabelText('Balance for Investments')
+    expect(within(input.parentElement as HTMLElement).getByText('€')).toBeInTheDocument()
+    expect(input).toHaveValue(7500.5)
   })
 })
 
@@ -273,9 +269,9 @@ describe('ScenarioBuilder reload hydration (bug-3 AC-4)', () => {
     expect(screen.getByDisplayValue('Rent')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Bonus')).toBeInTheDocument()
     // savings 1234500 → one v1 `Savings` row of 12345 (story 100.1, AC-12);
-    // investments 6789000 → 67890.00 (mock formatter)
+    // investments 6789000 → one v1 `Investments` row of 67890 (story 100.2, AC-13)
     expect(screen.getByLabelText('Balance for Savings')).toHaveValue(12345)
-    expect(screen.getByDisplayValue('67890.00')).toBeInTheDocument()
+    expect(screen.getByLabelText('Balance for Investments')).toHaveValue(67890)
     // years seeded from inputs
     expect(screen.getByDisplayValue('15')).toBeInTheDocument()
   })
@@ -295,13 +291,14 @@ describe('ScenarioBuilder reload hydration (bug-3 AC-4)', () => {
     // saved months ago to today's figures, which 62.1 AC-7 forbids. `years`
     // still falls back to `DEFAULT_FORM.years`, which survives.
     expect(screen.getByDisplayValue('My Saved Plan')).toBeInTheDocument()
-    // No savings rows and zeroed investments (story 100.1).
+    // No savings rows (story 100.1) and no investment rows (story 100.2).
     expect(screen.getByText('No savings accounts in this scenario')).toBeInTheDocument()
-    expect(screen.getByLabelText('Current Investments')).toHaveValue('0.00')
+    expect(screen.getByText('No investments or debts in this scenario')).toBeInTheDocument()
     expect(screen.getByDisplayValue('10')).toBeInTheDocument()
-    // The live stores did not leak in.
-    expect(screen.queryByDisplayValue('5000.00')).toBeNull()
-    expect(screen.queryByDisplayValue('10000.00')).toBeNull()
+    // The live stores did not leak in (they would seed a `Savings` row of 5000
+    // and an `Investments` row of 10000).
+    expect(screen.queryByLabelText('Balance for Savings')).toBeNull()
+    expect(screen.queryByLabelText('Balance for Investments')).toBeNull()
   })
 })
 
@@ -329,21 +326,30 @@ describe('ScenarioBuilder money inputs reject non-numeric characters (story 28-1
     }
   })
 
-  it('strips letters and symbols from Current Investments', () => {
+  /**
+   * Story 100.2 replaced Current Investments (the last field with a `sanitize`
+   * filter) with investment/debt rows. The two cases that pinned its filter
+   * ("strips letters and symbols", "persists the sanitized value") are replaced
+   * by the same pin as the savings rows: the money fields are number inputs, so
+   * the browser is the filter, and what is displayed is what is saved.
+   */
+  it('makes the investment/debt row money fields number inputs, the filter they rely on', () => {
     render(<ScenarioBuilder onSave={vi.fn()} />)
 
-    const investmentsInput = screen.getByDisplayValue('10000.00')
-    fireEvent.change(investmentsInput, { target: { value: 'about 25000 usd' } })
-
-    expect(investmentsInput).toHaveValue('25000')
+    for (const label of ['Balance for Investments', 'Contribution for Investments']) {
+      const input = screen.getByLabelText(label)
+      expect(input).toHaveAttribute('type', 'number')
+      expect(input).toHaveAttribute('min', '0')
+    }
   })
 
-  it('persists the sanitized value, so display and stored cents agree', async () => {
+  it('persists what the investment row displays, so display and stored cents agree', async () => {
     const onSave = vi.fn().mockResolvedValue({ success: true })
     render(<ScenarioBuilder onSave={onSave} />)
 
-    // Current Investments since story 100.1 (savings are rows, see above).
-    fireEvent.change(screen.getByDisplayValue('10000.00'), { target: { value: '12,345.67abc' } })
+    const field = screen.getByLabelText('Balance for Investments')
+    fireEvent.change(field, { target: { value: '12345.67' } })
+    expect(field).toHaveValue(12345.67)
     const saveButton = await screen.findByRole(
       'button',
       { name: /save forecast/i },
@@ -671,11 +677,20 @@ describe('One-time events can be an outflow (story forecast-1, AC-1/AC-3)', () =
     const isFrequency = (s: HTMLSelectElement) =>
       [...s.options].some((o) => /monthly/i.test(o.textContent ?? ''))
 
+    // Story 100.2 added a third kind: each investment/debt row's Type picker.
+    const isBalanceType = (s: HTMLSelectElement) =>
+      [...s.options].some((o) => o.textContent === 'Debt')
+
     expect(selects.filter(isDirection)).toHaveLength(1)
     // Positive control: there ARE other selects, so the line above is not the
     // whole population by accident.
     expect(selects.filter(isFrequency).length).toBeGreaterThan(0)
-    // The partition is total — no select is both, and none is neither.
-    expect(selects.every((s) => isDirection(s) !== isFrequency(s))).toBe(true)
+    expect(selects.filter(isBalanceType).length).toBeGreaterThan(0)
+    // The partition is total — every select is exactly one of the three kinds.
+    expect(
+      selects.every(
+        (s) => [isDirection(s), isFrequency(s), isBalanceType(s)].filter(Boolean).length === 1
+      )
+    ).toBe(true)
   })
 })

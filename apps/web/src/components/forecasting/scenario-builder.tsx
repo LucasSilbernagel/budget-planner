@@ -21,11 +21,10 @@ import {
   currencySymbol,
   isValidForecastYears,
   isValidGrowthRate,
-  parseFromInput,
-  sanitizeMoneyInput,
   solveAutomaticAllocations,
 } from '@budget-planner/core'
 import type { Frequency, NormalizableFinancialItem } from '@budget-planner/core/finance'
+import type { ClientBalanceTracking } from '@budget-planner/core/services/balanceTracking'
 import type { ClientSavingsGoal } from '@budget-planner/core/services/savingsGoals'
 import { Link } from '@tanstack/react-router'
 import React, {
@@ -43,7 +42,7 @@ import { isKnownFrequency } from '../../lib/readable-rows'
 import { sanitizeWithCaret } from '../../lib/sanitized-input'
 import { investmentContributionItems } from '../../lib/savings/investment-contribution-items'
 import type { SavedForecast, ScenarioInputs } from '../../routes/forecasting'
-import { useInvestmentEntries, useTotalInvestmentBalance } from '../../stores/balanceStore'
+import { useBalanceEntries, useInvestmentEntries } from '../../stores/balanceStore'
 import { useCurrencyPreferences, useFormattedAmount } from '../../stores/currencyStore'
 import { useExpenses } from '../../stores/expenseStore'
 import { useIncomeSources } from '../../stores/incomeStore'
@@ -87,6 +86,23 @@ export interface LocalSavingsAccount {
   name: string
   balance: number
   monthlyContribution: number
+}
+
+/**
+ * One investment or debt as a what-if row (story 100.2, FR165). Money in cents;
+ * `balance` is a positive MAGNITUDE for both types. `contribution` is the amount at
+ * `frequency` cadence, as `/balance` shows it (the engine normalises it). Never
+ * written back to the balance store (D0).
+ */
+export interface LocalBalanceAccount {
+  id: string
+  name: string
+  type: 'investment' | 'debt'
+  balance: number
+  contribution: number
+  frequency: Frequency
+  /** Investment rows only; always `false` on a debt row. */
+  contributionRecordedAsExpense: boolean
 }
 
 /**
@@ -260,6 +276,21 @@ const FIELDS_INVALID_SHORT = 'Fix the highlighted fields to save'
  */
 export const SAVINGS_WHAT_IF_NOTE = "What-if only: changes here don't change your Savings page."
 export const NO_SAVINGS_ACCOUNTS = 'No savings accounts in this scenario'
+
+/**
+ * Copy for the Investments & Debts section (story 100.2, AC-11). Lucas may tweak
+ * it; a copy test pins it. The last two sentences say why the starting net worth
+ * is not the Overview's: debts now count, assets do not (D1).
+ */
+export const BALANCE_WHAT_IF_NOTE =
+  "What-if only: changes here don't change your Balance Tracking page. Debts count against your starting net worth. Things you own outright (assets) aren't included."
+export const NO_BALANCE_ACCOUNTS = 'No investments or debts in this scenario'
+/** The same label `/balance` gives the flag (story 45.1). */
+const NOT_FROM_LEFT_OVER_LABEL = 'Not taken from the money left over'
+const BALANCE_TYPE_OPTIONS = [
+  { value: 'investment' as const, label: 'Investment' },
+  { value: 'debt' as const, label: 'Debt' },
+]
 
 /** `1 year` / `N years`, for the per-row outcome lines. */
 function yearsLabel(years: number): string {
@@ -453,6 +484,104 @@ function savingsFromSaved(inputs: ScenarioInputs | undefined): LocalSavingsAccou
   return []
 }
 
+/** A balance row's type, or `null` for anything else (assets, corrupt values). */
+function balanceRowType(type: unknown): LocalBalanceAccount['type'] | null {
+  return type === 'investment' || type === 'debt' ? type : null
+}
+
+/**
+ * Build what-if investment/debt rows from the active profile's balance entries,
+ * for a FRESH scenario (story 100.2, AC-6). Assets are not rows (D1).
+ *
+ * - `contribution` is the entry's RAW `monthlyContribution` at its own
+ *   `frequency`, so the row shows what `/balance` shows; the engine normalises it.
+ * - Balance sign (D6): a debt seeds `|balance|`, because a debt can be stored
+ *   negative (the screenshot seed's mortgage, sync-applied rows) while the row
+ *   holds a positive magnitude. A negative or non-finite investment seeds 0, as a
+ *   savings row does.
+ * - The flag is kept for an investment only (`/balance` enforces the same).
+ *
+ * ⚠️ Fields mapped explicitly, as in `itemsFromStore`: a spread would carry
+ * `profileId` and friends into the saved JSON.
+ */
+function balanceFromStore(entries: readonly ClientBalanceTracking[]): LocalBalanceAccount[] {
+  const rows: LocalBalanceAccount[] = []
+  for (const entry of entries) {
+    const type = balanceRowType(entry.type)
+    if (type === null) continue
+    const raw = entry.currentBalance
+    rows.push({
+      id: `balance-seeded-${rows.length}`,
+      name: typeof entry.name === 'string' ? entry.name : '',
+      type,
+      balance:
+        type === 'debt'
+          ? typeof raw === 'number' && Number.isFinite(raw)
+            ? Math.abs(raw)
+            : 0
+          : nonNegativeCents(raw),
+      contribution: nonNegativeCents(entry.monthlyContribution),
+      frequency: isKnownFrequency(entry.frequency) ? entry.frequency : 'monthly',
+      contributionRecordedAsExpense:
+        type === 'investment' && entry.contributionRecordedAsExpense === true,
+    })
+  }
+  return rows
+}
+
+/**
+ * Rebuild what-if investment/debt rows from a saved forecast's inputs (story
+ * 100.2, AC-13).
+ *
+ * A v3 forecast carries its rows. A v1/v2 forecast carries only the
+ * `investments` total, which reloads as ONE `Investments` row with no
+ * contribution (or no row at all when it is 0), so it projects exactly as before.
+ * A negative v1/v2 total is kept, not clamped: the row's field flags it from the
+ * start (`useMoneyDraft`), as 100.1 decided for savings.
+ *
+ * Defensive on its own (100.1 review): a caller that skips `mapToSavedForecast`
+ * cannot crash it with a non-array or a `null` entry. An entry that is neither an
+ * investment nor a debt is dropped (its sign is unknowable).
+ */
+function balanceFromSaved(inputs: ScenarioInputs | undefined): LocalBalanceAccount[] {
+  const saved: unknown = inputs?.balanceAccounts
+  if (Array.isArray(saved)) {
+    const rows: LocalBalanceAccount[] = []
+    for (const entry of saved as unknown[]) {
+      const account =
+        typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : {}
+      const type = balanceRowType(account['type'])
+      if (type === null) continue
+      const frequency = account['frequency']
+      rows.push({
+        id: `balance-loaded-${rows.length}`,
+        name: typeof account['name'] === 'string' ? account['name'] : '',
+        type,
+        balance: nonNegativeCents(account['balance']),
+        contribution: nonNegativeCents(account['contribution']),
+        frequency: isKnownFrequency(frequency) ? frequency : 'monthly',
+        contributionRecordedAsExpense:
+          type === 'investment' && account['contributionRecordedAsExpense'] === true,
+      })
+    }
+    return rows
+  }
+  if (inputs && Number.isFinite(inputs.investments) && inputs.investments !== 0) {
+    return [
+      {
+        id: 'balance-loaded-0',
+        name: 'Investments',
+        type: 'investment',
+        balance: inputs.investments,
+        contribution: 0,
+        frequency: 'monthly',
+        contributionRecordedAsExpense: false,
+      },
+    ]
+  }
+  return []
+}
+
 /**
  * Rebuild local one-time events from a saved scenario. The persisted events may
  * carry a `name` (the builder writes one) even though `ForecastingScenario` types
@@ -493,11 +622,9 @@ export function ScenarioBuilder({
 }: ScenarioBuilderProps): React.ReactElement {
   // Display amounts respect the user's currency mode (currency-less vs symbols).
   const formatCurrency = useFormattedAmount()
-  // Locale for parsing grouped/symbol input back to exact cents. parseFloat on a
-  // formatted string is lossy (`parseFloat('5,000.00') === 5`); the core
-  // parseFromInput helper strips grouping/symbols and canonicalizes the locale
-  // (story 14-3), so both money fields round-trip correctly.
-  const { locale } = useCurrencyPreferences()
+  // (Story 100.2 removed the last `parseFromInput` money field, Current
+  // Investments, and with it the builder's read of the currency locale. Every
+  // money field is now a `type="number"` row field, parsed by `useMoneyDraft`.)
   // State for financial items. When a saved forecast is loaded, seed every field
   // from it (the parent remounts this component via `key` on load, so these lazy
   // initializers run once per load); a fresh builder falls back to the defaults.
@@ -570,8 +697,9 @@ export function ScenarioBuilder({
   // position.
   //
   // A fresh builder therefore seeds from the savings ROWS (story 100.1, which
-  // replaced the single `useTotalSavings()` figure) and from
-  // `useTotalInvestmentBalance()` in the hydration effect below. Empty / `0` here
+  // replaced the single `useTotalSavings()` figure) and from the investment/debt
+  // ROWS (story 100.2, which replaced `useTotalInvestmentBalance()`) in the
+  // hydration effect below. Empty / `0` here
   // is the pre-seed value, and it is also the final value for a LOADED forecast
   // whose saved row predates persisted `inputs` — reading the live stores in that
   // case would silently re-baseline a forecast saved months ago, which is exactly
@@ -586,8 +714,18 @@ export function ScenarioBuilder({
     () => savingsAccounts.reduce((sum, account) => sum + account.balance, 0),
     [savingsAccounts]
   )
-  const [investments, setInvestments] = useState<number>(
-    () => initialForecast?.inputs?.investments ?? 0
+  const [balanceAccounts, setBalanceAccounts] = useState<LocalBalanceAccount[]>(() =>
+    initialForecast ? balanceFromSaved(initialForecast.inputs) : []
+  )
+  // The starting investments are the investment rows' sum (story 100.2, AC-2),
+  // derived like `savings`; the engine refuses a mismatch (`BALANCE_ROWS_MISMATCH`).
+  const investments = useMemo(
+    () =>
+      balanceAccounts.reduce(
+        (sum, account) => (account.type === 'investment' ? sum + account.balance : sum),
+        0
+      ),
+    [balanceAccounts]
   )
   const [oneTimeEvents, setOneTimeEvents] = useState<OneTimeEvent[]>(() =>
     initialForecast ? eventsFromSaved(initialForecast.scenario.oneTimeEvents) : []
@@ -623,7 +761,13 @@ export function ScenarioBuilder({
   const storeIncome = useIncomeSources()
   const storeExpenses = useExpenses()
   const storeSavingsGoals = useSavingsGoals()
-  const storeInvestments = useTotalInvestmentBalance()
+  // Profile-scoped (`balanceStore.ts` selector docblock); never `state.entries`.
+  const storeBalanceEntries = useBalanceEntries()
+  // The in-scope rows (story 100.2, D1): investments and debts, not assets.
+  const storeBalanceRowCount = useMemo(
+    () => storeBalanceEntries.filter((entry) => balanceRowType(entry.type) !== null).length,
+    [storeBalanceEntries]
+  )
   // The solver inputs /savings uses, built by the SAME mapping (story 100.1, AC-3).
   const storeInvestmentEntries = useInvestmentEntries()
   const storeContributionItems = useMemo(
@@ -648,7 +792,9 @@ export function ScenarioBuilder({
     // ROWS, not the total (story 100.1): a goal with a 0 balance is still a row
     // to seed.
     storeSavingsGoals.length === 0 &&
-    storeInvestments === 0
+    // ROWS again (story 100.2), not the investment total: a debt-only user, or an
+    // investment at 0, is still something to seed.
+    storeBalanceRowCount === 0
   const isInitialSyncPending = useIsInitialSyncPending(nothingToSeed)
   const readyToSeed = storesHydrated && !isInitialSyncPending
 
@@ -659,18 +805,17 @@ export function ScenarioBuilder({
   // survive it: a typed money value is neither replaced nor remounted (which
   // would drop focus mid-edit), and income/expense rows they added, edited or
   // deleted are not swapped for the store's. Set by the user-facing handlers
-  // only, never by the seed. (Money typed BEFORE hydration is not adopted at all,
-  // see `adoptPreHydrationValue`, so it never reaches these.)
-  const investmentsTouched = useRef(false)
+  // only, never by the seed. (Story 100.2 removed the last money `InputField`,
+  // Current Investments: every money field is now a keyed row, so there is no
+  // money typed BEFORE hydration to adopt or refuse.)
   const incomeRowsTouched = useRef(false)
   const expenseRowsTouched = useRef(false)
   // Savings rows (story 100.1): any row edit, add or remove marks the list, so the
   // seed leaves it alone, exactly as for income/expense rows (D8). Rows are keyed
   // by id, so the seed remounts them and they need no seed key.
   const savingsRowsTouched = useRef(false)
-  // Bumped only when the seed actually writes a money field, so the field
-  // remounts to show it. A touched field keeps its key: same node, same focus.
-  const [investmentsSeedKey, setInvestmentsSeedKey] = useState(0)
+  // Investment/debt rows (story 100.2): the same rule, through `editBalanceAccounts`.
+  const balanceRowsTouched = useRef(false)
 
   useEffect(() => {
     if (hasSeeded || !readyToSeed) return
@@ -692,15 +837,10 @@ export function ScenarioBuilder({
       }
       setSavingsAccounts(savingsFromStore(storeSavingsGoals, allocations))
     }
-    // ⚠️ The investment total is a raw `reduce(sum + currentBalance)` over
-    // persisted rows (`balanceStore.ts:373`) with NO finiteness guard, so one
-    // corrupt row makes the whole total NaN (code review 62.1). An unguarded NaN
-    // reaches the money field AND the saved forecast's `inputs`. (Savings rows
-    // coerce each balance in `savingsFromStore`.)
-    if (!investmentsTouched.current) {
-      setInvestments(Number.isFinite(storeInvestments) ? storeInvestments : 0)
-      setInvestmentsSeedKey((k) => k + 1)
-    }
+    // Investment/debt rows (story 100.2). Each balance is coerced per row in
+    // `balanceFromStore` (a corrupt one seeds 0), which also closes the 62.1
+    // review hazard of one non-finite row turning the old single total into NaN.
+    if (!balanceRowsTouched.current) setBalanceAccounts(balanceFromStore(storeBalanceEntries))
     setHasSeeded(true)
   }, [
     hasSeeded,
@@ -709,7 +849,7 @@ export function ScenarioBuilder({
     storeExpenses,
     storeSavingsGoals,
     storeContributionItems,
-    storeInvestments,
+    storeBalanceEntries,
   ])
 
   // State for results — seed from the loaded forecast so its summary shows
@@ -731,6 +871,17 @@ export function ScenarioBuilder({
     if (!initialForecast) return []
     const rows = savingsFromSaved(initialForecast.inputs)
     const saved = initialForecast.result?.projection?.at(-1)?.savingsAccounts
+    return Array.isArray(saved) && saved.length === rows.length ? rows.map((row) => row.id) : []
+  })
+  /**
+   * The investment/debt row ids the current `result` was computed for (story
+   * 100.2), mapped back by id for the same reason as `resultSavingsRowIds`, and
+   * seeded the same way from a loaded forecast whose saved result covers its rows.
+   */
+  const [resultBalanceRowIds, setResultBalanceRowIds] = useState<readonly string[]>(() => {
+    if (!initialForecast) return []
+    const rows = balanceFromSaved(initialForecast.inputs)
+    const saved = initialForecast.result?.projection?.at(-1)?.balanceAccounts
     return Array.isArray(saved) && saved.length === rows.length ? rows.map((row) => row.id) : []
   })
   const [isCalculating, setIsCalculating] = useState(false)
@@ -758,6 +909,7 @@ export function ScenarioBuilder({
   const [saveOutcome, setSaveOutcome] = useState<string | null>(null)
   const saveOutcomeRef = useRef<HTMLDivElement>(null)
   const savingsHeadingId = useId()
+  const balanceHeadingId = useId()
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   /**
@@ -856,7 +1008,7 @@ export function ScenarioBuilder({
     expenseItems,
     formData,
     savingsAccounts,
-    investments,
+    balanceAccounts,
     oneTimeEvents,
     invalidAmountRows,
   ])
@@ -918,11 +1070,25 @@ export function ScenarioBuilder({
           balance,
           monthlyContribution,
         })),
+        // Story 100.2: investment and debt rows. `investments` above is the
+        // investment rows' sum by construction. Unlike the savings rows these DO
+        // move totals: contributions move money from savings into investments,
+        // debts lower net worth and fall by their payment.
+        balanceAccounts: balanceAccounts.map(
+          ({ type, balance, contribution, frequency, contributionRecordedAsExpense }) => ({
+            type,
+            balance,
+            contribution,
+            frequency,
+            contributionRecordedAsExpense,
+          })
+        ),
       }
 
       const newResult = calculateFinancialForecast(currentData, scenario, formData.years)
       setResult(newResult)
       setResultSavingsRowIds(savingsAccounts.map((account) => account.id))
+      setResultBalanceRowIds(balanceAccounts.map((account) => account.id))
       // Lift the fresh result to the page so the Projections tab reflects THIS
       // scenario instead of sample data (story bug-3). Keep the last good result
       // on error rather than blanking the chart. Read via ref so this callback's
@@ -940,6 +1106,7 @@ export function ScenarioBuilder({
     savings,
     savingsAccounts,
     investments,
+    balanceAccounts,
     oneTimeEvents,
     invalidAmountRows,
   ])
@@ -966,20 +1133,6 @@ export function ScenarioBuilder({
       if (isValidForecastYears(years)) setLastValidYears(years)
     },
     [handleFormChange]
-  )
-
-  /**
-   * Handle investments change. The InputField's parseValue already converts the
-   * typed string to cents via parseFromInput, so store it directly — the old
-   * `Math.round(parseFloat(value) * 100)` re-scaled an already-cents value by
-   * another ×100 (a typed 5000 became $500,000).
-   */
-  const handleInvestmentsChange = useCallback(
-    (value: string | number) => {
-      investmentsTouched.current = true
-      setInvestments(typeof value === 'number' ? value : parseFromInput(value, locale))
-    },
-    [locale]
   )
 
   /**
@@ -1106,6 +1259,57 @@ export function ScenarioBuilder({
     [editSavingsAccounts]
   )
 
+  // Investment/debt rows (story 100.2): the same single setter, so every edit,
+  // add and remove marks the list touched. None touches the balance store (D0).
+  const editBalanceAccounts: React.Dispatch<React.SetStateAction<LocalBalanceAccount[]>> =
+    useCallback((update) => {
+      balanceRowsTouched.current = true
+      setBalanceAccounts(update)
+    }, [])
+
+  const addBalanceAccount = useCallback(() => {
+    editBalanceAccounts((prev) => [
+      ...prev,
+      {
+        id: generateId('balance'),
+        name: 'New Investment',
+        type: 'investment',
+        balance: 0,
+        contribution: 0,
+        frequency: 'monthly',
+        contributionRecordedAsExpense: false,
+      },
+    ])
+  }, [editBalanceAccounts])
+
+  const updateBalanceAccount = useCallback(
+    <K extends Exclude<keyof LocalBalanceAccount, 'id'>>(
+      id: string,
+      field: K,
+      value: LocalBalanceAccount[K]
+    ) => {
+      editBalanceAccounts((prev) =>
+        prev.map((account) => {
+          if (account.id !== id) return account
+          const next = { ...account, [field]: value }
+          // A debt has no "not taken from the money left over" flag: switching
+          // to Debt clears it, as `/balance` does (AC-8).
+          if (next.type === 'debt') next.contributionRecordedAsExpense = false
+          return next
+        })
+      )
+    },
+    [editBalanceAccounts]
+  )
+
+  // No "at least one item" rule: a scenario with no investments or debts is fine.
+  const deleteBalanceAccount = useCallback(
+    (id: string) => {
+      editBalanceAccounts((prev) => prev.filter((account) => account.id !== id))
+    },
+    [editBalanceAccounts]
+  )
+
   /**
    * Add one-time event
    */
@@ -1201,7 +1405,8 @@ export function ScenarioBuilder({
         // forecast can be reopened faithfully (story bug-3).
         // `savings` stays alongside the rows (story 100.1, D4): an older cached
         // client that reads only `inputs.savings` still reopens the forecast at
-        // the right starting figure.
+        // the right starting figure. `investments` likewise stays beside the
+        // investment/debt rows (story 100.2), as the investment rows' sum.
         inputs: {
           savings,
           investments,
@@ -1211,6 +1416,16 @@ export function ScenarioBuilder({
             balance,
             monthlyContribution,
           })),
+          balanceAccounts: balanceAccounts.map(
+            ({ name, type, balance, contribution, frequency, contributionRecordedAsExpense }) => ({
+              name,
+              type,
+              balance,
+              contribution,
+              frequency,
+              contributionRecordedAsExpense,
+            })
+          ),
         },
       })
       // Failures land in `saveOutcome`, beside the button. Successes are reported
@@ -1246,6 +1461,7 @@ export function ScenarioBuilder({
     savings,
     savingsAccounts,
     investments,
+    balanceAccounts,
     onSave,
   ])
 
@@ -1275,8 +1491,16 @@ export function ScenarioBuilder({
       currentIds.every((id, index) => id === resultSavingsRowIds.at(index))
     // Contributions are what the amber line blames, so it needs some (code
     // review 100.1): a negative remainder with nothing contributed is a deficit
-    // in the income itself, not over-contribution.
-    const contributing = savingsAccounts.some((account) => account.monthlyContribution > 0)
+    // in the income itself, not over-contribution. Since story 100.2 a COUNTED
+    // investment contribution reduces the left-over too, so it counts here.
+    const contributing =
+      savingsAccounts.some((account) => account.monthlyContribution > 0) ||
+      balanceAccounts.some(
+        (account) =>
+          account.type === 'investment' &&
+          !account.contributionRecordedAsExpense &&
+          account.contribution > 0
+      )
     return {
       years: result.projection.length,
       byRowId,
@@ -1284,7 +1508,23 @@ export function ScenarioBuilder({
       coversRows,
       contributing,
     }
-  }, [result, resultSavingsRowIds, savingsAccounts])
+  }, [result, resultSavingsRowIds, savingsAccounts, balanceAccounts])
+
+  /**
+   * Per-row outcome lines for the investment/debt rows (story 100.2, D9): each
+   * row's closing balance in the last projection year, keyed by row id.
+   */
+  const balanceOutcome = useMemo(() => {
+    if (!result) return null
+    const closing = result.projection.at(-1)?.balanceAccounts
+    if (!closing) return null
+    const byRowId = new Map<string, number>()
+    resultBalanceRowIds.forEach((id, index) => {
+      const balance = closing[index]
+      if (balance !== undefined) byRowId.set(id, balance)
+    })
+    return { years: result.projection.length, byRowId }
+  }, [result, resultBalanceRowIds])
 
   // Calculate summary statistics
   const summary = useMemo(() => {
@@ -1450,41 +1690,10 @@ export function ScenarioBuilder({
             parseValue={(v) => parseFloat(v) / 100}
             error={expenseGrowthValid ? undefined : GROWTH_INVALID_MESSAGE}
           />
-
-          {/* Current Investments */}
-          {/* ⚠️ `key` REMOUNTS this field when the story-62.1 seed lands, and it
-              is load-bearing, not cosmetic. `InputField` snapshots its display
-              string in a LAZY `useState` initializer and never resyncs when the
-              `value` prop changes (deliberately — there is no blur
-              re-formatter, so resyncing would fight the user mid-type). Without
-              the remount the seeded total reaches `investments` state and the
-              SAVED scenario, while the input on screen still reads the pre-seed
-              `0.00` — correct data, wrong thing displayed, and no test of the
-              state alone would see it.
-              The key changes ONLY when the seed actually writes this field
-              (`investmentsSeedKey`). If the user typed here first (the seed can
-              land seconds after hydration), `investmentsTouched` skips the write
-              AND the remount, so the field keeps its node, focus and text.
-              Money typed BEFORE hydration is deliberately NOT adopted
-              (`adoptPreHydrationValue={false}`): the hydration render parses
-              with the default locale, so a de-DE `1234,56` would be saved 100x.
-              The seed overwrites it instead (decided 2026-10-05).
-              `autoComplete="off"` keeps browsers from restoring a stale figure
-              into it. The row lists need no key: their `key` is the item id, so
-              seeding remounts them anyway (story 100.1 moved savings to rows). */}
-          <InputField
-            key={`investments-${investmentsSeedKey}`}
-            label="Current Investments"
-            value={investments}
-            onChange={handleInvestmentsChange}
-            type="text"
-            inputMode="decimal"
-            formatValue={(v) => formatCurrency(Number(v))}
-            parseValue={(v) => parseFromInput(v, locale)}
-            sanitize={(v) => sanitizeMoneyInput(v, locale)}
-            adoptPreHydrationValue={false}
-            autoComplete="off"
-          />
+          {/* Story 100.2 replaced Current Investments (the last money
+              `InputField`, with its seed-key remount and pre-hydration refusal)
+              with the Investments & Debts rows below. Rows are keyed by id, so the
+              seed remounts them, and no money field is server-rendered any more. */}
         </div>
       </section>
 
@@ -1554,6 +1763,59 @@ export function ScenarioBuilder({
               <GroupedAmount text={formatCurrency(savingsOutcome.unallocated)} />
             </p>
           ))}
+      </section>
+
+      {/* Investments & Debts (story 100.2, FR165) */}
+      <section
+        className="surface-inset rounded-xl p-6 space-y-4"
+        aria-labelledby={balanceHeadingId}
+      >
+        {/* The note sits below the heading row, at full width (100.1's 320px lesson). */}
+        <div className="flex items-center justify-between">
+          <h3 id={balanceHeadingId} className="text-lg font-semibold text-subheading">
+            Investments &amp; Debts
+          </h3>
+          <button
+            type="button"
+            onClick={addBalanceAccount}
+            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            + Add Balance
+          </button>
+        </div>
+        <p className="text-muted text-sm">{BALANCE_WHAT_IF_NOTE}</p>
+
+        {balanceAccounts.length === 0 ? (
+          <p className="text-muted text-sm">{NO_BALANCE_ACCOUNTS}</p>
+        ) : (
+          <div className="space-y-4">
+            {balanceAccounts.map((account, index) => {
+              const closing = balanceOutcome?.byRowId.get(account.id)
+              return (
+                <BalanceAccountRow
+                  key={account.id}
+                  account={account}
+                  position={index + 1}
+                  onUpdate={updateBalanceAccount}
+                  onDelete={deleteBalanceAccount}
+                  onValidityChange={setAmountRowValidity}
+                  outcome={
+                    balanceOutcome && closing !== undefined
+                      ? // A debt that STARTS at 0 was never owed, so it is not
+                        // "paid off" (code review 100.2): it reads After N years: 0.
+                        account.type === 'debt' && closing === 0 && account.balance > 0
+                        ? { label: `Paid off within ${yearsLabel(balanceOutcome.years)}` }
+                        : {
+                            label: `After ${yearsLabel(balanceOutcome.years)}:`,
+                            amount: formatCurrency(closing),
+                          }
+                      : null
+                  }
+                />
+              )
+            })}
+          </div>
+        )}
       </section>
 
       {/* Income Items */}
@@ -1744,7 +2006,9 @@ interface InputFieldProps {
    *
    * Opt-in per call site rather than inferred from `inputMode`/`type`, because
    * this component is shared by money and non-money fields alike — a scenario
-   * name must keep accepting letters. Only the two money fields pass it.
+   * name must keep accepting letters. Only the two money fields passed it; since
+   * story 100.2 neither exists (savings and investments are rows), so no call
+   * site passes it today. Kept, not deleted, for the next text money field.
    */
   sanitize?: (raw: string) => string
   /**
@@ -1756,7 +2020,9 @@ interface InputFieldProps {
   error?: string
   /**
    * Adopt text typed into the server-rendered input before hydration (default
-   * true). The money fields opt out: see the comment at their call site.
+   * true). A money field must opt out (the hydration render parses with the
+   * default locale, so a de-DE `1234,56` would be saved 100x; decided 2026-10-05).
+   * No money `InputField` exists since story 100.2.
    */
   adoptPreHydrationValue?: boolean
   autoComplete?: 'off'
@@ -2384,7 +2650,8 @@ interface SavingsAccountRowProps {
 }
 
 /**
- * One money field of a savings row: a DRAFT string, validated on every change
+ * One money field of a what-if row (savings rows, story 100.1; investment/debt
+ * rows, story 100.2): a DRAFT string, validated on every change
  * with the 81.1 rules, and written as cents only when usable — the same contract
  * as `FinancialItemRow`'s amount (see its docblock for why the draft exists).
  *
@@ -2434,41 +2701,23 @@ function useMoneyDraft(
   return { draft, error, onChange }
 }
 
-function SavingsAccountRow({
-  account,
-  position,
-  onUpdate,
-  onDelete,
-  onValidityChange,
-  outcome,
-}: SavingsAccountRowProps): React.ReactElement {
+/**
+ * One money field of a what-if row (savings rows, story 100.1; balance rows,
+ * story 100.2), driven by `useMoneyDraft`. The visible label is the same on
+ * every row, so the accessible name adds the row (`<label> for <row>`).
+ */
+function RowMoneyField({
+  label,
+  rowLabel,
+  field,
+}: {
+  label: string
+  rowLabel: string
+  field: ReturnType<typeof useMoneyDraft>
+}): React.ReactElement {
   const { mode, currency } = useCurrencyPreferences()
-  const nameId = useId()
-  const balanceId = useId()
-  const contributionId = useId()
-  const balance = useMoneyDraft(account.balance, `${account.id}:balance`, onValidityChange, (c) =>
-    onUpdate(account.id, 'balance', c)
-  )
-  const contribution = useMoneyDraft(
-    account.monthlyContribution,
-    `${account.id}:contribution`,
-    onValidityChange,
-    (c) => onUpdate(account.id, 'monthlyContribution', c)
-  )
-  // Every row has the same three visible labels, so each control's accessible
-  // name also carries the row's name, or a screen reader hears "Balance" N times.
-  const rowName = account.name.trim()
-  const rowLabel = rowName === '' ? 'account' : rowName
-
-  const moneyField = (
-    id: string,
-    label: string,
-    field: {
-      draft: string
-      error: string | null
-      onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
-    }
-  ) => (
+  const id = useId()
+  return (
     <div>
       <label htmlFor={id} className="block text-sm font-medium text-label mb-1">
         {label}
@@ -2503,6 +2752,30 @@ function SavingsAccountRow({
       )}
     </div>
   )
+}
+
+function SavingsAccountRow({
+  account,
+  position,
+  onUpdate,
+  onDelete,
+  onValidityChange,
+  outcome,
+}: SavingsAccountRowProps): React.ReactElement {
+  const nameId = useId()
+  const balance = useMoneyDraft(account.balance, `${account.id}:balance`, onValidityChange, (c) =>
+    onUpdate(account.id, 'balance', c)
+  )
+  const contribution = useMoneyDraft(
+    account.monthlyContribution,
+    `${account.id}:contribution`,
+    onValidityChange,
+    (c) => onUpdate(account.id, 'monthlyContribution', c)
+  )
+  // Every row has the same three visible labels, so each control's accessible
+  // name also carries the row's name, or a screen reader hears "Balance" N times.
+  const rowName = account.name.trim()
+  const rowLabel = rowName === '' ? 'account' : rowName
 
   return (
     <div className="surface rounded-lg p-4 shadow-sm border border-default">
@@ -2527,8 +2800,8 @@ function SavingsAccountRow({
           />
         </div>
 
-        {moneyField(balanceId, 'Balance', balance)}
-        {moneyField(contributionId, 'Monthly Contribution', contribution)}
+        <RowMoneyField label="Balance" rowLabel={rowLabel} field={balance} />
+        <RowMoneyField label="Monthly Contribution" rowLabel={rowLabel} field={contribution} />
 
         {/* Delete */}
         <div className="flex justify-end">
@@ -2548,6 +2821,179 @@ function SavingsAccountRow({
       {outcome && (
         <p className="mt-3 text-sm text-body">
           {outcome.label} <GroupedAmount text={outcome.amount} />
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Investment/debt Row Component (story 100.2, FR165)
+ */
+interface BalanceAccountRowProps {
+  account: LocalBalanceAccount
+  /** 1-based place in the list, so the name field is told apart even when two rows share a name. */
+  position: number
+  onUpdate: <K extends Exclude<keyof LocalBalanceAccount, 'id'>>(
+    id: string,
+    field: K,
+    value: LocalBalanceAccount[K]
+  ) => void
+  onDelete: (id: string) => void
+  /** Per money field, under `<rowId>:balance` / `<rowId>:contribution` (AC-9). */
+  onValidityChange: (key: string, valid: boolean) => void
+  /**
+   * `After N years: <amount>`, `Paid off within N years` (a debt at 0, no
+   * amount), or `null` while there is no result for this row.
+   */
+  outcome: { label: string; amount?: string } | null
+}
+
+function BalanceAccountRow({
+  account,
+  position,
+  onUpdate,
+  onDelete,
+  onValidityChange,
+  outcome,
+}: BalanceAccountRowProps): React.ReactElement {
+  const nameId = useId()
+  const typeId = useId()
+  const frequencyId = useId()
+  const flagId = useId()
+  const balance = useMoneyDraft(account.balance, `${account.id}:balance`, onValidityChange, (c) =>
+    onUpdate(account.id, 'balance', c)
+  )
+  const contribution = useMoneyDraft(
+    account.contribution,
+    `${account.id}:contribution`,
+    onValidityChange,
+    (c) => onUpdate(account.id, 'contribution', c)
+  )
+  // Each control's accessible name carries the row, as on the savings rows.
+  const rowName = account.name.trim()
+  const rowLabel = rowName === '' ? 'unnamed balance' : rowName
+  const selectClass =
+    'w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm'
+
+  return (
+    <div className="surface rounded-lg p-4 shadow-sm border border-default">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+        {/* Name */}
+        <div className="min-w-0">
+          <label htmlFor={nameId} className="block text-sm font-medium text-label mb-1">
+            Name
+          </label>
+          <input
+            id={nameId}
+            type="text"
+            value={account.name}
+            onChange={(e) => onUpdate(account.id, 'name', e.target.value)}
+            // By position, not by name: this field IS the name (100.1 review).
+            aria-label={`Balance Name, row ${position}`}
+            autoComplete="off"
+            className={selectClass}
+            placeholder="Investment or debt"
+          />
+        </div>
+
+        {/* Type */}
+        <div>
+          <label htmlFor={typeId} className="block text-sm font-medium text-label mb-1">
+            Type
+          </label>
+          <select
+            id={typeId}
+            value={account.type}
+            onChange={(e) =>
+              onUpdate(account.id, 'type', e.target.value === 'debt' ? 'debt' : 'investment')
+            }
+            aria-label={`Type for ${rowLabel}`}
+            autoComplete="off"
+            className={selectClass}
+          >
+            {BALANCE_TYPE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <RowMoneyField label="Balance" rowLabel={rowLabel} field={balance} />
+        <RowMoneyField label="Contribution" rowLabel={rowLabel} field={contribution} />
+
+        {/* Frequency */}
+        <div>
+          <label htmlFor={frequencyId} className="block text-sm font-medium text-label mb-1">
+            Frequency
+          </label>
+          <select
+            id={frequencyId}
+            value={account.frequency}
+            onChange={(e) =>
+              onUpdate(
+                account.id,
+                'frequency',
+                isKnownFrequency(e.target.value) ? e.target.value : 'monthly'
+              )
+            }
+            aria-label={`Frequency for ${rowLabel}`}
+            autoComplete="off"
+            className={selectClass}
+          >
+            {FREQUENCY_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Delete */}
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => onDelete(account.id)}
+            // Unique per row (AC-8): `getByRole` names are full-string.
+            aria-label={rowName === '' ? 'Remove balance' : `Remove ${rowName}`}
+            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors"
+          >
+            Remove
+          </button>
+        </div>
+      </div>
+      {/* Investment rows only, as on `/balance` (story 45.1). Checked: the
+          contribution is already out of take-home pay or an Expenses line, so the
+          forecast does not take it from the money left over a second time. */}
+      {account.type === 'investment' && (
+        <div className="mt-3 flex items-start gap-2">
+          <input
+            id={flagId}
+            type="checkbox"
+            checked={account.contributionRecordedAsExpense}
+            onChange={(e) =>
+              onUpdate(account.id, 'contributionRecordedAsExpense', e.target.checked)
+            }
+            aria-label={`${NOT_FROM_LEFT_OVER_LABEL}, for ${rowLabel}`}
+            autoComplete="off"
+            className="mt-0.5 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600"
+          />
+          <label htmlFor={flagId} className="text-sm text-label">
+            {NOT_FROM_LEFT_OVER_LABEL}
+          </label>
+        </div>
+      )}
+      {/* Plain text, not a live region: it changes on every recompute. */}
+      {outcome && (
+        <p className="mt-3 text-sm text-body">
+          {outcome.label}
+          {outcome.amount !== undefined && (
+            <>
+              {' '}
+              <GroupedAmount text={outcome.amount} />
+            </>
+          )}
         </p>
       )}
     </div>

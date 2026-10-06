@@ -27,7 +27,7 @@
  * whose harness this borrows.
  */
 
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { act } from 'react'
 import { hydrateRoot } from 'react-dom/client'
 import { renderToString } from 'react-dom/server'
@@ -156,9 +156,10 @@ describe('a fresh scenario seeds from the user own finances (62.1)', () => {
     // DEFAULT_INVESTMENTS ($10,000).
     expect(screen.getByDisplayValue('Emergency fund')).toBeInTheDocument()
     expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue(3456)
-    expect(screen.getByDisplayValue('9876.00')).toBeInTheDocument()
-    expect(screen.queryByDisplayValue('5000.00')).toBeNull()
-    expect(screen.queryByDisplayValue('10000.00')).toBeNull()
+    // One investment ROW since story 100.2.
+    expect(screen.getByLabelText('Balance for Index fund')).toHaveValue(9876)
+    expect(screen.queryByDisplayValue('5000')).toBeNull()
+    expect(screen.queryByDisplayValue('10000')).toBeNull()
   })
 
   it('seeds income and expense rows with their real name, amount and frequency', () => {
@@ -238,7 +239,8 @@ describe('a fresh scenario seeds from the user own finances (62.1)', () => {
     expect(screen.getByDisplayValue('My Financial Forecast')).toBeInTheDocument()
     // The savings row is kept (story 100.1) with its balance coerced to 0.
     expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue(0)
-    expect(screen.getByLabelText('Current Investments')).toHaveValue('0.00')
+    // The investment row too (story 100.2), coerced per row.
+    expect(screen.getByLabelText('Balance for Index fund')).toHaveValue(0)
     expect(screen.queryByDisplayValue('NaN')).toBeNull()
   })
 
@@ -420,6 +422,25 @@ describe('the seed respects the active profile (62.1 AC-4)', () => {
         savingsGoal({ id: 'g-b', currentBalance: 900_000, profileId: PROFILE_B }),
       ],
     })
+    // Story 100.2: investment/debt rows are profile-scoped too.
+    useBalanceStore.setState({
+      entries: [
+        investmentEntry({ id: 'e-a', name: 'A fund', currentBalance: 200_000 }),
+        investmentEntry({
+          id: 'e-b',
+          name: 'B fund',
+          currentBalance: 800_000,
+          profileId: PROFILE_B,
+        }),
+        investmentEntry({
+          id: 'e-b2',
+          name: 'B loan',
+          type: 'debt',
+          currentBalance: 700_000,
+          profileId: PROFILE_B,
+        }),
+      ] as never,
+    })
 
     render(<ScenarioBuilder onSave={vi.fn()} />)
 
@@ -427,9 +448,17 @@ describe('the seed respects the active profile (62.1 AC-4)', () => {
     expect(screen.queryByDisplayValue('B Salary')).toBeNull()
     // One savings ROW from profile A alone (story 100.1), holding $1,000 — not
     // two rows, and not profile B's $9,000.
-    const balances = screen.getAllByLabelText(/^Balance for /)
+    const savingsSection = screen.getByRole('region', { name: 'Savings Accounts' })
+    const balances = within(savingsSection).getAllByLabelText(/^Balance for /)
     expect(balances).toHaveLength(1)
     expect(balances[0]).toHaveValue(1000)
+    // One investment ROW from profile A alone (story 100.2): not B's fund or loan.
+    const balanceSection = screen.getByRole('region', { name: 'Investments & Debts' })
+    const names = within(balanceSection)
+      .getAllByLabelText(/^Balance Name, row \d+$/)
+      .map((input) => (input as HTMLInputElement).value)
+    expect(names).toEqual(['A fund'])
+    expect(screen.getByLabelText('Balance for A fund')).toHaveValue(2000)
   })
 
   /**
@@ -467,11 +496,12 @@ describe('a user with nothing recorded gets an empty builder (62.1 AC-6)', () =>
     expect(screen.queryByDisplayValue('Rent/Mortgage')).toBeNull()
     expect(screen.queryByDisplayValue('Utilities')).toBeNull()
     expect(screen.queryByDisplayValue('Groceries')).toBeNull()
-    // Zero and no savings rows (story 100.1), not the retired demo constants.
-    expect(screen.getByLabelText('Current Investments')).toHaveValue('0.00')
+    // No savings rows (story 100.1) and no investment/debt rows (story 100.2),
+    // not the retired demo constants.
+    expect(screen.getByText('No investments or debts in this scenario')).toBeInTheDocument()
     expect(screen.getByText('No savings accounts in this scenario')).toBeInTheDocument()
-    expect(screen.queryByDisplayValue('5000.00')).toBeNull()
-    expect(screen.queryByDisplayValue('10000.00')).toBeNull()
+    expect(screen.queryByDisplayValue('5000')).toBeNull()
+    expect(screen.queryByDisplayValue('10000')).toBeNull()
   })
 
   it('still offers the add-row affordances', () => {
@@ -523,7 +553,8 @@ describe('a loaded forecast still seeds from the saved scenario (62.1 AC-7)', ()
     expect(screen.getByDisplayValue('Saved Expense')).toBeInTheDocument()
     // A v1 saved total reloads as one `Savings` row (story 100.1, AC-12).
     expect(screen.getByLabelText('Balance for Savings')).toHaveValue(3333)
-    expect(screen.getByDisplayValue('4444.00')).toBeInTheDocument()
+    // ... and a v1 investments total as one `Investments` row (story 100.2).
+    expect(screen.getByLabelText('Balance for Investments')).toHaveValue(4444)
     // Via the attribute, for the `type="number"` reason documented above.
     expect(screen.getByLabelText('Income Growth Rate').getAttribute('value')).toBe('5.00%')
 
@@ -531,7 +562,7 @@ describe('a loaded forecast still seeds from the saved scenario (62.1 AC-7)', ()
     expect(screen.queryByDisplayValue('Consulting')).toBeNull()
     expect(screen.queryByDisplayValue('Mortgage')).toBeNull()
     expect(screen.queryByDisplayValue('Emergency fund')).toBeNull()
-    expect(screen.queryByDisplayValue('9876.00')).toBeNull()
+    expect(screen.queryByDisplayValue('Index fund')).toBeNull()
   })
 
   it('falls back to zero, not to the live stores, for an older row with no saved inputs', () => {
@@ -541,13 +572,13 @@ describe('a loaded forecast still seeds from the saved scenario (62.1 AC-7)', ()
     render(<ScenarioBuilder onSave={vi.fn()} initialForecast={olderRow} />)
 
     expect(screen.getByDisplayValue('March Plan')).toBeInTheDocument()
-    // No savings rows and zeroed investments (story 100.1), and the surviving
-    // DEFAULT_FORM.years of 10.
+    // No savings rows (story 100.1), no investment rows (story 100.2), and the
+    // surviving DEFAULT_FORM.years of 10.
     expect(screen.getByText('No savings accounts in this scenario')).toBeInTheDocument()
-    expect(screen.getByLabelText('Current Investments')).toHaveValue('0.00')
+    expect(screen.getByText('No investments or debts in this scenario')).toBeInTheDocument()
     expect(screen.getByDisplayValue('10')).toBeInTheDocument()
     expect(screen.queryByDisplayValue('Emergency fund')).toBeNull()
-    expect(screen.queryByDisplayValue('9876.00')).toBeNull()
+    expect(screen.queryByDisplayValue('Index fund')).toBeNull()
   })
 })
 
@@ -602,9 +633,9 @@ describe('the seed survives the rehydration race (62.1 AC-9)', () => {
       clientHtml,
       'builder seeded empty and never recovered — the lazy-initializer failure mode'
     ).toContain('Consulting')
-    // The savings row (story 100.1) and the investments total.
+    // The savings row (story 100.1) and the investment row (story 100.2).
     expect(clientHtml).toContain('Emergency fund')
-    expect(clientHtml).toContain('9876.00')
+    expect(clientHtml).toContain('Index fund')
   })
 
   it('raises no recoverable hydration error (62.1 AC-10)', async () => {

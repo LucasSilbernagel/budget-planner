@@ -1,4 +1,5 @@
 # generated: 2026-06-18
+# last_updated: 2026-10-05h (epic 99 done; 100.2 review; 100.3 ready-for-dev D4-D9 confirmed; EPIC 101 added FR167-168, 2 stories backlog.)
 # last_updated: 2026-10-05g (100.2 created -> ready-for-dev; D4-D10 confirmed. 100.1 merged PR #41.)
 # last_updated: 2026-10-05f (100.1 -> done: code review applied aadb512, compare 27/27; branch pushed, no PR). Earlier: **EPIC 100 added** (FR164-166, 3 stories); 100.1 created -> ready-for-dev, epic-100 in-progress; D5-D8 decided.)
 # last_updated: 2026-10-05b (**BATCH 20 wave 1 created**: 95.1, 96.2, 96.3, 97.1, 97.2, 98.1, 99.1 -> ready-for-dev; epics 95-99 in-progress.)
@@ -1328,16 +1329,20 @@ development_status:
   epic-98: done  # Batch 20 (2026-10-04, baseline 39ad798): Profiles Look and Sort the Way I Expect. Source: Lucas app review 2026-10-04; D-lists DECIDED (epics.md).
   98-1-house-by-default-an-icon-picker-on-create-oldest-first: done
   epic-98-retrospective: optional
-  epic-99: in-progress  # Batch 20 (2026-10-04, baseline 39ad798): Signed-In State Shows Up Right Away and Follows Me. Source: Lucas app review 2026-10-04; D-lists DECIDED (epics.md).
+  epic-99: done  # all stories done 2026-10-05 (99.1 PR #42).   Batch 20 (2026-10-04, baseline 39ad798): Signed-In State Shows Up Right Away and Follows Me. Source: Lucas app review 2026-10-04; D-lists DECIDED (epics.md).
   99-1-premium-navigation-appears-on-first-sign-in-without-a-refresh: done  # dev 242a1d9 + review eba4714 (2026-10-05); decision: keep last definitive answer; ships with deferred-fixes branch
   99-2-retirement-inputs-sync-across-my-devices: done  # Part A (server/contract, dormant push); split 2026-10-05
   99-3-retirement-plan-edits-push-from-every-device: done  # Part B (client push); added 2026-10-05; depends on 99.2 merged
   epic-99-retrospective: optional
   epic-100: in-progress  # Added 2026-10-05 (baseline a3aa0bd): Forecasts Built From My Real Accounts. Source: Lucas request 2026-10-05 (what-if per-account savings/balance rows + contributions; investment return rate nice-to-have). D-lists DECIDED 2026-10-05 (epics.md; rate seed 6%).
   100-1-my-savings-accounts-are-rows-i-can-tweak-in-the-forecast: done  # CREATED 2026-10-05 at a3aa0bd; DEV + CODE REVIEW DONE 2026-10-05 (fable 3 layers: 1 decision + 6 patches applied aadb512, 4 deferred, 11 dismissed). MERGED PR #41 91c73dd + deployed 2026-10-05. Gates green (core 1241, web 4719, e2e 23); screenshots compare 27/27 (run 37389026776).
-  100-2-my-balances-are-rows-i-can-tweak-in-the-forecast: ready-for-dev  # CREATED 2026-10-05 at 91c73dd; D4-D10 CONFIRMED by Lucas 2026-10-05
-  100-3-each-investment-has-its-own-return-rate: backlog  # after 100.2
+  100-2-my-balances-are-rows-i-can-tweak-in-the-forecast: done  # DEV 070d1ea + REVIEW 4bf6078 + copy 2777570 (2026-10-05);  CREATED 2026-10-05 at 91c73dd; D4-D10 CONFIRMED by Lucas 2026-10-05
+  100-3-each-investment-has-its-own-return-rate: ready-for-dev  # CREATED 2026-10-05 against 100.2 branch ce30e3a; D4-D9 CONFIRMED; dev after 100.2 merges
   epic-100-retrospective: optional
+  epic-101: in-progress  # Added 2026-10-05 (approved) from sprint-change-proposal-2026-10-05-sw-stale-seed.md (99.1 follow-up, FR167-168)
+  101-1-a-slow-network-never-shows-me-a-page-from-another-session: ready-for-dev  # CREATED 2026-10-05 at 2ca9896; D1-D7 CONFIRMED
+  101-2-premium-gates-follow-my-verified-session-like-the-nav: ready-for-dev  # CREATED 2026-10-05 at 2ca9896; DS1-DS5 CONFIRMED; cuttable (Q5)
+  epic-101-retrospective: optional
 
 action_items:
   - epic: 6
