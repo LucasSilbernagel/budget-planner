@@ -261,10 +261,6 @@ describe('the seed (AC-6)', () => {
       entry({ id: 'e-1', name: 'Mortgage', type: 'debt', currentBalance: -98_765_432_100 }),
       entry({ id: 'e-2', name: 'Bad fund', currentBalance: -500 }),
       entry({ id: 'e-3', name: 'NaN debt', type: 'debt', currentBalance: Number.NaN }),
-      // ⚠️ A NON-FINITE stored contribution is not in this fixture: it throws
-      // upstream, in the store's `withTimeline` (reached through
-      // `useInvestmentEntries`, read since story 100.1), before the seed runs.
-      // MEASURED in this file's first run. Pre-existing; `deferred-work.md`.
       entry({ id: 'e-5', name: 'Neg contrib', type: 'debt', monthlyContribution: -100 }),
     ])
     render(<ScenarioBuilder onSave={vi.fn()} />)
@@ -273,6 +269,24 @@ describe('the seed (AC-6)', () => {
     expect(screen.getByLabelText('Balance for Bad fund')).toHaveValue(0)
     expect(screen.getByLabelText('Balance for NaN debt')).toHaveValue(0)
     expect(screen.getByLabelText('Contribution for Neg contrib')).toHaveValue(0)
+  })
+
+  it('survives a non-finite stored investment contribution and seeds it as 0', async () => {
+    // It used to throw in the store's `withTimeline` (reached through
+    // `useInvestmentEntries`) before the seed ran, taking the whole builder down.
+    setEntries([
+      entry({ id: 'e-1', name: 'NaN fund', monthlyContribution: Number.NaN }),
+      entry({ id: 'e-2', name: 'Null fund', monthlyContribution: null as unknown as number }),
+      entry({ id: 'e-4', name: 'Inf fund', monthlyContribution: Number.POSITIVE_INFINITY }),
+      entry({ id: 'e-3', name: 'Pension', currentBalance: 1_000_000, monthlyContribution: 5_000 }),
+    ])
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    expect(rowNames()).toEqual(['NaN fund', 'Null fund', 'Inf fund', 'Pension'])
+    expect(screen.getByLabelText('Contribution for NaN fund')).toHaveValue(0)
+    expect(screen.getByLabelText('Contribution for Null fund')).toHaveValue(0)
+    expect(screen.getByLabelText('Contribution for Inf fund')).toHaveValue(0)
+    expect(screen.getByLabelText('Contribution for Pension')).toHaveValue(50)
+    await waitForResult()
   })
 
   it('keeps the flag on an investment only', async () => {

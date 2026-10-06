@@ -341,6 +341,62 @@ describe('withTimeline - frequency normalization (Story 16-2)', () => {
   })
 })
 
+/**
+ * `withTimeline` — a corrupt stored contribution (NaN/Infinity, or null once JSON
+ * has carried it). The store maps `withTimeline` over every row during render, and
+ * only the debt branch reads the normalized figure, so every other row must skip
+ * the throwing normalizer (it crashed the Scenario Builder).
+ */
+describe('withTimeline - non-finite contribution', () => {
+  const rows = [
+    ['investment', undefined],
+    ['asset', undefined],
+    ['debt', undefined],
+  ] as const
+  const values = [
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['null', null],
+  ] as const
+
+  for (const [type] of rows) {
+    it.each(values)(`does not throw for a ${type} row with a %s contribution`, (_label, value) => {
+      const entry = {
+        id: 'test-uuid',
+        type,
+        name: 'Corrupt',
+        currentBalance: 100000,
+        monthlyContribution: value,
+        frequency: 'monthly',
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+      } as unknown as ClientBalanceTracking
+      const result = withTimeline(entry)
+      expect(result.debtTimeline).toBeNull()
+      expect(result.debtProgress).toBeNull()
+      expect(result.debtTimelineLabel).toBe('No payment set')
+      expect(result.debtProgressLabel).toBe('No limit')
+    })
+  }
+
+  // Unchanged on purpose (the spec's boundary): the dormant debt branch still
+  // normalizes, so it still throws. Nothing in apps/web sets `debtSubType`.
+  it('still throws for a debt with a debtSubType and a NaN contribution', () => {
+    const entry = {
+      id: 'test-uuid',
+      type: 'debt',
+      debtSubType: 'loan',
+      name: 'Corrupt loan',
+      currentBalance: -100000,
+      monthlyContribution: Number.NaN,
+      frequency: 'monthly',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+    } as unknown as ClientBalanceTracking
+    expect(() => withTimeline(entry)).toThrow('Amount must be a finite number')
+  })
+})
+
 describe('sortByCreationDate', () => {
   it('should sort entries by creation date (newest first)', () => {
     const entries: ClientBalanceTracking[] = [
