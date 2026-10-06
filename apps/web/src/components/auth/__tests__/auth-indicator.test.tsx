@@ -1084,6 +1084,10 @@ describe('AuthIndicator — account menu (story 59.3)', () => {
       expect.arrayContaining(['py-2', 'text-sm', 'max-sm:min-h-[44px]', 'max-sm:py-3'])
     )
     expect(signOutTokens).not.toContain('min-h-[44px]')
+    // Below 640px the panel is full width, so the label is centred there; the
+    // narrow >= 640px dropdown stays left-aligned (Lucas 2026-10-06).
+    expect(signOutTokens).toEqual(expect.arrayContaining(['max-sm:text-center', 'text-left']))
+    expect(signOutTokens).not.toContain('text-center')
   })
 })
 
