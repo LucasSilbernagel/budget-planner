@@ -200,7 +200,7 @@ describe('a saved forecast is compared against today (story 107.1)', () => {
   it("a reopened forecast's Projections never shows the stored baseline (AC-7)", async () => {
     renderWithRouter(<ForecastingPage />)
     fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Load Big plan' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Big plan' }))
     // Straight to Projections, inside the builder's 500 ms debounce: this is the
     // page's own lifted result, the one that used to carry the stored baseline.
     fireEvent.click(screen.getByRole('button', { name: /projections/i }))
@@ -239,7 +239,7 @@ describe('a saved forecast is compared against today (story 107.1)', () => {
     syncPending.value = true
     renderWithRouter(<ForecastingPage />)
     fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Load Big plan' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Big plan' }))
     fireEvent.click(screen.getByRole('button', { name: /projections/i }))
     expect(
       screen.getByText('Build a scenario in the Scenario Builder to see its projection here.')
