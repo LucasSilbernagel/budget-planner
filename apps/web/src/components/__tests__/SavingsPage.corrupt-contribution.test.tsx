@@ -11,7 +11,6 @@
 
 import { fireEvent, renderWithProviders, screen } from '@/test/utils'
 import { solveAutomaticAllocations } from '@budget-planner/core'
-import type * as BalanceTracking from '@budget-planner/core/services/balanceTracking'
 import { render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useBalanceStore } from '../../stores/balanceStore'
@@ -21,25 +20,6 @@ import { useProfileStore } from '../../stores/profileStore'
 import { useSavingsStore } from '../../stores/savingsStore'
 import { SavingsPage } from '../SavingsPage'
 import { ScenarioBuilder } from '../forecasting/scenario-builder'
-
-// ⚠️ REMOVABLE once `fix/builder-nan-contribution-crash` merges. On this base the
-// store's `withTimeline` normalizes EVERY row's contribution and throws first,
-// in `useInvestmentEntries`, before any /savings memo runs. The sibling branch
-// normalizes only debt rows; this stub reproduces that so the cases below test
-// the /savings memos, not the store. Debts keep the real function.
-vi.mock('@budget-planner/core/services/balanceTracking', async (importOriginal) => {
-  const actual = await importOriginal<typeof BalanceTracking>()
-  return {
-    ...actual,
-    withTimeline: (entry: BalanceTracking.ClientBalanceTracking) =>
-      entry.type === 'debt'
-        ? actual.withTimeline(entry)
-        : {
-            ...actual.withTimeline({ ...entry, monthlyContribution: 0 }),
-            monthlyContribution: entry.monthlyContribution,
-          },
-  }
-})
 
 const ISO = '2026-10-06T00:00:00.000Z'
 const PROFILE = 'profile-corrupt'
