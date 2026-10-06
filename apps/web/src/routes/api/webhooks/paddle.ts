@@ -1823,6 +1823,26 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
         return json({ success: true })
       }
 
+      // A non-string `action` must not throw: `action.toLowerCase()` below runs
+      // inside `runGuarded`'s transaction, so the TypeError became `{ok:false}`
+      // -> 500, and Paddle retried a delivery that can never succeed until its
+      // retries ran out. Not applied, flagged, terminal 200 — the same treatment
+      // as a non-string refund `status` (94.1 code review).
+      if (typeof action !== 'string') {
+        logger.error('Webhook: adjustment action is not a string — not applied', {
+          customerId,
+          adjustmentId: data.id,
+          actionType: typeof action,
+        })
+        captureError(new Error('Webhook: adjustment action is not a string — review'), {
+          scope: 'paddle-webhook',
+          customerId,
+          ...(data.id ? { adjustmentId: data.id } : {}),
+          ...(data.transaction_id ? { transactionId: data.transaction_id } : {}),
+        })
+        return json({ success: true })
+      }
+
       const adjustmentTotal = parseLowestUnit(data.totals?.total)
       const result = await runGuarded(customerId, (tx) =>
         handleAdjustment(tx, {
