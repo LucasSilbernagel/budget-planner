@@ -491,12 +491,33 @@ describe('BalancePage mobile card presentation (story 31.2)', () => {
     const row = rowIn(tables(container).entries, 'Car Loan')
 
     expect(within(row).getByText('Debt')).toBeInTheDocument()
-    expect(within(row).getByText('-4,000.00')).toBeInTheDocument()
+    // Story 103.1 (FR171, D1): the fixture stores this debt NEGATIVE (a legacy
+    // row, via setState, which skips the validator); the cell shows the amount
+    // owed. Was '-4,000.00'.
+    expect(within(row).getByText('4,000.00')).toBeInTheDocument()
+    expect(within(row).queryByText('-4,000.00')).toBeNull()
     expect(within(row).getByText('300.00')).toBeInTheDocument()
     expect(within(row).getByText('Monthly')).toBeInTheDocument()
     expect(within(row).getByText('Paid by Car payment')).toBeInTheDocument()
     expect(within(row).getByRole('button', { name: 'Edit Car Loan' })).toBeInTheDocument()
     expect(within(row).getByRole('button', { name: 'Delete Car Loan' })).toBeInTheDocument()
+  })
+
+  it('a legacy NEGATIVE debt opens as the amount owed, and a plain save stores it positive (Story 103.1, D2)', async () => {
+    // The fixture's Car Loan is stored -400000 (setState skips the validator).
+    // Without the pre-fill, the field would show "-4,000.00", which the form
+    // and the store both refuse: the row could not be saved without retyping.
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    await user.click(screen.getByRole('button', { name: 'Edit Car Loan' }))
+    const editDialog = screen.getByRole('dialog', { name: 'Edit Balance Entry' })
+    expect(within(editDialog).getByTestId('balance-current-balance-input')).toHaveValue('4,000.00')
+    await user.click(within(editDialog).getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    const saved = useBalanceStore.getState().entries.find((entry) => entry.id === 'debt-1')
+    expect(saved?.currentBalance).toBe(400_000)
+    // The link survives the save untouched.
+    expect(saved?.paymentExpenseId).toBe('exp-car')
   })
 
   /**
@@ -773,7 +794,10 @@ describe('BalancePage — sort by column (34.2)', () => {
    * manual (insertion):   Zeta, Alpha, Mid, Beta
    * by type:              Zeta, Mid, Beta, Alpha   (investment before debt)
    * by name:              Alpha, Beta, Mid, Zeta
-   * by current balance:   Alpha(-500) Zeta(300) Mid(300) Beta(800)  <- Zeta/Mid TIE
+   * by current balance:   Zeta(300) Mid(300) Alpha(500) Beta(800)  <- Zeta/Mid TIE
+   *   (Story 103.1: Alpha was -500 and sorted FIRST; it is seeded through
+   *   `addBalanceEntry`, which now refuses a negative balance. The legacy
+   *   negative case is its own test below.)
    * by contribution NORM: Mid(4_17) Beta(200_00) Alpha(300_00) Zeta(433_33)
    * by contribution RAW:  Mid(50_00) Zeta(100_00) Beta(200_00) Alpha(300_00)
    *
@@ -791,7 +815,7 @@ describe('BalancePage — sort by column (34.2)', () => {
     {
       type: 'debt' as const,
       name: 'Alpha',
-      currentBalance: -500_00,
+      currentBalance: 500_00,
       monthlyContribution: 0,
       frequency: 'monthly' as const,
       paymentExpenseId: 'exp-alpha',
@@ -913,13 +937,36 @@ describe('BalancePage — sort by column (34.2)', () => {
     expect(orderIn(entriesTable())).toEqual(['Mid', 'Beta', 'Alpha', 'Zeta'])
   })
 
-  it('sorts Current Balance RAW, with a negative debt first and ties on manual order', async () => {
+  it('sorts Current Balance by value, ties on manual order', async () => {
     const user = userEvent.setup()
     renderWithProviders(<BalancePage />)
     await user.click(sortBy('Current Balance/Value'))
-    expect(orderIn(entriesTable())).toEqual(['Alpha', 'Zeta', 'Mid', 'Beta'])
+    expect(orderIn(entriesTable())).toEqual(['Zeta', 'Mid', 'Alpha', 'Beta'])
     await user.click(sortBy('Current Balance/Value'))
-    expect(orderIn(entriesTable())).toEqual(['Beta', 'Zeta', 'Mid', 'Alpha'])
+    expect(orderIn(entriesTable())).toEqual(['Beta', 'Alpha', 'Zeta', 'Mid'])
+  })
+
+  it('sorts a LEGACY negative debt by the amount owed it shows (Story 103.1, rule 2)', async () => {
+    // A row stored negative before 103.1 reaches the store by setState/rehydrate
+    // (no validator). Its cell shows 500.00, so it must sort as 500, between
+    // Mid (300) and Beta (800), not first as a raw -500 would.
+    useBalanceStore.setState({
+      entries: useBalanceStore
+        .getState()
+        .entries.map((entry) =>
+          entry.name === 'Alpha' ? { ...entry, currentBalance: -500_00 } : entry
+        ),
+    })
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    await user.click(sortBy('Current Balance/Value'))
+    expect(orderIn(entriesTable())).toEqual(['Zeta', 'Mid', 'Alpha', 'Beta'])
+    // Code review 103.1: descending too, so a key that is the magnitude one way
+    // and raw the other cannot pass (raw -500 would sort Alpha LAST here).
+    // Zeta and Mid tie at 300 and keep manual order in both directions.
+    await user.click(sortBy('Current Balance/Value'))
+    expect(header('Current Balance/Value')).toHaveAttribute('aria-sort', 'descending')
+    expect(orderIn(entriesTable())).toEqual(['Beta', 'Alpha', 'Zeta', 'Mid'])
   })
 
   it('keeps at most one column active', async () => {

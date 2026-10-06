@@ -215,8 +215,11 @@ export const savingsGoalSchema = z.object({
   // PUSH path is not: `pull()` refuses and reports the row (keeping any queued
   // local edit, story 75.4), while
   // a push-side rejection is kept queued forever and eventually stops all sync.
-  // ⚠️ Deliberately NOT mirrored onto `balanceTrackingSchema` below — debt
-  // balances are negative by design and that table has no such constraint.
+  // ⚠️ Deliberately NOT mirrored onto `balanceTrackingSchema` below. That table
+  // has no such constraint, and must not gain one: story 103.1 (FR171) refuses a
+  // negative balance ONLY at the client store write, because any refusal past
+  // the queue (DB, push gate, pull gate) deadlocks sync or drops the user's row.
+  // A legacy negative debt that is pulled is read as owed (`debtOwedCents`).
   currentBalance: z.number().int().min(0).max(PG_INT32_MAX),
   // Story 26.1: per-account allocation. `monthlyAllocation` is nullable cents
   // (0..int32). `allocationMode` is `.optional()` here (the client emits it via
@@ -428,7 +431,9 @@ export const retirementPlanRowSchema = z.object({
  * - contributionRecordedAsExpense: boolean (Story 45.1); absent leaves it unchanged
  * - endsBeforeRetirement: boolean (Story 65.2); absent leaves it unchanged
  * - paymentExpenseId: uuid or null (Story 102.1); absent leaves it unchanged
- * - currentBalance: may be negative (debt balances) but must fit in int32
+ * - currentBalance: must fit in int32. The SIGN is deliberately not checked here
+ *   (story 103.1): the client validator refuses a negative balance before
+ *   queueing, and a refusal at this gate would fail the whole batch forever.
  */
 export const syncOperationDataSchema = z.object({
   name: z.string().min(1).max(255).optional(),

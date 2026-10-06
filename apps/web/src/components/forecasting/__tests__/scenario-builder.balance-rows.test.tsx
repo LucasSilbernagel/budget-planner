@@ -633,6 +633,26 @@ describe('the starting figures (AC-2)', () => {
   })
 })
 
+describe('a debt seeds as the amount owed, whatever its stored sign (Story 103.1, FR171/AC-3)', () => {
+  // The builder's half of `components/__tests__/debt-sign-agreement.test.tsx`:
+  // the same fixture there gives 5,000.00 on the Overview, /balance and the
+  // Report for both signs. Hand-computed: 2,000,000 − 1,500,000 = 500,000c.
+  for (const sign of [1, -1] as const) {
+    it(`Starting Net Worth is 500,000c with the debt stored ${
+      sign > 0 ? '+' : '−'
+    }1,500,000`, async () => {
+      setEntries([
+        entry({ id: 'e-1', name: 'Pension', currentBalance: 2_000_000 }),
+        entry({ id: 'e-2', name: 'Car loan', type: 'debt', currentBalance: sign * 1_500_000 }),
+      ])
+      const format = formatter()
+      render(<ScenarioBuilder onSave={vi.fn()} />)
+      await waitForResult()
+      expect(card('Starting Net Worth')).toBe(format(500_000))
+    })
+  }
+})
+
 describe('what-if only: nothing reaches the balance store (AC-7, D0)', () => {
   it('a full edit sequence calls no balance-store action and leaves the persisted bytes unchanged', async () => {
     useIncomeStore.setState({ incomeSources: [income(500_000)] })
