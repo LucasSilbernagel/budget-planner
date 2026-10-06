@@ -170,14 +170,14 @@ function queueSummary(): string[] {
   return persistedQueue().map((o) => `${o.type}:${o.entityType}:${o.entityId}`)
 }
 
-function localProfile(id: string, name: string, isDefault: boolean) {
+function localProfile(id: string, name: string, isDefault: boolean, createdAt = OLD_ISO) {
   return {
     id,
     userId: USER,
     name,
     isDefault,
     currency: 'NONE',
-    createdAt: OLD_ISO,
+    createdAt,
     updatedAt: OLD_ISO,
   }
 }
@@ -437,23 +437,23 @@ describe('a profile deleted on another device (story 76.2)', () => {
     expect(await serverDefaults()).toEqual(['Travel'])
   })
 
-  it("AC-2 trap control: deleting the ACTIVE default promotes the repair's own pick, so the returning tombstone changes nothing", async () => {
+  it("AC-2 convergence: deleting the ACTIVE default promotes the repair's own pick, so the returning tombstone changes nothing", async () => {
     // ⚠️ REWRITTEN by the deferred-work follow-up to story 98.1. This test used to
     // pin that B's promotion of TRAVEL survived the tombstone's return and beat
-    // the server repair's pick (ARCHIVE, the oldest). That premise is gone by
-    // construction: deleting the ACTIVE profile now switches to, and promotes,
-    // the OLDEST survivor, which IS the repair's pick. MEASURED after the change:
-    // the repair bumps Archive's `updatedAt`, B's promotion of Archive loses pull
-    // last-writer-wins and is drained, and both sides already agree. What stays
-    // pinned: the promotion carries the DELETED profile's stamp, and the round
-    // trip converges on ONE default (Archive) everywhere with no conflict.
-    // The stamp-drain predicate itself is pinned in core's
-    // `pull-drops-deleted-profile-ops.test.ts` ("keeps … every userProfile op for
-    // another profile"; "a delete dropped by LWW against a TOMBSTONE keeps its
-    // promotion").
+    // the server repair's pick (ARCHIVE, the oldest). Deleting the ACTIVE profile
+    // now switches to, and promotes, the OLDEST survivor, which is what the
+    // repair picks when it RUNS. MEASURED after the change: the repair bumps
+    // Archive's `updatedAt`, B's promotion of Archive loses pull last-writer-wins
+    // and is drained, and both sides already agree. What stays pinned: the
+    // promotion carries the DELETED profile's stamp, and the round trip converges
+    // on ONE default (Archive) everywhere with no conflict.
     //
-    // THREE profiles, Archive the OLDEST on the server and the LAST in B's store
-    // array, so a first-in-store-order pick (Travel) fails every assertion below.
+    // ⚠️ This test can NO LONGER catch the two 76.2 trap mutations (drain a
+    // stamp-P promotion; count a tombstone as a loss): the promotion is drained
+    // by plain LWW either way (code review). The NEXT test is the trap control.
+    //
+    // THREE profiles, Archive the OLDEST, with distinct local `createdAt`s that
+    // match the server's, so a first-in-store-order pick (Travel) fails below.
     await db.insert(userProfiles).values([
       {
         id: Z,
@@ -482,9 +482,9 @@ describe('a profile deleted on another device (story 76.2)', () => {
     ])
     useProfileStore.setState({
       profiles: [
-        localProfile(P, 'Home', true),
-        localProfile(Y, 'Travel', false),
-        localProfile(Z, 'Archive', false),
+        localProfile(P, 'Home', true, '2026-02-01T00:00:00.000Z'),
+        localProfile(Y, 'Travel', false, '2026-03-01T00:00:00.000Z'),
+        localProfile(Z, 'Archive', false, '2026-01-01T00:00:00.000Z'),
       ],
       activeProfileId: P,
     })
@@ -528,6 +528,107 @@ describe('a profile deleted on another device (story 76.2)', () => {
     openBatch()
     await new Promise((r) => setTimeout(r, 2500))
     expect(await serverDefaults()).toEqual(['Archive'])
+    expect(batchAnswers.join(' ')).not.toMatch(/update-delete/)
+  }, 60_000)
+
+  it('AC-2 trap control: a promotion stamped with the deleted profile survives the tombstone and wins the seat', async () => {
+    // ⚠️ The replacement trap control (code review of the 98.1 follow-up). The
+    // seat is NOT empty when P's tombstone lands: device A promoted Travel BEFORE
+    // deleting P, so the server's repair never runs and Archive's row is never
+    // bumped. B's queued promotion of Archive (stamped P, `dependsOn` its own
+    // delete of P) must survive the pull that brings P's tombstone, and then
+    // win the seat (last promotion wins, 76.1).
+    //
+    // MEASURED discriminating, each mutation in core's `synchronization.ts`:
+    // M1 (`isStrandedByDeletedProfile` without its `userProfile` exclusion) and
+    // M5 (`lostToLiveRow` also recording a loss to a TOMBSTONE) both turn this
+    // RED at the queue assertion (`[]`: the promotion was dropped). That the
+    // server then keeps Travel is REASONED, not measured (the run stops first).
+    await db.insert(userProfiles).values([
+      {
+        id: Z,
+        userId: USER,
+        name: 'Archive',
+        isDefault: false,
+        createdAt: new Date('2026-01-01'),
+        updatedAt: OLD,
+      },
+      {
+        id: P,
+        userId: USER,
+        name: 'Home',
+        isDefault: true,
+        createdAt: new Date('2026-02-01'),
+        updatedAt: OLD,
+      },
+      {
+        id: Y,
+        userId: USER,
+        name: 'Travel',
+        isDefault: false,
+        createdAt: new Date('2026-03-01'),
+        updatedAt: OLD,
+      },
+    ])
+    useProfileStore.setState({
+      profiles: [
+        localProfile(P, 'Home', true, '2026-02-01T00:00:00.000Z'),
+        localProfile(Y, 'Travel', false, '2026-03-01T00:00:00.000Z'),
+        localProfile(Z, 'Archive', false, '2026-01-01T00:00:00.000Z'),
+      ],
+      activeProfileId: P,
+    })
+
+    rtl.render(<ActiveSync userId={USER} />)
+    await rtl.waitFor(() => expect(isSyncActive()).toBe(true), { timeout: 15_000 })
+    await rtl.waitFor(() => expect(pulls()).toBeGreaterThan(0), { timeout: 15_000 })
+    await new Promise((r) => setTimeout(r, 300))
+
+    await rtl.act(async () => {
+      useProfileStore.getState().removeProfile(P)
+    })
+    expect(useProfileStore.getState().activeProfileId).toBe(Z)
+    await rtl.waitFor(() => expect(persistedQueue()).toHaveLength(2), { timeout: 15_000 })
+    const promotion = persistedQueue().find((o) => o.entityId === Z)
+    expect(promotion?.profileId).toBe(P)
+    expect(promotion?.dependsOn).toMatchObject({ type: 'delete', entityId: P })
+
+    // Device A promotes Travel, THEN deletes P: the seat is never empty.
+    await deviceAPushes({
+      type: 'update',
+      entityType: 'userProfile',
+      entityId: Y,
+      data: { userId: USER, name: 'Travel', isDefault: true, currency: 'NONE' },
+    })
+    await deviceAPushes({
+      type: 'delete',
+      entityType: 'userProfile',
+      entityId: P,
+      data: { userId: USER },
+    })
+    // Positive anchor: no repair ran, Travel holds the seat.
+    expect(await serverDefaults()).toEqual(['Travel'])
+
+    // A reload: engine gone, queue kept. Its mount pull is a full snapshot.
+    rtl.cleanup()
+    resetSyncStore()
+    const pullsBefore = pulls()
+    rtl.render(<ActiveSync userId={USER} />)
+    await rtl.waitFor(() => expect(pulls()).toBeGreaterThan(pullsBefore), { timeout: 15_000 })
+    await rtl.waitFor(
+      () => expect(useProfileStore.getState().profiles.map((p) => p.id)).not.toContain(P),
+      { timeout: 15_000 }
+    )
+    await new Promise((r) => setTimeout(r, 300))
+
+    // The deletion HAPPENED, so the promotion is still the user's choice.
+    expect(queueSummary()).toEqual([`update:userProfile:${Z}`])
+
+    // Discriminating: without the promotion, A's pick (Travel) stays.
+    openBatch()
+    await rtl.waitFor(async () => expect(await serverDefaults()).toEqual(['Archive']), {
+      timeout: 15_000,
+    })
     expect(batchAnswers.join(' ')).not.toMatch(/update-delete/)
   }, 60_000)
 })

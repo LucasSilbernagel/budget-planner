@@ -1818,7 +1818,10 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
       const customerId = data.customer_id
       const action = data.action
 
-      if (!customerId || !action) {
+      // Absent means absent (`undefined`/`null`/`''`), not merely falsy: a `0` or
+      // `false` action is a WRONG-TYPED one and takes the flagged branch below
+      // (code review of the non-string guard).
+      if (!customerId || action == null || action === '') {
         logger.error('Webhook: adjustment event missing customer_id or action', { eventType })
         return json({ success: true })
       }

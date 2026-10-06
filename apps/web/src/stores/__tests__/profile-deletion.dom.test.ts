@@ -202,7 +202,7 @@ describe('deleting the ACTIVE profile lands on the OLDEST survivor (deferred fro
 
   it('promotes that same oldest survivor when the deleted active profile was the default', () => {
     useProfileStore.setState({
-      profiles: [alpha, doomed, zeta],
+      profiles: [alpha, { ...doomed, isDefault: true }, zeta],
       activeProfileId: 'doomed',
     })
 

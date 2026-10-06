@@ -517,25 +517,28 @@ describe('AC-1 — refunds, chargebacks and disputes', () => {
     )
   })
 
-  it('an adjustment whose action is not a string: 200, not applied, flagged (94.1 review follow-up)', async () => {
-    // Before the guard, `action.toLowerCase()` threw into the outer catch: a 500
-    // that Paddle retries until exhausted, with no alert. Same shape as the
-    // non-string `status` above.
-    await grantLifetime()
+  it.each([7, 0, false])(
+    'an adjustment whose action is not a string (%s): 200, not applied, flagged (94.1 review follow-up)',
+    async (action) => {
+      // Before the guard, `action.toLowerCase()` threw into the outer catch: a 500
+      // that Paddle retries until exhausted, with no alert. Same shape as the
+      // non-string `status` above.
+      await grantLifetime()
 
-    const res = await post({
-      ...adjustmentEvent({ action: 7, totals: { total: '9900' } }),
-      occurred_at: at(5),
-    })
+      const res = await post({
+        ...adjustmentEvent({ action, totals: { total: '9900' } }),
+        occurred_at: at(5),
+      })
 
-    expect(res.status).toBe(200)
-    expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('lifetime')
-    expect(await db.select().from(paddleAdjustments)).toHaveLength(0)
-    expect(captureError).toHaveBeenCalledWith(
-      expect.objectContaining({ message: expect.stringContaining('action is not a string') }),
-      expect.objectContaining({ customerId: 'ctm_1', adjustmentId: 'adj_1' })
-    )
-  })
+      expect(res.status).toBe(200)
+      expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('lifetime')
+      expect(await db.select().from(paddleAdjustments)).toHaveLength(0)
+      expect(captureError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringContaining('action is not a string') }),
+        expect.objectContaining({ customerId: 'ctm_1', adjustmentId: 'adj_1' })
+      )
+    }
+  )
 
   it('a refund with an UNEXPECTED status (e.g. `reversed`) is not applied, and is flagged (94.1 review)', async () => {
     await grantLifetime()

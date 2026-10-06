@@ -236,6 +236,12 @@ export const useProfileStore = create<ProfileState>()(
         // hands the default to the oldest live profile and `useProfiles` lists
         // oldest first. Picking by array position landed the user on an arbitrary
         // profile and promoted a different default from the server's pick.
+        // ⚠️ "Matches the server" only once `createdAt` has round-tripped: the
+        // server stamps its OWN `createdAt` on create (`sync.ts` drops the
+        // client's), and a profile with no `createdAt` (the bootstrap
+        // `DEFAULT_PROFILE`) sorts FIRST here. Until a pull brings the server's
+        // values the picks can differ; the queued promotion then wins the seat
+        // (last promotion wins, 76.1), so the two still converge.
         //
         // ⚠️ They agree on every reachable input but are NOT the same expression,
         // and an earlier comment here overclaimed that (code review). If
