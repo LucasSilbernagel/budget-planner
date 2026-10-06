@@ -556,7 +556,9 @@ describe('each money field reports its own validity (AC-9)', () => {
     fireEvent.change(balance, { target: { value: '' } })
 
     expect(balance).toHaveAttribute('aria-invalid', 'true')
-    expect(within(balance.closest('.surface') as HTMLElement).getByText('Enter a number.')).toBeTruthy()
+    expect(
+      within(balance.closest('.surface') as HTMLElement).getByText('Enter a number.')
+    ).toBeTruthy()
     expect(screen.getByTestId('save-blocked-reason').textContent).toBe(
       'Fix the highlighted fields to save'
     )
