@@ -638,6 +638,57 @@ describe('DS2: a gate mounting after the answer uses it and asks nothing', () =>
     gates.unmount()
     app.unmount()
   })
+
+  /**
+   * Code review: the C2 shape (a stale signed-out seed, a premium answer held)
+   * with a gate mounting on a later client navigation. The hook's initializer
+   * must start from the held answer even though a seed EXISTS, or every late
+   * gate paints locked for one commit before its effect unlocks it. A DOM
+   * assertion after `render` cannot see that (RTL's `act` flushes the effect),
+   * so the hook's value is recorded on EVERY render. Mutation (initializer
+   * prefers a non-null seed over the held answer) was GREEN on the whole file
+   * before this test.
+   */
+  it('signed-out seed, premium answer held: a gate mounted later is unlocked from its very first render', async () => {
+    const me = stubMe(meIs(PAID))
+    const rootRoute = createRootRoute({
+      component: () => (
+        <SessionSeedProvider seed={SIGNED_OUT_SEED}>
+          <AuthIndicator />
+        </SessionSeedProvider>
+      ),
+    })
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([
+        createRoute({ getParentRoute: () => rootRoute, path: '/', component: () => null }),
+      ]),
+      history: createMemoryHistory({ initialEntries: ['/'] }),
+    })
+    const app = render(<RouterProvider router={router} />)
+    await answerApplied()
+    expect(getVerifiedSession()?.subscriptionStatus).toBe('active')
+
+    const seen: boolean[] = []
+    function Recorder() {
+      const { status } = usePremiumAccess()
+      seen.push(status.hasAccess)
+      return null
+    }
+    const gates = render(
+      <SessionSeedProvider seed={SIGNED_OUT_SEED}>
+        <Recorder />
+        <GatesPage />
+      </SessionSeedProvider>
+    )
+    expect(seen[0], 'the first render used the stale seed, not the held answer').toBe(true)
+    expect(seen, 'a render reported no access').not.toContain(false)
+    expect(lockedGates()).toBe(0)
+    expect(unlockedGates()).toBe(GATE_COUNT)
+    await settle()
+    expect(me, 'a late gate asked /api/auth/me itself').toHaveBeenCalledTimes(1)
+    gates.unmount()
+    app.unmount()
+  })
 })
 
 // ---------------------------------------------------------------------------
