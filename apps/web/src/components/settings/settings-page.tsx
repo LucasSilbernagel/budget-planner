@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useSessionSeed } from '../../context/session-seed'
 import { isEntitledSeed } from '../../lib/premium/entitlement'
+import { useVerifiedSession } from '../../lib/session/verifiedSession'
 import { AccountSection } from './account-section'
 import { CategoriesSection } from './categories-section'
 import { CurrencyToggle } from './currency-toggle'
@@ -37,8 +38,13 @@ export function SettingsPage() {
    * Whether this session already reaches Report and Categories from the nav, and
    * so should not be shown their Settings tiles too (story 58.2, decision D2).
    *
-   * ⚠️ Read from the SSR seed as a `useState` INITIALIZER, never reactively —
-   * `session-seed.tsx` states that contract. `usePremiumAccess()` is the wrong
+   * ⚠️ The SSR seed is read as a `useState` INITIALIZER, never reactively —
+   * `session-seed.tsx` states that contract. AMENDED by story 101.2 (FR168):
+   * after the first paint the sections ALSO follow `AuthIndicator`'s last
+   * DEFINITIVE `/api/auth/me` answer (`lib/session/verifiedSession.ts`), as
+   * `GlobalNav` has since 99.1 and the Overview does since 101.2. No answer yet
+   * (also what SSR and hydration read) → the seed decides, so the fail direction
+   * below is unchanged; an unknown answer writes nothing. `usePremiumAccess()` is the wrong
    * tool here for the same reasons as on the Overview: its no-seed path starts
    * `isLoading: true`, so these sections would render and then vanish after the
    * client round-trip resolved.
@@ -61,7 +67,10 @@ export function SettingsPage() {
    * all three tier states, and this page holds one tier read instead of two.
    */
   const sessionSeed = useSessionSeed()
-  const [reachesPremiumFromNav] = useState(() => isEntitledSeed(sessionSeed))
+  const [seedReachesPremium] = useState(() => isEntitledSeed(sessionSeed))
+  const verifiedSession = useVerifiedSession()
+  const reachesPremiumFromNav =
+    verifiedSession === undefined ? seedReachesPremium : isEntitledSeed(verifiedSession)
 
   return (
     <div className="mx-auto max-w-xl px-4 py-10">

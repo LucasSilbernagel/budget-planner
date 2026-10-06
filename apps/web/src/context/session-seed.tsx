@@ -15,6 +15,13 @@
  * once as an initializer means a later provider value can never clobber a
  * consumer's already-resolved client state.
  *
+ * Since stories 99.1 and 101.2, `GlobalNav`, `usePremiumAccess` and the
+ * Overview/Settings premium sections ALSO follow the indicator's last DEFINITIVE
+ * `/api/auth/me` answer (`lib/session/verifiedSession.ts`) after the first
+ * paint. That is a second input, not a reactive read of this seed: the seed is
+ * still read once and still decides the first paint (and every frame until an
+ * answer arrives).
+ *
  * A `null` seed means "no usable server seed", in two cases:
  *   - the session resolver could not verify the session (see `getSessionSeed`,
  *     which returns `null` on error rather than asserting a wrong signed-out

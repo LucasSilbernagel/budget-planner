@@ -13,7 +13,13 @@
  * from before sign-in (shown in an integration test only).
  *
  * The indicator already holds the verified answer, refreshed per navigation. It
- * writes it here; the nav reads it. No second request anywhere.
+ * writes it here; the readers read it: the nav (99.1), and since story 101.2
+ * `usePremiumAccess` (every premium gate) and the Overview/Settings premium
+ * sections. Each keeps its own fail direction when nothing is held. No second
+ * request anywhere. Readers use `useVerifiedSession()` only, never
+ * `getVerifiedSession()` in render: the hook gives React zustand's server
+ * snapshot (`undefined`) while hydrating, so SSR and the first client frame
+ * agree (101.2 AC 6).
  *
  * ## Contract
  *
@@ -23,11 +29,13 @@
  *   is `{ user: null }` or a user with an email (decision D2, the same rule as
  *   `SyncProvider`). A 503, a network error or a malformed body writes nothing:
  *   unknown is not an answer. The store keeps what it held: `undefined` (the
- *   nav then uses the seed) or the last DEFINITIVE answer. So after a premium
- *   answer, a later 503 keeps the premium nav while the strip shows "Sign in"
- *   (the strip collapses every unknown to signed-out). Pinned in
- *   `nav-account-row.test.tsx`; whether unknown should instead clear the store
- *   is open (99.1 review, decision for Lucas).
+ *   readers then use the seed) or the last DEFINITIVE answer. So after a premium
+ *   answer, a later 503 keeps the premium nav (and, since 101.2, the unlocked
+ *   gates) while the strip shows "Sign in" (the strip collapses every unknown to
+ *   signed-out). Pinned in `nav-account-row.test.tsx` and
+ *   `premium-surfaces-follow-verified-session.test.tsx`. Keeping (not clearing)
+ *   the last definitive answer was decided by Lucas in the 99.1 review
+ *   (2026-10-05); 101.2's DS1 builds on it.
  * - ⚠️ Written ONLY from an effect (client-only). This is a module singleton: on
  *   the server one instance would serve every request, so a server-side write
  *   would leak one user's tier into another's render. `auth-indicator.ssr.dom.test.tsx`

@@ -32,10 +32,13 @@
  * `AuthIndicator`'s last definitive `/api/auth/me` answer
  * (`lib/session/verifiedSession.ts`), so after a client navigation the two
  * halves of the header agree. The document load stays the sign-out instrument
- * anyway, for the store-state reason above and for every OTHER seed consumer
- * (`usePremiumAccess`, the Overview and Settings gates), which still follow the
- * seed only.
+ * anyway, for the store-state reason above and for every OTHER seed consumer.
+ * (Since story 101.2 `usePremiumAccess` and the Overview and Settings gates
+ * follow that answer too; the Overview account notice, `PremiumCheckoutButton`
+ * and the store-hydration boundary still read the seed only.)
  */
+
+import { purgeAppShellCache } from '@/lib/pwa/app-shell-cache'
 
 /** How long to wait for the logout POST before leaving anyway. */
 const LOGOUT_TIMEOUT_MS = 10_000
@@ -79,16 +82,26 @@ export function returnToSignedOutHome(): void {
  * covers the navigation too, which can throw in a sandboxed frame — the same
  * reason the account-deletion path wraps its own call.
  *
- * ⚠️ What a FAILED POST actually looks like, corrected in review. The logout
- * route clears the cookies unconditionally (`routes/api/auth/logout.ts`), so
- * if the request arrived, the session is gone. If it did not arrive, the
- * reload decides what the user sees, and that is NOT always "still signed in":
- * with the service worker's `NetworkFirst` app-shell cache
- * (`apps/web/pwa.config.mjs`) an offline reload can serve a CACHED SIGNED-IN
- * document, whose strip then fails closed to "Sign in" while the session
- * cookie is still valid. The cache behaviour is pre-existing — it applies to
- * the `/settings` control just the same, and has since 58.1 — and is logged in
- * `deferred-work.md`. Do not describe this path as harmless.
+ * Between the POST and the navigation it deletes the service worker's page
+ * cache (`lib/pwa/app-shell-cache.ts`, story 101.1, FR167): the documents in it
+ * carry this session's seed, including the email, and on a shared machine the
+ * next person would be served them offline (or, before 101.1, on any network
+ * slower than 3 s). After the POST, not alongside it: once the server has
+ * answered signed-out, a navigation in another tab can no longer re-cache a
+ * signed-in document behind the purge (D2). The purge is bounded
+ * (`APP_SHELL_PURGE_TIMEOUT_MS`) and never rejects, so it cannot stop the user
+ * leaving.
+ *
+ * ⚠️ What a FAILED POST actually looks like, corrected in review and again by
+ * story 101.1. The logout route clears the cookies unconditionally
+ * (`routes/api/auth/logout.ts`), so if the request arrived, the session is
+ * gone. If it did not arrive (offline), the purge still runs (Q3), so no cached
+ * signed-in document is left to serve (unless the purge hit its bound): the
+ * reload shows the browser's offline page until the network is back
+ * (measured on the prod build, 101.1 evidence). Before 101.1 it could serve a
+ * CACHED SIGNED-IN document instead. The session cookie is still valid on the
+ * server if the POST never arrived (pre-existing, unchanged). Do not describe
+ * this path as harmless.
  */
 export async function signOut(): Promise<void> {
   inFlight ??= runSignOut().finally(() => {
@@ -108,6 +121,8 @@ async function runSignOut(): Promise<void> {
   } catch {
     // Deliberately empty. See the docblock: the reload is the report.
   }
+  // Even when the POST failed (offline): the cached pages are this session's.
+  await purgeAppShellCache()
   try {
     returnToSignedOutHome()
   } catch (error) {

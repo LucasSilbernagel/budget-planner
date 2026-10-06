@@ -26,6 +26,7 @@ import { useChartColors } from '../lib/chartTheme'
 import { lazyWithRetry } from '../lib/lazy-with-retry'
 import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../lib/premium/benefits'
 import { isEntitledSeed } from '../lib/premium/entitlement'
+import { useVerifiedSession } from '../lib/session/verifiedSession'
 import { useBalanceEntries, useExpenses, useIncomeSources, useSavingsGoals } from '../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 import {
@@ -157,10 +158,19 @@ export function HomePage() {
    * Whether this session already reaches its premium pages from the nav, and so
    * should not be shown the Overview's copy of them (story 58.2, FR88).
    *
-   * ⚠️ Read from the SSR seed as a `useState` INITIALIZER, never reactively —
+   * ⚠️ The SSR seed is read as a `useState` INITIALIZER, never reactively —
    * `session-seed.tsx` states that contract. Reading once means the first painted
    * frame is already correct and a later provider value cannot remove a section
    * out from under the user.
+   *
+   * ⚠️ AMENDED by story 101.2 (FR168): after the first paint the section ALSO
+   * follows `AuthIndicator`'s last DEFINITIVE `/api/auth/me` answer
+   * (`lib/session/verifiedSession.ts`), exactly as `GlobalNav` has since 99.1.
+   * No answer yet (`undefined`, which is also what SSR and hydration read) →
+   * the seed decides, so the fail direction below is unchanged. An unknown
+   * answer (503, network error, malformed) writes nothing, so the section keeps
+   * the seed or the last definitive answer. No fetch here: the answer is the
+   * indicator's own.
    *
    * ⚠️⚠️ `usePremiumAccess()` is the obvious reuse and is WRONG here, for two
    * independent reasons. (1) It would re-add the SIXTH tier subscription that
@@ -186,14 +196,19 @@ export function HomePage() {
    * (code review, 2026-09-21). Fail-open rescues the SSR-only outage, which is
    * the common one.
    *
-   * ⚠️ Accepted consequence, shared with the nav: the root loader caches the seed
-   * with `staleTime: Infinity`, so a user who upgrades MID-SESSION keeps seeing
-   * this section until a full reload. The nav keeps the free nav in the same
-   * window, so both surfaces stay consistent with each other — which is a reason
-   * not to "fix" only one of them.
+   * ~~⚠️ Accepted consequence, shared with the nav: the root loader caches the
+   * seed with `staleTime: Infinity`, so a user who upgrades MID-SESSION keeps
+   * seeing this section until a full reload.~~ No longer true since story 101.2:
+   * the root loader still caches the seed, but the section now follows the next
+   * definitive `/api/auth/me` answer (the indicator asks on every navigation),
+   * and the nav does the same since 99.1, so the two surfaces still move
+   * together — which remains the reason not to "fix" only one of them.
    */
   const sessionSeed = useSessionSeed()
-  const [reachesPremiumFromNav] = useState(() => isEntitledSeed(sessionSeed))
+  const [seedReachesPremium] = useState(() => isEntitledSeed(sessionSeed))
+  const verifiedSession = useVerifiedSession()
+  const reachesPremiumFromNav =
+    verifiedSession === undefined ? seedReachesPremium : isEntitledSeed(verifiedSession)
   // Story 95.1 (FR154, D2): the "No account needed …" notice is for visitors, so
   // ANY signed-in session (free included, so NOT `isEntitledSeed`) skips it. Same
   // initializer-only seed read as above: SSR and the first client frame agree, so
