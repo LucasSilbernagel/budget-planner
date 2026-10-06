@@ -79,6 +79,9 @@ export { monthlyContributionCents } from './services/balanceTracking'
 // Story 102.1 (FR169): the debt→expense payment link resolver, for the same
 // subpath reason as `monthlyContributionCents` above.
 export { resolveDebtPaymentExpense } from './services/balanceTracking'
+// Story 103.1 (FR171): a debt balance read as the amount owed, for every debt
+// reader in the web app (same subpath reason as above).
+export { debtOwedCents } from './services/balanceTracking'
 
 // Story 30.5: the shared categorical palette generator, re-exported for the
 // category-breakdown bar charts so they draw from the SAME palette as the

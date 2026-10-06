@@ -10,7 +10,12 @@
  * middleware (the store uses `skipHydration`, so we drive `persist.rehydrate()`).
  */
 
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  type SyncBridgeHandle,
+  clearSyncBridge,
+  registerSyncBridge,
+} from '../../lib/sync/syncBridge'
 import { useBalanceStore } from '../balanceStore'
 
 const STORAGE_KEY = 'budget-planner:balance-tracking'
@@ -240,7 +245,9 @@ describe('balanceStore — contributionRecordedAsExpense persists (Story 45.1, F
       investment({
         type: 'debt',
         name: 'Mortgage',
-        currentBalance: -30_000_000,
+        // Story 103.1: was -30_000_000. A negative balance is now refused on its
+        // own, which would make this rejection pass for the wrong reason.
+        currentBalance: 30_000_000,
         monthlyContribution: 0,
         contributionRecordedAsExpense: true,
       })
@@ -254,7 +261,8 @@ describe('balanceStore — contributionRecordedAsExpense persists (Story 45.1, F
       investment({
         type: 'debt',
         name: 'Mortgage',
-        currentBalance: -30_000_000,
+        // Story 103.1: was -30_000_000 (now refused; see above).
+        currentBalance: 30_000_000,
         monthlyContribution: 0,
       })
     )
@@ -316,5 +324,63 @@ describe('balanceStore — the retired contribution limit is stripped (story 49.
     expect(entry.monthlyContribution).toBe(500)
     expect(entry.frequency).toBe('monthly')
     expect(entry.sortOrder).toBe(0)
+  })
+})
+
+/**
+ * Story 103.1 (FR171, AC-1): a negative balance is refused on the STORE write
+ * path, before anything is queued for sync. This is the only refusal point for
+ * the sign: past the queue, a refusal deadlocks sync (schema-as-gate trap 5).
+ */
+describe('balanceStore — a negative balance never reaches the sync queue (Story 103.1)', () => {
+  function makeHandle() {
+    return {
+      userId: '550e8400-e29b-41d4-a716-446655440000',
+      queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
+      queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
+      queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
+    }
+  }
+  const debt = (currentBalance: number) => ({
+    type: 'debt' as const,
+    name: 'Car loan',
+    currentBalance,
+    monthlyContribution: 0,
+    frequency: 'monthly' as const,
+  })
+  let handle: ReturnType<typeof makeHandle>
+
+  beforeEach(() => {
+    handle = makeHandle()
+    registerSyncBridge(handle)
+  })
+
+  afterEach(() => {
+    clearSyncBridge()
+  })
+
+  it('refuses a negative debt on ADD: no row, no queueCreate', () => {
+    expect(useBalanceStore.getState().addBalanceEntry(debt(-400_000))).toBeNull()
+    expect(useBalanceStore.getState().entries).toHaveLength(0)
+    expect(handle.queueCreate).not.toHaveBeenCalled()
+    // Positive control over the same bridge and shape.
+    expect(useBalanceStore.getState().addBalanceEntry(debt(400_000))).not.toBeNull()
+    expect(handle.queueCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses an UPDATE to a negative balance: row unchanged, no queueUpdate', () => {
+    const created = useBalanceStore.getState().addBalanceEntry(debt(400_000))
+    if (!created) throw new Error('fixture row was refused')
+    expect(
+      useBalanceStore.getState().updateBalanceEntry(created.id, { currentBalance: -1 })
+    ).toBeNull()
+    expect(useBalanceStore.getState().entries[0]?.currentBalance).toBe(400_000)
+    expect(handle.queueUpdate).not.toHaveBeenCalled()
+    // Positive control (code review 103.1): a valid update over the same bridge
+    // IS queued, so the `not.toHaveBeenCalled` above is not vacuous.
+    expect(
+      useBalanceStore.getState().updateBalanceEntry(created.id, { currentBalance: 1 })
+    ).not.toBeNull()
+    expect(handle.queueUpdate).toHaveBeenCalledTimes(1)
   })
 })

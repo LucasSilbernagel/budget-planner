@@ -35,7 +35,7 @@
  * silently under-reporting.
  */
 
-import { calculateNetIncomeResult, normalizeToMonthly } from '@budget-planner/core'
+import { calculateNetIncomeResult, debtOwedCents, normalizeToMonthly } from '@budget-planner/core'
 import type { Frequency } from '@budget-planner/core'
 import { FINANCE_TYPES } from '@budget-planner/core/services/balanceTracking'
 import { netWorthFromTotals } from '../net-worth'
@@ -382,8 +382,14 @@ function buildNetWorth(
   const debts = readable.filter((row) => row.type === 'debt')
   const assets = readable.filter((row) => row.type === 'asset')
 
+  // Story 103.1 (FR171): a debt is read as the amount owed (`debtOwedCents`) in
+  // both its printed row and the total, the same reading as the Overview and
+  // `/balance`. Investments and assets stay raw (D3). Rows here are already
+  // readable (finite), so the helper only ever flips a sign.
+  const balanceOf = (row: ReportBalanceInput): number =>
+    row.type === 'debt' ? debtOwedCents(row.currentBalance) : row.currentBalance
   const sum = (rows: readonly ReportBalanceInput[]): number =>
-    rows.reduce((total, row) => total + row.currentBalance, 0)
+    rows.reduce((total, row) => total + balanceOf(row), 0)
 
   const totalInvestmentsCents = sum(investments)
   const totalDebtsCents = sum(debts)
@@ -392,7 +398,7 @@ function buildNetWorth(
   const toRow = (row: ReportBalanceInput): ReportBalanceRow => ({
     id: row.id,
     name: row.name,
-    balanceCents: row.currentBalance,
+    balanceCents: balanceOf(row),
   })
 
   return {

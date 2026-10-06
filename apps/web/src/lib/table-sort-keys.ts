@@ -1,4 +1,4 @@
-import { getNormalizationMultiplier, normalizeToMonthly } from '@budget-planner/core'
+import { debtOwedCents, getNormalizationMultiplier, normalizeToMonthly } from '@budget-planner/core'
 import { resolveCategoryName } from '../hooks/useCategoryLabels'
 import { isKnownFrequency, isReadableRow } from './readable-rows'
 import type { SortKeyExtractors } from './table-sort'
@@ -229,7 +229,11 @@ export function createBalanceSortExtractors(
         ? TYPE_SORT_RANK[row.type] ?? TYPE_SORT_RANK_FALLBACK
         : TYPE_SORT_RANK_FALLBACK,
     name: (row) => textOrNull(row.name),
-    currentBalance: (row) => finiteOrNull(row.currentBalance),
+    // Story 103.1 (FR171): a debt's cell shows the amount owed, so it keys on that
+    // (rule 2). `debtOwedCents` passes a non-finite value through, so a corrupt
+    // balance still keys null.
+    currentBalance: (row) =>
+      finiteOrNull(row.type === 'debt' ? debtOwedCents(row.currentBalance) : row.currentBalance),
     // An asset shows an em-dash here, not "$0.00 / Monthly" — rule 2 says sort
     // by what the CELL SHOWS, so it must null out rather than key at 0.
     // Story 102.1 (FR169): a debt shows its LINKED EXPENSE's payment, never its

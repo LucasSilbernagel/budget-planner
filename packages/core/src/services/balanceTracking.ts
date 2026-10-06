@@ -76,7 +76,7 @@ export interface ClientBalanceTracking {
   profileId?: string | null
   type: FinanceType
   name: string
-  currentBalance: number // In cents (can be negative for debts)
+  currentBalance: number // In cents, >= 0 for every type (Story 103.1: a debt is the amount owed; a legacy negative debt is read via `debtOwedCents`)
   monthlyContribution: number // In cents (default 0) — amount at `frequency` cadence (Story 16-2)
   frequency: Frequency // Cadence of monthlyContribution (Story 16-2); normalize before aggregating
   createdAt: string // ISO string for localStorage serialization
@@ -348,7 +348,8 @@ export interface ValidationError {
  * Form Validation (from Dev Notes):
  * - name: Required, max 100 characters
  * - type: Required, must be 'investment', 'debt' or 'asset'
- * - currentBalance: Required, integer (in cents, can be negative)
+ * - currentBalance: Required, non-negative integer (in cents). Story 103.1: a debt
+ *   is the positive amount owed; a negative balance is refused for every type.
  * - monthlyContribution: Optional, non-negative integer (in cents)
  */
 export function validateBalanceTracking(
@@ -492,6 +493,22 @@ export function validateBalanceTracking(
     errors.push({
       field: 'currentBalance',
       message: 'Current balance must be an integer (in cents, not a float)',
+      value: input.currentBalance,
+    })
+  } else if (input.currentBalance < 0) {
+    // Story 103.1 (FR171, D3): every type is a non-negative magnitude. A debt is
+    // the amount OWED (`NetWorthTotals.debtsCents` subtracts it), so a negative
+    // one used to INFLATE net worth wherever it was summed raw. The form already
+    // refused negatives for all types; this is the store write path.
+    // ⚠️ This is the ONLY refusal point for the sign, on purpose: it runs before
+    // `queue.add()`, so nothing is ever enqueued. A DB CHECK, a server push bound
+    // or a pull-gate bound would each be a permanent refusal past the queue, and
+    // in this repo every such refusal deadlocks sync for the whole account or
+    // silently drops the user's row (memory: schema-as-gate traps 4-5). A legacy
+    // or pulled negative debt is READ as owed instead (`debtOwedCents`).
+    errors.push({
+      field: 'currentBalance',
+      message: 'Current balance cannot be negative',
       value: input.currentBalance,
     })
   }
@@ -686,4 +703,23 @@ export function resolveDebtPaymentExpense<E extends { id: string }>(
   const id = entry.paymentExpenseId
   if (typeof id !== 'string' || id === '') return null
   return expenses.find((expense) => expense.id === id) ?? null
+}
+
+/**
+ * A debt balance as the amount OWED, in cents (Story 103.1, FR171, D1).
+ *
+ * A debt is stored as a positive magnitude, and `validateBalanceTracking` refuses
+ * a negative one. A negative debt can still reach a store by paths that skip the
+ * validator (a legacy or hand-edited localStorage blob, or a pulled row: the pull
+ * gate, server gate and DB deliberately do not refuse the sign). Reading it as
+ * its magnitude keeps every surface agreeing: before this, the Scenario Builder
+ * took `Math.abs` while Overview, `/balance` and the Report summed it raw, so a
+ * −X debt RAISED net worth there.
+ *
+ * ⚠️ Every debt reader goes through this one function. A non-finite input is
+ * returned UNCHANGED: corrupt-row handling (readable-rows partition + disclose,
+ * NaN guards) stays where it is, and must not see a NaN turned into 0.
+ */
+export function debtOwedCents(raw: number): number {
+  return Number.isFinite(raw) ? Math.abs(raw) : raw
 }
