@@ -900,16 +900,13 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
     expect(value('Annual return for Pension')).toBe('0.00%')
     expect(value('Annual return for ISA')).toBe('5.50%')
     expect(view.queryByLabelText('Annual return for Car loan')).toBeNull()
-    // Story 102.2: the debt's label and (off) flag came back from the database.
+    // Story 102.2: the debt's label came back from the database, and a labelled
+    // debt row offers no flag (code review: its payment is the row's own). (A v5
+    // TRUE flag surviving the mapper is pinned in forecasting-saved-balance-rows.)
     expect(rtl.within(section).getByText('from Expenses: Car payment')).toBeInTheDocument()
-    const debtFlag = view.getByLabelText(
-      'Payment already in Expenses, for Car loan'
-    ) as HTMLInputElement
-    expect(debtFlag).not.toBeChecked()
+    expect(view.queryByLabelText('Payment already in Expenses, for Car loan')).toBeNull()
 
-    // Save over it (PUT) with a NEGATIVE rate and the debt flagged: same row,
-    // version 5, rate and flag kept.
-    rtl.fireEvent.click(debtFlag)
+    // Save over it (PUT) with a NEGATIVE rate: same row, version 5, rate kept.
     typeInto(view.getByLabelText('Annual return for ISA'), '-2.5')
     await new Promise((resolve) => setTimeout(resolve, 800))
     await pressSave(view)
@@ -931,7 +928,7 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
       }
     ).inputs.balanceAccounts
     expect(after.map((row) => row.annualReturn)).toEqual([0, undefined, -0.025])
-    expect(after[1]?.contributionRecordedAsExpense).toBe(true)
+    expect(after[1]?.contributionRecordedAsExpense).toBe(false)
     expect(after[1]?.paidByExpenseName).toBe('Car payment')
 
     // Load it again (code review 100.3): the NEGATIVE rate comes back through the
@@ -943,7 +940,6 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
     await rtl.waitFor(() => expect(value('Annual return for ISA')).toBe('-2.50%'))
     expect(value('Annual return for Pension')).toBe('0.00%')
     expect(view.queryByLabelText('Annual return for Car loan')).toBeNull()
-    // A v5 debt's TRUE flag survives the mapper (it used to force `false`).
-    expect(view.getByLabelText('Payment already in Expenses, for Car loan')).toBeChecked()
+    expect(view.getByText('from Expenses: Car payment')).toBeInTheDocument()
   }, 30_000)
 })

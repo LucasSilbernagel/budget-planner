@@ -570,10 +570,29 @@ function balanceFromStore(
     const type = balanceRowType(entry.type)
     if (type === null) continue
     const raw = entry.currentBalance
+    const balance =
+      type === 'debt'
+        ? typeof raw === 'number' && Number.isFinite(raw)
+          ? Math.abs(raw)
+          : 0
+        : nonNegativeCents(raw)
     let linked: (typeof expenses)[number] | null = null
     if (type === 'debt') {
       const resolved = resolveDebtPaymentExpense(entry, expenses)
-      if (resolved !== null && !consumedExpenseIds.has(resolved.id)) {
+      // Code review 102.2: the expense moves only when the move keeps the money.
+      // A debt at 0 (paid off, or corrupt and seeded 0 by D6) would pay nothing,
+      // and an amount that is not a finite number above 0 would seed 0 (a
+      // negative one lowers expenses today); either way the payment would vanish
+      // from the scenario, so such a debt seeds as unlinked and the expense stays.
+      const amount = resolved?.amount
+      if (
+        resolved !== null &&
+        !consumedExpenseIds.has(resolved.id) &&
+        balance > 0 &&
+        typeof amount === 'number' &&
+        Number.isFinite(amount) &&
+        amount > 0
+      ) {
         linked = resolved
         consumedExpenseIds.add(resolved.id)
       }
@@ -583,12 +602,7 @@ function balanceFromStore(
       id: `balance-seeded-${rows.length}`,
       name: typeof entry.name === 'string' ? entry.name : '',
       type,
-      balance:
-        type === 'debt'
-          ? typeof raw === 'number' && Number.isFinite(raw)
-            ? Math.abs(raw)
-            : 0
-          : nonNegativeCents(raw),
+      balance,
       ...(type === 'debt'
         ? debtPaymentFromExpense(linked)
         : {
@@ -662,7 +676,13 @@ function balanceFromSaved(
       if (type === null) continue
       const frequency = account['frequency']
       const paidBy = account['paidByExpenseName']
-      const paidByName = type === 'debt' && typeof paidBy === 'string' ? paidBy.trim() : ''
+      const flagged =
+        (type === 'debt' && legacyDebts) || account['contributionRecordedAsExpense'] === true
+      // A labelled debt row never shows its flag (code review 102.2), so a row
+      // that is flagged (legacy, or a corrupt save) drops the label instead of
+      // hiding a ticked box: the label means "the payment is this row's own".
+      const paidByName =
+        type === 'debt' && !flagged && typeof paidBy === 'string' ? paidBy.trim() : ''
       rows.push({
         id: `balance-loaded-${rows.length}`,
         name: typeof account['name'] === 'string' ? account['name'] : '',
@@ -670,8 +690,7 @@ function balanceFromSaved(
         balance: nonNegativeCents(account['balance']),
         contribution: nonNegativeCents(account['contribution']),
         frequency: isKnownFrequency(frequency) ? frequency : 'monthly',
-        contributionRecordedAsExpense:
-          (type === 'debt' && legacyDebts) || account['contributionRecordedAsExpense'] === true,
+        contributionRecordedAsExpense: flagged,
         annualReturn:
           type === 'investment'
             ? annualReturnFromSaved(account['annualReturn'])
@@ -3144,6 +3163,7 @@ function BalanceAccountRow({
   const rowLabel = rowName === '' ? 'unnamed balance' : rowName
   const isInvestment = account.type === 'investment'
   const flagLabel = isInvestment ? NOT_FROM_LEFT_OVER_LABEL : PAYMENT_IN_EXPENSES_LABEL
+  const showFlag = isInvestment || !account.paidByExpenseName
   const selectClass =
     'w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm'
 
@@ -3254,25 +3274,32 @@ function BalanceAccountRow({
           from Expenses: {account.paidByExpenseName}
         </p>
       )}
-      {/* The one flag, labelled per type. Investment (story 45.1, as on
+      {/* The one flag, labelled per type. Hidden on a debt row that carries a
+          "from Expenses" label (code review 102.2, Lucas): its payment visibly is
+          the row's own, and ticking it would count that payment NOWHERE (the
+          expense left the Expenses rows when the row was seeded). Investment (story 45.1, as on
           `/balance`): the contribution is already out of take-home pay or an
           Expenses line, so the forecast does not take it from the money left over
           a second time. Debt (story 102.2, D2): the payment is already an
           Expenses line, so the row takes nothing from cash (100.2 D4 math). */}
-      <div className="mt-3 flex items-start gap-2">
-        <input
-          id={flagId}
-          type="checkbox"
-          checked={account.contributionRecordedAsExpense}
-          onChange={(e) => onUpdate(account.id, 'contributionRecordedAsExpense', e.target.checked)}
-          aria-label={`${flagLabel}, for ${rowLabel}`}
-          autoComplete="off"
-          className="mt-0.5 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600"
-        />
-        <label htmlFor={flagId} className="text-sm text-label">
-          {flagLabel}
-        </label>
-      </div>
+      {showFlag && (
+        <div className="mt-3 flex items-start gap-2">
+          <input
+            id={flagId}
+            type="checkbox"
+            checked={account.contributionRecordedAsExpense}
+            onChange={(e) =>
+              onUpdate(account.id, 'contributionRecordedAsExpense', e.target.checked)
+            }
+            aria-label={`${flagLabel}, for ${rowLabel}`}
+            autoComplete="off"
+            className="mt-0.5 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600"
+          />
+          <label htmlFor={flagId} className="text-sm text-label">
+            {flagLabel}
+          </label>
+        </div>
+      )}
       {/* Plain text, not a live region: it changes on every recompute. */}
       {outcome && (
         <p className="mt-3 text-sm text-body">

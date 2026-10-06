@@ -321,7 +321,7 @@ describe('the linked expense moves only with the debt row that carries it (story
     expect(screen.queryByLabelText('Contribution for Loan')).toBeNull()
   })
 
-  it('keeps Expenses rows touched first, and still seeds the debt with its payment and flag off', () => {
+  it('keeps Expenses rows touched first, and still seeds the debt with its payment, label and no flag', () => {
     addLinkedDebt()
     const { rerender } = render(<ScenarioBuilder onSave={onSave} />)
     fireEvent.click(screen.getByRole('button', { name: '+ Add Expense' }))
@@ -329,8 +329,8 @@ describe('the linked expense moves only with the debt row that carries it (story
     expect(screen.getAllByDisplayValue('New Expense')).toHaveLength(1)
     expect(screen.queryByDisplayValue('Rent')).toBeNull()
     expect(screen.getByLabelText('Contribution for Loan')).toHaveValue(200)
-    expect(
-      screen.getByRole('checkbox', { name: 'Payment already in Expenses, for Loan' })
-    ).not.toBeChecked()
+    expect(screen.getByText('from Expenses: Loan payment')).toBeInTheDocument()
+    // A labelled debt row has no flag checkbox (code review 102.2).
+    expect(screen.queryByLabelText('Payment already in Expenses, for Loan')).toBeNull()
   })
 })

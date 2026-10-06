@@ -1282,13 +1282,6 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
 })
 
 /**
- * Each investment row carries its own annual return (story 100.3, FR166).
- *
- * Every expected figure is derived BY HAND in the comment beside it, never by
- * calling the engine's own formula. Rule: `inv_y = round(inv_{y-1} × (1 +
- * annualReturn)) + annualContribution`, the 100.2 rule with the row's own rate.
- */
-/**
  * A debt's payment is cash out only while the debt is owed (story 102.2, FR170,
  * replacing 100.2 D4 for UNFLAGGED debt rows).
  *
@@ -1443,6 +1436,51 @@ describe('calculateFinancialForecast — a debt payment stops at payoff (102.2)'
     ])
   })
 
+  it('keeps the 100.1 invariant with a counted investment, a flagged debt and an unflagged debt together (T6 mix)', () => {
+    // Counted investment 100.00/mo (1,200.00 a year leaves savings); flagged debt
+    // 200.00/mo (takes nothing); unflagged debt 5,000.00 at 200.00/mo.
+    const r = calculateFinancialForecast(
+      {
+        ...CURRENT_DATA,
+        investments: 1_000_000,
+        balanceAccounts: [
+          {
+            type: 'investment',
+            annualReturn: 0.07,
+            balance: 1_000_000,
+            contribution: 10_000,
+            frequency: 'monthly',
+          },
+          debt(1_000_000, 20_000, { contributionRecordedAsExpense: true }),
+          debt(500_000, 20_000),
+        ],
+        savingsAccounts: [
+          { balance: 60_000, monthlyContribution: 20_000 },
+          { balance: 40_000, monthlyContribution: 0 },
+        ],
+      },
+      FLAT,
+      4
+    )
+    for (const p of r.projection) {
+      const rowSum = (p.savingsAccounts ?? []).reduce((sum, b) => sum + b, 0)
+      expect(rowSum + (p.unallocatedSavings ?? Number.NaN), `year ${p.year}`).toBe(p.savings)
+    }
+    // By hand, unassigned per year = 1,200,000 − unflagged debt paid − 240,000 to
+    // the savings rows − 120,000 counted contribution; the flagged debt takes 0.
+    //   Y1 −240,000 → 600,000; Y2 −240,000 → 600,000; Y3 −20,000 → 820,000; Y4 → 840,000.
+    expect(r.projection.map((p) => p.unallocatedSavings)).toEqual([
+      600_000, 1_200_000, 2_020_000, 2_860_000,
+    ])
+    // Both debts still fall: flagged 10,000.00 − 2,400.00 a year; unflagged pays off in Y3.
+    expect(r.projection.map((p) => p.balanceAccounts?.slice(1))).toEqual([
+      [760_000, 260_000],
+      [520_000, 20_000],
+      [280_000, 0],
+      [40_000, 0],
+    ])
+  })
+
   it('a moved payment ends where the old expense line did until payoff, then savings rise by the payment every year (AC-5)', () => {
     // (a) pre-story: the payment is an Expenses line and the debt is flagged (D4).
     // (b) story 102.2: the expense line is gone and the debt row pays (unflagged).
@@ -1484,6 +1522,13 @@ describe('calculateFinancialForecast — a debt payment stops at payoff (102.2)'
   })
 })
 
+/**
+ * Each investment row carries its own annual return (story 100.3, FR166).
+ *
+ * Every expected figure is derived BY HAND in the comment beside it, never by
+ * calling the engine's own formula. Rule: `inv_y = round(inv_{y-1} × (1 +
+ * annualReturn)) + annualContribution`, the 100.2 rule with the row's own rate.
+ */
 describe('calculateFinancialForecast — per-investment annual return (100.3)', () => {
   /** One investment row, no contribution, at `rate`; `investments` matches. */
   function oneRow(balance: number, annualReturn: unknown, contribution = 0) {

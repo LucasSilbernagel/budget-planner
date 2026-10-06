@@ -435,21 +435,23 @@ describe('the linked expense moves into the debt row (story 102.2)', () => {
     ])
   }
 
-  it('leaves the expense out of the Expenses rows, labels the debt row, starts its flag off, and keeps year 1 as it was (AC-1)', async () => {
+  it('leaves the expense out of the Expenses rows, labels the debt row, keeps its flag off and hidden, and keeps year 1 as it was (AC-1)', async () => {
     linkedFixture()
     render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResult} />)
     expect(expenseRowNames()).toEqual(['Rent'])
     expect(screen.getByLabelText('Contribution for Loan')).toHaveValue(200)
     const label = within(section()).getByText('from Expenses: Loan payment')
     expect(label.className.split(/\s+/)).toContain('text-faint')
-    expect(
-      screen.getByRole('checkbox', { name: 'Payment already in Expenses, for Loan' })
-    ).not.toBeChecked()
+    // Code review 102.2 (Lucas): a labelled debt row has NO flag checkbox (its
+    // payment is visibly the row's own; ticking it would count it nowhere).
+    expect(within(section()).queryAllByRole('checkbox')).toHaveLength(0)
     await waitForResult()
-    // MEASURED at T0 with the pre-story builder on the same data (Rent 3,800.00
-    // and Loan payment 200.00 both Expenses rows, the debt under 100.2 D4):
-    // year 1 netIncome 1,200,000 and expenses 4,800,000. The money moved, it did
-    // not change.
+    // Year 1 netIncome 1,200,000 and expenses 4,800,000: MEASURED at T0 by running
+    // the UNCHANGED engine (main `f6f1e96`, core `src` through tsx) with Rent
+    // 3,800.00 and Loan payment 200.00 both as expenses and the debt under 100.2
+    // D4 (the run that produced `V4_RESULT` below; its extra investment row does
+    // not touch `netIncome` or `expenses`). Not a run of the old builder itself.
+    // The money moved, it did not change.
     await waitFor(() => expect(engineRows.length).toBeGreaterThan(0))
     const year1 = onResult.mock.calls.at(-1)?.[0]?.projection[0]
     expect(year1?.netIncome).toBe(1_200_000)
@@ -526,21 +528,69 @@ describe('the linked expense moves into the debt row (story 102.2)', () => {
     )
   })
 
-  it('the debt checkbox puts the payment back in Expenses: ticking it stops the deduction (D2)', async () => {
-    linkedFixture()
+  it('on an UNLINKED debt whose payment is also an Expenses row, ticking the checkbox stops the double count, by hand (D2)', async () => {
+    // Rent 3,800.00 + Car payment 200.00 (NOT linked) = 4,000.00 a month, so
+    // 12,000.00 a year left over. Car loan 3,000.00, its payment typed as 200.00.
+    useIncomeStore.setState({ incomeSources: [income(500_000)] })
+    useExpenseStore.setState({
+      expenses: [expense(380_000), expense(20_000, { id: 'exp-car', name: 'Car payment' })],
+    })
+    setEntries([entry({ id: 'e-1', name: 'Car loan', type: 'debt', currentBalance: 300_000 })])
+    const format = formatter()
     render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResult} />)
     await waitForResult()
-    await waitFor(() =>
-      expect(onResult.mock.calls.at(-1)?.[0]?.projection[0]?.netIncome).toBe(1_200_000)
+    await setYears(2)
+    fireEvent.change(screen.getByLabelText('Contribution for Car loan'), {
+      target: { value: '200' },
+    })
+    // Unflagged, 2 years: Y1 pays 2,400.00 → 9,600.00 kept; Y2 pays the 600.00
+    // remainder → 11,400.00 kept. Savings 21,000.00, debt 0: ending 21,000.00.
+    await waitFor(() => expect(card('Ending Net Worth')).toBe(format(2_100_000)), {
+      timeout: 3000,
+    })
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'Payment already in Expenses, for Car loan' })
     )
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Payment already in Expenses, for Loan' }))
-    // Flagged: the 2,400.00 payment no longer leaves cash, so year 1 nets the
-    // whole (5,000.00 − 3,800.00) × 12 = 14,400.00.
-    await waitFor(
-      () => expect(onResult.mock.calls.at(-1)?.[0]?.projection[0]?.netIncome).toBe(1_440_000),
-      { timeout: 3000 }
-    )
+    // Flagged: the Expenses row alone takes the payment: 2 × 12,000.00 = 24,000.00.
+    await waitFor(() => expect(card('Ending Net Worth')).toBe(format(2_400_000)), {
+      timeout: 3000,
+    })
   })
+
+  it('shows no debt checkbox on an investment row, and the investment flag on no debt row (AC-9)', () => {
+    setEntries([
+      entry({ id: 'e-1', name: 'Pension', currentBalance: 100_000 }),
+      entry({ id: 'e-2', name: 'Card', type: 'debt', currentBalance: 50_000 }),
+    ])
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    expect(screen.queryByLabelText('Payment already in Expenses, for Pension')).toBeNull()
+    expect(screen.getByLabelText('Not taken from the money left over, for Pension')).toBeTruthy()
+    expect(screen.queryByLabelText('Not taken from the money left over, for Card')).toBeNull()
+    expect(screen.getByLabelText('Payment already in Expenses, for Card')).toBeTruthy()
+  })
+
+  it.each([
+    ['a paid-off debt (balance 0)', { currentBalance: 0 }, 20_000],
+    ['a corrupt debt balance (seeds 0, D6)', { currentBalance: Number.NaN }, 20_000],
+    ['a negative linked expense', { currentBalance: 300_000 }, -20_000],
+    ['an unreadable linked amount', { currentBalance: 300_000 }, Number.NaN],
+  ])(
+    'does not move the expense for %s: the money stays an Expenses row (code review)',
+    (_case, debt, amount) => {
+      useExpenseStore.setState({
+        expenses: [expense(380_000), expense(amount, { id: 'exp-loan', name: 'Loan payment' })],
+      })
+      setEntries([
+        entry({ id: 'e-1', name: 'Loan', type: 'debt', paymentExpenseId: 'exp-loan', ...debt }),
+      ])
+      render(<ScenarioBuilder onSave={vi.fn()} />)
+      expect(expenseRowNames()).toEqual(['Rent', 'Loan payment'])
+      expect(screen.getByLabelText('Contribution for Loan')).toHaveValue(0)
+      expect(within(section()).queryByText(/^from Expenses:/)).toBeNull()
+      // Unlabelled, so the row offers its flag as any debt does.
+      expect(screen.getByLabelText('Payment already in Expenses, for Loan')).not.toBeChecked()
+    }
+  )
 
   it('hides the label on an investment and shows it again back on Debt; editing the payment keeps it (D6, D7)', () => {
     linkedFixture()
@@ -549,8 +599,11 @@ describe('the linked expense moves into the debt row (story 102.2)', () => {
     expect(within(section()).getByText('from Expenses: Loan payment')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Type for Loan'), { target: { value: 'investment' } })
     expect(within(section()).queryByText(/^from Expenses:/)).toBeNull()
+    // As an investment the row offers ITS flag (the label is hidden, kept in state).
+    expect(screen.getByLabelText('Not taken from the money left over, for Loan')).toBeTruthy()
     fireEvent.change(screen.getByLabelText('Type for Loan'), { target: { value: 'debt' } })
     expect(within(section()).getByText('from Expenses: Loan payment')).toBeInTheDocument()
+    expect(within(section()).queryAllByRole('checkbox')).toHaveLength(0)
   })
 })
 
@@ -1219,6 +1272,35 @@ describe('a forecast saved before version 5 keeps its figures (story 102.2, AC-6
       frequency: 'monthly',
       contributionRecordedAsExpense: true,
     })
+  })
+
+  it('a saved debt that is flagged (legacy, or a corrupt v5 save) drops its label, so a ticked box is never hidden (code review)', () => {
+    const withLabel = (version: number, flag: boolean) =>
+      ({
+        ...(legacyForecast(version) as object),
+        inputs: {
+          ...V4_INPUTS,
+          investments: 0,
+          balanceAccounts: [
+            {
+              ...V4_INPUTS.balanceAccounts[1],
+              contributionRecordedAsExpense: flag,
+              paidByExpenseName: 'Loan payment',
+            },
+          ],
+        },
+      }) as never
+    for (const [version, flag] of [
+      [4, false],
+      [5, true],
+    ] as const) {
+      document.body.innerHTML = ''
+      render(<ScenarioBuilder onSave={vi.fn()} initialForecast={withLabel(version, flag)} />)
+      expect(within(section()).queryByText(/^from Expenses:/)).toBeNull()
+      expect(
+        screen.getByRole('checkbox', { name: 'Payment already in Expenses, for Loan' })
+      ).toBeChecked()
+    }
   })
 
   it('reloads a v5 label and keeps only a non-empty string (the builder is defensive on its own)', () => {
