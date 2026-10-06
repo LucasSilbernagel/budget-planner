@@ -100,7 +100,8 @@ describe('roundCents — large magnitudes never do worse than bare Math.round (A
   const ranges: { label: string; start: bigint }[] = [
     { label: '1e13 cents', start: 10_000_000_000_000n },
     {
-      label: 'the validator bound (MAX_SAFE_INTEGER / 100)',
+      label:
+        'MAX_SAFE_INTEGER / 100 (the balance validator bound before story 106.1 made it int32)',
       start: BigInt(Math.floor(Number.MAX_SAFE_INTEGER / 100)) - 200_000n,
     },
   ]

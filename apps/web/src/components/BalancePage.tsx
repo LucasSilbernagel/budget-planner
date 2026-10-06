@@ -11,6 +11,7 @@ import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
 import { useNetWorth } from '../hooks/useNetWorth'
 import { useStoresHydrated } from '../hooks/useStoresHydrated'
 import { useTableSort } from '../hooks/useTableSort'
+import { exceedsMoneyLimit, moneyLimitMessage } from '../lib/money-limit'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import {
   type BalanceRow,
@@ -413,6 +414,10 @@ export function BalancePage() {
     const balanceInCents = parseFromInput(currentBalance, locale)
     if (balanceInCents < 0) {
       next.currentBalance = 'Please enter a valid non-negative current balance'
+    } else if (exceedsMoneyLimit(balanceInCents)) {
+      // Story 106.1 (FR174): above the int32 sync limit the row would be saved
+      // here and silently refused at enqueue, so refuse it before saving.
+      next.currentBalance = moneyLimitMessage({ mode, currency, locale })
     }
     // Story 43.4 (D2): the contribution field is hidden for assets, so never
     // block an asset submit on a stale value left over from a type switch.
@@ -422,10 +427,12 @@ export function BalancePage() {
       const monthlyInCents = parseFromInput(monthlyContribution, locale)
       if (monthlyInCents < 0) {
         next.monthlyContribution = 'Please enter a valid non-negative monthly contribution'
+      } else if (exceedsMoneyLimit(monthlyInCents)) {
+        next.monthlyContribution = moneyLimitMessage({ mode, currency, locale })
       }
     }
     return next
-  }, [type, name, currentBalance, monthlyContribution, locale])
+  }, [type, name, currentBalance, monthlyContribution, mode, currency, locale])
 
   const clearErrors = () => {
     setErrors({})

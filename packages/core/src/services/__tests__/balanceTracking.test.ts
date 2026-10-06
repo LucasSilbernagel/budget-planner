@@ -690,7 +690,11 @@ describe('Edge Case Handling - Validation', () => {
   })
 
   describe('Bounds validation', () => {
-    it('should reject currentBalance exceeding safe integer bounds', () => {
+    // Story 106.1 (FR174): the bound is now the int32 sync limit, not
+    // `MAX_SAFE_INTEGER / 100`, and the message names it ("can sync") rather
+    // than "safe integer bounds". `MAX_SAFE_INTEGER` is still refused, by the
+    // new bound; the exact edges are pinned in `money-limits.test.ts`.
+    it('should reject currentBalance above the largest amount that can sync', () => {
       const input: Partial<ClientNewBalanceTracking> = {
         type: 'investment',
         name: 'Test',
@@ -699,9 +703,9 @@ describe('Edge Case Handling - Validation', () => {
       }
       const errors = validateBalanceTracking(input)
       expect(errors.length).toBeGreaterThan(0)
-      expect(errors.some((e) => e.field === 'currentBalance' && e.message.includes('bounds'))).toBe(
-        true
-      )
+      expect(
+        errors.some((e) => e.field === 'currentBalance' && e.message.includes('can sync'))
+      ).toBe(true)
     })
   })
 

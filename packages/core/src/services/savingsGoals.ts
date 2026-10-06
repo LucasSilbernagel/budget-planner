@@ -11,6 +11,7 @@
  */
 
 import type { SavingsGoal as DbSavingsGoal } from '@budget-planner/db'
+import { MAX_MONEY_CENTS } from '../finance/money-limits'
 import { calculateProgress as calculateSavingsGoalProgress } from '../utils/savingsGoalCalculations'
 import { generateUuid } from '../utils/uuid'
 
@@ -278,6 +279,13 @@ export function validateSavingsGoal(input: Partial<ClientNewSavingsGoal>): Valid
         message: 'Target amount must be positive',
         value: input.targetAmount,
       })
+    } else if (input.targetAmount > MAX_MONEY_CENTS) {
+      // Story 106.1 (FR174): the sync gate's int32 bound.
+      errors.push({
+        field: 'targetAmount',
+        message: 'Target amount exceeds the largest amount that can sync',
+        value: input.targetAmount,
+      })
     }
   }
 
@@ -298,6 +306,13 @@ export function validateSavingsGoal(input: Partial<ClientNewSavingsGoal>): Valid
     errors.push({
       field: 'currentBalance',
       message: 'Current balance cannot be negative',
+      value: input.currentBalance,
+    })
+  } else if (input.currentBalance > MAX_MONEY_CENTS) {
+    // Story 106.1 (FR174): the sync gate's int32 bound.
+    errors.push({
+      field: 'currentBalance',
+      message: 'Current balance exceeds the largest amount that can sync',
       value: input.currentBalance,
     })
   } else if (
@@ -342,6 +357,13 @@ export function validateSavingsGoal(input: Partial<ClientNewSavingsGoal>): Valid
       errors.push({
         field: 'monthlyAllocation',
         message: 'Monthly allocation cannot be negative',
+        value: input.monthlyAllocation,
+      })
+    } else if (input.monthlyAllocation > MAX_MONEY_CENTS) {
+      // Story 106.1 (FR174): the sync gate's int32 bound.
+      errors.push({
+        field: 'monthlyAllocation',
+        message: 'Monthly allocation exceeds the largest amount that can sync',
         value: input.monthlyAllocation,
       })
     }
