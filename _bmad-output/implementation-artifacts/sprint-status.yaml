@@ -1,4 +1,5 @@
 # generated: 2026-06-18
+# last_updated: 2026-10-06m (106.1 review -> done; epic 106 done.)
 # last_updated: 2026-10-06l (105.1 review -> done, epic 105 done; epic 106 (106.1) in dev.)
 # last_updated: 2026-10-06k (103.1 review -> done: patches fbf720f, screenshots 8c93a33; epics 103 + 104 done.)
 # last_updated: 2026-10-06j (104.1 review -> done: patches 5ddcb53, branch not pushed; 103.1 dev running.)
@@ -1367,8 +1368,8 @@ development_status:
   epic-105: done  # DONE 2026-10-06 (105.1).  Added 2026-10-06 (approved) from sprint-change-proposal-2026-10-06-biweekly-normalize.md (FR173)
   105-1-biweekly-amounts-convert-to-monthly-without-losing-a-cent: done  # REVIEW 2026-10-06 (0 decision, 2 comment patches 5d8e86e, 2 defer, 9 dismissed; compare 37523121802 green); DEV 9dd3b04 (branch story/105-1-biweekly-normalize, not pushed), core 1341, biweekly 120,989→0; CREATED 2026-10-06 at 313248b; D1-D3 CONFIRMED; dev launched
   epic-105-retrospective: optional
-  epic-106: in-progress  # Added 2026-10-06 (approved) from sprint-change-proposal-2026-10-06-money-int32-bound.md (FR174)
-  106-1-a-money-amount-too-large-to-sync-is-refused-where-i-type-it: in-progress  # dev launched 2026-10-06; CREATED 2026-10-06 at e81db6d; D1-D3 CONFIRMED (cap int32)
+  epic-106: done  # DONE 2026-10-06 (106.1).  Added 2026-10-06 (approved) from sprint-change-proposal-2026-10-06-money-int32-bound.md (FR174)
+  106-1-a-money-amount-too-large-to-sync-is-refused-where-i-type-it: done  # REVIEW 2026-10-06 (0 decision, 2 patches a2c58bc, 4 defer, 9 dismissed; compare 37525426177 green); DEV 1eda025 (branch story/106-1-money-int32-cap, not pushed), core 1344 web 5030 e2e 23, 13/13 arms RED; dev launched 2026-10-06; CREATED 2026-10-06 at e81db6d; D1-D3 CONFIRMED (cap int32)
   epic-106-retrospective: optional
 
 action_items:
