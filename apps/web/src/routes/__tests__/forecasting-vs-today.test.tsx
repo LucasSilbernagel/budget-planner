@@ -4,7 +4,7 @@ import {
   type YearlyForecast,
   calculateFinancialForecast,
 } from '@budget-planner/core'
-import { fireEvent, renderHook, within } from '@testing-library/react'
+import { act, fireEvent, renderHook, waitFor, within } from '@testing-library/react'
 import type React from 'react'
 import { type ReactElement, cloneElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -36,6 +36,13 @@ vi.mock('recharts', async (importOriginal) => {
       cloneElement(children, { width: 600, height: 400 } as never),
   }
 })
+
+// Holds the fresh-device "first pull still in flight" window open (AC-6), so a
+// forecast can be reopened before today's data is ready (code review 107.1).
+const syncPending = vi.hoisted(() => ({ value: false }))
+vi.mock('../../hooks/useIsInitialSyncPending', () => ({
+  useIsInitialSyncPending: () => syncPending.value,
+}))
 
 const usePremiumAccess = vi.fn()
 vi.mock('../../hooks/usePremiumAccess', () => ({
@@ -116,7 +123,7 @@ function row(year: number, netWorth: number): YearlyForecast {
   return { year, income: 0, expenses: 0, netIncome: 0, savings: netWorth, investments: 0, netWorth }
 }
 
-function savedRow(): Record<string, unknown> {
+function savedRow(inputs: Record<string, unknown> = {}): Record<string, unknown> {
   const scenario = { name: 'Big plan', incomeGrowthRate: 0, expenseGrowthRate: 0 }
   const result: ForecastingResult = {
     scenario,
@@ -143,7 +150,7 @@ function savedRow(): Record<string, unknown> {
     scenarioData: JSON.stringify({
       scenario,
       result,
-      inputs: { savings: 0, investments: 0, years: YEARS },
+      inputs: { savings: 0, investments: 0, years: YEARS, ...inputs },
     }),
   }
 }
@@ -171,6 +178,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  syncPending.value = false
   useIncomeStore.setState({ incomeSources: [] })
   useExpenseStore.setState({ expenses: [] })
   vi.clearAllMocks()
@@ -205,5 +213,54 @@ describe('a saved forecast is compared against today (story 107.1)', () => {
       .find((dt) => dt.closest('.hidden') === null) as HTMLElement
     const format = formatter()
     expect(card.nextElementSibling?.textContent).toBe(`+${format(STORED_ENDING - todayEnding())}`)
+  })
+
+  it("a forecast reopened before today's data is ready shows on Projections once it is, even if it never recomputes (code review 107.1)", async () => {
+    // A saved rate outside -100%..100% is flagged on load, so the builder never
+    // recomputes until it is fixed (100.3 D9): only the "fill today's baseline"
+    // step can put this forecast on Projections.
+    fetchForecasts.mockResolvedValue({
+      success: true,
+      data: [
+        savedRow({
+          balanceAccounts: [
+            {
+              name: 'Wild fund',
+              type: 'investment',
+              balance: 0,
+              contribution: 0,
+              frequency: 'monthly',
+              annualReturn: 5,
+            },
+          ],
+        }),
+      ],
+    })
+    syncPending.value = true
+    renderWithRouter(<ForecastingPage />)
+    fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Load Big plan' }))
+    fireEvent.click(screen.getByRole('button', { name: /projections/i }))
+    expect(
+      screen.getByText('Build a scenario in the Scenario Builder to see its projection here.')
+    ).toBeInTheDocument()
+
+    // The first pull lands: today's data is ready (a store write re-renders).
+    syncPending.value = false
+    act(() => seedToday())
+    const format = formatter()
+    const expected = `+${format(STORED_ENDING - todayEnding())}`
+    // The builder stays mounted, CSS-hidden, with its own card: the VISIBLE one is
+    // the Projections tab's.
+    await waitFor(
+      () => {
+        const visible = screen
+          .getAllByText('vs. today', { selector: 'dt' })
+          .filter((dt) => dt.closest('.hidden') === null)
+        expect(visible).toHaveLength(1)
+        expect(visible[0]?.nextElementSibling?.textContent).toBe(expected)
+      },
+      { timeout: 3000 }
+    )
   })
 })

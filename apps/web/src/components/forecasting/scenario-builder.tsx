@@ -1141,12 +1141,20 @@ export function ScenarioBuilder({
   // Fill the loaded result's empty baseline once today's data is ready. A
   // recomputed result always carries a full baseline (years >= 1), so an empty
   // one can only be that placeholder.
+  //
+  // ⚠️ It is LIFTED too (code review 107.1). The page shows a reopened forecast
+  // on Projections only when today's data was ready at the click; otherwise it
+  // waits for this builder's first recompute, which a forecast with a field
+  // flagged on load never runs. Without the lift that forecast's Projections
+  // stayed empty until the field was fixed (MEASURED: RED in
+  // `routes/__tests__/forecasting-vs-today.test.tsx`).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on today's data alone — `result` is read only to find the placeholder, and re-running on every recompute would be wasted work (a recomputed baseline is never empty).
   useEffect(() => {
-    if (!today.data) return
-    const data = today.data
-    setResult((prev) =>
-      prev && prev.baseline.length === 0 ? withTodayBaseline(prev, data) ?? prev : prev
-    )
+    if (!today.data || !result || result.baseline.length > 0) return
+    const filled = withTodayBaseline(result, today.data)
+    if (!filled) return
+    setResult(filled)
+    onResultChangeRef.current?.(filled)
   }, [today.data])
   /**
    * The savings row ids the current `result` was computed for, in engine input
