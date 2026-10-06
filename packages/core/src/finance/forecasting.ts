@@ -482,81 +482,50 @@ export interface ForecastingResult {
   }
 }
 
+/** Story 107.1: one forecast dataset, for the projection and (optionally) a separate baseline. */
+export interface ForecastInputData {
+  income: NormalizableFinancialItem[]
+  expenses: NormalizableFinancialItem[]
+  savings: number // Current savings in cents
+  investments: number // Current investments in cents
+  /**
+   * Optional per-account split of `savings` (story 100.1). When given, the
+   * balances must sum to `savings` exactly (`SAVINGS_ROWS_MISMATCH`).
+   */
+  savingsAccounts?: SavingsAccountInput[]
+  /**
+   * Optional investment and debt rows (story 100.2). When given, the investment
+   * rows' balances must sum to `investments` exactly (`BALANCE_ROWS_MISMATCH`),
+   * and the debt rows lower net worth. When absent, the output is identical to
+   * before the story (no new keys). Each investment row carries its own
+   * `annualReturn` (story 100.3).
+   */
+  balanceAccounts?: BalanceAccountInput[]
+}
+
 /**
- * Calculates financial forecast based on current data and scenario
- *
- * @param currentData - Current financial data (income, expenses, savings, investments)
- * @param scenario - Forecasting scenario with assumptions
- * @param years - Number of years to project; must satisfy `isValidForecastYears`
- * @returns Complete forecasting result
- * @throws Error if `years` is not a whole number of years in 1-30; if either
- *   growth rate is not a finite number from −1 to 1 (`GROWTH_RATE_OUT_OF_RANGE`);
- *   if the starting `savings` or `investments`, or a one-time event dated inside
- *   the window, is not a finite number (`validateAmount`); if a savings row's
- *   balance or contribution is not finite (`validateAmount`), negative
- *   (`SAVINGS_ROW_NEGATIVE`), or the balances do not sum to `savings`
- *   (`SAVINGS_ROWS_MISMATCH`); if an investment/debt row is neither type
- *   (`BALANCE_ROW_TYPE`), has a non-finite balance or contribution
- *   (`validateAmount`), a negative one (`BALANCE_ROW_NEGATIVE`), or the investment
- *   rows do not sum to `investments` (`BALANCE_ROWS_MISMATCH`); if an investment
- *   row's `annualReturn` is missing, not finite or outside −1..1
- *   (`INVESTMENT_RETURN_OUT_OF_RANGE`; a debt row's is ignored); or if the
- *   projection's balance, investment total or debt total overflows
- *   (`FORECAST_OUT_OF_RANGE`)
+ * One dataset, validated and prepared for a loop (story 107.1: extracted so the
+ * projection data and a separate baseline dataset go through the SAME checks and
+ * the same row preparation). Throws exactly what the inline code threw before.
  */
-export function calculateFinancialForecast(
-  currentData: {
-    income: NormalizableFinancialItem[]
-    expenses: NormalizableFinancialItem[]
-    savings: number // Current savings in cents
-    investments: number // Current investments in cents
-    /**
-     * Optional per-account split of `savings` (story 100.1). When given, the
-     * balances must sum to `savings` exactly (`SAVINGS_ROWS_MISMATCH`).
-     */
-    savingsAccounts?: SavingsAccountInput[]
-    /**
-     * Optional investment and debt rows (story 100.2). When given, the investment
-     * rows' balances must sum to `investments` exactly (`BALANCE_ROWS_MISMATCH`),
-     * and the debt rows lower net worth. When absent, the output is identical to
-     * before the story (no new keys). Each investment row carries its own
-     * `annualReturn` (story 100.3).
-     */
-    balanceAccounts?: BalanceAccountInput[]
-  },
-  scenario: ForecastingScenario,
-  years = DEFAULT_FORECAST_YEARS
-): ForecastingResult {
-  // REFUSE rather than clamp (story 77.1, D1): a clamp would silently project a
-  // period the caller never asked for. Both callers already surface a throw — the
-  // builder as its calculation banner, the server as `{ success: false }`. This
-  // must stay BEFORE the first loop; see `MIN_FORECAST_YEARS`.
-  if (!isValidForecastYears(years)) {
-    throw new Error(
-      `Projection period must be a whole number of years from ${MIN_FORECAST_YEARS} to ${MAX_FORECAST_YEARS}`
-    )
-  }
-  // Refuse, not clamp, a growth rate outside −100%..+100% (story 81.1, D2). Both
-  // are checked EVEN WHEN no rows of that kind exist: `[].map(...)` never
-  // evaluates the rate, so before 81.1 a NaN rate with no rows passed silently and
-  // a Save would persist `null` (TRACED: JSON has no NaN). With rows, a NaN rate surfaced only as
-  // `validateAmount`'s "Amount must be a finite number", which names the wrong input.
-  if (
-    !isValidGrowthRate(scenario.incomeGrowthRate) ||
-    !isValidGrowthRate(scenario.expenseGrowthRate)
-  ) {
-    throw new Error(GROWTH_RATE_OUT_OF_RANGE)
-  }
+function prepareForecastData(data: ForecastInputData): {
+  savingsAccounts: SavingsAccountInput[] | undefined
+  balanceAccounts: BalanceAccountInput[] | undefined
+  balanceAnnualContributions: number[] | undefined
+  balanceGrowthMultipliers: number[]
+  countedContributionTotal: number
+  startingDebts: number
+} {
   // The starting balances are money terms like every other (story 81.1, the 77.1
   // review rider). Unvalidated, a NaN/Infinity here was caught only by the
   // running-balance check below and reported as FORECAST_OUT_OF_RANGE ("too large
   // to project"), which misdescribes a missing or corrupt starting figure.
-  validateAmount(currentData.savings)
-  validateAmount(currentData.investments)
+  validateAmount(data.savings)
+  validateAmount(data.investments)
   // Savings rows (story 100.1): every money term validated like the totals above,
   // never negative, and summing to `savings` exactly so the engine and its caller
   // cannot disagree about where the projection starts.
-  const savingsAccounts = currentData.savingsAccounts
+  const savingsAccounts = data.savingsAccounts
   if (savingsAccounts) {
     let balanceSum = 0
     for (const account of savingsAccounts) {
@@ -567,7 +536,7 @@ export function calculateFinancialForecast(
       }
       balanceSum += account.balance
     }
-    if (balanceSum !== currentData.savings) {
+    if (balanceSum !== data.savings) {
       throw new Error(SAVINGS_ROWS_MISMATCH)
     }
   }
@@ -578,7 +547,7 @@ export function calculateFinancialForecast(
   // solver reads the flag). A debt's payment is NOT a fixed yearly total: it
   // stops at payoff, so each loop takes what the rows paid that year
   // (`stepBalanceRows` › `countedDebtPaid`, story 102.2).
-  const balanceAccounts = currentData.balanceAccounts
+  const balanceAccounts = data.balanceAccounts
   let balanceAnnualContributions: number[] | undefined
   // Each row's `1 + annualReturn` (story 100.3), computed once here beside the
   // contributions, not per iteration. 1 on a debt row (never read there).
@@ -623,29 +592,123 @@ export function calculateFinancialForecast(
       }
       return annual
     })
-    if (investmentSum !== currentData.investments) {
+    if (investmentSum !== data.investments) {
       throw new Error(BALANCE_ROWS_MISMATCH)
     }
   }
+  return {
+    savingsAccounts,
+    balanceAccounts,
+    balanceAnnualContributions,
+    balanceGrowthMultipliers,
+    countedContributionTotal,
+    startingDebts,
+  }
+}
+
+/**
+ * Calculates financial forecast based on current data and scenario
+ *
+ * @param currentData - Current financial data (income, expenses, savings, investments)
+ * @param scenario - Forecasting scenario with assumptions
+ * @param years - Number of years to project; must satisfy `isValidForecastYears`
+ * @param baselineInput - Story 107.1 (FR175): the data the BASELINE is projected
+ *   from, when it differs from `currentData` (the builder passes the user's
+ *   current saved data and its own edited rows as `currentData`). Validated by
+ *   the same rules, with the same errors. Omitted: the baseline uses
+ *   `currentData`, exactly as before the story. `summary` is always the
+ *   projection's.
+ * @returns Complete forecasting result
+ * @throws Error if `years` is not a whole number of years in 1-30; if either
+ *   growth rate is not a finite number from −1 to 1 (`GROWTH_RATE_OUT_OF_RANGE`);
+ *   if the starting `savings` or `investments`, or a one-time event dated inside
+ *   the window, is not a finite number (`validateAmount`); if a savings row's
+ *   balance or contribution is not finite (`validateAmount`), negative
+ *   (`SAVINGS_ROW_NEGATIVE`), or the balances do not sum to `savings`
+ *   (`SAVINGS_ROWS_MISMATCH`); if an investment/debt row is neither type
+ *   (`BALANCE_ROW_TYPE`), has a non-finite balance or contribution
+ *   (`validateAmount`), a negative one (`BALANCE_ROW_NEGATIVE`), or the investment
+ *   rows do not sum to `investments` (`BALANCE_ROWS_MISMATCH`); if an investment
+ *   row's `annualReturn` is missing, not finite or outside −1..1
+ *   (`INVESTMENT_RETURN_OUT_OF_RANGE`; a debt row's is ignored); or if the
+ *   projection's balance, investment total or debt total overflows
+ *   (`FORECAST_OUT_OF_RANGE`)
+ */
+export function calculateFinancialForecast(
+  currentData: ForecastInputData,
+  scenario: ForecastingScenario,
+  years = DEFAULT_FORECAST_YEARS,
+  baselineInput?: ForecastInputData
+): ForecastingResult {
+  // REFUSE rather than clamp (story 77.1, D1): a clamp would silently project a
+  // period the caller never asked for. Both callers already surface a throw — the
+  // builder as its calculation banner, the server as `{ success: false }`. This
+  // must stay BEFORE the first loop; see `MIN_FORECAST_YEARS`.
+  if (!isValidForecastYears(years)) {
+    throw new Error(
+      `Projection period must be a whole number of years from ${MIN_FORECAST_YEARS} to ${MAX_FORECAST_YEARS}`
+    )
+  }
+  // Refuse, not clamp, a growth rate outside −100%..+100% (story 81.1, D2). Both
+  // are checked EVEN WHEN no rows of that kind exist: `[].map(...)` never
+  // evaluates the rate, so before 81.1 a NaN rate with no rows passed silently and
+  // a Save would persist `null` (TRACED: JSON has no NaN). With rows, a NaN rate surfaced only as
+  // `validateAmount`'s "Amount must be a finite number", which names the wrong input.
+  if (
+    !isValidGrowthRate(scenario.incomeGrowthRate) ||
+    !isValidGrowthRate(scenario.expenseGrowthRate)
+  ) {
+    throw new Error(GROWTH_RATE_OUT_OF_RANGE)
+  }
+  const {
+    savingsAccounts,
+    balanceAccounts,
+    balanceAnnualContributions,
+    balanceGrowthMultipliers,
+    countedContributionTotal,
+    startingDebts,
+  } = prepareForecastData(currentData)
+  // Story 107.1 (FR175): the baseline is projected from its OWN dataset when one
+  // is given (the builder passes the user's current saved data, so an edited row
+  // moves only the projection). Without one it is `currentData`, prepared once,
+  // so the output is byte-identical to before the story.
+  const baselineData = baselineInput ?? currentData
+  const {
+    balanceAccounts: baseBalanceAccounts,
+    balanceAnnualContributions: baseBalanceAnnualContributions,
+    balanceGrowthMultipliers: baseBalanceGrowthMultipliers,
+    countedContributionTotal: baseCountedContributionTotal,
+    startingDebts: baseStartingDebts,
+  } = baselineInput === undefined
+    ? {
+        balanceAccounts,
+        balanceAnnualContributions,
+        balanceGrowthMultipliers,
+        countedContributionTotal,
+        startingDebts,
+      }
+    : prepareForecastData(baselineInput)
 
   const baseline: YearlyForecast[] = []
   const projection: YearlyForecast[] = []
 
   // Calculate baseline (current trends without scenario adjustments)
-  let currentSavings = currentData.savings
-  let currentInvestments = currentData.investments
+  let currentSavings = baselineData.savings
+  let currentInvestments = baselineData.investments
   // Investment/debt rows (story 100.2) are modelled in THIS loop too (D5), with
   // the same `stepBalanceRows`, so a flat scenario still gives baseline ===
-  // projection. Undefined without rows, so that path is untouched.
-  let baselineRowBalances = balanceAccounts?.map((account) => account.balance)
-  let currentDebts = startingDebts
+  // projection WHEN BOTH LOOPS READ THE SAME DATA (no `baselineInput`, or one
+  // equal to `currentData`; story 107.1). Undefined without rows, so that path is
+  // untouched.
+  let baselineRowBalances = baseBalanceAccounts?.map((account) => account.balance)
+  let currentDebts = baseStartingDebts
   // Every figure a baseline row reports is ANNUAL: the monthly-normalized totals
   // are lifted to a year once, here, rather than per iteration.
-  const baselineAnnualIncome = calculateGrossPeriodIncome(currentData.income) * MONTHS_PER_YEAR
+  const baselineAnnualIncome = calculateGrossPeriodIncome(baselineData.income) * MONTHS_PER_YEAR
   const baselineAnnualExpenses =
-    calculateTotalPeriodExpenses(currentData.expenses) * MONTHS_PER_YEAR
+    calculateTotalPeriodExpenses(baselineData.expenses) * MONTHS_PER_YEAR
   const baselineAnnualNetIncome =
-    calculateNetPeriodIncome(currentData.income, currentData.expenses) * MONTHS_PER_YEAR
+    calculateNetPeriodIncome(baselineData.income, baselineData.expenses) * MONTHS_PER_YEAR
 
   for (let year = 1; year <= years; year++) {
     // Apply the year's net income BEFORE recording the row, so the row reports
@@ -665,6 +728,9 @@ export function calculateFinancialForecast(
     // a flat scenario, the hand-derived 7% chain on the baseline rows, a rounding
     // probe, and the cross-scenario invariant that the two investment series match
     // for EVERY scenario, since no scenario lever touches investments).
+    // Story 107.1: all of this is about the two loops reading the SAME data. With
+    // a separate `baselineInput` the baseline is a different dataset by design,
+    // and the series differ by whatever the scenario's rows changed.
     //
     // ⚠️ Three things about this statement are load-bearing and must stay in step
     // with the projection's `roundCents(projInvestments * 1.07)` — search that
@@ -722,22 +788,22 @@ export function calculateFinancialForecast(
     // what the unflagged debts paid this year comes off the year's net income
     // and onto its expenses, exactly as in the projection loop (D5).
     const baselineStep =
-      balanceAccounts && baselineRowBalances && balanceAnnualContributions
+      baseBalanceAccounts && baselineRowBalances && baseBalanceAnnualContributions
         ? stepBalanceRows(
-            balanceAccounts,
+            baseBalanceAccounts,
             baselineRowBalances,
-            balanceAnnualContributions,
-            balanceGrowthMultipliers
+            baseBalanceAnnualContributions,
+            baseBalanceGrowthMultipliers
           )
         : null
     const baselineDebtPaid = baselineStep?.countedDebtPaid ?? 0
     const baselineNetIncomeThisYear = baselineAnnualNetIncome - baselineDebtPaid
     currentSavings += baselineNetIncomeThisYear
-    if (balanceAccounts && baselineStep) {
+    if (baseBalanceAccounts && baselineStep) {
       baselineRowBalances = baselineStep.balances
-      currentSavings -= countedContributionTotal
-      currentInvestments = sumRows(balanceAccounts, baselineRowBalances, 'investment')
-      currentDebts = sumRows(balanceAccounts, baselineRowBalances, 'debt')
+      currentSavings -= baseCountedContributionTotal
+      currentInvestments = sumRows(baseBalanceAccounts, baselineRowBalances, 'investment')
+      currentDebts = sumRows(baseBalanceAccounts, baselineRowBalances, 'debt')
     } else {
       // Compound investments at the SAME 7% the projection uses, in the SAME
       // position (after the flow, before the row is taken) and with the SAME

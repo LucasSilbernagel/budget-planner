@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useCallback, useMemo, useRef } from 'react'
+import { signedAmount } from '../../lib/forecasting/today-baseline'
 import type { SavedForecast } from '../../routes/forecasting'
 import { useFormattedAmount } from '../../stores/currencyStore'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
@@ -27,6 +28,12 @@ export interface ForecastListProps {
   onDelete: (id: string) => void
   /** Callback when user selects a forecast to load */
   onLoad?: (forecast: SavedForecast) => void
+  /**
+   * Each forecast's "vs. today" in cents, by id (story 107.1, Q1): its ending net
+   * worth minus today's data projected flat over the same years. Computed by the
+   * page (the list reads no store); a forecast missing here shows no line.
+   */
+  vsToday?: ReadonlyMap<string, number>
 }
 
 // ============================================================================
@@ -67,6 +74,7 @@ export function ForecastList({
   forecasts,
   onDelete,
   onLoad,
+  vsToday,
 }: ForecastListProps): React.ReactElement {
   // Display amounts respect the user's currency mode (currency-less vs symbols).
   const formatCurrency = useFormattedAmount()
@@ -384,6 +392,13 @@ export function ForecastList({
                       {forecast.result.summary.totalGrowth >= 0 ? '+' : ''}
                       {formatCurrency(forecast.result.summary.totalGrowth)}
                     </div>
+                    {/* Story 107.1 (Q1): against today's data, signed with the
+                        same guard as the line above. */}
+                    {vsToday?.has(forecast.id) && (
+                      <div className="text-xs text-muted mt-1">
+                        {signedAmount(vsToday.get(forecast.id) ?? 0, formatCurrency)} vs. today
+                      </div>
+                    )}
                   </td>
 
                   {/* Actions */}

@@ -1251,11 +1251,12 @@ describe('a forecast saved before version 5 keeps its figures (story 102.2, AC-6
       ).not.toBeChecked()
       await waitFor(() => expect(onResult).toHaveBeenCalled(), { timeout: 3000 })
       const recomputed = onResult.mock.calls.at(-1)?.[0]
+      // Story 107.1 (D2): the BASELINE is today's data (empty stores here), not the
+      // saved rows', so only the scenario's own figures are the T0 ones.
       expect({
-        baseline: recomputed?.baseline,
         projection: recomputed?.projection,
         summary: recomputed?.summary,
-      }).toEqual(V4_RESULT)
+      }).toEqual({ projection: V4_RESULT.projection, summary: V4_RESULT.summary })
     }
   )
 

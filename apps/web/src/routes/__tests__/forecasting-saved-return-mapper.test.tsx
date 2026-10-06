@@ -25,6 +25,9 @@ vi.mock('../../components/forecasting/scenario-builder', () => ({
     received.push(props.initialForecast)
     return null
   },
+  // Story 107.1: the page reads today's data from the same module. Not ready
+  // here: this file is about the mapper, not the baseline.
+  useCurrentForecastData: () => ({ ready: false, rows: null, data: null }),
 }))
 
 const usePremiumAccess = vi.fn()

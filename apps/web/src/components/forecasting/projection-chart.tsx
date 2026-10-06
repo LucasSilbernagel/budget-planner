@@ -29,6 +29,7 @@ import {
 import { useIsNarrowViewport } from '../../hooks/useIsNarrowViewport'
 import { niceAxisTicks } from '../../lib/chart-axis'
 import { useChartColors } from '../../lib/chartTheme'
+import { signedAmount, vsTodayCents } from '../../lib/forecasting/today-baseline'
 import { useCurrencyPreferences, useFormattedAmount } from '../../stores/currencyStore'
 import { ErrorBoundary } from '../ErrorBoundary'
 import { GroupedAmount } from '../ui/GroupedAmount'
@@ -342,6 +343,7 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
   const [config, setConfig] = useState<ChartConfig>(DEFAULT_CONFIG)
 
   const chartData = convertToChartData(result)
+  const vsToday = result ? vsTodayCents(result) : null
   const scenarioName = projectionSeriesName(result)
   const yAxis = projectionYAxis(
     chartData.flatMap((point) => [point.baselineNetWorth, point.scenarioNetWorth])
@@ -536,7 +538,7 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
         {/* Summary Statistics — gated on chartData (not just `result`) so an
             empty-arrays result can't show the cards alongside the empty state. */}
         {result && chartData.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <SummaryCard
               label="Starting Net Worth"
               value={formatCurrency(result.summary.startingNetWorth)}
@@ -560,6 +562,16 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
               change={0}
               positive={result.summary.averageAnnualGrowth >= 0}
             />
+            {/* Story 107.1 (FR175, Q1): ending net worth against TODAY's data
+                projected flat (the Baseline line), signed. */}
+            {vsToday !== null && (
+              <SummaryCard
+                label="vs. today"
+                value={signedAmount(vsToday, formatCurrency)}
+                change={0}
+                positive={vsToday >= 0}
+              />
+            )}
           </div>
         )}
       </div>

@@ -1683,6 +1683,10 @@ function LockedTileContent({
  * ⚠️ `newIncome`/`newExpenses` are **not read by the CALCULATION** — they
  * are the SAVE FORMAT for the builder's rows, which reload depends on. Do not cite
  * them as scenario-expressive, and do not delete them as dead.
+ * Since story 107.1 (FR175) the comparison is against TODAY: the builder passes
+ * the user's current saved data as the engine's separate baseline, so an edit to
+ * any row (items 4-5, income, expenses) moves only the scenario line. Before it,
+ * both lines came from the edited rows and only items 1-3 ever differed.
  *
  * So a raise, rising bills, a one-off windfall, a one-off cost, paying down a loan
  * and saving more each month are expressible.

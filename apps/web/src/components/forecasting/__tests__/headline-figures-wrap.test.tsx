@@ -76,6 +76,8 @@ const EXPECTED: [string, string[]][] = [
   ['Ending Net Worth', ['$310,', '100,', '483.69']],
   ['Total Growth', ['$284,', '532,', '582.89']],
   ['Avg Annual Growth', ['$28,', '453,', '258.29']],
+  // Story 107.1: ending minus the (mocked) one-row baseline, signed.
+  ['vs. today', ['+$284,', '532,', '582.89']],
 ]
 
 beforeEach(() => {
@@ -91,7 +93,7 @@ afterEach(() => {
 })
 
 describe('forecasting headline figures break only between digit groups (story 88.4)', () => {
-  it('the Scenario Builder: the four Forecast Summary stat cards', async () => {
+  it('the Scenario Builder: the Forecast Summary stat cards (five since story 107.1)', async () => {
     render(<ScenarioBuilder onSave={vi.fn()} />)
     await waitFor(() => expect(figureOf('Ending Net Worth').textContent).toBe('$310,100,483.69'))
     for (const [label, runs] of EXPECTED) {
@@ -99,7 +101,7 @@ describe('forecasting headline figures break only between digit groups (story 88
     }
   })
 
-  it('the Projections tab: the four summary cards', () => {
+  it('the Projections tab: the summary cards (five since story 107.1)', () => {
     render(<ProjectionChart result={RESULT} />)
     for (const [label, runs] of EXPECTED) {
       expect(runsOf(figureOf(label)), label).toEqual(runs)

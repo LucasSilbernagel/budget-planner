@@ -20,11 +20,11 @@ import {
 } from '@budget-planner/core'
 import type { Frequency } from '@budget-planner/core/finance'
 import { createFileRoute } from '@tanstack/react-router'
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { PremiumPrompt } from '../components/auth/premium-prompt'
 import { ForecastList } from '../components/forecasting/forecast-list'
 import { ProjectionChart } from '../components/forecasting/projection-chart'
-import { ScenarioBuilder } from '../components/forecasting/scenario-builder'
+import { ScenarioBuilder, useCurrentForecastData } from '../components/forecasting/scenario-builder'
 import { usePremiumAccess } from '../hooks/usePremiumAccess'
 import {
   type ForecastWire,
@@ -35,6 +35,7 @@ import {
   updateForecast,
 } from '../lib/forecasting/forecast-api'
 import { FORECAST_SAVE_VERSION } from '../lib/forecasting/forecast-version'
+import { todayBaseline, withTodayBaseline } from '../lib/forecasting/today-baseline'
 import { isKnownFrequency } from '../lib/readable-rows'
 
 // ============================================================================
@@ -377,6 +378,11 @@ function ForecastingPage(): React.ReactElement {
   // Projections tab reflects the user's real scenario instead of sample data
   // (story bug-3).
   const [scenarioResult, setScenarioResult] = useState<ForecastingResult | null>(null)
+  // Today's data (story 107.1, FR175): every forecast's baseline. The builder
+  // reads the same hook; the page needs it for a reopened forecast's Projections
+  // and for each saved forecast's "vs. today" figure (D2: the stored baseline was
+  // computed from the scenario's own rows, so it is never shown).
+  const today = useCurrentForecastData()
   // The saved forecast the user chose to reopen ("My Forecasts" → Load). Drives
   // the ScenarioBuilder's `key` + `initialForecast` so it remounts seeded.
   const [loadedForecast, setLoadedForecast] = useState<SavedForecast | null>(null)
@@ -669,16 +675,37 @@ function ForecastingPage(): React.ReactElement {
   // Reopen a saved forecast into the Scenario Builder (story bug-3). Seeds the
   // builder (via key + initialForecast), shows its projection immediately, and
   // switches to the builder tab so the user lands on the reloaded scenario.
-  const handleLoadForecast = useCallback((forecast: SavedForecast) => {
-    // Reopening a different scenario retires the previous save confirmation.
-    setSaveSuccess(null)
-    setLoadedForecast(forecast)
-    // `forecast.name` is the server's row name (`mapToSavedForecast`).
-    setSaveTarget({ id: forecast.id, name: forecast.name })
-    setLoadNonce((n) => n + 1)
-    setScenarioResult(forecast.result)
-    setActiveTab('scenarios')
-  }, [])
+  const handleLoadForecast = useCallback(
+    (forecast: SavedForecast) => {
+      // Reopening a different scenario retires the previous save confirmation.
+      setSaveSuccess(null)
+      setLoadedForecast(forecast)
+      // `forecast.name` is the server's row name (`mapToSavedForecast`).
+      setSaveTarget({ id: forecast.id, name: forecast.name })
+      setLoadNonce((n) => n + 1)
+      // Story 107.1 (AC-7): never the stored baseline. `null` until today's data is
+      // ready; the builder's first recompute lifts the full result either way.
+      setScenarioResult(withTodayBaseline(forecast.result, today.data))
+      setActiveTab('scenarios')
+    },
+    [today.data]
+  )
+
+  const savedForecasts = useMemo(
+    () => serverForecasts.map(mapToSavedForecast).filter((f): f is SavedForecast => f !== null),
+    [serverForecasts]
+  )
+  // Each saved forecast's "vs. today" (story 107.1, Q1): its ending net worth
+  // against today's data projected flat over the SAME years. Absent while
+  // today's data is not ready, or when the engine refuses it.
+  const vsTodayById = useMemo(() => {
+    const byId = new Map<string, number>()
+    for (const forecast of savedForecasts) {
+      const end = todayBaseline(today.data, forecast.result.projection.length)?.at(-1)?.netWorth
+      if (end !== undefined) byId.set(forecast.id, forecast.result.summary.endingNetWorth - end)
+    }
+    return byId
+  }, [savedForecasts, today.data])
 
   // Show loading state (SSR + first client paint — see usePremiumAccess).
   if (status.isLoading) {
@@ -747,6 +774,11 @@ function ForecastingPage(): React.ReactElement {
             contribution) claimable. Since story 102.2 a debt row's payment is
             cash out while the debt is owed and stops at payoff, unless the row is
             flagged "Payment already in Expenses".
+            Since story 107.1 (FR175) every one of those row edits SHOWS: the
+            baseline is the user's current saved data (`useCurrentForecastData`),
+            not the builder's edited rows, so only the scenario line moves. Before,
+            both lines came from the edited rows and only the growth rates and
+            one-time events ever differed from the baseline.
             Keep this in step with `PremiumFeatureLabel`'s docblock in HomePage.tsx.
             No positional wording ("below"): the intro renders on every tab, and
             the builder is only on the first one. */}
@@ -809,9 +841,8 @@ function ForecastingPage(): React.ReactElement {
 
           {activeTab === 'saved' && (
             <ForecastList
-              forecasts={serverForecasts
-                .map(mapToSavedForecast)
-                .filter((f): f is SavedForecast => f !== null)}
+              forecasts={savedForecasts}
+              vsToday={vsTodayById}
               onDelete={handleDeleteForecast}
               onLoad={handleLoadForecast}
             />
