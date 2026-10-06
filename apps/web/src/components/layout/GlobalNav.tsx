@@ -3,6 +3,7 @@ import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSessionSeed } from '../../context/session-seed'
 import { isEntitledSeed } from '../../lib/premium/entitlement'
+import { useVerifiedSession } from '../../lib/session/verifiedSession'
 import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
 import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon'
 import { SettingsIcon } from '../ui/SettingsIcon'
@@ -805,8 +806,9 @@ export function GlobalNav() {
    * not verify the session (unverified, NOT entitled), an unauthenticated seed
    * never qualifies however its status reads, and only `active`/`lifetime` count
    * — `free`/`past_due`/`canceled` get the free nav. A paid user hitting a
-   * transient resolver error sees the free nav for that page load and self-heals
-   * on the next, which is the right way round.
+   * transient resolver error paints the free nav first and gains the premium
+   * destinations when the indicator's `/api/auth/me` answer lands (story 99.1,
+   * below), which is the right way round.
    *
    * ⚠️ The NAV fails closed; the Overview and Settings gates added by story 58.2
    * fail OPEN with the same predicate, because hiding their sections from an
@@ -814,13 +816,31 @@ export function GlobalNav() {
    * are fail-safe and they point opposite ways on purpose — see
    * `entitlement.ts`. Do not "harmonise" the two directions.
    *
-   * ⚠️ Accepted consequence: the root loader caches the seed with
-   * `staleTime: Infinity`, so a user who upgrades MID-SESSION keeps the free nav
-   * until a full reload. Every other seed consumer already behaves this way. Do
-   * not "fix" it with a reactive read — that is the flash above.
+   * ⚠️ AMENDED by story 99.1 (FR160): the seed is the FIRST PAINT, not the last
+   * word. Until 99.1 this read was frozen for the life of the document (the
+   * root loader caches the seed with `staleTime: Infinity`), while
+   * `AuthIndicator` re-asks `/api/auth/me` on every navigation. Any document
+   * whose seed was signed-out or null under a premium session therefore showed
+   * "Premium" in the account row and the FREE nav until a reload. Triggers
+   * (99.1 Debug Log): the service worker's 3 s NetworkFirst fallback serving a
+   * cached SIGNED-OUT document to the first signed-in navigation (MEASURED on the
+   * prod build with the >3 s network FORCED; prod latency not measured), and a
+   * tab left open from before sign-in (shown in an integration test only).
+   *
+   * The contract now: the seed (still read ONCE, as an initializer) decides the
+   * first paint, so SSR and hydration agree and nothing flashes. After that the
+   * nav follows the indicator's last DEFINITIVE answer (`verifiedSession.ts`:
+   * a 200 with a parseable body only; a 503, a network error or a malformed
+   * body writes nothing, so the nav keeps what it had: the seed, or an EARLIER
+   * definitive answer). It changes only when that answer DISAGREES with the
+   * seed, in BOTH directions (decision D1): a signed-out/free answer over an
+   * entitled seed drops the premium destinations too. Still no fetch here and
+   * still not `usePremiumAccess()`: the answer is the indicator's own.
    */
   const seed = useSessionSeed()
-  const [isEntitled] = useState(() => isEntitledSeed(seed))
+  const [seedEntitled] = useState(() => isEntitledSeed(seed))
+  const verifiedSession = useVerifiedSession()
+  const isEntitled = verifiedSession === undefined ? seedEntitled : isEntitledSeed(verifiedSession)
 
   const visibleMoreDestinations = useMemo(() => {
     const destinations = isEntitled ? MORE_DESTINATIONS_ENTITLED : MORE_DESTINATIONS
