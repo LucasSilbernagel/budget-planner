@@ -2188,6 +2188,46 @@ describe('BalancePage — a debt is paid by a linked expense (Story 102.1)', () 
     expect(useBalanceStore.getState().entries[0]?.paymentExpenseId).toBeNull()
   })
 
+  it('keeps the unavailable-link option after "Not linked" is picked, so the stored link can be restored (code review)', async () => {
+    const user = userEvent.setup()
+    const remote = '55555555-5555-4555-8555-555555555555'
+    useBalanceStore.setState({ entries: [debt({ paymentExpenseId: remote })] })
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByRole('button', { name: 'Edit Car Loan' }))
+    const dialog = screen.getByRole('dialog', { name: 'Edit Balance Entry' })
+    const picker = within(dialog).getByLabelText('Paid by') as HTMLSelectElement
+    await user.selectOptions(picker, '')
+    expect(optionTexts(picker)).toContain('Linked expense not on this device')
+
+    await user.selectOptions(picker, 'Linked expense not on this device')
+    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(useBalanceStore.getState().entries[0]?.paymentExpenseId).toBe(remote)
+  })
+
+  it('survives a linked expense with a corrupt non-string frequency (code review)', async () => {
+    const user = userEvent.setup()
+    useExpenseStore.setState({
+      expenses: [
+        {
+          ...expenseRow('exp-car', 'Car payment', 45_000),
+          profileId: MAIN,
+          frequency: {} as never,
+        },
+      ],
+    })
+    useBalanceStore.setState({ entries: [debt()] })
+    renderWithProviders(<BalancePage />)
+    expect(screen.getByText('Paid by Car payment')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Edit Car Loan' }))
+    const dialog = screen.getByRole('dialog', { name: 'Edit Balance Entry' })
+    const texts = optionTexts(within(dialog).getByLabelText('Paid by'))
+    expect(texts[1]).toMatch(/^Car payment — .*450\.00$/)
+    expect(texts.join('|')).not.toContain('[object')
+  })
+
   it('⚠️ saves null when a linked debt is switched to an investment', async () => {
     const user = userEvent.setup()
     useBalanceStore.setState({ entries: [debt()] })

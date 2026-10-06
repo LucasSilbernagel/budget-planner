@@ -126,16 +126,19 @@ describe('a debt payment link changes no expense figure (Story 102.1, AC-9)', ()
   afterEach(resetStores)
 
   const generatedAt = new Date('2026-10-06T12:00:00.000Z')
+  // Each page's own expense-derived figure, MEASURED from a probe run (code
+  // review: a bare `length > 0` would pass on an empty state or a gate):
+  // 450.00 + 1,500.00 a month = 1,950.00 = 23,400.00 a year, and the /savings
+  // leftover is 5,000.00 − 1,950.00 − 200.00 (the Pension contribution) = 2,850.00.
   it.each([
-    ['Expenses', () => <ExpensesPage />],
-    ['Savings', () => <SavingsPage />],
-    ['Overview', () => <HomePage />],
-    ['Report', () => <FinancialSummaryReport generatedAt={generatedAt} />],
-  ] as const)('%s reads the same with the debt linked or not', (_page, page) => {
+    ['Expenses', () => <ExpensesPage />, '23,400.00'],
+    ['Savings', () => <SavingsPage />, '2,850.00'],
+    ['Overview', () => <HomePage />, '23,400.00'],
+    ['Report', () => <FinancialSummaryReport generatedAt={generatedAt} />, '1,950.00'],
+  ] as const)('%s reads the same with the debt linked or not', (_page, page, figure) => {
     const unlinked = textOf(page, false)
     const linked = textOf(page, true)
-    // Guard against a vacuous pass: the seeded expense must be on the page.
-    expect(unlinked.length).toBeGreaterThan(0)
+    expect(unlinked).toContain(figure)
     expect(linked).toBe(unlinked)
   })
 

@@ -191,7 +191,7 @@ function DebtPaymentCell({
   expense,
   formatAmount,
 }: {
-  expense: { name: unknown; amount: unknown; frequency: Frequency } | null
+  expense: { name: unknown; amount: unknown; frequency: unknown } | null
   formatAmount: (cents: number) => string
 }) {
   if (expense === null) {
@@ -205,7 +205,7 @@ function DebtPaymentCell({
           <div className={`text-muted text-sm ${RESPONSIVE_AMOUNT_CLASS}`}>
             <GroupedAmount text={formatAmount(expense.amount)} />
           </div>
-          <div className="text-faint text-xs">{frequencyLabel(expense.frequency)}</div>
+          <div className="text-faint text-xs">{untrustedFrequencyLabel(expense.frequency)}</div>
         </>
       )}
       <div className="text-faint text-xs">Paid by {name}</div>
@@ -215,9 +215,21 @@ function DebtPaymentCell({
 
 /**
  * Story 102.1 (D7): the "Paid by" option value for a stored link this device
- * cannot resolve. Not a uuid, so it can never collide with an expense id.
+ * cannot resolve. It contains spaces, which no client-generated id has (every
+ * expense id is a `generateUUID()` uuid), so it cannot be mistaken for a real
+ * expense option.
  */
-const PAYMENT_LINK_UNAVAILABLE = 'unavailable'
+const PAYMENT_LINK_UNAVAILABLE = 'linked expense unavailable'
+
+/**
+ * Story 102.1 (code review): a linked expense's cadence label. The expense row is
+ * as untrusted as its name and amount (localStorage is user-editable), and
+ * `frequencyLabel` falls back to the RAW value, so a non-string would reach React
+ * as a child and throw. A non-string shows nothing.
+ */
+function untrustedFrequencyLabel(frequency: unknown): string {
+  return typeof frequency === 'string' ? frequencyLabel(frequency as Frequency) : ''
+}
 
 /**
  * Story 102.1: one "Paid by" option, `name — amount / frequency`. An unreadable
@@ -225,12 +237,13 @@ const PAYMENT_LINK_UNAVAILABLE = 'unavailable'
  * never blank the form, the #46-#48 lesson).
  */
 function paymentOptionLabel(
-  expense: { name: unknown; amount: unknown; frequency: Frequency },
+  expense: { name: unknown; amount: unknown; frequency: unknown },
   formatAmount: (cents: number) => string
 ): string {
   const name = typeof expense.name === 'string' ? expense.name : ''
+  const cadence = untrustedFrequencyLabel(expense.frequency)
   return typeof expense.amount === 'number' && Number.isFinite(expense.amount)
-    ? `${name} — ${formatAmount(expense.amount)} / ${frequencyLabel(expense.frequency)}`
+    ? `${name} — ${formatAmount(expense.amount)}${cadence ? ` / ${cadence}` : ''}`
     : name
 }
 
@@ -239,9 +252,6 @@ function paymentOptionLabel(
  * options, so the two cannot drift apart (story 34.2; the mobile consumer became
  * `TableSortControl` in story 48.1).
  */
-/** Module scope: the factory takes no arguments and closes over nothing, so a
- * per-instance `useMemo` would allocate an identical object on every mount. */
-
 const SORT_COLUMN_LABELS: Record<BalanceSortKey, string> = {
   type: 'Type',
   name: 'Name',
@@ -374,8 +384,12 @@ export function BalancePage() {
   // profile) is shown as its own selected option and kept on save unless the
   // user picks something else. Showing "Not linked" and clearing it on save
   // would silently erase a link made on another device.
-  const paymentLinkUnavailable =
-    paymentExpenseId !== null && !expenses.some((expense) => expense.id === paymentExpenseId)
+  // Code review: keyed on the STORED link, not the current choice, so the option
+  // stays in the list after the user picks something else and the stored link
+  // can be restored without cancelling the form.
+  const storedLinkUnavailable =
+    storedPaymentExpenseId !== null &&
+    !expenses.some((expense) => expense.id === storedPaymentExpenseId)
 
   // Inline field-validation error state (replaces browser alert() popups).
   // Mirrors the app's canonical inline-validation pattern: an errors map plus
@@ -1188,7 +1202,7 @@ export function BalancePage() {
                   value={
                     paymentExpenseId === null
                       ? ''
-                      : paymentLinkUnavailable
+                      : storedLinkUnavailable && paymentExpenseId === storedPaymentExpenseId
                         ? PAYMENT_LINK_UNAVAILABLE
                         : paymentExpenseId
                   }
@@ -1206,7 +1220,7 @@ export function BalancePage() {
                   data-testid="balance-payment-expense-select"
                 >
                   <option value="">Not linked</option>
-                  {paymentLinkUnavailable && (
+                  {storedLinkUnavailable && (
                     <option value={PAYMENT_LINK_UNAVAILABLE}>
                       Linked expense not on this device
                     </option>

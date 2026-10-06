@@ -1,5 +1,5 @@
 # generated: 2026-06-18
-# last_updated: 2026-10-06c (102.1 in-progress -> review: gates green 5m02s; CI screenshot compare pending a push.)
+# last_updated: 2026-10-06d (102.1 review -> done: 3 Fable layers, 8 patches applied, gates green 5m30s; 102.2 next.)
 # last_updated: 2026-10-06b (102.1 ready-for-dev -> in-progress, dev-story started.)
 # last_updated: 2026-10-06a (EPIC 102 added FR169-170 via correct-course; 102.1 created -> ready-for-dev, D1-D10 confirmed.)
 # last_updated: 2026-10-05h (epic 99 done; 100.2 review; 100.3 ready-for-dev D4-D9 confirmed; EPIC 101 added FR167-168, 2 stories backlog.)
@@ -1347,7 +1347,7 @@ development_status:
   101-2-premium-gates-follow-my-verified-session-like-the-nav: done  # DEV eafb191 + REVIEW 52fc2de 2026-10-05 (gates green, web 4828); CREATED 2026-10-05 at 2ca9896; DS1-DS5 CONFIRMED; cuttable (Q5)
   epic-101-retrospective: optional
   epic-102: in-progress  # Added 2026-10-06 (approved) from sprint-change-proposal-2026-10-06-debt-payment-link.md (FR169-170)
-  102-1-i-link-a-debt-to-the-expense-that-pays-it: review  # CREATED 2026-10-06 at 78be545; D1-D10 CONFIRMED by Lucas 2026-10-06
+  102-1-i-link-a-debt-to-the-expense-that-pays-it: done  # DEV 04f211a + screenshots 7ec99f8 + REVIEW (Fable x3: 1 decision kept D7, 8 patches, 4 defer, 7 dismissed) 2026-10-06; CREATED 2026-10-06 at 78be545; D1-D10 CONFIRMED by Lucas 2026-10-06
   102-2-my-forecast-stops-paying-a-debt-once-its-paid-off: backlog
   epic-102-retrospective: optional
 

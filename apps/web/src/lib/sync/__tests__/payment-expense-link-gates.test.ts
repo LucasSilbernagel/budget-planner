@@ -76,7 +76,11 @@ describe('Gate 1: the client sync-queue schema (the SILENT one)', () => {
 })
 
 describe('Gate 2: the server ingest schema', () => {
-  it('passes a linked id through UNSTRIPPED', () => {
+  // ⚠️ This cannot fail on the new schema line: `syncOperationSchema` validates
+  // `data` inside a superRefine that DISCARDS its parse result, so `parsed.data`
+  // is the raw input whatever the entity schema declares (the 45.1 precedent).
+  // It pins the wire contract only; the REJECTS case below exercises the line.
+  it('leaves a linked id on the wire (superRefine passthrough, not the schema line)', () => {
     const parsed = syncOperationSchema.parse(op({ ...baseRow, paymentExpenseId: EXPENSE_ID }))
     expect((parsed.data as Record<string, unknown>)['paymentExpenseId']).toBe(EXPENSE_ID)
   })
