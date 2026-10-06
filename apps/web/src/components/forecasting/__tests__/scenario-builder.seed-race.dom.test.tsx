@@ -255,3 +255,82 @@ describe('edits made while the seed is still pending survive it', () => {
     expect(screen.getByDisplayValue('Consulting')).toBeInTheDocument()
   })
 })
+
+/**
+ * Story 102.2 (AC-8, D5): a debt linked to an expense MOVES that expense into
+ * the debt row, but only in the seed pass that creates the debt row. These pin
+ * the two orders a pre-seed edit can take.
+ */
+describe('the linked expense moves only with the debt row that carries it (story 102.2)', () => {
+  function addLinkedDebt(): void {
+    useExpenseStore.setState({
+      expenses: [
+        ...useExpenseStore.getState().expenses,
+        {
+          id: 'exp-loan',
+          profileId: PROFILE_A,
+          userId: 0,
+          name: 'Loan payment',
+          amount: 20_000,
+          frequency: 'monthly' as const,
+          categoryId: null,
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+      ],
+    })
+    useBalanceStore.setState({
+      entries: [
+        ...useBalanceStore.getState().entries,
+        {
+          id: 'entry-loan',
+          profileId: PROFILE_A,
+          type: 'debt' as const,
+          name: 'Loan',
+          currentBalance: 300_000,
+          monthlyContribution: 0,
+          frequency: 'monthly' as const,
+          paymentExpenseId: 'exp-loan',
+          sortOrder: 1,
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+      ] as never,
+    })
+  }
+
+  it('positive control: untouched, the expense leaves the Expenses rows and the debt carries it', () => {
+    addLinkedDebt()
+    const { rerender } = render(<ScenarioBuilder onSave={onSave} />)
+    landSeed(rerender)
+    expect(screen.getByDisplayValue('Rent')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('Loan payment')).toBeNull()
+    expect(screen.getByLabelText('Contribution for Loan')).toHaveValue(200)
+    expect(screen.getByText('from Expenses: Loan payment')).toBeInTheDocument()
+  })
+
+  it('removes nothing when the balance rows were touched first: no debt row carries the payment, so it must stay an expense', () => {
+    addLinkedDebt()
+    const { rerender } = render(<ScenarioBuilder onSave={onSave} />)
+    fireEvent.click(screen.getByRole('button', { name: '+ Add Balance' }))
+    landSeed(rerender)
+    // The Expenses rows seeded (positive control), Loan payment INCLUDED ...
+    expect(screen.getByDisplayValue('Rent')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Loan payment')).toBeInTheDocument()
+    // ... and the store's debt was not added beside the user's row.
+    expect(screen.queryByLabelText('Contribution for Loan')).toBeNull()
+  })
+
+  it('keeps Expenses rows touched first, and still seeds the debt with its payment, label and no flag', () => {
+    addLinkedDebt()
+    const { rerender } = render(<ScenarioBuilder onSave={onSave} />)
+    fireEvent.click(screen.getByRole('button', { name: '+ Add Expense' }))
+    landSeed(rerender)
+    expect(screen.getAllByDisplayValue('New Expense')).toHaveLength(1)
+    expect(screen.queryByDisplayValue('Rent')).toBeNull()
+    expect(screen.getByLabelText('Contribution for Loan')).toHaveValue(200)
+    expect(screen.getByText('from Expenses: Loan payment')).toBeInTheDocument()
+    // A labelled debt row has no flag checkbox (code review 102.2).
+    expect(screen.queryByLabelText('Payment already in Expenses, for Loan')).toBeNull()
+  })
+})

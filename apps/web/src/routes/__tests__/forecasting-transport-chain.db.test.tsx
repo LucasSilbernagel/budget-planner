@@ -689,7 +689,7 @@ describe('savings rows round-trip through the real routes (story 100.1, AC-11)',
     useSavingsStore.setState({ savingsGoals: [] })
   })
 
-  it('POST and PUT store the current version (4 since story 100.3) with the rows and their sum, and Load brings the rows back', async () => {
+  it('POST and PUT store the current version (5 since story 102.2) with the rows and their sum, and Load brings the rows back', async () => {
     await seedSavingsRows()
     const view = renderWithRouter(<ForecastingPage />)
     await pressSave(view)
@@ -704,7 +704,7 @@ describe('savings rows round-trip through the real routes (story 100.1, AC-11)',
         .from(forecastingProfiles)
     const [created, ...more] = await versioned()
     expect(more).toEqual([])
-    expect(created?.version).toBe(4)
+    expect(created?.version).toBe(5)
     const inputs = (
       JSON.parse(String(created?.scenarioData)) as { inputs: Record<string, unknown> }
     ).inputs
@@ -734,7 +734,7 @@ describe('savings rows round-trip through the real routes (story 100.1, AC-11)',
       timeout: 5000,
     })
     const [updated] = await versioned()
-    expect(updated?.version).toBe(4)
+    expect(updated?.version).toBe(5)
     expect(
       (JSON.parse(String(updated?.scenarioData)) as { inputs: { savingsAccounts: unknown[] } })
         .inputs.savingsAccounts
@@ -752,7 +752,7 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
     useExpenseStore.setState({ expenses: [] })
   })
 
-  it('POST stores version 4 with the rows, their rates and the investment sum; Load brings every field back; PUT keeps a changed rate', async () => {
+  it('POST stores version 5 with the rows, their rates, the debt flag and label, and the investment sum; Load brings every field back; PUT keeps a changed rate and flag', async () => {
     const { useBalanceStore } = await import('@/stores/balanceStore')
     const { useExpenseStore } = await import('@/stores/expenseStore')
     // Story 102.1 (FR169): the Car loan's 300.00 payment is its linked expense.
@@ -830,7 +830,7 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
         .from(forecastingProfiles)
     const [created, ...more] = await stored()
     expect(more).toEqual([])
-    expect(created?.version).toBe(4)
+    expect(created?.version).toBe(5)
     const inputs = (
       JSON.parse(String(created?.scenarioData)) as { inputs: Record<string, unknown> }
     ).inputs
@@ -845,6 +845,8 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
         annualReturn: 0,
       },
       // The stored negative debt seeds as its magnitude (D6). No rate on a debt.
+      // Story 102.2 (version 5): its flag starts off and it names the Expenses
+      // row its payment came from.
       {
         name: 'Car loan',
         type: 'debt',
@@ -852,6 +854,7 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
         contribution: 30_000,
         frequency: 'monthly',
         contributionRecordedAsExpense: false,
+        paidByExpenseName: 'Car payment',
       },
       {
         name: 'ISA',
@@ -897,8 +900,13 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
     expect(value('Annual return for Pension')).toBe('0.00%')
     expect(value('Annual return for ISA')).toBe('5.50%')
     expect(view.queryByLabelText('Annual return for Car loan')).toBeNull()
+    // Story 102.2: the debt's label came back from the database, and a labelled
+    // debt row offers no flag (code review: its payment is the row's own). (A v5
+    // TRUE flag surviving the mapper is pinned in forecasting-saved-balance-rows.)
+    expect(rtl.within(section).getByText('from Expenses: Car payment')).toBeInTheDocument()
+    expect(view.queryByLabelText('Payment already in Expenses, for Car loan')).toBeNull()
 
-    // Save over it (PUT) with a NEGATIVE rate: same row, version 4, rate kept.
+    // Save over it (PUT) with a NEGATIVE rate: same row, version 5, rate kept.
     typeInto(view.getByLabelText('Annual return for ISA'), '-2.5')
     await new Promise((resolve) => setTimeout(resolve, 800))
     await pressSave(view)
@@ -907,13 +915,21 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
     })
     const [updated, ...others] = await stored()
     expect(others).toEqual([])
-    expect(updated?.version).toBe(4)
+    expect(updated?.version).toBe(5)
     const after = (
       JSON.parse(String(updated?.scenarioData)) as {
-        inputs: { balanceAccounts: Array<{ annualReturn?: number }> }
+        inputs: {
+          balanceAccounts: Array<{
+            annualReturn?: number
+            contributionRecordedAsExpense: boolean
+            paidByExpenseName?: string
+          }>
+        }
       }
     ).inputs.balanceAccounts
     expect(after.map((row) => row.annualReturn)).toEqual([0, undefined, -0.025])
+    expect(after[1]?.contributionRecordedAsExpense).toBe(false)
+    expect(after[1]?.paidByExpenseName).toBe('Car payment')
 
     // Load it again (code review 100.3): the NEGATIVE rate comes back through the
     // real handlers too. The builder remounts on Load, so the typed draft `-2.5`
@@ -924,5 +940,6 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
     await rtl.waitFor(() => expect(value('Annual return for ISA')).toBe('-2.50%'))
     expect(value('Annual return for Pension')).toBe('0.00%')
     expect(view.queryByLabelText('Annual return for Car loan')).toBeNull()
+    expect(view.getByText('from Expenses: Car payment')).toBeInTheDocument()
   }, 30_000)
 })
