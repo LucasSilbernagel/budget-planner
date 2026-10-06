@@ -125,6 +125,33 @@ describe('roundCents — large magnitudes never do worse than bare Math.round (A
     },
     60_000
   )
+
+  // Code review 104.1: both ranges above sit past the snap cap (~1.126e9 cents),
+  // where `roundCents` IS `Math.round`, so they cannot see the snap at all. These
+  // two start BELOW the cap, where the snap is live at a large magnitude.
+  // MEASURED (review): 1.5% helper 0 vs bare 1,000 per range; 5.555% and 5.5555%
+  // helper 0, bare 0. ⚠️ A rate with 5+ percent decimals can do WORSE than bare
+  // here (3.333333%, 5.555555%: up to 9 vs 1) — accepted by Lucas 2026-10-06
+  // (review RD-1, deferred-work), so it is deliberately not swept.
+  const subCap: { label: string; start: bigint; num: bigint; den: bigint }[] = [
+    { label: '1.5% from 1e8', start: 100_000_000n, num: 15n, den: 1000n },
+    { label: '1.5% from 1e9', start: 1_000_000_000n, num: 15n, den: 1000n },
+    { label: '5.555% from 1e9', start: 1_000_000_000n, num: 5555n, den: 100_000n },
+    { label: '5.5555% from 1e9', start: 1_000_000_000n, num: 55555n, den: 1_000_000n },
+  ]
+  it.each(subCap)(
+    'below the cap, matches the integer oracle exactly: $label',
+    ({ start, num, den }) => {
+      const multiplier = 1 + Number(num) / Number(den)
+      let helper = 0
+      for (let i = 0; i < COUNT; i++) {
+        const b = start + BigInt(i)
+        if (roundCents(Number(b) * multiplier) !== exactRoundBig(b * (den + num), den)) helper++
+      }
+      expect(helper).toBe(0)
+    },
+    60_000
+  )
 })
 
 describe('roundCents — edge values', () => {
@@ -151,6 +178,27 @@ describe('roundCents — edge values', () => {
   it('does not move a fraction that is genuinely below a half', () => {
     expect(roundCents(101.4999)).toBe(101)
     expect(roundCents(2.49)).toBe(2)
+    // Code review 104.1: just OUTSIDE the window (~9e-14 at 101). A widened
+    // `ROUNDING_ERROR_EPSILONS` would snap these and fail here.
+    expect(roundCents(101.5 - 1e-10)).toBe(101)
+    expect(roundCents(1_000_000.5 - 1e-6)).toBe(1_000_000)
+  })
+
+  it('snaps a negative value float error pushed past the half (the only case D4 changes)', () => {
+    // Exactly -101.5 rounds to -101 (toward +Infinity). Float can land just
+    // BELOW it; bare Math.round then gives -102. MEASURED (review): bare -102.
+    expect(Math.round(-101.50000000000001)).toBe(-102)
+    expect(roundCents(-101.50000000000001)).toBe(-101)
+  })
+
+  it('snaps just under the cap and is bare Math.round just over it', () => {
+    // MEASURED (review), 1.5%: b = 1,044,335,100 → 1060000126.4999999, exact
+    // 1,060,000,127 (bare 126). b = 1,220,161,300 → 1238463719.4999998, exact
+    // 1,238,463,720 — past the cap the miss stays (accepted, deferred-work).
+    expect(roundCents(1_044_335_100 * 1.015)).toBe(1_060_000_127)
+    expect(Math.round(1_044_335_100 * 1.015)).toBe(1_060_000_126)
+    expect(roundCents(1_220_161_300 * 1.015)).toBe(Math.round(1_220_161_300 * 1.015))
+    expect(roundCents(1_220_161_300 * 1.015)).toBe(1_238_463_719)
   })
 })
 

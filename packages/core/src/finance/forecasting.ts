@@ -302,15 +302,22 @@ const MAX_HALF_CENT_SNAP = 1e-6
 /**
  * Story 104.1 (FR172): `Math.round`, except that a value float error left within
  * a few ulps of an exact half cent is rounded as that half (toward +Infinity,
- * `Math.round`'s own rule, D4). Every money product in this engine rounds here.
+ * `Math.round`'s own rule, D4). The engine's five growth sites round here.
+ * ⚠️ NOT `normalizeToMonthly` (`normalization.ts`), which still rounds bare and
+ * misses biweekly halves (deferred-work, 104.1 review).
  *
  * Why: `100 × 1.015` is `101.49999999999999`, so bare `Math.round` gave 101 where
  * the decimal answer is 102 (RD1, 100.3 review: 8,415 of b in 0..1,999,999 at
  * 1.5%, 3,650 at 4.5%, 1,154 at 5.5%, 0 at 6% and 7%).
  *
- * ⚠️ The snap is CAPPED. Above ~1.1e9 cents the error window would pass 1e-6,
- * wide enough to swallow a TRUE fraction such as .49995 (a rate with 3 percent
- * decimals), so there it is bare `Math.round`. MEASURED (story 104.1 dev) against
+ * ⚠️ The snap is only as safe as the RATE's decimal grain is coarse. A rate with
+ * k percent decimals puts true fractions on a 10^-(k+2) grid; once the window
+ * (4ε·|x|, ~9e-7 at 1e9) reaches that grid, a TRUE .4999999 is snapped UP. So
+ * a 5+-decimal rate (3.333333%) can round 1 cent high below the cap — MEASURED
+ * in code review, accepted by Lucas 2026-10-06 (RD-1, deferred-work).
+ * The snap is CAPPED at a 1e-6 window (~1.126e9 cents, ~$11.3M): above it this is
+ * bare `Math.round`, so the RD1 miss survives there at any rate (deferred).
+ * The cap value is empirical, not derived. MEASURED (story 104.1 dev) against
  * an integer oracle at 5.555%, 200,000 balances from 1e13 cents: uncapped windows
  * of 1, 2 and 4 epsilons gave 560, 950 and 1,730 mismatches,
  * `Math.round(+x.toPrecision(15))` 9,930, bare `Math.round` 170, this rule 170.
