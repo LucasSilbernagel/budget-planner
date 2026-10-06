@@ -105,7 +105,8 @@ describe('deleting the DEFAULT profile (story 63.2, AC-2/AC-3)', () => {
     useProfileStore.getState().removeProfile('main')
 
     const state = useProfileStore.getState()
-    // `removeProfile` repoints an active deletion to the first survivor, and the
+    // `removeProfile` repoints an active deletion to the OLDEST survivor (no
+    // `createdAt` here, so the id breaks the tie), and the
     // promotion follows that same choice rather than computing a second answer.
     expect(state.activeProfileId).toBe('biz')
     expect(state.profiles.find((p) => p.isDefault)?.id).toBe('biz')
@@ -167,6 +168,61 @@ describe('deleting the DEFAULT profile (story 63.2, AC-2/AC-3)', () => {
     // something every deletion emits.
     expect(handle.queueUpdate).not.toHaveBeenCalled()
     expect(useProfileStore.getState().profiles.find((p) => p.isDefault)?.id).toBe('main')
+  })
+})
+
+describe('deleting the ACTIVE profile lands on the OLDEST survivor (deferred from 98.1)', () => {
+  // ⚠️ Store order, id order and age order deliberately DISAGREE: `alpha` is the
+  // newest profile, first in the array AND first by id; `zeta` is the oldest and
+  // last on both. Only a `createdAt` comparison picks `zeta` — the same choice the
+  // server's post-tombstone repair makes (`ensureUserHasDefaultProfile`: createdAt
+  // ASC, then id), and the order `useProfiles` displays (story 98.1).
+  const alpha = { ...biz, id: 'alpha', name: 'Newest', createdAt: '2026-09-03T00:00:00.000Z' }
+  const doomed = { ...main, id: 'doomed', name: 'Doomed', createdAt: '2026-09-02T00:00:00.000Z' }
+  const zeta = { ...side, id: 'zeta', name: 'Oldest', createdAt: '2026-09-01T00:00:00.000Z' }
+
+  beforeEach(() => {
+    registerSyncBridge(handle)
+  })
+
+  it('switches to the oldest remaining profile, not the first in store order', () => {
+    useProfileStore.setState({
+      profiles: [alpha, { ...doomed, isDefault: false }, { ...zeta, isDefault: true }],
+      activeProfileId: 'doomed',
+    })
+
+    useProfileStore.getState().removeProfile('doomed')
+
+    const state = useProfileStore.getState()
+    expect(state.activeProfileId).toBe('zeta')
+    // Not the default: the default is unchanged and nothing is promoted.
+    expect(state.profiles.find((p) => p.isDefault)?.id).toBe('zeta')
+    expect(handle.queueUpdate).not.toHaveBeenCalled()
+  })
+
+  it('promotes that same oldest survivor when the deleted active profile was the default', () => {
+    useProfileStore.setState({
+      profiles: [alpha, { ...doomed, isDefault: true }, zeta],
+      activeProfileId: 'doomed',
+    })
+
+    useProfileStore.getState().removeProfile('doomed')
+
+    const state = useProfileStore.getState()
+    expect(state.activeProfileId).toBe('zeta')
+    expect(state.profiles.filter((p) => p.isDefault).map((p) => p.id)).toEqual(['zeta'])
+    // The queued promotion names the profile the server's repair also picks, so
+    // the device and the server agree on the default.
+    expect(handle.queueUpdate).toHaveBeenCalledTimes(1)
+    expect(handle.queueUpdate.mock.calls[0]?.[1]).toBe('zeta')
+  })
+
+  it('leaves the active profile alone when a NON-active profile is deleted', () => {
+    useProfileStore.setState({ profiles: [alpha, doomed, zeta], activeProfileId: 'alpha' })
+
+    useProfileStore.getState().removeProfile('zeta')
+
+    expect(useProfileStore.getState().activeProfileId).toBe('alpha')
   })
 })
 
