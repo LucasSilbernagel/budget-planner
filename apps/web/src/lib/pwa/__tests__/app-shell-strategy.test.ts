@@ -111,6 +111,23 @@ beforeAll(async () => {
   const { CacheableResponsePlugin } = await import('workbox-cacheable-response')
   expect(pwaRuntimeCaching).toHaveLength(1)
   expect(pwaRuntimeCaching[0].handler).toBe('NetworkFirst')
+  // The model below translates ONLY these options. Any other one `workbox-build`
+  // accepts (`plugins`, `precacheFallback`, `broadcastUpdate`, `backgroundSync`,
+  // `rangeRequests`) becomes a plugin in the real service worker, and the spread
+  // below would silently drop it (or pass it to the constructor, which ignores
+  // it), so this test would vouch for a route it never ran. Model it here first.
+  const modelled = [
+    'cacheName',
+    'networkTimeoutSeconds',
+    'fetchOptions',
+    'matchOptions',
+    'expiration',
+    'cacheableResponse',
+  ]
+  expect(
+    Object.keys(pwaRuntimeCaching[0].options).filter((key) => !modelled.includes(key)),
+    'route option(s) this model does not translate'
+  ).toEqual([])
   const { expiration: _ignored, cacheableResponse, ...plain } = pwaRuntimeCaching[0].options
   strategy = new NetworkFirst({
     ...plain,
