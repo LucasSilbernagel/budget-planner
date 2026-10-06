@@ -11,6 +11,7 @@
 
 import {
   DEFAULT_FORECAST_YEARS,
+  DEFAULT_INVESTMENT_RETURN,
   type ForecastingResult,
   type ForecastingScenario,
   MAX_FORECAST_YEARS,
@@ -93,6 +94,11 @@ export interface LocalSavingsAccount {
  * `balance` is a positive MAGNITUDE for both types. `contribution` is the amount at
  * `frequency` cadence, as `/balance` shows it (the engine normalises it). Never
  * written back to the balance store (D0).
+ *
+ * `annualReturn` (story 100.3, FR166) is a decimal (0.06 = 6%), what-if only:
+ * `/balance` has no rate. Every row holds one, seeded at `DEFAULT_INVESTMENT_RETURN`;
+ * it is shown, sent to the engine and saved on INVESTMENT rows only. A debt row
+ * keeps it hidden, so switching back to Investment shows it again (D8).
  */
 export interface LocalBalanceAccount {
   id: string
@@ -103,6 +109,8 @@ export interface LocalBalanceAccount {
   frequency: Frequency
   /** Investment rows only; always `false` on a debt row. */
   contributionRecordedAsExpense: boolean
+  /** Story 100.3: the row's annual return; only investment rows use it. */
+  annualReturn: number
 }
 
 /**
@@ -260,6 +268,13 @@ const YEARS_INVALID_SHORT = 'Fix the projection period to save'
 const GROWTH_INVALID_MESSAGE = `Enter a growth rate from ${MIN_GROWTH_RATE * 100}% to ${
   MAX_GROWTH_RATE * 100
 }%.`
+/**
+ * The Annual return field's message (story 100.3, D7), from the same core bounds
+ * as `GROWTH_INVALID_MESSAGE`, so it cannot drift from the engine's rule.
+ */
+const RETURN_INVALID_MESSAGE = `Enter an annual return from ${MIN_GROWTH_RATE * 100}% to ${
+  MAX_GROWTH_RATE * 100
+}%.`
 const AMOUNT_NEGATIVE_MESSAGE = 'Enter an amount of 0 or more.'
 const AMOUNT_TOO_LARGE_MESSAGE = 'Enter a smaller amount.'
 const AMOUNT_NOT_A_NUMBER_MESSAGE = 'Enter a number.'
@@ -306,6 +321,18 @@ function yearsLabel(years: number): string {
  */
 function growthRateFromSaved(rate: unknown): number {
   return typeof rate === 'number' && Number.isFinite(rate) ? rate : 0
+}
+
+/**
+ * A saved investment row's annual return as the builder should hold it (story
+ * 100.3, D3/D9). Absent (a v1-v3 forecast), `null` (JSON's NaN) or any other
+ * non-finite value reloads at `DEFAULT_INVESTMENT_RETURN` (6%). A FINITE rate
+ * outside −100%..100% is kept: its field flags it from the first render and holds
+ * Save and the recompute until it is fixed (refuse, not clamp, as
+ * `growthRateFromSaved` and `useMoneyDraft` do).
+ */
+function annualReturnFromSaved(rate: unknown): number {
+  return typeof rate === 'number' && Number.isFinite(rate) ? rate : DEFAULT_INVESTMENT_RETURN
 }
 
 const FREQUENCY_OPTIONS = [
@@ -500,6 +527,8 @@ function balanceRowType(type: unknown): LocalBalanceAccount['type'] | null {
  *   holds a positive magnitude. A negative or non-finite investment seeds 0, as a
  *   savings row does.
  * - The flag is kept for an investment only (`/balance` enforces the same).
+ * - Every row starts at `DEFAULT_INVESTMENT_RETURN` (story 100.3, D2): `/balance`
+ *   has no rate to seed from.
  *
  * ⚠️ Fields mapped explicitly, as in `itemsFromStore`: a spread would carry
  * `profileId` and friends into the saved JSON.
@@ -524,6 +553,7 @@ function balanceFromStore(entries: readonly ClientBalanceTracking[]): LocalBalan
       frequency: isKnownFrequency(entry.frequency) ? entry.frequency : 'monthly',
       contributionRecordedAsExpense:
         type === 'investment' && entry.contributionRecordedAsExpense === true,
+      annualReturn: DEFAULT_INVESTMENT_RETURN,
     })
   }
   return rows
@@ -542,6 +572,11 @@ function balanceFromStore(entries: readonly ClientBalanceTracking[]): LocalBalan
  * Defensive on its own (100.1 review): a caller that skips `mapToSavedForecast`
  * cannot crash it with a non-array or a `null` entry. An entry that is neither an
  * investment nor a debt is dropped (its sign is unknowable).
+ *
+ * Rates (story 100.3): an investment row's saved `annualReturn` goes through
+ * `annualReturnFromSaved` (no usable rate → 6%, D3; finite out-of-range kept and
+ * flagged, D9). A debt row's saved rate is ignored (debts are saved without one,
+ * D8) and the row starts at the default, like a seeded debt.
  */
 function balanceFromSaved(inputs: ScenarioInputs | undefined): LocalBalanceAccount[] {
   const saved: unknown = inputs?.balanceAccounts
@@ -562,6 +597,10 @@ function balanceFromSaved(inputs: ScenarioInputs | undefined): LocalBalanceAccou
         frequency: isKnownFrequency(frequency) ? frequency : 'monthly',
         contributionRecordedAsExpense:
           type === 'investment' && account['contributionRecordedAsExpense'] === true,
+        annualReturn:
+          type === 'investment'
+            ? annualReturnFromSaved(account['annualReturn'])
+            : DEFAULT_INVESTMENT_RETURN,
       })
     }
     return rows
@@ -576,6 +615,9 @@ function balanceFromSaved(inputs: ScenarioInputs | undefined): LocalBalanceAccou
         contribution: 0,
         frequency: 'monthly',
         contributionRecordedAsExpense: false,
+        // A v1/v2 forecast saved no rate: it reloads at 6% (D3), not the 7% it
+        // was computed at, so it reopens LOWER than it was saved (accepted).
+        annualReturn: DEFAULT_INVESTMENT_RETURN,
       },
     ]
   }
@@ -664,8 +706,10 @@ export function ScenarioBuilder({
   const expenseGrowthValid = isValidGrowthRate(formData.expenseGrowthRate)
 
   /**
-   * The income, expense and event amount fields currently holding a value that
-   * was NOT written to state (story 81.1, D4), keyed by row id. Each row reports
+   * The fields currently holding a value that was NOT written to state (story
+   * 81.1, D4): income, expense and event amounts keyed by row id, and the what-if
+   * rows' fields keyed `<rowId>:<field>` (balance, contribution, and since story
+   * 100.3 an investment row's `annualReturn`). Each row reports
    * from its own change handler — synchronously, in the same batch as any write —
    * so the debounced recompute below never runs with a bad value it cannot see.
    * A row that unmounts (removed, or re-keyed by a load) withdraws its key.
@@ -1074,13 +1118,23 @@ export function ScenarioBuilder({
         // investment rows' sum by construction. Unlike the savings rows these DO
         // move totals: contributions move money from savings into investments,
         // debts lower net worth and fall by their payment.
+        // Story 100.3: each investment row's own rate. A debt row's hidden rate is
+        // not sent (the engine would ignore it anyway).
         balanceAccounts: balanceAccounts.map(
-          ({ type, balance, contribution, frequency, contributionRecordedAsExpense }) => ({
+          ({
             type,
             balance,
             contribution,
             frequency,
             contributionRecordedAsExpense,
+            annualReturn,
+          }) => ({
+            type,
+            balance,
+            contribution,
+            frequency,
+            contributionRecordedAsExpense,
+            ...(type === 'investment' ? { annualReturn } : {}),
           })
         ),
       }
@@ -1278,6 +1332,7 @@ export function ScenarioBuilder({
         contribution: 0,
         frequency: 'monthly',
         contributionRecordedAsExpense: false,
+        annualReturn: DEFAULT_INVESTMENT_RETURN,
       },
     ])
   }, [editBalanceAccounts])
@@ -1293,7 +1348,8 @@ export function ScenarioBuilder({
           if (account.id !== id) return account
           const next = { ...account, [field]: value }
           // A debt has no "not taken from the money left over" flag: switching
-          // to Debt clears it, as `/balance` does (AC-8).
+          // to Debt clears it, as `/balance` does (AC-8). Its annual return is
+          // KEPT, hidden (story 100.3, D8): back to Investment shows it again.
           if (next.type === 'debt') next.contributionRecordedAsExpense = false
           return next
         })
@@ -1416,14 +1472,25 @@ export function ScenarioBuilder({
             balance,
             monthlyContribution,
           })),
+          // `annualReturn` on investment rows only (story 100.3, D8): a debt is
+          // saved without one, so a later debt-interest story owns its own field.
           balanceAccounts: balanceAccounts.map(
-            ({ name, type, balance, contribution, frequency, contributionRecordedAsExpense }) => ({
+            ({
               name,
               type,
               balance,
               contribution,
               frequency,
               contributionRecordedAsExpense,
+              annualReturn,
+            }) => ({
+              name,
+              type,
+              balance,
+              contribution,
+              frequency,
+              contributionRecordedAsExpense,
+              ...(type === 'investment' ? { annualReturn } : {}),
             })
           ),
         },
@@ -2702,6 +2769,85 @@ function useMoneyDraft(
 }
 
 /**
+ * The Annual return field of an investment row (story 100.3, D6), modelled on
+ * `useMoneyDraft`: a DRAFT string, and the parsed rate written to the row only
+ * when usable. Parsed like the growth-rate fields (`parseFloat(raw) / 100`, so
+ * `7`, `7%` and `7.00%` all mean 0.07) and bounded by the same rule
+ * (`isValidGrowthRate`). Empty, not a number or outside −100%..100% shows
+ * `RETURN_INVALID_MESSAGE`, is NOT written, and reports invalid under its own key,
+ * which holds the recompute and Save. A finite out-of-range rate can ARRIVE from a
+ * saved forecast (D9): flagged from the first render, as `useMoneyDraft` flags a
+ * negative amount. The draft opens as `formatPercentage(rate)` (`6.00%`).
+ */
+function usePercentDraft(
+  rate: number,
+  validityKey: string,
+  onValidityChange: (key: string, valid: boolean) => void,
+  write: (rate: number) => void
+) {
+  const [draft, setDraft] = useState<string>(() => formatPercentage(rate))
+  const [error, setError] = useState<string | null>(() =>
+    isValidGrowthRate(rate) ? null : RETURN_INVALID_MESSAGE
+  )
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only — reports the value the row ARRIVED with; later changes report from `onChange`.
+  useEffect(() => {
+    if (!isValidGrowthRate(rate)) onValidityChange(validityKey, false)
+  }, [])
+  useWithdrawValidityOnUnmount(validityKey, onValidityChange)
+  const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value
+    setDraft(raw)
+    const parsed = parseFloat(raw) / 100
+    const problem = raw.trim() !== '' && isValidGrowthRate(parsed) ? null : RETURN_INVALID_MESSAGE
+    if (problem === null) write(parsed)
+    setError(problem)
+    onValidityChange(validityKey, problem === null)
+  }
+  return { draft, error, onChange }
+}
+
+/**
+ * The Annual return field (story 100.3), the percent twin of `RowMoneyField`:
+ * same label, error markup and `<label> for <row>` accessible name. `type="text"`
+ * with `inputMode="decimal"`, like the growth-rate fields, because it shows `%`.
+ */
+function RowPercentField({
+  label,
+  rowLabel,
+  field,
+}: {
+  label: string
+  rowLabel: string
+  field: ReturnType<typeof usePercentDraft>
+}): React.ReactElement {
+  const id = useId()
+  return (
+    <div>
+      <label htmlFor={id} className="block text-sm font-medium text-label mb-1">
+        {label}
+      </label>
+      <input
+        id={id}
+        type="text"
+        inputMode="decimal"
+        value={field.draft}
+        onChange={field.onChange}
+        aria-label={`${label} for ${rowLabel}`}
+        autoComplete="off"
+        aria-invalid={field.error ? true : undefined}
+        aria-describedby={field.error ? `${id}-error` : undefined}
+        className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
+      />
+      {field.error && (
+        <p id={`${id}-error`} className="mt-1 text-xs text-red-600 dark:text-red-300">
+          {field.error}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
  * One money field of a what-if row (savings rows, story 100.1; balance rows,
  * story 100.2), driven by `useMoneyDraft`. The visible label is the same on
  * every row, so the accessible name adds the row (`<label> for <row>`).
@@ -2840,7 +2986,10 @@ interface BalanceAccountRowProps {
     value: LocalBalanceAccount[K]
   ) => void
   onDelete: (id: string) => void
-  /** Per money field, under `<rowId>:balance` / `<rowId>:contribution` (AC-9). */
+  /**
+   * Per field, under `<rowId>:balance` / `<rowId>:contribution` (100.2 AC-9) and
+   * `<rowId>:annualReturn` (story 100.3).
+   */
   onValidityChange: (key: string, valid: boolean) => void
   /**
    * `After N years: <amount>`, `Paid off within N years` (a debt at 0, no
@@ -2873,6 +3022,7 @@ function BalanceAccountRow({
   // Each control's accessible name carries the row, as on the savings rows.
   const rowName = account.name.trim()
   const rowLabel = rowName === '' ? 'unnamed balance' : rowName
+  const isInvestment = account.type === 'investment'
   const selectClass =
     'w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm'
 
@@ -2950,8 +3100,20 @@ function BalanceAccountRow({
           </select>
         </div>
 
-        {/* Delete */}
-        <div className="flex justify-end">
+        {/* Annual return (story 100.3): investment rows only. Its own component,
+            so switching to Debt UNMOUNTS it and withdraws its validity key (AC-10). */}
+        {isInvestment && (
+          <AnnualReturnField
+            account={account}
+            rowLabel={rowLabel}
+            onUpdate={onUpdate}
+            onValidityChange={onValidityChange}
+          />
+        )}
+
+        {/* Delete. `md:col-start-3` keeps it in the last column when an investment
+            row's seventh field (Annual return) pushes it onto a row of its own. */}
+        <div className="flex justify-end md:col-start-3">
           <button
             type="button"
             onClick={() => onDelete(account.id)}
@@ -2966,7 +3128,7 @@ function BalanceAccountRow({
       {/* Investment rows only, as on `/balance` (story 45.1). Checked: the
           contribution is already out of take-home pay or an Expenses line, so the
           forecast does not take it from the money left over a second time. */}
-      {account.type === 'investment' && (
+      {isInvestment && (
         <div className="mt-3 flex items-start gap-2">
           <input
             id={flagId}
@@ -2998,6 +3160,34 @@ function BalanceAccountRow({
       )}
     </div>
   )
+}
+
+/**
+ * The Annual return field of one investment row (story 100.3). A component of its
+ * own, not a hook call in `BalanceAccountRow`, so it mounts and unmounts with the
+ * row's type: a Debt row has no field, and leaving Investment withdraws the
+ * field's validity report (`useWithdrawValidityOnUnmount`), so a bad rate typed
+ * before the switch never keeps Save blocked. The row keeps its last VALID rate
+ * in state (D8); remounting shows it.
+ */
+function AnnualReturnField({
+  account,
+  rowLabel,
+  onUpdate,
+  onValidityChange,
+}: {
+  account: LocalBalanceAccount
+  rowLabel: string
+  onUpdate: BalanceAccountRowProps['onUpdate']
+  onValidityChange: (key: string, valid: boolean) => void
+}): React.ReactElement {
+  const rate = usePercentDraft(
+    account.annualReturn,
+    `${account.id}:annualReturn`,
+    onValidityChange,
+    (r) => onUpdate(account.id, 'annualReturn', r)
+  )
+  return <RowPercentField label="Annual return" rowLabel={rowLabel} field={rate} />
 }
 
 /**

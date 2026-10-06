@@ -35,8 +35,10 @@ import {
   BALANCE_ROW_NEGATIVE,
   BALANCE_ROW_TYPE,
   type BalanceAccountInput,
+  DEFAULT_INVESTMENT_RETURN,
   FORECAST_OUT_OF_RANGE,
   type ForecastingScenario,
+  INVESTMENT_RETURN_OUT_OF_RANGE,
   SAVINGS_ROWS_MISMATCH,
   SAVINGS_ROW_NEGATIVE,
   type SavingsAccountInput,
@@ -861,6 +863,9 @@ describe('calculateFinancialForecast — savings account rows (100.1)', () => {
  * checked with a calculator), never by calling the engine's own formula.
  *
  *   - Investment row: `inv_y = round(inv_{y-1} × 1.07) + annualContribution` (D7).
+ *     Since story 100.3 the rate is the row's own `annualReturn`; every investment
+ *     fixture here carries `annualReturn: 0.07` (100.3 D4: the engine has no
+ *     default), so every figure below is still the 100.2 figure, unchanged.
  *   - A counted contribution (flag not `=== true`) also leaves savings; a flagged
  *     one does not, because net income already lost it (45.1, FR72).
  *   - Debt row: `debt_y = max(0, debt_{y-1} − annualContribution)`; savings is not
@@ -877,9 +882,16 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
    *   - debt 5,000.00, paying 200.00/mo (2,400.00 a year).
    */
   const MIXED: BalanceAccountInput[] = [
-    { type: 'investment', balance: 1_000_000, contribution: 10_000, frequency: 'monthly' },
     {
       type: 'investment',
+      annualReturn: 0.07,
+      balance: 1_000_000,
+      contribution: 10_000,
+      frequency: 'monthly',
+    },
+    {
+      type: 'investment',
+      annualReturn: 0.07,
       balance: 100_007,
       contribution: 5_000,
       frequency: 'weekly',
@@ -932,7 +944,13 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
         ...CURRENT_DATA,
         investments: 0,
         balanceAccounts: [
-          { type: 'investment', balance: 0, contribution: 1_200_013, frequency: 'annually' },
+          {
+            type: 'investment',
+            annualReturn: 0.07,
+            balance: 0,
+            contribution: 1_200_013,
+            frequency: 'annually',
+          },
         ],
       },
       FLAT,
@@ -951,6 +969,7 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
         balanceAccounts: [
           {
             type: 'investment',
+            annualReturn: 0.07,
             balance: 0,
             contribution: 10_000,
             frequency: 'quarterly' as never,
@@ -969,7 +988,13 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
         ...CURRENT_DATA,
         investments: 100_007,
         balanceAccounts: [
-          { type: 'investment', balance: 100_007, contribution: 0, frequency: 'monthly' },
+          {
+            type: 'investment',
+            annualReturn: 0.07,
+            balance: 100_007,
+            contribution: 0,
+            frequency: 'monthly',
+          },
         ],
       },
       FLAT,
@@ -1001,8 +1026,20 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
         ...CURRENT_DATA,
         investments: 100_007,
         balanceAccounts: [
-          { type: 'investment', balance: 50_003, contribution: 0, frequency: 'monthly' },
-          { type: 'investment', balance: 50_004, contribution: 0, frequency: 'monthly' },
+          {
+            type: 'investment',
+            annualReturn: 0.07,
+            balance: 50_003,
+            contribution: 0,
+            frequency: 'monthly',
+          },
+          {
+            type: 'investment',
+            annualReturn: 0.07,
+            balance: 50_004,
+            contribution: 0,
+            frequency: 'monthly',
+          },
         ],
       },
       FLAT,
@@ -1014,6 +1051,7 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
   it('flag parity: a flagged contribution plus its expense row ends where an unflagged one does', () => {
     const row = (flag: boolean): BalanceAccountInput => ({
       type: 'investment',
+      annualReturn: 0.07,
       balance: 200_000,
       contribution: 30_000,
       frequency: 'monthly',
@@ -1144,7 +1182,13 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
 
   it('refuses a negative balance or contribution', () => {
     const bad: BalanceAccountInput[] = [
-      { type: 'investment', balance: -1, contribution: 0, frequency: 'monthly' },
+      {
+        type: 'investment',
+        annualReturn: 0.07,
+        balance: -1,
+        contribution: 0,
+        frequency: 'monthly',
+      },
       { type: 'debt', balance: -1, contribution: 0, frequency: 'monthly' },
       { type: 'debt', balance: 0, contribution: -1, frequency: 'monthly' },
     ]
@@ -1218,5 +1262,259 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
         YEARS
       )
     ).toThrow(FORECAST_OUT_OF_RANGE)
+  })
+})
+
+/**
+ * Each investment row carries its own annual return (story 100.3, FR166).
+ *
+ * Every expected figure is derived BY HAND in the comment beside it, never by
+ * calling the engine's own formula. Rule: `inv_y = round(inv_{y-1} × (1 +
+ * annualReturn)) + annualContribution`, the 100.2 rule with the row's own rate.
+ */
+describe('calculateFinancialForecast — per-investment annual return (100.3)', () => {
+  /** One investment row, no contribution, at `rate`; `investments` matches. */
+  function oneRow(balance: number, annualReturn: unknown, contribution = 0) {
+    return {
+      ...CURRENT_DATA,
+      investments: balance,
+      balanceAccounts: [
+        {
+          type: 'investment' as const,
+          balance,
+          contribution,
+          frequency: 'monthly' as const,
+          annualReturn: annualReturn as number,
+        },
+      ],
+    }
+  }
+
+  it('the default for a new investment row is 6% (D2)', () => {
+    expect(DEFAULT_INVESTMENT_RETURN).toBe(0.06)
+  })
+
+  /**
+   * AC-3: at 0.07 every row reproduces 100.2's pinned figures to the cent. The
+   * constants are COPIED from the 100.2 tests above (`grows, pays down and moves
+   * money between buckets, by hand` and `rounds each investment row on its own`),
+   * not recomputed.
+   */
+  it('at 7% the 100.2 fixtures give the 100.2 figures exactly (parity)', () => {
+    const PINNED_100_2 = {
+      balanceAccounts: [
+        [1_190_000, 367_011, 260_000],
+        [1_393_300, 652_706, 20_000],
+        [1_610_831, 958_399, 0],
+      ],
+      investments: [1_557_011, 2_046_006, 2_569_230],
+      savings: [1_180_000, 2_260_000, 3_340_000],
+      netWorth: [2_477_011, 4_286_006, 5_909_230],
+      startingNetWorth: 700_007,
+      endingNetWorth: 5_909_230,
+    }
+    const mixed = calculateFinancialForecast(
+      {
+        ...CURRENT_DATA,
+        investments: 1_100_007,
+        balanceAccounts: [
+          {
+            type: 'investment',
+            balance: 1_000_000,
+            contribution: 10_000,
+            frequency: 'monthly',
+            annualReturn: 0.07,
+          },
+          {
+            type: 'investment',
+            balance: 100_007,
+            contribution: 5_000,
+            frequency: 'weekly',
+            contributionRecordedAsExpense: true,
+            annualReturn: 0.07,
+          },
+          { type: 'debt', balance: 500_000, contribution: 20_000, frequency: 'monthly' },
+        ],
+      },
+      FLAT,
+      YEARS
+    )
+    for (const series of [mixed.projection, mixed.baseline]) {
+      expect(series.map((p) => p.balanceAccounts)).toEqual(PINNED_100_2.balanceAccounts)
+      expect(series.map((p) => p.investments)).toEqual(PINNED_100_2.investments)
+      expect(series.map((p) => p.savings)).toEqual(PINNED_100_2.savings)
+      expect(series.map((p) => p.netWorth)).toEqual(PINNED_100_2.netWorth)
+    }
+    expect(mixed.summary.startingNetWorth).toBe(PINNED_100_2.startingNetWorth)
+    expect(mixed.summary.endingNetWorth).toBe(PINNED_100_2.endingNetWorth)
+
+    // The per-row rounding fixture (100.2 D7): 107007, 114497, 122511.
+    const split = calculateFinancialForecast(
+      {
+        ...CURRENT_DATA,
+        investments: 100_007,
+        balanceAccounts: [
+          {
+            type: 'investment',
+            balance: 50_003,
+            contribution: 0,
+            frequency: 'monthly',
+            annualReturn: 0.07,
+          },
+          {
+            type: 'investment',
+            balance: 50_004,
+            contribution: 0,
+            frequency: 'monthly',
+            annualReturn: 0.07,
+          },
+        ],
+      },
+      FLAT,
+      YEARS
+    )
+    expect(split.projection.map((p) => p.investments)).toEqual([107_007, 114_497, 122_511])
+  })
+
+  it('compounds a row at 6% on BOTH series, by hand', () => {
+    // round(1000000 × 1.06) = 1060000; round(1060000 × 1.06) = 1123600;
+    // round(1123600 × 1.06) = round(1191016) = 1191016 (all exact).
+    const r = calculateFinancialForecast(oneRow(1_000_000, 0.06), FLAT, YEARS)
+    expect(r.projection.map((p) => p.investments)).toEqual([1_060_000, 1_123_600, 1_191_016])
+    expect(r.baseline.map((b) => b.investments)).toEqual([1_060_000, 1_123_600, 1_191_016])
+  })
+
+  it('rounds every year at 6% (the 67.1 rounding probe, at the new rate)', () => {
+    // round(100007 × 1.06) = round(106007.42) = 106007;
+    // round(106007 × 1.06) = round(112367.42) = 112367;
+    // round(112367 × 1.06) = round(119109.02) = 119109.
+    const r = calculateFinancialForecast(oneRow(100_007, 0.06), FLAT, YEARS)
+    expect(r.projection.map((p) => p.investments)).toEqual([106_007, 112_367, 119_109])
+  })
+
+  it('two rows at different rates each compound at their own rate', () => {
+    // A: 500000 at 2%: 510000, 520200, round(530604) = 530604.
+    // B: 300000 at 10%: 330000, round(363000.00000000006) = 363000,
+    //    round(399300.00000000006) = 399300.
+    // investments = A + B: 840000, 883200, 929904.
+    const r = calculateFinancialForecast(
+      {
+        ...CURRENT_DATA,
+        investments: 800_000,
+        balanceAccounts: [
+          {
+            type: 'investment',
+            balance: 500_000,
+            contribution: 0,
+            frequency: 'monthly',
+            annualReturn: 0.02,
+          },
+          {
+            type: 'investment',
+            balance: 300_000,
+            contribution: 0,
+            frequency: 'monthly',
+            annualReturn: 0.1,
+          },
+        ],
+      },
+      FLAT,
+      YEARS
+    )
+    expect(r.projection.map((p) => p.balanceAccounts)).toEqual([
+      [510_000, 330_000],
+      [520_200, 363_000],
+      [530_604, 399_300],
+    ])
+    expect(r.projection.map((p) => p.investments)).toEqual([840_000, 883_200, 929_904])
+  })
+
+  it('accepts −100% (the row drops to 0, then gains only its contributions) and +100% (doubles)', () => {
+    // −100%: round(100000 × 0) + 120000 = 120000; round(120000 × 0) + 120000 = 120000.
+    const lost = calculateFinancialForecast(oneRow(100_000, -1, 10_000), FLAT, 2)
+    expect(lost.projection.map((p) => p.investments)).toEqual([120_000, 120_000])
+    // +100%: 100000 × 2 + 120000 = 320000; 320000 × 2 + 120000 = 760000. Growth
+    // comes BEFORE the contribution (100.2 D7): (100000 + 120000) × 2 would be 440000.
+    const doubled = calculateFinancialForecast(oneRow(100_000, 1, 10_000), FLAT, 2)
+    expect(doubled.projection.map((p) => p.investments)).toEqual([320_000, 760_000])
+  })
+
+  it('refuses a rate outside −100%..100%, not a finite number, or missing (D4)', () => {
+    expect(INVESTMENT_RETURN_OUT_OF_RANGE).toBe('Investment returns must be from -100% to 100%')
+    const bad: unknown[] = [
+      -1.0001,
+      1.0001,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      undefined,
+      null,
+      '0.06',
+    ]
+    for (const rate of bad) {
+      expect(
+        () => calculateFinancialForecast(oneRow(100_000, rate), FLAT, YEARS),
+        String(rate)
+      ).toThrow(INVESTMENT_RETURN_OUT_OF_RANGE)
+    }
+    // A row with no `annualReturn` key at all (D4: no hidden default).
+    expect(() =>
+      calculateFinancialForecast(
+        {
+          ...CURRENT_DATA,
+          investments: 100_000,
+          balanceAccounts: [
+            { type: 'investment', balance: 100_000, contribution: 0, frequency: 'monthly' },
+          ],
+        },
+        FLAT,
+        YEARS
+      )
+    ).toThrow(INVESTMENT_RETURN_OUT_OF_RANGE)
+  })
+
+  it('ignores the rate on a debt row: NaN there does not throw, and the debt pays down as before', () => {
+    const r = calculateFinancialForecast(
+      {
+        ...CURRENT_DATA,
+        balanceAccounts: [
+          {
+            type: 'debt',
+            balance: 500_000,
+            contribution: 20_000,
+            frequency: 'monthly',
+            annualReturn: Number.NaN,
+          },
+        ],
+      },
+      FLAT,
+      YEARS
+    )
+    // 500000 − 240000 = 260000; − 240000 = 20000; max(0, −220000) = 0.
+    expect(r.projection.map((p) => p.debts)).toEqual([260_000, 20_000, 0])
+  })
+
+  it('a flat scenario keeps baseline === projection with a row at a non-7% rate (67.1, 100.2 D5)', () => {
+    const r = calculateFinancialForecast(
+      {
+        ...CURRENT_DATA,
+        investments: 100_007,
+        balanceAccounts: [
+          {
+            type: 'investment',
+            balance: 100_007,
+            contribution: 10_000,
+            frequency: 'monthly',
+            annualReturn: 0.03,
+          },
+          { type: 'debt', balance: 50_000, contribution: 1_000, frequency: 'monthly' },
+        ],
+      },
+      FLAT,
+      YEARS
+    )
+    expect(r.baseline).toEqual(r.projection)
+    // Control, by hand: round(100007 × 1.03) = round(103007.21) = 103007, + 120000.
+    expect(r.baseline[0]?.investments).toBe(223_007)
   })
 })

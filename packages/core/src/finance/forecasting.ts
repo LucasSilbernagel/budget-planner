@@ -173,6 +173,27 @@ export function isValidGrowthRate(value: unknown): value is number {
 }
 
 /**
+ * The return a NEW investment row is given (story 100.3, D2): 6% a year, as a
+ * decimal like the growth rates. The Scenario Builder seeds every investment row
+ * with it, and a saved forecast whose row has no usable rate reloads at it (D3).
+ * Defined here, once, so the builder, the saved-forecast mapper and the tests
+ * share one constant. The ENGINE never applies it on its own: an investment row
+ * without a rate is refused (`INVESTMENT_RETURN_OUT_OF_RANGE`, D4), so there is
+ * no hidden second default.
+ */
+export const DEFAULT_INVESTMENT_RETURN = 0.06
+
+/**
+ * The refusal for an investment row whose `annualReturn` is missing, not a finite
+ * number, or outside `MIN_GROWTH_RATE..MAX_GROWTH_RATE` (story 100.3, FR166).
+ * Same bounds and the same check (`isValidGrowthRate`) as the growth rates: below
+ * −100% a balance would alternate sign, above +100% the figures run away.
+ */
+export const INVESTMENT_RETURN_OUT_OF_RANGE = `Investment returns must be from ${
+  MIN_GROWTH_RATE * 100
+}% to ${MAX_GROWTH_RATE * 100}%`
+
+/**
  * The refusal when a projection's running balance stops being a finite number
  * (story 77.1 code review, P2). Exported so the tests pin the exact text.
  */
@@ -216,8 +237,9 @@ export const SAVINGS_ROW_NEGATIVE = 'Savings account balances and contributions 
  * `monthlyContributionCents` (the single chokepoint), never read raw.
  *
  * Each year, after the year's net income and before the row is taken:
- *   - investment: `round(balance × 1.07) + annual contribution` (growth on the
- *     opening balance, then the contributions, D7). A contribution NOT flagged
+ *   - investment: `round(balance × (1 + annualReturn)) + annual contribution`
+ *     (growth on the opening balance at the row's OWN rate, story 100.3, then the
+ *     contributions, 100.2 D7). A contribution NOT flagged
  *     `contributionRecordedAsExpense === true` also leaves savings; a flagged one
  *     does not, because net income already lost it (story 45.1, FR72).
  *   - debt: `max(0, balance − annual payment)`. No interest (D2). Savings is not
@@ -230,6 +252,13 @@ export interface BalanceAccountInput {
   contribution: number
   frequency: Frequency
   contributionRecordedAsExpense?: boolean
+  /**
+   * The row's annual return as a decimal (0.06 = 6%), story 100.3 (FR166).
+   * REQUIRED on an investment row: it must satisfy `isValidGrowthRate` (finite,
+   * −1..1), else `INVESTMENT_RETURN_OUT_OF_RANGE`; there is no engine default (D4).
+   * Ignored, and not validated, on a debt row (100.2 D2: no debt interest).
+   */
+  annualReturn?: number
 }
 
 /** The refusal for a negative investment/debt balance or contribution (story 100.2). */
@@ -249,23 +278,27 @@ export const BALANCE_ROWS_MISMATCH = 'Investment balances must add up to the sta
  */
 export const BALANCE_ROW_TYPE = 'Each balance row must be an investment or a debt'
 
-/** Investment growth per year, the same 7% both loops have always used. */
-const INVESTMENT_GROWTH = 1.07
-
 /**
  * One year of the balance rows (story 100.2): each row's CLOSING balance from its
  * opening balance. Shared by BOTH loops (D5), so baseline and projection cannot
- * model them differently.
+ * model them differently. `growthMultipliers[i]` is the investment row's
+ * `1 + annualReturn` (story 100.3), computed once before the loops.
+ *
+ * ⚠️ Written as `balance × (1 + r)`, never `balance + balance × r`: MEASURED
+ * (2026-10-05) `1 + 0.07 === 1.07` and `round(b × 1.07) === round(b × (1 + 0.07))`
+ * for every integer b in 0..1,999,999, so a row at 7% reproduces 100.2's figures
+ * to the cent. The other form was not measured for every rate.
  */
 function stepBalanceRows(
   rows: readonly BalanceAccountInput[],
   balances: readonly number[],
-  annualContributions: readonly number[]
+  annualContributions: readonly number[],
+  growthMultipliers: readonly number[]
 ): number[] {
   return balances.map((balance, i) => {
     const annual = annualContributions[i] ?? 0
     return rows[i]?.type === 'investment'
-      ? Math.round(balance * INVESTMENT_GROWTH) + annual
+      ? Math.round(balance * (growthMultipliers[i] ?? 1)) + annual
       : Math.max(0, balance - annual)
   })
 }
@@ -399,7 +432,9 @@ export interface ForecastingResult {
  *   (`SAVINGS_ROWS_MISMATCH`); if an investment/debt row is neither type
  *   (`BALANCE_ROW_TYPE`), has a non-finite balance or contribution
  *   (`validateAmount`), a negative one (`BALANCE_ROW_NEGATIVE`), or the investment
- *   rows do not sum to `investments` (`BALANCE_ROWS_MISMATCH`); or if the
+ *   rows do not sum to `investments` (`BALANCE_ROWS_MISMATCH`); if an investment
+ *   row's `annualReturn` is missing, not finite or outside −1..1
+ *   (`INVESTMENT_RETURN_OUT_OF_RANGE`; a debt row's is ignored); or if the
  *   projection's balance, investment total or debt total overflows
  *   (`FORECAST_OUT_OF_RANGE`)
  */
@@ -418,7 +453,8 @@ export function calculateFinancialForecast(
      * Optional investment and debt rows (story 100.2). When given, the investment
      * rows' balances must sum to `investments` exactly (`BALANCE_ROWS_MISMATCH`),
      * and the debt rows lower net worth. When absent, the output is identical to
-     * before the story (no new keys).
+     * before the story (no new keys). Each investment row carries its own
+     * `annualReturn` (story 100.3).
      */
     balanceAccounts?: BalanceAccountInput[]
   },
@@ -476,6 +512,9 @@ export function calculateFinancialForecast(
   // solver reads the flag). Debt payments never count (D4).
   const balanceAccounts = currentData.balanceAccounts
   let balanceAnnualContributions: number[] | undefined
+  // Each row's `1 + annualReturn` (story 100.3), computed once here beside the
+  // contributions, not per iteration. 1 on a debt row (never read there).
+  const balanceGrowthMultipliers: number[] = []
   let countedContributionTotal = 0
   let startingDebts = 0
   if (balanceAccounts) {
@@ -488,6 +527,16 @@ export function calculateFinancialForecast(
       validateAmount(account.contribution)
       if (account.balance < 0 || account.contribution < 0) {
         throw new Error(BALANCE_ROW_NEGATIVE)
+      }
+      // Story 100.3: an investment row's own rate, the growth rates' rule. A
+      // missing one is refused too (D4); a debt row's is ignored, not validated.
+      if (account.type === 'investment') {
+        if (!isValidGrowthRate(account.annualReturn)) {
+          throw new Error(INVESTMENT_RETURN_OUT_OF_RANGE)
+        }
+        balanceGrowthMultipliers.push(1 + account.annualReturn)
+      } else {
+        balanceGrowthMultipliers.push(1)
       }
       const annual =
         monthlyContributionCents({
@@ -585,16 +634,17 @@ export function calculateFinancialForecast(
     // times zero is still zero. `deferred-work.md` carried the same false claim
     // and is corrected by this story.)
     //
-    // ⚠️ STILL OPEN, and this line makes it load-bearing in one more place: the 7%
-    // is hard-coded with no parameter and no user control. `deferred-work.md`
-    // records it as a FOURTH logging (three before this story, re-anchored by it).
-    // Fixing it means deciding whether forecasting exposes its own rate control —
-    // its own story, not this one.
+    // ⚠️ CLOSED by story 100.3 (FR166) for every caller the app has: investment
+    // ROWS carry their own rate (`annualReturn`, default 6% in the builder), and
+    // `stepBalanceRows` applies it. The 7% below survives ONLY on the row-less API
+    // path (no `balanceAccounts`), which the Scenario Builder never takes (it
+    // always passes an array, possibly empty). Kept byte-identical (D5), with the
+    // 67.1 block that pins it.
     //
     // ⚠️ SUPERSEDED IN PART by story 100.2 (FR165): "no scenario lever touches
     // investments" and "investments get no contributions" are no longer true
     // when `balanceAccounts` is given. Then each investment row compounds on its
-    // own and gains its contribution, a counted contribution leaves savings, and
+    // own, at its OWN rate since story 100.3, and gains its contribution, a counted contribution leaves savings, and
     // debts fall by their payment (`stepBalanceRows`, used by BOTH loops, D5).
     // Per-row `Math.round` can differ from one compounded total by a cent a year
     // (D7, pinned). Without rows, the single statement below runs, unchanged.
@@ -603,7 +653,8 @@ export function calculateFinancialForecast(
       baselineRowBalances = stepBalanceRows(
         balanceAccounts,
         baselineRowBalances,
-        balanceAnnualContributions
+        balanceAnnualContributions,
+        balanceGrowthMultipliers
       )
       currentSavings -= countedContributionTotal
       currentInvestments = sumRows(balanceAccounts, baselineRowBalances, 'investment')
@@ -713,7 +764,8 @@ export function calculateFinancialForecast(
       projRowBalances = stepBalanceRows(
         balanceAccounts,
         projRowBalances,
-        balanceAnnualContributions
+        balanceAnnualContributions,
+        balanceGrowthMultipliers
       )
       projSavings -= countedContributionTotal
       projInvestments = sumRows(balanceAccounts, projRowBalances, 'investment')

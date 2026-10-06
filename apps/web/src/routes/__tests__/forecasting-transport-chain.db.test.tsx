@@ -689,7 +689,7 @@ describe('savings rows round-trip through the real routes (story 100.1, AC-11)',
     useSavingsStore.setState({ savingsGoals: [] })
   })
 
-  it('POST and PUT store the current version (3 since story 100.2) with the rows and their sum, and Load brings the rows back', async () => {
+  it('POST and PUT store the current version (4 since story 100.3) with the rows and their sum, and Load brings the rows back', async () => {
     await seedSavingsRows()
     const view = renderWithRouter(<ForecastingPage />)
     await pressSave(view)
@@ -704,7 +704,7 @@ describe('savings rows round-trip through the real routes (story 100.1, AC-11)',
         .from(forecastingProfiles)
     const [created, ...more] = await versioned()
     expect(more).toEqual([])
-    expect(created?.version).toBe(3)
+    expect(created?.version).toBe(4)
     const inputs = (
       JSON.parse(String(created?.scenarioData)) as { inputs: Record<string, unknown> }
     ).inputs
@@ -734,7 +734,7 @@ describe('savings rows round-trip through the real routes (story 100.1, AC-11)',
       timeout: 5000,
     })
     const [updated] = await versioned()
-    expect(updated?.version).toBe(3)
+    expect(updated?.version).toBe(4)
     expect(
       (JSON.parse(String(updated?.scenarioData)) as { inputs: { savingsAccounts: unknown[] } })
         .inputs.savingsAccounts
@@ -750,7 +750,7 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
     useBalanceStore.setState({ entries: [] })
   })
 
-  it('POST stores version 3 with the rows and the investment sum, and Load brings every field back', async () => {
+  it('POST stores version 4 with the rows, their rates and the investment sum; Load brings every field back; PUT keeps a changed rate', async () => {
     const { useBalanceStore } = await import('@/stores/balanceStore')
     useBalanceStore.setState({
       entries: [
@@ -794,17 +794,23 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
       ] as never,
     })
     const view = renderWithRouter(<ForecastingPage />)
+    // Story 100.3: rates of 0 and a non-integer 5.5% before the first save.
+    typeInto(await view.findByLabelText('Annual return for Pension'), '0')
+    typeInto(view.getByLabelText('Annual return for ISA'), '5.5')
+    await new Promise((resolve) => setTimeout(resolve, 800))
     await pressSave(view)
     await view.findByTestId('save-success', {}, { timeout: 5000 })
 
-    const [created, ...more] = await db
-      .select({
-        version: forecastingProfiles.version,
-        scenarioData: forecastingProfiles.scenarioData,
-      })
-      .from(forecastingProfiles)
+    const stored = () =>
+      db
+        .select({
+          version: forecastingProfiles.version,
+          scenarioData: forecastingProfiles.scenarioData,
+        })
+        .from(forecastingProfiles)
+    const [created, ...more] = await stored()
     expect(more).toEqual([])
-    expect(created?.version).toBe(3)
+    expect(created?.version).toBe(4)
     const inputs = (
       JSON.parse(String(created?.scenarioData)) as { inputs: Record<string, unknown> }
     ).inputs
@@ -816,8 +822,9 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
         contribution: 25_000,
         frequency: 'biweekly',
         contributionRecordedAsExpense: true,
+        annualReturn: 0,
       },
-      // The stored negative debt seeds as its magnitude (D6).
+      // The stored negative debt seeds as its magnitude (D6). No rate on a debt.
       {
         name: 'Car loan',
         type: 'debt',
@@ -833,6 +840,7 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
         contribution: 120_000,
         frequency: 'annually',
         contributionRecordedAsExpense: false,
+        annualReturn: 0.055,
       },
     ])
     // Kept for an older cached client: the INVESTMENT rows' sum, debts excluded.
@@ -866,5 +874,25 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
     expect(
       view.getByLabelText('Not taken from the money left over, for ISA') as HTMLInputElement
     ).not.toBeChecked()
-  }, 20_000)
+    expect(value('Annual return for Pension')).toBe('0.00%')
+    expect(value('Annual return for ISA')).toBe('5.50%')
+    expect(view.queryByLabelText('Annual return for Car loan')).toBeNull()
+
+    // Save over it (PUT) with a NEGATIVE rate: same row, version 4, rate kept.
+    typeInto(view.getByLabelText('Annual return for ISA'), '-2.5')
+    await new Promise((resolve) => setTimeout(resolve, 800))
+    await pressSave(view)
+    await rtl.waitFor(() => expect(served.some((line) => line.startsWith('PUT '))).toBe(true), {
+      timeout: 5000,
+    })
+    const [updated, ...others] = await stored()
+    expect(others).toEqual([])
+    expect(updated?.version).toBe(4)
+    const after = (
+      JSON.parse(String(updated?.scenarioData)) as {
+        inputs: { balanceAccounts: Array<{ annualReturn?: number }> }
+      }
+    ).inputs.balanceAccounts
+    expect(after.map((row) => row.annualReturn)).toEqual([0, undefined, -0.025])
+  }, 30_000)
 })
