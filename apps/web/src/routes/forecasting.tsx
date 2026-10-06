@@ -81,7 +81,7 @@ export const Route = createFileRoute('/forecasting')({
            suite as proof a new situation is modellable. */
         name: 'description',
         content:
-          'Model how a raise, rising bills or a one-off cost changes your finances over the years ahead — with saved, reloadable scenarios.',
+          'Model how a raise, rising bills, a one-off cost, paying down a loan or saving more each month changes your finances over the years ahead — with saved, reloadable scenarios.',
       },
     ],
   }),
@@ -677,7 +677,7 @@ function ForecastingPage(): React.ReactElement {
             starts passing for the wrong reason. */}
         <PremiumPrompt
           featureName="Advanced Forecasting"
-          message="See how a raise, rising bills or a big one-off cost would change your finances over the years ahead — and save each scenario to reopen later."
+          message="See how a raise, rising bills, a big one-off cost, paying down a loan or saving more each month would change your finances over the years ahead — and save each scenario to reopen later."
           asDialog={false}
         />
       </div>
@@ -708,12 +708,16 @@ function ForecastingPage(): React.ReactElement {
             retirement are still out, because each needs a RECURRING change dated
             to a chosen year and recurring items carry no start/end year. (A house
             DEPOSIT is fine — it is a single dated outflow; the mortgage is not.)
+            Since story 100.2 the balance rows also make "paying down a loan" (a
+            debt row's payment) and "saving more each month" (an investment
+            contribution) claimable.
             Keep this in step with `PremiumFeatureLabel`'s docblock in HomePage.tsx.
             No positional wording ("below"): the intro renders on every tab, and
             the builder is only on the first one. */}
         <p data-testid="forecasting-intro" className="text-body mb-6 max-w-3xl">
-          Wondering how a raise, steadily rising bills or a big one-off cost would change things?
-          Build it out here and see how your finances track over the years ahead.
+          Wondering how a raise, steadily rising bills, a big one-off cost, paying down a loan or
+          saving more each month would change things? Build it out here and see how your finances
+          track over the years ahead.
         </p>
 
         {/* Tabs */}

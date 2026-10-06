@@ -182,7 +182,7 @@ describe('HomePage premium discovery', () => {
 
     expect(
       screen.getByText(
-        'See how a raise, rising bills or a big one-off cost plays out over the years ahead'
+        'See how a raise, rising bills, a big one-off cost, paying down a loan or saving more each month plays out over the years ahead'
       )
     ).toBeInTheDocument()
   })

@@ -67,7 +67,7 @@ const ForecastingPage = Route.options.component as () => React.ReactElement
  * test matched "…a big one-off cos" and never asserted the question mark at all.
  */
 const INTRO_SENTENCE =
-  'Wondering how a raise, steadily rising bills or a big one-off cost would change things?'
+  'Wondering how a raise, steadily rising bills, a big one-off cost, paying down a loan or saving more each month would change things?'
 
 /** The second sentence, pinned separately so it cannot be dropped unnoticed. */
 const INTRO_SECOND_SENTENCE =
@@ -83,10 +83,10 @@ const INTRO_SECOND_SENTENCE =
  * to pin them as constants is single-source, not escaping.
  */
 const PROMPT_MESSAGE =
-  'See how a raise, rising bills or a big one-off cost would change your finances over the years ahead — and save each scenario to reopen later.'
+  'See how a raise, rising bills, a big one-off cost, paying down a loan or saving more each month would change your finances over the years ahead — and save each scenario to reopen later.'
 
 const META_DESCRIPTION =
-  'Model how a raise, rising bills or a one-off cost changes your finances over the years ahead — with saved, reloadable scenarios.'
+  'Model how a raise, rising bills, a one-off cost, paying down a loan or saving more each month changes your finances over the years ahead — with saved, reloadable scenarios.'
 
 interface MetaEntry {
   title?: string
