@@ -713,6 +713,37 @@ describe('Nav + account row, the nav follows the verified session (story 99.1)',
     }
   )
 
+  // AC 3: the marker and the destinations come from the SAME answer, with no
+  // observable state in between. A MutationObserver callback runs at every
+  // microtask checkpoint after a DOM change, so a state "marker shown, nav still
+  // free" that survived even one checkpoint (let alone a paint) is recorded.
+  it.each([
+    { name: 'signed-out seed', seed: SIGNED_OUT_SEED },
+    { name: 'null seed', seed: null },
+  ] as const)(
+    '$name: the Premium marker and the premium destinations land together',
+    async ({ seed }) => {
+      const answer = held(meIs(PAID))
+      stubMe(answer.respond)
+      const { container } = renderNavigable(seed)
+      await screen.findByRole('navigation', { name: /primary/i })
+      const split: string[] = []
+      const observer = new MutationObserver(() => {
+        const marker = premiumMarker() !== null
+        const hrefs = premiumHrefsInNav().length
+        if (marker !== (hrefs === PREMIUM_NAV_ROUTES.length)) {
+          split.push(`marker=${marker} premiumHrefs=${hrefs}`)
+        }
+      })
+      observer.observe(container, { childList: true, subtree: true, characterData: true })
+      answer.release()
+      await waitFor(() => expect(premiumMarker()).not.toBeNull())
+      observer.disconnect()
+      expect(premiumHrefsInNav()).toEqual([...PREMIUM_NAV_ROUTES])
+      expect(split, 'the header showed Premium with the free nav (or the reverse)').toEqual([])
+    }
+  )
+
   it('a tab open from before sign-in (C2): the premium answer arrives on a client navigation', async () => {
     let signedIn = false
     const me = stubMe(() => meIs(signedIn ? PAID : null)())
@@ -808,6 +839,27 @@ describe('Nav + account row, the nav follows the verified session (story 99.1)',
     }
   )
 
+  // Review 99.1: an unknown answer AFTER a definitive one keeps the last
+  // definitive answer (the store is not cleared), so the nav stays premium while
+  // the strip collapses the unknown to "Sign in". Pins the shipped behaviour;
+  // whether unknown should clear the store instead is a decision for Lucas.
+  it('a definitive premium answer, then a 503 on the next navigation: the nav keeps the last answer', async () => {
+    let fail = false
+    const me = stubMe(() => (fail ? new Response('{}', { status: 503 }) : meIs(PAID)()))
+    const { router } = renderNavigable(SIGNED_OUT_SEED)
+    await waitFor(() => expect(premiumMarker()).not.toBeNull())
+    expect(premiumHrefsInNav()).toEqual([...PREMIUM_NAV_ROUTES])
+
+    fail = true
+    await act(async () => {
+      await router.navigate({ to: '/income' })
+    })
+    await waitFor(() => expect(me).toHaveBeenCalledTimes(2))
+    await screen.findByRole('link', { name: /sign in/i })
+    expect(getVerifiedSession()?.subscriptionStatus).toBe('active')
+    expect(premiumHrefsInNav()).toEqual([...PREMIUM_NAV_ROUTES])
+  })
+
   it('a null seed with no answer yet is the free nav', async () => {
     stubMe(() => new Promise<Response>(() => {}))
     renderNavigable(null)
@@ -830,7 +882,7 @@ describe('Nav + account row, the nav follows the verified session (story 99.1)',
     },
     { name: 'signed-out seed + signed-out answer', seed: SIGNED_OUT_SEED, user: null, premium: 0 },
   ])(
-    '$name: the nav renders once, no anchor is added or removed over the fetch',
+    '$name: no anchor is added or removed over the fetch (the nav re-renders, its DOM does not change)',
     async ({ seed, user, premium }) => {
       const answer = held(meIs(user as Me | null))
       const me = stubMe(answer.respond)

@@ -205,7 +205,8 @@ export function AuthIndicator() {
   // already correct (story UX-1). Read once as an initializer — the per-navigation
   // fetch below owns freshness thereafter.
   const seed = useSessionSeed()
-  const [authState, setAuthState] = useState<AuthState>(() => seedToAuthState(seed)) // Re-resolve on every navigation so the strip never shows a stale identity
+  const [authState, setAuthState] = useState<AuthState>(() => seedToAuthState(seed))
+  // Re-resolve on every navigation so the strip never shows a stale identity
   // after a client-side sign-out (which navigates without remounting the root).
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   // Story 41.3 (UX-DR51). Which URLs count as "the sign-in page", all three
@@ -259,7 +260,8 @@ export function AuthIndicator() {
         setAuthState(user ? { status: 'authenticated', user } : { status: 'unauthenticated' })
         // Story 99.1: share a DEFINITIVE answer with `GlobalNav`, so the nav and
         // the Premium marker follow the same verified session. Unknown (non-200,
-        // malformed) writes nothing: the nav keeps what its seed gave it. Only
+        // malformed) writes nothing: the nav keeps what it had (the seed, or the
+        // last definitive answer: review 99.1, see `verifiedSession.ts`). Only
         // ever written here, in an effect, so never during a server render.
         if (answer.definitive) {
           setVerifiedSession(answerToSeed(answer.user))

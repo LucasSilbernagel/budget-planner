@@ -40,6 +40,13 @@ import { PROD_E2E_SESSION_SECRET } from './e2e/helpers/prod-session'
  *                                            unchanged, still measuring what it
  *                                            always measured.
  *   - `chromium-paid` :5174, paid seed    → the PAID nav. Only `*.paid.spec.ts`.
+ *                                            ⚠️ Since story 99.1 only until
+ *                                            `/api/auth/me` answers: unmocked it
+ *                                            answers `{user:null}` (no real
+ *                                            session), and the nav then DROPS
+ *                                            its premium entries (decision D1).
+ *                                            Call `mockSignedIn()` before any
+ *                                            paid-nav assertion.
  *
  * A paid spec that is not named `*.paid.spec.ts` runs on the free server and
  * measures the free nav. If a paid-tier assertion mysteriously passes against 7

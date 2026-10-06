@@ -821,16 +821,18 @@ export function GlobalNav() {
    * root loader caches the seed with `staleTime: Infinity`), while
    * `AuthIndicator` re-asks `/api/auth/me` on every navigation. Any document
    * whose seed was signed-out or null under a premium session therefore showed
-   * "Premium" in the account row and the FREE nav until a reload. MEASURED
-   * triggers (99.1 Debug Log): the service worker's 3 s NetworkFirst fallback
-   * serving a cached SIGNED-OUT document to the first signed-in navigation, and
-   * a tab left open from before sign-in.
+   * "Premium" in the account row and the FREE nav until a reload. Triggers
+   * (99.1 Debug Log): the service worker's 3 s NetworkFirst fallback serving a
+   * cached SIGNED-OUT document to the first signed-in navigation (MEASURED on the
+   * prod build with the >3 s network FORCED; prod latency not measured), and a
+   * tab left open from before sign-in (shown in an integration test only).
    *
    * The contract now: the seed (still read ONCE, as an initializer) decides the
    * first paint, so SSR and hydration agree and nothing flashes. After that the
    * nav follows the indicator's last DEFINITIVE answer (`verifiedSession.ts`:
    * a 200 with a parseable body only; a 503, a network error or a malformed
-   * body writes nothing). It changes only when that answer DISAGREES with the
+   * body writes nothing, so the nav keeps what it had: the seed, or an EARLIER
+   * definitive answer). It changes only when that answer DISAGREES with the
    * seed, in BOTH directions (decision D1): a signed-out/free answer over an
    * entitled seed drops the premium destinations too. Still no fetch here and
    * still not `usePremiumAccess()`: the answer is the indicator's own.
