@@ -2,6 +2,7 @@ import { planLabel } from '@/lib/account/plan-label'
 import { purgeLocalFinancialData } from '@/lib/account/purge-local-financial-data'
 import { returnToSignedOutHome, signOut } from '@/lib/account/sign-out'
 import { hasPaidAccess } from '@/lib/premium/access-statuses'
+import { purgeAppShellCache } from '@/lib/pwa/app-shell-cache'
 import type { BillingInterval, SubscriptionStatus } from '@budget-planner/db/src/schema'
 import { useEffect, useRef, useState } from 'react'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
@@ -125,6 +126,9 @@ export function AccountSection() {
     // AC-5: purge locally persisted financial data (incl. the durable sync queue)
     // so a signed-out browser does not still show/retain the deleted numbers.
     await purgeLocalFinancialData(userId)
+    // Story 101.1 (FR167): the service worker's cached pages carry the deleted
+    // account's seed (its email). Bounded and never rejects.
+    await purgeAppShellCache()
     setIsConfirmOpen(false)
     try {
       returnToSignedOutHome()

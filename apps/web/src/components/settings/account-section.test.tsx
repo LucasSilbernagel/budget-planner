@@ -111,6 +111,9 @@ describe('AccountSection', () => {
       user: { userId: 'user-42', email: 'user@example.com', subscriptionStatus: 'active' },
       deleteOk: true,
     })
+    // Story 101.1 (AC 5): the service worker's page cache goes too.
+    const deleteCache = vi.fn(async () => true)
+    vi.stubGlobal('caches', { delete: deleteCache })
     const user = userEvent.setup()
     render(<AccountSection />)
 
@@ -132,6 +135,10 @@ describe('AccountSection', () => {
     // (bp-sync-queue-<userId>) is cleared too.
     await waitFor(() => expect(purgeLocalFinancialData).toHaveBeenCalledWith('user-42'))
     await waitFor(() => expect(assign).toHaveBeenCalledWith('/'))
+    // Story 101.1 (AC 5): the page cache is deleted BEFORE the document load.
+    expect(deleteCache).toHaveBeenCalledTimes(1)
+    expect(deleteCache).toHaveBeenCalledWith('app-shell')
+    expect(deleteCache.mock.invocationCallOrder[0]).toBeLessThan(assign.mock.invocationCallOrder[0])
     // The post-deletion exit is the shared document-load helper (story 59.3).
     expect(returnToSignedOutHome).toHaveBeenCalledTimes(1)
     // NOT a second logout POST: the delete endpoint already cleared the session.
@@ -162,6 +169,8 @@ describe('AccountSection', () => {
       user: { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'active' },
       deleteOk: false,
     })
+    const deleteCache = vi.fn(async () => true)
+    vi.stubGlobal('caches', { delete: deleteCache })
     const user = userEvent.setup()
     render(<AccountSection />)
 
@@ -169,6 +178,8 @@ describe('AccountSection', () => {
     await user.click(screen.getByTestId('delete-confirm-confirm'))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not delete your account/i)
+    // Story 101.1 (AC 5): still signed in, so the page cache stays.
+    expect(deleteCache).not.toHaveBeenCalled()
     // The dialog must close on failure so the inline error is not occluded by the overlay.
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
     expect(purgeLocalFinancialData).not.toHaveBeenCalled()
