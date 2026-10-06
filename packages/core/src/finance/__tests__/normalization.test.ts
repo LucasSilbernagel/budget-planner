@@ -262,6 +262,10 @@ describe('Frequency Normalization Engine', () => {
       )
     })
 
+    // ⚠️ Story 105.1 review: these two MAX/MIN_SAFE_INTEGER tests are the ONLY ones
+    // that catch a divide-before-multiply rewrite of `normalizeToMonthly`
+    // (`(a / 12) * 12`): it is exact for every in-domain amount, so the
+    // `normalization.exact.test.ts` sweeps cannot see it. Keep them.
     it('should handle very large numbers without overflow', () => {
       const largeAmount = Number.MAX_SAFE_INTEGER
       const result = normalizeToMonthly(largeAmount, 'monthly')

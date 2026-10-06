@@ -37,7 +37,10 @@ const FREQUENCY_MULTIPLIERS: Record<Frequency, number> = {
  * multiply exactly and divide once. `amount × 26 / 12` rounds an exact half cent
  * the same way at every amount; `amount × (26 / 12)` did not (27¢ biweekly gave
  * 58.49999999999999 → 58, not 59; 120,989 misses in 0..1,999,999, MEASURED).
- * `amount × 52` stays below 2^53 up to the money bound (MAX_SAFE_INTEGER / 100).
+ * `amount × 52` stays below 2^53 for |amount| ≤ MAX_SAFE_INTEGER / 100. That bound
+ * is enforced only by `validateBalanceTracking`; income and expense amounts are
+ * bounded by the int32 sync schema (and, from story 106.1, the forms). A corrupt
+ * local amount far above it can come out inexact or Infinity (deferred-work).
  */
 const PERIODS_PER_YEAR: Record<Frequency, number> = {
   weekly: 52,
