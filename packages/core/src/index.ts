@@ -14,6 +14,9 @@
 // Frequency normalization
 export * from './finance/normalization'
 
+// The largest money amount the app can sync (story 106.1)
+export * from './finance/money-limits'
+
 // Net income calculation
 export * from './finance/netIncome'
 

@@ -6,6 +6,7 @@
  */
 
 import { z } from 'zod'
+import { MAX_MONEY_CENTS } from '../finance/money-limits'
 import { INCOME_BASES, RETIREMENT_MODELS } from '../finance/retirement'
 import { FINANCE_TYPES } from '../services/balanceTracking'
 
@@ -204,7 +205,7 @@ export const savingsGoalSchema = z.object({
   // rejected EVERY savings account the user owns. The bug was invisible for as
   // long as nothing imported this file. `.positive()` mirrors the server ingest
   // gate; `.max()` mirrors syncOperationDataSchema and the int32 column.
-  targetAmount: z.number().int().positive().max(PG_INT32_MAX).nullable(),
+  targetAmount: z.number().int().positive().max(MAX_MONEY_CENTS).nullable(),
   // ⚠️ REQUIRED and BOUNDED — `.default(0)` here let a row omit its balance
   // entirely and NaN `getTotalSavings()`. NOT NULL column.
   //
@@ -220,12 +221,12 @@ export const savingsGoalSchema = z.object({
   // negative balance ONLY at the client store write, because any refusal past
   // the queue (DB, push gate, pull gate) deadlocks sync or drops the user's row.
   // A legacy negative debt that is pulled is read as owed (`debtOwedCents`).
-  currentBalance: z.number().int().min(0).max(PG_INT32_MAX),
+  currentBalance: z.number().int().min(0).max(MAX_MONEY_CENTS),
   // Story 26.1: per-account allocation. `monthlyAllocation` is nullable cents
   // (0..int32). `allocationMode` is `.optional()` here (the client emits it via
   // syncBridge); the server gate uses `.default('automatic')` on ingest — an
   // intentional asymmetry, not an exact mirror. Bound matches syncOperationDataSchema.
-  monthlyAllocation: z.number().int().min(0).max(PG_INT32_MAX).nullable().optional(),
+  monthlyAllocation: z.number().int().min(0).max(MAX_MONEY_CENTS).nullable().optional(),
   // ⚠️ REQUIRED — NOT NULL column (`default 'automatic'` is the DB's default
   // for an INSERT, not permission for a pulled row to omit the key).
   allocationMode: z.enum(['manual', 'automatic']),
@@ -238,12 +239,12 @@ export const balanceTrackingSchema = z.object({
   // ⚠️ REQUIRED and BOUNDED. `.default(0)` here was the measured hole: a row
   // omitting `currentBalance` passed the guard and NaN'd the net-worth figure via
   // `stores/balanceStore.ts`. NOT NULL column; may be negative (debt balances).
-  currentBalance: z.number().int().min(PG_INT32_MIN).max(PG_INT32_MAX),
+  currentBalance: z.number().int().min(PG_INT32_MIN).max(MAX_MONEY_CENTS),
   // ⚠️ REQUIRED — NOT NULL column, and non-negative by a CHECK that is REAL since
   // story 66.5 / migration 0020 (`balanceTracking_monthlyContribution_non_negative`).
   // It was inert when this bound was written; the bound is now a mirror rather
   // than the sole enforcement, and must not be loosened on that account.
-  monthlyContribution: z.number().int().min(0).max(PG_INT32_MAX),
+  monthlyContribution: z.number().int().min(0).max(MAX_MONEY_CENTS),
   // Story 16-2: cadence of the contribution. ⚠️ REQUIRED — the column is NOT NULL
   // with a DB-side default of 'monthly', which is not permission for a pulled row
   // to omit the key. Mirrors the server gate in apps/web/src/server/api/sync.ts.
@@ -437,14 +438,14 @@ export const retirementPlanRowSchema = z.object({
  */
 export const syncOperationDataSchema = z.object({
   name: z.string().min(1).max(255).optional(),
-  amount: z.number().int().positive().max(PG_INT32_MAX).optional(),
+  amount: z.number().int().positive().max(MAX_MONEY_CENTS).optional(),
   frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']).optional(),
   // null ⇒ savings account (no target); a positive int ⇒ goal. Must allow null
   // or a paid-tier account create/update ZodError-fails at the sync-queue gate.
-  targetAmount: z.number().int().positive().max(PG_INT32_MAX).nullable().optional(),
-  currentBalance: z.number().int().min(PG_INT32_MIN).max(PG_INT32_MAX).optional(),
+  targetAmount: z.number().int().positive().max(MAX_MONEY_CENTS).nullable().optional(),
+  currentBalance: z.number().int().min(PG_INT32_MIN).max(MAX_MONEY_CENTS).optional(),
   type: z.enum(FINANCE_TYPES).optional(),
-  monthlyContribution: z.number().int().min(0).max(PG_INT32_MAX).optional(),
+  monthlyContribution: z.number().int().min(0).max(MAX_MONEY_CENTS).optional(),
   // Story 45.1 (FR72): see balanceTrackingSchema above. Optional here because an
   // operation payload is partial; absent leaves the server value untouched.
   contributionRecordedAsExpense: z.boolean().optional(),
@@ -474,7 +475,7 @@ export const syncOperationDataSchema = z.object({
   // Story 26.1: savings monthly allocation (nullable cents, >= 0) + mode. Bounds
   // mirror the DB (allocationMode NOT NULL default 'automatic'; monthlyAllocation
   // nullable). Absent from a payload is fine — both are optional here.
-  monthlyAllocation: z.number().int().min(0).max(PG_INT32_MAX).nullable().optional(),
+  monthlyAllocation: z.number().int().min(0).max(MAX_MONEY_CENTS).nullable().optional(),
   allocationMode: z.enum(['manual', 'automatic']).optional(),
   description: z.string().max(500).optional(),
   isDefault: z.boolean().optional(),
