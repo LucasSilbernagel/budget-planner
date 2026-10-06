@@ -294,6 +294,37 @@ export const BALANCE_ROWS_MISMATCH = 'Investment balances must add up to the sta
  */
 export const BALANCE_ROW_TYPE = 'Each balance row must be an investment or a debt'
 
+/** How many units of float error (`|x| × Number.EPSILON`) a product may carry. */
+const ROUNDING_ERROR_EPSILONS = 4
+/** The widest window around .5 that is still snapped, in cents. */
+const MAX_HALF_CENT_SNAP = 1e-6
+
+/**
+ * Story 104.1 (FR172): `Math.round`, except that a value float error left within
+ * a few ulps of an exact half cent is rounded as that half (toward +Infinity,
+ * `Math.round`'s own rule, D4). Every money product in this engine rounds here.
+ *
+ * Why: `100 × 1.015` is `101.49999999999999`, so bare `Math.round` gave 101 where
+ * the decimal answer is 102 (RD1, 100.3 review: 8,415 of b in 0..1,999,999 at
+ * 1.5%, 3,650 at 4.5%, 1,154 at 5.5%, 0 at 6% and 7%).
+ *
+ * ⚠️ The snap is CAPPED. Above ~1.1e9 cents the error window would pass 1e-6,
+ * wide enough to swallow a TRUE fraction such as .49995 (a rate with 3 percent
+ * decimals), so there it is bare `Math.round`. MEASURED (story 104.1 dev) against
+ * an integer oracle at 5.555%, 200,000 balances from 1e13 cents: uncapped windows
+ * of 1, 2 and 4 epsilons gave 560, 950 and 1,730 mismatches,
+ * `Math.round(+x.toPrecision(15))` 9,930, bare `Math.round` 170, this rule 170.
+ * Do not widen either constant without re-running `forecasting.rounding.test.ts`.
+ */
+export function roundCents(x: number): number {
+  const window = Math.abs(x) * Number.EPSILON * ROUNDING_ERROR_EPSILONS
+  if (!(window <= MAX_HALF_CENT_SNAP)) return Math.round(x)
+  const floor = Math.floor(x)
+  // `floor + 0.5` is exact here, and `Math.round` of it keeps the sign of a zero
+  // result (-0.5 → -0) as bare `Math.round` does.
+  return Math.abs(x - floor - 0.5) <= window ? Math.round(floor + 0.5) : Math.round(x)
+}
+
 /**
  * One year of the balance rows (story 100.2): each row's CLOSING balance from its
  * opening balance. Shared by BOTH loops (D5), so baseline and projection cannot
@@ -322,7 +353,7 @@ function stepBalanceRows(
     const annual = annualContributions[i] ?? 0
     const row = rows[i]
     if (row?.type === 'investment') {
-      return Math.round(balance * (growthMultipliers[i] ?? 1)) + annual
+      return roundCents(balance * (growthMultipliers[i] ?? 1)) + annual
     }
     const next = Math.max(0, balance - annual)
     if (row?.contributionRecordedAsExpense !== true) countedDebtPaid += balance - next
@@ -629,10 +660,10 @@ export function calculateFinancialForecast(
     // for EVERY scenario, since no scenario lever touches investments).
     //
     // ⚠️ Three things about this statement are load-bearing and must stay in step
-    // with the projection's `Math.round(projInvestments * 1.07)` — search that
+    // with the projection's `roundCents(projInvestments * 1.07)` — search that
     // identifier; every line number this comment has carried has rotted within
     // days, twice inside story 67.1's own review: the RATE, the per-year
-    // `Math.round`, and the POSITION (after the flow, before the row is taken,
+    // rounding (`roundCents` since story 104.1), and the POSITION (after the flow, before the row is taken,
     // because rows report CLOSING balances).
     //
     // ⚠️⚠️ THE FOUR TESTS ARE NOT EQUALLY SENSITIVE, and an earlier version of this
@@ -641,7 +672,8 @@ export function calculateFinancialForecast(
     //   · RATE (baseline 1.07 -> 1.06)          -> 4 of 4 red
     //   · POSITION (move after `baseline.push`) -> 4 of 4 red, series shifted a year
     //   · REMOVE the statement entirely          -> 4 of 4 red
-    //   · DROP the `Math.round` here             -> 1 of 4 red (the rounding probe ONLY)
+    //   · DROP the rounding here                 -> 1 of 4 red (the rounding probe ONLY;
+    //     re-MEASURED by story 104.1 with `roundCents` in place)
     //   · CARRY a fraction, round at the row     -> 1 of 4 red (the rounding probe ONLY)
     //   · change the PROJECTION's rate alone     -> 3 of 4 red (the baseline-only
     //     test reads `r.baseline` and cannot see it)
@@ -677,7 +709,7 @@ export function calculateFinancialForecast(
     // own, at its OWN rate since story 100.3, and gains its contribution, a
     // counted contribution leaves savings, and debts fall by their payment
     // (`stepBalanceRows`, used by BOTH loops, D5).
-    // Per-row `Math.round` can differ from one compounded total by a cent a year
+    // Per-row rounding can differ from one compounded total by a cent a year
     // (D7, pinned). Without rows, the single statement below runs, unchanged.
     // Story 102.2: the rows step FIRST (pure on the opening balances), because
     // what the unflagged debts paid this year comes off the year's net income
@@ -702,10 +734,10 @@ export function calculateFinancialForecast(
     } else {
       // Compound investments at the SAME 7% the projection uses, in the SAME
       // position (after the flow, before the row is taken) and with the SAME
-      // per-year `Math.round` as the projection's `projInvestments` statement
+      // per-year `roundCents` as the projection's `projInvestments` statement
       // (search that identifier — deliberately not cited by line).
       // Any of the three drifting apart reopens the divergence this story closed.
-      currentInvestments = Math.round(currentInvestments * 1.07)
+      currentInvestments = roundCents(currentInvestments * 1.07)
     }
 
     const baselineYear: YearlyForecast = {
@@ -741,11 +773,11 @@ export function calculateFinancialForecast(
     // Adjust income and expenses by growth rates
     const adjustedIncome = currentData.income.map((item) => ({
       ...item,
-      amount: Math.round(item.amount * (1 + scenario.incomeGrowthRate) ** year),
+      amount: roundCents(item.amount * (1 + scenario.incomeGrowthRate) ** year),
     }))
     const adjustedExpenses = currentData.expenses.map((item) => ({
       ...item,
-      amount: Math.round(item.amount * (1 + scenario.expenseGrowthRate) ** year),
+      amount: roundCents(item.amount * (1 + scenario.expenseGrowthRate) ** year),
     }))
 
     // Calculate net income with adjustments
@@ -823,7 +855,7 @@ export function calculateFinancialForecast(
       projDebts = sumRows(balanceAccounts, projRowBalances, 'debt')
     } else {
       // Investment growth with compounding
-      projInvestments = Math.round(projInvestments * 1.07) // Assume 7% return
+      projInvestments = roundCents(projInvestments * 1.07) // Assume 7% return
     }
     // Refuse, not clamp (D1), once the balance leaves finite numbers — several
     // individually valid events can sum past MAX_VALUE. Checked on the SUM, so an
