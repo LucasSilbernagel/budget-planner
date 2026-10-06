@@ -56,6 +56,15 @@ describe('the one-time event year field (108.1, AC-2)', () => {
     expect(screen.queryByLabelText('Year')).toBeNull()
   })
 
+  it('keeps its label on one line, so the row stays aligned (108.1 review)', () => {
+    // jsdom has no layout, so pin the class token (computed style is vacuous
+    // here). The wrap it prevents was MEASURED under DejaVu Sans at 768 px.
+    const field = addEvent()
+    const label = document.querySelector(`label[for="${field.id}"]`)
+    expect(label?.textContent?.trim()).toBe('Years from now')
+    expect(label?.classList.contains('whitespace-nowrap')).toBe(true)
+  })
+
   it('explains that 1 is the first year and shows the calendar year, both described', () => {
     const field = addEvent()
     expect(field.value).toBe('1')

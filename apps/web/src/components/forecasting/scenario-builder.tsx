@@ -2801,7 +2801,15 @@ function OneTimeEventRow({
             where counting starts, and the calendar year sits beside the value.
             The stored value and its clamp are unchanged (1..`maxYear`). */}
         <div>
-          <label htmlFor={yearId} className="block text-sm font-medium text-label mb-1">
+          {/* `whitespace-nowrap` (108.1 review): under DejaVu Sans (CI, many Linux
+              desktops) this label is 107.3 px, wider than a column at 768-776 px
+              (105 px), so it wrapped to two lines and dropped this input 20 px
+              below the others in a top-aligned row. MEASURED; unwrapped it
+              overhangs ≤ 3 px into the 12 px gap. */}
+          <label
+            htmlFor={yearId}
+            className="block whitespace-nowrap text-sm font-medium text-label mb-1"
+          >
             Years from now
           </label>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
