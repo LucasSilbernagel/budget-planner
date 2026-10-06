@@ -657,6 +657,43 @@ describe('the builder is defensive on its own (AC-14, 100.1 review)', () => {
     // Not an array: loads as the v1/v2 total.
     expect(rowNames()).toEqual(['Investments'])
     expect(screen.getByLabelText('Balance for Investments')).toHaveValue(12.34)
+
+    // Story 100.3 code review: the builder's OWN rate coercion
+    // (`annualReturnFromSaved`), with no mapper in front of it to strip the bad
+    // values first. null / a string / NaN → 6%; a finite in-range rate kept.
+    document.body.innerHTML = ''
+    const investment = (name: string, annualReturn: unknown) => ({
+      name,
+      type: 'investment',
+      balance: 1_000,
+      contribution: 0,
+      frequency: 'monthly',
+      annualReturn,
+    })
+    render(
+      <ScenarioBuilder
+        onSave={vi.fn()}
+        initialForecast={forecast({
+          savings: 0,
+          investments: 4_000,
+          years: 10,
+          balanceAccounts: [
+            investment('Null', null),
+            investment('Text', '0.07'),
+            investment('NaN', Number.NaN),
+            investment('Kept', 0.03),
+          ],
+        })}
+      />
+    )
+    const rate = (name: string) => screen.getByLabelText(`Annual return for ${name}`)
+    expect(rate('Null')).toHaveValue('6.00%')
+    expect(rate('Text')).toHaveValue('6.00%')
+    expect(rate('NaN')).toHaveValue('6.00%')
+    expect(rate('Kept')).toHaveValue('3.00%')
+    for (const name of ['Null', 'Text', 'NaN', 'Kept']) {
+      expect(rate(name)).not.toHaveAttribute('aria-invalid')
+    }
   })
 })
 
@@ -791,7 +828,9 @@ describe('each investment row has its own annual return (story 100.3)', () => {
     // sequential gate run, past the 5 s default.
   }, 15_000)
 
-  for (const bad of ['', 'abc', '150', '-101']) {
+  // `5abc`, `1,5` and `1e2` (code review): `parseFloat` alone would read 5%, 1%
+  // and 100% from them, silently.
+  for (const bad of ['', 'abc', '150', '-101', '5abc', '1,5', '1e2']) {
     it(`"${bad}" is refused: error on the field, recompute and Save held, last result kept (AC-9)`, async () => {
       fillFixture()
       const format = formatter()
@@ -828,15 +867,19 @@ describe('each investment row has its own annual return (story 100.3)', () => {
       await waitFor(() => expect(fundLine()).toBe(`After 2 years: ${format(352_960)}`), {
         timeout: 3000,
       })
-      // Every row the engine ever saw carried a usable investment rate.
+      // Every row the engine ever saw carried a usable investment rate, and the
+      // bad text never became one (`5abc` → 0.05, `1,5` → 0.01, `1e2` → 1 would).
+      let investmentRowsSeen = 0
       for (const rows of engineRows) {
         for (const row of rows as Array<{ type: string; annualReturn?: unknown }>) {
           if (row.type === 'investment') {
+            investmentRowsSeen++
             expect(typeof row.annualReturn).toBe('number')
-            expect(Math.abs(row.annualReturn as number)).toBeLessThanOrEqual(1)
+            expect([0.06, 0.04]).toContain(row.annualReturn)
           }
         }
       }
+      expect(investmentRowsSeen).toBeGreaterThan(0)
       // Several debounced recomputes in one test: 5 s is too tight under gate load.
     }, 15_000)
   }

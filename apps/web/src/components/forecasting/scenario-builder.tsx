@@ -2772,13 +2772,17 @@ function useMoneyDraft(
  * The Annual return field of an investment row (story 100.3, D6), modelled on
  * `useMoneyDraft`: a DRAFT string, and the parsed rate written to the row only
  * when usable. Parsed like the growth-rate fields (`parseFloat(raw) / 100`, so
- * `7`, `7%` and `7.00%` all mean 0.07) and bounded by the same rule
- * (`isValidGrowthRate`). Empty, not a number or outside −100%..100% shows
+ * `7`, `7%` and `7.00%` all mean 0.07), but only when the WHOLE text is a number
+ * (`PERCENT_TEXT`), and bounded by the same rule (`isValidGrowthRate`). Empty,
+ * not a number (`abc`, `5abc`, `1,5`, `1e2`) or outside −100%..100% shows
  * `RETURN_INVALID_MESSAGE`, is NOT written, and reports invalid under its own key,
  * which holds the recompute and Save. A finite out-of-range rate can ARRIVE from a
  * saved forecast (D9): flagged from the first render, as `useMoneyDraft` flags a
  * negative amount. The draft opens as `formatPercentage(rate)` (`6.00%`).
  */
+/** A plain decimal, optionally signed, optionally ending in `%` (story 100.3 review). */
+const PERCENT_TEXT = /^\s*[-+]?(?:\d+\.?\d*|\.\d+)\s*%?\s*$/
+
 function usePercentDraft(
   rate: number,
   validityKey: string,
@@ -2797,8 +2801,11 @@ function usePercentDraft(
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value
     setDraft(raw)
-    const parsed = parseFloat(raw) / 100
-    const problem = raw.trim() !== '' && isValidGrowthRate(parsed) ? null : RETURN_INVALID_MESSAGE
+    // `parseFloat` alone reads a PREFIX: `5abc` → 5, `1,5` → 1 (a decimal comma
+    // silently dropped), `1e2` → 100. The whole text must be a plain number with an
+    // optional `%` (code review 100.3), else it is refused, never written.
+    const parsed = PERCENT_TEXT.test(raw) ? parseFloat(raw) / 100 : Number.NaN
+    const problem = isValidGrowthRate(parsed) ? null : RETURN_INVALID_MESSAGE
     if (problem === null) write(parsed)
     setError(problem)
     onValidityChange(validityKey, problem === null)

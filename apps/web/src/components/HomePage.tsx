@@ -1664,10 +1664,11 @@ function LockedTileContent({
  *   5. `currentData.balanceAccounts` (story 100.2) — per-investment and per-debt
  *      balances, contributions and frequencies. These ARE scenario-expressive:
  *      raising an investment contribution moves money from savings into
- *      investments at each row's own annual return (6% unless changed), and paying a debt down lowers it each year (no interest
- *      modelled). So "raise my pension contribution" and "pay down a loan" are
- *      expressible. Debts also lower the starting net worth. The copy names both
- *      (Lucas 2026-10-05, story 100.2): "saving more each month" holds through
+ *      investments at each row's own annual return (6% unless changed), and
+ *      paying a debt down lowers it each year (no interest modelled). So "raise
+ *      my pension contribution" and "pay down a loan" are expressible. Debts
+ *      also lower the starting net worth. The copy names both (Lucas
+ *      2026-10-05, story 100.2): "saving more each month" holds through
  *      INVESTMENT contributions only (savings-row contributions only split
  *      savings, item 4), and under 100.2 D4 a debt's payment is already an
  *      Expenses line, so an honest "pay it down faster" what-if raises the

@@ -894,5 +894,15 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
       }
     ).inputs.balanceAccounts
     expect(after.map((row) => row.annualReturn)).toEqual([0, undefined, -0.025])
+
+    // Load it again (code review 100.3): the NEGATIVE rate comes back through the
+    // real handlers too. The builder remounts on Load, so the typed draft `-2.5`
+    // is replaced by the formatted `-2.50%` only if the stored rate was read.
+    rtl.fireEvent.click(
+      await view.findByRole('button', { name: 'Load My Financial Forecast' }, { timeout: 5000 })
+    )
+    await rtl.waitFor(() => expect(value('Annual return for ISA')).toBe('-2.50%'))
+    expect(value('Annual return for Pension')).toBe('0.00%')
+    expect(view.queryByLabelText('Annual return for Car loan')).toBeNull()
   }, 30_000)
 })

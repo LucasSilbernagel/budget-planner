@@ -257,6 +257,8 @@ export interface BalanceAccountInput {
    * REQUIRED on an investment row: it must satisfy `isValidGrowthRate` (finite,
    * −1..1), else `INVESTMENT_RETURN_OUT_OF_RANGE`; there is no engine default (D4).
    * Ignored, and not validated, on a debt row (100.2 D2: no debt interest).
+   * The engine's old fixed 7% survives ONLY on the row-less path (no
+   * `balanceAccounts`), which the Scenario Builder never takes (D5).
    */
   annualReturn?: number
 }
@@ -644,8 +646,9 @@ export function calculateFinancialForecast(
     // ⚠️ SUPERSEDED IN PART by story 100.2 (FR165): "no scenario lever touches
     // investments" and "investments get no contributions" are no longer true
     // when `balanceAccounts` is given. Then each investment row compounds on its
-    // own, at its OWN rate since story 100.3, and gains its contribution, a counted contribution leaves savings, and
-    // debts fall by their payment (`stepBalanceRows`, used by BOTH loops, D5).
+    // own, at its OWN rate since story 100.3, and gains its contribution, a
+    // counted contribution leaves savings, and debts fall by their payment
+    // (`stepBalanceRows`, used by BOTH loops, D5).
     // Per-row `Math.round` can differ from one compounded total by a cent a year
     // (D7, pinned). Without rows, the single statement below runs, unchanged.
     currentSavings += baselineAnnualNetIncome

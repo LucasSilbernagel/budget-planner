@@ -1392,6 +1392,24 @@ describe('calculateFinancialForecast — per-investment annual return (100.3)', 
     expect(r.projection.map((p) => p.investments)).toEqual([106_007, 112_367, 119_109])
   })
 
+  /**
+   * Code review 100.3: rates the field can produce but no figure pinned yet.
+   * 100000 cents, no contribution, BY HAND:
+   *   0%:    100000 every year.
+   *   −25%:  75000; 56250; 56250 × 0.75 = 42187.5 (exact in binary) → 42188.
+   *   5.5%:  105500; 105500 × 1.055 = 111302.5 → 111303;
+   *          111303 × 1.055 = 117424.665 → 117425.
+   */
+  it.each([
+    [0, [100_000, 100_000, 100_000]],
+    [-0.25, [75_000, 56_250, 42_188]],
+    [0.055, [105_500, 111_303, 117_425]],
+  ])('compounds a row at %s on BOTH series, by hand', (rate, expected) => {
+    const r = calculateFinancialForecast(oneRow(100_000, rate), FLAT, YEARS)
+    expect(r.projection.map((p) => p.investments)).toEqual(expected)
+    expect(r.baseline.map((b) => b.investments)).toEqual(expected)
+  })
+
   it('two rows at different rates each compound at their own rate', () => {
     // A: 500000 at 2%: 510000, 520200, round(530604) = 530604.
     // B: 300000 at 10%: 330000, round(363000.00000000006) = 363000,
