@@ -1339,9 +1339,9 @@ development_status:
   100-2-my-balances-are-rows-i-can-tweak-in-the-forecast: done  # DEV 070d1ea + REVIEW 4bf6078 + copy 2777570 (2026-10-05);  CREATED 2026-10-05 at 91c73dd; D4-D10 CONFIRMED by Lucas 2026-10-05
   100-3-each-investment-has-its-own-return-rate: ready-for-dev  # CREATED 2026-10-05 against 100.2 branch ce30e3a; D4-D9 CONFIRMED; dev after 100.2 merges
   epic-100-retrospective: optional
-  epic-101: in-progress  # Added 2026-10-05 (approved) from sprint-change-proposal-2026-10-05-sw-stale-seed.md (99.1 follow-up, FR167-168)
-  101-1-a-slow-network-never-shows-me-a-page-from-another-session: ready-for-dev  # CREATED 2026-10-05 at 2ca9896; D1-D7 CONFIRMED
-  101-2-premium-gates-follow-my-verified-session-like-the-nav: ready-for-dev  # CREATED 2026-10-05 at 2ca9896; DS1-DS5 CONFIRMED; cuttable (Q5)
+  epic-101: done  # both stories done 2026-10-05;  # Added 2026-10-05 (approved) from sprint-change-proposal-2026-10-05-sw-stale-seed.md (99.1 follow-up, FR167-168)
+  101-1-a-slow-network-never-shows-me-a-page-from-another-session: done  # DEV 1b32e4b + REVIEW fee0638 2026-10-05 (gates green; spike passed); CREATED 2026-10-05 at 2ca9896; D1-D7 CONFIRMED
+  101-2-premium-gates-follow-my-verified-session-like-the-nav: done  # DEV eafb191 + REVIEW 52fc2de 2026-10-05 (gates green, web 4828); CREATED 2026-10-05 at 2ca9896; DS1-DS5 CONFIRMED; cuttable (Q5)
   epic-101-retrospective: optional
 
 action_items:
