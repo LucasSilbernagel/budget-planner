@@ -227,22 +227,36 @@ export const useProfileStore = create<ProfileState>()(
         // The survivor that inherits `isDefault`, computed ONCE so the store
         // write and the queued update cannot disagree. It is the profile that is
         // active AFTER the deletion: the current one if it survives, otherwise
-        // the first survivor — the same choice the `set()` below makes for
+        // the OLDEST survivor — the same choice the `set()` below makes for
         // `activeProfileId`.
+        //
+        // ⚠️ OLDEST, not `survivors[0]` (deferred from story 98.1). The store
+        // ARRAY is not in age order (a pulled update is removed and re-appended),
+        // while the server's post-tombstone repair (`ensureUserHasDefaultProfile`)
+        // hands the default to the oldest live profile and `useProfiles` lists
+        // oldest first. Picking by array position landed the user on an arbitrary
+        // profile and promoted a different default from the server's pick.
+        // ⚠️ "Matches the server" only once `createdAt` has round-tripped: the
+        // server stamps its OWN `createdAt` on create (`sync.ts` drops the
+        // client's), and a profile with no `createdAt` (the bootstrap
+        // `DEFAULT_PROFILE`) sorts FIRST here. Until a pull brings the server's
+        // values the picks can differ; the queued promotion then wins the seat
+        // (last promotion wins, 76.1), so the two still converge.
         //
         // ⚠️ They agree on every reachable input but are NOT the same expression,
         // and an earlier comment here overclaimed that (code review). If
         // `activeProfileId` names no profile at all — a corrupt or stale
         // persisted blob — `survivors.find` misses and the promotion falls back
-        // to `survivors[0]` while `activeProfileId` stays stale, so the promoted
+        // to `oldestSurvivor` while `activeProfileId` stays stale, so the promoted
         // profile is not the active one. That is the pre-existing orphaned-id
         // case (story 63.1 AC-7), not something this story introduces.
         const survivors = before.profiles.filter((profile) => profile.id !== profileId)
+        const oldestSurvivor = sortProfilesOldestFirst(survivors)[0]
         const nextActiveId =
-          before.activeProfileId === profileId ? survivors[0]?.id : before.activeProfileId
+          before.activeProfileId === profileId ? oldestSurvivor?.id : before.activeProfileId
         const promoted =
           willRemove && target?.isDefault
-            ? survivors.find((profile) => profile.id === nextActiveId) ?? survivors[0]
+            ? survivors.find((profile) => profile.id === nextActiveId) ?? oldestSurvivor
             : undefined
 
         set((state) => {
@@ -260,10 +274,11 @@ export const useProfileStore = create<ProfileState>()(
               promoted && profile.id === promoted.id ? { ...profile, isDefault: true } : profile
             )
 
-          // If the deleted profile was active, switch to the first remaining profile
+          // If the deleted profile was active, switch to the OLDEST remaining
+          // profile (see `oldestSurvivor` above).
           let newActiveProfileId = state.activeProfileId
           if (state.activeProfileId === profileId && newProfiles.length > 0) {
-            newActiveProfileId = newProfiles[0]?.id ?? newActiveProfileId
+            newActiveProfileId = sortProfilesOldestFirst(newProfiles)[0]?.id ?? newActiveProfileId
           }
 
           return {
@@ -427,7 +442,8 @@ export const useProfileStore = create<ProfileState>()(
 // Story 98.1 (FR159): profiles READ oldest → newest (`createdAt`, then `id`), at
 // this boundary rather than in the store array, so every write path (pulled
 // remove-then-append, local create, reconcile, rehydrate) is covered. The store
-// ARRAY order and its `[0]` fallbacks are deliberately untouched. ⚠️ `useShallow`
+// ARRAY order and its `[0]` fallbacks are deliberately untouched (except
+// `removeProfile`'s next-active pick, which now takes the oldest survivor). ⚠️ `useShallow`
 // is load-bearing: the sort returns a NEW array on every call, so without it every
 // store change (even an unrelated one, e.g. `activeProfileId`) hands consumers a
 // fresh array and re-renders them, and the result is not referentially stable
