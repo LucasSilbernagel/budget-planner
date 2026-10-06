@@ -654,6 +654,10 @@ const ACCOUNT_PANEL_CLASS =
  * The Settings page's own Sign out is a standalone button in page content and
  * is outlined like one (story 70.2). It does not use this row style on purpose.
  *
+ * `max-sm:text-center` (Lucas 2026-10-06): below 640px the panel is full width,
+ * so a left-aligned label sat stranded at the edge; it is centred there.
+ * At 640px and up the panel is a narrow dropdown and stays left-aligned.
+ *
  * `max-sm:min-h-[44px] max-sm:py-3` (story 96.1, FR156): below 640px the row
  * is a 44px target, the same pair as the nav sheet's `SHEET_ROW_CLASS`
  * (`GlobalNav.tsx`). `py-3` keeps the label centred in a `block` row (12 + 20
@@ -661,7 +665,7 @@ const ACCOUNT_PANEL_CLASS =
  * Only Sign out is visible there (the Settings row is `max-sm:hidden`, 96.3).
  */
 const PANEL_ROW_CLASS =
-  'block w-full px-4 py-2 max-sm:min-h-[44px] max-sm:py-3 text-left text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-green-500 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100'
+  'block w-full px-4 py-2 max-sm:min-h-[44px] max-sm:py-3 text-left max-sm:text-center text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-green-500 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100'
 
 /** The Sign out row: the shared row, plus its in-flight (`disabled`) state. */
 const SIGN_OUT_CLASS = `${PANEL_ROW_CLASS} disabled:cursor-wait disabled:opacity-60`
