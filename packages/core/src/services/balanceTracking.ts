@@ -283,10 +283,6 @@ export function getTypeDisplayProperties(type: FinanceType):
  * @returns BalanceTrackingWithTimeline with calculated fields
  */
 export function withTimeline(entry: ClientBalanceTracking): BalanceTrackingWithTimeline {
-  // Story 16-2: normalize the contribution to its monthly equivalent before feeding
-  // the monthly-math timeline/debt calculators (they stay purely "per month").
-  const monthlyContribution = monthlyContributionCents(entry)
-
   // Calculate debt-specific metrics if this is a debt
   let debtProgress: number | null = null
   let debtProgressLabel = 'No limit'
@@ -294,9 +290,14 @@ export function withTimeline(entry: ClientBalanceTracking): BalanceTrackingWithT
   let debtTimelineLabel = 'No payment set'
 
   if (entry.type === 'debt' && entry.debtSubType) {
+    // Story 16-2: normalize the contribution to its monthly equivalent before feeding
+    // the monthly-math debt calculator (it stays purely "per month").
+    // Normalized only here, the one reader: the normalizer throws on a non-finite
+    // contribution, and the store maps this over EVERY row during render, so a
+    // corrupt non-debt row must never reach it.
     const result = calculateDebtMetrics(
       entry.currentBalance,
-      monthlyContribution,
+      monthlyContributionCents(entry),
       entry.debtSubType,
       entry.originalBalance
     )
