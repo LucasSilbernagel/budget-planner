@@ -1,4 +1,6 @@
 # generated: 2026-06-18
+# last_updated: 2026-10-06j (104.1 review -> done: patches 5ddcb53, branch not pushed; 103.1 dev running.)
+# last_updated: 2026-10-06i (correct-course approved: epics 103 (FR171 negative debt) + 104 (FR172 forecast rounding) added; 103.1 + 104.1 created -> ready-for-dev, D-lists CONFIRMED by Lucas (all as recommended).)
 # last_updated: 2026-10-06h (102.2 review -> done: patches b64a7b0 + screenshots 563e65f, gates green 5m58s; epic-102 stories all done, open PR next.)
 # last_updated: 2026-10-06g (102.2 in-progress -> review: gates green, screenshots re-baselined 5ff046b, compare 27/27.)
 # last_updated: 2026-10-06f (102.2 ready-for-dev -> in-progress, dev-story started.)
@@ -37,7 +39,7 @@
 # last_updated: 2026-10-03q (**90.1, 91.1, 92.1 DEV STARTED -> in-progress** (parallel worktree agents, e2e serialized by flock).)
 # last_updated: 2026-10-03p (**Batch 18 decisions CONFIRMED** by Lucas: 90.1 D1-D4, 91.1 D1-D5, 92.1 D1-D3 as recommended.)
 # last_updated: 2026-10-03o (**92.1 CREATED -> ready-for-dev** (background fork); epic-92 in-progress; D1-D3 await Lucas.)
-# last_updated: 2026-10-03n (**91.1 CREATED -> ready-for-dev** (background fork); epic-91 in-progress; D1-D5 await Lucas.)
+# last_updated: 2026-10-03n (**91.1 CREATED -> ready-for-dev** (background fork); epic-91 in-progress; D1-D5 CONFIRMED by Lucas 2026-10-06.)
 # last_updated: 2026-10-03m (**90.1 CREATED -> ready-for-dev**; epic-90 in-progress; D1-D4 await Lucas.)
 # last_updated: 2026-10-03l (**BATCH 18 planned**: epics 90-92 / 5 stories added as backlog; baseline_commit reset to `c7765eb`.)
 # last_updated: 2026-10-03k (**88.4 DONE, epic 88 DONE**: PR #31 merged `c7765eb`; batch 17 code complete.)
@@ -1354,6 +1356,12 @@ development_status:
   102-1-i-link-a-debt-to-the-expense-that-pays-it: done  # DEV 04f211a + screenshots 7ec99f8 + REVIEW (Fable x3: 1 decision kept D7, 8 patches, 4 defer, 7 dismissed) 2026-10-06; CREATED 2026-10-06 at 78be545; D1-D10 CONFIRMED by Lucas 2026-10-06
   102-2-my-forecast-stops-paying-a-debt-once-its-paid-off: done  # REVIEW (3 layers: decision 1 hide flag on labelled debt, 8 patches b64a7b0, 1 defer, 11 dismissed; screenshots 563e65f, compare 27/27, gates green 5m58s) 2026-10-06; DEV 73316f1 + screenshots 5ff046b (compare 27/27), gates green 6m10s, 2026-10-06; CREATED 2026-10-06 at f6f1e96; D1-D10 CONFIRMED by Lucas 2026-10-06
   epic-102-retrospective: optional
+  epic-103: in-progress  # Added 2026-10-06 (approved) from sprint-change-proposal-2026-10-06-negative-debt-and-rounding.md (FR171)
+  103-1-my-net-worth-counts-a-debt-as-money-i-owe: in-progress  # CREATED 2026-10-06 at 583d84e; D1-D5 CONFIRMED by Lucas 2026-10-06
+  epic-103-retrospective: optional
+  epic-104: done  # DONE 2026-10-06 (104.1 reviewed, 5ddcb53, not pushed).  Added 2026-10-06 (approved) from sprint-change-proposal-2026-10-06-negative-debt-and-rounding.md (FR172)
+  104-1-half-cents-round-the-same-way-in-every-forecast-year: done  # REVIEW 2026-10-06 (3 layers: RD-1 accepted+deferred, 5 patches 5ddcb53, 4 defer, 7 dismissed; core 1327); DEV 129e6a6 (branch story/104-1-forecast-half-cent-rounding, not pushed), gates green core 1321 web 5004 e2e 23, AC-3 0 / AC-4 170=170; deferred text in story, merge at close; CREATED 2026-10-06 at 583d84e; D1-D4 CONFIRMED by Lucas 2026-10-06; toPrecision(15) MEASURED worse at 1e13
+  epic-104-retrospective: optional
 
 action_items:
   - epic: 6
