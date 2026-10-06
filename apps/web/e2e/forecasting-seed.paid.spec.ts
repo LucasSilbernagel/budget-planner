@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { mockSignedIn } from './helpers/nav-more'
 
 /**
  * A fresh scenario opens on the user's own finances (story 62.1, FR94).
@@ -117,6 +118,13 @@ async function inputValues(page: import('@playwright/test').Page): Promise<strin
 test.describe('a fresh scenario seeds from the user own finances (62.1)', () => {
   test('shows the user rows and totals, and never the retired demo data', async ({ page }) => {
     await seedOwnFinances(page)
+    // The :5174 seam's SSR seed is entitled, but its real `/api/auth/me` answers
+    // signed-out (no real session). Since story 101.2 `usePremiumAccess` follows
+    // that definitive answer, as the nav has since 99.1, so without an AGREEING
+    // answer /forecasting swaps the builder for the upgrade prompt after
+    // hydration (MEASURED: RED "builder never seeded the user rows", snapshot
+    // showed "Go Premium", before this line was added).
+    await mockSignedIn(page, { subscriptionStatus: 'active' })
     await page.goto('/forecasting')
 
     // Positive control FIRST: the builder actually rendered. Without it every

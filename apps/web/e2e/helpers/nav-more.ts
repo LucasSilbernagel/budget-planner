@@ -84,6 +84,9 @@ const AUTH_DELAY_MS = Number(process.env.E2E_AUTH_DELAY_MS ?? 0)
  *
  * ⚠️ Since story 99.1 the NAV follows that answer too: on `:5174` without this
  * mock, the signed-out answer removes the premium nav entries the seed painted.
+ * Since story 101.2 so do the premium gates (`usePremiumAccess`: /forecasting
+ * shows the upgrade prompt) and the Overview/Settings premium sections (they
+ * reappear). A paid spec on `:5174` needs this mock with an entitled status.
  */
 export async function mockSignedIn(
   page: Page,

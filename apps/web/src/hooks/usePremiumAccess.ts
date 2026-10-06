@@ -5,7 +5,12 @@
  * Provides subscription status and access control for premium features.
  *
  * Architecture: seeded from the SSR session (story UX-1); without a seed, one
- * same-origin `GET /api/auth/me` (story 83.1).
+ * same-origin `GET /api/auth/me` (story 83.1). Since story 101.2 (FR168) it
+ * ALSO follows the last DEFINITIVE `/api/auth/me` answer `AuthIndicator`
+ * records (`lib/session/verifiedSession.ts`), as `GlobalNav` has since 99.1:
+ * the seed decides the first paint, the verified answer every frame after it.
+ * Fail direction unchanged: CLOSED (no answer and no seed = loading, then its
+ * own check; any failure = no access).
  * Data Sovereignty: All checks performed server-side, data in DanubeData (Germany - EU)
  *
  * ⚠️ Never `import()` a `server/` module here (story 83.1, FR136). The client
@@ -16,7 +21,7 @@
  * build gate if server code reaches the client bundle.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   SIGNED_OUT_SEED,
   type SeedSubscriptionStatus,
@@ -24,6 +29,7 @@ import {
   useSessionSeed,
 } from '../context/session-seed'
 import { STATUS_ACCESS, hasPremiumFeatures } from '../lib/premium/access-statuses'
+import { useVerifiedSession } from '../lib/session/verifiedSession'
 
 // ============================================================================
 // Type Definitions
@@ -79,7 +85,8 @@ const defaultStatus: PremiumAccessStatus = {
  * Access requires a premium-features status (`hasPremiumFeatures`: active or
  * lifetime — NOT past_due); every other state is fail-closed to no access.
  * The no-seed client re-check resolves through this function too (story 83.1),
- * so seed and re-check cannot disagree.
+ * so seed and re-check cannot disagree, and so does the indicator's verified
+ * answer (story 101.2).
  *
  * ⚠️ Its `hasAccess` field and `lib/premium/entitlement.ts`'s `isEntitledSeed`
  * are THE SAME RULE (story 58.2). Since story 78.3 both call the same status
@@ -127,13 +134,35 @@ export function usePremiumAccess(): {
   checkAccess: () => Promise<PremiumAccessCheckResult>
   refresh: () => Promise<void>
 } {
-  // Seed the initial status from the SSR-resolved session (story UX-1). Read once
-  // as an initializer so a later provider change can never clobber a resolved
-  // status. When there is no seed (resolver could not verify, or rendered outside
-  // the provider) we keep the fail-closed loading default and resolve via the
-  // client check below.
+  // Seed the initial status from the SSR-resolved session (story UX-1). The seed
+  // is still read once, as an initializer, so a later provider change can never
+  // clobber a resolved status. When there is no seed (resolver could not verify,
+  // or rendered outside the provider) we keep the fail-closed loading default and
+  // resolve via the client check below.
+  //
+  // Story 101.2 (FR168): the hook ALSO follows the indicator's last DEFINITIVE
+  // `/api/auth/me` answer, read through `useVerifiedSession()` ONLY. While
+  // hydrating, React reads zustand's SERVER snapshot (`undefined`), so SSR and
+  // the first client frame are both the seed's; a non-reactive
+  // `getVerifiedSession()` here would break that (101.2 AC 6, mutation M5). A gate
+  // mounting AFTER an answer (a client navigation) starts from that answer
+  // (decision DS2). Agreeing answers re-render with equal values: never through
+  // `isLoading: true`, so a gate never flashes its skeleton (AC 5).
   const seed = useSessionSeed()
-  const [status, setStatus] = useState<PremiumAccessStatus>(() => seedToStatus(seed))
+  const verified = useVerifiedSession()
+  const [status, setStatus] = useState<PremiumAccessStatus>(() =>
+    seedToStatus(verified === undefined ? seed : knownStatusSeed(verified))
+  )
+  // The latest definitive answer, for `checkAccess` (DS1) and the mount check
+  // (DS2), which must not re-run when it changes.
+  const verifiedRef = useRef(verified)
+
+  useEffect(() => {
+    verifiedRef.current = verified
+    if (verified !== undefined) {
+      setStatus(seedToStatus(knownStatusSeed(verified)))
+    }
+  }, [verified])
 
   /**
    * Check premium access with the server (`GET /api/auth/me`).
@@ -143,6 +172,20 @@ export function usePremiumAccess(): {
    * re-check can never disagree (story 83.1). Anything else fails CLOSED.
    */
   const checkAccess = useCallback(async (): Promise<PremiumAccessCheckResult> => {
+    /** Apply the held definitive answer, if any (DS1); `null` when none is held. */
+    const verifiedStatus = (): PremiumAccessCheckResult | null => {
+      const held = verifiedRef.current
+      if (held === undefined) {
+        return null
+      }
+      const heldStatus = seedToStatus(knownStatusSeed(held))
+      setStatus(heldStatus)
+      return {
+        hasAccess: heldStatus.hasAccess,
+        subscriptionStatus: heldStatus.subscriptionStatus,
+        isAuthenticated: heldStatus.isAuthenticated,
+      }
+    }
     try {
       setStatus((prev) => ({ ...prev, isLoading: true, error: null }))
 
@@ -160,6 +203,13 @@ export function usePremiumAccess(): {
       // Fallback for when server check fails - assume no access
       // Log the error for debugging
       console.error('Premium access check failed:', seedFromServer.error)
+      // Decision DS1 (story 101.2): a failed check is UNKNOWN, and unknown keeps
+      // the last definitive answer (99.1 D2). So when the indicator's answer is
+      // held, it stands instead of the fail-closed fallback.
+      const held = verifiedStatus()
+      if (held) {
+        return held
+      }
       const fallbackStatus: PremiumAccessStatus = {
         hasAccess: false,
         subscriptionStatus: 'free',
@@ -174,6 +224,10 @@ export function usePremiumAccess(): {
         isAuthenticated: false,
       }
     } catch (error) {
+      const held = verifiedStatus()
+      if (held) {
+        return held
+      }
       const errorMessage = error instanceof Error ? error.message : 'Failed to check premium access'
       const errorStatus: PremiumAccessStatus = {
         hasAccess: false,
@@ -198,12 +252,15 @@ export function usePremiumAccess(): {
     await checkAccess()
   }, [checkAccess])
 
-  // Resolve access on mount ONLY when there is no SSR seed. With a seed the first
-  // paint is already correct (story UX-1) and re-checking would reintroduce the
-  // flash (and, in the browser, a needless server round-trip). Explicit
-  // checkAccess()/refresh() callers (e.g. the forecasting route) are unaffected.
+  // Resolve access on mount ONLY when there is no SSR seed AND no definitive
+  // answer is held yet. With a seed the first paint is already correct (story
+  // UX-1) and re-checking would reintroduce the flash (and, in the browser, a
+  // needless server round-trip). With a held answer the indicator has just asked
+  // the same question (story 101.2, DS2: no request). A successful check and a
+  // later verified answer are both definitive: the last one wins. Explicit
+  // checkAccess()/refresh() callers are unaffected.
   useEffect(() => {
-    if (seed) {
+    if (seed || verifiedRef.current !== undefined) {
       return
     }
     checkAccess()
@@ -223,6 +280,16 @@ export function usePremiumAccess(): {
  */
 const isKnownStatus = (value: unknown): value is Exclude<SeedSubscriptionStatus, null> =>
   typeof value === 'string' && Object.keys(STATUS_ACCESS).includes(value)
+
+/**
+ * A verified answer with its status narrowed to the known set (story 101.2).
+ * `AuthIndicator` casts the raw `/api/auth/me` string; `fetchSessionSeed` maps an
+ * unknown status to `null`. Same here, so `subscriptionStatus` stays inside its
+ * declared union and an unknown status is no access.
+ */
+function knownStatusSeed(seed: SessionSeed): SessionSeed {
+  return isKnownStatus(seed.subscriptionStatus) ? seed : { ...seed, subscriptionStatus: null }
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null

@@ -13,7 +13,13 @@
  * from before sign-in (shown in an integration test only).
  *
  * The indicator already holds the verified answer, refreshed per navigation. It
- * writes it here; the nav reads it. No second request anywhere.
+ * writes it here; the readers read it: the nav (99.1), and since story 101.2
+ * `usePremiumAccess` (every premium gate) and the Overview/Settings premium
+ * sections. Each keeps its own fail direction when nothing is held. No second
+ * request anywhere. Readers use `useVerifiedSession()` only, never
+ * `getVerifiedSession()` in render: the hook gives React zustand's server
+ * snapshot (`undefined`) while hydrating, so SSR and the first client frame
+ * agree (101.2 AC 6).
  *
  * ## Contract
  *

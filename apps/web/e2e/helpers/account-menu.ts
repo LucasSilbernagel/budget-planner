@@ -11,7 +11,8 @@
  * (`nav-more.ts`) BEFORE `page.goto`, or there is no trigger to find: on the
  * free server the SSR seed is signed-out, and on the `:5174` paid seam the
  * post-mount `/api/auth/me` resolves signed-out and unmounts the trigger the
- * seed painted.
+ * seed painted. That answer also drives the nav (story 99.1) and, since story
+ * 101.2, the premium gates and the Overview/Settings premium sections.
  */
 import { type Locator, type Page, expect } from '@playwright/test'
 
