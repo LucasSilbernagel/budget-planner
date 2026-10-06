@@ -88,7 +88,7 @@ async function mapped(balanceAccounts: unknown[]) {
   fetchForecasts.mockResolvedValue({ success: true, data: [savedRow(balanceAccounts)] })
   renderWithRouter(<ForecastingPage />)
   fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
-  fireEvent.click(await screen.findByRole('button', { name: 'Load Plan' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit Plan' }))
   await waitFor(() => expect(received.at(-1)).toBeDefined())
   const rows = received.at(-1)?.inputs?.balanceAccounts
   if (!rows) throw new Error('the mapper produced no balance rows')

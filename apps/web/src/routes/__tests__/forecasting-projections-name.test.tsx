@@ -105,7 +105,7 @@ describe('the Projections legend names the scenario', () => {
   it('(a) after loading a saved forecast from My Forecasts', async () => {
     renderWithRouter(<ForecastingPage />)
     fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Load Buy a house' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Buy a house' }))
     await waitFor(() => expect(screen.getByDisplayValue('Buy a house')).toBeInTheDocument())
 
     await openProjections()

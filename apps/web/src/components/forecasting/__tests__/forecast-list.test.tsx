@@ -1,22 +1,28 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { SavedForecast } from '../../../routes/forecasting'
+import { PencilIcon } from '../../ui/RowActionIcons'
 import { ForecastList } from '../forecast-list'
 
 /**
  * ForecastList reload-affordance tests (story bug-3, AC-4) + the row-action
  * accessible-name contract (deferred-work item closed 2026-09-01).
  *
- * The Load button only renders when the route passes `onLoad`. Before bug-3 the
+ * The reopen button only renders when the route passes `onLoad`. Before bug-3 the
  * route never passed it, so saved forecasts could not be reopened. These lock the
- * wiring contract: the Load action appears and fires when `onLoad` is provided.
+ * wiring contract: the action appears and fires when `onLoad` is provided.
+ *
+ * Story 108.1 (FR176, D7): the action was "Load" with a gear icon; it is now
+ * "Edit" with the finance tables' pencil (`PencilIcon`), named `Edit {name}`
+ * with `title="Edit"`. Since 97.1 a Save after reopening UPDATES the forecast,
+ * so it is an edit. The prop and handler keep their `onLoad` names.
  *
  * ⚠️ THE NAME QUERIES BELOW ARE ROW-DISAMBIGUATED ON PURPOSE, AND THE ABSENCE
- * TEST DEPENDS ON IT. These buttons are icon-only (`LoadIcon`/`DeleteIcon` are
+ * TEST DEPENDS ON IT. These buttons are icon-only (`PencilIcon`/`DeleteIcon` are
  * both `aria-hidden`), and until 2026-09-01 they carried `title` but NO
  * `aria-label`, so their entire accessible name came from `title` — the weakest
  * source in the accname spec, and un-disambiguated ("Delete", not "Delete
- * <name>") across every row. They now carry `aria-label={`Load ${name}`}` /
+ * <name>") across every row. They now carry `aria-label={`Edit ${name}`}` (`Load ${name}` before 108.1) /
  * `Delete ${name}`; `title` is kept for the pointer tooltip only.
  *
  * ⚠️ `getByRole`'s `name` is a FULL-STRING match, so a query written against the
@@ -56,21 +62,21 @@ const sampleForecast: SavedForecast = {
 }
 
 describe('ForecastList reload affordance (bug-3 AC-4)', () => {
-  it('renders a Load action and calls onLoad with the forecast when provided', () => {
+  it('renders an Edit action and calls onLoad with the forecast when provided', () => {
     const onLoad = vi.fn()
     render(<ForecastList forecasts={[sampleForecast]} onDelete={vi.fn()} onLoad={onLoad} />)
 
-    const loadButton = screen.getByRole('button', { name: 'Load Retirement Plan' })
-    fireEvent.click(loadButton)
+    const editButton = screen.getByRole('button', { name: 'Edit Retirement Plan' })
+    fireEvent.click(editButton)
 
     expect(onLoad).toHaveBeenCalledTimes(1)
     expect(onLoad).toHaveBeenCalledWith(sampleForecast)
   })
 
-  it('omits the Load action when onLoad is not provided', () => {
+  it('omits the Edit action when onLoad is not provided', () => {
     render(<ForecastList forecasts={[sampleForecast]} onDelete={vi.fn()} />)
-    expect(screen.queryByRole('button', { name: 'Load Retirement Plan' })).toBeNull()
-    /* Positive control: the row IS rendered, so the null above is the Load button
+    expect(screen.queryByRole('button', { name: 'Edit Retirement Plan' })).toBeNull()
+    /* Positive control: the row IS rendered, so the null above is the Edit button
      * genuinely absent and not the whole list failing to mount. Without this the
      * assertion passes on an empty render. */
     expect(screen.getByRole('button', { name: 'Delete Retirement Plan' })).toBeInTheDocument()
@@ -83,9 +89,9 @@ describe('ForecastList reload affordance (bug-3 AC-4)', () => {
      * "Delete". Asserting the bare verb is ABSENT is what makes this falsifiable
      * — dropping either `aria-label` reverts the name to `title`'s bare verb and
      * reddens both halves. */
-    expect(screen.getByRole('button', { name: 'Load Retirement Plan' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit Retirement Plan' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Delete Retirement Plan' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Load' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull()
   })
 
@@ -99,9 +105,30 @@ describe('ForecastList reload affordance (bug-3 AC-4)', () => {
      * button was called "Delete", so a screen-reader user tabbing the list could
      * not tell which forecast they were about to destroy. */
     for (const name of ['Retirement Plan', 'Sabbatical']) {
-      expect(screen.getByRole('button', { name: `Load ${name}` })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: `Edit ${name}` })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: `Delete ${name}` })).toBeInTheDocument()
     }
+  })
+})
+
+describe('the Edit action looks and reads like an edit (story 108.1, AC-3)', () => {
+  it('draws the finance tables\' pencil, titled "Edit", and nothing still says Load', () => {
+    render(<ForecastList forecasts={[sampleForecast]} onDelete={vi.fn()} onLoad={vi.fn()} />)
+    const button = screen.getByRole('button', { name: 'Edit Retirement Plan' })
+    expect(button).toHaveAttribute('title', 'Edit')
+
+    // The glyph is the SAME path as `PencilIcon`, read from a fresh render of it
+    // rather than a pasted string, so the test cannot drift from the shared icon.
+    const { container: reference } = render(<PencilIcon />)
+    const pencilPath = reference.querySelector('path')?.getAttribute('d')
+    expect(pencilPath, 'PencilIcon rendered a path').toBeTruthy()
+    const paths = [...button.querySelectorAll('svg path')].map((p) => p.getAttribute('d'))
+    expect(paths).toEqual([pencilPath])
+    expect(button.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+
+    // The old name and tooltip are gone. Positive control: the button above.
+    expect(screen.queryByRole('button', { name: 'Load Retirement Plan' })).toBeNull()
+    expect(screen.queryByTitle('Load')).toBeNull()
   })
 })
 
