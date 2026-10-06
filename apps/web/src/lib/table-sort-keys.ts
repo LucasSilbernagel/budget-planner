@@ -159,13 +159,28 @@ export function createSavingsSortExtractors(
 
 export type BalanceSortKey = 'type' | 'name' | 'currentBalance' | 'contribution'
 
-interface BalanceRow {
+export interface BalanceRow {
   type: string
   name: string
   currentBalance: number
   monthlyContribution: number
   frequency: string
+  /**
+   * Story 102.1 (FR169): a debt's link to the expense that pays it. Untrusted
+   * (`unknown`): only the caller's resolver interprets it.
+   */
+  paymentExpenseId?: unknown
 }
+
+/**
+ * Story 102.1: resolves a DEBT row to the payment its Contribution cell shows
+ * (the linked expense's amount and cadence), or `null` when the cell says
+ * "Not linked". The page builds it over the active profile's expenses, so the
+ * extractors must be rebuilt (`useMemo`) when those change.
+ */
+export type DebtPaymentResolver = (
+  row: BalanceRow
+) => { amount: unknown; frequency: unknown } | null
 
 /**
  * Balance — the editable "Your Balance Entries" table only.
@@ -197,7 +212,9 @@ const TYPE_SORT_RANK: Readonly<Record<string, number>> = {
 }
 const TYPE_SORT_RANK_FALLBACK = 3
 
-export function createBalanceSortExtractors(): SortKeyExtractors<BalanceRow, BalanceSortKey> {
+export function createBalanceSortExtractors(
+  debtPayment: DebtPaymentResolver = () => null
+): SortKeyExtractors<BalanceRow, BalanceSortKey> {
   return {
     // ⚠️ An OWN-property check, not `?? FALLBACK`: a row whose `type` is 'constructor',
     // 'toString' or 'valueOf' would otherwise read an INHERITED Object.prototype
@@ -215,7 +232,15 @@ export function createBalanceSortExtractors(): SortKeyExtractors<BalanceRow, Bal
     currentBalance: (row) => finiteOrNull(row.currentBalance),
     // An asset shows an em-dash here, not "$0.00 / Monthly" — rule 2 says sort
     // by what the CELL SHOWS, so it must null out rather than key at 0.
-    contribution: (row) =>
-      row.type === 'asset' ? null : normalizedOrNull(row.monthlyContribution, row.frequency),
+    // Story 102.1 (FR169): a debt shows its LINKED EXPENSE's payment, never its
+    // own stored contribution, so it keys on that (null when not linked).
+    contribution: (row) => {
+      if (row.type === 'asset') return null
+      if (row.type === 'debt') {
+        const payment = debtPayment(row)
+        return payment === null ? null : normalizedOrNull(payment.amount, payment.frequency)
+      }
+      return normalizedOrNull(row.monthlyContribution, row.frequency)
+    },
   }
 }

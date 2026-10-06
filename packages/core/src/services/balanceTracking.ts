@@ -92,6 +92,13 @@ export interface ClientBalanceTracking {
   // byte-identical in every other field, so no rule computed from row content can
   // tell them apart — see `finance/savingsAllocation.ts` and FR72.
   contributionRecordedAsExpense?: boolean
+  // Story 102.1 (FR169): the id of the expense row that pays this DEBT, so the
+  // payment is entered once, on Expenses. Null/absent ⇒ not linked. Only a debt
+  // carries one (`validateBalanceTracking`). ⚠️ No foreign key anywhere: a link to
+  // an expense this device does not hold (deleted, not yet pulled, another
+  // profile) is a NORMAL state. Read it ONLY through `resolveDebtPaymentExpense`,
+  // never as a trusted id: localStorage is user-editable.
+  paymentExpenseId?: string | null
   // Debt-specific fields
   debtSubType?: DebtSubType // Sub-type for debt entries (credit-card, mortgage, loan, other)
   originalBalance?: number // Original loan amount in cents (for mortgage/loan progress calculation)
@@ -107,6 +114,7 @@ export interface ClientNewBalanceTracking {
   monthlyContribution: number // In cents (default 0) — amount at `frequency` cadence (Story 16-2)
   frequency: Frequency // Cadence of monthlyContribution (Story 16-2)
   contributionRecordedAsExpense?: boolean // Story 45.1 (FR72); see ClientBalanceTracking
+  paymentExpenseId?: string | null // Story 102.1 (FR169); see ClientBalanceTracking
   // Debt-specific fields
   debtSubType?: DebtSubType // Sub-type for debt entries
   originalBalance?: number // Original loan amount in cents (for mortgage/loan)
@@ -141,6 +149,7 @@ export interface CreateBalanceTrackingInput {
   monthlyContribution: number // In cents — amount at `frequency` cadence (Story 16-2)
   frequency: Frequency // Cadence of monthlyContribution (Story 16-2)
   contributionRecordedAsExpense?: boolean // Story 45.1 (FR72); see ClientBalanceTracking
+  paymentExpenseId?: string | null // Story 102.1 (FR169); see ClientBalanceTracking
   userId?: number // Optional for free tier (null), required for paid tier
 }
 
@@ -156,6 +165,7 @@ export interface UpdateBalanceTrackingInput {
   monthlyContribution?: number // In cents — amount at `frequency` cadence (Story 16-2)
   frequency?: Frequency // Cadence of monthlyContribution (Story 16-2)
   contributionRecordedAsExpense?: boolean // Story 45.1 (FR72); see ClientBalanceTracking
+  paymentExpenseId?: string | null // Story 102.1 (FR169); see ClientBalanceTracking
 }
 
 /**
@@ -426,6 +436,30 @@ export function validateBalanceTracking(
     })
   }
 
+  // Story 102.1 (FR169, AC-6): the payment link. A string id or null, and a
+  // non-null link only on a DEBT (an investment's contribution and an asset's
+  // absence of one are their own fields). Uuid shape is NOT checked here (D3): the
+  // sync gates check it, and a free-tier row must never be blocked by it.
+  // ⚠️ Same RESIDUAL as the two rules above: `applyServerChanges` bypasses this,
+  // which is why every reader goes through `resolveDebtPaymentExpense`.
+  if (
+    input.paymentExpenseId !== undefined &&
+    input.paymentExpenseId !== null &&
+    typeof input.paymentExpenseId !== 'string'
+  ) {
+    errors.push({
+      field: 'paymentExpenseId',
+      message: 'The linked expense must be an expense id or empty',
+      value: input.paymentExpenseId,
+    })
+  } else if (typeof input.paymentExpenseId === 'string' && input.type !== 'debt') {
+    errors.push({
+      field: 'paymentExpenseId',
+      message: 'Only a debt can be paid by an expense',
+      value: input.paymentExpenseId,
+    })
+  }
+
   // Frequency validation (Story 16-2): required, must be a valid cadence
   if (input.frequency === undefined || input.frequency === null) {
     errors.push({
@@ -633,3 +667,23 @@ export type { DebtSubType, DebtCalculationResult }
 export { calculateDebtMetrics }
 
 export { withTimeline as withBalanceTrackingTimeline }
+
+/**
+ * The expense that pays a debt (Story 102.1, FR169), or `null`.
+ *
+ * `null` for every case a reader must show as "not linked": a non-debt row, no
+ * link, a non-string stored value, and a DANGLING link (an expense deleted, not
+ * yet pulled by this device, or in another profile). It never throws.
+ *
+ * ⚠️ `expenses` must be the ACTIVE PROFILE's expenses (the web app's
+ * `useExpenses()`): profile scope is what makes another profile's expense a miss.
+ */
+export function resolveDebtPaymentExpense<E extends { id: string }>(
+  entry: { type: unknown; paymentExpenseId?: unknown },
+  expenses: readonly E[]
+): E | null {
+  if (entry.type !== 'debt') return null
+  const id = entry.paymentExpenseId
+  if (typeof id !== 'string' || id === '') return null
+  return expenses.find((expense) => expense.id === id) ?? null
+}

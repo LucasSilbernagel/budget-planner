@@ -200,12 +200,17 @@ export async function seedFinanceRows(page: Page): Promise<void> {
                 updatedAt: now,
               },
               {
+                // Story 102.1 (FR169): a debt's payment is its LINKED Expenses
+                // row, so the Contribution cell shows `exp-1`'s figure plus a
+                // "Paid by" line carrying the 138-character unbroken name: the
+                // widest case that cell can render, kept deliberately.
                 id: 'bal-2',
                 type: 'debt',
                 name: 'Mortgage',
                 currentBalance: -98765432100,
-                monthlyContribution: 234567800,
+                monthlyContribution: 0,
                 frequency: 'monthly',
+                paymentExpenseId: 'exp-1',
                 createdAt: now,
                 updatedAt: now,
               },

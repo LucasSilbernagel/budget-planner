@@ -76,6 +76,9 @@ export type { AllocationMode } from './services/savingsGoals'
 // below. (This rule was originally set by `remainingContributionRoom`, removed by
 // story 49.1 / FR75; the rule outlived the export that established it.)
 export { monthlyContributionCents } from './services/balanceTracking'
+// Story 102.1 (FR169): the debt→expense payment link resolver, for the same
+// subpath reason as `monthlyContributionCents` above.
+export { resolveDebtPaymentExpense } from './services/balanceTracking'
 
 // Story 30.5: the shared categorical palette generator, re-exported for the
 // category-breakdown bar charts so they draw from the SAME palette as the

@@ -591,6 +591,8 @@ describe('balanceTracking — the contribution limit is removed (story 49.1, FR7
         'isDeleted',
         'monthlyContribution',
         'name',
+        // Story 102.1 (FR169): the debt's linked expense. See the block below.
+        'paymentExpenseId',
         'profileId',
         'sortOrder',
         'type',
@@ -614,5 +616,39 @@ describe('balanceTracking — the contribution limit is removed (story 49.1, FR7
       .sort()
 
     expect(checkNames).toEqual(['balanceTracking_monthlyContribution_non_negative'])
+  })
+})
+
+/**
+ * `balanceTracking.paymentExpenseId` (Story 102.1, FR169): the expense that pays a
+ * debt.
+ *
+ * ⚠️⚠️ The NO-FOREIGN-KEY assertion is the point of this block. A real FK turns a
+ * dangling link (an expense deleted, or not yet pulled by this device: a NORMAL
+ * state) into a 23503 on push, which this product keeps queued and replays until
+ * the circuit breaker stops ALL of the account's sync. `expenses.categoryId` is
+ * the live example: its sync is pinned to null for exactly that reason.
+ *
+ * Asserted as the exact FK set of the table (positive form, not a bare absence
+ * check), so adding `.references(() => expenses.id)` reddens it.
+ */
+describe('balanceTracking.paymentExpenseId (story 102.1, FR169)', () => {
+  it('is a nullable uuid with no default', () => {
+    const column = balanceTracking.paymentExpenseId
+    expect(column.getSQLType()).toBe('uuid')
+    expect(column.notNull).toBe(false)
+    expect(column.hasDefault).toBe(false)
+  })
+
+  it('⚠️ references NOTHING: the table keeps exactly its two owner FKs', () => {
+    const refs = getTableConfig(balanceTracking)
+      .foreignKeys.map((fk) => {
+        const ref = fk.reference()
+        return `${ref.columns.map((c) => c.name).join(',')}->${
+          getTableConfig(ref.foreignTable).name
+        }`
+      })
+      .sort()
+    expect(refs).toEqual(['profileId->userProfiles', 'userId->users'])
   })
 })

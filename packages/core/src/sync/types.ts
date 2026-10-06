@@ -252,6 +252,12 @@ export const balanceTrackingSchema = z.object({
   // syncBridge payload whitelist, or the field silently does not round-trip.
   // ⚠️ REQUIRED — NOT NULL column (see the REQUIRED/NULLABLE rule above).
   contributionRecordedAsExpense: z.boolean(),
+  // Story 102.1 (FR169), D1: `paymentExpenseId` is DELIBERATELY NOT DECLARED here,
+  // following `categoryId`. This schema is a VERDICT ONLY (`validateServerRow`):
+  // `pull()` keeps the original row, so the undeclared key still reaches the store.
+  // Declaring it could only add a false rejection (trap 4) and buys nothing: every
+  // reader resolves the link through `resolveDebtPaymentExpense`, which treats any
+  // bad value as "not linked".
   userId: z.string().uuid(),
 })
 
@@ -421,6 +427,7 @@ export const retirementPlanRowSchema = z.object({
  * - monthlyContribution: must be >= 0
  * - contributionRecordedAsExpense: boolean (Story 45.1); absent leaves it unchanged
  * - endsBeforeRetirement: boolean (Story 65.2); absent leaves it unchanged
+ * - paymentExpenseId: uuid or null (Story 102.1); absent leaves it unchanged
  * - currentBalance: may be negative (debt balances) but must fit in int32
  */
 export const syncOperationDataSchema = z.object({
@@ -436,6 +443,18 @@ export const syncOperationDataSchema = z.object({
   // Story 45.1 (FR72): see balanceTrackingSchema above. Optional here because an
   // operation payload is partial; absent leaves the server value untouched.
   contributionRecordedAsExpense: z.boolean().optional(),
+  // Story 102.1 (FR169): the expense that pays a debt row.
+  //
+  // ⚠️ THIS GATE STRIPS UNDECLARED KEYS and runs BEFORE `queue.add()`: without
+  // this line the link never leaves the device, with no error and a "successful"
+  // sync (the trap `endsBeforeRetirement` documents below).
+  // ⚠️ `.nullable()` as well as `.optional()`, for the reason `categoryId` records
+  // below: unlinking sends an explicit `null` (the bridge always emits the key,
+  // because `updateEntity` does a partial `.set()`), and `.optional()` alone
+  // rejects `null`. Never required: this schema is shared by every entity.
+  // ⚠️ A uuid that matches no expense is VALID here and everywhere else (no FK):
+  // a dangling link is a normal state, never a reason to refuse an operation.
+  paymentExpenseId: z.string().uuid().nullable().optional(),
   // Story 65.2 (FR101): the expense row's "this ends before I retire" flag.
   //
   // ⚠️⚠️ THIS GATE STRIPS UNDECLARED KEYS, and it is the one the story's epic

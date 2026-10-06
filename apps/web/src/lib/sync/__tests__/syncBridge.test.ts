@@ -157,6 +157,9 @@ describe('syncBridge — paid tier (handle registered)', () => {
           // validates `data` in a superRefine that DISCARDS its parse result — so
           // the wire value is whatever the bridge sends and nothing else.
           contributionRecordedAsExpense: false,
+          // Story 102.1 (FR169): the debt-payment link, emitted as an explicit
+          // null when unlinked so an unlink lands (partial `.set()`).
+          paymentExpenseId: null,
           userId: SESSION_USER_ID,
         },
       },
@@ -264,6 +267,8 @@ describe('syncBridge — paid tier (handle registered)', () => {
         'currentBalance',
         'monthlyContribution',
         'contributionRecordedAsExpense',
+        // Story 102.1 (FR169): always on the wire (null when unlinked).
+        'paymentExpenseId',
         'frequency',
         'sortOrder',
         'userId',
@@ -385,6 +390,8 @@ describe('syncBridge — an asset row reaches the queue (Story 43.4, gate 2 fals
       frequency: 'monthly',
       // Story 45.1 (FR72): stamped false rather than omitted — see below.
       contributionRecordedAsExpense: false,
+      // Story 102.1: an asset is never linked, so the explicit null.
+      paymentExpenseId: null,
       sortOrder: 0,
       userId: SESSION_USER_ID,
     })

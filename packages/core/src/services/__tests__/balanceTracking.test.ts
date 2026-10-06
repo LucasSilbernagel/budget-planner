@@ -18,6 +18,7 @@ import {
   isValidBalanceTracking,
   monthlyContributionCents,
   resetBalanceTrackingTempId,
+  resolveDebtPaymentExpense,
   sortByCreationDate,
   toClientBalanceTracking,
   validateBalanceTracking,
@@ -915,5 +916,94 @@ describe('validateBalanceTracking — contributionRecordedAsExpense (Story 45.1,
         contributionRecordedAsExpense: false,
       })
     ).toEqual([])
+  })
+})
+
+describe('validateBalanceTracking — paymentExpenseId (Story 102.1, FR169/AC-6)', () => {
+  const EXPENSE_ID = '44444444-4444-4444-8444-444444444444'
+  const row = (overrides: Record<string, unknown> = {}) => ({
+    type: 'debt' as const,
+    name: 'Car loan',
+    currentBalance: 1_200_000,
+    monthlyContribution: 0,
+    frequency: 'monthly' as const,
+    ...overrides,
+  })
+
+  // Acceptance first, over the same factory as the rejections (the 45.1 rule:
+  // a rejection that passes only because the fixture is malformed proves nothing).
+  it('ACCEPTS a debt linked to an expense', () => {
+    expect(validateBalanceTracking(row({ paymentExpenseId: EXPENSE_ID }))).toEqual([])
+  })
+
+  it('ACCEPTS a debt with no link (null) and with the key absent', () => {
+    expect(validateBalanceTracking(row({ paymentExpenseId: null }))).toEqual([])
+    expect(validateBalanceTracking(row())).toEqual([])
+  })
+
+  it('ACCEPTS an investment and an asset whose link is null', () => {
+    expect(
+      validateBalanceTracking(
+        row({ type: 'investment', monthlyContribution: 50_000, paymentExpenseId: null })
+      )
+    ).toEqual([])
+    expect(validateBalanceTracking(row({ type: 'asset', paymentExpenseId: null }))).toEqual([])
+  })
+
+  it('REJECTS a link on an investment row: only a debt is paid by an expense', () => {
+    const errors = validateBalanceTracking(
+      row({ type: 'investment', monthlyContribution: 50_000, paymentExpenseId: EXPENSE_ID })
+    )
+    expect(errors.map((e) => e.field)).toEqual(['paymentExpenseId'])
+  })
+
+  it('REJECTS a link on an asset row', () => {
+    const errors = validateBalanceTracking(row({ type: 'asset', paymentExpenseId: EXPENSE_ID }))
+    expect(errors.map((e) => e.field)).toEqual(['paymentExpenseId'])
+  })
+
+  it('REJECTS a link that is neither a string nor null', () => {
+    const errors = validateBalanceTracking(row({ paymentExpenseId: 42 }))
+    expect(errors.map((e) => e.field)).toEqual(['paymentExpenseId'])
+  })
+})
+
+describe('resolveDebtPaymentExpense (Story 102.1, FR169/AC-5)', () => {
+  const expenses = [
+    { id: 'e-1', name: 'Car payment', amount: 45_000, frequency: 'monthly' as const },
+    { id: 'e-2', name: 'Rent', amount: 150_000, frequency: 'monthly' as const },
+  ]
+
+  it('returns the linked expense for a debt', () => {
+    expect(resolveDebtPaymentExpense({ type: 'debt', paymentExpenseId: 'e-1' }, expenses)).toBe(
+      expenses[0]
+    )
+  })
+
+  it('returns null when the debt is not linked (null or absent)', () => {
+    expect(resolveDebtPaymentExpense({ type: 'debt', paymentExpenseId: null }, expenses)).toBeNull()
+    expect(resolveDebtPaymentExpense({ type: 'debt' }, expenses)).toBeNull()
+  })
+
+  it('⚠️ returns null for a DANGLING link (deleted, not yet pulled, other profile)', () => {
+    // The caller passes the active profile's expenses, so all three cases are
+    // the same thing here: an id that is not in the list.
+    expect(
+      resolveDebtPaymentExpense({ type: 'debt', paymentExpenseId: 'gone' }, expenses)
+    ).toBeNull()
+  })
+
+  it('returns null for a non-string stored value (localStorage is user-editable)', () => {
+    for (const bad of [42, true, {}, ['e-1'], '']) {
+      expect(
+        resolveDebtPaymentExpense({ type: 'debt', paymentExpenseId: bad }, expenses)
+      ).toBeNull()
+    }
+  })
+
+  it('returns null for a non-debt row even when it carries a matching id', () => {
+    for (const type of ['investment', 'asset', 'mystery']) {
+      expect(resolveDebtPaymentExpense({ type, paymentExpenseId: 'e-1' }, expenses)).toBeNull()
+    }
   })
 })

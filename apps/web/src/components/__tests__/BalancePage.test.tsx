@@ -19,8 +19,32 @@ import { getDocPage } from '../../content/docs'
 import { clearSyncBridge, registerSyncBridge } from '../../lib/sync/syncBridge'
 import type { FinanceType } from '../../stores/balanceStore'
 import { useBalanceStore } from '../../stores/balanceStore'
+import { useExpenseStore } from '../../stores/expenseStore'
+import { useProfileStore } from '../../stores/profileStore'
 import { useSavingsStore } from '../../stores/savingsStore'
 import { BalancePage } from '../BalancePage'
+
+/** One row of the expense store (its row type is not exported). */
+type ClientExpense = ReturnType<typeof useExpenseStore.getState>['expenses'][number]
+
+/** An Expenses row for the 102.1 payment link (only the fields the page reads). */
+function expenseRow(
+  id: string,
+  name: string,
+  amount: number,
+  frequency: ClientExpense['frequency'] = 'monthly'
+): ClientExpense {
+  return {
+    id,
+    userId: 0,
+    name,
+    amount,
+    frequency,
+    categoryId: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  }
+}
 
 /**
  * BalancePage "Add Balance Entry" button tests (story 6-6, BUG-A).
@@ -432,16 +456,20 @@ describe('BalancePage mobile card presentation (story 31.2)', () => {
           type: 'debt',
           name: 'Car Loan',
           currentBalance: -400000,
-          monthlyContribution: 30000,
+          // Story 102.1 (FR169): a debt's payment is its linked Expenses row.
+          monthlyContribution: 0,
           frequency: 'monthly',
+          paymentExpenseId: 'exp-car',
           createdAt: ISO_31_2,
           updatedAt: ISO_31_2,
         },
       ],
     })
+    useExpenseStore.setState({ expenses: [expenseRow('exp-car', 'Car payment', 30000)] })
   })
 
   afterEach(() => {
+    useExpenseStore.setState({ expenses: [] })
     useBalanceStore.setState({ entries: [] })
   })
 
@@ -466,6 +494,7 @@ describe('BalancePage mobile card presentation (story 31.2)', () => {
     expect(within(row).getByText('-4,000.00')).toBeInTheDocument()
     expect(within(row).getByText('300.00')).toBeInTheDocument()
     expect(within(row).getByText('Monthly')).toBeInTheDocument()
+    expect(within(row).getByText('Paid by Car payment')).toBeInTheDocument()
     expect(within(row).getByRole('button', { name: 'Edit Car Loan' })).toBeInTheDocument()
     expect(within(row).getByRole('button', { name: 'Delete Car Loan' })).toBeInTheDocument()
   })
@@ -747,6 +776,9 @@ describe('BalancePage — sort by column (34.2)', () => {
    * by current balance:   Alpha(-500) Zeta(300) Mid(300) Beta(800)  <- Zeta/Mid TIE
    * by contribution NORM: Mid(4_17) Beta(200_00) Alpha(300_00) Zeta(433_33)
    * by contribution RAW:  Mid(50_00) Zeta(100_00) Beta(200_00) Alpha(300_00)
+   *
+   * Story 102.1: Alpha (the debt) gets its 300_00 from its LINKED expense, not a
+   * stored contribution, so the orders above are unchanged.
    */
   const SEED = [
     {
@@ -760,8 +792,9 @@ describe('BalancePage — sort by column (34.2)', () => {
       type: 'debt' as const,
       name: 'Alpha',
       currentBalance: -500_00,
-      monthlyContribution: 300_00,
+      monthlyContribution: 0,
       frequency: 'monthly' as const,
+      paymentExpenseId: 'exp-alpha',
     },
     {
       type: 'investment' as const,
@@ -783,6 +816,7 @@ describe('BalancePage — sort by column (34.2)', () => {
 
   function seedRows() {
     useBalanceStore.setState({ entries: [] })
+    useExpenseStore.setState({ expenses: [expenseRow('exp-alpha', 'Alpha payment', 300_00)] })
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-03-01T00:00:00.000Z'))
     for (const entry of SEED) {
@@ -820,6 +854,7 @@ describe('BalancePage — sort by column (34.2)', () => {
   })
 
   afterEach(() => {
+    useExpenseStore.setState({ expenses: [] })
     useBalanceStore.setState({ entries: [] })
   })
 
@@ -1119,7 +1154,7 @@ const hintText = (el: HTMLElement): string => (el.textContent ?? '').replace(/\s
  * has nothing to do with the copy.
  */
 const DEBT_HINT =
-  "Enter what you still owe today. Record the recurring payment on the Expenses page — that's where it counts against your cash flow. If the loan bought something you still have, record that as an Asset entry too, so your net worth reflects both sides. Where a mortgage belongs works through a full example."
+  "Enter what you still owe today. Record the recurring payment on the Expenses page — that's where it counts against your cash flow — then pick it under Paid by. If the loan bought something you still have, record that as an Asset entry too, so your net worth reflects both sides. Where a mortgage belongs works through a full example."
 
 const ASSET_HINT =
   "Enter what it's worth today. Money you put aside toward it belongs on the Savings page — an asset's value here changes as it appreciates, not as you contribute. A loan against it is recorded separately as a Debt entry, and your down payment is not entered anywhere. Where a mortgage belongs works through a full example."
@@ -1689,12 +1724,9 @@ describe('BalancePage — the modal asks exactly the right fields per type (stor
     ],
     [
       'debt',
-      [
-        'balance-name-input',
-        'balance-current-balance-input',
-        'balance-monthly-contribution-input',
-        'balance-frequency-select',
-      ],
+      // Story 102.1 (FR169): the debt's payment is picked from Expenses, so the
+      // contribution and frequency fields give way to the "Paid by" select.
+      ['balance-name-input', 'balance-current-balance-input', 'balance-payment-expense-select'],
     ],
     ['asset', ['balance-name-input', 'balance-current-balance-input']],
   ])('a %s asks for exactly its own fields', async (type, expected) => {
@@ -1967,4 +1999,226 @@ describe('BalancePage — the Name placeholder follows the Type dropdown (story 
       expect(placeholder).not.toMatch(JURISDICTION_SPECIFIC)
     }
   )
+})
+
+/**
+ * Story 102.1 (FR169): a debt's payment is the Expenses row that pays it, picked
+ * on the debt form, so it is entered once.
+ *
+ * Integration through the real page and the real balance/expense/profile stores.
+ * The expense side is never written by any of this: linking only reads it.
+ */
+describe('BalancePage — a debt is paid by a linked expense (Story 102.1)', () => {
+  const MAIN = 'profile-main'
+  const OTHER = 'profile-other'
+
+  beforeEach(() => {
+    useProfileStore.setState({ activeProfileId: MAIN })
+    useBalanceStore.setState({ entries: [] })
+    useExpenseStore.setState({
+      expenses: [
+        { ...expenseRow('exp-car', 'Car payment', 45_000), profileId: MAIN },
+        { ...expenseRow('exp-rent', 'Rent', 150_000), profileId: MAIN },
+        // Another profile's expense: never offered, never resolved.
+        { ...expenseRow('exp-other', 'Other profile bill', 9_900), profileId: OTHER },
+      ],
+    })
+  })
+
+  afterEach(() => {
+    useExpenseStore.setState({ expenses: [] })
+    useBalanceStore.setState({ entries: [] })
+    useProfileStore.setState({ activeProfileId: null })
+  })
+
+  const debt = (overrides: Record<string, unknown> = {}) => ({
+    id: 'debt-car',
+    profileId: MAIN,
+    type: 'debt' as const,
+    name: 'Car Loan',
+    // Positive, as the form saves a debt (a negative value fails the form's own
+    // balance check, which would block the edit tests' saves).
+    currentBalance: 1_200_000,
+    monthlyContribution: 0,
+    frequency: 'monthly' as const,
+    paymentExpenseId: 'exp-car',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  })
+
+  const optionTexts = (select: HTMLElement): string[] =>
+    [...(select as HTMLSelectElement).options].map((option) => option.textContent ?? '')
+
+  async function openAddDebt(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByTestId('balance-add-button'))
+    const dialog = screen.getByRole('dialog', { name: 'Add Balance Entry' })
+    await user.selectOptions(within(dialog).getByLabelText(/type/i), 'debt')
+    return dialog
+  }
+
+  it('offers a labelled "Paid by" picker for a debt: Not linked, then this profile’s expenses', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    const dialog = await openAddDebt(user)
+
+    const picker = within(dialog).getByLabelText('Paid by')
+    expect(picker).toHaveValue('')
+    const texts = optionTexts(picker)
+    expect(texts[0]).toBe('Not linked')
+    expect(texts).toHaveLength(3)
+    expect(texts[1]).toMatch(/^Car payment — .*450\.00 \/ Monthly$/)
+    expect(texts[2]).toMatch(/^Rent — .*1,500\.00 \/ Monthly$/)
+    expect(texts.join('|')).not.toContain('Other profile bill')
+  })
+
+  it('saves the link with a zero contribution, and the row shows the expense’s payment', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    const dialog = await openAddDebt(user)
+
+    await user.type(within(dialog).getByLabelText(/name/i), 'Car Loan')
+    await user.type(within(dialog).getByLabelText(/current balance/i), '12000')
+    await user.selectOptions(within(dialog).getByLabelText('Paid by'), 'exp-car')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Balance Entry' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    const [saved] = useBalanceStore.getState().entries
+    expect(saved).toMatchObject({
+      type: 'debt',
+      paymentExpenseId: 'exp-car',
+      monthlyContribution: 0,
+      frequency: 'monthly',
+    })
+    expect(screen.getByText('Paid by Car payment')).toBeInTheDocument()
+    expect(screen.getAllByText('450.00').length).toBeGreaterThan(0)
+  })
+
+  it('saves "Not linked" as null, and the row says Not linked', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<BalancePage />)
+    const dialog = await openAddDebt(user)
+
+    await user.type(within(dialog).getByLabelText(/name/i), 'Card')
+    await user.type(within(dialog).getByLabelText(/current balance/i), '500')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Balance Entry' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(useBalanceStore.getState().entries[0]?.paymentExpenseId).toBeNull()
+    expect(screen.getByText('Not linked')).toBeInTheDocument()
+  })
+
+  it('does not offer an expense another debt already uses, but keeps the edited debt’s own', async () => {
+    const user = userEvent.setup()
+    useBalanceStore.setState({ entries: [debt()] })
+    renderWithProviders(<BalancePage />)
+
+    // A NEW debt: Car payment is taken.
+    let dialog = await openAddDebt(user)
+    expect(optionTexts(within(dialog).getByLabelText('Paid by')).join('|')).not.toContain(
+      'Car payment'
+    )
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    // EDITING the debt that owns it: still there, and selected.
+    await user.click(screen.getByRole('button', { name: 'Edit Car Loan' }))
+    dialog = screen.getByRole('dialog', { name: 'Edit Balance Entry' })
+    const picker = within(dialog).getByLabelText('Paid by')
+    expect(picker).toHaveValue('exp-car')
+  })
+
+  it('follows the expense live: editing its amount changes the debt row with no debt edit', () => {
+    useBalanceStore.setState({ entries: [debt()] })
+    renderWithProviders(<BalancePage />)
+    expect(screen.getAllByText('450.00').length).toBeGreaterThan(0)
+
+    act(() => {
+      useExpenseStore.getState().updateExpense('exp-car', { amount: 47_500 })
+    })
+    expect(screen.getAllByText('475.00').length).toBeGreaterThan(0)
+    expect(screen.queryByText('450.00')).not.toBeInTheDocument()
+    expect(useBalanceStore.getState().entries[0]?.paymentExpenseId).toBe('exp-car')
+  })
+
+  it('reads a deleted linked expense as Not linked, without touching the debt', () => {
+    useBalanceStore.setState({ entries: [debt()] })
+    renderWithProviders(<BalancePage />)
+    expect(screen.getByText('Paid by Car payment')).toBeInTheDocument()
+
+    act(() => {
+      useExpenseStore.getState().deleteExpense('exp-car')
+    })
+    expect(screen.getByText('Not linked')).toBeInTheDocument()
+    // D8: no cascade. The stored link stays (it may resolve again after a pull).
+    expect(useBalanceStore.getState().entries[0]?.paymentExpenseId).toBe('exp-car')
+  })
+
+  it.each([
+    ['another profile’s expense', 'exp-other'],
+    ['an expense this device has never pulled', '55555555-5555-4555-8555-555555555555'],
+    ['a corrupt non-string value', 42],
+  ])('reads a link to %s as Not linked, with no error', (_case, paymentExpenseId) => {
+    useBalanceStore.setState({ entries: [debt({ paymentExpenseId })] as never })
+    renderWithProviders(<BalancePage />)
+    expect(screen.getByText('Not linked')).toBeInTheDocument()
+    expect(screen.queryByText(/NaN/)).not.toBeInTheDocument()
+  })
+
+  it('⚠️ D7: keeps a link this device cannot resolve when the debt is saved untouched', async () => {
+    const user = userEvent.setup()
+    const remote = '55555555-5555-4555-8555-555555555555'
+    useBalanceStore.setState({ entries: [debt({ paymentExpenseId: remote })] })
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByRole('button', { name: 'Edit Car Loan' }))
+    let dialog = screen.getByRole('dialog', { name: 'Edit Balance Entry' })
+    const picker = within(dialog).getByLabelText('Paid by') as HTMLSelectElement
+    expect(picker.selectedOptions[0]?.textContent).toBe('Linked expense not on this device')
+
+    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(useBalanceStore.getState().entries[0]?.paymentExpenseId).toBe(remote)
+
+    // Choosing "Not linked" does clear it.
+    await user.click(screen.getByRole('button', { name: 'Edit Car Loan' }))
+    dialog = screen.getByRole('dialog', { name: 'Edit Balance Entry' })
+    await user.selectOptions(within(dialog).getByLabelText('Paid by'), '')
+    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(useBalanceStore.getState().entries[0]?.paymentExpenseId).toBeNull()
+  })
+
+  it('⚠️ saves null when a linked debt is switched to an investment', async () => {
+    const user = userEvent.setup()
+    useBalanceStore.setState({ entries: [debt()] })
+    renderWithProviders(<BalancePage />)
+
+    await user.click(screen.getByRole('button', { name: 'Edit Car Loan' }))
+    const dialog = screen.getByRole('dialog', { name: 'Edit Balance Entry' })
+    await user.selectOptions(within(dialog).getByLabelText(/type/i), 'investment')
+    // Prefilled with the debt's stored 0.00, so clear before typing.
+    await user.clear(within(dialog).getByTestId('balance-monthly-contribution-input'))
+    await user.type(within(dialog).getByTestId('balance-monthly-contribution-input'), '100')
+    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(useBalanceStore.getState().entries[0]).toMatchObject({
+      type: 'investment',
+      paymentExpenseId: null,
+      monthlyContribution: 10_000,
+    })
+  })
+
+  it('never writes the expense store (linking only reads it)', async () => {
+    const user = userEvent.setup()
+    const before = useExpenseStore.getState().expenses
+    renderWithProviders(<BalancePage />)
+    const dialog = await openAddDebt(user)
+    await user.type(within(dialog).getByLabelText(/name/i), 'Car Loan')
+    await user.type(within(dialog).getByLabelText(/current balance/i), '12000')
+    await user.selectOptions(within(dialog).getByLabelText('Paid by'), 'exp-car')
+    await user.click(within(dialog).getByRole('button', { name: 'Add Balance Entry' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(useExpenseStore.getState().expenses).toBe(before)
+  })
 })

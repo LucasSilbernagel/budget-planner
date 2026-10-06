@@ -1,4 +1,7 @@
 # generated: 2026-06-18
+# last_updated: 2026-10-06c (102.1 in-progress -> review: gates green 5m02s; CI screenshot compare pending a push.)
+# last_updated: 2026-10-06b (102.1 ready-for-dev -> in-progress, dev-story started.)
+# last_updated: 2026-10-06a (EPIC 102 added FR169-170 via correct-course; 102.1 created -> ready-for-dev, D1-D10 confirmed.)
 # last_updated: 2026-10-05h (epic 99 done; 100.2 review; 100.3 ready-for-dev D4-D9 confirmed; EPIC 101 added FR167-168, 2 stories backlog.)
 # last_updated: 2026-10-05g (100.2 created -> ready-for-dev; D4-D10 confirmed. 100.1 merged PR #41.)
 # last_updated: 2026-10-05f (100.1 -> done: code review applied aadb512, compare 27/27; branch pushed, no PR). Earlier: **EPIC 100 added** (FR164-166, 3 stories); 100.1 created -> ready-for-dev, epic-100 in-progress; D5-D8 decided.)
@@ -1343,6 +1346,10 @@ development_status:
   101-1-a-slow-network-never-shows-me-a-page-from-another-session: done  # DEV 1b32e4b + REVIEW fee0638 2026-10-05 (gates green; spike passed); CREATED 2026-10-05 at 2ca9896; D1-D7 CONFIRMED
   101-2-premium-gates-follow-my-verified-session-like-the-nav: done  # DEV eafb191 + REVIEW 52fc2de 2026-10-05 (gates green, web 4828); CREATED 2026-10-05 at 2ca9896; DS1-DS5 CONFIRMED; cuttable (Q5)
   epic-101-retrospective: optional
+  epic-102: in-progress  # Added 2026-10-06 (approved) from sprint-change-proposal-2026-10-06-debt-payment-link.md (FR169-170)
+  102-1-i-link-a-debt-to-the-expense-that-pays-it: review  # CREATED 2026-10-06 at 78be545; D1-D10 CONFIRMED by Lucas 2026-10-06
+  102-2-my-forecast-stops-paying-a-debt-once-its-paid-off: backlog
+  epic-102-retrospective: optional
 
 action_items:
   - epic: 6

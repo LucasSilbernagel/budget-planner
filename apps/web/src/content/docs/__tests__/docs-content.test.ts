@@ -880,6 +880,14 @@ describe('documentation content accuracy (story 10-4)', () => {
     return sections
   }
 
+  it('the mortgage page tells the reader to link the payment in the debt’s Paid by field (102.1, AC-11)', () => {
+    const { where } = mortgageSections()
+    // Scoped to `### Where each part goes`, next to the routing claims, and named
+    // by the literal field label the debt form renders (`BalancePage.tsx`).
+    expect(where).toMatch(/\*Paid\s+by\*\s+field,\s+pick\s+the\s+payment[^.]*Expenses\s+page/i)
+    expect(where).toMatch(/enter\s+it\s+only\s+once/i)
+  })
+
   it('the mortgage page states the three-part model and scopes the debt claims (43.5, AC-1)', () => {
     const page = mortgage()
     const { where } = mortgageSections()

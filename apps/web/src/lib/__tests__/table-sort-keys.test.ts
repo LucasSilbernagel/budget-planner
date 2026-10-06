@@ -310,6 +310,56 @@ describe('balance sort keys', () => {
     expect(keyOf(extractors, 'contribution')(corrupt)).toBeNull()
   })
 
+  /**
+   * Story 102.1 (FR169, AC-3): a debt's Contribution cell shows its LINKED
+   * EXPENSE's payment (or "Not linked"), never its own stored contribution, so
+   * the key reads the same thing (rule 2: sort by what the cell shows).
+   */
+  describe('a debt sorts by its linked expense (story 102.1)', () => {
+    const payments: Record<string, { amount: unknown; frequency: unknown }> = {
+      'e-weekly': { amount: 100_00, frequency: 'weekly' },
+      'e-monthly': { amount: 300_00, frequency: 'monthly' },
+    }
+    const linked = createBalanceSortExtractors((row) => {
+      const id = row.paymentExpenseId
+      return typeof id === 'string' ? payments[id] ?? null : null
+    })
+    const debt = (name: string, paymentExpenseId: string | null, monthlyContribution = 0) => ({
+      ...entry(name, 'debt', -100_00, monthlyContribution),
+      paymentExpenseId,
+    })
+
+    it('keys a linked debt at the expense payment, normalized by ITS cadence', () => {
+      expect(keyOf(linked, 'contribution')(debt('car', 'e-weekly'))).toBe(433_33)
+      expect(
+        sortRowsBy(
+          [debt('car', 'e-weekly'), debt('loan', 'e-monthly')],
+          keyOf(linked, 'contribution'),
+          'asc'
+        ).map((r) => r.name)
+      ).toEqual(['loan', 'car'])
+    })
+
+    it('⚠️ never keys a debt at its own stored contribution', () => {
+      // A pre-102.1 debt can still hold one; the cell no longer shows it.
+      expect(keyOf(linked, 'contribution')(debt('old', null, 999_00))).toBeNull()
+    })
+
+    it('keys an unlinked or dangling debt null (the cell says "Not linked")', () => {
+      expect(keyOf(linked, 'contribution')(debt('none', null))).toBeNull()
+      expect(keyOf(linked, 'contribution')(debt('gone', 'e-deleted'))).toBeNull()
+    })
+
+    it('keys every debt null when no resolver is given', () => {
+      expect(keyOf(extractors, 'contribution')(debt('car', 'e-weekly', 50_00))).toBeNull()
+    })
+
+    it('leaves investment contributions on their own field', () => {
+      const tfsa = entry('tfsa', 'investment', 0, 300_00)
+      expect(keyOf(linked, 'contribution')(tfsa)).toBe(300_00)
+    })
+  })
+
   it('sorts a negative debt balance below every positive one', () => {
     const rows = [entry('tfsa', 'investment', 100_00), entry('loan', 'debt', -500_00)]
     expect(sortRowsBy(rows, keyOf(extractors, 'currentBalance'), 'asc').map((r) => r.name)).toEqual(

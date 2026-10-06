@@ -747,11 +747,30 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
 
   afterEach(async () => {
     const { useBalanceStore } = await import('@/stores/balanceStore')
+    const { useExpenseStore } = await import('@/stores/expenseStore')
     useBalanceStore.setState({ entries: [] })
+    useExpenseStore.setState({ expenses: [] })
   })
 
   it('POST stores version 4 with the rows, their rates and the investment sum; Load brings every field back; PUT keeps a changed rate', async () => {
     const { useBalanceStore } = await import('@/stores/balanceStore')
+    const { useExpenseStore } = await import('@/stores/expenseStore')
+    // Story 102.1 (FR169): the Car loan's 300.00 payment is its linked expense.
+    useExpenseStore.setState({
+      expenses: [
+        {
+          id: 'exp-car',
+          profileId: PROFILE,
+          userId: 0,
+          name: 'Car payment',
+          amount: 30_000,
+          frequency: 'monthly',
+          categoryId: null,
+          createdAt: ISO,
+          updatedAt: ISO,
+        },
+      ],
+    })
     useBalanceStore.setState({
       entries: [
         {
@@ -773,8 +792,9 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
           type: 'debt',
           name: 'Car loan',
           currentBalance: -500_000,
-          monthlyContribution: 30_000,
+          monthlyContribution: 0,
           frequency: 'monthly',
+          paymentExpenseId: 'exp-car',
           sortOrder: 1,
           createdAt: ISO,
           updatedAt: ISO,
