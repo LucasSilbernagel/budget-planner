@@ -155,6 +155,12 @@ describe('a growth rate outside -100%..+100%, or not a number, is reported on it
     ['non-numeric text', 'abc'],
     ['-150 (below -100%: the income sign would alternate)', '-150'],
     ['150 (above +100%)', '150'],
+    // A numeric PREFIX used to be read silently (`parseFloat`): 5%, 100%, 1%.
+    // Refused ON PURPOSE, even `1e2` (=100%, in range): only a plain decimal with an
+    // optional `%` is a rate, as on the Annual return field.
+    ['trailing junk', '5abc'],
+    ['an exponent', '1e2'],
+    ['a decimal comma', '1,5'],
   ]
 
   const fields: [string, 'incomeGrowthRate' | 'expenseGrowthRate', string][] = [
@@ -201,28 +207,38 @@ describe('a growth rate outside -100%..+100%, or not a number, is reported on it
     ['-100', -1],
     ['100', 1],
     ['5', 0.05],
+    // The field's own display must round-trip, and a spaced `%` is still a rate.
+    ['5.00%', 0.05],
+    ['5 %', 0.05],
+    ['-3.5', -0.035],
+    ['.5', 0.005],
   ]
-  for (const [typed, rate] of valid) {
-    it(`${typed} is valid: recomputes with ${rate} and clears the message`, async () => {
-      await renderBuilder()
-      const field = screen.getByLabelText('Income Growth Rate')
-      fireEvent.change(field, { target: { value: 'abc' } })
-      await pastDebounce()
-      expect(screen.getByText(GROWTH_MESSAGE)).toBeInTheDocument()
+  for (const [label, key] of [
+    ['Income Growth Rate', 'incomeGrowthRate'],
+    ['Expense Growth Rate', 'expenseGrowthRate'],
+  ] as const) {
+    for (const [typed, rate] of valid) {
+      it(`${label}: ${typed} is valid: recomputes with ${rate} and clears the message`, async () => {
+        await renderBuilder()
+        const field = screen.getByLabelText(label)
+        fireEvent.change(field, { target: { value: 'abc' } })
+        await pastDebounce()
+        expect(screen.getByText(GROWTH_MESSAGE)).toBeInTheDocument()
 
-      const callsBefore = engineCalls.length
-      fireEvent.change(field, { target: { value: typed } })
-      await waitFor(() => expect(engineCalls.length).toBe(callsBefore + 1), { timeout: 3000 })
-      // Exactly ONE recompute for the fix (81.1 review, P7), not one per render.
-      await pastDebounce()
-      expect(engineCalls.length, 'one engine call for the corrected value').toBe(callsBefore + 1)
+        const callsBefore = engineCalls.length
+        fireEvent.change(field, { target: { value: typed } })
+        await waitFor(() => expect(engineCalls.length).toBe(callsBefore + 1), { timeout: 3000 })
+        // Exactly ONE recompute for the fix (81.1 review, P7), not one per render.
+        await pastDebounce()
+        expect(engineCalls.length, 'one engine call for the corrected value').toBe(callsBefore + 1)
 
-      expect(engineCalls.at(-1)?.incomeGrowthRate).toBeCloseTo(rate, 12)
-      expect(screen.queryByText(GROWTH_MESSAGE)).toBeNull()
-      expectFieldClean(field)
-      expect(screen.queryByTestId('save-blocked-reason')).toBeNull()
-      expect(screen.getByRole('button', { name: /save forecast/i })).toBeEnabled()
-    })
+        expect(engineCalls.at(-1)?.[key]).toBeCloseTo(rate, 12)
+        expect(screen.queryByText(GROWTH_MESSAGE)).toBeNull()
+        expectFieldClean(field)
+        expect(screen.queryByTestId('save-blocked-reason')).toBeNull()
+        expect(screen.getByRole('button', { name: /save forecast/i })).toBeEnabled()
+      })
+    }
   }
 })
 
