@@ -494,6 +494,10 @@ export function calculateFinancialForecast(
           monthlyContribution: account.contribution,
           frequency: account.frequency,
         }) * MONTHS_PER_YEAR
+      // A finite contribution can normalise to Infinity (1e308 weekly). On an
+      // investment the total check below would catch it, but a debt would just
+      // floor to 0 silently, so refuse it here for both (code review 100.2).
+      if (!Number.isFinite(annual)) throw new Error(FORECAST_OUT_OF_RANGE)
       if (account.type === 'investment') {
         investmentSum += account.balance
         if (account.contributionRecordedAsExpense !== true) countedContributionTotal += annual

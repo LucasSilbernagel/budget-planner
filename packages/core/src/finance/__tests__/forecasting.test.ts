@@ -1203,4 +1203,20 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
       )
     ).toThrow(FORECAST_OUT_OF_RANGE)
   })
+
+  it('refuses a debt payment that normalises to Infinity, rather than flooring the debt to 0 (code review)', () => {
+    // 1e308 weekly × 52 / 12 overflows; without the guard the debt silently reads 0.
+    expect(() =>
+      calculateFinancialForecast(
+        {
+          ...CURRENT_DATA,
+          balanceAccounts: [
+            { type: 'debt', balance: 100_000, contribution: 1e308, frequency: 'weekly' },
+          ],
+        },
+        FLAT,
+        YEARS
+      )
+    ).toThrow(FORECAST_OUT_OF_RANGE)
+  })
 })

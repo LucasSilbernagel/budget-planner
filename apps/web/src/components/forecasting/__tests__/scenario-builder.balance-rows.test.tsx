@@ -460,6 +460,21 @@ describe('the per-row outcome and the totals (AC-10)', () => {
     expect(card('Ending Net Worth')).toBe(format(2_472_890))
   })
 
+  it('a debt that starts at 0 is not "Paid off" (nothing was owed; code review)', async () => {
+    useIncomeStore.setState({ incomeSources: [income(500_000)] })
+    setEntries([entry({ id: 'e-1', name: 'Settled', type: 'debt', currentBalance: 0 })])
+    const format = formatter()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+    const row = screen.getByLabelText('Balance for Settled').closest('.surface') as HTMLElement
+    await waitFor(() =>
+      expect(within(row).getByText(/^After 10 years:/).textContent).toBe(
+        `After 10 years: ${format(0)}`
+      )
+    )
+    expect(within(row).queryByText(/^Paid off/)).toBeNull()
+  })
+
   it('raising a contribution moves money into investments and raises the ending net worth', async () => {
     fillOutcomeFixture()
     const format = formatter()
@@ -518,6 +533,36 @@ describe('each money field reports its own validity (AC-9)', () => {
     expect(reason(), 'the contribution is still bad').toBe('Fix the highlighted fields to save')
     fireEvent.change(contribution, { target: { value: '1' } })
     expect(reason()).toBeNull()
+  })
+
+  it('grouped text the browser cannot hold (badInput) is refused, never saved as 0 (replaces bug-3 AC-2, code review)', async () => {
+    // The bug-3 grouped (`12,345.67`) / symbol (`€7,500.50`) cases guarded a
+    // TEXT money field that is gone. On a `type="number"` row field Chromium
+    // reports such text as value "" with `validity.badInput` (MEASURED, 81.1);
+    // jsdom never does, so the browser's report is stubbed. Without the badInput
+    // check `useMoneyDraft` would read "" as an emptied field and write 0.
+    useIncomeStore.setState({ incomeSources: [income(500_000)] })
+    setEntries([entry({ id: 'e-1', name: 'Fund', currentBalance: 100_000 })])
+    const format = formatter()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+    await waitFor(() => expect(card('Starting Net Worth')).toBe(format(100_000)))
+    const balance = screen.getByLabelText('Balance for Fund')
+    Object.defineProperty(balance, 'validity', {
+      configurable: true,
+      get: () => ({ badInput: true }),
+    })
+
+    fireEvent.change(balance, { target: { value: '' } })
+
+    expect(balance).toHaveAttribute('aria-invalid', 'true')
+    expect(within(balance.closest('.surface') as HTMLElement).getByText('Enter a number.')).toBeTruthy()
+    expect(screen.getByTestId('save-blocked-reason').textContent).toBe(
+      'Fix the highlighted fields to save'
+    )
+    // The last good figure stands: nothing recomputed the start at 0.
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    expect(card('Starting Net Worth')).toBe(format(100_000))
   })
 
   it('withdraws a removed row report, so a deleted bad row cannot keep Save blocked', async () => {

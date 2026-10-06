@@ -1801,7 +1801,9 @@ export function ScenarioBuilder({
                   onValidityChange={setAmountRowValidity}
                   outcome={
                     balanceOutcome && closing !== undefined
-                      ? account.type === 'debt' && closing === 0
+                      ? // A debt that STARTS at 0 was never owed, so it is not
+                        // "paid off" (code review 100.2): it reads After N years: 0.
+                        account.type === 'debt' && closing === 0 && account.balance > 0
                         ? { label: `Paid off within ${yearsLabel(balanceOutcome.years)}` }
                         : {
                             label: `After ${yearsLabel(balanceOutcome.years)}:`,
@@ -2648,7 +2650,8 @@ interface SavingsAccountRowProps {
 }
 
 /**
- * One money field of a savings row: a DRAFT string, validated on every change
+ * One money field of a what-if row (savings rows, story 100.1; investment/debt
+ * rows, story 100.2): a DRAFT string, validated on every change
  * with the 81.1 rules, and written as cents only when usable — the same contract
  * as `FinancialItemRow`'s amount (see its docblock for why the draft exists).
  *
