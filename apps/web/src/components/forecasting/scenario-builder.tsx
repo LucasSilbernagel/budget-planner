@@ -2708,6 +2708,13 @@ function OneTimeEventRow({
   const directionId = `event-direction-${event.id}`
   const yearId = `event-year-${event.id}`
   const nameId = `event-name-${event.id}`
+  const yearCalendarId = `${yearId}-calendar`
+  const yearHelpId = `${yearId}-help`
+  // The calendar year the value lands in (story 108.1, D6): year 1 is the first
+  // projected year, so in 2026 it is 2027. Read at render: an event row only
+  // exists after a client-side add or load (a fresh builder SSRs with no
+  // events), so this never renders on the server and cannot mismatch hydration.
+  const calendarYear = new Date().getFullYear() + event.year
 
   const handleYearChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const year = Math.max(1, Math.min(maxYear, parseInt(e.target.value, 10) || 1))
@@ -2716,7 +2723,10 @@ function OneTimeEventRow({
 
   return (
     <div className="surface rounded-lg p-4 shadow-sm border border-default">
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+      {/* `items-start` since story 108.1: the year cell carries two lines under its
+          input, and `items-end` would have pushed every other input up out of
+          line with it. Labels are one line at md+, so tops align the inputs. */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-start">
         {/* Name */}
         <div>
           <label htmlFor={nameId} className="block text-sm font-medium text-label mb-1">
@@ -2784,25 +2794,40 @@ function OneTimeEventRow({
           )}
         </div>
 
-        {/* Year */}
+        {/* Year (story 108.1, FR176, D6). It was labelled just "Year", which
+            reads as a calendar year (2027) as easily as a count. It is a count
+            from the start of the forecast — the engine applies the event in
+            loop year `event.year` — so the label says so, the help line says
+            where counting starts, and the calendar year sits beside the value.
+            The stored value and its clamp are unchanged (1..`maxYear`). */}
         <div>
           <label htmlFor={yearId} className="block text-sm font-medium text-label mb-1">
-            Year
+            Years from now
           </label>
-          <input
-            id={yearId}
-            type="number"
-            value={event.year}
-            onChange={handleYearChange}
-            min={1}
-            max={maxYear}
-            step={1}
-            className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
-          />
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <input
+              id={yearId}
+              type="number"
+              value={event.year}
+              onChange={handleYearChange}
+              min={1}
+              max={maxYear}
+              step={1}
+              aria-describedby={`${yearCalendarId} ${yearHelpId}`}
+              className="w-20 shrink-0 px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
+            />
+            <span id={yearCalendarId} className="text-sm text-muted whitespace-nowrap">
+              Year {event.year} ({calendarYear})
+            </span>
+          </div>
+          <p id={yearHelpId} className="mt-1 text-xs text-muted">
+            1 = the first year of your forecast
+          </p>
         </div>
 
-        {/* Delete */}
-        <div className="flex justify-end">
+        {/* Delete. `md:pt-6` (the label's line + margin) lines it up with the
+            inputs now that the row aligns to the top (108.1). */}
+        <div className="flex justify-end md:pt-6">
           <button
             type="button"
             onClick={() => onDelete(event.id)}

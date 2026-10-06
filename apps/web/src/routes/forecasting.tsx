@@ -843,34 +843,23 @@ function PageHeader(): React.ReactElement {
               `forecasting-intro` paragraph, so the page opened with two stacked
               taglines saying the same thing at different levels of vagueness.
               57.1 flagged it and left the call to Lucas; DECIDED 2026-09-21 —
-              delete the subtitle, keep the intro. The `<h1>` plus the Premium
-              badge identify the page; the intro does the explaining, and it is
-              the one that names situations the engine can actually model.
+              delete the subtitle, keep the intro. The `<h1>` identifies the
+              page; the intro does the explaining, and it is the one that names
+              situations the engine can actually model.
               This header is `sticky`, so every line here costs vertical space on
               a phone for the whole scroll.
               ⚠️ Do NOT "restore the missing subtitle" — its absence is pinned by
-              `__tests__/forecasting-intro.test.tsx`. */}
+              `__tests__/forecasting-intro.test.tsx`.
+              ⚠️ NO "Premium Feature" BADGE EITHER (story 108.1, FR176, D5,
+              Lucas 2026-10-06: removed at every width). Only a premium user
+              reaches this header, so the badge told them nothing. Pinned by
+              `__tests__/forecasting-header.test.tsx`. */}
           <div>
             <h1 className="text-2xl font-bold text-subheading">Financial Forecasting</h1>
-          </div>
-          <div className="flex items-center space-x-4">
-            <PremiumBadge />
           </div>
         </div>
       </div>
     </header>
-  )
-}
-
-/**
- * Premium Badge Component
- */
-function PremiumBadge(): React.ReactElement {
-  return (
-    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-      <CrownIcon className="w-3 h-3 mr-1.5" />
-      Premium Feature
-    </span>
   )
 }
 
@@ -1002,25 +991,6 @@ function LoadingSpinner(): React.ReactElement {
 // ============================================================================
 // Icon Components
 // ============================================================================
-
-function CrownIcon({ className }: { className: string }): React.ReactElement {
-  return (
-    <svg
-      aria-hidden="true"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M5 18V6a2 2 0 012-2h10a2 2 0 012 2v12M9 18h6M9 18h6M9 18V8m6 10V8m-6 10a2 2 0 002 2h2a2 2 0 002-2M9 18a2 2 0 00-2-2h2a2 2 0 002 2"
-      />
-    </svg>
-  )
-}
 
 function ScenarioIcon({ className }: { className: string }): React.ReactElement {
   return (
