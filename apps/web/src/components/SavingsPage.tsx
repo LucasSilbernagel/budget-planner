@@ -163,6 +163,7 @@ export function SavingsPage() {
       name: item.name,
       monthlyCents: Math.max(0, monthly(item.amount, item.frequency)),
       excluded: item.recordedAsExpense,
+      unreadable: item.unreadable,
     }))
     const contributionsCounted = lines
       .filter((line) => !line.excluded)
@@ -872,6 +873,20 @@ export function SavingsPage() {
                                     on its Balance Tracking entry.
                                   </span>
                                 ) : null}
+                                {line.unreadable && (
+                                  /* The stored contribution was not a number, so the
+                                     mapper counted it as 0. Said here, on the line,
+                                     because a silent $0.00 overstates the leftover
+                                     by an amount the user cannot see. Independent of
+                                     the arms above: a flagged row still gets it. */
+                                  <span
+                                    className="basis-full text-[11px] text-amber-700 dark:text-amber-300"
+                                    data-testid={`breakdown-unreadable-${line.id}`}
+                                  >
+                                    Couldn’t read this contribution, so it counts as{' '}
+                                    {formatAmount(0)}. Re-enter it on Balance Tracking.
+                                  </span>
+                                )}
                               </li>
                             )
                           })}
