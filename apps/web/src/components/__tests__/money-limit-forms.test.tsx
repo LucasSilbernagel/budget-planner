@@ -100,20 +100,45 @@ describe('/income', () => {
     )
     expect(useIncomeStore.getState().incomeSources).toHaveLength(0)
   })
+
+  // Code review 106.1: the EDIT path runs the same check (same `computeErrors`).
+  it('refuses an edit to one cent over the limit, and keeps the saved amount', async () => {
+    useIncomeStore
+      .getState()
+      .addIncomeSource({ name: 'Salary', amount: 500_000, frequency: 'monthly' })
+    const user = userEvent.setup()
+    renderWithProviders(<IncomePage />)
+    await user.click(screen.getAllByRole('button', { name: 'Edit Salary' })[0] as HTMLElement)
+    await typeInto(user, 'income-amount-input', OVER)
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Save Changes' })
+    )
+    expect(screen.getByTestId('income-amount-error')).toHaveTextContent(USD_MESSAGE)
+    expect(useIncomeStore.getState().incomeSources.map((s) => s.amount)).toEqual([500_000])
+  })
 })
 
 describe('/expenses', () => {
-  it('refuses one cent over the limit with a field error, and saves nothing', async () => {
+  async function submitExpense(amount: string) {
     const user = userEvent.setup()
     renderWithProviders(<ExpensesPage />)
     await user.click(screen.getByRole('button', { name: '+ Add Expense' }))
     await typeInto(user, 'expense-name-input', 'Mortgage')
-    await typeInto(user, 'expense-amount-input', OVER)
+    await typeInto(user, 'expense-amount-input', amount)
     await user.click(
       within(screen.getByRole('dialog')).getByRole('button', { name: 'Add Expense' })
     )
+  }
+
+  it('refuses one cent over the limit with a field error, and saves nothing', async () => {
+    await submitExpense(OVER)
     expect(screen.getByTestId('expense-amount-error')).toHaveTextContent(USD_MESSAGE)
     expect(useExpenseStore.getState().expenses).toHaveLength(0)
+  })
+
+  it('accepts exactly the limit', async () => {
+    await submitExpense(AT)
+    expect(useExpenseStore.getState().expenses.map((e) => e.amount)).toEqual([MAX_MONEY_CENTS])
   })
 })
 
@@ -156,6 +181,22 @@ describe('/savings', () => {
     expect(screen.getByTestId('savings-monthly-allocation-error')).toHaveTextContent(USD_MESSAGE)
     expect(useSavingsStore.getState().savingsGoals).toHaveLength(0)
   })
+
+  // Code review 106.1: exactly the limit is accepted on every savings field.
+  it('accepts exactly the limit as target, current balance and manual allocation', async () => {
+    const user = await openSavingsForm()
+    await typeInto(user, 'savings-target-amount-input', AT)
+    await typeInto(user, 'savings-current-balance-input', AT)
+    await user.selectOptions(screen.getByTestId('savings-allocation-mode-select'), 'manual')
+    await typeInto(user, 'savings-monthly-allocation-input', AT)
+    await submit(user)
+    const goal = useSavingsStore.getState().savingsGoals[0]
+    expect([goal?.targetAmount, goal?.currentBalance, goal?.monthlyAllocation]).toEqual([
+      MAX_MONEY_CENTS,
+      MAX_MONEY_CENTS,
+      MAX_MONEY_CENTS,
+    ])
+  })
 })
 
 describe('/balance', () => {
@@ -193,6 +234,16 @@ describe('/balance', () => {
     await typeInto(user, 'balance-current-balance-input', AT)
     await submit(user)
     expect(useBalanceStore.getState().entries.map((e) => e.currentBalance)).toEqual([
+      MAX_MONEY_CENTS,
+    ])
+  })
+
+  it('accepts exactly the limit as an investment contribution', async () => {
+    const user = await openBalanceForm()
+    await typeInto(user, 'balance-current-balance-input', '1000')
+    await typeInto(user, 'balance-monthly-contribution-input', AT)
+    await submit(user)
+    expect(useBalanceStore.getState().entries.map((e) => e.monthlyContribution)).toEqual([
       MAX_MONEY_CENTS,
     ])
   })
