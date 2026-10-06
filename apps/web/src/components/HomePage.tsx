@@ -1,3 +1,4 @@
+import { debtOwedCents } from '@budget-planner/core'
 import {
   calculateNetIncomeResult,
   denormalizeFromMonthly,
@@ -280,9 +281,12 @@ export function HomePage() {
   const totalInvestments = balanceEntries
     .filter((entry) => entry.type === 'investment')
     .reduce((sum, entry) => sum + entry.currentBalance, 0)
+  // Story 103.1 (FR171): a debt reads as the amount owed, exactly as the store's
+  // `useTotalDebtBalance` does, so the chart and the Net Worth tile agree on a
+  // legacy negative row.
   const totalDebts = balanceEntries
     .filter((entry) => entry.type === 'debt')
-    .reduce((sum, entry) => sum + entry.currentBalance, 0)
+    .reduce((sum, entry) => sum + debtOwedCents(entry.currentBalance), 0)
   // ⚠️ Story 43.4: this inline re-derivation is a SECOND copy of the balance
   // store's own selectors (`balanceStore.ts:340-380`). It exists for the bar
   // chart, which needs the components rather than the net. When FR70 added the

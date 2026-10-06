@@ -428,7 +428,9 @@ export const retirementPlanRowSchema = z.object({
  * - contributionRecordedAsExpense: boolean (Story 45.1); absent leaves it unchanged
  * - endsBeforeRetirement: boolean (Story 65.2); absent leaves it unchanged
  * - paymentExpenseId: uuid or null (Story 102.1); absent leaves it unchanged
- * - currentBalance: may be negative (debt balances) but must fit in int32
+ * - currentBalance: must fit in int32. The SIGN is deliberately not checked here
+ *   (story 103.1): the client validator refuses a negative balance before
+ *   queueing, and a refusal at this gate would fail the whole batch forever.
  */
 export const syncOperationDataSchema = z.object({
   name: z.string().min(1).max(255).optional(),

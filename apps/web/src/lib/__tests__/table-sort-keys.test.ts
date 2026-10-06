@@ -360,10 +360,22 @@ describe('balance sort keys', () => {
     })
   })
 
-  it('sorts a negative debt balance below every positive one', () => {
+  // Story 103.1 (FR171): this test was "sorts a negative debt balance below
+  // every positive one". The cell now shows a debt as the amount OWED, so rule 2
+  // (sort by what the cell shows) keys a legacy −500 debt at 500, above 100.
+  it('keys a legacy negative debt by the amount owed its cell shows (Story 103.1)', () => {
     const rows = [entry('tfsa', 'investment', 100_00), entry('loan', 'debt', -500_00)]
+    expect(keyOf(extractors, 'currentBalance')(rows[1] as (typeof rows)[number])).toBe(500_00)
     expect(sortRowsBy(rows, keyOf(extractors, 'currentBalance'), 'asc').map((r) => r.name)).toEqual(
-      ['loan', 'tfsa']
+      ['tfsa', 'loan']
     )
+  })
+
+  it('keeps a negative INVESTMENT raw (D3: only debts are read as a magnitude)', () => {
+    expect(keyOf(extractors, 'currentBalance')(entry('bad', 'investment', -100_00))).toBe(-100_00)
+  })
+
+  it('keys a corrupt debt balance null, as before (the helper passes NaN through)', () => {
+    expect(keyOf(extractors, 'currentBalance')(entry('nan', 'debt', Number.NaN))).toBeNull()
   })
 })

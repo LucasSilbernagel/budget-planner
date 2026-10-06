@@ -20,6 +20,7 @@ import {
   MIN_GROWTH_RATE,
   calculateFinancialForecast,
   currencySymbol,
+  debtOwedCents,
   isValidForecastYears,
   isValidGrowthRate,
   resolveDebtPaymentExpense,
@@ -573,7 +574,7 @@ function balanceFromStore(
     const balance =
       type === 'debt'
         ? typeof raw === 'number' && Number.isFinite(raw)
-          ? Math.abs(raw)
+          ? debtOwedCents(raw) // Story 103.1: the one reading every surface uses
           : 0
         : nonNegativeCents(raw)
     let linked: (typeof expenses)[number] | null = null

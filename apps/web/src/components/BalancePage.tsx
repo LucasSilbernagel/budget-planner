@@ -1,4 +1,4 @@
-import { resolveDebtPaymentExpense } from '@budget-planner/core'
+import { debtOwedCents, resolveDebtPaymentExpense } from '@budget-planner/core'
 import {
   currencySymbol,
   formatForInputDisplay,
@@ -489,7 +489,15 @@ export function BalancePage() {
     setEditingId(entry.id)
     setType(entry.type)
     setName(entry.name)
-    setCurrentBalance(formatForInputDisplay(entry.currentBalance, locale))
+    // Story 103.1 (FR171, D2): a legacy negative debt opens as the amount owed,
+    // so a plain save stores it positive (the form and the validator refuse a
+    // negative balance, which would otherwise leave the row unsaveable).
+    setCurrentBalance(
+      formatForInputDisplay(
+        entry.type === 'debt' ? debtOwedCents(entry.currentBalance) : entry.currentBalance,
+        locale
+      )
+    )
     setMonthlyContribution(formatForInputDisplay(entry.monthlyContribution, locale))
     setFrequency(entry.frequency ?? 'monthly')
     // Story 45.1: absent ⇒ unticked ⇒ deducted, matching the pool's own default.
@@ -884,7 +892,15 @@ export function BalancePage() {
                                 groups below `sm` (RESPONSIVE_AMOUNT_CLASS +
                                 GroupedAmount, inside the `hydrated` branch). */}
                               <div className={`text-muted text-sm ${RESPONSIVE_AMOUNT_CLASS}`}>
-                                <GroupedAmount text={formatAmount(entry.currentBalance)} />
+                                {/* Story 103.1 (FR171): a debt shows the amount
+                                  owed, the same reading as the totals above. */}
+                                <GroupedAmount
+                                  text={formatAmount(
+                                    entry.type === 'debt'
+                                      ? debtOwedCents(entry.currentBalance)
+                                      : entry.currentBalance
+                                  )}
+                                />
                               </div>
                             </td>
                             <td className={RESPONSIVE_CELL_CLASS}>

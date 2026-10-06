@@ -186,7 +186,9 @@ const BALANCE_SEED = [
   {
     type: 'debt' as const,
     name: 'Alpha',
-    currentBalance: -500_00,
+    // Story 103.1: was -500_00. Seeded through `addBalanceEntry`, which now
+    // refuses a negative balance; no assertion here reads the balance order.
+    currentBalance: 500_00,
     monthlyContribution: 300_00,
     frequency: 'monthly' as const,
   },

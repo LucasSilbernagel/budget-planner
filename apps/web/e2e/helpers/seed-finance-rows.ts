@@ -207,7 +207,10 @@ export async function seedFinanceRows(page: Page): Promise<void> {
                 id: 'bal-2',
                 type: 'debt',
                 name: 'Mortgage',
-                currentBalance: -98765432100,
+                // Story 103.1 (FR171, D4): a debt is stored as the positive
+                // amount owed. Was -98765432100, which the store write path
+                // now refuses (this seed writes localStorage directly).
+                currentBalance: 98765432100,
                 monthlyContribution: 0,
                 frequency: 'monthly',
                 paymentExpenseId: 'exp-1',

@@ -18,6 +18,7 @@ import type {
   ClientNewBalanceTracking,
 } from '@budget-planner/core/services/balanceTracking'
 import {
+  debtOwedCents,
   filterBalanceTracking,
   toClientBalanceTracking,
   validateBalanceTracking,
@@ -372,15 +373,22 @@ export const useDebtEntries = (): BalanceTrackingWithTimeline[] => useBalanceEnt
  */
 export const useAssetEntries = (): BalanceTrackingWithTimeline[] => useBalanceEntriesByType('asset')
 
-/** Sum of `currentBalance` over the active profile's entries of one type. */
+/**
+ * Sum of `currentBalance` over the active profile's entries of one type.
+ *
+ * Story 103.1 (FR171): a DEBT is summed as the amount owed (`debtOwedCents`), so
+ * a legacy or pulled negative debt no longer raises net worth. Investments and
+ * assets stay raw (D3); a non-finite balance still yields NaN on every type.
+ */
 function totalBalanceOfType(
   entries: readonly ClientBalanceTracking[],
   activeProfileId: string | null,
   type: FinanceType
 ): number {
+  const read = type === 'debt' ? debtOwedCents : (cents: number) => cents
   return scopeToActiveProfile(entries, activeProfileId)
     .filter((e) => e.type === type)
-    .reduce((sum, entry) => sum + entry.currentBalance, 0)
+    .reduce((sum, entry) => sum + read(entry.currentBalance), 0)
 }
 
 /**

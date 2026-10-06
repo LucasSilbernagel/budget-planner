@@ -446,7 +446,11 @@ export const balanceTracking = pgTable(
       .notNull(),
     type: financeTypeEnum('type').notNull(), // investment, debt or asset
     name: varchar('name', { length: 255 }).notNull(),
-    currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents (can be negative for debt)
+    // Current balance in cents. Story 103.1 (FR171): a non-negative magnitude for
+    // every type (a debt is the amount OWED). The client validator refuses a
+    // negative value; readers treat a legacy negative debt as owed. NOT enforced
+    // here on purpose: see the constraint note below.
+    currentBalance: integer('currentBalance').notNull().default(0),
     // Contribution amount in cents (>= 0 required). Story 16-2: no longer implicitly
     // monthly — `frequency` (below) is its cadence; the monthly-equivalent is derived
     // via the normalization engine. Column name retained for call-site stability.
@@ -495,10 +499,15 @@ export const balanceTracking = pgTable(
     // stays correct: at the time drizzle-kit 0.23 had never emitted ANY check() to
     // a migration, so there was nothing in SQL to drop. Migration 0020 adds the
     // eight that still exist — it does not resurrect the one 49.1 deleted.
-    // ⚠️ `currentBalance` deliberately gets NO constraint on this table: debt
-    // balances are negative by design (see the column's note above). Only
-    // `savingsGoals.currentBalance` is bounded, and
-    // `check-constraints.test.ts` pins both halves of that asymmetry.
+    // ⚠️ `currentBalance` deliberately gets NO constraint on this table, and the
+    // reason CHANGED in story 103.1. It used to be "debt balances are negative by
+    // design"; since FR171 every balance is non-negative, but a CHECK here would
+    // be a permanent refusal past the client's sync queue (a 23514 is classified
+    // `constraint` and never cleared), so a legacy negative debt could never be
+    // pushed and the device would keep a row the server refuses. The sign is
+    // refused ONLY by `validateBalanceTracking`, before anything is queued
+    // (memory: schema-as-gate trap 5). Only `savingsGoals.currentBalance` is
+    // bounded, and `check-constraints.test.ts` pins both halves of that asymmetry.
     monthlyContributionNonNegative: check(
       'balanceTracking_monthlyContribution_non_negative',
       sql`${table.monthlyContribution} >= 0`

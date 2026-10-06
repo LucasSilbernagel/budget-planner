@@ -12,6 +12,7 @@ import {
   BalanceTrackingWithTimeline,
   ClientBalanceTracking,
   ClientNewBalanceTracking,
+  debtOwedCents,
   filterBalanceTracking,
   generateBalanceTrackingTempId,
   getTypeDisplayProperties,
@@ -101,10 +102,13 @@ describe('validateBalanceTracking', () => {
       monthlyContribution: 50000,
       frequency: 'monthly',
     }
+    // Story 103.1 (FR171): was -100000. A debt is now stored as the positive
+    // amount owed and a negative balance is refused (see the 103.1 block below),
+    // so the type-acceptance case uses a legal balance.
     const debt: ClientNewBalanceTracking = {
       type: 'debt',
       name: 'Debt',
-      currentBalance: -100000,
+      currentBalance: 100000,
       monthlyContribution: 50000,
       frequency: 'weekly',
     }
@@ -137,7 +141,11 @@ describe('validateBalanceTracking', () => {
     )
   })
 
-  it('should allow negative currentBalance for debts', () => {
+  // Story 103.1 (FR171): this test used to be "should allow negative
+  // currentBalance for debts". The invariant is reversed on purpose: a debt is
+  // the positive amount owed (`NetWorthTotals.debtsCents`), and a negative one
+  // inflated net worth on every surface that summed it raw.
+  it('should REFUSE a negative currentBalance for debts (Story 103.1)', () => {
     const input: ClientNewBalanceTracking = {
       type: 'debt',
       name: 'Test Debt',
@@ -146,7 +154,13 @@ describe('validateBalanceTracking', () => {
       frequency: 'monthly',
     }
     const errors = validateBalanceTracking(input)
-    expect(errors.length).toBe(0)
+    expect(errors).toEqual([
+      {
+        field: 'currentBalance',
+        message: 'Current balance cannot be negative',
+        value: -100000,
+      },
+    ])
   })
 
   it('should fail validation for negative monthlyContribution', () => {
@@ -910,7 +924,9 @@ describe('validateBalanceTracking — contributionRecordedAsExpense (Story 45.1,
       validateBalanceTracking({
         type: 'debt' as const,
         name: 'Mortgage',
-        currentBalance: -30_000_000,
+        // Story 103.1: was -30_000_000; a negative balance is now refused on
+        // its own, which would mask what this test is about (the flag).
+        currentBalance: 30_000_000,
         monthlyContribution: 0,
         frequency: 'monthly' as const,
         contributionRecordedAsExpense: false,
@@ -965,6 +981,58 @@ describe('validateBalanceTracking — paymentExpenseId (Story 102.1, FR169/AC-6)
   it('REJECTS a link that is neither a string nor null', () => {
     const errors = validateBalanceTracking(row({ paymentExpenseId: 42 }))
     expect(errors.map((e) => e.field)).toEqual(['paymentExpenseId'])
+  })
+})
+
+describe('validateBalanceTracking — a balance is never negative (Story 103.1, FR171/AC-1, D3)', () => {
+  const row = (type: FinanceType, currentBalance: number) => ({
+    type,
+    name: 'Row',
+    currentBalance,
+    monthlyContribution: 0,
+    frequency: 'monthly' as const,
+  })
+
+  // Acceptance over the same factory as the refusals (the 45.1 rule).
+  it('ACCEPTS 0 and a positive balance on every type', () => {
+    for (const type of ['investment', 'debt', 'asset'] as const) {
+      expect(validateBalanceTracking(row(type, 0))).toEqual([])
+      expect(validateBalanceTracking(row(type, 1))).toEqual([])
+    }
+  })
+
+  it('REFUSES a negative balance on every type (D3), with one currentBalance error', () => {
+    for (const type of ['investment', 'debt', 'asset'] as const) {
+      expect(validateBalanceTracking(row(type, -1))).toEqual([
+        { field: 'currentBalance', message: 'Current balance cannot be negative', value: -1 },
+      ])
+    }
+  })
+
+  it('does not ADD the sign error to a non-integer or non-finite balance (its own error says why)', () => {
+    // −Infinity already carries TWO errors (finite + the pre-existing bounds
+    // check), so this asserts the absence of the sign message, not a count.
+    for (const bad of [-1.5, Number.NEGATIVE_INFINITY]) {
+      const errors = validateBalanceTracking(row('debt', bad))
+      expect(errors.some((e) => e.field === 'currentBalance')).toBe(true)
+      expect(errors.some((e) => e.message === 'Current balance cannot be negative')).toBe(false)
+    }
+  })
+})
+
+describe('debtOwedCents (Story 103.1, FR171/AC-2, D1)', () => {
+  it('reads a debt as the positive amount owed, whatever its stored sign', () => {
+    expect(debtOwedCents(400_000)).toBe(400_000)
+    expect(debtOwedCents(-400_000)).toBe(400_000)
+    expect(debtOwedCents(0)).toBe(0)
+  })
+
+  it('returns a non-finite value UNCHANGED, so corrupt-row handling still sees it', () => {
+    // A NaN hidden as 0 would remove a debt from net worth with nothing on
+    // screen to explain it (net-worth.ts: partition + disclose, never drop).
+    expect(debtOwedCents(Number.NaN)).toBeNaN()
+    expect(debtOwedCents(Number.POSITIVE_INFINITY)).toBe(Number.POSITIVE_INFINITY)
+    expect(debtOwedCents(Number.NEGATIVE_INFINITY)).toBe(Number.NEGATIVE_INFINITY)
   })
 })
 
