@@ -242,15 +242,29 @@ export const SAVINGS_ROW_NEGATIVE = 'Savings account balances and contributions 
  *     contributions, 100.2 D7). A contribution NOT flagged
  *     `contributionRecordedAsExpense === true` also leaves savings; a flagged one
  *     does not, because net income already lost it (story 45.1, FR72).
- *   - debt: `max(0, balance − annual payment)`. No interest (D2). Savings is not
- *     touched: `/balance` tells debt holders to record the payment on Expenses,
- *     so net income already lost it (D4).
+ *   - debt: pays `min(annual payment, balance)`, so the balance falls to
+ *     `max(0, balance − annual payment)`. No interest (D2). Story 102.2 (FR170,
+ *     replacing 100.2 D4): what the row PAID that year is cash out, added to the
+ *     year's `expenses` and taken from its `netIncome` (and so from savings), in
+ *     both loops. Nothing is paid once the debt is 0, so the payment stops at
+ *     payoff. It is not grown by `expenseGrowthRate` (a fixed instalment, D4). A
+ *     debt flagged `contributionRecordedAsExpense === true` ("Payment already in
+ *     Expenses") keeps the 100.2 D4 math: it falls, and takes nothing from cash,
+ *     because an Expenses line already does. Saved forecasts from before version
+ *     5 reload their debts flagged (D1), so they project exactly as saved.
  */
 export interface BalanceAccountInput {
   type: 'investment' | 'debt'
   balance: number
   contribution: number
   frequency: Frequency
+  /**
+   * Investment row (story 45.1): the contribution is already out of take-home
+   * pay or an Expenses line, so it does not leave savings again. Debt row (story
+   * 102.2, D1): the payment is already an Expenses line, so the row takes
+   * nothing from cash (the 100.2 D4 math). Read strictly (`=== true`): anything
+   * else means the money leaves savings, so no row creates money.
+   */
   contributionRecordedAsExpense?: boolean
   /**
    * The row's annual return as a decimal (0.06 = 6%), story 100.3 (FR166).
@@ -290,19 +304,31 @@ export const BALANCE_ROW_TYPE = 'Each balance row must be an investment or a deb
  * (2026-10-05) `1 + 0.07 === 1.07` and `round(b × 1.07) === round(b × (1 + 0.07))`
  * for every integer b in 0..1,999,999, so a row at 7% reproduces 100.2's figures
  * to the cent. The other form was not measured for every rate.
+ *
+ * `countedDebtPaid` (story 102.2, FR170) is what the UNFLAGGED debt rows paid
+ * this year, `opening − closing`: the full payment while owed, the remainder in
+ * the payoff year, 0 after. Both loops take it out of the year's net income.
+ * Pure on the opening balances, so a loop can step the rows BEFORE it applies
+ * the year's net income.
  */
 function stepBalanceRows(
   rows: readonly BalanceAccountInput[],
   balances: readonly number[],
   annualContributions: readonly number[],
   growthMultipliers: readonly number[]
-): number[] {
-  return balances.map((balance, i) => {
+): { balances: number[]; countedDebtPaid: number } {
+  let countedDebtPaid = 0
+  const closing = balances.map((balance, i) => {
     const annual = annualContributions[i] ?? 0
-    return rows[i]?.type === 'investment'
-      ? Math.round(balance * (growthMultipliers[i] ?? 1)) + annual
-      : Math.max(0, balance - annual)
+    const row = rows[i]
+    if (row?.type === 'investment') {
+      return Math.round(balance * (growthMultipliers[i] ?? 1)) + annual
+    }
+    const next = Math.max(0, balance - annual)
+    if (row?.contributionRecordedAsExpense !== true) countedDebtPaid += balance - next
+    return next
   })
+  return { balances: closing, countedDebtPaid }
 }
 
 /** Σ of the rows of one type. */
@@ -511,7 +537,9 @@ export function calculateFinancialForecast(
   // contribution goes through the chokepoint once, here, so neither loop can read
   // it raw. `countedContributionTotal` is what leaves savings each year: investment
   // contributions NOT already in expenses (`=== true`, strict, as the savings
-  // solver reads the flag). Debt payments never count (D4).
+  // solver reads the flag). A debt's payment is NOT a fixed yearly total: it
+  // stops at payoff, so each loop takes what the rows paid that year
+  // (`stepBalanceRows` › `countedDebtPaid`, story 102.2).
   const balanceAccounts = currentData.balanceAccounts
   let balanceAnnualContributions: number[] | undefined
   // Each row's `1 + annualReturn` (story 100.3), computed once here beside the
@@ -651,14 +679,23 @@ export function calculateFinancialForecast(
     // (`stepBalanceRows`, used by BOTH loops, D5).
     // Per-row `Math.round` can differ from one compounded total by a cent a year
     // (D7, pinned). Without rows, the single statement below runs, unchanged.
-    currentSavings += baselineAnnualNetIncome
-    if (balanceAccounts && baselineRowBalances && balanceAnnualContributions) {
-      baselineRowBalances = stepBalanceRows(
-        balanceAccounts,
-        baselineRowBalances,
-        balanceAnnualContributions,
-        balanceGrowthMultipliers
-      )
+    // Story 102.2: the rows step FIRST (pure on the opening balances), because
+    // what the unflagged debts paid this year comes off the year's net income
+    // and onto its expenses, exactly as in the projection loop (D5).
+    const baselineStep =
+      balanceAccounts && baselineRowBalances && balanceAnnualContributions
+        ? stepBalanceRows(
+            balanceAccounts,
+            baselineRowBalances,
+            balanceAnnualContributions,
+            balanceGrowthMultipliers
+          )
+        : null
+    const baselineDebtPaid = baselineStep?.countedDebtPaid ?? 0
+    const baselineNetIncomeThisYear = baselineAnnualNetIncome - baselineDebtPaid
+    currentSavings += baselineNetIncomeThisYear
+    if (balanceAccounts && baselineStep) {
+      baselineRowBalances = baselineStep.balances
       currentSavings -= countedContributionTotal
       currentInvestments = sumRows(balanceAccounts, baselineRowBalances, 'investment')
       currentDebts = sumRows(balanceAccounts, baselineRowBalances, 'debt')
@@ -674,8 +711,8 @@ export function calculateFinancialForecast(
     const baselineYear: YearlyForecast = {
       year,
       income: baselineAnnualIncome,
-      expenses: baselineAnnualExpenses,
-      netIncome: baselineAnnualNetIncome,
+      expenses: baselineAnnualExpenses + baselineDebtPaid,
+      netIncome: baselineNetIncomeThisYear,
       savings: currentSavings,
       investments: currentInvestments,
       netWorth: currentSavings + currentInvestments - currentDebts,
@@ -730,7 +767,22 @@ export function calculateFinancialForecast(
     // windfall and every planned cost twelvefold; the one-time-event tests above
     // fail on exactly that mutation, because their deltas are asserted as the
     // event's own amount.
-    const totalNetIncome = netIncome * MONTHS_PER_YEAR + oneTimeForYear
+    // Story 102.2 (FR170): the rows step before the flow (pure on the opening
+    // balances), so what the unflagged debts paid this year can leave the year's
+    // net income: the full payment while owed, the remainder in the payoff year,
+    // nothing after. NOT grown by `expenseGrowthRate` (D4): it is added after
+    // `adjustedExpenses`, never inside it. Same arithmetic as the baseline (D5).
+    const projStep =
+      balanceAccounts && projRowBalances && balanceAnnualContributions
+        ? stepBalanceRows(
+            balanceAccounts,
+            projRowBalances,
+            balanceAnnualContributions,
+            balanceGrowthMultipliers
+          )
+        : null
+    const projDebtPaid = projStep?.countedDebtPaid ?? 0
+    const totalNetIncome = netIncome * MONTHS_PER_YEAR + oneTimeForYear - projDebtPaid
 
     /**
      * ⚠️ APPLY THIS YEAR'S FLOW BEFORE RECORDING THE ROW (story `forecast-2`).
@@ -760,16 +812,12 @@ export function calculateFinancialForecast(
      * see the `MONTHS_PER_YEAR` docblock for which term it may and may not touch.
      */
     projSavings += totalNetIncome
-    if (balanceAccounts && projRowBalances && balanceAnnualContributions) {
+    if (balanceAccounts && projStep) {
       // Story 100.2: per-row growth/contribution and pay-down, in the SAME
       // position as the single statement below (closing balances), and the
-      // counted contributions leave savings. See the baseline loop.
-      projRowBalances = stepBalanceRows(
-        balanceAccounts,
-        projRowBalances,
-        balanceAnnualContributions,
-        balanceGrowthMultipliers
-      )
+      // counted contributions leave savings. See the baseline loop. (Stepped
+      // above, before the flow, since story 102.2.)
+      projRowBalances = projStep.balances
       projSavings -= countedContributionTotal
       projInvestments = sumRows(balanceAccounts, projRowBalances, 'investment')
       projDebts = sumRows(balanceAccounts, projRowBalances, 'debt')
@@ -806,7 +854,7 @@ export function calculateFinancialForecast(
     const yearProjection: YearlyForecast = {
       year,
       income: calculateGrossPeriodIncome(adjustedIncome) * MONTHS_PER_YEAR,
-      expenses: calculateTotalPeriodExpenses(adjustedExpenses) * MONTHS_PER_YEAR,
+      expenses: calculateTotalPeriodExpenses(adjustedExpenses) * MONTHS_PER_YEAR + projDebtPaid,
       netIncome: totalNetIncome,
       savings: projSavings,
       investments: projInvestments,

@@ -107,9 +107,13 @@ function rows(): [string, string, number, number, string, boolean | null][] {
     .queryAllByLabelText(/^Balance Name, row \d+$/)
     .map((name) => {
       const label = value(name).trim() === '' ? 'unnamed balance' : value(name).trim()
-      const flag = within(section).queryByLabelText(
+      // One flag per row, labelled per type (story 102.2, D2).
+      const flag = (within(section).queryByLabelText(
         `Not taken from the money left over, for ${label}`
-      ) as HTMLInputElement | null
+      ) ??
+        within(section).queryByLabelText(
+          `Payment already in Expenses, for ${label}`
+        )) as HTMLInputElement | null
       return [
         value(name),
         value(within(section).getByLabelText(`Type for ${label}`)),
@@ -197,9 +201,11 @@ describe('a v3 forecast reloads its rows exactly (AC-13)', () => {
       3
     )
 
+    // Story 102.2 (D1): a v3 debt was computed under 100.2 D4, so it reloads
+    // flagged "Payment already in Expenses" (saved `false`).
     expect(rows()).toEqual([
       ['Pension', 'investment', 10000.01, 250, 'biweekly', true],
-      ['Car loan', 'debt', 5000, 300, 'monthly', null],
+      ['Car loan', 'debt', 5000, 300, 'monthly', true],
       ['ISA', 'investment', 2000, 1200, 'annually', false],
     ])
     expect(call.data.investments).toBe(1_200_001)
@@ -219,7 +225,7 @@ describe('a v3 forecast reloads its rows exactly (AC-13)', () => {
         balance: 500_000,
         contribution: 30_000,
         frequency: 'monthly',
-        contributionRecordedAsExpense: false,
+        contributionRecordedAsExpense: true,
       },
       {
         type: 'investment',
@@ -343,10 +349,11 @@ describe('corrupt saved rows (AC-14)', () => {
       },
       3
     )
-    // The asset and the null entry (no type) are dropped; the debt's flag is cleared.
+    // The asset and the null entry (no type) are dropped. Story 102.2: a debt has
+    // its own flag now, and a v3 debt reloads it ON (D1, legacy D4 math).
     expect(rows()).toEqual([
       ['', 'investment', 0, 0, 'monthly', false],
-      ['Loan', 'debt', 10, 1, 'weekly', null],
+      ['Loan', 'debt', 10, 1, 'weekly', true],
       ['Ok', 'investment', 10, 1, 'monthly', false],
     ])
     // `inputs` survived: years is the saved one.
@@ -512,5 +519,71 @@ describe('a v4 forecast reloads each investment row at its own rate (story 100.3
     expect(Object.keys(call.data.balanceAccounts?.[0] ?? {})).not.toContain('annualReturn')
     fireEvent.change(screen.getByLabelText('Type for Loan'), { target: { value: 'investment' } })
     expect(screen.getByLabelText('Annual return for Loan')).toHaveValue('6.00%')
+  })
+})
+
+/**
+ * Version 5 (story 102.2, AC-7) through the page's real `mapToSavedForecast`: a
+ * debt's flag is no longer forced `false` by the mapper, and `paidByExpenseName`
+ * is kept on a debt when it is a non-empty string.
+ */
+describe("a v5 forecast keeps each debt row's flag and label (story 102.2)", () => {
+  const debtRow = (over: Record<string, unknown>) => ({
+    name: 'Car loan',
+    type: 'debt',
+    balance: 500_000,
+    contribution: 30_000,
+    frequency: 'monthly',
+    ...over,
+  })
+
+  it('a v5 debt keeps a true flag and an unflagged one stays unflagged, both reaching the engine', async () => {
+    const call = await loadPlan(
+      {
+        savings: 0,
+        investments: 0,
+        years: 10,
+        balanceAccounts: [
+          debtRow({ name: 'Flagged', contributionRecordedAsExpense: true }),
+          debtRow({ name: 'Paying', contributionRecordedAsExpense: false }),
+          // A corrupt flag reads OFF (strict `=== true`): the payment leaves cash.
+          debtRow({ name: 'Corrupt', contributionRecordedAsExpense: 'yes' }),
+        ],
+      },
+      5
+    )
+    expect(rows().map(([name, , , , , flag]) => [name, flag])).toEqual([
+      ['Flagged', true],
+      ['Paying', false],
+      ['Corrupt', false],
+    ])
+    expect((call.data.balanceAccounts ?? []).map((a) => a.contributionRecordedAsExpense)).toEqual([
+      true,
+      false,
+      false,
+    ])
+  })
+
+  it("keeps a debt's non-empty paidByExpenseName, trimmed; drops an empty, blank or non-string one", async () => {
+    await loadPlan(
+      {
+        savings: 0,
+        investments: 0,
+        years: 10,
+        balanceAccounts: [
+          debtRow({ name: 'Named', paidByExpenseName: '  Car payment ' }),
+          debtRow({ name: 'Empty', paidByExpenseName: '' }),
+          debtRow({ name: 'Blank', paidByExpenseName: '   ' }),
+          debtRow({ name: 'Number', paidByExpenseName: 42 }),
+        ],
+      },
+      5
+    )
+    const section = screen.getByRole('region', { name: 'Investments & Debts' })
+    expect(
+      within(section)
+        .getAllByText(/^from Expenses:/)
+        .map((el) => el.textContent)
+    ).toEqual(['from Expenses: Car payment'])
   })
 })

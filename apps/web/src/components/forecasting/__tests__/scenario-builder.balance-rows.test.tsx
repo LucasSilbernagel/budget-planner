@@ -139,7 +139,11 @@ function clearStores(): void {
   useBalanceStore.setState({ entries: [] })
 }
 
+/** Every result the builder lifts to the page (story 102.2 reads its yearly figures). */
+const onResult = vi.fn()
+
 beforeEach(() => {
+  onResult.mockReset()
   clearStores()
   syncPendingCalls.length = 0
   engineRows.length = 0
@@ -208,6 +212,8 @@ describe('rows replace the investments total (AC-1, AC-11)', () => {
       screen.getByLabelText('Not taken from the money left over, for Pension')
     ).toBeInTheDocument()
     expect(screen.queryByLabelText('Not taken from the money left over, for Car loan')).toBeNull()
+    // A debt row carries its own label for the same flag (story 102.2, D2).
+    expect(screen.getByLabelText('Payment already in Expenses, for Car loan')).not.toBeChecked()
     // The single total is gone.
     expect(screen.queryByLabelText('Current Investments')).toBeNull()
   })
@@ -396,22 +402,155 @@ describe('a debt seeds its payment from its linked expense (story 102.1, AC-10)'
     render(<ScenarioBuilder onSave={vi.fn()} />)
     expect(screen.getByLabelText('Contribution for Loan')).toHaveValue(0)
   })
+})
 
-  it('keeps the linked expense among the expense rows (moving it out is story 102.2)', () => {
+/**
+ * The linked expense MOVES into the debt row (story 102.2, FR170, AC-1, AC-8).
+ * The payment becomes one cash line, the debt row's, taken from net income only
+ * while the debt is owed.
+ */
+describe('the linked expense moves into the debt row (story 102.2)', () => {
+  /** Every Expenses row name the builder shows, in order. */
+  function expenseRowNames(): string[] {
+    const expenses = screen.getByRole('heading', { name: 'Expense Categories' }).closest('section')
+    if (!expenses) throw new Error('no Expense Categories section')
+    return within(expenses)
+      .queryAllByLabelText('Name')
+      .map((input) => (input as HTMLInputElement).value)
+  }
+
+  function linkedFixture(): void {
+    useIncomeStore.setState({ incomeSources: [income(500_000)] })
     useExpenseStore.setState({
-      expenses: [expense(15_000, { id: 'exp-car', name: 'Car payment' })],
+      expenses: [expense(380_000), expense(20_000, { id: 'exp-loan', name: 'Loan payment' })],
     })
     setEntries([
       entry({
         id: 'e-1',
         name: 'Loan',
         type: 'debt',
-        currentBalance: 900_000,
-        paymentExpenseId: 'exp-car',
+        currentBalance: 300_000,
+        paymentExpenseId: 'exp-loan',
       }),
     ])
-    render(<ScenarioBuilder onSave={vi.fn()} />)
-    expect(screen.getByDisplayValue('Car payment')).toBeInTheDocument()
+  }
+
+  it('leaves the expense out of the Expenses rows, labels the debt row, starts its flag off, and keeps year 1 as it was (AC-1)', async () => {
+    linkedFixture()
+    render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResult} />)
+    expect(expenseRowNames()).toEqual(['Rent'])
+    expect(screen.getByLabelText('Contribution for Loan')).toHaveValue(200)
+    const label = within(section()).getByText('from Expenses: Loan payment')
+    expect(label.className.split(/\s+/)).toContain('text-faint')
+    expect(
+      screen.getByRole('checkbox', { name: 'Payment already in Expenses, for Loan' })
+    ).not.toBeChecked()
+    await waitForResult()
+    // MEASURED at T0 with the pre-story builder on the same data (Rent 3,800.00
+    // and Loan payment 200.00 both Expenses rows, the debt under 100.2 D4):
+    // year 1 netIncome 1,200,000 and expenses 4,800,000. The money moved, it did
+    // not change.
+    await waitFor(() => expect(engineRows.length).toBeGreaterThan(0))
+    const year1 = onResult.mock.calls.at(-1)?.[0]?.projection[0]
+    expect(year1?.netIncome).toBe(1_200_000)
+    expect(year1?.expenses).toBe(4_800_000)
+  })
+
+  it('lets one expense pay ONE debt: a second debt linked to it seeds unlinked, so it is never counted twice (AC-8)', () => {
+    linkedFixture()
+    setEntries([
+      entry({
+        id: 'e-1',
+        name: 'Loan',
+        type: 'debt',
+        currentBalance: 300_000,
+        paymentExpenseId: 'exp-loan',
+        sortOrder: 0,
+      }),
+      entry({
+        id: 'e-2',
+        name: 'Twin',
+        type: 'debt',
+        currentBalance: 300_000,
+        paymentExpenseId: 'exp-loan',
+        sortOrder: 1,
+      }),
+    ])
+    render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResult} />)
+    expect(screen.getByLabelText('Contribution for Loan')).toHaveValue(200)
+    expect(screen.getByLabelText('Contribution for Twin')).toHaveValue(0)
+    expect(within(section()).getAllByText(/^from Expenses:/)).toHaveLength(1)
+    expect(expenseRowNames()).toEqual(['Rent'])
+  })
+
+  it('removes no expense for a dangling link, and shows no label (AC-8)', () => {
+    linkedFixture()
+    setEntries([
+      entry({
+        id: 'e-1',
+        name: 'Loan',
+        type: 'debt',
+        currentBalance: 300_000,
+        paymentExpenseId: 'exp-gone',
+      }),
+    ])
+    render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResult} />)
+    expect(expenseRowNames()).toEqual(['Rent', 'Loan payment'])
+    expect(screen.getByLabelText('Contribution for Loan')).toHaveValue(0)
+    expect(within(section()).queryByText(/^from Expenses:/)).toBeNull()
+  })
+
+  it('an unlinked what-if debt pays from cash too: no row creates money (AC-4)', async () => {
+    // 12,000.00 a year left over; + Add Balance → Debt 1,000.00 paying 100.00/mo.
+    // Year 1, by hand: 1,000.00 paid (1,200.00 > the balance) → net 11,000.00.
+    useIncomeStore.setState({ incomeSources: [income(500_000)] })
+    useExpenseStore.setState({ expenses: [expense(400_000)] })
+    render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResult} />)
+    await waitForResult()
+    fireEvent.click(screen.getByRole('button', { name: '+ Add Balance' }))
+    fireEvent.change(screen.getByLabelText('Type for New Investment'), {
+      target: { value: 'debt' },
+    })
+    expect(
+      screen.getByRole('checkbox', { name: 'Payment already in Expenses, for New Investment' })
+    ).not.toBeChecked()
+    fireEvent.change(screen.getByLabelText('Balance for New Investment'), {
+      target: { value: '1000' },
+    })
+    fireEvent.change(screen.getByLabelText('Contribution for New Investment'), {
+      target: { value: '100' },
+    })
+    await waitFor(
+      () => expect(onResult.mock.calls.at(-1)?.[0]?.projection[0]?.netIncome).toBe(1_100_000),
+      { timeout: 3000 }
+    )
+  })
+
+  it('the debt checkbox puts the payment back in Expenses: ticking it stops the deduction (D2)', async () => {
+    linkedFixture()
+    render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResult} />)
+    await waitForResult()
+    await waitFor(() =>
+      expect(onResult.mock.calls.at(-1)?.[0]?.projection[0]?.netIncome).toBe(1_200_000)
+    )
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Payment already in Expenses, for Loan' }))
+    // Flagged: the 2,400.00 payment no longer leaves cash, so year 1 nets the
+    // whole (5,000.00 − 3,800.00) × 12 = 14,400.00.
+    await waitFor(
+      () => expect(onResult.mock.calls.at(-1)?.[0]?.projection[0]?.netIncome).toBe(1_440_000),
+      { timeout: 3000 }
+    )
+  })
+
+  it('hides the label on an investment and shows it again back on Debt; editing the payment keeps it (D6, D7)', () => {
+    linkedFixture()
+    render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResult} />)
+    fireEvent.change(screen.getByLabelText('Contribution for Loan'), { target: { value: '350' } })
+    expect(within(section()).getByText('from Expenses: Loan payment')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Type for Loan'), { target: { value: 'investment' } })
+    expect(within(section()).queryByText(/^from Expenses:/)).toBeNull()
+    fireEvent.change(screen.getByLabelText('Type for Loan'), { target: { value: 'debt' } })
+    expect(within(section()).getByText('from Expenses: Loan payment')).toBeInTheDocument()
   })
 })
 
@@ -504,13 +643,20 @@ describe('add, remove and type switch (AC-8)', () => {
     expect(screen.queryByText('At least one item is required')).toBeNull()
   })
 
-  it('switching a row to Debt clears and hides its flag, and the save carries false', async () => {
+  it('any type switch clears the flag, both ways, and relabels it; the save carries false (story 102.2, D8)', async () => {
     setEntries([entry({ id: 'e-1', name: 'Pension', contributionRecordedAsExpense: true })])
     const onSave = vi.fn().mockResolvedValue({ success: true })
     render(<ScenarioBuilder onSave={onSave} />)
     fireEvent.change(screen.getByLabelText('Type for Pension'), { target: { value: 'debt' } })
     expect(screen.queryByLabelText('Not taken from the money left over, for Pension')).toBeNull()
-    // Back to Investment: the flag is unchecked, not restored.
+    // A debt row has its own flag (story 102.2, D2), cleared by the switch.
+    const debtFlag = screen.getByRole('checkbox', {
+      name: 'Payment already in Expenses, for Pension',
+    })
+    expect(debtFlag).not.toBeChecked()
+    // Ticked on the debt, then back to Investment: cleared again (D8).
+    fireEvent.click(debtFlag)
+    expect(debtFlag).toBeChecked()
     fireEvent.change(screen.getByLabelText('Type for Pension'), { target: { value: 'investment' } })
     expect(
       screen.getByLabelText('Not taken from the money left over, for Pension')
@@ -540,12 +686,19 @@ describe('the per-row outcome and the totals (AC-10)', () => {
    *   Fund: 1000.00 → round(1060.00) + 1200.00 = 2260.00 → round(2395.60) + 1200.00 = 3595.60.
    *   Loan: 3000.00 − 2400.00 = 600.00 → max(0, −1800.00) = 0 (paid off).
    *   Card: 500.00, no payment, stays 500.00.
-   *   Savings: 2 × (12,000.00 − 1,200.00 counted) = 21,600.00.
-   *   Ending net worth: 21,600.00 + 3,595.60 − 500.00 = 24,695.60.
    *   Starting: 0 + 1,000.00 − 3,500.00 = −2,500.00.
    *
    * Story 102.1: the Loan's 200.00 payment is its LINKED Expenses row, so Rent is
-   * 3,800.00 and the two still total 4,000.00 a month: every figure above holds.
+   * 3,800.00 and the two total 4,000.00 a month.
+   *
+   * ⚠️ RE-PINNED by story 102.2 (FR170): the linked row moves into the Loan, so
+   * the Expenses rows hold Rent alone (14,400.00 a year left over) and the Loan
+   * pays from cash only while owed:
+   *   Y1: Loan pays 2,400.00 → net 12,000.00; savings + 12,000 − 1,200 = 10,800.00.
+   *   Y2: Loan pays the 600.00 remainder → net 13,800.00; savings + 12,600.00.
+   *   Savings 23,400.00 (was 21,600.00 under 100.2 D4: the 1,800.00 the paid-off
+   *   Loan no longer takes in year 2).
+   *   Ending net worth: 23,400.00 + 3,595.60 − 500.00 = 26,495.60 (was 24,695.60).
    */
   function fillOutcomeFixture(): void {
     useIncomeStore.setState({ incomeSources: [income(500_000)] })
@@ -591,7 +744,7 @@ describe('the per-row outcome and the totals (AC-10)', () => {
         .closest('[aria-live]')
     ).toBeNull()
     expect(card('Starting Net Worth')).toBe(format(-250_000))
-    expect(card('Ending Net Worth')).toBe(format(2_469_560))
+    expect(card('Ending Net Worth')).toBe(format(2_649_560))
   })
 
   it('a debt that starts at 0 is not "Paid off" (nothing was owed; code review)', async () => {
@@ -615,13 +768,14 @@ describe('the per-row outcome and the totals (AC-10)', () => {
     render(<ScenarioBuilder onSave={vi.fn()} />)
     await waitForResult()
     await setYears(2)
-    await waitFor(() => expect(card('Ending Net Worth')).toBe(format(2_469_560)))
+    await waitFor(() => expect(card('Ending Net Worth')).toBe(format(2_649_560)))
 
     fireEvent.change(screen.getByLabelText('Contribution for Fund'), { target: { value: '200' } })
     // At 6% (story 100.3; 6112.90 and 24,812.90 at 7%):
     // Fund: 1000.00 → 1060.00 + 2400.00 = 3460.00 → round(3667.60) + 2400.00 = 6067.60.
-    // Savings: 2 × (12,000.00 − 2,400.00) = 19,200.00. Ending: 19,200.00 + 6,067.60 − 500.00.
-    await waitFor(() => expect(card('Ending Net Worth')).toBe(format(2_476_760)), {
+    // Savings (story 102.2, Loan paying from cash while owed): (12,000.00 − 2,400.00)
+    // + (13,800.00 − 2,400.00) = 21,000.00. Ending: 21,000.00 + 6,067.60 − 500.00.
+    await waitFor(() => expect(card('Ending Net Worth')).toBe(format(2_656_760)), {
       timeout: 3000,
     })
   })
@@ -809,6 +963,284 @@ describe('the builder is defensive on its own (AC-14, 100.1 review)', () => {
   })
 })
 
+/**
+ * A forecast saved before version 5 keeps its figures (story 102.2, AC-6, D1).
+ *
+ * ⚠️ `V4_RESULT` was MEASURED at T0, before any engine change: the pre-story
+ * engine (main `f6f1e96`, core `src` run through tsx) on exactly the inputs the
+ * builder sends for `V4_INPUTS` below, 5 years. It is NOT recomputed here, so it
+ * cannot agree with the new code by construction.
+ */
+const V4_RESULT = {
+  baseline: [
+    {
+      year: 1,
+      income: 6000000,
+      expenses: 4800000,
+      netIncome: 1200000,
+      savings: 1180000,
+      investments: 226000,
+      netWorth: 1346000,
+      debts: 60000,
+      balanceAccounts: [226000, 60000],
+    },
+    {
+      year: 2,
+      income: 6000000,
+      expenses: 4800000,
+      netIncome: 1200000,
+      savings: 2260000,
+      investments: 359560,
+      netWorth: 2619560,
+      debts: 0,
+      balanceAccounts: [359560, 0],
+    },
+    {
+      year: 3,
+      income: 6000000,
+      expenses: 4800000,
+      netIncome: 1200000,
+      savings: 3340000,
+      investments: 501134,
+      netWorth: 3841134,
+      debts: 0,
+      balanceAccounts: [501134, 0],
+    },
+    {
+      year: 4,
+      income: 6000000,
+      expenses: 4800000,
+      netIncome: 1200000,
+      savings: 4420000,
+      investments: 651202,
+      netWorth: 5071202,
+      debts: 0,
+      balanceAccounts: [651202, 0],
+    },
+    {
+      year: 5,
+      income: 6000000,
+      expenses: 4800000,
+      netIncome: 1200000,
+      savings: 5500000,
+      investments: 810274,
+      netWorth: 6310274,
+      debts: 0,
+      balanceAccounts: [810274, 0],
+    },
+  ],
+  projection: [
+    {
+      year: 1,
+      income: 6000000,
+      expenses: 4800000,
+      netIncome: 1200000,
+      savings: 1180000,
+      investments: 226000,
+      netWorth: 1346000,
+      savingsAccounts: [100000],
+      unallocatedSavings: 1080000,
+      debts: 60000,
+      balanceAccounts: [226000, 60000],
+    },
+    {
+      year: 2,
+      income: 6000000,
+      expenses: 4800000,
+      netIncome: 1200000,
+      savings: 2260000,
+      investments: 359560,
+      netWorth: 2619560,
+      savingsAccounts: [100000],
+      unallocatedSavings: 2160000,
+      debts: 0,
+      balanceAccounts: [359560, 0],
+    },
+    {
+      year: 3,
+      income: 6000000,
+      expenses: 4800000,
+      netIncome: 1200000,
+      savings: 3340000,
+      investments: 501134,
+      netWorth: 3841134,
+      savingsAccounts: [100000],
+      unallocatedSavings: 3240000,
+      debts: 0,
+      balanceAccounts: [501134, 0],
+    },
+    {
+      year: 4,
+      income: 6000000,
+      expenses: 4800000,
+      netIncome: 1200000,
+      savings: 4420000,
+      investments: 651202,
+      netWorth: 5071202,
+      savingsAccounts: [100000],
+      unallocatedSavings: 4320000,
+      debts: 0,
+      balanceAccounts: [651202, 0],
+    },
+    {
+      year: 5,
+      income: 6000000,
+      expenses: 4800000,
+      netIncome: 1200000,
+      savings: 5500000,
+      investments: 810274,
+      netWorth: 6310274,
+      savingsAccounts: [100000],
+      unallocatedSavings: 5400000,
+      debts: 0,
+      balanceAccounts: [810274, 0],
+    },
+  ],
+  summary: {
+    startingNetWorth: -100000,
+    endingNetWorth: 6310274,
+    totalGrowth: 6410274,
+    averageAnnualGrowth: 1282054.8,
+  },
+}
+
+const V4_INPUTS = {
+  savings: 100_000,
+  investments: 100_000,
+  years: 5,
+  savingsAccounts: [{ name: 'Pot', balance: 100_000, monthlyContribution: 0 }],
+  balanceAccounts: [
+    {
+      name: 'Fund',
+      type: 'investment',
+      balance: 100_000,
+      contribution: 10_000,
+      frequency: 'monthly',
+      contributionRecordedAsExpense: false,
+      annualReturn: 0.06,
+    },
+    // Saved under 100.2 D4: the flag `false`, the payment ALSO an Expenses row.
+    {
+      name: 'Loan',
+      type: 'debt',
+      balance: 300_000,
+      contribution: 20_000,
+      frequency: 'monthly',
+      contributionRecordedAsExpense: false,
+    },
+  ],
+}
+
+function legacyForecast(version: number | undefined) {
+  const scenario = {
+    name: 'Legacy plan',
+    incomeGrowthRate: 0,
+    expenseGrowthRate: 0,
+    newIncome: [{ name: 'Salary', amount: 500_000, frequency: 'monthly' as const }],
+    newExpenses: [
+      { name: 'Rent', amount: 380_000, frequency: 'monthly' as const },
+      { name: 'Loan payment', amount: 20_000, frequency: 'monthly' as const },
+    ],
+  }
+  return {
+    id: 'saved-legacy',
+    name: 'Legacy plan',
+    scenario,
+    result: { scenario, ...V4_RESULT },
+    inputs: V4_INPUTS,
+    ...(version === undefined ? {} : { version }),
+    createdAt: ISO,
+    updatedAt: ISO,
+  } as never
+}
+
+describe('a forecast saved before version 5 keeps its figures (story 102.2, AC-6)', () => {
+  it.each([
+    ['version 4', 4],
+    ['version 3', 3],
+    ['no version', undefined],
+  ])(
+    '%s: the debt reloads flagged and recomputes exactly the T0 figures',
+    async (_label, version) => {
+      render(
+        <ScenarioBuilder
+          onSave={vi.fn()}
+          onResultChange={onResult}
+          initialForecast={legacyForecast(version)}
+        />
+      )
+      expect(
+        screen.getByRole('checkbox', { name: 'Payment already in Expenses, for Loan' })
+      ).toBeChecked()
+      // Investment rows are untouched by the legacy rule.
+      expect(
+        screen.getByLabelText('Not taken from the money left over, for Fund')
+      ).not.toBeChecked()
+      await waitFor(() => expect(onResult).toHaveBeenCalled(), { timeout: 3000 })
+      const recomputed = onResult.mock.calls.at(-1)?.[0]
+      expect({
+        baseline: recomputed?.baseline,
+        projection: recomputed?.projection,
+        summary: recomputed?.summary,
+      }).toEqual(V4_RESULT)
+    }
+  )
+
+  it('version 5: the same saved row is unflagged, so the payment leaves cash and the figures differ', async () => {
+    render(
+      <ScenarioBuilder
+        onSave={vi.fn()}
+        onResultChange={onResult}
+        initialForecast={legacyForecast(5)}
+      />
+    )
+    expect(
+      screen.getByRole('checkbox', { name: 'Payment already in Expenses, for Loan' })
+    ).not.toBeChecked()
+    await waitFor(() => expect(onResult).toHaveBeenCalled(), { timeout: 3000 })
+    // Year 1, by hand: the Loan payment is ALSO in Expenses here, so it is now
+    // counted twice (what the legacy flag exists to prevent): 1,200,000 − 240,000.
+    expect(onResult.mock.calls.at(-1)?.[0]?.projection[0]?.netIncome).toBe(960_000)
+  })
+
+  it('saves a reloaded legacy debt with its flag ON, so it stays legacy after a v5 save', async () => {
+    const onSave = vi.fn().mockResolvedValue({ success: true })
+    render(<ScenarioBuilder onSave={onSave} initialForecast={legacyForecast(4)} />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: /save forecast/i }, { timeout: 3000 })
+    )
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    const debt = onSave.mock.calls[0][0].inputs.balanceAccounts[1]
+    expect(debt).toEqual({
+      name: 'Loan',
+      type: 'debt',
+      balance: 300_000,
+      contribution: 20_000,
+      frequency: 'monthly',
+      contributionRecordedAsExpense: true,
+    })
+  })
+
+  it('reloads a v5 label and keeps only a non-empty string (the builder is defensive on its own)', () => {
+    const v5 = (paidByExpenseName: unknown) =>
+      ({
+        ...(legacyForecast(5) as object),
+        inputs: {
+          ...V4_INPUTS,
+          balanceAccounts: [{ ...V4_INPUTS.balanceAccounts[1], paidByExpenseName }],
+          investments: 0,
+        },
+      }) as never
+    render(<ScenarioBuilder onSave={vi.fn()} initialForecast={v5('  Loan payment ')} />)
+    expect(within(section()).getByText('from Expenses: Loan payment')).toBeInTheDocument()
+    for (const bad of ['', '   ', 7, null]) {
+      document.body.innerHTML = ''
+      render(<ScenarioBuilder onSave={vi.fn()} initialForecast={v5(bad)} />)
+      expect(within(section()).queryByText(/^from Expenses:/)).toBeNull()
+    }
+  })
+})
+
 describe('save writes the rows and the investment total (AC-12)', () => {
   it('hands onSave every row field in order, and investments as the investment rows sum', async () => {
     setEntries([
@@ -850,7 +1282,9 @@ describe('save writes the rows and the investment total (AC-12)', () => {
         // Story 100.3: the seeded 6%, on the investment row only (D8).
         annualReturn: 0.06,
       },
-      // A debt is saved WITHOUT a rate (`toEqual` fails on an extra defined key).
+      // A debt is saved WITHOUT a rate (`toEqual` fails on an extra defined key),
+      // and since story 102.2 (version 5) WITH the name of the Expenses row its
+      // payment came from (D6).
       {
         name: 'Loan',
         type: 'debt',
@@ -858,6 +1292,7 @@ describe('save writes the rows and the investment total (AC-12)', () => {
         contribution: 20_000,
         frequency: 'monthly',
         contributionRecordedAsExpense: false,
+        paidByExpenseName: 'Loan payment',
       },
     ])
     expect(inputs.investments).toBe(1_000_001)

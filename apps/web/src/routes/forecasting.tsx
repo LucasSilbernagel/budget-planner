@@ -123,9 +123,16 @@ export interface SavedBalanceAccount {
   balance: number
   contribution: number
   frequency: Frequency
+  /**
+   * Investment: "Not taken from the money left over" (45.1). Debt (story 102.2,
+   * version 5): "Payment already in Expenses"; every v1-v4 debt was saved `false`
+   * under 100.2 D4, and the builder reloads those flagged (it reads `version`).
+   */
   contributionRecordedAsExpense: boolean
   /** Investment rows saved since story 100.3 (version 4) only. */
   annualReturn?: number
+  /** Debt rows saved since story 102.2 (version 5) only: the seeded payment's Expenses row. */
+  paidByExpenseName?: string
 }
 
 /**
@@ -217,6 +224,11 @@ function savedSavingsAccount(entry: unknown): SavedSavingsAccount {
  * number, even outside −100%..100% (D9: the builder flags it, refuse not clamp);
  * omitted otherwise (absent, `null`, a string), so the builder's default applies
  * (D3). Never kept on a debt row (D8). The builder coerces the same way on its own.
+ *
+ * Story 102.2 (version 5): the flag is kept `=== true` on a DEBT row too
+ * ("Payment already in Expenses"); before, it was forced `false` there. The
+ * v1-v4 legacy rule is NOT applied here but in the builder, which has `version`.
+ * `paidByExpenseName` is kept on a debt row when it is a non-empty string.
  */
 function savedBalanceAccount(entry: unknown): SavedBalanceAccount | null {
   const record =
@@ -232,8 +244,12 @@ function savedBalanceAccount(entry: unknown): SavedBalanceAccount | null {
     balance: money(record['balance']),
     contribution: money(record['contribution']),
     frequency: isKnownFrequency(frequency) ? frequency : 'monthly',
-    contributionRecordedAsExpense:
-      type === 'investment' && record['contributionRecordedAsExpense'] === true,
+    contributionRecordedAsExpense: record['contributionRecordedAsExpense'] === true,
+    ...(type === 'debt' &&
+    typeof record['paidByExpenseName'] === 'string' &&
+    record['paidByExpenseName'].trim() !== ''
+      ? { paidByExpenseName: record['paidByExpenseName'].trim() }
+      : {}),
     ...(type === 'investment' &&
     typeof record['annualReturn'] === 'number' &&
     Number.isFinite(record['annualReturn'])
@@ -728,7 +744,9 @@ function ForecastingPage(): React.ReactElement {
             DEPOSIT is fine — it is a single dated outflow; the mortgage is not.)
             Since story 100.2 the balance rows also make "paying down a loan" (a
             debt row's payment) and "saving more each month" (an investment
-            contribution) claimable.
+            contribution) claimable. Since story 102.2 a debt row's payment is
+            cash out while the debt is owed and stops at payoff, unless the row is
+            flagged "Payment already in Expenses".
             Keep this in step with `PremiumFeatureLabel`'s docblock in HomePage.tsx.
             No positional wording ("below"): the intro renders on every tab, and
             the builder is only on the first one. */}

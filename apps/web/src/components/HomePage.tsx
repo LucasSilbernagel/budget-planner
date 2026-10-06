@@ -1670,10 +1670,12 @@ function LockedTileContent({
  *      also lower the starting net worth. The copy names both (Lucas
  *      2026-10-05, story 100.2): "saving more each month" holds through
  *      INVESTMENT contributions only (savings-row contributions only split
- *      savings, item 4), and under 100.2 D4 a debt's payment is already an
- *      Expenses line, so an honest "pay it down faster" what-if raises the
- *      matching expense too (raising the row alone lowers the debt without
- *      taking the extra out of savings).
+ *      savings, item 4). Since story 102.2 (FR170, replacing 100.2 D4) a debt
+ *      row's payment leaves savings while the debt is owed and stops at payoff
+ *      (a linked Expenses row moves into the debt row when the builder seeds), so
+ *      raising the row alone is an honest "pay it down faster" what-if. Only a
+ *      row flagged "Payment already in Expenses" (every debt of a forecast saved
+ *      before version 5) still leaves the cash to its Expenses line.
  * ⚠️ `newIncome`/`newExpenses` are **not read by the CALCULATION** — they
  * are the SAVE FORMAT for the builder's rows, which reload depends on. Do not cite
  * them as scenario-expressive, and do not delete them as dead.

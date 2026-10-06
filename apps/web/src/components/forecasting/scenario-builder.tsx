@@ -108,10 +108,23 @@ export interface LocalBalanceAccount {
   balance: number
   contribution: number
   frequency: Frequency
-  /** Investment rows only; always `false` on a debt row. */
+  /**
+   * The money is already counted in Expenses, so the engine does not take it
+   * from cash again. Investment row: "Not taken from the money left over" (story
+   * 45.1). Debt row (story 102.2, D1/D2): "Payment already in Expenses", which
+   * keeps the 100.2 D4 math; off, the row's payment is cash out while the debt
+   * is owed. Off on every seeded, new or type-switched row (D8); on for every
+   * debt of a forecast saved before version 5.
+   */
   contributionRecordedAsExpense: boolean
   /** Story 100.3: the row's annual return; only investment rows use it. */
   annualReturn: number
+  /**
+   * Story 102.2 (D6): the name of the Expenses row a seeded debt's payment came
+   * from, shown as "from Expenses: <name>" on debt rows only. Saved in version 5.
+   * Absent when the row has no source (unlinked, added here, older forecasts).
+   */
+  paidByExpenseName?: string
 }
 
 /**
@@ -303,6 +316,8 @@ export const BALANCE_WHAT_IF_NOTE =
 export const NO_BALANCE_ACCOUNTS = 'No investments or debts in this scenario'
 /** The same label `/balance` gives the flag (story 45.1). */
 const NOT_FROM_LEFT_OVER_LABEL = 'Not taken from the money left over'
+/** The same flag on a debt row (story 102.2, D2): the payment is already an Expenses line. */
+const PAYMENT_IN_EXPENSES_LABEL = 'Payment already in Expenses'
 const BALANCE_TYPE_OPTIONS = [
   { value: 'investment' as const, label: 'Investment' },
   { value: 'debt' as const, label: 'Debt' },
@@ -526,8 +541,14 @@ function balanceRowType(type: unknown): LocalBalanceAccount['type'] | null {
  * - A DEBT's contribution (story 102.1, FR169, D5) is its LINKED EXPENSE's amount
  *   at that expense's frequency, never its own stored contribution, which
  *   `/balance` no longer shows or writes. No link (or one that does not resolve
- *   in `expenses`, the active profile's) seeds 0. The 100.2 D4 math is unchanged:
- *   the linked expense stays among the expense rows (102.2 moves it).
+ *   in `expenses`, the active profile's) seeds 0.
+ * - Story 102.2 (FR170, D5): the linked expense MOVES into the debt row. The row
+ *   carries its name (`paidByExpenseName`) and its flag starts off, so the engine
+ *   takes the payment from cash while the debt is owed; `consumedExpenseIds`
+ *   names the expenses the caller must leave OUT of the seeded Expenses rows, so
+ *   the payment is one cash line, not two. One expense pays at most ONE debt row,
+ *   the first in store order: a later debt linked to the same expense (102.1's
+ *   deferred two-device race) seeds as unlinked, so it is never counted twice.
  * - Balance sign (D6): a debt seeds `|balance|`, because a debt can be stored
  *   negative (the screenshot seed's mortgage, sync-applied rows) while the row
  *   holds a positive magnitude. A negative or non-finite investment seeds 0, as a
@@ -541,13 +562,23 @@ function balanceRowType(type: unknown): LocalBalanceAccount['type'] | null {
  */
 function balanceFromStore(
   entries: readonly ClientBalanceTracking[],
-  expenses: readonly { id: string; amount: unknown; frequency: unknown }[]
-): LocalBalanceAccount[] {
+  expenses: readonly { id: string; name: unknown; amount: unknown; frequency: unknown }[]
+): { rows: LocalBalanceAccount[]; consumedExpenseIds: ReadonlySet<string> } {
   const rows: LocalBalanceAccount[] = []
+  const consumedExpenseIds = new Set<string>()
   for (const entry of entries) {
     const type = balanceRowType(entry.type)
     if (type === null) continue
     const raw = entry.currentBalance
+    let linked: (typeof expenses)[number] | null = null
+    if (type === 'debt') {
+      const resolved = resolveDebtPaymentExpense(entry, expenses)
+      if (resolved !== null && !consumedExpenseIds.has(resolved.id)) {
+        linked = resolved
+        consumedExpenseIds.add(resolved.id)
+      }
+    }
+    const linkedName = typeof linked?.name === 'string' ? linked.name.trim() : ''
     rows.push({
       id: `balance-seeded-${rows.length}`,
       name: typeof entry.name === 'string' ? entry.name : '',
@@ -559,17 +590,19 @@ function balanceFromStore(
             : 0
           : nonNegativeCents(raw),
       ...(type === 'debt'
-        ? debtPaymentFromExpense(resolveDebtPaymentExpense(entry, expenses))
+        ? debtPaymentFromExpense(linked)
         : {
             contribution: nonNegativeCents(entry.monthlyContribution),
             frequency: isKnownFrequency(entry.frequency) ? entry.frequency : 'monthly',
           }),
+      // A debt starts OFF (102.2, D2): its payment left the Expenses rows with it.
       contributionRecordedAsExpense:
         type === 'investment' && entry.contributionRecordedAsExpense === true,
       annualReturn: DEFAULT_INVESTMENT_RETURN,
+      ...(linkedName !== '' ? { paidByExpenseName: linkedName } : {}),
     })
   }
-  return rows
+  return { rows, consumedExpenseIds }
 }
 
 /**
@@ -606,8 +639,19 @@ function debtPaymentFromExpense(expense: { amount: unknown; frequency: unknown }
  * `annualReturnFromSaved` (no usable rate → 6%, D3; finite out-of-range kept and
  * flagged, D9). A debt row's saved rate is ignored (debts are saved without one,
  * D8) and the row starts at the default, like a seeded debt.
+ *
+ * Debt flag (story 102.2, D1): a forecast saved before version 5 (`version`
+ * absent or below 5) computed its debts under 100.2 D4, with the payment still an
+ * Expenses row among its `newExpenses`. Each of its debt rows therefore reloads
+ * FLAGGED ("Payment already in Expenses"), so it projects exactly as saved and
+ * the payment is not counted twice. A v5 debt keeps its saved flag (`=== true`).
+ * `paidByExpenseName` (D6) is kept when it is a non-empty string, on debts only.
  */
-function balanceFromSaved(inputs: ScenarioInputs | undefined): LocalBalanceAccount[] {
+function balanceFromSaved(
+  inputs: ScenarioInputs | undefined,
+  version: unknown
+): LocalBalanceAccount[] {
+  const legacyDebts = !(typeof version === 'number' && version >= 5)
   const saved: unknown = inputs?.balanceAccounts
   if (Array.isArray(saved)) {
     const rows: LocalBalanceAccount[] = []
@@ -617,6 +661,8 @@ function balanceFromSaved(inputs: ScenarioInputs | undefined): LocalBalanceAccou
       const type = balanceRowType(account['type'])
       if (type === null) continue
       const frequency = account['frequency']
+      const paidBy = account['paidByExpenseName']
+      const paidByName = type === 'debt' && typeof paidBy === 'string' ? paidBy.trim() : ''
       rows.push({
         id: `balance-loaded-${rows.length}`,
         name: typeof account['name'] === 'string' ? account['name'] : '',
@@ -625,11 +671,12 @@ function balanceFromSaved(inputs: ScenarioInputs | undefined): LocalBalanceAccou
         contribution: nonNegativeCents(account['contribution']),
         frequency: isKnownFrequency(frequency) ? frequency : 'monthly',
         contributionRecordedAsExpense:
-          type === 'investment' && account['contributionRecordedAsExpense'] === true,
+          (type === 'debt' && legacyDebts) || account['contributionRecordedAsExpense'] === true,
         annualReturn:
           type === 'investment'
             ? annualReturnFromSaved(account['annualReturn'])
             : DEFAULT_INVESTMENT_RETURN,
+        ...(paidByName !== '' ? { paidByExpenseName: paidByName } : {}),
       })
     }
     return rows
@@ -788,7 +835,7 @@ export function ScenarioBuilder({
     [savingsAccounts]
   )
   const [balanceAccounts, setBalanceAccounts] = useState<LocalBalanceAccount[]>(() =>
-    initialForecast ? balanceFromSaved(initialForecast.inputs) : []
+    initialForecast ? balanceFromSaved(initialForecast.inputs, initialForecast.version) : []
   )
   // The starting investments are the investment rows' sum (story 100.2, AC-2),
   // derived like `savings`; the engine refuses a mismatch (`BALANCE_ROWS_MISMATCH`).
@@ -893,9 +940,33 @@ export function ScenarioBuilder({
   useEffect(() => {
     if (hasSeeded || !readyToSeed) return
     if (!incomeRowsTouched.current) setIncomeItems(itemsFromStore(storeIncome, 'income'))
-    if (!expenseRowsTouched.current) setExpenseItems(itemsFromStore(storeExpenses, 'expense'))
+    // Investment/debt rows (story 100.2). Each balance is coerced per row in
+    // `balanceFromStore` (a corrupt one seeds 0), which also closes the 62.1
+    // review hazard of one non-finite row turning the old single total into NaN.
+    // Story 102.1: debts seed their payment from the linked expense.
+    // Story 102.2 (D5): that expense MOVES into the debt row, so it leaves the
+    // Expenses rows, but ONLY in this same pass: when the balance rows were
+    // touched first no debt row carries it, and removing it would make the
+    // payment vanish from the scenario. Seeded BEFORE the Expenses rows so the
+    // consumed ids are known; ids are by index, so filter before mapping.
+    let consumedExpenseIds: ReadonlySet<string> = new Set()
+    if (!balanceRowsTouched.current) {
+      const seeded = balanceFromStore(storeBalanceEntries, storeExpenses)
+      setBalanceAccounts(seeded.rows)
+      consumedExpenseIds = seeded.consumedExpenseIds
+    }
+    if (!expenseRowsTouched.current) {
+      setExpenseItems(
+        itemsFromStore(
+          storeExpenses.filter((row) => !consumedExpenseIds.has(row.id)),
+          'expense'
+        )
+      )
+    }
     if (!savingsRowsTouched.current) {
       // The solver throws on a corrupt persisted amount (`normalizeToMonthly`).
+      // It keeps the FULL `storeExpenses` (story 102.2): it mirrors /savings,
+      // where the linked expense is still an ordinary expense.
       // Automatic rows then seed 0; the builder must still render (AC-3).
       let allocations: Record<string, number> | null = null
       try {
@@ -909,13 +980,6 @@ export function ScenarioBuilder({
         allocations = null
       }
       setSavingsAccounts(savingsFromStore(storeSavingsGoals, allocations))
-    }
-    // Investment/debt rows (story 100.2). Each balance is coerced per row in
-    // `balanceFromStore` (a corrupt one seeds 0), which also closes the 62.1
-    // review hazard of one non-finite row turning the old single total into NaN.
-    // Story 102.1: debts seed their payment from the linked expense.
-    if (!balanceRowsTouched.current) {
-      setBalanceAccounts(balanceFromStore(storeBalanceEntries, storeExpenses))
     }
     setHasSeeded(true)
   }, [
@@ -956,7 +1020,7 @@ export function ScenarioBuilder({
    */
   const [resultBalanceRowIds, setResultBalanceRowIds] = useState<readonly string[]>(() => {
     if (!initialForecast) return []
-    const rows = balanceFromSaved(initialForecast.inputs)
+    const rows = balanceFromSaved(initialForecast.inputs, initialForecast.version)
     const saved = initialForecast.result?.projection?.at(-1)?.balanceAccounts
     return Array.isArray(saved) && saved.length === rows.length ? rows.map((row) => row.id) : []
   })
@@ -1379,10 +1443,13 @@ export function ScenarioBuilder({
         prev.map((account) => {
           if (account.id !== id) return account
           const next = { ...account, [field]: value }
-          // A debt has no "not taken from the money left over" flag: switching
-          // to Debt clears it, as `/balance` does (AC-8). Its annual return is
-          // KEPT, hidden (story 100.3, D8): back to Investment shows it again.
-          if (next.type === 'debt') next.contributionRecordedAsExpense = false
+          // Any type change clears the flag, both ways (story 102.2, D8; was
+          // "switching to Debt clears it", 100.2 AC-8): "is this money already in
+          // Expenses" means something different for each type and must be
+          // answered again. Its annual return is KEPT, hidden (story 100.3, D8):
+          // back to Investment shows it again. So is `paidByExpenseName` (shown
+          // on debt rows only).
+          if (next.type !== account.type) next.contributionRecordedAsExpense = false
           return next
         })
       )
@@ -1506,6 +1573,8 @@ export function ScenarioBuilder({
           })),
           // `annualReturn` on investment rows only (story 100.3, D8): a debt is
           // saved without one, so a later debt-interest story owns its own field.
+          // Story 102.2 (version 5): a debt's flag is saved as it stands, and its
+          // `paidByExpenseName` when it has one (D6).
           balanceAccounts: balanceAccounts.map(
             ({
               name,
@@ -1515,6 +1584,7 @@ export function ScenarioBuilder({
               frequency,
               contributionRecordedAsExpense,
               annualReturn,
+              paidByExpenseName,
             }) => ({
               name,
               type,
@@ -1523,6 +1593,7 @@ export function ScenarioBuilder({
               frequency,
               contributionRecordedAsExpense,
               ...(type === 'investment' ? { annualReturn } : {}),
+              ...(type === 'debt' && paidByExpenseName ? { paidByExpenseName } : {}),
             })
           ),
         },
@@ -3072,6 +3143,7 @@ function BalanceAccountRow({
   const rowName = account.name.trim()
   const rowLabel = rowName === '' ? 'unnamed balance' : rowName
   const isInvestment = account.type === 'investment'
+  const flagLabel = isInvestment ? NOT_FROM_LEFT_OVER_LABEL : PAYMENT_IN_EXPENSES_LABEL
   const selectClass =
     'w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm'
 
@@ -3174,27 +3246,33 @@ function BalanceAccountRow({
           </button>
         </div>
       </div>
-      {/* Investment rows only, as on `/balance` (story 45.1). Checked: the
-          contribution is already out of take-home pay or an Expenses line, so the
-          forecast does not take it from the money left over a second time. */}
-      {isInvestment && (
-        <div className="mt-3 flex items-start gap-2">
-          <input
-            id={flagId}
-            type="checkbox"
-            checked={account.contributionRecordedAsExpense}
-            onChange={(e) =>
-              onUpdate(account.id, 'contributionRecordedAsExpense', e.target.checked)
-            }
-            aria-label={`${NOT_FROM_LEFT_OVER_LABEL}, for ${rowLabel}`}
-            autoComplete="off"
-            className="mt-0.5 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600"
-          />
-          <label htmlFor={flagId} className="text-sm text-label">
-            {NOT_FROM_LEFT_OVER_LABEL}
-          </label>
-        </div>
+      {/* Story 102.2 (D6): where a seeded debt's payment came from. Debt rows
+          only; kept in state while the row is an investment. `break-words` so a
+          long expense name wraps at 320 px instead of scrolling. */}
+      {!isInvestment && account.paidByExpenseName && (
+        <p className="mt-3 text-sm text-faint break-words min-w-0">
+          from Expenses: {account.paidByExpenseName}
+        </p>
       )}
+      {/* The one flag, labelled per type. Investment (story 45.1, as on
+          `/balance`): the contribution is already out of take-home pay or an
+          Expenses line, so the forecast does not take it from the money left over
+          a second time. Debt (story 102.2, D2): the payment is already an
+          Expenses line, so the row takes nothing from cash (100.2 D4 math). */}
+      <div className="mt-3 flex items-start gap-2">
+        <input
+          id={flagId}
+          type="checkbox"
+          checked={account.contributionRecordedAsExpense}
+          onChange={(e) => onUpdate(account.id, 'contributionRecordedAsExpense', e.target.checked)}
+          aria-label={`${flagLabel}, for ${rowLabel}`}
+          autoComplete="off"
+          className="mt-0.5 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600"
+        />
+        <label htmlFor={flagId} className="text-sm text-label">
+          {flagLabel}
+        </label>
+      </div>
       {/* Plain text, not a live region: it changes on every recompute. */}
       {outcome && (
         <p className="mt-3 text-sm text-body">

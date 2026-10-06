@@ -868,8 +868,10 @@ describe('calculateFinancialForecast — savings account rows (100.1)', () => {
  *     default), so every figure below is still the 100.2 figure, unchanged.
  *   - A counted contribution (flag not `=== true`) also leaves savings; a flagged
  *     one does not, because net income already lost it (45.1, FR72).
- *   - Debt row: `debt_y = max(0, debt_{y-1} − annualContribution)`; savings is not
- *     touched, the payment is already an Expenses line (D4).
+ *   - Debt row: `debt_y = max(0, debt_{y-1} − annualContribution)`. FLAGGED
+ *     (`contributionRecordedAsExpense === true`), savings is not touched: the
+ *     payment is already an Expenses line (100.2 D4). Unflagged, what it paid is
+ *     cash out (story 102.2; its own block below).
  *   - Both loops (D5), so a flat scenario keeps baseline === projection (67.1).
  */
 describe('calculateFinancialForecast — investment and debt rows (100.2)', () => {
@@ -897,7 +899,15 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
       frequency: 'weekly',
       contributionRecordedAsExpense: true,
     },
-    { type: 'debt', balance: 500_000, contribution: 20_000, frequency: 'monthly' },
+    // Story 102.2: flagged "payment already in Expenses", so the 100.2 D4 math
+    // (and every figure below) is unchanged. That is the AC-3 parity proof.
+    {
+      type: 'debt',
+      balance: 500_000,
+      contribution: 20_000,
+      frequency: 'monthly',
+      contributionRecordedAsExpense: true,
+    },
   ]
   const MIXED_DATA = { ...CURRENT_DATA, investments: 1_100_007, balanceAccounts: MIXED }
 
@@ -920,7 +930,7 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
     expect(r.projection.map((p) => p.investments)).toEqual([1_557_011, 2_046_006, 2_569_230])
     expect(r.projection.map((p) => p.debts)).toEqual([260_000, 20_000, 0])
     // Savings: + 1,200,000 net income − 120,000 counted contribution a year. The
-    // flagged contribution and the debt payment take nothing more (D4, 45.1).
+    // flagged contribution and the flagged debt payment take nothing more (D4, 45.1).
     expect(r.projection.map((p) => p.savings)).toEqual([1_180_000, 2_260_000, 3_340_000])
     // netWorth = savings + investments − debts.
     expect(r.projection.map((p) => p.netWorth)).toEqual([2_477_011, 4_286_006, 5_909_230])
@@ -1106,12 +1116,18 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
     expect(withDebt.summary.startingNetWorth).toBe(without.summary.startingNetWorth - 750_000)
   })
 
-  it('a payment bigger than the debt pays it off and stops at 0; it never touches savings (D4)', () => {
+  it('a FLAGGED payment bigger than the debt pays it off and stops at 0; it never touches savings (D4, kept by 102.2 for flagged rows)', () => {
     const r = calculateFinancialForecast(
       {
         ...CURRENT_DATA,
         balanceAccounts: [
-          { type: 'debt', balance: 100_000, contribution: 50_000, frequency: 'monthly' },
+          {
+            type: 'debt',
+            balance: 100_000,
+            contribution: 50_000,
+            frequency: 'monthly',
+            contributionRecordedAsExpense: true,
+          },
         ],
       },
       FLAT,
@@ -1272,6 +1288,202 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
  * calling the engine's own formula. Rule: `inv_y = round(inv_{y-1} × (1 +
  * annualReturn)) + annualContribution`, the 100.2 rule with the row's own rate.
  */
+/**
+ * A debt's payment is cash out only while the debt is owed (story 102.2, FR170,
+ * replacing 100.2 D4 for UNFLAGGED debt rows).
+ *
+ * Every figure is derived BY HAND in the comment beside it. CURRENT_DATA nets
+ * 1,000.00/mo (income 60,000.00 and expenses 48,000.00 a year, 12,000.00 left).
+ * An unflagged debt row pays `min(annual payment, opening balance)` each year; that
+ * amount is added to the year's `expenses` and taken from its `netIncome`, in
+ * BOTH loops.
+ */
+describe('calculateFinancialForecast — a debt payment stops at payoff (102.2)', () => {
+  const debt = (
+    balance: number,
+    contribution: number,
+    over: Partial<BalanceAccountInput> = {}
+  ): BalanceAccountInput => ({
+    type: 'debt',
+    balance,
+    contribution,
+    frequency: 'monthly',
+    ...over,
+  })
+
+  it('pays the full payment while owed, only the remainder in the payoff year, nothing after, by hand', () => {
+    // 5,000.00 at 200.00/mo = 2,400.00 a year.
+    //   Y1: pays 2,400.00 → 2,600.00 owed. expenses 48,000 + 2,400 = 50,400.00;
+    //       net 12,000 − 2,400 = 9,600.00; savings 1,000 + 9,600 = 10,600.00.
+    //   Y2: pays 2,400.00 → 200.00 owed. net 9,600.00; savings 20,200.00.
+    //   Y3: pays the 200.00 remainder → 0. expenses 48,200.00; net 11,800.00;
+    //       savings 32,000.00.
+    //   Y4: pays nothing. expenses 48,000.00; net 12,000.00; savings 44,000.00.
+    const r = calculateFinancialForecast(
+      { ...CURRENT_DATA, balanceAccounts: [debt(500_000, 20_000)] },
+      FLAT,
+      4
+    )
+    expect(r.projection.map((p) => p.debts)).toEqual([260_000, 20_000, 0, 0])
+    expect(r.projection.map((p) => p.expenses)).toEqual([
+      5_040_000, 5_040_000, 4_820_000, 4_800_000,
+    ])
+    expect(r.projection.map((p) => p.netIncome)).toEqual([960_000, 960_000, 1_180_000, 1_200_000])
+    expect(r.projection.map((p) => p.savings)).toEqual([1_060_000, 2_020_000, 3_200_000, 4_400_000])
+    // netWorth = savings − debts.
+    expect(r.projection.map((p) => p.netWorth)).toEqual([800_000, 2_000_000, 3_200_000, 4_400_000])
+    expect(r.summary.startingNetWorth).toBe(-400_000)
+    // Income is untouched: the payment is an outflow, not lost income.
+    expect(r.projection.map((p) => p.income)).toEqual([6_000_000, 6_000_000, 6_000_000, 6_000_000])
+  })
+
+  it('deducts in the baseline too, so a flat scenario keeps baseline === projection (D5, 67.1)', () => {
+    const r = calculateFinancialForecast(
+      { ...CURRENT_DATA, balanceAccounts: [debt(500_000, 20_000)] },
+      FLAT,
+      4
+    )
+    expect(r.baseline).toEqual(r.projection)
+    // Control: the baseline really carries the deduction (not two untouched series).
+    expect(r.baseline.map((b) => b.netIncome)).toEqual([960_000, 960_000, 1_180_000, 1_200_000])
+  })
+
+  it('a payment of 0 leaves the debt constant and deducts nothing', () => {
+    const r = calculateFinancialForecast(
+      { ...CURRENT_DATA, balanceAccounts: [debt(750_000, 0)] },
+      FLAT,
+      YEARS
+    )
+    const without = calculateFinancialForecast(CURRENT_DATA, FLAT, YEARS)
+    expect(r.projection.map((p) => p.debts)).toEqual([750_000, 750_000, 750_000])
+    expect(r.projection.map((p) => p.savings)).toEqual(without.projection.map((p) => p.savings))
+    expect(r.projection.map((p) => p.expenses)).toEqual(without.projection.map((p) => p.expenses))
+  })
+
+  it('a payment bigger than the debt pays only the debt in year 1, then nothing', () => {
+    // 1,000.00 owed, 500.00/mo = 6,000.00 a year: Y1 pays 1,000.00 only.
+    //   Y1 net 12,000 − 1,000 = 11,000.00; savings 12,000.00. Y2 net 12,000.00; savings 24,000.00.
+    const r = calculateFinancialForecast(
+      { ...CURRENT_DATA, balanceAccounts: [debt(100_000, 50_000)] },
+      FLAT,
+      2
+    )
+    expect(r.projection.map((p) => p.netIncome)).toEqual([1_100_000, 1_200_000])
+    expect(r.projection.map((p) => p.savings)).toEqual([1_200_000, 2_400_000])
+    expect(r.projection.map((p) => p.debts)).toEqual([0, 0])
+  })
+
+  it('normalises a weekly payment through the chokepoint before deducting it', () => {
+    // 50.00/week: round(5000 × 52/12) = 21667 a month, × 12 = 260,004 a year.
+    // Net 1,200,000 − 260,004 = 939,996.
+    const r = calculateFinancialForecast(
+      { ...CURRENT_DATA, balanceAccounts: [debt(1_000_000, 5_000, { frequency: 'weekly' })] },
+      FLAT,
+      1
+    )
+    expect(r.projection[0]?.netIncome).toBe(939_996)
+    expect(r.projection[0]?.debts).toBe(739_996)
+  })
+
+  it('does not grow the payment with the expense growth rate (D4: a fixed instalment)', () => {
+    // Expenses grow 10%: Y1 round(400000 × 1.1) = 440000/mo → 5,280,000 a year;
+    // Y2 round(400000 × 1.21) = 484000/mo → 5,808,000. The 2,400.00 payment stays flat.
+    const r = calculateFinancialForecast(
+      { ...CURRENT_DATA, balanceAccounts: [debt(1_000_000, 20_000)] },
+      { ...FLAT, expenseGrowthRate: 0.1 },
+      2
+    )
+    expect(r.projection.map((p) => p.expenses)).toEqual([5_520_000, 6_048_000])
+    // 6,000,000 − 5,520,000 = 480,000; 6,000,000 − 6,048,000 = −48,000.
+    expect(r.projection.map((p) => p.netIncome)).toEqual([480_000, -48_000])
+  })
+
+  it('counts only the unflagged debts; a corrupt flag counts as unflagged (strict === true)', () => {
+    // Flagged 200.00/mo takes nothing; unflagged 100.00/mo takes 1,200.00 a year;
+    // the string 'true' is not `true`, so its 50.00/mo (600.00 a year) is taken too.
+    // Net 12,000 − 1,200 − 600 = 10,200.00.
+    const r = calculateFinancialForecast(
+      {
+        ...CURRENT_DATA,
+        balanceAccounts: [
+          debt(1_000_000, 20_000, { contributionRecordedAsExpense: true }),
+          debt(1_000_000, 10_000),
+          debt(1_000_000, 5_000, { contributionRecordedAsExpense: 'true' as never }),
+        ],
+      },
+      FLAT,
+      1
+    )
+    expect(r.projection[0]?.netIncome).toBe(1_020_000)
+    // Every row still falls by its payment, flagged or not.
+    expect(r.projection[0]?.balanceAccounts).toEqual([760_000, 880_000, 940_000])
+  })
+
+  it('keeps the 100.1 invariant with an unflagged debt: rows + unassigned === savings', () => {
+    const r = calculateFinancialForecast(
+      {
+        ...CURRENT_DATA,
+        balanceAccounts: [debt(500_000, 20_000)],
+        savingsAccounts: [
+          { balance: 60_000, monthlyContribution: 20_000 },
+          { balance: 40_000, monthlyContribution: 0 },
+        ],
+      },
+      FLAT,
+      5
+    )
+    for (const p of r.projection) {
+      const rowSum = (p.savingsAccounts ?? []).reduce((sum, b) => sum + b, 0)
+      expect(rowSum + (p.unallocatedSavings ?? Number.NaN), `year ${p.year}`).toBe(p.savings)
+    }
+    // Y1 by hand: 1,200,000 − 240,000 paid − 240,000 to the savings rows = 720,000.
+    // Y3 (payoff, 20,000 paid): 720,000 + 720,000 + (1,200,000 − 20,000 − 240,000).
+    expect(r.projection.map((p) => p.unallocatedSavings)).toEqual([
+      720_000, 1_440_000, 2_380_000, 3_340_000, 4_300_000,
+    ])
+  })
+
+  it('a moved payment ends where the old expense line did until payoff, then savings rise by the payment every year (AC-5)', () => {
+    // (a) pre-story: the payment is an Expenses line and the debt is flagged (D4).
+    // (b) story 102.2: the expense line is gone and the debt row pays (unflagged).
+    const before = calculateFinancialForecast(
+      {
+        ...CURRENT_DATA,
+        expenses: [...CURRENT_DATA.expenses, { amount: 20_000, frequency: 'monthly' as const }],
+        balanceAccounts: [debt(500_000, 20_000, { contributionRecordedAsExpense: true })],
+      },
+      FLAT,
+      5
+    )
+    const after = calculateFinancialForecast(
+      { ...CURRENT_DATA, balanceAccounts: [debt(500_000, 20_000)] },
+      FLAT,
+      5
+    )
+    // Same debt path either way.
+    expect(after.projection.map((p) => p.debts)).toEqual(before.projection.map((p) => p.debts))
+    // Years 1-2 (owed all year): identical money.
+    for (const i of [0, 1]) {
+      expect(after.projection[i]?.netIncome).toBe(before.projection[i]?.netIncome)
+      expect(after.projection[i]?.expenses).toBe(before.projection[i]?.expenses)
+      expect(after.projection[i]?.savings).toBe(before.projection[i]?.savings)
+    }
+    // Payoff year 3: only the 200.00 remainder was paid, so 2,200.00 more is kept.
+    const diff = (i: number) =>
+      (after.projection[i]?.savings ?? Number.NaN) - (before.projection[i]?.savings ?? Number.NaN)
+    expect(diff(2)).toBe(220_000)
+    // Every later year keeps the whole 2,400.00 payment: net income higher by
+    // exactly P, and the savings gap widens by P a year.
+    for (const i of [3, 4]) {
+      expect(
+        (after.projection[i]?.netIncome ?? Number.NaN) -
+          (before.projection[i]?.netIncome ?? Number.NaN)
+      ).toBe(240_000)
+      expect(diff(i) - diff(i - 1)).toBe(240_000)
+    }
+  })
+})
+
 describe('calculateFinancialForecast — per-investment annual return (100.3)', () => {
   /** One investment row, no contribution, at `rate`; `investments` matches. */
   function oneRow(balance: number, annualReturn: unknown, contribution = 0) {
@@ -1333,7 +1545,14 @@ describe('calculateFinancialForecast — per-investment annual return (100.3)', 
             contributionRecordedAsExpense: true,
             annualReturn: 0.07,
           },
-          { type: 'debt', balance: 500_000, contribution: 20_000, frequency: 'monthly' },
+          // Flagged (story 102.2): the 100.2 D4 math these figures were pinned under.
+          {
+            type: 'debt',
+            balance: 500_000,
+            contribution: 20_000,
+            frequency: 'monthly',
+            contributionRecordedAsExpense: true,
+          },
         ],
       },
       FLAT,
