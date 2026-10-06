@@ -1,8 +1,18 @@
-import { act, fireEvent, renderWithRouter, screen, userEvent, waitFor, within } from '@/test/utils'
+import {
+  act,
+  fireEvent,
+  render,
+  renderWithRouter,
+  screen,
+  userEvent,
+  waitFor,
+  within,
+} from '@/test/utils'
 import {
   RouterProvider,
   createMemoryHistory,
   createRootRoute,
+  createRoute,
   createRouter,
 } from '@tanstack/react-router'
 import { renderToString } from 'react-dom/server'
@@ -13,8 +23,12 @@ import {
   type SessionSeed,
   SessionSeedProvider,
 } from '../../../context/session-seed'
+import {
+  getVerifiedSession,
+  resetVerifiedSessionForTests,
+} from '../../../lib/session/verifiedSession'
 import { AuthIndicator } from '../../auth/auth-indicator'
-import { GlobalNav } from '../GlobalNav'
+import { GlobalNav, PREMIUM_NAV_ROUTES } from '../GlobalNav'
 
 /**
  * Nav + account row composition (story 19-3; updated for the 31.4 CSS switch).
@@ -83,6 +97,9 @@ beforeEach(() => {
 afterEach(() => {
   global.fetch = originalFetch
   vi.restoreAllMocks()
+  // Story 99.1: `AuthIndicator` writes its verified answer to a module store
+  // the nav reads; without this a paid answer leaks into the next test's nav.
+  resetVerifiedSessionForTests()
 })
 
 /** Mirror the `__root.tsx` desktop row: nav leading, account indicator trailing. */
@@ -579,6 +596,321 @@ describe('Nav + account row, the per-width Settings route (story 96.3)', () => {
         // Both signed-in >= 640px routes: the open panel's row and the JS-off gear.
         expect(desktop).toHaveLength(2)
       }
+    }
+  )
+})
+
+/**
+ * Story 99.1 (FR160): the nav follows the SAME client-verified answer that puts
+ * the Premium marker in the account row.
+ *
+ * The reported defect: a new buyer signs in and the header shows "Premium" while
+ * the nav has no premium destinations until a manual reload. The two read the
+ * tier differently: `AuthIndicator` re-asks `/api/auth/me` on mount and on
+ * every navigation, `GlobalNav` read the SSR seed once. Any document whose seed
+ * is signed-out (or null) under a premium session cookie therefore showed the
+ * split: a service-worker-cached signed-out document (story 99.1's C1), a tab
+ * left open from before sign-in (C2), or a resolver error (C3).
+ *
+ * Asserted on hrefs inside the Primary landmark (anchor presence, not CSS
+ * visibility: jsdom applies no stylesheet and a closed `<details>` still counts).
+ */
+describe('Nav + account row, the nav follows the verified session (story 99.1)', () => {
+  const PAID = { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'active' }
+  type Me = typeof PAID
+
+  /** `/api/auth/me` answers per call; `delayMs` puts the answer on a real timer. */
+  function stubMe(answer: () => Response | Promise<Response>, delayMs = 0) {
+    const me = vi.fn(answer)
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      if (String(input).includes('/api/auth/me')) {
+        if (delayMs === 0) return Promise.resolve(me())
+        return new Promise<Response>((resolve) => setTimeout(() => resolve(me()), delayMs))
+      }
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    }) as typeof global.fetch
+    return me
+  }
+  const meIs = (user: Me | null) => () => new Response(JSON.stringify({ user }), { status: 200 })
+
+  /**
+   * An answer held back until `release()`, so a test can assert the FIRST paint
+   * (the seed's) before the answer lands. Without it a zero-delay stub can
+   * resolve before `findByRole` returns, and the "first paint" read is racy.
+   */
+  function held(answer: () => Response) {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const respond = async () => {
+      await gate
+      return answer()
+    }
+    return { respond, release: () => release() }
+  }
+
+  function Row({ seed }: { seed: SessionSeed | null }) {
+    return (
+      <SessionSeedProvider seed={seed}>
+        <div className="sm:mx-auto sm:flex sm:max-w-6xl sm:items-center sm:justify-between">
+          <GlobalNav />
+          <AuthIndicator />
+        </div>
+      </SessionSeedProvider>
+    )
+  }
+
+  /** A router with real child routes, so a client navigation changes `pathname`. */
+  function renderNavigable(seed: SessionSeed | null, path = '/') {
+    const rootRoute = createRootRoute({ component: () => <Row seed={seed} /> })
+    const router = createRouter({
+      routeTree: rootRoute.addChildren(
+        ['/', '/income', '/login'].map((p) =>
+          createRoute({ getParentRoute: () => rootRoute, path: p, component: () => null })
+        )
+      ),
+      history: createMemoryHistory({ initialEntries: [path] }),
+    })
+    const result = render(<RouterProvider router={router} />)
+    return { router, ...result }
+  }
+
+  const premiumHrefsInNav = () => {
+    const nav = screen.getByRole('navigation', { name: /primary/i })
+    return PREMIUM_NAV_ROUTES.filter((href) => nav.querySelector(`a[href="${href}"]`) !== null)
+  }
+  const premiumMarker = () =>
+    within(screen.getByRole('status', { name: /account status/i })).queryByText('Premium', {
+      exact: true,
+    })
+
+  it('names the four premium destinations (guards the assertions below against a vacuous list)', () => {
+    expect([...PREMIUM_NAV_ROUTES].sort()).toEqual(
+      ['/categories', '/financial-summary', '/forecasting', '/profiles'].sort()
+    )
+  })
+
+  it.each([
+    { name: 'a signed-out seed (the C1 cached document)', seed: SIGNED_OUT_SEED, delayMs: 0 },
+    { name: 'a null seed (the C3 resolver error)', seed: null, delayMs: 0 },
+    { name: 'a signed-out seed, slow answer', seed: SIGNED_OUT_SEED, delayMs: 50 },
+    { name: 'a null seed, slow answer', seed: null, delayMs: 50 },
+  ] as const)(
+    '$name + a premium /api/auth/me: the premium destinations appear',
+    async ({ seed, delayMs }) => {
+      const answer = held(meIs(PAID))
+      stubMe(answer.respond, delayMs)
+      renderNavigable(seed)
+
+      await screen.findByRole('navigation', { name: /primary/i })
+      // First paint is the seed's answer: free. (The answer is held until here.)
+      expect(premiumHrefsInNav()).toEqual([])
+      answer.release()
+      // Wait for the POST-fetch state: the marker only appears once the answer lands.
+      await waitFor(() => expect(premiumMarker()).not.toBeNull())
+      expect(premiumHrefsInNav()).toEqual([...PREMIUM_NAV_ROUTES])
+    }
+  )
+
+  // AC 3: the marker and the destinations come from the SAME answer, with no
+  // observable state in between. A MutationObserver callback runs at every
+  // microtask checkpoint after a DOM change, so a state "marker shown, nav still
+  // free" that survived even one checkpoint (let alone a paint) is recorded.
+  it.each([
+    { name: 'signed-out seed', seed: SIGNED_OUT_SEED },
+    { name: 'null seed', seed: null },
+  ] as const)(
+    '$name: the Premium marker and the premium destinations land together',
+    async ({ seed }) => {
+      const answer = held(meIs(PAID))
+      stubMe(answer.respond)
+      const { container } = renderNavigable(seed)
+      await screen.findByRole('navigation', { name: /primary/i })
+      const split: string[] = []
+      const observer = new MutationObserver(() => {
+        const marker = premiumMarker() !== null
+        const hrefs = premiumHrefsInNav().length
+        if (marker !== (hrefs === PREMIUM_NAV_ROUTES.length)) {
+          split.push(`marker=${marker} premiumHrefs=${hrefs}`)
+        }
+      })
+      observer.observe(container, { childList: true, subtree: true, characterData: true })
+      answer.release()
+      await waitFor(() => expect(premiumMarker()).not.toBeNull())
+      observer.disconnect()
+      expect(premiumHrefsInNav()).toEqual([...PREMIUM_NAV_ROUTES])
+      expect(split, 'the header showed Premium with the free nav (or the reverse)').toEqual([])
+    }
+  )
+
+  it('a tab open from before sign-in (C2): the premium answer arrives on a client navigation', async () => {
+    let signedIn = false
+    const me = stubMe(() => meIs(signedIn ? PAID : null)())
+    const { router } = renderNavigable(SIGNED_OUT_SEED)
+
+    await screen.findByRole('link', { name: /sign in/i })
+    await waitFor(() => expect(me).toHaveBeenCalledTimes(1))
+    expect(premiumHrefsInNav()).toEqual([])
+
+    // The session cookie now exists (signed in from another tab); this tab
+    // navigates on the client, so its document and seed stay signed out.
+    signedIn = true
+    await act(async () => {
+      await router.navigate({ to: '/income' })
+    })
+    await waitFor(() => expect(premiumMarker()).not.toBeNull())
+    expect(me).toHaveBeenCalledTimes(2)
+    expect(premiumHrefsInNav()).toEqual([...PREMIUM_NAV_ROUTES])
+  })
+
+  /** Let the indicator's fetch chain (fetch → json → setState) run to the end. */
+  const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve, 30)))
+
+  const ENTITLED_SEED: SessionSeed = { isAuthenticated: true, ...PAID } as SessionSeed
+
+  // AC 4 (decision D2): only a 200 with a parseable body is an answer.
+  it.each([
+    { name: 'a 503', answer: () => new Response('{}', { status: 503 }) },
+    {
+      name: 'a network error',
+      answer: () => {
+        throw new TypeError('Failed to fetch')
+      },
+    },
+    { name: 'a 200 that is not JSON', answer: () => new Response('<html>', { status: 200 }) },
+    { name: 'a 200 with no user key', answer: () => new Response('{}', { status: 200 }) },
+    {
+      name: 'a 200 whose user has no email',
+      answer: () => new Response(JSON.stringify({ user: { ...PAID, email: '' } }), { status: 200 }),
+    },
+  ])(
+    '$name is not an answer: the nav keeps what the seed gave it, in both tiers',
+    async ({ answer }) => {
+      for (const [seed, expected] of [
+        [SIGNED_OUT_SEED, []],
+        [null, []],
+        [ENTITLED_SEED, [...PREMIUM_NAV_ROUTES]],
+      ] as const) {
+        const me = stubMe(answer)
+        const { unmount } = renderNavigable(seed)
+        await waitFor(() => expect(me).toHaveBeenCalledTimes(1))
+        await settle()
+        // Positive control: the answer really landed (the strip shows it as signed out).
+        await screen.findByRole('link', { name: /sign in/i })
+        expect(getVerifiedSession(), 'an unknown answer was recorded').toBeUndefined()
+        expect(premiumHrefsInNav()).toEqual(expected)
+        unmount()
+        resetVerifiedSessionForTests()
+      }
+    }
+  )
+
+  // AC 4: a definitive answer that is not premium never entitles.
+  it.each(['free', 'past_due', 'canceled'])(
+    'a definitive %s answer over a signed-out seed never shows the premium destinations',
+    async (status) => {
+      const me = stubMe(meIs({ ...PAID, subscriptionStatus: status }))
+      renderNavigable(SIGNED_OUT_SEED)
+      await screen.findByRole('button', { name: 'Account menu' })
+      expect(me).toHaveBeenCalledTimes(1)
+      expect(getVerifiedSession()?.subscriptionStatus).toBe(status)
+      expect(premiumMarker()).toBeNull()
+      expect(premiumHrefsInNav()).toEqual([])
+    }
+  )
+
+  // Decision D1 (Lucas 2026-10-05): symmetric. A definitive not-entitled answer
+  // over an entitled seed drops the premium destinations.
+  it.each([
+    { name: 'signed out', user: null },
+    { name: 'free', user: { ...PAID, subscriptionStatus: 'free' } },
+  ])(
+    'an entitled seed + a definitive $name answer: the premium destinations go',
+    async ({ user }) => {
+      const answer = held(meIs(user))
+      stubMe(answer.respond)
+      renderNavigable(ENTITLED_SEED)
+      await screen.findByRole('navigation', { name: /primary/i })
+      expect(premiumHrefsInNav(), 'first paint is the seed').toEqual([...PREMIUM_NAV_ROUTES])
+      answer.release()
+      await waitFor(() => expect(premiumHrefsInNav()).toEqual([]))
+      expect(premiumMarker()).toBeNull()
+    }
+  )
+
+  // Review 99.1: an unknown answer AFTER a definitive one keeps the last
+  // definitive answer (the store is not cleared), so the nav stays premium while
+  // the strip collapses the unknown to "Sign in". Pins the shipped behaviour;
+  // whether unknown should clear the store instead is a decision for Lucas.
+  it('a definitive premium answer, then a 503 on the next navigation: the nav keeps the last answer', async () => {
+    let fail = false
+    const me = stubMe(() => (fail ? new Response('{}', { status: 503 }) : meIs(PAID)()))
+    const { router } = renderNavigable(SIGNED_OUT_SEED)
+    await waitFor(() => expect(premiumMarker()).not.toBeNull())
+    expect(premiumHrefsInNav()).toEqual([...PREMIUM_NAV_ROUTES])
+
+    fail = true
+    await act(async () => {
+      await router.navigate({ to: '/income' })
+    })
+    await waitFor(() => expect(me).toHaveBeenCalledTimes(2))
+    await screen.findByRole('link', { name: /sign in/i })
+    expect(getVerifiedSession()?.subscriptionStatus).toBe('active')
+    expect(premiumHrefsInNav()).toEqual([...PREMIUM_NAV_ROUTES])
+  })
+
+  it('a null seed with no answer yet is the free nav', async () => {
+    stubMe(() => new Promise<Response>(() => {}))
+    renderNavigable(null)
+    await screen.findByRole('navigation', { name: /primary/i })
+    await settle()
+    expect(getVerifiedSession()).toBeUndefined()
+    expect(premiumHrefsInNav()).toEqual([])
+  })
+
+  // AC 5: when seed and answer AGREE (every normal page load) the nav's anchors
+  // never change. A MutationObserver records every anchor added or removed
+  // inside the nav from the first commit until after the answer has landed.
+  it.each([
+    { name: 'paid seed + paid answer', seed: ENTITLED_SEED, user: PAID, premium: 4 },
+    {
+      name: 'free seed + free answer',
+      seed: { isAuthenticated: true, ...PAID, subscriptionStatus: 'free' } as SessionSeed,
+      user: { ...PAID, subscriptionStatus: 'free' },
+      premium: 0,
+    },
+    { name: 'signed-out seed + signed-out answer', seed: SIGNED_OUT_SEED, user: null, premium: 0 },
+  ])(
+    '$name: no anchor is added or removed over the fetch (the nav re-renders, its DOM does not change)',
+    async ({ seed, user, premium }) => {
+      const answer = held(meIs(user as Me | null))
+      const me = stubMe(answer.respond)
+      renderNavigable(seed)
+      const nav = await screen.findByRole('navigation', { name: /primary/i })
+      const before = premiumHrefsInNav()
+      expect(before).toHaveLength(premium)
+
+      const anchorChanges: string[] = []
+      const observer = new MutationObserver((records) => {
+        for (const r of records) {
+          for (const n of [...r.addedNodes, ...r.removedNodes]) {
+            if (n instanceof Element && (n.matches('a') || n.querySelector('a'))) {
+              anchorChanges.push(n.outerHTML.slice(0, 80))
+            }
+          }
+        }
+      })
+      observer.observe(nav, { childList: true, subtree: true })
+      answer.release()
+      await waitFor(() => expect(me).toHaveBeenCalledTimes(1))
+      await settle()
+      // Positive control: the answer really landed and was recorded.
+      expect(getVerifiedSession(), 'the answer never reached the store').toBeDefined()
+      observer.disconnect()
+
+      expect(anchorChanges, 'the nav flipped although seed and answer agree').toEqual([])
+      expect(premiumHrefsInNav()).toEqual(before)
     }
   )
 })

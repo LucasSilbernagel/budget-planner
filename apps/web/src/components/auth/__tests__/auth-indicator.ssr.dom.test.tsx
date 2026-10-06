@@ -10,6 +10,10 @@ import { renderToString } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { type SessionSeed, SessionSeedProvider } from '../../../context/session-seed'
+import {
+  getVerifiedSession,
+  resetVerifiedSessionForTests,
+} from '../../../lib/session/verifiedSession'
 import { AuthIndicator } from '../auth-indicator'
 
 /**
@@ -316,5 +320,34 @@ describe('AuthIndicator — hydrating the signed-out strip on /login (story 41.3
     } finally {
       cleanup()
     }
+  })
+})
+
+/**
+ * Story 99.1 (AC 5): the verified-session store is a module singleton. On the
+ * server one instance serves EVERY request, so a write during a server render
+ * would leak one user's tier into the next user's nav. `AuthIndicator` writes it
+ * only from its post-mount effect, which `renderToString` never runs.
+ */
+describe('AuthIndicator — a server render never writes the verified session (story 99.1)', () => {
+  afterEach(() => {
+    resetVerifiedSessionForTests()
+  })
+
+  it.each([
+    ['signed out', SIGNED_OUT],
+    ['entitled', ENTITLED],
+  ] as const)('a %s server render leaves the store empty', async (_name, seed) => {
+    // A fetch that WOULD answer at once, so any write path reached during the
+    // render (or a microtask after it) has a definitive answer to write.
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify({ user: ENTITLED }), { status: 200 }))
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const { html } = await serverHtml(seed, '/')
+    expect(html).toContain('data-auth-indicator')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(fetchMock, 'the server render asked /api/auth/me').not.toHaveBeenCalled()
+    expect(getVerifiedSession()).toBeUndefined()
   })
 })

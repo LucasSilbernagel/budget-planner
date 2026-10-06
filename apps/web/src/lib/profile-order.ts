@@ -7,7 +7,9 @@
  * the store array: one selector covers every write path (local create, pulled
  * updates' remove-then-append in `applyOne`, reconcile's `setProfiles`, rehydrate
  * of a persisted blob), including future ones. The store ARRAY order, and the
- * `[0]` fallbacks that read it, are deliberately left alone (story 98.1 Dev Notes).
+ * `[0]` fallbacks that read it, are deliberately left alone (story 98.1 Dev Notes),
+ * except `removeProfile`'s next-active pick, which takes the oldest survivor so it
+ * matches the server's default repair (deferred-work follow-up to 98.1).
  *
  * ⚠️ Differs from `lib/ordering.ts`'s `sortByDisplayOrder` on purpose: a missing
  * or unparseable `createdAt` sorts FIRST here, not LAST. The bootstrap

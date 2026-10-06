@@ -81,6 +81,9 @@ const AUTH_DELAY_MS = Number(process.env.E2E_AUTH_DELAY_MS ?? 0)
  * before this helper existed was therefore measured beside a "Sign in" cluster.
  * That missed that a signed-in cluster (avatar + email + Premium pill) wrapped
  * the desktop row to 2-3 rows at 640-849px. Call BEFORE `page.goto`.
+ *
+ * ⚠️ Since story 99.1 the NAV follows that answer too: on `:5174` without this
+ * mock, the signed-out answer removes the premium nav entries the seed painted.
  */
 export async function mockSignedIn(
   page: Page,
