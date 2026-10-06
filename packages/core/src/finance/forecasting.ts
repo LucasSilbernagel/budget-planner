@@ -20,8 +20,8 @@ import { type Frequency, validateAmount } from './normalization'
  * ⚠️ THE UNIT BRIDGE OF THIS WHOLE MODULE. Read before touching either loop.
  *
  * Everything in `./netIncome` and `./normalization` speaks MONTHLY — a row's
- * frequency is folded into a monthly-normalized figure (`normalization.ts:27-30`:
- * `weekly: 52/12`, `annually: 1/12`), rounded per item. But an iteration of the
+ * frequency is folded into a monthly-normalized figure (`normalizeToMonthly`:
+ * `amount × periodsPerYear / 12`, story 105.1), rounded per item. But an iteration of the
  * loops below is a YEAR. Multiplying by this constant is what reconciles the two.
  *
  * ⚠️ Apply it to the RECURRING FLOW ONLY. `oneTimeEvents` amounts are already
@@ -303,8 +303,8 @@ const MAX_HALF_CENT_SNAP = 1e-6
  * Story 104.1 (FR172): `Math.round`, except that a value float error left within
  * a few ulps of an exact half cent is rounded as that half (toward +Infinity,
  * `Math.round`'s own rule, D4). The engine's five growth sites round here.
- * ⚠️ NOT `normalizeToMonthly` (`normalization.ts`), which still rounds bare and
- * misses biweekly halves (deferred-work, 104.1 review).
+ * `normalizeToMonthly` (`normalization.ts`) does not use it: since story 105.1 it
+ * multiplies by an integer periods-per-year before dividing, which is exact.
  *
  * Why: `100 × 1.015` is `101.49999999999999`, so bare `Math.round` gave 101 where
  * the decimal answer is 102 (RD1, 100.3 review: 8,415 of b in 0..1,999,999 at

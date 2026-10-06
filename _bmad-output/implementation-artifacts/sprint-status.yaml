@@ -1,4 +1,5 @@
 # generated: 2026-06-18
+# last_updated: 2026-10-06l (105.1 review -> done, epic 105 done; epic 106 (106.1) in dev.)
 # last_updated: 2026-10-06k (103.1 review -> done: patches fbf720f, screenshots 8c93a33; epics 103 + 104 done.)
 # last_updated: 2026-10-06j (104.1 review -> done: patches 5ddcb53, branch not pushed; 103.1 dev running.)
 # last_updated: 2026-10-06i (correct-course approved: epics 103 (FR171 negative debt) + 104 (FR172 forecast rounding) added; 103.1 + 104.1 created -> ready-for-dev, D-lists CONFIRMED by Lucas (all as recommended).)
@@ -1363,6 +1364,12 @@ development_status:
   epic-104: done  # DONE 2026-10-06 (104.1 reviewed, 5ddcb53, not pushed).  Added 2026-10-06 (approved) from sprint-change-proposal-2026-10-06-negative-debt-and-rounding.md (FR172)
   104-1-half-cents-round-the-same-way-in-every-forecast-year: done  # REVIEW 2026-10-06 (3 layers: RD-1 accepted+deferred, 5 patches 5ddcb53, 4 defer, 7 dismissed; core 1327); DEV 129e6a6 (branch story/104-1-forecast-half-cent-rounding, not pushed), gates green core 1321 web 5004 e2e 23, AC-3 0 / AC-4 170=170; deferred text in story, merge at close; CREATED 2026-10-06 at 583d84e; D1-D4 CONFIRMED by Lucas 2026-10-06; toPrecision(15) MEASURED worse at 1e13
   epic-104-retrospective: optional
+  epic-105: done  # DONE 2026-10-06 (105.1).  Added 2026-10-06 (approved) from sprint-change-proposal-2026-10-06-biweekly-normalize.md (FR173)
+  105-1-biweekly-amounts-convert-to-monthly-without-losing-a-cent: done  # REVIEW 2026-10-06 (0 decision, 2 comment patches 5d8e86e, 2 defer, 9 dismissed; compare 37523121802 green); DEV 9dd3b04 (branch story/105-1-biweekly-normalize, not pushed), core 1341, biweekly 120,989→0; CREATED 2026-10-06 at 313248b; D1-D3 CONFIRMED; dev launched
+  epic-105-retrospective: optional
+  epic-106: in-progress  # Added 2026-10-06 (approved) from sprint-change-proposal-2026-10-06-money-int32-bound.md (FR174)
+  106-1-a-money-amount-too-large-to-sync-is-refused-where-i-type-it: in-progress  # dev launched 2026-10-06; CREATED 2026-10-06 at e81db6d; D1-D3 CONFIRMED (cap int32)
+  epic-106-retrospective: optional
 
 action_items:
   - epic: 6

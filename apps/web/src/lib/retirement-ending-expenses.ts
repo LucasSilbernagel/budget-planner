@@ -70,13 +70,12 @@ export function isMarked(row: EndingExpenseRow): boolean {
  * ⚠️ Normalizes through core rather than summing `amount`, so an annual
  * insurance premium and a weekly commute are not added as if both were monthly.
  *
- * ⚠️ MEASURED, and it contradicts the documentation: core multiplies by the
- * EXACT fractions `52/12`, `26/12` and `1/12`
- * (`packages/core/src/finance/normalization.ts:27-30`), not by the rounded
- * 4.333 / 2.167 / 0.083 that `project-context.md` and this story's epic both
- * quote. `normalizeToMonthly` then `Math.round`s each item individually. A test
+ * ⚠️ MEASURED, and it contradicts the documentation: core does NOT use the
+ * rounded 4.333 / 2.167 / 0.083 that `project-context.md` and this story's epic
+ * both quote. Since story 105.1 `normalizeToMonthly` computes
+ * `Math.round(amount × periodsPerYear / 12)` (52, 26, 12, 1) per item. A test
  * that computes its expected figure from the rounded decimals is off by single
- * cents and looks like a real defect — do the arithmetic with the fractions.
+ * cents and looks like a real defect — do the arithmetic the same way.
  *
  * ⚠️⚠️ THE REUSE IS THE GUARD. `toNormalizableItems` filters on `isReadableRow`,
  * whose `typeof amount === 'number'` check is what stops a persisted STRING
