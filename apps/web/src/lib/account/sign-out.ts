@@ -32,9 +32,10 @@
  * `AuthIndicator`'s last definitive `/api/auth/me` answer
  * (`lib/session/verifiedSession.ts`), so after a client navigation the two
  * halves of the header agree. The document load stays the sign-out instrument
- * anyway, for the store-state reason above and for every OTHER seed consumer
- * (`usePremiumAccess`, the Overview and Settings gates), which still follow the
- * seed only.
+ * anyway, for the store-state reason above and for every OTHER seed consumer.
+ * (Since story 101.2 `usePremiumAccess` and the Overview and Settings gates
+ * follow that answer too; the Overview account notice, `PremiumCheckoutButton`
+ * and the store-hydration boundary still read the seed only.)
  */
 
 import { purgeAppShellCache } from '@/lib/pwa/app-shell-cache'

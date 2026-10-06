@@ -73,8 +73,14 @@ import { hasPremiumFeatures } from './access-statuses'
  * client-verified session (`lib/session/verifiedSession.ts`, written by
  * `AuthIndicator` from a definitive `/api/auth/me` answer) and follows it when it
  * disagrees with the seed. That is a second INPUT to this one predicate, not a
- * reactive seed read: the seed is still read once. The Overview and Settings
- * gates still follow the seed only (story 99.1, decision D4: out of scope).
+ * reactive seed read: the seed is still read once. ~~The Overview and Settings
+ * gates still follow the seed only (story 99.1, decision D4: out of scope).~~
+ * Since story 101.2 (FR168) the Overview and Settings gates do the same (seed
+ * for the first paint, then the verified answer; fail OPEN unchanged), and so
+ * does `usePremiumAccess` through `seedToStatus` (fail CLOSED unchanged). That
+ * narrows the "remaining gap" above: once the indicator has a definitive
+ * premium answer, the boxes unlock even when the hook's own null-seed check
+ * fails (decision DS1). Before any answer, the gap stands as described.
  */
 export function isEntitledSeed(seed: SessionSeed | null): boolean {
   return seed?.isAuthenticated === true && hasPremiumFeatures(seed.subscriptionStatus)
