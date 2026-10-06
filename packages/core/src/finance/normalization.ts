@@ -20,14 +20,30 @@ export interface NormalizableFinancialItem {
   frequency: Frequency
 }
 
-// Frequency multipliers for monthly normalization
-// These are the exact number of periods per month
-// Using precise fractions to avoid floating-point accumulation errors
+// Frequency multipliers for monthly normalization: periods per month.
+// ⚠️ These are NOT exact in float (`26 / 12` is 2.1666666666666665), so
+// `normalizeToMonthly` does not multiply by them: it uses `PERIODS_PER_YEAR`
+// below. They stay for `getNormalizationMultiplier` (sort ranking) and
+// `denormalizeFromMonthly` (measured exact, story 105.1 D2).
 const FREQUENCY_MULTIPLIERS: Record<Frequency, number> = {
   weekly: 52 / 12, // 52 weeks / 12 months = 4.333333...
   biweekly: 26 / 12, // 26 biweekly periods / 12 months = 2.166666...
   monthly: 1, // 1 month / 12 months = 1/12, but we're normalizing TO monthly, so multiply by 1
   annually: 1 / 12, // 1 / 12 = 0.083333...
+}
+
+/**
+ * Story 105.1 (FR173): periods per YEAR, an integer, so `normalizeToMonthly` can
+ * multiply exactly and divide once. `amount × 26 / 12` rounds an exact half cent
+ * the same way at every amount; `amount × (26 / 12)` did not (27¢ biweekly gave
+ * 58.49999999999999 → 58, not 59; 120,989 misses in 0..1,999,999, MEASURED).
+ * `amount × 52` stays below 2^53 up to the money bound (MAX_SAFE_INTEGER / 100).
+ */
+const PERIODS_PER_YEAR: Record<Frequency, number> = {
+  weekly: 52,
+  biweekly: 26,
+  monthly: 12,
+  annually: 1,
 }
 
 /**
@@ -61,9 +77,8 @@ export function validateAmount(amount: unknown): asserts amount is number {
 export function normalizeToMonthly(amount: unknown, frequency: unknown): number {
   validateAmount(amount)
   validateFrequency(frequency)
-  const multiplier = FREQUENCY_MULTIPLIERS[frequency]
-  const normalized = amount * multiplier
-  return Math.round(normalized)
+  // Multiply first, divide once (story 105.1): see `PERIODS_PER_YEAR`.
+  return Math.round((amount * PERIODS_PER_YEAR[frequency]) / 12)
 }
 
 /**

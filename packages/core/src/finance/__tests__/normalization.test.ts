@@ -81,6 +81,14 @@ describe('Frequency Normalization Engine', () => {
       expect(result).toBe(EXPECTED_MONTHLY.BIWEEKLY)
     })
 
+    it('normalizes 27¢ biweekly to 59, the exact half rounded up (Story 105.1, AC-2)', () => {
+      // Why the rule multiplies before it divides: `26 / 12` is not exact in
+      // float, so the old `27 * (26 / 12)` lands just BELOW the exact 58.5 and
+      // `Math.round` gave 58. `(27 * 26) / 12` is exactly 58.5.
+      expect(27 * (26 / 12)).toBe(58.49999999999999)
+      expect(normalizeToMonthly(27, 'biweekly')).toBe(59)
+    })
+
     it('should normalize monthly $500 to monthly (unchanged = 50000 cents)', () => {
       const result = normalizeToMonthly(TEST_AMOUNTS.MONTHLY, 'monthly')
       expect(result).toBe(EXPECTED_MONTHLY.MONTHLY)
