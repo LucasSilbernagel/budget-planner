@@ -1,4 +1,6 @@
 # generated: 2026-06-18
+# last_updated: 2026-10-06h (102.2 review -> done: patches b64a7b0 + screenshots 563e65f, gates green 5m58s; epic-102 stories all done, open PR next.)
+# last_updated: 2026-10-06g (102.2 in-progress -> review: gates green, screenshots re-baselined 5ff046b, compare 27/27.)
 # last_updated: 2026-10-06f (102.2 ready-for-dev -> in-progress, dev-story started.)
 # last_updated: 2026-10-06e (102.2 created -> ready-for-dev; D1-D10 CONFIRMED by Lucas.)
 # last_updated: 2026-10-06d (102.1 review -> done: 3 Fable layers, 8 patches applied, gates green 5m30s; 102.2 next.)
@@ -1348,9 +1350,9 @@ development_status:
   101-1-a-slow-network-never-shows-me-a-page-from-another-session: done  # DEV 1b32e4b + REVIEW fee0638 2026-10-05 (gates green; spike passed); CREATED 2026-10-05 at 2ca9896; D1-D7 CONFIRMED
   101-2-premium-gates-follow-my-verified-session-like-the-nav: done  # DEV eafb191 + REVIEW 52fc2de 2026-10-05 (gates green, web 4828); CREATED 2026-10-05 at 2ca9896; DS1-DS5 CONFIRMED; cuttable (Q5)
   epic-101-retrospective: optional
-  epic-102: in-progress  # Added 2026-10-06 (approved) from sprint-change-proposal-2026-10-06-debt-payment-link.md (FR169-170)
+  epic-102: done  # DONE 2026-10-06 (102.1 #49, 102.2 review done). Added 2026-10-06 (approved) from sprint-change-proposal-2026-10-06-debt-payment-link.md (FR169-170)
   102-1-i-link-a-debt-to-the-expense-that-pays-it: done  # DEV 04f211a + screenshots 7ec99f8 + REVIEW (Fable x3: 1 decision kept D7, 8 patches, 4 defer, 7 dismissed) 2026-10-06; CREATED 2026-10-06 at 78be545; D1-D10 CONFIRMED by Lucas 2026-10-06
-  102-2-my-forecast-stops-paying-a-debt-once-its-paid-off: in-progress  # DEV started 2026-10-06 on story/102-2-debt-payoff-stop; CREATED 2026-10-06 at f6f1e96; D1-D10 CONFIRMED by Lucas 2026-10-06
+  102-2-my-forecast-stops-paying-a-debt-once-its-paid-off: done  # REVIEW (3 layers: decision 1 hide flag on labelled debt, 8 patches b64a7b0, 1 defer, 11 dismissed; screenshots 563e65f, compare 27/27, gates green 5m58s) 2026-10-06; DEV 73316f1 + screenshots 5ff046b (compare 27/27), gates green 6m10s, 2026-10-06; CREATED 2026-10-06 at f6f1e96; D1-D10 CONFIRMED by Lucas 2026-10-06
   epic-102-retrospective: optional
 
 action_items:
