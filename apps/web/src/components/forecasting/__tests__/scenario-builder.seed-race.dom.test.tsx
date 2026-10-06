@@ -198,6 +198,32 @@ describe('edits made while the seed is still pending survive it', () => {
     expect(within(balances).getAllByRole('button', { name: /^Remove / })).toHaveLength(1)
   })
 
+  /**
+   * Story 100.3: an annual return typed on a row added before the seed survives
+   * it too. No new touched flag: the rate edit goes through the same
+   * `editBalanceAccounts` that marks the list touched.
+   */
+  it('keeps an annual return typed on a row added before the seed (story 100.3)', () => {
+    const { rerender } = render(<ScenarioBuilder onSave={onSave} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Add Balance' }))
+    const field = screen.getByLabelText('Annual return for New Investment') as HTMLInputElement
+    expect(field).toHaveValue('6.00%')
+    field.focus()
+    fireEvent.change(field, { target: { value: '3.5' } })
+
+    landSeed(rerender)
+
+    // The seed landed (positive control) ...
+    expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue(3456)
+    // ... the rate field is the same node, focused, with the typed text ...
+    expect(screen.getByLabelText('Annual return for New Investment')).toBe(field)
+    expect(document.activeElement).toBe(field)
+    expect(field).toHaveValue('3.5')
+    // ... and the store's Index fund (seeded at 6.00%) was not added beside it.
+    expect(screen.queryByLabelText('Annual return for Index fund')).toBeNull()
+  })
+
   it('keeps income rows the user added and edited instead of replacing them', () => {
     const { rerender } = render(<ScenarioBuilder onSave={onSave} />)
 

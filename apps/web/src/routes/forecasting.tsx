@@ -111,6 +111,11 @@ export interface SavedSavingsAccount {
  * One what-if investment or debt row as a saved forecast stores it (story
  * 100.2). Money in cents; `balance` is a positive magnitude for both types and
  * `contribution` is the amount at `frequency` cadence.
+ *
+ * `annualReturn` (story 100.3, version 4) is a decimal (0.06 = 6%), written on
+ * INVESTMENT rows only. Absent on every v1-v3 row and on every debt row; the
+ * builder then uses `DEFAULT_INVESTMENT_RETURN` (6%, D3), so a forecast saved
+ * before 100.3 reopens lower than it was saved (computed at 7%).
  */
 export interface SavedBalanceAccount {
   name: string
@@ -119,6 +124,8 @@ export interface SavedBalanceAccount {
   contribution: number
   frequency: Frequency
   contributionRecordedAsExpense: boolean
+  /** Investment rows saved since story 100.3 (version 4) only. */
+  annualReturn?: number
 }
 
 /**
@@ -133,7 +140,8 @@ export interface SavedBalanceAccount {
  * beside `balanceAccounts` (story 100.2) as the INVESTMENT rows' sum, with the
  * same rows-win rule. (An older client that reads only `investments` reopens a v3
  * forecast without its debts and contributions; its starting investments are
- * still right.)
+ * still right.) Since story 100.3 (version 4) each investment row also carries
+ * its own `annualReturn`.
  */
 export interface ScenarioInputs {
   savings: number
@@ -204,6 +212,11 @@ function savedSavingsAccount(entry: unknown): SavedSavingsAccount {
  * unknown frequency `monthly`, and the flag is kept only `=== true` on an
  * investment. Returns `null` for a row that is neither an investment nor a debt:
  * its sign is unknowable, so it is DROPPED rather than guessed.
+ *
+ * `annualReturn` (story 100.3): kept on an investment row when it is a FINITE
+ * number, even outside −100%..100% (D9: the builder flags it, refuse not clamp);
+ * omitted otherwise (absent, `null`, a string), so the builder's default applies
+ * (D3). Never kept on a debt row (D8). The builder coerces the same way on its own.
  */
 function savedBalanceAccount(entry: unknown): SavedBalanceAccount | null {
   const record =
@@ -221,6 +234,11 @@ function savedBalanceAccount(entry: unknown): SavedBalanceAccount | null {
     frequency: isKnownFrequency(frequency) ? frequency : 'monthly',
     contributionRecordedAsExpense:
       type === 'investment' && record['contributionRecordedAsExpense'] === true,
+    ...(type === 'investment' &&
+    typeof record['annualReturn'] === 'number' &&
+    Number.isFinite(record['annualReturn'])
+      ? { annualReturn: record['annualReturn'] }
+      : {}),
   }
 }
 

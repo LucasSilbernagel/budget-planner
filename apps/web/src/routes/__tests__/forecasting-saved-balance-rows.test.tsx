@@ -1,5 +1,8 @@
 import { renderWithRouter, screen } from '@/test/utils'
-import { calculateFinancialForecast as realForecast } from '@budget-planner/core'
+import {
+  DEFAULT_INVESTMENT_RETURN,
+  calculateFinancialForecast as realForecast,
+} from '@budget-planner/core'
 import { fireEvent, waitFor, within } from '@testing-library/react'
 import type React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -200,6 +203,8 @@ describe('a v3 forecast reloads its rows exactly (AC-13)', () => {
       ['ISA', 'investment', 2000, 1200, 'annually', false],
     ])
     expect(call.data.investments).toBe(1_200_001)
+    // Story 100.3: a v3 row saved no rate, so each investment runs at 6% (D3);
+    // the debt carries none.
     expect(call.data.balanceAccounts).toEqual([
       {
         type: 'investment',
@@ -207,6 +212,7 @@ describe('a v3 forecast reloads its rows exactly (AC-13)', () => {
         contribution: 25_000,
         frequency: 'biweekly',
         contributionRecordedAsExpense: true,
+        annualReturn: 0.06,
       },
       {
         type: 'debt',
@@ -221,30 +227,48 @@ describe('a v3 forecast reloads its rows exactly (AC-13)', () => {
         contribution: 120_000,
         frequency: 'annually',
         contributionRecordedAsExpense: false,
+        annualReturn: 0.06,
       },
     ])
+    expect(screen.getByLabelText('Annual return for Pension')).toHaveValue('6.00%')
+    expect(screen.getByLabelText('Annual return for ISA')).toHaveValue('6.00%')
+    expect(screen.queryByLabelText('Annual return for Car loan')).toBeNull()
     // The debt counts against the start: 0 + 1200001 − 500000.
     expect(call.result.summary.startingNetWorth).toBe(700_001)
     expect(screen.queryByDisplayValue('Live store row')).toBeNull()
   })
 })
 
-describe('a v1/v2 forecast reopens with the figures it had (AC-13)', () => {
+/**
+ * ⚠️ RE-PINNED by story 100.3 (D3). Until then a v1/v2 forecast reopened with
+ * EXACTLY the figures it had (its single Investments row compounded at the old
+ * 7%). Under D3 a forecast saved without rates reloads at 6%, so it now reopens
+ * LOWER than it was saved, by design (Lucas, 2026-10-05). The row itself is
+ * unchanged; the figures are re-derived by hand at 6%.
+ */
+describe('a v1/v2 forecast reopens as one Investments row, at 6% (AC-13; 100.3 D3)', () => {
   for (const version of [1, 2]) {
-    it(`v${version}: becomes ONE Investments row, and projects exactly as before the story`, async () => {
+    it(`v${version}: becomes ONE Investments row at 6.00%, and projects LOWER than at the old 7%`, async () => {
       const call = await loadPlan({ savings: 123_400, investments: 50_000, years: 7 }, version)
 
       expect(rows()).toEqual([['Investments', 'investment', 500, 0, 'monthly', false]])
-      // What the page computed before story 100.2: the same inputs, no balance rows.
-      const before = realForecast(
+      expect(screen.getByLabelText('Annual return for Investments')).toHaveValue('6.00%')
+      // BY HAND at 6%, from 500.00: 530.00, 561.80, round(595.508) = 595.51,
+      // round(631.2406) = 631.24, round(669.1144) = 669.11, round(709.2566) =
+      // 709.26, round(751.8156) = 751.82.
+      expect(call.result.projection.map((p) => p.investments)).toEqual([
+        53_000, 56_180, 59_551, 63_124, 66_911, 70_926, 75_182,
+      ])
+      // Savings: 1,234.00 + 7 × 60,000.00 = 421,234.00. Ending: + 751.82.
+      expect(call.result.summary.startingNetWorth).toBe(173_400)
+      expect(call.result.summary.endingNetWorth).toBe(42_198_582)
+      // A relation, not a figure: lower than the no-rows (7%) call it matched in 100.2.
+      const atSevenPercent = realForecast(
         { income: INCOME, expenses: [], savings: 123_400, investments: 50_000 },
         { ...SCENARIO, newIncome: INCOME, newExpenses: [], oneTimeEvents: [] },
         7
       )
-      expect(call.result.summary).toEqual(before.summary)
-      expect(call.result.projection.map((p) => p.netWorth)).toEqual(
-        before.projection.map((p) => p.netWorth)
-      )
+      expect(call.result.summary.endingNetWorth).toBeLessThan(atSevenPercent.summary.endingNetWorth)
     })
   }
 
@@ -381,5 +405,112 @@ describe('corrupt saved rows (AC-14)', () => {
     )
     expect(call.data.investments).toBe(1_000)
     expect(call.result.summary.startingNetWorth).toBe(1_000)
+  })
+})
+
+/**
+ * Saved rates reload (story 100.3, AC-12, D3/D9), through the real mapper and the
+ * real builder. Presence decides, never `version`.
+ */
+describe('a v4 forecast reloads each investment row at its own rate (story 100.3)', () => {
+  const row = (name: string, extra: Record<string, unknown>, type = 'investment') => ({
+    name,
+    type,
+    balance: 100_000,
+    contribution: 0,
+    frequency: 'monthly',
+    contributionRecordedAsExpense: false,
+    ...extra,
+  })
+
+  it('keeps 0, a negative and a non-integer rate, shows them and runs them', async () => {
+    const call = await loadPlan(
+      {
+        savings: 0,
+        investments: 300_000,
+        years: 7,
+        balanceAccounts: [
+          row('Cash ISA', { annualReturn: 0 }),
+          row('Crypto', { annualReturn: -0.25 }),
+          row('Fund', { annualReturn: 0.055 }),
+        ],
+      },
+      4
+    )
+    expect(screen.getByLabelText('Annual return for Cash ISA')).toHaveValue('0.00%')
+    expect(screen.getByLabelText('Annual return for Crypto')).toHaveValue('-25.00%')
+    expect(screen.getByLabelText('Annual return for Fund')).toHaveValue('5.50%')
+    expect(
+      call.data.balanceAccounts?.map((a) => (a as { annualReturn?: number }).annualReturn)
+    ).toEqual([0, -0.25, 0.055])
+    expect(screen.queryByTestId('save-blocked-reason')).toBeNull()
+  })
+
+  it('a missing, null or non-number rate reloads at 6% (D3)', async () => {
+    const call = await loadPlan(
+      {
+        savings: 0,
+        investments: 300_000,
+        years: 7,
+        balanceAccounts: [
+          row('Missing', {}),
+          row('Null', { annualReturn: null }),
+          row('Text', { annualReturn: '0.09' }),
+        ],
+      },
+      4
+    )
+    for (const name of ['Missing', 'Null', 'Text']) {
+      expect(screen.getByLabelText(`Annual return for ${name}`)).toHaveValue('6.00%')
+    }
+    expect(
+      call.data.balanceAccounts?.map((a) => (a as { annualReturn?: number }).annualReturn)
+    ).toEqual([DEFAULT_INVESTMENT_RETURN, DEFAULT_INVESTMENT_RETURN, DEFAULT_INVESTMENT_RETURN])
+  })
+
+  it('keeps a FINITE rate outside −100%..100% and flags it from the first render (D9)', async () => {
+    fetchForecasts.mockResolvedValue({
+      success: true,
+      data: [
+        savedRow(
+          {
+            savings: 0,
+            investments: 100_000,
+            years: 7,
+            balanceAccounts: [row('Wild', { annualReturn: 1.5 })],
+          },
+          4
+        ),
+      ],
+    })
+    renderWithRouter(<ForecastingPage />)
+    fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Load Plan' }))
+    const field = await screen.findByLabelText('Annual return for Wild')
+    expect(field).toHaveValue('150.00%')
+    expect(field).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByText('Enter an annual return from -100% to 100%.')).toBeInTheDocument()
+    expect(screen.getByTestId('save-blocked-reason').textContent).toBe(
+      'Fix the highlighted fields to save'
+    )
+    // Held: past the debounce, no engine call ran with the loaded rows.
+    await new Promise((resolve) => setTimeout(resolve, 700))
+    expect(engineCalls.some((c) => c.data.investments === 100_000)).toBe(false)
+  })
+
+  it("ignores a debt row's saved rate: no field, and back to Investment it shows 6.00%", async () => {
+    const call = await loadPlan(
+      {
+        savings: 0,
+        investments: 0,
+        years: 7,
+        balanceAccounts: [row('Loan', { annualReturn: 0.2 }, 'debt')],
+      },
+      4
+    )
+    expect(screen.queryByLabelText('Annual return for Loan')).toBeNull()
+    expect(Object.keys(call.data.balanceAccounts?.[0] ?? {})).not.toContain('annualReturn')
+    fireEvent.change(screen.getByLabelText('Type for Loan'), { target: { value: 'investment' } })
+    expect(screen.getByLabelText('Annual return for Loan')).toHaveValue('6.00%')
   })
 })

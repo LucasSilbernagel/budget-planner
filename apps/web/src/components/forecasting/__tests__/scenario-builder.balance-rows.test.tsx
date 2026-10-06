@@ -5,7 +5,13 @@
  * Integration tests: the real builder, the real stores, the real engine and the
  * real currency store. Only the debounce is waited on. The one thing mocked is
  * `useIsInitialSyncPending`, as a pass-through spy, so the `nothingToSeed`
- * argument the builder hands it can be read (AC-6).
+ * argument the builder hands it can be read (AC-6). The engine is the REAL one,
+ * wrapped only to record each call's balance rows (story 100.3: a bad rate must
+ * never reach it).
+ *
+ * Story 100.3: every investment row now compounds at its OWN annual return,
+ * seeded at 6%. Every figure below that involves investment growth was re-derived
+ * by hand at 6% (it was 7% in 100.2).
  *
  * Unlike the savings rows (100.1), these rows MOVE totals: a counted investment
  * contribution moves money from savings into investments, a debt lowers net
@@ -21,6 +27,18 @@ import { useIncomeStore } from '../../../stores/incomeStore'
 import { useProfileStore } from '../../../stores/profileStore'
 import { useSavingsStore } from '../../../stores/savingsStore'
 import { ScenarioBuilder } from '../scenario-builder'
+
+const engineRows = vi.hoisted(() => [] as unknown[][])
+vi.mock('@budget-planner/core', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@budget-planner/core')>()
+  return {
+    ...real,
+    calculateFinancialForecast: (...args: Parameters<typeof real.calculateFinancialForecast>) => {
+      engineRows.push([...(args[0].balanceAccounts ?? [])])
+      return real.calculateFinancialForecast(...args)
+    },
+  }
+})
 
 const syncPendingCalls = vi.hoisted(() => [] as boolean[])
 vi.mock('../../../hooks/useIsInitialSyncPending', () => ({
@@ -114,6 +132,7 @@ function clearStores(): void {
 beforeEach(() => {
   clearStores()
   syncPendingCalls.length = 0
+  engineRows.length = 0
   useProfileStore.setState({ activeProfileId: PROFILE })
 })
 
@@ -339,6 +358,8 @@ describe('what-if only: nothing reaches the balance store (AC-7, D0)', () => {
     fireEvent.change(screen.getByLabelText('Balance for RRSP'), { target: { value: '9999' } })
     fireEvent.change(screen.getByLabelText('Contribution for RRSP'), { target: { value: '50' } })
     fireEvent.change(screen.getByLabelText('Frequency for RRSP'), { target: { value: 'weekly' } })
+    // Story 100.3: the rate is what-if only too (no rate field on /balance, D2).
+    fireEvent.change(screen.getByLabelText('Annual return for RRSP'), { target: { value: '3' } })
     fireEvent.click(screen.getByLabelText('Not taken from the money left over, for RRSP'))
     fireEvent.change(screen.getByLabelText('Type for Loan'), { target: { value: 'investment' } })
     fireEvent.click(screen.getByRole('button', { name: '+ Add Balance' }))
@@ -407,12 +428,13 @@ describe('add, remove and type switch (AC-8)', () => {
 
 describe('the per-row outcome and the totals (AC-10)', () => {
   /**
-   * 12,000.00 a year left over. Over 2 years, BY HAND:
-   *   Fund: 1000.00 → round(1070.00) + 1200.00 = 2270.00 → round(2428.90) + 1200.00 = 3628.90.
+   * 12,000.00 a year left over. Over 2 years, BY HAND, Fund at the seeded 6%
+   * (story 100.3; at 100.2's 7% it was 3628.90 and 24,728.90):
+   *   Fund: 1000.00 → round(1060.00) + 1200.00 = 2260.00 → round(2395.60) + 1200.00 = 3595.60.
    *   Loan: 3000.00 − 2400.00 = 600.00 → max(0, −1800.00) = 0 (paid off).
    *   Card: 500.00, no payment, stays 500.00.
    *   Savings: 2 × (12,000.00 − 1,200.00 counted) = 21,600.00.
-   *   Ending net worth: 21,600.00 + 3,628.90 − 500.00 = 24,728.90.
+   *   Ending net worth: 21,600.00 + 3,595.60 − 500.00 = 24,695.60.
    *   Starting: 0 + 1,000.00 − 3,500.00 = −2,500.00.
    */
   function fillOutcomeFixture(): void {
@@ -442,7 +464,7 @@ describe('the per-row outcome and the totals (AC-10)', () => {
       screen.getByLabelText(`Balance for ${name}`).closest('.surface') as HTMLElement
     await waitFor(() =>
       expect(within(row('Fund')).getByText(/^After 2 years:/).textContent).toBe(
-        `After 2 years: ${format(362_890)}`
+        `After 2 years: ${format(359_560)}`
       )
     )
     expect(within(row('Loan')).getByText('Paid off within 2 years')).toBeInTheDocument()
@@ -457,7 +479,7 @@ describe('the per-row outcome and the totals (AC-10)', () => {
         .closest('[aria-live]')
     ).toBeNull()
     expect(card('Starting Net Worth')).toBe(format(-250_000))
-    expect(card('Ending Net Worth')).toBe(format(2_472_890))
+    expect(card('Ending Net Worth')).toBe(format(2_469_560))
   })
 
   it('a debt that starts at 0 is not "Paid off" (nothing was owed; code review)', async () => {
@@ -481,12 +503,13 @@ describe('the per-row outcome and the totals (AC-10)', () => {
     render(<ScenarioBuilder onSave={vi.fn()} />)
     await waitForResult()
     await setYears(2)
-    await waitFor(() => expect(card('Ending Net Worth')).toBe(format(2_472_890)))
+    await waitFor(() => expect(card('Ending Net Worth')).toBe(format(2_469_560)))
 
     fireEvent.change(screen.getByLabelText('Contribution for Fund'), { target: { value: '200' } })
-    // Fund: 1000.00 → 1070.00 + 2400.00 = 3470.00 → round(3712.90) + 2400.00 = 6112.90.
-    // Savings: 2 × (12,000.00 − 2,400.00) = 19,200.00. Ending: 19,200.00 + 6,112.90 − 500.00.
-    await waitFor(() => expect(card('Ending Net Worth')).toBe(format(2_481_290)), {
+    // At 6% (story 100.3; 6112.90 and 24,812.90 at 7%):
+    // Fund: 1000.00 → 1060.00 + 2400.00 = 3460.00 → round(3667.60) + 2400.00 = 6067.60.
+    // Savings: 2 × (12,000.00 − 2,400.00) = 19,200.00. Ending: 19,200.00 + 6,067.60 − 500.00.
+    await waitFor(() => expect(card('Ending Net Worth')).toBe(format(2_476_760)), {
       timeout: 3000,
     })
   })
@@ -634,6 +657,43 @@ describe('the builder is defensive on its own (AC-14, 100.1 review)', () => {
     // Not an array: loads as the v1/v2 total.
     expect(rowNames()).toEqual(['Investments'])
     expect(screen.getByLabelText('Balance for Investments')).toHaveValue(12.34)
+
+    // Story 100.3 code review: the builder's OWN rate coercion
+    // (`annualReturnFromSaved`), with no mapper in front of it to strip the bad
+    // values first. null / a string / NaN → 6%; a finite in-range rate kept.
+    document.body.innerHTML = ''
+    const investment = (name: string, annualReturn: unknown) => ({
+      name,
+      type: 'investment',
+      balance: 1_000,
+      contribution: 0,
+      frequency: 'monthly',
+      annualReturn,
+    })
+    render(
+      <ScenarioBuilder
+        onSave={vi.fn()}
+        initialForecast={forecast({
+          savings: 0,
+          investments: 4_000,
+          years: 10,
+          balanceAccounts: [
+            investment('Null', null),
+            investment('Text', '0.07'),
+            investment('NaN', Number.NaN),
+            investment('Kept', 0.03),
+          ],
+        })}
+      />
+    )
+    const rate = (name: string) => screen.getByLabelText(`Annual return for ${name}`)
+    expect(rate('Null')).toHaveValue('6.00%')
+    expect(rate('Text')).toHaveValue('6.00%')
+    expect(rate('NaN')).toHaveValue('6.00%')
+    expect(rate('Kept')).toHaveValue('3.00%')
+    for (const name of ['Null', 'Text', 'NaN', 'Kept']) {
+      expect(rate(name)).not.toHaveAttribute('aria-invalid')
+    }
   })
 })
 
@@ -671,7 +731,10 @@ describe('save writes the rows and the investment total (AC-12)', () => {
         contribution: 2_500,
         frequency: 'weekly',
         contributionRecordedAsExpense: true,
+        // Story 100.3: the seeded 6%, on the investment row only (D8).
+        annualReturn: 0.06,
       },
+      // A debt is saved WITHOUT a rate (`toEqual` fails on an extra defined key).
       {
         name: 'Loan',
         type: 'debt',
@@ -682,5 +745,193 @@ describe('save writes the rows and the investment total (AC-12)', () => {
       },
     ])
     expect(inputs.investments).toBe(1_000_001)
+  })
+})
+
+/**
+ * Each investment row's own annual return (story 100.3, FR166). Every figure is
+ * derived BY HAND in the comment beside it. The fixture is the AC-10 one above:
+ * 12,000.00 a year left over; Fund 1000.00 contributing 100.00/mo; Loan 3000.00
+ * paying 200.00/mo; Card 500.00. Two years.
+ */
+describe('each investment row has its own annual return (story 100.3)', () => {
+  function fillFixture(): void {
+    useIncomeStore.setState({ incomeSources: [income(500_000)] })
+    useExpenseStore.setState({ expenses: [expense(400_000)] })
+    setEntries([
+      entry({ id: 'e-1', name: 'Fund', currentBalance: 100_000, monthlyContribution: 10_000 }),
+      entry({
+        id: 'e-2',
+        name: 'Loan',
+        type: 'debt',
+        currentBalance: 300_000,
+        monthlyContribution: 20_000,
+      }),
+    ])
+  }
+  const rateField = (name: string) => screen.getByLabelText(`Annual return for ${name}`)
+  const reason = () => screen.queryByTestId('save-blocked-reason')?.textContent ?? null
+  const fundLine = () =>
+    within(screen.getByLabelText('Balance for Fund').closest('.surface') as HTMLElement).getByText(
+      /^After 2 years:/
+    ).textContent
+
+  it('seeds 6.00% on every investment row, + Add Balance too, and shows no rate on a debt (AC-7, AC-8)', () => {
+    setEntries([
+      entry({ id: 'e-1', name: 'Pension' }),
+      entry({ id: 'e-2', name: 'Loan', type: 'debt' }),
+    ])
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    expect(rateField('Pension')).toHaveValue('6.00%')
+    expect(rateField('Pension')).toHaveAttribute('type', 'text')
+    expect(rateField('Pension')).toHaveAttribute('inputmode', 'decimal')
+    expect(rateField('Pension')).toHaveAttribute('autocomplete', 'off')
+    // The debt row has no rate field (positive control: its row is there).
+    expect(screen.getByLabelText('Balance for Loan')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Annual return for Loan')).toBeNull()
+    expect(within(section()).getAllByLabelText(/^Annual return for /)).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Add Balance' }))
+    expect(rateField('New Investment')).toHaveValue('6.00%')
+    // A blank name reads "unnamed balance", like the row's other controls.
+    fireEvent.change(screen.getByDisplayValue('New Investment'), { target: { value: '' } })
+    expect(rateField('unnamed balance')).toHaveValue('6.00%')
+  })
+
+  it('typing a rate changes the row, by hand; 7, 7% and 7.00% all mean 7%', async () => {
+    fillFixture()
+    const format = formatter()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+    await setYears(2)
+    // 6%: 1000.00 → 1060.00 + 1200.00 = 2260.00 → round(2395.60) + 1200.00 = 3595.60.
+    await waitFor(() => expect(fundLine()).toBe(`After 2 years: ${format(359_560)}`))
+
+    fireEvent.change(rateField('Fund'), { target: { value: '5' } })
+    // 5%: 1000.00 → 1050.00 + 1200.00 = 2250.00 → round(2362.50) + 1200.00 = 3562.50.
+    await waitFor(() => expect(fundLine()).toBe(`After 2 years: ${format(356_250)}`), {
+      timeout: 3000,
+    })
+    // 7%: 1000.00 → 1070.00 + 1200.00 = 2270.00 → round(2428.90) + 1200.00 = 3628.90.
+    for (const typed of ['7', '7%', '7.00%']) {
+      fireEvent.change(rateField('Fund'), { target: { value: '5' } })
+      await waitFor(() => expect(fundLine()).toBe(`After 2 years: ${format(356_250)}`), {
+        timeout: 3000,
+      })
+      fireEvent.change(rateField('Fund'), { target: { value: typed } })
+      await waitFor(() => expect(fundLine()).toBe(`After 2 years: ${format(362_890)}`), {
+        timeout: 3000,
+      })
+      expect(rateField('Fund')).not.toHaveAttribute('aria-invalid')
+    }
+    // Seven debounced recomputes (500 ms each): measured 5195 ms under a full
+    // sequential gate run, past the 5 s default.
+  }, 15_000)
+
+  // `5abc`, `1,5` and `1e2` (code review): `parseFloat` alone would read 5%, 1%
+  // and 100% from them, silently.
+  for (const bad of ['', 'abc', '150', '-101', '5abc', '1,5', '1e2']) {
+    it(`"${bad}" is refused: error on the field, recompute and Save held, last result kept (AC-9)`, async () => {
+      fillFixture()
+      const format = formatter()
+      render(<ScenarioBuilder onSave={vi.fn()} />)
+      await waitForResult()
+      await setYears(2)
+      await waitFor(() => expect(fundLine()).toBe(`After 2 years: ${format(359_560)}`))
+      const calls = engineRows.length
+
+      fireEvent.change(rateField('Fund'), { target: { value: bad } })
+
+      const field = rateField('Fund')
+      expect(field).toHaveValue(bad)
+      expect(field).toHaveAttribute('aria-invalid', 'true')
+      const message = within(field.closest('div') as HTMLElement).getByText(
+        'Enter an annual return from -100% to 100%.'
+      )
+      expect(field).toHaveAttribute('aria-describedby', message.id)
+      expect(message.className.split(/\s+/)).toEqual(
+        expect.arrayContaining(['text-xs', 'text-red-600', 'dark:text-red-300'])
+      )
+      expect(reason()).toBe('Fix the highlighted fields to save')
+      // Past the debounce: no engine call at all, so the bad rate never reached it,
+      // and the last good figure stands.
+      await new Promise((resolve) => setTimeout(resolve, 700))
+      expect(engineRows.length).toBe(calls)
+      expect(fundLine()).toBe(`After 2 years: ${format(359_560)}`)
+
+      // Fixing it recomputes (4%: 1000.00 → 1040.00 + 1200.00 = 2240.00 →
+      // round(2329.60) + 1200.00 = 3529.60).
+      fireEvent.change(rateField('Fund'), { target: { value: '4' } })
+      expect(reason()).toBeNull()
+      expect(rateField('Fund')).not.toHaveAttribute('aria-invalid')
+      await waitFor(() => expect(fundLine()).toBe(`After 2 years: ${format(352_960)}`), {
+        timeout: 3000,
+      })
+      // Every row the engine ever saw carried a usable investment rate, and the
+      // bad text never became one (`5abc` → 0.05, `1,5` → 0.01, `1e2` → 1 would).
+      let investmentRowsSeen = 0
+      for (const rows of engineRows) {
+        for (const row of rows as Array<{ type: string; annualReturn?: unknown }>) {
+          if (row.type === 'investment') {
+            investmentRowsSeen++
+            expect(typeof row.annualReturn).toBe('number')
+            expect([0.06, 0.04]).toContain(row.annualReturn)
+          }
+        }
+      }
+      expect(investmentRowsSeen).toBeGreaterThan(0)
+      // Several debounced recomputes in one test: 5 s is too tight under gate load.
+    }, 15_000)
+  }
+
+  it('a bad balance and a bad rate in one row both block Save; fixing one leaves the other (AC-9)', async () => {
+    fillFixture()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+    fireEvent.change(screen.getByLabelText('Balance for Fund'), { target: { value: '-5' } })
+    fireEvent.change(rateField('Fund'), { target: { value: '200' } })
+    expect(reason()).toBe('Fix the highlighted fields to save')
+    fireEvent.change(screen.getByLabelText('Balance for Fund'), { target: { value: '5' } })
+    expect(reason(), 'the rate is still bad').toBe('Fix the highlighted fields to save')
+    fireEvent.change(rateField('Fund'), { target: { value: '3' } })
+    expect(reason()).toBeNull()
+  })
+
+  it('switching to Debt withdraws a bad rate and hides the field; back to Investment shows the last VALID rate (AC-10, D8)', async () => {
+    fillFixture()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+    fireEvent.change(rateField('Fund'), { target: { value: '4' } })
+    fireEvent.change(rateField('Fund'), { target: { value: '150' } })
+    expect(reason()).toBe('Fix the highlighted fields to save')
+
+    fireEvent.change(screen.getByLabelText('Type for Fund'), { target: { value: 'debt' } })
+    expect(screen.queryByLabelText('Annual return for Fund')).toBeNull()
+    expect(reason(), 'the unmounted field withdrew its report').toBeNull()
+
+    fireEvent.change(screen.getByLabelText('Type for Fund'), { target: { value: 'investment' } })
+    expect(rateField('Fund')).toHaveValue('4.00%')
+    expect(rateField('Fund')).not.toHaveAttribute('aria-invalid')
+  })
+
+  it('saves the typed rate on the investment row and none on a debt (AC-11)', async () => {
+    fillFixture()
+    const onSave = vi.fn().mockResolvedValue({ success: true })
+    render(<ScenarioBuilder onSave={onSave} />)
+    await waitForResult()
+    fireEvent.change(rateField('Fund'), { target: { value: '5.5' } })
+    // A debt row that was an investment keeps no rate in the save either.
+    fireEvent.change(screen.getByLabelText('Type for Loan'), { target: { value: 'investment' } })
+    fireEvent.change(rateField('Loan'), { target: { value: '9' } })
+    fireEvent.change(screen.getByLabelText('Type for Loan'), { target: { value: 'debt' } })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /save forecast/i })).toBeEnabled()
+    )
+    fireEvent.click(screen.getByRole('button', { name: /save forecast/i }))
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    const saved = onSave.mock.calls.at(-1)?.[0].inputs.balanceAccounts
+    expect(saved[0].annualReturn).toBe(0.055)
+    expect(saved[1].type).toBe('debt')
+    expect(Object.keys(saved[1])).not.toContain('annualReturn')
   })
 })

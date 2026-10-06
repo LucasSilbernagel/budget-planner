@@ -180,14 +180,35 @@ describe('a v2 forecast reloads its rows exactly (AC-11)', () => {
   })
 })
 
-describe('a v1 forecast reopens with the figures it had (AC-12)', () => {
-  it('becomes ONE row named Savings, and projects exactly as before the story', async () => {
+// Renamed by the 100.3 code review: under 100.3 D3 a v1 forecast no longer
+// reopens with the figures it had (its investments drop from 7% to 6%). The claim
+// kept here is 100.1's: the single Savings row changes no figure.
+describe('a v1 forecast reopens as one Savings row that changes no figure (AC-12)', () => {
+  it('becomes ONE row named Savings, and projects exactly as the same inputs without savings rows', async () => {
     const call = await loadPlan({ savings: 123_400, investments: 50_000, years: 7 })
 
     expect(rows()).toEqual([['Savings', 1234, 0]])
-    // What the page computed before story 100.1: the same inputs, no rows.
+    // What the page computes without savings rows: the same inputs, no rows.
+    // ⚠️ Story 100.3 (D3): the v1 forecast's investments now reload as one
+    // Investments row at 6% (100.2 + 100.3), so the comparison call carries that
+    // same row. The claim pinned here is still 100.1's: the one Savings row
+    // changes no figure. (Before 100.3 this compared against a no-rows call at 7%.)
     const before = realForecast(
-      { income: INCOME, expenses: [], savings: 123_400, investments: 50_000 },
+      {
+        income: INCOME,
+        expenses: [],
+        savings: 123_400,
+        investments: 50_000,
+        balanceAccounts: [
+          {
+            type: 'investment',
+            balance: 50_000,
+            contribution: 0,
+            frequency: 'monthly',
+            annualReturn: 0.06,
+          },
+        ],
+      },
       { ...SCENARIO, newIncome: INCOME, newExpenses: [], oneTimeEvents: [] },
       7
     )
