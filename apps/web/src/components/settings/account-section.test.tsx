@@ -49,6 +49,7 @@ vi.mock('@/lib/account/sign-out', async (importOriginal) => {
 })
 
 import { resetSignOutStateForTests, returnToSignedOutHome, signOut } from '@/lib/account/sign-out'
+import { expectNoDarkFill } from '@/test/white-fill-tokens'
 import { AccountSection } from './account-section'
 import { LocalDataSection } from './local-data-section'
 
@@ -348,5 +349,7 @@ describe('AccountSection — Sign out affordance (Story 70.2)', () => {
     expect(tokens.some((token) => /(^|:)bg-red-/.test(token))).toBe(false)
     // The comparison is live: Delete account IS the solid red one.
     expect(screen.getByRole('button', { name: /^delete account$/i })).toHaveClass('bg-red-600')
+    // Story 115.1: and keeps red-600 in dark (white on red-500 is 3.76:1).
+    expectNoDarkFill(screen.getByRole('button', { name: /^delete account$/i }))
   })
 })

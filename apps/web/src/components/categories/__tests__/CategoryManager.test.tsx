@@ -10,6 +10,7 @@
  * Every assertion below names the specific value (30.4a review lesson).
  */
 
+import { expectSharedGreen } from '@/test/white-fill-tokens'
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -40,6 +41,12 @@ async function addCategory(
 }
 
 describe('creating a category (AC-2)', () => {
+  it('both "Add category" buttons use the shared AA green (story 115.1)', () => {
+    render(<CategoryManager />)
+    expectSharedGreen(screen.getByTestId('category-add-income'))
+    expectSharedGreen(screen.getByTestId('category-add-expense'))
+  })
+
   it('creates it under the right kind and clears the input', async () => {
     const user = userEvent.setup()
     render(<CategoryManager />)

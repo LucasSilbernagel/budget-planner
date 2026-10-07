@@ -1069,7 +1069,7 @@ export function HomePage() {
                 <div className="flex flex-wrap items-center justify-center gap-3">
                   <a
                     href="/income"
-                    className="inline-flex items-center rounded-md bg-green-600 px-4 py-2 font-medium text-white transition-colors hover:bg-green-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+                    className="inline-flex items-center fill-green rounded-md px-4 py-2 font-medium transition-colors hover:bg-green-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
                   >
                     + Add income
                   </a>

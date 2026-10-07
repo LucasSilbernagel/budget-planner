@@ -291,7 +291,7 @@ function CategorySection({
         </div>
         <button
           type="submit"
-          className="rounded-md bg-green-600 px-4 py-2 text-white transition-colors hover:bg-green-700"
+          className="fill-green rounded-md px-4 py-2 transition-colors hover:bg-green-800"
           data-testid={`category-add-${kind}`}
         >
           Add category

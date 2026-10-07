@@ -385,7 +385,7 @@ export function IncomePage() {
                 ref={addButtonRef}
                 type="button"
                 onClick={openAddModal}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors whitespace-nowrap"
+                className="fill-green px-4 py-2 rounded-md hover:bg-green-800 transition-colors whitespace-nowrap"
               >
                 + Add Income Source
               </button>

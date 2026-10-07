@@ -35,6 +35,7 @@ vi.mock('../../hooks/usePremiumAccess', () => ({
   usePremiumAccess: () => usePremiumAccess(),
 }))
 
+import { expectSharedGreen } from '@/test/white-fill-tokens'
 import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../../lib/premium/benefits'
 import { HomePage, OVERVIEW_BENEFITS } from '../HomePage'
 
@@ -689,6 +690,8 @@ describe('HomePage overview subtitle + mobile padding (story 19-4)', () => {
     const tokens = (section as HTMLElement).className.split(/\s+/)
     expect(tokens).toContain('p-4')
     expect(tokens).toContain('sm:p-6')
+    // Story 115.1: the onboarding call to action is the shared AA green.
+    expectSharedGreen(screen.getByRole('link', { name: '+ Add income' }))
   })
 })
 

@@ -258,9 +258,9 @@ function PlanCard({
           // gray-900 because those buttons sit on the page canvas instead.
           className={`mt-6 inline-flex w-full items-center justify-center rounded-lg px-4 py-2.5 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 ${
             ctaPrimary
-              ? // Deliberately keeps the blue-600 fill in BOTH themes. The shipped
-                // convention (`contact-form.tsx:309`) drops to blue-500 on dark, but
-                // white on blue-500 measures 3.68:1 — below WCAG AA's 4.5:1 for
+              ? // Deliberately keeps the blue-600 fill in BOTH themes (story 115.1
+                // brought `contact-form.tsx`, which dropped to blue-500 on dark, in
+                // line): white on blue-500 measures 3.68:1 — below WCAG AA's 4.5:1 for
                 // normal text — while blue-600 measures 5.17:1. Measured at 320px in
                 // a real browser during story 31-1; AC-7 outranks the convention.
                 'bg-blue-600 text-white hover:bg-blue-700'
