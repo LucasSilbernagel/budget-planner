@@ -1,4 +1,6 @@
 # generated: 2026-06-18
+# last_updated: 2026-10-06o (107.1 + 108.1 done; epics 107+108 done.)
+# last_updated: 2026-10-06n (epics 107+108 added; 107.1 + 108.1 created -> ready-for-dev.)
 # last_updated: 2026-10-06m (106.1 review -> done; epic 106 done.)
 # last_updated: 2026-10-06l (105.1 review -> done, epic 105 done; epic 106 (106.1) in dev.)
 # last_updated: 2026-10-06k (103.1 review -> done: patches fbf720f, screenshots 8c93a33; epics 103 + 104 done.)
@@ -1371,6 +1373,12 @@ development_status:
   epic-106: done  # DONE 2026-10-06 (106.1).  Added 2026-10-06 (approved) from sprint-change-proposal-2026-10-06-money-int32-bound.md (FR174)
   106-1-a-money-amount-too-large-to-sync-is-refused-where-i-type-it: done  # REVIEW 2026-10-06 (0 decision, 2 patches a2c58bc, 4 defer, 9 dismissed; compare 37525426177 green); DEV 1eda025 (branch story/106-1-money-int32-cap, not pushed), core 1344 web 5030 e2e 23, 13/13 arms RED; dev launched 2026-10-06; CREATED 2026-10-06 at e81db6d; D1-D3 CONFIRMED (cap int32)
   epic-106-retrospective: optional
+  epic-107: done  # DONE 2026-10-06 (107.1). Added 2026-10-06 (approved) from sprint-change-proposal-2026-10-06-forecasting-feedback.md (FR175)
+  107-1-my-forecast-compares-my-changes-against-what-i-have-today: done  # integration/forecasting-107-108, screenshots 4 shots, compare 37554562712 27/27; REVIEW 2026-10-06 approved (0 decision, 1 patch 96a670d, 2 defer, 9 dismissed; web 5044); screenshots pending; DEV 62823b5 (branch story/107-1-forecast-vs-today, not pushed), gates green core 1363 web 5043 e2e 23, 6/6 arms RED; dev launched 2026-10-06 (fork, branch story/107-1-forecast-vs-today); CREATED 2026-10-06 at 621ee31; Q1 DECIDED (vs-today figure on builder+projections+list); D1-D4 CONFIRMED by Lucas 2026-10-06 (all rec)
+  epic-107-retrospective: optional
+  epic-108: done  # DONE 2026-10-06 (108.1). Added 2026-10-06 (approved) from sprint-change-proposal-2026-10-06-forecasting-feedback.md (FR176)
+  108-1-the-forecasting-page-is-clearer-to-use: done  # integration/forecasting-107-108, compare 37554562712 27/27; REVIEW 2026-10-06 approved (0 decision, 1 patch c6304dd, 9 dismissed; web 5041); screenshots pending; DEV 75d661d (branch story/108-1-forecasting-tidy-up, not pushed), gates green web 5040 e2e 23, 4/4 arms RED; dev launched 2026-10-06 (fork, branch story/108-1-forecasting-tidy-up); CREATED 2026-10-06 at 621ee31; D5-D7 CONFIRMED by Lucas 2026-10-06 (all rec)
+  epic-108-retrospective: optional
 
 action_items:
   - epic: 6
