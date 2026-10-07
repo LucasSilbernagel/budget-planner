@@ -48,6 +48,7 @@ import { useStoresHydrated } from '../../hooks/useStoresHydrated'
 import { signedAmount, vsTodayCents, withTodayBaseline } from '../../lib/forecasting/today-baseline'
 import { type MoneyDraft, parseMoneyDraft, reformatAmountOnBlur } from '../../lib/money-input'
 import { exceedsMoneyLimit, moneyLimitMessage } from '../../lib/money-limit'
+import { decimalCommaToPoint } from '../../lib/percent-text'
 import { isKnownFrequency } from '../../lib/readable-rows'
 import { sanitizeMoneyChange, sanitizeWithCaret } from '../../lib/sanitized-input'
 import { investmentContributionItems } from '../../lib/savings/investment-contribution-items'
@@ -3059,8 +3060,9 @@ function useMoneyDraft(
  * `useMoneyDraft`: a DRAFT string, and the parsed rate written to the row only
  * when usable. Parsed like the growth-rate fields (`parseFloat(raw) / 100`, so
  * `7`, `7%` and `7.00%` all mean 0.07), but only when the WHOLE text is a number
- * (`PERCENT_TEXT`), and bounded by the same rule (`isValidGrowthRate`). Empty,
- * not a number (`abc`, `5abc`, `1,5`, `1e2`) or outside −100%..100% shows
+ * (`PERCENT_TEXT`), and bounded by the same rule (`isValidGrowthRate`). A single
+ * decimal comma reads as the point (`2,5` = 2.5%, story 110.1). Empty, not a
+ * number (`abc`, `5abc`, `2,5,1`, `1.000,5`, `1e2`) or outside −100%..100% shows
  * `RETURN_INVALID_MESSAGE`, is NOT written, and reports invalid under its own key,
  * which holds the recompute and Save. A finite out-of-range rate can ARRIVE from a
  * saved forecast (D9): flagged from the first render, as `useMoneyDraft` flags a
@@ -3072,12 +3074,16 @@ const PERCENT_TEXT = /^\s*[-+]?(?:\d+\.?\d*|\.\d+)\s*%?\s*$/
 /**
  * A typed percentage as a decimal rate (`5`, `5%`, `5.00%` → 0.05), or NaN when the
  * WHOLE text is not a plain number with an optional `%`. `parseFloat` alone reads a
- * PREFIX: `5abc` → 5, `1,5` → 1 (a decimal comma silently dropped), `1e2` → 100.
- * Shared by the Annual return field and both growth-rate fields; the caller's
- * `isValidGrowthRate` turns the NaN into the field's message.
+ * PREFIX: `5abc` → 5, `2,5` → 2 (a decimal comma silently dropped), `1e2` → 100.
+ * A single decimal comma is converted to a point FIRST (story 110.1, D3:
+ * `decimalCommaToPoint`), so `2,5` → 0.025; an ambiguous comma form keeps its
+ * comma and fails `PERCENT_TEXT`. Shared by the Annual return field and both
+ * growth-rate fields; the caller's `isValidGrowthRate` turns the NaN into the
+ * field's message.
  */
 function parsePercentText(raw: string): number {
-  return PERCENT_TEXT.test(raw) ? parseFloat(raw) / 100 : Number.NaN
+  const text = decimalCommaToPoint(raw)
+  return PERCENT_TEXT.test(text) ? parseFloat(text) / 100 : Number.NaN
 }
 
 function usePercentDraft(

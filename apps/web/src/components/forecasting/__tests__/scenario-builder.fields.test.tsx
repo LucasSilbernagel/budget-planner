@@ -192,7 +192,10 @@ describe('a growth rate outside -100%..+100%, or not a number, is reported on it
     // optional `%` is a rate, as on the Annual return field.
     ['trailing junk', '5abc'],
     ['an exponent', '1e2'],
-    ['a decimal comma', '1,5'],
+    // A single decimal comma is a rate since story 110.1 (D3); these stay ambiguous.
+    ['two commas', '2,5,1'],
+    ['a grouped number with a decimal comma', '1.000,5'],
+    ['a grouped number with a decimal point', '1,000.5'],
   ]
 
   const fields: [string, 'incomeGrowthRate' | 'expenseGrowthRate', string][] = [
@@ -244,6 +247,10 @@ describe('a growth rate outside -100%..+100%, or not a number, is reported on it
     ['5 %', 0.05],
     ['-3.5', -0.035],
     ['.5', 0.005],
+    // Story 110.1 (D3): a single comma is the decimal point, in every locale.
+    ['2,5', 0.025],
+    ['2,5 %', 0.025],
+    ['-2,5', -0.025],
   ]
   for (const [label, key] of [
     ['Income Growth Rate', 'incomeGrowthRate'],
@@ -265,6 +272,8 @@ describe('a growth rate outside -100%..+100%, or not a number, is reported on it
         expect(engineCalls.length, 'one engine call for the corrected value').toBe(callsBefore + 1)
 
         expect(engineCalls.at(-1)?.[key]).toBeCloseTo(rate, 12)
+        // No reformat while editing (110.1 AC 6): `2,5` stays `2,5`.
+        expect(field).toHaveValue(typed)
         expect(screen.queryByText(GROWTH_MESSAGE)).toBeNull()
         expectFieldClean(field)
         expect(screen.queryByTestId('save-blocked-reason')).toBeNull()

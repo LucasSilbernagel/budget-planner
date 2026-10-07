@@ -1823,27 +1823,27 @@ describe('RetirementAccumulationPlanner — post-retirement return rate (story 3
     renderWithProviders(<RetirementAccumulationPlanner />)
 
     // BEFORE: it starts showing the accumulation default, not an independent one.
-    expect(postRetirementField()).toHaveValue(6)
+    expect(postRetirementField()).toHaveValue('6.0')
 
     await setField(user, accumulationField(), '8')
 
-    expect(accumulationField()).toHaveValue(8)
-    expect(postRetirementField()).toHaveValue(8)
+    expect(accumulationField()).toHaveValue('8')
+    expect(postRetirementField()).toHaveValue('8')
   })
 
   it('stops mirroring once edited, and the two then move independently (AC-2)', async () => {
     const user = userEvent.setup()
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(postRetirementField()).toHaveValue(6)
+    expect(postRetirementField()).toHaveValue('6.0')
 
     await setField(user, postRetirementField(), '3')
-    expect(postRetirementField()).toHaveValue(3)
+    expect(postRetirementField()).toHaveValue('3')
 
     // Changing the accumulation rate must no longer drag the edited field with it.
     await setField(user, accumulationField(), '8')
-    expect(accumulationField()).toHaveValue(8)
-    expect(postRetirementField()).toHaveValue(3)
+    expect(accumulationField()).toHaveValue('8')
+    expect(postRetirementField()).toHaveValue('3')
   })
 
   it('a lower post-retirement rate raises the requirement and delays retirement (AC-7)', async () => {
@@ -2396,5 +2396,71 @@ describe('RetirementAccumulationPlanner — expenses that end before retirement 
     expect(savingsSection()).toBe(withFlag)
     // …and the marked figure never reached the base in the first place.
     expect(withFlag).not.toContain('51,800.00')
+  })
+})
+
+/**
+ * Story 110.1 (FR178, D3): a single decimal comma is the decimal point. Both rate
+ * fields are `type="text"` now: a number input drops the `,` keystroke, so a
+ * user typing `2,5` saw `25` and the plan solved at 25% (MEASURED in Chromium,
+ * story Dev Notes §2). The reachable fixture retires at once (0 months), where
+ * the saving-phase rate moves nothing, so the desired income is raised until
+ * retirement is years away and the whole outlook moves with either rate.
+ */
+describe('a decimal comma in the rate fields (story 110.1)', () => {
+  beforeEach(resetStores)
+  afterEach(resetStores)
+
+  const outlook = () => screen.getByTestId('accumulation-outputs').textContent
+
+  async function fillYearsAwayCase(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+    await fillReachableCase(user)
+    const desired = screen.getByLabelText('Desired Retirement Income')
+    await user.clear(desired)
+    await user.type(desired, '60000')
+  }
+
+  async function setRate(
+    user: ReturnType<typeof userEvent.setup>,
+    label: string,
+    typed: string
+  ): Promise<void> {
+    await user.clear(screen.getByLabelText(label))
+    await user.type(screen.getByLabelText(label), typed)
+  }
+
+  for (const label of ['Expected Annual Return', 'Post-Retirement Annual Return']) {
+    it(`${label}: 2,5 keeps its comma and solves exactly as 2.5`, async () => {
+      const user = userEvent.setup()
+      renderWithProviders(<RetirementAccumulationPlanner />)
+      await fillYearsAwayCase(user)
+
+      await setRate(user, label, '2.5')
+      const atPoint = outlook()
+      // Positive control: the outlook moves with the rate, so equality below is
+      // not two readings of a rate-blind figure.
+      await setRate(user, label, '25')
+      expect(outlook()).not.toBe(atPoint)
+
+      await setRate(user, label, '2,5')
+      expect(screen.getByLabelText(label)).toHaveValue('2,5')
+      expect(screen.getByLabelText(label)).toHaveAttribute('type', 'text')
+      expect(screen.getByLabelText(label)).toHaveAttribute('inputmode', 'decimal')
+      expect(outlook()).toBe(atPoint)
+    })
+  }
+
+  it('an ambiguous comma form shows the invalid-input note, not a plan', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<RetirementAccumulationPlanner />)
+    await fillReachableCase(user)
+
+    await setRate(user, 'Expected Annual Return', '1.000,5')
+
+    expect(screen.getByLabelText('Expected Annual Return')).toHaveValue('1.000,5')
+    expect(
+      screen.getByText('Please check your inputs — one of the values is not a valid number.')
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('accumulation-outputs')).not.toBeInTheDocument()
   })
 })
