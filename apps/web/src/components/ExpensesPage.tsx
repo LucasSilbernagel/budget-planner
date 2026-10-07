@@ -1,3 +1,4 @@
+import { resolveDebtPaymentExpense } from '@budget-planner/core'
 import {
   currencySymbol,
   formatForInputDisplay,
@@ -10,12 +11,13 @@ import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
 import { usePremiumAccess } from '../hooks/usePremiumAccess'
 import { useStoresHydrated } from '../hooks/useStoresHydrated'
 import { useTableSort } from '../hooks/useTableSort'
+import { debtLinkSentence } from '../lib/debt-link-sentence'
 import { reformatAmountOnBlur } from '../lib/money-input'
 import { exceedsMoneyLimit, moneyLimitMessage } from '../lib/money-limit'
 import { summarizeReadableRows } from '../lib/readable-rows'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import { type FlowSortKey, createFlowSortExtractors } from '../lib/table-sort-keys'
-import { useExpenseStore, useExpenses, useTotalExpenses } from '../stores'
+import { useBalanceStore, useExpenseStore, useExpenses, useTotalExpenses } from '../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 import { useShowRetirementPlanner } from '../stores/plannerVisibilityStore'
 import { CategoryBadge } from './categories/CategoryBadge'
@@ -327,7 +329,29 @@ export function ExpensesPage() {
   // "Add" button is a stable focus target after a confirmed delete (AC-5).
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const addButtonRef = useRef<HTMLButtonElement>(null)
-  const pendingDeleteName = expenses.find((e) => e.id === pendingDeleteId)?.name ?? ''
+  const pendingExpense = expenses.find((e) => e.id === pendingDeleteId)
+  const pendingDeleteName = pendingExpense?.name ?? ''
+
+  // Story 113.1 (FR181): the dialog names every debt that has this expense as
+  // its payment. ⚠️ ALL balance rows, not `useBalanceEntries()`: that hook is
+  // active-profile scoped, but deleting an unscoped expense unlinks a debt in
+  // any profile, so that debt must be named too (AC 4). "Linked" is the core
+  // resolver's rule (debt rows only), never a hand-rolled id match. Delete does
+  // not touch the debt (102.1 D8): this is information only.
+  const allBalanceEntries = useBalanceStore((state) => state.entries)
+  const pendingDeleteDebtSentence = useMemo(() => {
+    if (pendingExpense === undefined) return null
+    const names: string[] = []
+    let unnamedCount = 0
+    for (const entry of allBalanceEntries) {
+      if (resolveDebtPaymentExpense(entry, [pendingExpense]) === null) continue
+      // Untrusted store data (AC 6): a non-string or blank name is unnamed.
+      const name = typeof entry.name === 'string' ? entry.name.trim() : ''
+      if (name === '') unnamedCount += 1
+      else names.push(name)
+    }
+    return debtLinkSentence(names, unnamedCount)
+  }, [allBalanceEntries, pendingExpense])
 
   // Handle form submission (add or update)
   const handleSubmit = (e: React.FormEvent) => {
@@ -866,7 +890,8 @@ export function ExpensesPage() {
           message={
             <>
               Are you sure you want to delete
-              {pendingDeleteName ? ` "${pendingDeleteName}"` : ' this expense'}? This cannot be
+              {pendingDeleteName ? ` "${pendingDeleteName}"` : ' this expense'}?
+              {pendingDeleteDebtSentence ? ` ${pendingDeleteDebtSentence}` : ''} This cannot be
               undone.
             </>
           }
