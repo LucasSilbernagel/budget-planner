@@ -97,8 +97,13 @@
   .text-muted {
     @apply text-gray-500 dark:text-gray-400;
   }
+  /* Story 115.2 (FR183): was gray-400 in light, 2.54:1 on white and 2.43:1 on
+     gray-50, below WCAG AA's 4.5:1 at every one of its sites (Lighthouse audit
+     2026-10-07). gray-500 is 4.83:1 / 4.63:1. So `.text-faint` now has the SAME
+     values as `.text-muted` in both themes; the name is kept so its sites need
+     no edit, and a future lighter shade must clear 4.5:1 on its background. */
   .text-faint {
-    @apply text-gray-400 dark:text-gray-400;
+    @apply text-gray-500 dark:text-gray-400;
   }
 
   .border-default {

@@ -99,6 +99,13 @@ describe('forecasting headline figures break only between digit groups (story 88
     for (const [label, runs] of EXPECTED) {
       expect(runsOf(figureOf(label)), label).toEqual(runs)
     }
+    // Story 115.2: the card labels read `.text-body`. `.text-muted` on the
+    // blue-100 card was 3.96:1, below AA (tokens, not paint: no Tailwind in jsdom).
+    for (const [label] of EXPECTED) {
+      const term = screen.getByText(label, { selector: 'dt' })
+      expect([...term.classList], label).toContain('text-body')
+      expect([...term.classList], label).not.toContain('text-muted')
+    }
   })
 
   it('the Projections tab: the summary cards (five since story 107.1)', () => {

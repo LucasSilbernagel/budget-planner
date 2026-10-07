@@ -1525,7 +1525,7 @@ function RetirementAccumulationPlannerInner() {
               />
               <span>
                 <span className="block font-medium text-subheading">{copy.label}</span>
-                <span className="block text-sm text-muted mt-1">{copy.explanation}</span>
+                <span className="block text-sm text-body mt-1">{copy.explanation}</span>
               </span>
             </label>
           ))}

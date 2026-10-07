@@ -715,10 +715,10 @@ export function SavingsPage() {
 
                       ⚠️ The token this REPLACED, for the record: `text-muted` is
                       4.83:1 light / 5.78:1 dark — it passed AA and was never the
-                      defect. The neighbour to avoid is `text-faint`, 2.54:1 in
-                      LIGHT ONLY; it is pixel-identical to `text-muted` in dark
-                      (both gray-400), so no dark screenshot can distinguish
-                      them and two `text-faint` hints already sit on this page.
+                      defect. The neighbour avoided here was `text-faint`, then
+                      2.54:1 in LIGHT ONLY and pixel-identical to `text-muted` in
+                      dark (both gray-400). Story 115.2 retokened it to gray-500,
+                      so it now equals `text-muted` in both themes.
 
                       ⚠️ No `focus:ring-offset-*`. The default ring-offset colour
                       is white and global.css has no override, so an offset here

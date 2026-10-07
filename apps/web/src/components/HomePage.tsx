@@ -731,7 +731,7 @@ export function HomePage() {
                     can assert this figure directly. */}
                 <p
                   data-testid="overview-total-income"
-                  className="text-2xl font-bold text-green-600"
+                  className="text-2xl font-bold text-green-600 dark:text-green-400"
                 >
                   {hydrated ? (
                     <GroupedAmount text={formatAmount(incomeForDuration)} />
@@ -756,7 +756,7 @@ export function HomePage() {
                     accessible-name reason for keying on a testid. */}
                 <p
                   data-testid="overview-total-expenses"
-                  className="text-2xl font-bold text-red-600"
+                  className="text-2xl font-bold text-red-600 dark:text-red-400"
                 >
                   {hydrated ? (
                     <GroupedAmount text={formatAmount(expensesForDuration)} />
@@ -779,7 +779,9 @@ export function HomePage() {
                 <p
                   data-testid="overview-net-worth"
                   className={`text-2xl font-bold ${
-                    netWorth >= 0 ? 'text-purple-600' : 'text-red-600'
+                    netWorth >= 0
+                      ? 'text-purple-600 dark:text-purple-400'
+                      : 'text-red-600 dark:text-red-400'
                   }`}
                 >
                   {hydrated ? (

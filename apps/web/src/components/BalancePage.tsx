@@ -1115,8 +1115,9 @@ export function BalancePage() {
                   Deliberately says where the payment IS counted rather than
                   telling anyone to leave Contribution blank, since that field
                   is still shown and still labelled required. `text-muted` (not
-                  the `text-faint` used elsewhere) because gray-400 on the white
-                  modal card measures 2.54:1, below WCAG AA.
+                  the `text-faint` used elsewhere) because `text-faint` was then
+                  gray-400, 2.54:1 on the white modal card, below WCAG AA (story
+                  115.2 has since made the two tokens equal).
 
                   Story 49.2 (UX-DR40, amended) adds the RECIPROCAL half. 36.3
                   and 43.4 each told one arm where its counterpart goes, but
@@ -1149,11 +1150,11 @@ export function BalancePage() {
                     the HINT text  text-muted = gray-500 on white         4.83:1
                                    text-muted = gray-400 on gray-800      5.78:1
 
-                  ⚠️ `text-faint` is IDENTICAL to `text-muted` in dark (both resolve
-                  to gray-400), so it fails in LIGHT ONLY, at 2.54:1 — 36.3's figure,
-                  reproduced here by an independent routine. The token choice is
-                  therefore load-bearing in exactly one theme, which is why it is
-                  pinned rather than left to style review. */}
+                  ⚠️ When this was written `text-faint` was IDENTICAL to `text-muted`
+                  in dark (both gray-400) and failed in LIGHT ONLY, at 2.54:1 —
+                  36.3's figure, reproduced here by an independent routine. Story
+                  115.2 retokened it to gray-500 in light, so the two now match in
+                  both themes; the pin stays so this hint keeps the named token. */}
               {type === 'debt' && (
                 <p className="mt-1 text-xs text-muted" data-testid="balance-debt-hint">
                   Enter what you still owe today. Record the recurring payment on the Expenses page

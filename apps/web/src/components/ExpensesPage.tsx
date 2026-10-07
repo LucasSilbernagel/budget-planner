@@ -736,8 +736,9 @@ export function ExpensesPage() {
                   suites, and a hint is not worth rewiring them. Not wired via
                   `aria-describedby` either: every such attribute in this app is
                   a single id, and joining one here breaks an exact-match
-                  assertion. `text-muted` (not `text-faint`) because gray-400 on
-                  the white modal card measures 2.54:1, below WCAG AA. */}
+                  assertion. `text-muted` (not `text-faint`) because `text-faint`
+                  was then gray-400, 2.54:1 on the white modal card, below WCAG
+                  AA (story 115.2 has since made the two tokens equal). */}
               <p className="mt-1 text-xs text-muted" data-testid="expense-mortgage-hint">
                 Paying off a loan or mortgage? Enter the payment here, and the amount still owed on
                 the Balance Tracking page.

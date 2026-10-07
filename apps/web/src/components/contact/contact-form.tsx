@@ -176,7 +176,7 @@ export function ContactForm({ className = '' }: ContactFormProps) {
           htmlFor="contact-name"
           className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
         >
-          Name <span className="text-gray-400 dark:text-gray-500">(optional)</span>
+          Name <span className="text-muted">(optional)</span>
         </label>
         <input
           id="contact-name"
@@ -200,7 +200,7 @@ export function ContactForm({ className = '' }: ContactFormProps) {
           htmlFor="contact-email"
           className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
         >
-          Email <span className="text-gray-400 dark:text-gray-500">(optional)</span>
+          Email <span className="text-muted">(optional)</span>
         </label>
         <input
           id="contact-email"

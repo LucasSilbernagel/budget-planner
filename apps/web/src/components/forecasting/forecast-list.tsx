@@ -71,6 +71,16 @@ function truncate(text: string, maxLength: number): string {
  * Displays and manages saved forecasting scenarios.
  * Provides search, filter, and bulk action capabilities.
  */
+/**
+ * Secondary text in a forecast row (story 115.2, FR183). A selected row is
+ * `bg-blue-50`, where `.text-muted` (gray-500) measures 4.44:1, just below WCAG
+ * AA's 4.5:1; `.text-body` (gray-600) is 6.94:1. An unselected row keeps the
+ * lighter token (4.83:1 on white) so the hierarchy holds there.
+ */
+function mutedOnRow(selected: boolean): 'text-body' | 'text-muted' {
+  return selected ? 'text-body' : 'text-muted'
+}
+
 export function ForecastList({
   forecasts,
   onDelete,
@@ -271,7 +281,7 @@ export function ForecastList({
               type="button"
               onClick={handleBulkDelete}
               disabled={selectedCount === 0}
-              className="px-4 py-2 bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-300 text-sm font-medium rounded-lg hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 text-sm font-medium rounded-lg hover:bg-red-200 hover:text-red-800 dark:hover:bg-red-900/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Delete Selected
             </button>
@@ -362,7 +372,9 @@ export function ForecastList({
                     <div className="text-sm font-medium text-subheading">
                       {truncate(forecast.name, 40)}
                     </div>
-                    <div className="text-xs text-muted mt-1">v{forecast.version ?? 1}</div>
+                    <div className={`text-xs mt-1 ${mutedOnRow(selectedIds.has(forecast.id))}`}>
+                      v{forecast.version ?? 1}
+                    </div>
                   </td>
 
                   {/* Description */}
@@ -389,14 +401,14 @@ export function ForecastList({
                         `formatCurrency` emits its own leading `-` — so the cell
                         rendered `+-40,000.00`. Same guard as
                         `projection-chart.tsx`'s `{isPositive ? '+' : ''}`. */}
-                    <div className="text-xs text-muted mt-1">
+                    <div className={`text-xs mt-1 ${mutedOnRow(selectedIds.has(forecast.id))}`}>
                       {forecast.result.summary.totalGrowth >= 0 ? '+' : ''}
                       {formatCurrency(forecast.result.summary.totalGrowth)}
                     </div>
                     {/* Story 107.1 (Q1): against today's data, signed with the
                         same guard as the line above. */}
                     {vsToday?.has(forecast.id) && (
-                      <div className="text-xs text-muted mt-1">
+                      <div className={`text-xs mt-1 ${mutedOnRow(selectedIds.has(forecast.id))}`}>
                         {signedAmount(vsToday.get(forecast.id) ?? 0, formatCurrency)} vs. today
                       </div>
                     )}

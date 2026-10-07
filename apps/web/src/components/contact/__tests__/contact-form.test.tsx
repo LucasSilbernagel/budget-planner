@@ -28,6 +28,15 @@ function stubFormId(id: string = FORM_ID) {
 }
 
 describe('ContactForm', () => {
+  it('marks the optional fields with .text-muted, not the sub-AA greys (story 115.2)', () => {
+    stubFormId()
+    render(<ContactForm />)
+    // gray-400 on light gray-50 was 2.43:1 and gray-500 on dark gray-900 3.67:1.
+    const marks = screen.getAllByText('(optional)')
+    expect(marks).toHaveLength(2)
+    for (const mark of marks) expect([...mark.classList]).toEqual(['text-muted'])
+  })
+
   it('keeps the Send message fill at blue-600 in dark too (story 115.1)', () => {
     stubFormId()
     render(<ContactForm />)
