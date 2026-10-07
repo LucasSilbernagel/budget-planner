@@ -97,12 +97,32 @@
   .text-muted {
     @apply text-gray-500 dark:text-gray-400;
   }
+  /* Story 115.2 (FR183): was gray-400 in light, 2.54:1 on white and 2.43:1 on
+     gray-50, below WCAG AA's 4.5:1 at every one of its sites (Lighthouse audit
+     2026-10-07). gray-500 is 4.83:1 / 4.63:1. So `.text-faint` now has the SAME
+     values as `.text-muted` in both themes; the name is kept so its sites need
+     no edit, and a future lighter shade must clear 4.5:1 on its background. */
   .text-faint {
-    @apply text-gray-400 dark:text-gray-400;
+    @apply text-gray-500 dark:text-gray-400;
   }
 
   .border-default {
     @apply border-gray-200 dark:border-gray-700;
+  }
+
+  /* --- White text on a green fill (story 115.1, FR183) ---
+     The ONE green for white-text buttons and badges. White on green-700
+     (#15803d) is 5.02:1, above WCAG AA's 4.5:1 for normal text; the green-600
+     it replaces was 3.30:1 and the dark-mode green-500 2.28:1 (Lighthouse audit
+     2026-10-07). So there is deliberately NO dark variant: a lighter green in
+     dark mode fails again. Hover stays at the call site (`hover:bg-green-800`,
+     7.13:1) because the Premium badge is not interactive.
+     ⚠️ A call site must not also carry a `bg-green-*` utility: utilities are
+     emitted after this layer and would win. `white-on-fill.guard.test.ts` pins
+     both rules. Do not remap `green-600` in the Tailwind config instead:
+     `text-green-600` colours income amounts elsewhere. */
+  .fill-green {
+    @apply bg-green-700 text-white;
   }
 
   /* --- Interactive surface + accent (story 30-1, FR51) ---

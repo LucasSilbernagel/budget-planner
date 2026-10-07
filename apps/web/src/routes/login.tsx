@@ -115,11 +115,11 @@ function LoginPage() {
           <div className="mt-4 text-center text-sm text-muted">
             <p>
               By signing in, you agree to our{' '}
-              <a href="/terms" className="text-accent hover:underline">
+              <a href="/terms" className="text-accent underline">
                 Terms of Service
               </a>{' '}
               and{' '}
-              <a href="/privacy" className="text-accent hover:underline">
+              <a href="/privacy" className="text-accent underline">
                 Privacy Policy
               </a>
             </p>

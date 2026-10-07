@@ -2120,11 +2120,10 @@ describe('SavingsPage — leftover breakdown disclosure affordance (Story 51.2)'
     // hovering, and hover does not exist on touch (`global.css:102-107`).
     expect(tokens).toContain('underline')
     expect(tokens).not.toContain('hover:underline')
-    // The caption colours this story exists to replace. ⚠️ `text-faint` is
-    // 2.54:1 on the white `.surface` card and FAILS AA in light — but it is
-    // pixel-identical to `text-muted` in DARK (both resolve to gray-400), so a
-    // dark-mode screenshot review cannot catch a regression to it. Only this
-    // token pin can. (Mutation arm M3.)
+    // The caption colours this story exists to replace. ⚠️ `text-faint` was
+    // 2.54:1 on the white `.surface` card and FAILED AA in light (story 115.2
+    // retokened it to gray-500, the same values as `text-muted`). Neither is
+    // the accent this caption needs. (Mutation arm M3.)
     expect(tokens).not.toContain('text-muted')
     expect(tokens).not.toContain('text-faint')
     // ⚠️ BOTH HOVER ARMS, because the pair is load-bearing in opposite themes

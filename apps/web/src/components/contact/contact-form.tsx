@@ -176,7 +176,7 @@ export function ContactForm({ className = '' }: ContactFormProps) {
           htmlFor="contact-name"
           className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
         >
-          Name <span className="text-gray-400 dark:text-gray-500">(optional)</span>
+          Name <span className="text-muted">(optional)</span>
         </label>
         <input
           id="contact-name"
@@ -200,7 +200,7 @@ export function ContactForm({ className = '' }: ContactFormProps) {
           htmlFor="contact-email"
           className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
         >
-          Email <span className="text-gray-400 dark:text-gray-500">(optional)</span>
+          Email <span className="text-muted">(optional)</span>
         </label>
         <input
           id="contact-email"
@@ -306,7 +306,7 @@ export function ContactForm({ className = '' }: ContactFormProps) {
         type="submit"
         disabled={isSubmitting}
         aria-busy={isSubmitting}
-        className="w-full rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
+        className="w-full rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {isSubmitting ? 'Sending…' : 'Send message'}
       </button>

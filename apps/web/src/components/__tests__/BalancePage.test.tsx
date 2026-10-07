@@ -1481,11 +1481,10 @@ describe('BalancePage — mortgage guidance link and contrast token (49.2)', () 
 
       // `.text-muted` is `text-gray-500 dark:text-gray-400`: 4.83:1 on the white
       // modal card and 5.78:1 on `dark:bg-gray-800`. Both pass AA for small text.
-      // ⚠️ `text-faint` resolves to gray-400 in BOTH themes, so it is identical to
-      // `text-muted` in dark and fails in LIGHT ONLY, at 2.54:1 (36.3's figure,
-      // reproduced independently by 49.2). Swapping the token is therefore a
-      // regression in one theme and a no-op in the other — which is exactly the
-      // kind of half-visible change a class pin catches and a style review does not.
+      // ⚠️ When this was written `text-faint` resolved to gray-400 in BOTH themes,
+      // so it failed in LIGHT ONLY, at 2.54:1 (36.3's figure, reproduced
+      // independently by 49.2). Story 115.2 retokened it to gray-500 in light, so
+      // the two tokens now have equal values; the pin keeps the named token.
       //
       // ⚠️ HONESTY NOTE: this pair was GREEN before story 49.2 — both hints already
       // carried `text-muted`. It proves nothing about 49.2's change and is purely a

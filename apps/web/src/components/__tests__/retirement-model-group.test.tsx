@@ -138,6 +138,13 @@ describe('the radio options are untouched (AC-5)', () => {
     // Deplete is the default model.
     expect(tokens(selected as Element)).toContain('border-blue-500')
     expect(tokens(unselected as Element)).toContain('border-gray-300')
+    // Story 115.2: each explanation reads `.text-body`, because `.text-muted` on
+    // the selected option's blue-50 was 4.44:1, below AA (tokens, not paint).
+    for (const label of [selected, unselected] as Element[]) {
+      const explanation = label.querySelectorAll('span > span')[1] as Element
+      expect(tokens(explanation)).toContain('text-body')
+      expect(tokens(explanation)).not.toContain('text-muted')
+    }
   })
 
   it('still renders both models by name', () => {

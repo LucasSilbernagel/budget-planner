@@ -84,6 +84,7 @@ function mobileLabelsIn(row: HTMLElement): string[] {
   return [...row.querySelectorAll('span.sm\\:hidden')].map((el) => el.textContent ?? '')
 }
 
+import { expectSharedGreen } from '@/test/white-fill-tokens'
 import { IncomePage } from '../IncomePage'
 
 /**
@@ -191,6 +192,8 @@ describe('IncomePage add dialog dismissal', () => {
   async function openFilledAddDialog(user: ReturnType<typeof userEvent.setup>) {
     renderWithProviders(<IncomePage />)
     expect(screen.getByText('No income sources yet')).toBeInTheDocument()
+    // Story 115.1: the shared AA green (white on green-600 was 3.30:1).
+    expectSharedGreen(screen.getByRole('button', { name: '+ Add Income Source' }))
     await user.click(screen.getByRole('button', { name: '+ Add Income Source' }))
     const dialog = screen.getByRole('dialog', { name: 'Add Income Source' })
     await user.type(within(dialog).getByLabelText('Name *'), 'Draft')

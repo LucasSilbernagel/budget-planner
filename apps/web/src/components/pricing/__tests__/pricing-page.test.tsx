@@ -364,9 +364,9 @@ describe('PricingPageView theming', () => {
     )
 
     const primary = [...screen.getByRole('button', { name: 'Get Premium' }).classList]
-    // The blue-600 fill is held in BOTH themes on purpose. The shipped
-    // convention (`contact-form.tsx:309`) drops to blue-500 on dark, but white
-    // on blue-500 measures 3.68:1 — below AA's 4.5:1 for normal text — against
+    // The blue-600 fill is held in BOTH themes on purpose (story 115.1 made
+    // `contact-form.tsx`, the one-time blue-500 dark convention, follow suit):
+    // white on blue-500 measures 3.68:1 — below AA's 4.5:1 for normal text — against
     // 5.17:1 for blue-600. Measured in a real browser during story 31-1 (AC-7).
     expect(primary).toContain('bg-blue-600')
     expect(primary).toContain('hover:bg-blue-700')

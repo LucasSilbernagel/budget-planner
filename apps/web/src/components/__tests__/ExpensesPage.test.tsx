@@ -86,6 +86,7 @@ function mobileLabelsIn(row: HTMLElement): string[] {
   return [...row.querySelectorAll('span.sm\\:hidden')].map((el) => el.textContent ?? '')
 }
 
+import { expectSharedGreen } from '@/test/white-fill-tokens'
 import { ExpensesPage } from '../ExpensesPage'
 
 /**
@@ -165,10 +166,13 @@ describe('ExpensesPage safe-action buttons are not danger-red', () => {
 
     const addButton = screen.getByRole('button', { name: '+ Add Expense' })
     expect(addButton.className).not.toMatch(/bg-red-(600|700)/)
+    // Story 115.1: both are the shared AA green (white on green-600 was 3.30:1).
+    expectSharedGreen(addButton)
 
     await user.click(addButton)
     const submit = within(screen.getByRole('dialog')).getByRole('button', { name: 'Add Expense' })
     expect(submit.className).not.toMatch(/bg-red-(600|700)/)
+    expectSharedGreen(submit)
   })
 })
 

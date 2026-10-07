@@ -28,7 +28,7 @@ export function DocNotFound() {
       <section className="rounded-lg surface p-6 shadow-md">
         <p className="text-body">
           We couldn't find that documentation page.{' '}
-          <a href="/docs" className="text-accent hover:underline">
+          <a href="/docs" className="text-accent underline">
             Return to the documentation index
           </a>
           .

@@ -732,7 +732,7 @@ export function HomePage() {
                     can assert this figure directly. */}
                 <p
                   data-testid="overview-total-income"
-                  className="text-2xl font-bold text-green-600"
+                  className="text-2xl font-bold text-green-600 dark:text-green-400"
                 >
                   {hydrated ? (
                     <GroupedAmount text={formatAmount(incomeForDuration)} />
@@ -757,7 +757,7 @@ export function HomePage() {
                     accessible-name reason for keying on a testid. */}
                 <p
                   data-testid="overview-total-expenses"
-                  className="text-2xl font-bold text-red-600"
+                  className="text-2xl font-bold text-red-600 dark:text-red-400"
                 >
                   {hydrated ? (
                     <GroupedAmount text={formatAmount(expensesForDuration)} />
@@ -780,7 +780,9 @@ export function HomePage() {
                 <p
                   data-testid="overview-net-worth"
                   className={`text-2xl font-bold ${
-                    netWorth >= 0 ? 'text-purple-600' : 'text-red-600'
+                    netWorth >= 0
+                      ? 'text-purple-600 dark:text-purple-400'
+                      : 'text-red-600 dark:text-red-400'
                   }`}
                 >
                   {hydrated ? (
@@ -1078,7 +1080,7 @@ export function HomePage() {
                 <div className="flex flex-wrap items-center justify-center gap-3">
                   <a
                     href="/income"
-                    className="inline-flex items-center rounded-md bg-green-600 px-4 py-2 font-medium text-white transition-colors hover:bg-green-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+                    className="inline-flex items-center fill-green rounded-md px-4 py-2 font-medium transition-colors hover:bg-green-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
                   >
                     + Add income
                   </a>

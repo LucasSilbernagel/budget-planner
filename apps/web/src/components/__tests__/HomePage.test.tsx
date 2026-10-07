@@ -40,6 +40,7 @@ vi.mock('../../hooks/usePremiumAccess', () => ({
   usePremiumAccess: () => usePremiumAccess(),
 }))
 
+import { expectSharedGreen } from '@/test/white-fill-tokens'
 import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../../lib/premium/benefits'
 import { HomePage, OVERVIEW_BENEFITS } from '../HomePage'
 
@@ -706,6 +707,8 @@ describe('HomePage overview subtitle + mobile padding (story 19-4)', () => {
     const tokens = (section as HTMLElement).className.split(/\s+/)
     expect(tokens).toContain('p-4')
     expect(tokens).toContain('sm:p-6')
+    // Story 115.1: the onboarding call to action is the shared AA green.
+    expectSharedGreen(screen.getByRole('link', { name: '+ Add income' }))
   })
 })
 
@@ -2042,6 +2045,18 @@ describe('HomePage net worth includes savings (Story 32.2)', () => {
     render(<HomePage />)
 
     expect(screen.getByTestId('overview-net-worth')).toHaveTextContent('-127,000.00')
+    // Story 115.2: a negative figure gets a lighter red in dark (red-600 on the
+    // dark inset card was 2.64:1; red-400 is 4.62:1), and so does Total Expenses.
+    // Tokens, not paint: jsdom has no Tailwind.
+    expect([...screen.getByTestId('overview-net-worth').classList]).toEqual(
+      expect.arrayContaining(['text-red-600', 'dark:text-red-400'])
+    )
+    expect([...screen.getByTestId('overview-total-expenses').classList]).toEqual(
+      expect.arrayContaining(['text-red-600', 'dark:text-red-400'])
+    )
+    expect([...screen.getByTestId('overview-total-income').classList]).toEqual(
+      expect.arrayContaining(['text-green-600', 'dark:text-green-400'])
+    )
   })
 
   it('AC-3: no longer shows the pre-32.2 investments-minus-debts figure', () => {
@@ -2077,6 +2092,10 @@ describe('HomePage net worth includes savings (Story 32.2)', () => {
     render(<HomePage />)
 
     expect(screen.getByTestId('overview-net-worth')).toHaveTextContent('3,000.00')
+    // Story 115.2: purple-600 on the dark inset card was 2.37:1; purple-400 is 4.83.
+    expect([...screen.getByTestId('overview-net-worth').classList]).toEqual(
+      expect.arrayContaining(['text-purple-600', 'dark:text-purple-400'])
+    )
   })
 
   it('AC-3: a savings-only user is NOT told the figure is untracked', () => {

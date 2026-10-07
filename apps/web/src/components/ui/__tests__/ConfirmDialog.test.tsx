@@ -1,4 +1,5 @@
 import { renderWithProviders, screen, userEvent } from '@/test/utils'
+import { expectNoDarkFill } from '@/test/white-fill-tokens'
 import { useRef, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { ConfirmDialog } from '../ConfirmDialog'
@@ -84,6 +85,8 @@ describe('ConfirmDialog', () => {
     )
     expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Keep' })).toBeInTheDocument()
+    // Story 115.1: the confirm fill stays red-600 in dark (white on red-500 is 3.76:1).
+    expectNoDarkFill(screen.getByRole('button', { name: 'Remove' }))
   })
 
   it('moves focus to finalFocusRef after a destructive confirm removes the trigger (AC-5)', async () => {
