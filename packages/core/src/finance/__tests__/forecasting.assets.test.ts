@@ -1,0 +1,212 @@
+/**
+ * Story 114.1 (FR182): assets in the forecast.
+ *
+ * An asset is a CONSTANT (D7): no growth, no contribution. `assets` (cents, the
+ * total of the builder's asset rows) lifts every year's `netWorth` and the
+ * starting net worth by the same amount, and changes nothing else. Absent, the
+ * output is exactly what it was before the story (AC-2).
+ *
+ * Every figure here is hand-derived. The fixture: 6,000.00/mo income, 3,000.00/mo
+ * expenses, 10,000.00 savings, no investments, and an EMPTY row list (the
+ * builder's path, so investments stay at 0 rather than compounding at the
+ * row-less 7%). Net income is 36,000.00 a year, so savings close year n at
+ * 10,000.00 + n × 36,000.00.
+ */
+
+import { describe, expect, it } from 'vitest'
+import {
+  ASSETS_NEGATIVE,
+  FORECAST_OUT_OF_RANGE,
+  type ForecastInputData,
+  type ForecastingScenario,
+  calculateFinancialForecast,
+} from '../forecasting'
+
+const FLAT: ForecastingScenario = {
+  name: 'Scenario',
+  incomeGrowthRate: 0,
+  expenseGrowthRate: 0,
+  oneTimeEvents: [],
+}
+
+const HOUSE = 30_000_000
+
+function data(assets?: number): ForecastInputData {
+  return {
+    income: [{ amount: 600_000, frequency: 'monthly' }],
+    expenses: [{ amount: 300_000, frequency: 'monthly' }],
+    savings: 1_000_000,
+    investments: 0,
+    balanceAccounts: [],
+    ...(assets === undefined ? {} : { assets }),
+  }
+}
+
+describe('assets count in net worth (story 114.1, AC-1)', () => {
+  it('adds the assets to the starting net worth', () => {
+    const result = calculateFinancialForecast(data(HOUSE), FLAT, 3)
+    expect(result.summary.startingNetWorth).toBe(1_000_000 + HOUSE)
+  })
+
+  it('lifts every year of BOTH series by exactly the asset total, and leaves the growth unchanged', () => {
+    const without = calculateFinancialForecast(data(), FLAT, 3)
+    const withAssets = calculateFinancialForecast(data(HOUSE), FLAT, 3)
+
+    // Hand-derived: savings close year n at 1,000,000 + n × 3,600,000.
+    expect(withAssets.projection.map((row) => row.netWorth)).toEqual([
+      4_600_000 + HOUSE,
+      8_200_000 + HOUSE,
+      11_800_000 + HOUSE,
+    ])
+    expect(withAssets.baseline.map((row) => row.netWorth)).toEqual([
+      4_600_000 + HOUSE,
+      8_200_000 + HOUSE,
+      11_800_000 + HOUSE,
+    ])
+    for (const series of ['baseline', 'projection'] as const) {
+      withAssets[series].forEach((row, i) => {
+        const plain = without[series][i]
+        expect(row.netWorth - (plain?.netWorth ?? 0)).toBe(HOUSE)
+        // A constant: the same value every year (D7), nothing grows.
+        expect(row.assets).toBe(HOUSE)
+        // Nothing else moves.
+        expect(row.savings).toBe(plain?.savings)
+        expect(row.investments).toBe(plain?.investments)
+        expect(row.income).toBe(plain?.income)
+        expect(row.expenses).toBe(plain?.expenses)
+        expect(row.netIncome).toBe(plain?.netIncome)
+        expect(row.debts).toBe(plain?.debts)
+      })
+    }
+    expect(withAssets.summary.endingNetWorth).toBe(11_800_000 + HOUSE)
+    expect(withAssets.summary.totalGrowth).toBe(without.summary.totalGrowth)
+    expect(withAssets.summary.averageAnnualGrowth).toBe(without.summary.averageAnnualGrowth)
+  })
+
+  it('stays constant over a long period with growing investments beside it (no multiplier)', () => {
+    const input: ForecastInputData = {
+      ...data(HOUSE),
+      investments: 1_000_007,
+      balanceAccounts: [
+        {
+          type: 'investment',
+          balance: 1_000_007,
+          contribution: 0,
+          frequency: 'monthly',
+          annualReturn: 0.07,
+        },
+      ],
+    }
+    const result = calculateFinancialForecast(input, FLAT, 30)
+    for (const row of result.projection) {
+      expect(row.assets).toBe(HOUSE)
+      expect(row.netWorth).toBe(row.savings + row.investments + HOUSE - (row.debts ?? 0))
+    }
+  })
+
+  it('counts against nothing: a debt still subtracts, the asset still adds', () => {
+    const input: ForecastInputData = {
+      ...data(HOUSE),
+      balanceAccounts: [
+        {
+          type: 'debt',
+          balance: 500_000,
+          contribution: 0,
+          frequency: 'monthly',
+          contributionRecordedAsExpense: true,
+        },
+      ],
+    }
+    const result = calculateFinancialForecast(input, FLAT, 2)
+    expect(result.summary.startingNetWorth).toBe(1_000_000 + HOUSE - 500_000)
+    expect(result.projection.map((row) => row.netWorth)).toEqual([
+      4_600_000 + HOUSE - 500_000,
+      8_200_000 + HOUSE - 500_000,
+    ])
+  })
+
+  it('0 is a value: the key is present and nothing changes', () => {
+    const without = calculateFinancialForecast(data(), FLAT, 3)
+    const zero = calculateFinancialForecast(data(0), FLAT, 3)
+    expect(zero.summary).toEqual(without.summary)
+    expect(zero.projection.map((row) => row.assets)).toEqual([0, 0, 0])
+    expect(zero.baseline.map((row) => row.assets)).toEqual([0, 0, 0])
+    expect(zero.projection.map((row) => row.netWorth)).toEqual(
+      without.projection.map((row) => row.netWorth)
+    )
+  })
+})
+
+describe('the baseline uses its OWN assets (story 114.1, AC-1, with story 107.1)', () => {
+  it('a separate baseline input with different assets moves only the baseline', () => {
+    const plain = calculateFinancialForecast(data(), FLAT, 3)
+    const result = calculateFinancialForecast(data(HOUSE), FLAT, 3, data(10_000_000))
+    result.baseline.forEach((row, i) => {
+      expect(row.assets).toBe(10_000_000)
+      expect(row.netWorth).toBe((plain.baseline[i]?.netWorth ?? 0) + 10_000_000)
+    })
+    result.projection.forEach((row, i) => {
+      expect(row.assets).toBe(HOUSE)
+      expect(row.netWorth).toBe((plain.projection[i]?.netWorth ?? 0) + HOUSE)
+    })
+    // The summary is always the projection's.
+    expect(result.summary.startingNetWorth).toBe(1_000_000 + HOUSE)
+  })
+
+  it('a baseline input without assets has no `assets` key, even when the projection has one', () => {
+    const result = calculateFinancialForecast(data(HOUSE), FLAT, 2, data())
+    for (const row of result.baseline) expect(row).not.toHaveProperty('assets')
+    for (const row of result.projection) expect(row.assets).toBe(HOUSE)
+  })
+})
+
+describe('assets are validated like every starting figure (story 114.1, AC-1)', () => {
+  it('refuses a negative total', () => {
+    expect(() => calculateFinancialForecast(data(-1), FLAT, 3)).toThrow(ASSETS_NEGATIVE)
+    expect(ASSETS_NEGATIVE).toBe('Asset values must be 0 or more')
+  })
+
+  it('refuses a negative total on the baseline input too', () => {
+    expect(() => calculateFinancialForecast(data(HOUSE), FLAT, 3, data(-1))).toThrow(
+      ASSETS_NEGATIVE
+    )
+  })
+
+  it.each([
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['-Infinity', Number.NEGATIVE_INFINITY],
+    ['a string', '5' as unknown as number],
+    ['null', null as unknown as number],
+  ])('refuses %s as validateAmount does', (_label, assets) => {
+    expect(() => calculateFinancialForecast(data(assets), FLAT, 3)).toThrow(
+      'Amount must be a finite number'
+    )
+  })
+
+  it('refuses a projection whose net worth would overflow with the assets (FORECAST_OUT_OF_RANGE)', () => {
+    const huge: ForecastInputData = {
+      ...data(Number.MAX_VALUE),
+      savings: Number.MAX_VALUE,
+      savingsAccounts: undefined,
+    }
+    expect(() => calculateFinancialForecast(huge, FLAT, 1)).toThrow(FORECAST_OUT_OF_RANGE)
+  })
+})
+
+describe('without assets the output is unchanged (story 114.1, AC-2)', () => {
+  it('no `assets` key on any row when none is given', () => {
+    const result = calculateFinancialForecast(data(), FLAT, 3)
+    for (const row of [...result.baseline, ...result.projection]) {
+      expect(row).not.toHaveProperty('assets')
+    }
+    expect(result.summary.startingNetWorth).toBe(1_000_000)
+  })
+
+  it('an explicit `assets: undefined` is the same as absent', () => {
+    const absent = calculateFinancialForecast(data(), FLAT, 3)
+    const explicit = calculateFinancialForecast({ ...data(), assets: undefined }, FLAT, 3)
+    expect(explicit).toEqual(absent)
+    for (const row of explicit.projection) expect(row).not.toHaveProperty('assets')
+  })
+})

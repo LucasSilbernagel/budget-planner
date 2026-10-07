@@ -137,6 +137,15 @@ export interface SavedBalanceAccount {
 }
 
 /**
+ * One what-if asset row as a saved forecast stores it (story 114.1, version 6).
+ * Money in cents. An asset is a constant (D7), so a name and a value is all.
+ */
+export interface SavedAssetAccount {
+  name: string
+  balance: number
+}
+
+/**
  * Builder inputs that are NOT part of ForecastingScenario but are needed to
  * faithfully reopen a saved forecast (savings/investments/years). Persisted in
  * the scenarioData JSON blob alongside { scenario, result } (story bug-3).
@@ -149,7 +158,8 @@ export interface SavedBalanceAccount {
  * same rows-win rule. (An older client that reads only `investments` reopens a v3
  * forecast without its debts and contributions; its starting investments are
  * still right.) Since story 100.3 (version 4) each investment row also carries
- * its own `annualReturn`.
+ * its own `annualReturn`. Since story 114.1 (version 6) the asset rows are saved
+ * too, with no total beside them: an older client ignores them.
  */
 export interface ScenarioInputs {
   savings: number
@@ -159,6 +169,8 @@ export interface ScenarioInputs {
   savingsAccounts?: SavedSavingsAccount[]
   /** Absent on forecasts saved before story 100.2 (versions 1 and 2). */
   balanceAccounts?: SavedBalanceAccount[]
+  /** Absent before version 6 (story 114.1): such a forecast reloads with no asset rows. */
+  assetAccounts?: SavedAssetAccount[]
 }
 
 /**
@@ -260,6 +272,22 @@ function savedBalanceAccount(entry: unknown): SavedBalanceAccount | null {
 }
 
 /**
+ * A saved asset row coerced like `savedSavingsAccount` (story 114.1, AC-10): a
+ * non-object becomes `{}` (so a blank row at 0), a non-string name `''`, and a
+ * non-finite or negative value 0. Never dropped: unlike a balance row, an asset
+ * has no type whose sign could be unknown.
+ */
+function savedAssetAccount(entry: unknown): SavedAssetAccount {
+  const record =
+    typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : {}
+  const balance = record['balance']
+  return {
+    name: typeof record['name'] === 'string' ? record['name'] : '',
+    balance: typeof balance === 'number' && Number.isFinite(balance) && balance >= 0 ? balance : 0,
+  }
+}
+
+/**
  * Map a server-side forecasting profile to the client SavedForecast shape.
  * scenarioData is a JSON string of { scenario, result }; returns null if it
  * cannot be parsed into the expected shape so a corrupt row can't crash the UI.
@@ -269,9 +297,10 @@ function mapToSavedForecast(profile: ForecastWire): SavedForecast | null {
     const parsed = JSON.parse(profile.scenarioData) as {
       scenario?: ForecastingScenario
       result?: ForecastingResult
-      inputs?: Omit<ScenarioInputs, 'savingsAccounts' | 'balanceAccounts'> & {
+      inputs?: Omit<ScenarioInputs, 'savingsAccounts' | 'balanceAccounts' | 'assetAccounts'> & {
         savingsAccounts?: unknown
         balanceAccounts?: unknown
+        assetAccounts?: unknown
       }
     }
     // Validate the nested shape the saved-list UI actually dereferences
@@ -325,6 +354,12 @@ function mapToSavedForecast(profile: ForecastWire): SavedForecast | null {
           0
         )
       : savedInputs?.investments
+    // Asset rows (story 114.1, AC-10): a non-array is ignored (no rows, as for a
+    // forecast saved before version 6) and each entry is coerced. A bad
+    // `assetAccounts` never discards `inputs`.
+    const assetAccounts = Array.isArray(savedInputs?.assetAccounts)
+      ? savedInputs.assetAccounts.map(savedAssetAccount)
+      : undefined
     const inputs: ScenarioInputs | undefined =
       savedInputs &&
       typeof savings === 'number' &&
@@ -339,6 +374,7 @@ function mapToSavedForecast(profile: ForecastWire): SavedForecast | null {
               : DEFAULT_FORECAST_YEARS,
             ...(savingsAccounts ? { savingsAccounts } : {}),
             ...(balanceAccounts ? { balanceAccounts } : {}),
+            ...(assetAccounts ? { assetAccounts } : {}),
           }
         : undefined
     return {

@@ -8,8 +8,12 @@
  * The arithmetic itself lives in `lib/net-worth.ts`, which the
  * React-free report builder calls directly with its own corruption-filtered
  * totals (a deliberate divergence, pinned by a parity test). The forecasting
- * scenario's "Starting/Ending Net Worth" is NOT this figure at all: those inputs
- * are typed by the user, and the exclusion is recorded at that call site.
+ * scenario's "Starting/Ending Net Worth" does not read this hook: those inputs
+ * are what-if rows the user can edit. Seeded from the stores, the Starting Net
+ * Worth equals this figure since story 114.1 (assets included), pinned by
+ * `scenario-builder.asset-rows.test.tsx` against this hook. One known exception,
+ * closed by decision: a legacy stored-NEGATIVE asset, which this hook sums raw and
+ * the builder seeds as 0 (`assetsFromStore`).
  *
  * ⚠️ There is deliberately no balance-store-only net selector any more. The old
  * `useNetBalance` computed `investments − debts` and could not see the savings

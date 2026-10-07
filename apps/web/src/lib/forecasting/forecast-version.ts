@@ -14,8 +14,15 @@
  * change field presence cannot detect: the builder's `balanceFromSaved` READS
  * `version` and reloads every debt of a forecast below 5 flagged (D1), so it
  * projects exactly as it was saved.
+ * Version 6 (story 114.1, FR182) adds `inputs.assetAccounts` (`{ name, balance }`
+ * rows, always present, possibly empty). A v1-v5 forecast has none and reloads
+ * with no asset rows (`assetsFromSaved`). ⚠️ Its "vs. today" (on My Forecasts
+ * and in the reopened builder) reads lower by the user's asset total: its
+ * projection has no assets, today's baseline does (Q3, accepted pre-launch).
+ * Reopening and saving does NOT fix it: a loaded forecast is never seeded, so it
+ * saves `assetAccounts: []`. Only adding the asset rows by hand does.
  *
  * Its own module, not `forecast-api.ts`: the page tests replace that module
  * wholesale with `vi.mock`, which would turn this into `undefined`.
  */
-export const FORECAST_SAVE_VERSION = 5
+export const FORECAST_SAVE_VERSION = 6
