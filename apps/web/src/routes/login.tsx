@@ -70,7 +70,7 @@ function LoginPage() {
   const { error } = Route.useSearch()
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center surface-sunken p-4">
+    <main className="min-h-screen flex flex-col items-center justify-center surface-sunken p-4">
       <div className="w-full max-w-md">
         {/* Logo / Header */}
         <div className="text-center mb-8">
@@ -115,11 +115,11 @@ function LoginPage() {
           <div className="mt-4 text-center text-sm text-muted">
             <p>
               By signing in, you agree to our{' '}
-              <a href="/terms" className="text-accent hover:underline">
+              <a href="/terms" className="text-accent underline">
                 Terms of Service
               </a>{' '}
               and{' '}
-              <a href="/privacy" className="text-accent hover:underline">
+              <a href="/privacy" className="text-accent underline">
                 Privacy Policy
               </a>
             </p>
@@ -143,6 +143,6 @@ function LoginPage() {
           </div>
         </div>
       </div>
-    </div>
+    </main>
   )
 }

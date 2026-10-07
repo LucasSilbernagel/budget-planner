@@ -40,6 +40,10 @@ describe('DocNotFound theming', () => {
     if (!(backLink instanceof HTMLElement)) throw new Error('missing docs index link')
     expect([...backLink.classList]).toContain('text-accent')
     expect([...backLink.classList]).not.toContain('text-blue-600')
+    // Story 115.2: a link inside the sentence is underlined at rest (its colour is
+    // 1.13:1 against the body text; WCAG 1.4.1 wants 3:1 or a non-colour cue).
+    expect([...backLink.classList]).toContain('underline')
+    expect([...backLink.classList]).not.toContain('hover:underline')
   })
 
   it('renders inside the themed DocsLayout shell, so the 404 canvas darkens too', () => {

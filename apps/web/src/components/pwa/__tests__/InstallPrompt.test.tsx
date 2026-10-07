@@ -9,6 +9,7 @@
  * dismissed.
  */
 
+import { expectSharedGreen } from '@/test/white-fill-tokens'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // @ts-expect-error — pwa.config.mjs is plain ESM at the app root with no types.
@@ -71,6 +72,8 @@ describe('InstallPrompt', () => {
     expect(preventDefault).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('region', { name: /install longhand/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Install' })).toBeInTheDocument()
+    // Story 115.1: the shared AA green, with no dark-mode green-500 beside it.
+    expectSharedGreen(screen.getByRole('button', { name: 'Install' }))
   })
 
   /**

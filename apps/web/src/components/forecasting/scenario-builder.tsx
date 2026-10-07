@@ -2420,7 +2420,7 @@ export function ScenarioBuilder({
         <section className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-6">
           <h3 className="text-lg font-semibold text-subheading mb-4">Forecast Summary</h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <dl className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <StatCard
               label="Starting Net Worth"
               value={formatCurrency(summary?.startingNetWorth || 0)}
@@ -2443,7 +2443,7 @@ export function ScenarioBuilder({
             {vsToday !== null && (
               <StatCard label="vs. today" value={signedAmount(vsToday, formatCurrency)} />
             )}
-          </div>
+          </dl>
 
           {/* The save outcome renders HERE, not at the top of the form.
               ⚠️ Adjacency is structural, not cosmetic: the message shares this
@@ -2845,7 +2845,7 @@ function FinancialItemRow({
           <button
             type="button"
             onClick={onDelete}
-            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors"
+            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 hover:text-red-800 dark:hover:bg-red-900/60 dark:hover:text-red-300 transition-colors"
           >
             Remove
           </button>
@@ -3146,7 +3146,7 @@ function OneTimeEventRow({
           <button
             type="button"
             onClick={() => onDelete(event.id)}
-            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors"
+            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 hover:text-red-800 dark:hover:bg-red-900/60 dark:hover:text-red-300 transition-colors"
           >
             Remove
           </button>
@@ -3437,7 +3437,7 @@ function SavingsAccountRow({
             // Unique per row (AC-5): "Remove" alone would name every row's button
             // the same, and `getByRole` names are full-string.
             aria-label={rowName === '' ? 'Remove account' : `Remove ${rowName}`}
-            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors"
+            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 hover:text-red-800 dark:hover:bg-red-900/60 dark:hover:text-red-300 transition-colors"
           >
             Remove
           </button>
@@ -3601,7 +3601,7 @@ function BalanceAccountRow({
             onClick={() => onDelete(account.id)}
             // Unique per row (AC-8): `getByRole` names are full-string.
             aria-label={rowName === '' ? 'Remove balance' : `Remove ${rowName}`}
-            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors"
+            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 hover:text-red-800 dark:hover:bg-red-900/60 dark:hover:text-red-300 transition-colors"
           >
             Remove
           </button>
@@ -3745,7 +3745,7 @@ function AssetAccountRow({
             onClick={() => onDelete(account.id)}
             // Unique per row: `getByRole` names are full-string.
             aria-label={rowName === '' ? 'Remove asset' : `Remove ${rowName}`}
-            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors"
+            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 hover:text-red-800 dark:hover:bg-red-900/60 dark:hover:text-red-300 transition-colors"
           >
             Remove
           </button>
@@ -3778,7 +3778,7 @@ function StatCard({ label, value, highlight }: StatCardProps): React.ReactElemen
         highlight ? 'bg-white dark:bg-gray-800 shadow' : 'bg-blue-100 dark:bg-blue-900/40'
       }`}
     >
-      <dt className="text-xs font-medium text-muted uppercase tracking-wider">{label}</dt>
+      <dt className="text-xs font-medium text-body uppercase tracking-wider">{label}</dt>
       <dd
         className={`mt-1 text-lg font-semibold ${
           highlight ? 'text-blue-600 dark:text-blue-400' : 'text-gray-800 dark:text-gray-100'

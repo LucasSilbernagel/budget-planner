@@ -251,6 +251,35 @@ describe('the /forecasting page intro (57.1, AC-3)', () => {
  * asserted for titles only, not descriptions; an earlier version of this comment
  * had that wrong.) So a revert to the vague copy would have shipped green.
  */
+/**
+ * Story 116.1 (FR184, A4): every state of `/forecasting` is ONE `<main>`
+ * landmark. Only the active state had one; the loading and locked states (never
+ * audited by Lighthouse) are pinned here. Each case first AWAITS text that only
+ * its own branch renders, because `renderWithRouter` mounts asynchronously and
+ * a synchronous count would run against an empty body.
+ */
+describe('/forecasting landmarks (story 116.1)', () => {
+  it.each([
+    ['loading', { isLoading: true }, () => screen.findAllByText(/^loading\.\.\.$/i)],
+    [
+      'locked',
+      { hasAccess: false, subscriptionStatus: 'free' as const },
+      () => screen.findAllByText(/advanced forecasting/i),
+    ],
+    [
+      'active',
+      { hasAccess: true, subscriptionStatus: 'active' as const, isAuthenticated: true },
+      () => screen.findAllByTestId('forecasting-intro'),
+    ],
+  ])('the %s state is exactly one <main>', async (_state, overrides, branchRendered) => {
+    mockStatus(overrides)
+    renderWithRouter(<ForecastingPage />)
+
+    expect((await branchRendered()).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+  })
+})
+
 describe('the /forecasting mechanism copy (57.1 follow-up #3)', () => {
   /** The exact subtitle deleted from the sticky `PageHeader`. */
   const DELETED_SUBTITLE = 'Advanced tools for modeling your financial future'

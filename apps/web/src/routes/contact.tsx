@@ -24,7 +24,7 @@ export const Route = createFileRoute('/contact')({
 
 function ContactPage() {
   return (
-    <div className="mx-auto max-w-xl px-4 py-10">
+    <main className="mx-auto max-w-xl px-4 py-10">
       <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Contact</h1>
       <p className="mt-2 text-gray-600 dark:text-gray-400">
         Have feedback or found a bug? Send a message and it will reach the developer directly. Only
@@ -33,6 +33,6 @@ function ContactPage() {
       <div className="mt-6">
         <ContactForm />
       </div>
-    </div>
+    </main>
   )
 }

@@ -480,7 +480,7 @@ export function AuthIndicator() {
               // It stays OUTSIDE the account-menu trigger and always visible
               // (story 59.3): a paying user's standing confirmation is not
               // something to put behind a click.
-              <span className="shrink-0 rounded-full bg-green-600 px-2 py-0.5 text-xs font-semibold text-white dark:bg-green-500">
+              <span className="fill-green shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold">
                 Premium
               </span>
             )}

@@ -251,8 +251,8 @@ describe('the canonical Premium benefit set is the same on every surface', () =>
     // Pinned BOTH ways. The prompt-order test above derives its expectation from
     // PROMPT_COPY, so it cannot see this wording at all. This pins the Overview
     // `featureName`; the other plain-name surfaces are pinned exactly in their own
-    // suites: `/settings` tile `report-section.test.tsx` (locked button name
-    // 'Financial Summary Report — premium, locked'), `/financial-summary` gate
+    // suites: `/settings` tile `report-section.test.tsx` (its visible title, which
+    // since story 116.2 is the locked button's name), `/financial-summary` gate
     // `ReportPage.test.tsx` (anchored featureName). `/pricing` and the Overview
     // label stay under the download fence below.
     expect(PROMPT_COPY.report).toBe('Downloadable Financial Summary Report')
@@ -274,11 +274,13 @@ describe('the canonical Premium benefit set is the same on every surface', () =>
     // the pairing, and the duplication is deliberate: it is the only place a
     // benefit pointing at the wrong page can be caught.
     // `featureName` is pinned here too, for the same reason and one of its own:
-    // it is what `PremiumFeatureGate` turns into the "<name> — premium, locked"
-    // accessible name, and D4 requires one feature to have exactly ONE name across
-    // the Overview, `/settings` and its route. Nothing compared those before, so
-    // renaming `report.featureName` to "Financial Summary" stayed green while the
-    // two surfaces announced different names — the drift class this story removes.
+    // it is how `PremiumFeatureGate`'s upgrade dialog names the feature, and D4
+    // requires one feature to have exactly ONE name across the Overview,
+    // `/settings` and its route. Nothing compared those before, so renaming
+    // `report.featureName` to "Financial Summary" stayed green while the two
+    // surfaces named it differently — the drift class this story removes.
+    // (Until story 116.2 it was also the locked button's accessible name; that is
+    // now the button's visible content.)
     const EXPECTED: Record<
       PremiumBenefitId,
       | { activation: 'prompt'; featureName: string }

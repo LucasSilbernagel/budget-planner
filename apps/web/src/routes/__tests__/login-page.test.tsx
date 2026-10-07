@@ -68,6 +68,13 @@ describe('/login — the sign-in card beside the strip', () => {
       'href',
       '/privacy'
     )
+    // Story 115.2: links INSIDE the sentence are underlined at rest. Their colour
+    // alone is 1.39:1 against the text around them; WCAG 1.4.1 wants 3:1 or a
+    // non-colour cue, and hover does not exist on touch.
+    for (const link of within(consent).getAllByRole('link')) {
+      expect([...link.classList]).toContain('underline')
+      expect([...link.classList]).not.toContain('hover:underline')
+    }
 
     expect(screen.getByRole('link', { name: /continue without account/i })).toHaveAttribute(
       'href',
@@ -96,5 +103,11 @@ describe('/login — the sign-in card beside the strip', () => {
     const region = await strip()
     await waitFor(() => expect(region.children).toHaveLength(0))
     expect(within(region).queryByRole('link', { name: /sign in/i })).toBeNull()
+  })
+
+  it('is exactly one <main> landmark (story 116.1, FR184)', async () => {
+    renderChrome('/login', true)
+    expect(await screen.findByRole('heading', { name: /^sign in$/i })).toBeInTheDocument()
+    expect(screen.getAllByRole('main')).toHaveLength(1)
   })
 })

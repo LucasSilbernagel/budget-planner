@@ -58,6 +58,7 @@ vi.mock('@/lib/account/sign-out', async (importOriginal) => {
 })
 
 import { resetSignOutStateForTests, signOut } from '@/lib/account/sign-out'
+import { expectSharedGreen } from '@/test/white-fill-tokens'
 import { AuthIndicator } from '../auth-indicator'
 
 /**
@@ -221,6 +222,8 @@ describe('AuthIndicator', () => {
     const indicator = await screen.findByRole('status')
     expect(await within(indicator).findByText('user@example.com')).toBeInTheDocument()
     expect(within(indicator).getByText(/^premium$/i)).toBeInTheDocument()
+    // Story 115.1: the badge is the shared AA green, with no dark green-500.
+    expectSharedGreen(within(indicator).getByText(/^premium$/i))
     // Signed-in: no "Sign in" affordance.
     expect(screen.queryByRole('link', { name: /sign in/i })).not.toBeInTheDocument()
   })

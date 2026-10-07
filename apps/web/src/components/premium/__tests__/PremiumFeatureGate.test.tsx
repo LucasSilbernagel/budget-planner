@@ -15,6 +15,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../../hooks/usePremiumAccess'
+import { ANY_LOCKED_NAME, lockedName } from '../../../test/locked-name'
 
 const usePremiumAccess = vi.fn()
 
@@ -45,11 +46,18 @@ function mockStatus(overrides: Partial<PremiumAccessStatus>): void {
   usePremiumAccess.mockReturnValue({ status })
 }
 
-function renderGate(props?: { upgradeHref?: string }) {
+const DESCRIPTION = 'See how your finances change over the years ahead'
+
+function renderGate(props?: { upgradeHref?: string; featureName?: string }) {
   return render(
     <PremiumFeatureGate
-      featureName="Advanced Forecasting"
-      locked={<span>Advanced Forecasting</span>}
+      featureName={props?.featureName ?? 'Advanced Forecasting'}
+      locked={
+        <span className="flex flex-col">
+          <span>Advanced Forecasting</span>
+          <span>{DESCRIPTION}</span>
+        </span>
+      }
       upgradeHref={props?.upgradeHref}
     >
       <a href="/forecasting" data-testid="unlocked-link">
@@ -91,7 +99,7 @@ describe('PremiumFeatureGate', () => {
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
     renderGate()
 
-    const locked = screen.getByRole('button', { name: /advanced forecasting — premium, locked/i })
+    const locked = screen.getByRole('button', { name: lockedName('Advanced Forecasting') })
     expect(locked).toBeInTheDocument()
     expect(screen.getByText('Premium')).toBeInTheDocument()
     expect(screen.queryByTestId('unlocked-link')).not.toBeInTheDocument()
@@ -116,7 +124,7 @@ describe('PremiumFeatureGate', () => {
     renderGate()
 
     expect(screen.queryByTestId('premium-prompt')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /premium, locked/i }))
+    fireEvent.click(screen.getByRole('button', { name: ANY_LOCKED_NAME }))
 
     expect(screen.getByTestId('premium-prompt')).toBeInTheDocument()
     expect(premiumPromptProps).toHaveBeenCalledWith(
@@ -132,9 +140,78 @@ describe('PremiumFeatureGate', () => {
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
     renderGate({ upgradeHref: '/login' })
 
-    fireEvent.click(screen.getByRole('button', { name: /premium, locked/i }))
+    fireEvent.click(screen.getByRole('button', { name: ANY_LOCKED_NAME }))
     expect(premiumPromptProps).toHaveBeenCalledWith(
       expect.objectContaining({ upgradeHref: '/login' })
     )
+  })
+})
+
+/**
+ * Story 116.2 (FR184, A3): the locked control is named by what it SHOWS. It used
+ * to carry `aria-label="<featureName> — premium, locked"`, which replaced its
+ * content in the accessible name, so the visible description was never
+ * announced and a voice-control user saying the visible title matched nothing
+ * (axe `label-content-name-mismatch`).
+ */
+describe('PremiumFeatureGate locked accessible name (story 116.2)', () => {
+  /** The name testing-library computes for `el` (handed to a `name` matcher). */
+  function nameOf(el: HTMLElement): string {
+    let name = ''
+    screen.queryAllByRole('button', {
+      name: (computed, node) => {
+        if (node === el) name = computed
+        return false
+      },
+    })
+    return name
+  }
+
+  it('carries no aria-label or aria-labelledby that would replace its content (AC-2)', () => {
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
+    renderGate()
+    const locked = screen.getByTestId('premium-gate-locked')
+    expect(locked).not.toHaveAttribute('aria-label')
+    expect(locked).not.toHaveAttribute('aria-labelledby')
+  })
+
+  it('is named title first, then the description, then "Premium, locked" (AC-1)', () => {
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
+    renderGate()
+    const name = nameOf(screen.getByTestId('premium-gate-locked'))
+    expect(name).toMatch(/^Advanced Forecasting\b/)
+    expect(name).toContain(DESCRIPTION)
+    expect(name).toMatch(/\bPremium\s*,\s*locked$/)
+  })
+
+  it('takes its name from the visible content, not from `featureName` (AC-1, AC-5)', () => {
+    // A `featureName` that appears nowhere on screen: it must reach the dialog
+    // and NOT the button's name.
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
+    renderGate({ featureName: 'Dialog-only Name' })
+    const locked = screen.getByTestId('premium-gate-locked')
+    expect(nameOf(locked)).toMatch(/^Advanced Forecasting\b/)
+    expect(nameOf(locked)).not.toContain('Dialog-only Name')
+
+    fireEvent.click(locked)
+    expect(premiumPromptProps).toHaveBeenCalledWith(
+      expect.objectContaining({ featureName: 'Dialog-only Name' })
+    )
+  })
+
+  it('the entitled and loading states carry no lock text (AC-3)', () => {
+    mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
+    const { unmount } = renderGate()
+    // Positive control first: the entitled branch rendered.
+    expect(screen.getByTestId('unlocked-link')).toBeInTheDocument()
+    expect(screen.queryByText(/locked/i)).toBeNull()
+    expect(document.body.textContent).not.toMatch(/locked/i)
+    unmount()
+
+    mockStatus({ isLoading: true })
+    renderGate()
+    const skeleton = screen.getByTestId('premium-gate-skeleton')
+    expect(skeleton).toHaveAttribute('aria-hidden', 'true')
+    expect(skeleton.textContent).not.toMatch(/locked/i)
   })
 })

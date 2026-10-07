@@ -35,12 +35,25 @@ vi.setConfig({ testTimeout: SERVED_TEST_TIMEOUT_MS })
 
 let app: ServedApp
 
+/**
+ * A counter.dev site id for THIS server (story 117.1), so the analytics tag is
+ * in the served HTML. Vite copies `VITE_*` keys from `process.env` into
+ * `import.meta.env` when the server is created, so it is set before
+ * `startServedApp()` and restored after. Fake id: nothing loads it here (no
+ * browser).
+ */
+const SERVED_COUNTERDEV_ID = 'served-test-site-id'
+const previousCounterDevId = process.env['VITE_COUNTERDEV_ID']
+
 beforeAll(async () => {
+  process.env['VITE_COUNTERDEV_ID'] = SERVED_COUNTERDEV_ID
   app = await startServedApp()
 }, SERVED_APP_TIMEOUT_MS)
 
 afterAll(async () => {
   await app?.close()
+  if (previousCounterDevId === undefined) Reflect.deleteProperty(process.env, 'VITE_COUNTERDEV_ID')
+  else process.env['VITE_COUNTERDEV_ID'] = previousCounterDevId
 })
 
 function nonceFromCsp(csp: string): string | undefined {
@@ -123,10 +136,11 @@ describe('the document response headers (was e2e security-headers AC-1)', () => 
       const inline = [...response.body.matchAll(/<script(\s[^>]*)?>([\s\S]*?)<\/script>/g)].filter(
         ([, attributes = '']) => !/\ssrc=/.test(attributes)
       )
-      // Anti-vacuity: the two pre-paint bootstraps are hash-authorized inline
-      // scripts in <head>, so a parse that found none would be blind.
+      // Anti-vacuity: the three pre-paint bootstraps (story 117.2 added the
+      // third) are hash-authorized inline scripts in <head>, so a parse that
+      // found none would be blind.
       const hashed = inline.filter(([, attributes = '']) => !/\snonce=/.test(attributes))
-      expect(hashed.length, 'expected the hash-authorized bootstraps').toBeGreaterThanOrEqual(2)
+      expect(hashed.length, 'expected the hash-authorized bootstraps').toBeGreaterThanOrEqual(3)
 
       for (const [tag, attributes = '', text = ''] of inline) {
         const scriptNonce = attributes.match(/\snonce="([^"]*)"/)?.[1]
@@ -139,6 +153,36 @@ describe('the document response headers (was e2e security-headers AC-1)', () => 
       }
     })
   }
+})
+
+/**
+ * Story 117.1 (FR185): the counter.dev tag is DEFERRED, so it no longer blocks
+ * first paint. The unit pins in `lib/analytics/__tests__/counter.test.ts` see
+ * the `head().scripts` entry; this sees what reaches the HTML through TanStack's
+ * `<Scripts />` and React's SSR, which is what the browser acts on. That the
+ * deferred tag still records the visit (counter.dev reads
+ * `document.currentScript`) needs a browser: it was proven once, by hand, in the
+ * story's evidence, because CI builds without a site id.
+ */
+describe('the counter.dev analytics tag (story 117.1)', () => {
+  it('is served once on /, deferred, with its data-id and the request nonce', async () => {
+    const response = await app.get('/')
+    expect(response.status).toBe(200)
+    const tags = [
+      ...response.body.matchAll(
+        /<script\s[^>]*src="https:\/\/cdn\.counter\.dev\/script\.js"[^>]*>/g
+      ),
+    ].map(([tag]) => tag)
+    expect(tags, 'exactly one counter.dev tag').toHaveLength(1)
+    const [tag = ''] = tags
+    expect(tag).toMatch(/\sdefer(=""|\s|>)/)
+    expect(tag).not.toMatch(/\sasync(=""|\s|>)/)
+    expect(tag).not.toMatch(/\stype=/)
+    expect(tag).toContain(`data-id="${SERVED_COUNTERDEV_ID}"`)
+    const nonce = nonceFromCsp(header(response, 'content-security-policy') ?? '')
+    expect(nonce, 'header carries a nonce').toBeTruthy()
+    expect(tag).toContain(`nonce="${nonce}"`)
+  })
 })
 
 describe('robots.txt and sitemap.xml (was e2e page-metadata)', () => {

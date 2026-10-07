@@ -223,7 +223,7 @@ export function InstallPrompt() {
         <button
           type="button"
           onClick={() => void install()}
-          className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 dark:bg-green-500 dark:hover:bg-green-600"
+          className="fill-green rounded-md px-4 py-2 text-sm font-medium hover:bg-green-800 focus:outline-none focus:ring-2 focus:ring-green-500"
         >
           Install
         </button>

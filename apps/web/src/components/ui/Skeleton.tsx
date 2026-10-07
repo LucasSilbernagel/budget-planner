@@ -153,6 +153,11 @@ export interface SkeletonBlockProps {
   /** Optional `data-testid`, by convention `<resolved-testid>-skeleton`. */
   testId?: string
   /**
+   * Optional `data-hook`: a CSS hook for a pre-paint rule in `styles/global.css`
+   * (story 117.2). Separate from `testId` so a style never keys off a test id.
+   */
+  hook?: string
+  /**
    * Real content, rendered pulsing and `aria-hidden`. Use when the resolved
    * markup is available at pending time — the footprint then matches exactly,
    * with no measurement and nothing to keep in sync.
@@ -168,10 +173,16 @@ export interface SkeletonBlockProps {
 export function SkeletonBlock({
   className,
   testId,
+  hook,
   children,
 }: SkeletonBlockProps): React.ReactElement {
   return (
-    <div aria-hidden="true" data-testid={testId} className={`${PULSE} ${className ?? ''}`.trim()}>
+    <div
+      aria-hidden="true"
+      data-testid={testId}
+      data-hook={hook}
+      className={`${PULSE} ${className ?? ''}`.trim()}
+    >
       {children}
     </div>
   )

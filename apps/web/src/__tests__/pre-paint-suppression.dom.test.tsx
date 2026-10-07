@@ -9,11 +9,17 @@ import {
 import { renderToString } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import { HomePage } from '../components/HomePage'
 import { GlobalNav } from '../components/layout/GlobalNav'
 import { AccountNoticeBox } from '../components/overview/AccountNoticeBox'
 import { NO_FLASH_PLANNER_SCRIPT } from '../lib/nav/no-flash-planner-visibility-script'
 import { ACCOUNT_NOTICE_DISMISSED_STORAGE_KEY } from '../lib/overview/account-notice-dismissal'
 import { NO_FLASH_ACCOUNT_NOTICE_SCRIPT } from '../lib/overview/no-flash-account-notice-script'
+import {
+  NO_FLASH_OVERVIEW_DATA_SCRIPT,
+  OVERVIEW_HAS_DATA_ATTRIBUTE,
+} from '../lib/overview/no-flash-overview-data-script'
+import { useIncomeStore } from '../stores/incomeStore'
 import {
   PLANNER_VISIBILITY_STORAGE_KEY,
   usePlannerVisibilityStore,
@@ -91,6 +97,7 @@ beforeEach(() => {
   localStorage.clear()
   document.documentElement.removeAttribute('data-hide-retirement')
   document.documentElement.removeAttribute('data-dismiss-account-notice')
+  document.documentElement.removeAttribute(OVERVIEW_HAS_DATA_ATTRIBUTE)
   // The server and first client render paint the deterministic default.
   usePlannerVisibilityStore.setState({ showRetirementPlanner: true })
 })
@@ -98,11 +105,12 @@ afterEach(() => {
   document.body.innerHTML = ''
   document.documentElement.removeAttribute('data-hide-retirement')
   document.documentElement.removeAttribute('data-dismiss-account-notice')
+  document.documentElement.removeAttribute(OVERVIEW_HAS_DATA_ATTRIBUTE)
   localStorage.clear()
 })
 
 describe('pre-paint suppression — the <head> wiring (__root.tsx)', () => {
-  it('emits both bootstraps as inline scripts INSIDE <head>, before <HeadContent />, never deferred', () => {
+  it('emits all three bootstraps as inline scripts INSIDE <head>, before <HeadContent />, never deferred', () => {
     // The JSX elements on their own lines, not a `<head>` mention in a comment.
     const open = ROOT_SOURCE.search(/\n\s*<head>\n/)
     const close = ROOT_SOURCE.search(/\n\s*<\/head>\n/)
@@ -111,7 +119,11 @@ describe('pre-paint suppression — the <head> wiring (__root.tsx)', () => {
     const head = ROOT_SOURCE.slice(open, close)
     const headContentAt = head.indexOf('<HeadContent />')
     expect(headContentAt, 'no <HeadContent /> inside <head>').toBeGreaterThan(-1)
-    for (const name of ['NO_FLASH_PLANNER_SCRIPT', 'NO_FLASH_ACCOUNT_NOTICE_SCRIPT']) {
+    for (const name of [
+      'NO_FLASH_PLANNER_SCRIPT',
+      'NO_FLASH_ACCOUNT_NOTICE_SCRIPT',
+      'NO_FLASH_OVERVIEW_DATA_SCRIPT',
+    ]) {
       const tag = head.match(
         new RegExp(`<script[^>]*dangerouslySetInnerHTML=\\{\\{ __html: ${name} \\}\\}[^>]*/>`)
       )
@@ -207,6 +219,44 @@ describe('pre-paint suppression — the dismissed account notice (story 55.1)', 
     runBootstrap(NO_FLASH_ACCOUNT_NOTICE_SCRIPT)
     const container = await firstFrame(() => <AccountNoticeBox />)
     expect(container.querySelector('[data-account-notice]')).not.toBeNull()
+    expect(document.querySelectorAll(rule().selector)).toHaveLength(0)
+  })
+})
+
+/**
+ * Story 117.2 (FR185): the third chain RESERVES space instead of hiding. With
+ * budget rows in this browser, the Overview's server-rendered pending block is
+ * made one viewport tall so its growth into the charts happens below the fold.
+ * Same named loss as above: the first frame and the CLS are measured by the
+ * story's probe/Lighthouse runs, not here.
+ */
+describe('pre-paint reservation — the Overview pending block (story 117.2)', () => {
+  const rule = () => ruleStartingWith(`[${OVERVIEW_HAS_DATA_ATTRIBUTE}='1']`)
+
+  it('global.css gives it min-height: 100vh, unscoped by any @media/@supports', () => {
+    expect(rule().body.replace(/\s+/g, ' ').trim()).toMatch(/(^|;)\s*min-height: 100vh;?$/)
+    expect(
+      appliesUnconditionally(rule()),
+      `the rule is scoped by: ${rule().atRules.join(' > ')}`
+    ).toBe(true)
+  })
+
+  it('once the real bootstrap marks <html>, the rule matches exactly the server-rendered pending block', async () => {
+    // Written through the real store, as the browser would hold it.
+    useIncomeStore.setState({ incomeSources: [{ id: 'row-1' }] } as never)
+    runBootstrap(NO_FLASH_OVERVIEW_DATA_SCRIPT)
+    useIncomeStore.setState({ incomeSources: [] } as never)
+    const container = await firstFrame(() => <HomePage />)
+
+    const pending = container.querySelector('[data-testid="overview-sections-skeleton"]')
+    expect(pending, 'the server HTML lost the pending block').not.toBeNull()
+    expect([...document.querySelectorAll(rule().selector)]).toEqual([pending])
+  })
+
+  it('matches nothing in a browser with no budget rows (positive control)', async () => {
+    runBootstrap(NO_FLASH_OVERVIEW_DATA_SCRIPT)
+    const container = await firstFrame(() => <HomePage />)
+    expect(container.querySelector('[data-testid="overview-sections-skeleton"]')).not.toBeNull()
     expect(document.querySelectorAll(rule().selector)).toHaveLength(0)
   })
 })

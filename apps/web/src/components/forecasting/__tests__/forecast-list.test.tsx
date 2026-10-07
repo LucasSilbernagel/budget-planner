@@ -172,3 +172,22 @@ describe('Total Growth sign (story forecast-1)', () => {
     expect(screen.getByText('+40000.00')).toBeInTheDocument()
   })
 })
+
+describe('secondary text on a selected row (story 115.2)', () => {
+  it('reads .text-body on the selected row’s blue tint, .text-muted otherwise', () => {
+    // gray-500 on the selected row's blue-50 measured 4.44:1, below AA's 4.5:1.
+    // Tokens, not paint (jsdom has no Tailwind): the Lighthouse re-run is the proof.
+    render(<ForecastList forecasts={[sampleForecast]} onDelete={vi.fn()} onLoad={vi.fn()} />)
+    const lines = () => [screen.getByText('v1'), screen.getByText('+40000.00')]
+
+    for (const line of lines()) expect([...line.classList]).toContain('text-muted')
+
+    const row = screen.getByText('v1').closest('tr') as HTMLElement
+    fireEvent.click(row)
+    expect([...row.classList]).toContain('bg-blue-50')
+    for (const line of lines()) {
+      expect([...line.classList]).toContain('text-body')
+      expect([...line.classList]).not.toContain('text-muted')
+    }
+  })
+})

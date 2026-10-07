@@ -8,10 +8,10 @@
  * owns the gating and the upgrade interaction.
  *
  * The lock icon is decorative (`aria-hidden`); the visible "Premium" text is the
- * announced signal when the badge is read on its own. When the badge sits inside
- * a control that already names the locked state (the gate's button has an
- * `aria-label` like "Advanced Forecasting — premium, locked"), the label simply
- * reinforces it visually.
+ * announced signal when the badge is read on its own. Inside the gate's button
+ * its "Premium" is part of the button's name, which the gate completes with a
+ * hidden ", locked" (story 116.2); that text is in the gate, not here, because
+ * `CategoryPicker` shows this badge outside any button.
  */
 
 import type React from 'react'

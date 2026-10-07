@@ -56,10 +56,17 @@ vi.mock('../../../lib/chartTheme', () => ({
   useChartColors: () => ({ grid: '#cccccc', axis: '#333333', tooltipText: '#333333' }),
 }))
 
-/** The text runs between `<wbr>`s; a plain string comes back as ONE run. */
+/**
+ * The text runs between `<wbr>`s; a plain string comes back as ONE run.
+ *
+ * Skips the Projections card's change line ("+$…"), which story 116.1 moved
+ * INSIDE the `<dd>` as a block span (a `<dl>` group may hold only `<dt>`/`<dd>`):
+ * it is a second figure under the headline one, not part of it.
+ */
 function runsOf(el: Element): string[] {
   const out = ['']
   for (const node of Array.from(el.childNodes)) {
+    if (node instanceof HTMLElement && node.matches('dd > span.block')) continue
     if (node.nodeName === 'WBR') out.push('')
     else out[out.length - 1] += node.textContent ?? ''
   }
@@ -98,6 +105,13 @@ describe('forecasting headline figures break only between digit groups (story 88
     await waitFor(() => expect(figureOf('Ending Net Worth').textContent).toBe('$310,100,483.69'))
     for (const [label, runs] of EXPECTED) {
       expect(runsOf(figureOf(label)), label).toEqual(runs)
+    }
+    // Story 115.2: the card labels read `.text-body`. `.text-muted` on the
+    // blue-100 card was 3.96:1, below AA (tokens, not paint: no Tailwind in jsdom).
+    for (const [label] of EXPECTED) {
+      const term = screen.getByText(label, { selector: 'dt' })
+      expect([...term.classList], label).toContain('text-body')
+      expect([...term.classList], label).not.toContain('text-muted')
     }
   })
 

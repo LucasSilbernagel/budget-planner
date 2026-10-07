@@ -27,26 +27,37 @@ export function CategoriesPage(): React.ReactElement {
   const { status } = usePremiumAccess()
 
   if (status.isLoading) {
+    // ⚠️ Each branch's outer element has its OWN `key` (story 117.2, FR185):
+    // without them React reused the spinner's <div> as the resolved page's
+    // container, and Chrome counted the 32 px node growing into the page as a
+    // layout shift (CLS 0.1153 on /categories, MEASURED). Keys make React replace
+    // the loading subtree. Do not tidy them away.
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
+      <main
+        key="premium-loading"
+        className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900"
+      >
         <div
           role="status"
           aria-label="Loading"
           className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
         />
-      </div>
+      </main>
     )
   }
 
   if (!status.hasAccess) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4 dark:bg-gray-900">
+      <main
+        key="premium-locked"
+        className="flex min-h-screen items-center justify-center bg-gray-50 p-4 dark:bg-gray-900"
+      >
         <PremiumPrompt
           featureName="Custom Categories"
           message="Create your own income and expense categories, assign them to your entries, and see your overview grouped the way you think about your money."
           asDialog={false}
         />
-      </div>
+      </main>
     )
   }
 
@@ -57,7 +68,7 @@ export function CategoriesPage(): React.ReactElement {
   // so `space-y-8`'s `> * + *` rule can never margin the manager's fixed
   // ConfirmDialog overlay — see the comment in `CategoryManager`.
   return (
-    <div className="min-h-screen surface-sunken p-4 sm:p-8">
+    <div key="premium-content" className="min-h-screen surface-sunken p-4 sm:p-8">
       <div className="mx-auto max-w-3xl space-y-8">
         <CategoryManager />
         <CategoryBreakdown />

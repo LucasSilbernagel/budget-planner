@@ -60,6 +60,21 @@ function tokens(el: Element): string[] {
 }
 
 describe('forecasting tab strip below 640 px (story 91.3)', () => {
+  it('gives an inactive tab AA-contrast text in both themes (story 115.2)', async () => {
+    // gray-500 on the strip's gray-100 was 4.39:1 and gray-400 on dark gray-700
+    // 4.06:1, below AA's 4.5:1; gray-600 / gray-300 are 6.87 / 7.00. Tokens,
+    // not paint (jsdom has no Tailwind): the Lighthouse re-run is the proof.
+    const inactive = (await renderTabs()).filter((button) => !tokens(button).includes('shadow-sm'))
+    expect(inactive).toHaveLength(2)
+    for (const button of inactive) {
+      expect(tokens(button)).toEqual(
+        expect.arrayContaining(['text-gray-600', 'dark:text-gray-300'])
+      )
+      expect(tokens(button)).not.toContain('text-gray-500')
+      expect(tokens(button)).not.toContain('dark:text-gray-400')
+    }
+  })
+
   it('keeps three tabs, in order, with their names, in one strip', async () => {
     const buttons = await renderTabs()
     const strip = buttons[0]?.parentElement as HTMLElement
