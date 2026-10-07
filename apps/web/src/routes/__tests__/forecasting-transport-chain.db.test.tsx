@@ -725,12 +725,12 @@ describe('savings rows round-trip through the real routes (story 100.1, AC-11)',
       await view.findByRole('button', { name: 'Edit My Financial Forecast' }, { timeout: 5000 })
     )
     const value = (label: string) => (view.getByLabelText(label) as HTMLInputElement).value
-    await rtl.waitFor(() => expect(value('Balance for Emergency fund')).toBe('1000'))
+    await rtl.waitFor(() => expect(value('Balance for Emergency fund')).toBe('1,000.00'))
     expect(
       view.getAllByLabelText(/^Account Name, row \d+$/).map((el) => (el as HTMLInputElement).value)
     ).toEqual(['Emergency fund', 'House fund'])
-    expect(value('Monthly Contribution for Emergency fund')).toBe('200')
-    expect(value('Balance for House fund')).toBe('2500.01')
+    expect(value('Monthly Contribution for Emergency fund')).toBe('200.00')
+    expect(value('Balance for House fund')).toBe('2,500.01')
     expect(value('Monthly Contribution for House fund')).toBe('0.05')
 
     // Save over it (PUT): same version.
@@ -881,7 +881,7 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
       await view.findByRole('button', { name: 'Edit My Financial Forecast' }, { timeout: 5000 })
     )
     const value = (label: string) => (view.getByLabelText(label) as HTMLInputElement).value
-    await rtl.waitFor(() => expect(value('Balance for Pension')).toBe('10000.01'))
+    await rtl.waitFor(() => expect(value('Balance for Pension')).toBe('10,000.01'))
     const section = view.getByRole('region', { name: 'Investments & Debts' })
     expect(
       rtl
@@ -890,14 +890,14 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
         .map((el) => (el as HTMLInputElement).value)
     ).toEqual(['Pension', 'Car loan', 'ISA'])
     expect(value('Type for Pension')).toBe('investment')
-    expect(value('Contribution for Pension')).toBe('250')
+    expect(value('Contribution for Pension')).toBe('250.00')
     expect(value('Frequency for Pension')).toBe('biweekly')
     expect(
       view.getByLabelText('Not taken from the money left over, for Pension') as HTMLInputElement
     ).toBeChecked()
     expect(value('Type for Car loan')).toBe('debt')
-    expect(value('Balance for Car loan')).toBe('5000')
-    expect(value('Contribution for Car loan')).toBe('300')
+    expect(value('Balance for Car loan')).toBe('5,000.00')
+    expect(value('Contribution for Car loan')).toBe('300.00')
     expect(value('Frequency for Car loan')).toBe('monthly')
     expect(value('Frequency for ISA')).toBe('annually')
     expect(

@@ -135,9 +135,9 @@ describe('edits made while the seed is still pending survive it', () => {
     expect(screen.getByDisplayValue('Consulting')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Rent')).toBeInTheDocument()
     // Story 100.1: savings are rows now, one per store row.
-    expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue(3456)
+    expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue('3,456.00')
     // Story 100.2: investments are rows too.
-    expect(screen.getByLabelText('Balance for Index fund')).toHaveValue(9876)
+    expect(screen.getByLabelText('Balance for Index fund')).toHaveValue('9,876.00')
   })
 
   /**
@@ -158,11 +158,11 @@ describe('edits made while the seed is still pending survive it', () => {
 
     // The seed landed (positive control) ...
     expect(screen.getByDisplayValue('Consulting')).toBeInTheDocument()
-    expect(screen.getByLabelText('Balance for Index fund')).toHaveValue(9876)
+    expect(screen.getByLabelText('Balance for Index fund')).toHaveValue('9,876.00')
     // ... the user's row is the SAME node, still focused, still the typed text ...
     expect(screen.getByLabelText('Balance for New Account')).toBe(field)
     expect(document.activeElement).toBe(field)
-    expect(field).toHaveValue(1234)
+    expect(field).toHaveValue('1234')
     // ... and the store's row was not added beside it.
     expect(screen.queryByDisplayValue('Emergency fund')).toBeNull()
     const savings = screen.getByRole('region', { name: 'Savings Accounts' })
@@ -187,11 +187,11 @@ describe('edits made while the seed is still pending survive it', () => {
     landSeed(rerender)
 
     // The seed landed (positive control) ...
-    expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue(3456)
+    expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue('3,456.00')
     // ... the user's row is the same node, focused, with the typed value ...
     expect(screen.getByLabelText('Balance for New Investment')).toBe(field)
     expect(document.activeElement).toBe(field)
-    expect(field).toHaveValue(50)
+    expect(field).toHaveValue('50')
     // ... and the store's Index fund was not added beside it.
     expect(screen.queryByDisplayValue('Index fund')).toBeNull()
     const balances = screen.getByRole('region', { name: 'Investments & Debts' })
@@ -215,7 +215,7 @@ describe('edits made while the seed is still pending survive it', () => {
     landSeed(rerender)
 
     // The seed landed (positive control) ...
-    expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue(3456)
+    expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue('3,456.00')
     // ... the rate field is the same node, focused, with the typed text ...
     expect(screen.getByLabelText('Annual return for New Investment')).toBe(field)
     expect(document.activeElement).toBe(field)
@@ -305,7 +305,7 @@ describe('the linked expense moves only with the debt row that carries it (story
     landSeed(rerender)
     expect(screen.getByDisplayValue('Rent')).toBeInTheDocument()
     expect(screen.queryByDisplayValue('Loan payment')).toBeNull()
-    expect(screen.getByLabelText('Contribution for Loan')).toHaveValue(200)
+    expect(screen.getByLabelText('Contribution for Loan')).toHaveValue('200.00')
     expect(screen.getByText('from Expenses: Loan payment')).toBeInTheDocument()
   })
 
@@ -328,7 +328,7 @@ describe('the linked expense moves only with the debt row that carries it (story
     landSeed(rerender)
     expect(screen.getAllByDisplayValue('New Expense')).toHaveLength(1)
     expect(screen.queryByDisplayValue('Rent')).toBeNull()
-    expect(screen.getByLabelText('Contribution for Loan')).toHaveValue(200)
+    expect(screen.getByLabelText('Contribution for Loan')).toHaveValue('200.00')
     expect(screen.getByText('from Expenses: Loan payment')).toBeInTheDocument()
     // A labelled debt row has no flag checkbox (code review 102.2).
     expect(screen.queryByLabelText('Payment already in Expenses, for Loan')).toBeNull()

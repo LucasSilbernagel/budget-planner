@@ -166,16 +166,32 @@ describe('the Projection Period field refuses what the engine cannot run (AC-1)'
   })
 
   it('an invalid period retires a stale calculation error (review P3)', async () => {
-    const field = await renderBuilder()
-    // A banner from an input no field can refuse: an income amount of 1e306 is
-    // 1e308 cents (finite, so the row accepts it), and annualized it overflows,
-    // so the engine refuses with FORECAST_OUT_OF_RANGE.
+    // A banner from an input no field can refuse: an income amount of 1e308 cents
+    // (finite), which annualized overflows, so the engine refuses with
+    // FORECAST_OUT_OF_RANGE.
     // ⚠️ This used an EMPTIED growth rate until story 81.1. That now shows a
     // field message and never reaches the engine, so it raises no banner at all.
-    const [salary] = screen
-      .getAllByLabelText('Amount')
-      .filter((el) => !el.id.startsWith('event-amount-'))
-    fireEvent.change(salary as HTMLElement, { target: { value: '1e306' } })
+    // Until story 109.1 the amount was TYPED (`1e306`); the field now refuses
+    // anything above the money limit, so it arrives from a saved forecast.
+    const field = await renderBuilder({
+      id: 'f-big',
+      name: 'Big',
+      scenario: {
+        name: 'Big',
+        incomeGrowthRate: 0,
+        expenseGrowthRate: 0,
+        newIncome: [{ amount: 1e308, frequency: 'monthly' }],
+      },
+      result: {
+        scenario: { name: 'Big', incomeGrowthRate: 0, expenseGrowthRate: 0 },
+        baseline: [],
+        projection: [],
+        summary: { startingNetWorth: 0, endingNetWorth: 0, totalGrowth: 0, averageAnnualGrowth: 0 },
+      },
+      inputs: { savings: 0, investments: 0, years: 10 },
+      createdAt: ISO,
+      updatedAt: ISO,
+    })
     expect(
       await screen.findByTestId('calculation-error', {}, { timeout: 3000 })
     ).toBeInTheDocument()

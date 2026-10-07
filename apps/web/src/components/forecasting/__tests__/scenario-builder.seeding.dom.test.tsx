@@ -155,9 +155,9 @@ describe('a fresh scenario seeds from the user own finances (62.1)', () => {
     // and explicitly NOT the retired DEFAULT_SAVINGS ($5,000) /
     // DEFAULT_INVESTMENTS ($10,000).
     expect(screen.getByDisplayValue('Emergency fund')).toBeInTheDocument()
-    expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue(3456)
+    expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue('3,456.00')
     // One investment ROW since story 100.2.
-    expect(screen.getByLabelText('Balance for Index fund')).toHaveValue(9876)
+    expect(screen.getByLabelText('Balance for Index fund')).toHaveValue('9,876.00')
     expect(screen.queryByDisplayValue('5000')).toBeNull()
     expect(screen.queryByDisplayValue('10000')).toBeNull()
   })
@@ -169,8 +169,8 @@ describe('a fresh scenario seeds from the user own finances (62.1)', () => {
     expect(screen.getByDisplayValue('Consulting')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Mortgage')).toBeInTheDocument()
     // Amounts arrive in cents and render through the row editor's own divisor.
-    expect(screen.getByDisplayValue('7200')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('2100')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('7,200.00')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('2,100.00')).toBeInTheDocument()
     // The demo rows are gone for good.
     expect(screen.queryByDisplayValue('Salary')).toBeNull()
     expect(screen.queryByDisplayValue('Rent/Mortgage')).toBeNull()
@@ -196,7 +196,7 @@ describe('a fresh scenario seeds from the user own finances (62.1)', () => {
 
     // The amount is the RAW figure, not the monthly-normalized one
     // `useTotalIncome` would have produced.
-    expect(screen.getByDisplayValue('500')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('500.00')).toBeInTheDocument()
     // ...and the frequency survives as `weekly`. This is the discriminating
     // assertion the previous version lacked entirely.
     const frequency = screen.getAllByRole('combobox').find((el) => el.closest('div'))
@@ -238,9 +238,9 @@ describe('a fresh scenario seeds from the user own finances (62.1)', () => {
     // Positive control: the builder rendered at all.
     expect(screen.getByDisplayValue('My Financial Forecast')).toBeInTheDocument()
     // The savings row is kept (story 100.1) with its balance coerced to 0.
-    expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue(0)
+    expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue('0.00')
     // The investment row too (story 100.2), coerced per row.
-    expect(screen.getByLabelText('Balance for Index fund')).toHaveValue(0)
+    expect(screen.getByLabelText('Balance for Index fund')).toHaveValue('0.00')
     expect(screen.queryByDisplayValue('NaN')).toBeNull()
   })
 
@@ -451,14 +451,14 @@ describe('the seed respects the active profile (62.1 AC-4)', () => {
     const savingsSection = screen.getByRole('region', { name: 'Savings Accounts' })
     const balances = within(savingsSection).getAllByLabelText(/^Balance for /)
     expect(balances).toHaveLength(1)
-    expect(balances[0]).toHaveValue(1000)
+    expect(balances[0]).toHaveValue('1,000.00')
     // One investment ROW from profile A alone (story 100.2): not B's fund or loan.
     const balanceSection = screen.getByRole('region', { name: 'Investments & Debts' })
     const names = within(balanceSection)
       .getAllByLabelText(/^Balance Name, row \d+$/)
       .map((input) => (input as HTMLInputElement).value)
     expect(names).toEqual(['A fund'])
-    expect(screen.getByLabelText('Balance for A fund')).toHaveValue(2000)
+    expect(screen.getByLabelText('Balance for A fund')).toHaveValue('2,000.00')
   })
 
   /**
@@ -552,9 +552,9 @@ describe('a loaded forecast still seeds from the saved scenario (62.1 AC-7)', ()
     expect(screen.getByDisplayValue('Saved Income')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Saved Expense')).toBeInTheDocument()
     // A v1 saved total reloads as one `Savings` row (story 100.1, AC-12).
-    expect(screen.getByLabelText('Balance for Savings')).toHaveValue(3333)
+    expect(screen.getByLabelText('Balance for Savings')).toHaveValue('3,333.00')
     // ... and a v1 investments total as one `Investments` row (story 100.2).
-    expect(screen.getByLabelText('Balance for Investments')).toHaveValue(4444)
+    expect(screen.getByLabelText('Balance for Investments')).toHaveValue('4,444.00')
     // Via the attribute, for the `type="number"` reason documented above.
     expect(screen.getByLabelText('Income Growth Rate').getAttribute('value')).toBe('5.00%')
 

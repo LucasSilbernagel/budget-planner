@@ -166,9 +166,9 @@ describe('rows replace the single savings total (AC-1, AC-9)', () => {
       .getAllByLabelText(/^Account Name, row \d+$/)
       .map((input) => (input as HTMLInputElement).value)
     expect(names).toEqual(['Emergency fund', 'House fund'])
-    expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue(3456)
-    expect(screen.getByLabelText('Monthly Contribution for Emergency fund')).toHaveValue(200)
-    expect(screen.getByLabelText('Balance for House fund')).toHaveValue(2500)
+    expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue('3,456.00')
+    expect(screen.getByLabelText('Monthly Contribution for Emergency fund')).toHaveValue('200.00')
+    expect(screen.getByLabelText('Balance for House fund')).toHaveValue('2,500.00')
 
     // The single total is gone. (Current Investments went too, in story 100.2:
     // `scenario-builder.balance-rows.test.tsx`.)
@@ -278,7 +278,9 @@ describe('contributions seed from the same figures /savings shows (AC-3)', () =>
     const seeded = ROWS.map((row) =>
       Math.round(
         Number(
-          (screen.getByLabelText(`Monthly Contribution for ${row.name}`) as HTMLInputElement).value
+          (
+            screen.getByLabelText(`Monthly Contribution for ${row.name}`) as HTMLInputElement
+          ).value.replaceAll(',', '') // grouped since story 109.1
         ) * 100
       )
     )
@@ -315,8 +317,8 @@ describe('contributions seed from the same figures /savings shows (AC-3)', () =>
     render(<ScenarioBuilder onSave={vi.fn()} />)
 
     expect(screen.getByLabelText('Scenario Name')).toBeInTheDocument()
-    expect(screen.getByLabelText('Monthly Contribution for Fixed pot')).toHaveValue(1300)
-    expect(screen.getByLabelText('Monthly Contribution for Auto one')).toHaveValue(0)
+    expect(screen.getByLabelText('Monthly Contribution for Fixed pot')).toHaveValue('1,300.00')
+    expect(screen.getByLabelText('Monthly Contribution for Auto one')).toHaveValue('0.00')
   })
 
   it('coerces a corrupt manual allocation to 0, as the solver counts it', () => {
@@ -340,8 +342,8 @@ describe('contributions seed from the same figures /savings shows (AC-3)', () =>
     })
     render(<ScenarioBuilder onSave={vi.fn()} />)
 
-    expect(screen.getByLabelText('Monthly Contribution for Negative')).toHaveValue(0)
-    expect(screen.getByLabelText('Monthly Contribution for Not a number')).toHaveValue(0)
+    expect(screen.getByLabelText('Monthly Contribution for Negative')).toHaveValue('0.00')
+    expect(screen.getByLabelText('Monthly Contribution for Not a number')).toHaveValue('0.00')
   })
 })
 
@@ -394,8 +396,8 @@ describe('add and remove rows (AC-5)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '+ Add Account' }))
     expect(screen.getByDisplayValue('New Account')).toBeInTheDocument()
-    expect(screen.getByLabelText('Balance for New Account')).toHaveValue(0)
-    expect(screen.getByLabelText('Monthly Contribution for New Account')).toHaveValue(0)
+    expect(screen.getByLabelText('Balance for New Account')).toHaveValue('0.00')
+    expect(screen.getByLabelText('Monthly Contribution for New Account')).toHaveValue('0.00')
 
     // A blank name falls back to a generic, still-meaningful name.
     fireEvent.change(screen.getByDisplayValue('New Account'), { target: { value: '   ' } })
@@ -538,10 +540,12 @@ describe('each money field reports its own validity (AC-10)', () => {
       savingsGoals: [goal({ id: 'g-1', name: 'House fund', currentBalance: 100_000 })],
     })
     render(<ScenarioBuilder onSave={vi.fn()} />)
+    // Was `1e308` → "Enter a smaller amount." until story 109.1: the field now
+    // drops a typed exponent, and refuses anything above the money limit (Q1).
     fireEvent.change(screen.getByLabelText('Balance for House fund'), {
-      target: { value: '1e308' },
+      target: { value: '21474836.48' },
     })
-    expect(screen.getByText('Enter a smaller amount.')).toBeInTheDocument()
+    expect(screen.getByText('Enter an amount up to 21,474,836.47')).toBeInTheDocument()
   })
 
   it('withdraws a removed row report, so a deleted bad row cannot keep Save blocked', async () => {
@@ -631,7 +635,7 @@ describe('code review fixes (2026-10-05)', () => {
       />
     )
     const balance = screen.getByLabelText('Balance for Savings')
-    expect(balance).toHaveValue(-5)
+    expect(balance).toHaveValue('-5.00')
     expect(balance).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByText('Enter an amount of 0 or more.')).toBeInTheDocument()
     // The saved result is on screen, so the Save area renders: blocked, with the reason.
@@ -751,13 +755,13 @@ describe('code review fixes (2026-10-05)', () => {
         })}
       />
     )
-    expect(screen.getByLabelText('Balance for Ok')).toHaveValue(10)
+    expect(screen.getByLabelText('Balance for Ok')).toHaveValue('10.00')
     expect(screen.getAllByLabelText(/^Account Name, row \d+$/)).toHaveLength(2)
     cleanupAndRender(
       savedForecast({ savings: 1_234, investments: 0, years: 10, savingsAccounts: 'oops' })
     )
     // Not an array: loads as the v1 total.
-    expect(screen.getByLabelText('Balance for Savings')).toHaveValue(12.34)
+    expect(screen.getByLabelText('Balance for Savings')).toHaveValue('12.34')
   })
 
   it('names each row name field by its position and turns autofill off on every row input', () => {
@@ -774,7 +778,15 @@ describe('code review fixes (2026-10-05)', () => {
     for (const input of within(section).getAllByRole('textbox')) {
       expect(input).toHaveAttribute('autocomplete', 'off')
     }
-    for (const input of within(section).getAllByRole('spinbutton')) {
+    // The money fields were spinbuttons until story 109.1; they are textboxes now,
+    // so the loop above covers them. Pin the COUNT, so the loop cannot pass
+    // without them: a Balance and a Monthly Contribution on each of the two rows.
+    const money = within(section).getAllByLabelText(
+      /^(Balance|Monthly Contribution) for Same name$/
+    )
+    expect(money).toHaveLength(4)
+    for (const input of money) {
+      expect(input).toHaveRole('textbox')
       expect(input).toHaveAttribute('autocomplete', 'off')
     }
   })

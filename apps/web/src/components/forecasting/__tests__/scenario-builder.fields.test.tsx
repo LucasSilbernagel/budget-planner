@@ -18,6 +18,12 @@ import { ScenarioBuilder } from '../scenario-builder'
  *   - an income amount of `-5` was stored as 0 and the field snapped to "0";
  *   - an income amount of `1e308` reached the engine as Infinity (`1e308 * 100`).
  *
+ * Story 109.1 made every money field `type="text"` (grouped, as on /income): text
+ * that cannot be read (`1.2.3`) is "Enter a number." (it was the browser's
+ * `badInput`), and an amount above the money limit is refused with the limit
+ * message (it was "Enter a smaller amount." for a non-finite one). A typed `1e308`
+ * cannot happen any more: the field drops the exponent as it is typed.
+ *
  * ⚠️ THE ENGINE IS WRAPPED, as in `scenario-builder.years.test.tsx`: every call
  * is RECORDED and then run for real with the same inputs. Assertions about the
  * guard are on that record — the summary tiles mask NaN with `|| 0`, so "nothing
@@ -71,7 +77,10 @@ const GROWTH_MESSAGE = 'Enter a growth rate from -100% to 100%.'
 const FIELDS_REASON = 'Fix the highlighted fields to save'
 const YEARS_REASON = 'Fix the projection period to save'
 const NEGATIVE_MESSAGE = 'Enter an amount of 0 or more.'
-const TOO_LARGE_MESSAGE = 'Enter a smaller amount.'
+/** `moneyLimitMessage` in currency-less mode (story 109.1, Q1). */
+const LIMIT_MESSAGE = 'Enter an amount up to 21,474,836.47'
+/** One cent over `MAX_MONEY_CENTS`. */
+const OVER_LIMIT = '21474836.48'
 const NOT_A_NUMBER_MESSAGE = 'Enter a number.'
 const SALARY_CENTS = 500_000
 /** Comfortably past the builder's 500 ms debounce. */
@@ -109,6 +118,29 @@ function expectFieldError(field: HTMLElement, message: string): void {
   const describedBy = field.getAttribute('aria-describedby')
   expect(describedBy, 'aria-describedby on the field').toBeTruthy()
   expect(document.getElementById(describedBy as string)).toHaveTextContent(message)
+}
+
+/** A saved forecast with one monthly income of `cents` (story 109.1: an amount no field accepts). */
+function savedWithIncome(cents: number): SavedForecast {
+  return {
+    id: 'f-big',
+    name: 'Big',
+    scenario: {
+      name: 'Big',
+      incomeGrowthRate: 0,
+      expenseGrowthRate: 0,
+      newIncome: [{ amount: cents, frequency: 'monthly' }],
+    },
+    result: {
+      scenario: { name: 'Big', incomeGrowthRate: 0, expenseGrowthRate: 0 },
+      baseline: [],
+      projection: [],
+      summary: { startingNetWorth: 1, endingNetWorth: 1, totalGrowth: 0, averageAnnualGrowth: 0 },
+    },
+    inputs: { savings: 0, investments: 0, years: 5 },
+    createdAt: ISO,
+    updatedAt: ISO,
+  }
 }
 
 function expectSaveBlocked(reason: string): void {
@@ -245,7 +277,9 @@ describe('a growth rate outside -100%..+100%, or not a number, is reported on it
 describe('an income or expense amount is reported on its field, never silently zeroed (AC-2)', () => {
   const invalid: [string, string, string][] = [
     ['a negative', '-5', NEGATIVE_MESSAGE],
-    ['1e308 (finite, but Infinity once scaled to cents)', '1e308', TOO_LARGE_MESSAGE],
+    // Was `1e308` (finite, but Infinity once scaled to cents) until story 109.1.
+    ['one cent over the money limit (109.1, Q1)', OVER_LIMIT, LIMIT_MESSAGE],
+    ['malformed text (109.1: replaces the badInput case)', '1.2.3', NOT_A_NUMBER_MESSAGE],
   ]
 
   for (const [name, typed, message] of invalid) {
@@ -301,23 +335,23 @@ describe('an income or expense amount is reported on its field, never silently z
     expectSaveBlocked(FIELDS_REASON)
   })
 
-  it('a value the browser cannot parse (validity.badInput) says "Enter a number."', async () => {
-    // jsdom never reports badInput (MEASURED in 81.1: `abc`, `1e999` → value "",
-    // badInput=false), while Chromium does for exactly these inputs (77.1). So
-    // the browser's report is stubbed on the element.
+  it('a value that cannot be read (1.2.3) says "Enter a number." (replaces bug-3 AC-2 / 81.1 badInput)', async () => {
+    // Until story 109.1 this was the browser's `validity.badInput` on a
+    // `type="number"` field, stubbed here because jsdom never reports it. The
+    // field is text now, so the unreadable text itself arrives.
     await renderBuilder()
     const callsBefore = engineCalls.length
     const [amount] = incomeAmountInputs()
     if (!amount) throw new Error('the seeded income row rendered no amount input')
-    Object.defineProperty(amount, 'validity', {
-      configurable: true,
-      get: () => ({ badInput: true }),
-    })
 
-    fireEvent.change(amount, { target: { value: '' } })
+    fireEvent.change(amount, { target: { value: '1.2.3' } })
     await pastDebounce()
 
     expectFieldError(amount, NOT_A_NUMBER_MESSAGE)
+    expect(amount.value, 'the typed text stays').toBe('1.2.3')
+    // Blur keeps it too: a refused entry is never re-echoed as 0.00.
+    fireEvent.blur(amount)
+    expect(amount.value).toBe('1.2.3')
     expect(engineCalls.length, 'the last good amount is kept, no recompute').toBe(callsBefore)
     expectSaveBlocked(FIELDS_REASON)
   })
@@ -361,7 +395,7 @@ describe('an income or expense amount is reported on its field, never silently z
 })
 
 describe('a one-time event amount that overflows is reported on its field (AC-2, D6)', () => {
-  it('1e308: field message, the typed text stays, the last good amount is kept', async () => {
+  it('over the money limit: field message, the typed text stays, the last good amount is kept', async () => {
     await renderBuilder()
     fireEvent.click(screen.getByRole('button', { name: /add event/i }))
     const amount = document.querySelector('input[id^="event-amount-"]') as HTMLInputElement
@@ -373,11 +407,11 @@ describe('a one-time event amount that overflows is reported on its field (AC-2,
     })
     const callsBefore = engineCalls.length
 
-    fireEvent.change(amount, { target: { value: '1e308' } })
+    fireEvent.change(amount, { target: { value: OVER_LIMIT } })
     await pastDebounce()
 
-    expectFieldError(amount, TOO_LARGE_MESSAGE)
-    expect(amount.value, 'the typed text is still in the field').toBe('1e308')
+    expectFieldError(amount, LIMIT_MESSAGE)
+    expect(amount.value, 'the typed text is still in the field').toBe(OVER_LIMIT)
     expect(engineCalls.length, 'no recompute while a field is invalid').toBe(callsBefore)
     expectSaveBlocked(FIELDS_REASON)
 
@@ -389,7 +423,7 @@ describe('a one-time event amount that overflows is reported on its field (AC-2,
     expect(screen.queryByTestId('save-blocked-reason')).toBeNull()
   })
 
-  it('text the browser cannot parse (badInput) is reported and held, like an income row (review R1)', async () => {
+  it('text that cannot be read (1.2.3) is reported and held, like an income row (review R1; was badInput until 109.1)', async () => {
     await renderBuilder()
     fireEvent.click(screen.getByRole('button', { name: /add event/i }))
     const amount = document.querySelector('input[id^="event-amount-"]') as HTMLInputElement
@@ -398,14 +432,8 @@ describe('a one-time event amount that overflows is reported on its field (AC-2,
       timeout: 3000,
     })
     const callsBefore = engineCalls.length
-    // jsdom never reports badInput (MEASURED, 81.1); Chromium does for `1e999`,
-    // a half-typed `1e`, or a lone "-". Stub the browser's report.
-    Object.defineProperty(amount, 'validity', {
-      configurable: true,
-      get: () => ({ badInput: true }),
-    })
 
-    fireEvent.change(amount, { target: { value: '' } })
+    fireEvent.change(amount, { target: { value: '1.2.3' } })
     await pastDebounce()
 
     expectFieldError(amount, NOT_A_NUMBER_MESSAGE)
@@ -421,7 +449,7 @@ describe('a one-time event amount that overflows is reported on its field (AC-2,
     await waitFor(() => expect(engineCalls.at(-1)?.eventAmounts).toEqual([1234]), {
       timeout: 3000,
     })
-    fireEvent.change(amount, { target: { value: '1e308' } })
+    fireEvent.change(amount, { target: { value: OVER_LIMIT } })
     fireEvent.change(amount, { target: { value: '' } })
 
     await waitFor(
@@ -436,7 +464,7 @@ describe('a one-time event amount that overflows is reported on its field (AC-2,
     expect(screen.queryByTestId('save-blocked-reason')).toBeNull()
   })
 
-  it('a refused `-1e308` still selects "Money out" for the corrected entry (review P2)', async () => {
+  it('a refused over-limit `-` entry still selects "Money out" for the corrected entry (review P2)', async () => {
     await renderBuilder()
     fireEvent.click(screen.getByRole('button', { name: /add event/i }))
     const amount = document.querySelector('input[id^="event-amount-"]') as HTMLInputElement
@@ -446,8 +474,8 @@ describe('a one-time event amount that overflows is reported on its field (AC-2,
       timeout: 3000,
     })
 
-    fireEvent.change(amount, { target: { value: '-1e308' } })
-    expectFieldError(amount, TOO_LARGE_MESSAGE)
+    fireEvent.change(amount, { target: { value: `-${OVER_LIMIT}` } })
+    expectFieldError(amount, LIMIT_MESSAGE)
     expect(direction.value, 'the typed minus selects money out even when refused').toBe('out')
 
     fireEvent.change(amount, { target: { value: '5' } })
@@ -461,7 +489,7 @@ describe('a one-time event amount that overflows is reported on its field (AC-2,
     )
   })
 
-  it('on a NEW event (amount 0), a refused `-1e308` still selects "Money out" (review P2)', async () => {
+  it('on a NEW event (amount 0), a refused over-limit `-` entry still selects "Money out" (review P2)', async () => {
     // At amount 0 the sign cannot carry the direction, so `pendingDirection` does:
     // it must be set even though the entry itself is refused.
     await renderBuilder()
@@ -469,8 +497,8 @@ describe('a one-time event amount that overflows is reported on its field (AC-2,
     const amount = document.querySelector('input[id^="event-amount-"]') as HTMLInputElement
     const direction = document.querySelector('select[id^="event-direction-"]') as HTMLSelectElement
 
-    fireEvent.change(amount, { target: { value: '-1e308' } })
-    expectFieldError(amount, TOO_LARGE_MESSAGE)
+    fireEvent.change(amount, { target: { value: `-${OVER_LIMIT}` } })
+    expectFieldError(amount, LIMIT_MESSAGE)
     expect(direction.value, 'the typed minus selects money out even when refused').toBe('out')
 
     fireEvent.change(amount, { target: { value: '5' } })
@@ -488,7 +516,7 @@ describe('a one-time event amount that overflows is reported on its field (AC-2,
     await renderBuilder()
     fireEvent.click(screen.getByRole('button', { name: /add event/i }))
     const amount = document.querySelector('input[id^="event-amount-"]') as HTMLInputElement
-    fireEvent.change(amount, { target: { value: '1e308' } })
+    fireEvent.change(amount, { target: { value: OVER_LIMIT } })
     await pastDebounce()
     expectSaveBlocked(FIELDS_REASON)
 
@@ -507,12 +535,12 @@ describe('a one-time event amount that overflows is reported on its field (AC-2,
 })
 
 describe('a stale calculation banner is cleared by ANY field turning invalid (81.1 review, P6)', () => {
-  // The banner comes from an input no field can refuse: an income amount of 1e306
-  // is 1e308 cents (finite, so the row accepts it) and overflows once annualized.
+  // The banner comes from an input no field can refuse. Until story 109.1 that was
+  // a TYPED income of 1e306 (1e308 cents, finite, overflowing once annualized);
+  // the money limit now refuses it on the field, so it ARRIVES from a saved
+  // forecast instead, which the builder loads as-is.
   async function raiseBanner(): Promise<void> {
-    await renderBuilder()
-    const [salary] = incomeAmountInputs()
-    fireEvent.change(salary as HTMLElement, { target: { value: '1e306' } })
+    await renderBuilder(savedWithIncome(1e308))
     expect(await screen.findByTestId('calculation-error', {}, { timeout: 3000 })).toHaveTextContent(
       'Forecast amounts are too large to project'
     )
@@ -532,7 +560,7 @@ describe('a stale calculation banner is cleared by ANY field turning invalid (81
     await raiseBanner()
     fireEvent.click(screen.getByRole('button', { name: /add event/i }))
     const amount = document.querySelector('input[id^="event-amount-"]') as HTMLInputElement
-    fireEvent.change(amount, { target: { value: '1e308' } })
+    fireEvent.change(amount, { target: { value: '1.2.3' } })
     await pastDebounce()
     expect(
       screen.queryByTestId('calculation-error'),
