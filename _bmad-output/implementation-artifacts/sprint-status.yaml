@@ -1,4 +1,9 @@
 # generated: 2026-06-18
+# last_updated: 2026-10-07f (110.1, 112.1, 114.1 reviewed + approved -> done; epics 110, 112, 114 done (triage-7 batch complete). Integration gates green, compare 37654052670 27/27.)
+# last_updated: 2026-10-07e (114.1 dev done -> review.)
+# last_updated: 2026-10-07d (110.1 dev done -> review.)
+# last_updated: 2026-10-07c (112.1 dev done -> review.)
+# last_updated: 2026-10-07b (dev LAUNCHED: 110.1, 112.1, 114.1 -> in-progress, 3 parallel worktree forks off 3fea167.)
 # last_updated: 2026-10-07a (109.1, 111.1, 113.1 reviewed + approved -> done; epics 109, 111, 113 done. Integration branch gates green, screenshots compare 37644604625 27/27.)
 # last_updated: 2026-10-06v (109.1 dev done -> review; all 3 launched stories in review.)
 # last_updated: 2026-10-06u (113.1 dev done -> review.)
@@ -1390,20 +1395,20 @@ development_status:
   epic-109: done  # DONE 2026-10-07. Added 2026-10-06 (approved) from sprint-change-proposal-2026-10-06-triage-7.md (FR177)
   109-1-every-money-amount-on-the-forecasting-page-is-formatted: done  # DONE 2026-10-07: integration/triage7-109-111-113 gates ALL GREEN 5m59s (web 5120, e2e 23), compare 37644604625 27/27. REVIEWED 2026-10-07: APPROVED, 0 patches, gates ALL GREEN 4m58s at 511ad6e (web 5098, e2e 23); D1 (lone -/. writes 0) DECIDED by Lucas 2026-10-07 = keep; 3 more LOW deferred. Done after merge + screenshots. DEV DONE 2026-10-06: 511ad6e (branch story/109-1-forecasting-money-format, not pushed), gates --sequential ALL GREEN 10m02s (core 1363, db 321/7, web 5098, e2e 23), 6/6 arms RED; baseline web/e2e NOT measured; T7 screenshots: expect forecasting-320-light + forecasting-1280-light to change. DEV LAUNCHED 2026-10-06 (worktree fork, branch story/109-1). CREATED 2026-10-06 at 39b2abf; story Qs DECIDED by Lucas 2026-10-06 (all rec); D1-D2 CONFIRMED (rec)
   epic-109-retrospective: optional
-  epic-110: in-progress  # Added 2026-10-06 (approved) from triage-7 (FR178)
-  110-1-percent-fields-accept-a-decimal-comma: ready-for-dev  # CREATED 2026-10-06 at 39b2abf; story Qs DECIDED by Lucas 2026-10-06 (all rec); D3 CONFIRMED (rec)
+  epic-110: done  # DONE 2026-10-07. Added 2026-10-06 (approved) from triage-7 (FR178)
+  110-1-percent-fields-accept-a-decimal-comma: done  # DONE 2026-10-07: integration/triage7-110-112-114 gates ALL GREEN 6m04s (core 1400, web 5180, e2e 23), compare 37654052670 27/27. REVIEWED 2026-10-07: APPROVED, 0 patches, 0 decisions, 1 LOW deferred (full-width comma). Done after merge. DEV DONE 2026-10-07: a68a9d8 (branch story/110-1-percent-decimal-comma, not pushed), gates ALL GREEN 6m08s (web 5151, e2e 23; baseline 5120 at 3fea167), arms A-E RED; predicted 0 screenshot changes. DEV LAUNCHED 2026-10-07 (worktree fork off 3fea167). CREATED 2026-10-06 at 39b2abf; story Qs DECIDED by Lucas 2026-10-06 (all rec); D3 CONFIRMED (rec)
   epic-110-retrospective: optional
   epic-111: done  # DONE 2026-10-07. Added 2026-10-06 (approved) from triage-7 (FR179)
   111-1-a-yearly-amount-counts-in-full-in-my-forecast: done  # DONE 2026-10-07: integration/triage7-109-111-113 gates ALL GREEN 5m59s (web 5120, e2e 23), compare 37644604625 27/27. REVIEWED 2026-10-07: D1 [MED] false over-contribution warning DECIDED by Lucas 2026-10-07: option 1, FIXED 01e2855 (roundingDriftToleranceCents, 6/6 arms RED), gates ALL GREEN 5m57s (core 1383, web 5055, e2e 23); APPROVED, done after merge, 1 LOW deferred. DEV DONE 2026-10-06: a865886 (branch story/111-1-annualise-exactly, not pushed), gates --sequential ALL GREEN 11m16s (core 1380, db 321/7, web 5052, e2e 23), 5/5 arms RED; T8 screenshots compare after push (predicted 0 changes); T9 deferred-work done by parent. DEV LAUNCHED 2026-10-06 (worktree fork, branch story/111-1). CREATED 2026-10-06 at 39b2abf; story Qs DECIDED by Lucas 2026-10-06 (all rec); D4 CONFIRMED (rec)
   epic-111-retrospective: optional
-  epic-112: in-progress  # Added 2026-10-06 (approved) from triage-7 (FR180)
-  112-1-the-forecast-warns-when-contributions-exceed-whats-left-over: ready-for-dev  # CREATED 2026-10-06 at 39b2abf; story Qs DECIDED by Lucas 2026-10-06 (all rec); D5 CONFIRMED (rec)
+  epic-112: done  # DONE 2026-10-07. Added 2026-10-06 (approved) from triage-7 (FR180)
+  112-1-the-forecast-warns-when-contributions-exceed-whats-left-over: done  # DONE 2026-10-07: integration/triage7-110-112-114 gates ALL GREEN 6m04s (core 1400, web 5180, e2e 23), compare 37654052670 27/27. REVIEWED 2026-10-07: APPROVED, 1 test patch 7d0f7a9 (AC-4 first-row add), gates ALL GREEN 5m54s (web 5125, e2e 23), 0 decisions, 1 LOW deferred. Done after merge. DEV DONE 2026-10-07: b3ec4ae (branch story/112-1-overcontribution-warning, not pushed), gates ALL GREEN 6m32s (web 5124, e2e 23; baseline 5120 at 3fea167), 5/5 arms RED; reuses 111.1 tolerance; predicted 0 screenshot changes. DEV LAUNCHED 2026-10-07 (worktree fork off 3fea167). CREATED 2026-10-06 at 39b2abf; story Qs DECIDED by Lucas 2026-10-06 (all rec); D5 CONFIRMED (rec)
   epic-112-retrospective: optional
   epic-113: done  # DONE 2026-10-07. Added 2026-10-06 (approved) from triage-7 (FR181)
   113-1-deleting-an-expense-that-pays-a-debt-tells-me: done  # DONE 2026-10-07: integration/triage7-109-111-113 gates ALL GREEN 5m59s (web 5120, e2e 23), compare 37644604625 27/27. REVIEWED 2026-10-07: APPROVED, 0 patches, gates ALL GREEN 4m57s at e8cb7e8 (web 5069, e2e 23); D1 (unnamed-debt copy) DECIDED by Lucas 2026-10-07 = keep as shipped; 0 screenshot changes (no shot opens delete dialog); 1 LOW deferred. Done after merge. DEV DONE 2026-10-06: e8cb7e8 (branch story/113-1-expense-delete-debt-warning, not pushed), gates green (web 5069, core 1363, db 321/7; e2e 23 in solo re-run after port clash), 6/6 arms RED; reviewer: mixed named/blank + all-unnamed multi-debt copy; screenshots compare before merge. DEV LAUNCHED 2026-10-06 (worktree fork, branch story/113-1). CREATED 2026-10-06 at 39b2abf; story Qs DECIDED by Lucas 2026-10-06 (all rec); D6 CONFIRMED (rec)
   epic-113-retrospective: optional
-  epic-114: in-progress  # Added 2026-10-06 (approved) from triage-7 (FR182)
-  114-1-my-assets-count-in-the-forecast: ready-for-dev  # CREATED 2026-10-06 at 39b2abf; story Qs DECIDED by Lucas 2026-10-06 (all rec); D7-D8 CONFIRMED (rec)
+  epic-114: done  # DONE 2026-10-07. Added 2026-10-06 (approved) from triage-7 (FR182)
+  114-1-my-assets-count-in-the-forecast: done  # DONE 2026-10-07: integration/triage7-110-112-114 gates ALL GREEN 6m04s (core 1400, web 5180, e2e 23), compare 37654052670 27/27. REVIEWED 2026-10-07: APPROVED, comment patch d42b43d, gates ALL GREEN 5m07s (core 1400, web 5144, e2e 23); D1 (pre-v6 forecast reads low by assets forever) DECIDED by Lucas 2026-10-07 = accept (pre-launch); 3 LOW deferred. Done after merge. DEV DONE 2026-10-07: 88aa73d (branch story/114-1-assets-in-forecast, not pushed), gates ALL GREEN 6m08s (core 1400, web 5144, e2e 23; baseline at 3fea167 core 1383 web 5120), 11/12 arms RED (survivor explained), save v5->6; screenshots: expect forecasting-320/1280-light to change. DEV LAUNCHED 2026-10-07 (worktree fork off 3fea167). CREATED 2026-10-06 at 39b2abf; story Qs DECIDED by Lucas 2026-10-06 (all rec); D7-D8 CONFIRMED (rec)
   epic-114-retrospective: optional
 
 action_items:
