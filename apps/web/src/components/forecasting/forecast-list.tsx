@@ -360,7 +360,8 @@ export function ForecastList({
                     <input
                       type="checkbox"
                       checked={selectedIds.has(forecast.id)}
-                      onChange={(e) => e.stopPropagation()}
+                      onChange={() => toggleSelection(forecast.id)}
+                      // Keeps the click off the row's own toggle, or one click toggles twice.
                       onClick={(e) => e.stopPropagation()}
                       className="h-4 w-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500"
                       aria-label={`Select ${forecast.name}`}

@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { SavedForecast } from '../../../routes/forecasting'
 import { PencilIcon } from '../../ui/RowActionIcons'
@@ -189,5 +190,77 @@ describe('secondary text on a selected row (story 115.2)', () => {
       expect([...line.classList]).toContain('text-body')
       expect([...line.classList]).not.toContain('text-muted')
     }
+  })
+})
+
+describe('row checkbox selects its row (story 118.1, FR186)', () => {
+  // Before 118.1 the controlled checkbox's onChange only stopped propagation, so
+  // clicking it or pressing Space changed nothing; only a click elsewhere on the
+  // row selected it. The row's onClick toggles too, so the box's onClick must
+  // keep stopping propagation or one click toggles twice.
+  const second: SavedForecast = { ...sampleForecast, id: 'saved-2', name: 'House Fund' }
+
+  it('toggles the row once per click on its checkbox', async () => {
+    const user = userEvent.setup()
+    render(<ForecastList forecasts={[sampleForecast]} onDelete={vi.fn()} />)
+    const box = screen.getByRole('checkbox', { name: 'Select Retirement Plan' })
+    const bulk = screen.getByRole('button', { name: 'Delete Selected' })
+
+    await user.click(box)
+    expect(box).toBeChecked()
+    expect(box.closest('tr')).toHaveClass('bg-blue-50')
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
+    expect(bulk).toBeEnabled()
+
+    await user.click(box)
+    expect(box).not.toBeChecked()
+    expect(box.closest('tr')).not.toHaveClass('bg-blue-50')
+    expect(screen.queryByText(/selected$/)).toBeNull()
+    expect(bulk).toBeDisabled()
+  })
+
+  it('toggles the row with Space on its checkbox', async () => {
+    const user = userEvent.setup()
+    render(<ForecastList forecasts={[sampleForecast]} onDelete={vi.fn()} />)
+    const box = screen.getByRole('checkbox', { name: 'Select Retirement Plan' })
+
+    box.focus()
+    await user.keyboard(' ')
+    expect(box).toBeChecked()
+    await user.keyboard(' ')
+    expect(box).not.toBeChecked()
+  })
+
+  it('bulk-deletes exactly the forecasts checked by their checkboxes', async () => {
+    const user = userEvent.setup()
+    const onDelete = vi.fn()
+    render(<ForecastList forecasts={[sampleForecast, second]} onDelete={onDelete} />)
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select House Fund' }))
+    await user.click(screen.getByRole('button', { name: 'Delete Selected' }))
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' })
+    )
+
+    expect(onDelete).toHaveBeenCalledTimes(1)
+    expect(onDelete).toHaveBeenCalledWith('saved-2')
+    expect(screen.getByRole('checkbox', { name: 'Select House Fund' })).not.toBeChecked()
+  })
+
+  it('still selects when the row itself is clicked', async () => {
+    const user = userEvent.setup()
+    render(<ForecastList forecasts={[sampleForecast]} onDelete={vi.fn()} />)
+
+    await user.click(screen.getByText('Retirement Plan'))
+    expect(screen.getByRole('checkbox', { name: 'Select Retirement Plan' })).toBeChecked()
+  })
+
+  it("does not select when the row's Delete button is clicked", async () => {
+    const user = userEvent.setup()
+    render(<ForecastList forecasts={[sampleForecast]} onDelete={vi.fn()} />)
+
+    await user.click(screen.getByRole('button', { name: 'Delete Retirement Plan' }))
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Select Retirement Plan' })).not.toBeChecked()
   })
 })
