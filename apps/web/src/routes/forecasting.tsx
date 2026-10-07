@@ -20,7 +20,7 @@ import {
 } from '@budget-planner/core'
 import type { Frequency } from '@budget-planner/core/finance'
 import { createFileRoute } from '@tanstack/react-router'
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { PremiumPrompt } from '../components/auth/premium-prompt'
 import { ForecastList } from '../components/forecasting/forecast-list'
 import { ProjectionChart } from '../components/forecasting/projection-chart'
@@ -679,6 +679,12 @@ function ForecastingPage(): React.ReactElement {
     [defaultProfileId, profileState.kind, saveTarget]
   )
 
+  // Bulk delete calls `handleDeleteForecast` once per id, and their list reloads
+  // overlap. Only the newest reload may replace the list (story 119.1 review):
+  // it starts after the last DELETE finishes, while an older one can answer
+  // later with rows that are already gone.
+  const latestDeleteReload = useRef(0)
+
   // Handle deleting a forecast - `DELETE /api/forecasts`
   const handleDeleteForecast = useCallback(
     async (id: string) => {
@@ -693,9 +699,10 @@ function ForecastingPage(): React.ReactElement {
           // creates a new one (story 97.1, D3). Bulk delete calls this per id.
           setSaveTarget((target) => (target?.id === id ? null : target))
           // Reload forecasts (scoped to the same profile) to get the updated list
+          const reload = ++latestDeleteReload.current
           const getResult = await fetchForecasts(defaultProfileId ?? undefined)
 
-          if (getResult.success && getResult.data) {
+          if (reload === latestDeleteReload.current && getResult.success && getResult.data) {
             setServerForecasts(getResult.data)
           }
         } else {
