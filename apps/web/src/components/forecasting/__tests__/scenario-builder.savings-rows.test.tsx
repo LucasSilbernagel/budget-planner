@@ -784,3 +784,74 @@ function cleanupAndRender(forecast: SavedForecast): void {
   document.body.innerHTML = ''
   render(<ScenarioBuilder onSave={vi.fn()} initialForecast={forecast} />)
 }
+
+describe('rounding cents are not over-contribution (story 111.1 review, D1)', () => {
+  /**
+   * The forecast annualises exactly (111.1) while an automatic row's allocation is
+   * monthly-canonical. 100.00/wk is 520,000 a year exactly but 43,333 × 12 =
+   * 519,996 monthly-canonical: 4 cents a year the allocation over-counts the
+   * left-over, 40 by year 10. Tolerance: 6 × 1 non-monthly entry × 10 years = 60.
+   */
+  it('a fully allocated automatic row shows no amber line, and 0.00 unassigned', async () => {
+    useIncomeStore.setState({ incomeSources: [income(500_000)] })
+    useExpenseStore.setState({ expenses: [{ ...expense(10_000), frequency: 'weekly' as const }] })
+    useSavingsStore.setState({
+      savingsGoals: [goal({ id: 'g-1', name: 'House fund', allocationMode: 'automatic' })],
+    })
+    const format = formatter()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+
+    await waitFor(() =>
+      expect(screen.getByTestId('savings-unassigned').textContent).toBe(
+        `Not assigned to an account after 10 years: ${format(0)}`
+      )
+    )
+  })
+
+  /** 5,000.00/mo in, one ANNUAL expense, a manual 4,000.00/mo row: 12 × 400,000 − net. */
+  function fillShortfallFixture(annualExpenseCents: number): void {
+    useIncomeStore.setState({ incomeSources: [income(500_000)] })
+    useExpenseStore.setState({
+      expenses: [{ ...expense(annualExpenseCents), frequency: 'annually' as const }],
+    })
+    useSavingsStore.setState({
+      savingsGoals: [
+        goal({
+          id: 'g-1',
+          name: 'House fund',
+          allocationMode: 'manual',
+          monthlyAllocation: 400_000,
+        }),
+      ],
+    })
+  }
+
+  it('a shortfall exactly at the tolerance stays quiet', async () => {
+    // Net 6,000,000 − 1,200,006 = 4,799,994; contributions 4,800,000: 6 a year, 60 = tolerance.
+    fillShortfallFixture(1_200_006)
+    const format = formatter()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+
+    await waitFor(() =>
+      expect(screen.getByTestId('savings-unassigned').textContent).toBe(
+        `Not assigned to an account after 10 years: ${format(0)}`
+      )
+    )
+  })
+
+  it('a shortfall one step above the tolerance still warns, with the full amount', async () => {
+    // Net 4,799,993; contributions 4,800,000: 7 a year, 70 > 60.
+    fillShortfallFixture(1_200_007)
+    const format = formatter()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+
+    await waitFor(() =>
+      expect(screen.getByTestId('savings-unassigned').textContent).toBe(
+        `Your contributions are ${format(70)} more than you have left over by year 10`
+      )
+    )
+  })
+})

@@ -25,6 +25,7 @@ import {
   isValidForecastYears,
   isValidGrowthRate,
   resolveDebtPaymentExpense,
+  roundingDriftToleranceCents,
   solveAutomaticAllocations,
 } from '@budget-planner/core'
 import type { Frequency, NormalizableFinancialItem } from '@budget-planner/core/finance'
@@ -1816,14 +1817,31 @@ export function ScenarioBuilder({
           !account.contributionRecordedAsExpense &&
           account.contribution > 0
       )
+    // Story 111.1 review (D1, Lucas 2026-10-07): automatic rows are seeded from a
+    // MONTHLY-canonical left-over, but the forecast annualises exactly, so the
+    // remainder can dip a few cents below 0 from rounding alone (MEASURED: 5,000.00/mo
+    // in, 100.00/wk out, one automatic row: -0.40 by year 10). A shortfall within
+    // the worst-case drift is not over-contribution: no amber line, and 0.00 shown.
+    const roundingTolerance = roundingDriftToleranceCents(
+      [
+        ...incomeItems.map((item) => item.frequency),
+        ...expenseItems.map((item) => item.frequency),
+        ...balanceAccounts
+          .filter((account) => !account.contributionRecordedAsExpense && account.contribution > 0)
+          .map((account) => account.frequency),
+      ],
+      result.projection.length
+    )
+    const withinRounding =
+      last.unallocatedSavings < 0 && -last.unallocatedSavings <= roundingTolerance
     return {
       years: result.projection.length,
       byRowId,
-      unallocated: last.unallocatedSavings,
+      unallocated: withinRounding ? 0 : last.unallocatedSavings,
       coversRows,
       contributing,
     }
-  }, [result, resultSavingsRowIds, savingsAccounts, balanceAccounts])
+  }, [result, resultSavingsRowIds, savingsAccounts, balanceAccounts, incomeItems, expenseItems])
 
   /**
    * Per-row outcome lines for the investment/debt rows (story 100.2, D9): each

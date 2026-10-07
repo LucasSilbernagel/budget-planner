@@ -161,4 +161,36 @@ export function calculateTotalAnnualNormalized(items: unknown): number {
   }, 0)
 }
 
+/**
+ * The most one non-monthly entry can drift in a year between the two rounding
+ * rules (story 111.1 review, D1): monthly-canonical `round(a × P / 12) × 12`
+ * against the forecast's exact `a × P`. MEASURED over amounts 0..1,999,999 at
+ * create-story: weekly -4..4, biweekly -4..6, annually -5..6; monthly is exact.
+ */
+export const ROUNDING_DRIFT_CENTS_PER_ENTRY_YEAR = 6
+
+/**
+ * Worst-case cents a forecast can disagree with a MONTHLY-canonical figure after
+ * `years`, from rounding alone (story 111.1 review, D1, Lucas 2026-10-07): 6¢ per
+ * non-monthly entry per year. The caller passes the frequency of every recurring
+ * flow that reaches both sides (income, expenses, counted investment
+ * contributions and debt payments). Use it so a shortfall of rounding cents is
+ * never reported as overspending: the builder's over-contribution line (111.1)
+ * and the no-savings-rows warning (112.1).
+ *
+ * An unknown frequency counts as non-monthly (the safe side). `years` that is not
+ * a positive finite number gives 0.
+ * @param frequencies - One entry per recurring flow
+ * @param years - Projection years the shortfall accumulated over
+ * @returns The tolerance in cents
+ */
+export function roundingDriftToleranceCents(
+  frequencies: readonly unknown[],
+  years: number
+): number {
+  if (!Number.isFinite(years) || years <= 0) return 0
+  const nonMonthly = frequencies.filter((frequency) => frequency !== 'monthly').length
+  return ROUNDING_DRIFT_CENTS_PER_ENTRY_YEAR * nonMonthly * Math.floor(years)
+}
+
 // Note: Frequency and NormalizableFinancialItem are already exported directly above

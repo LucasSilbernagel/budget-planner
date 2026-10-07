@@ -13,9 +13,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   type Frequency,
+  ROUNDING_DRIFT_CENTS_PER_ENTRY_YEAR,
   calculateTotalAnnualNormalized,
   normalizeToAnnual,
   normalizeToMonthly,
+  roundingDriftToleranceCents,
 } from '../normalization'
 
 const PERIODS: Record<Frequency, number> = { weekly: 52, biweekly: 26, monthly: 12, annually: 1 }
@@ -89,5 +91,38 @@ describe('calculateTotalAnnualNormalized (story 111.1)', () => {
     expect(() =>
       calculateTotalAnnualNormalized([{ amount: Number.NaN, frequency: 'weekly' }])
     ).toThrow('Amount must be a finite number')
+  })
+})
+
+describe('roundingDriftToleranceCents (story 111.1 review, D1)', () => {
+  it('is 6 cents per non-monthly entry per year, for each frequency mix', () => {
+    expect(ROUNDING_DRIFT_CENTS_PER_ENTRY_YEAR).toBe(6)
+    expect(roundingDriftToleranceCents([], 10)).toBe(0)
+    expect(roundingDriftToleranceCents(['monthly', 'monthly'], 10)).toBe(0)
+    expect(roundingDriftToleranceCents(['weekly'], 1)).toBe(6)
+    expect(roundingDriftToleranceCents(['biweekly'], 1)).toBe(6)
+    expect(roundingDriftToleranceCents(['annually'], 1)).toBe(6)
+    expect(roundingDriftToleranceCents(['weekly'], 10)).toBe(60)
+    expect(roundingDriftToleranceCents(['monthly', 'weekly', 'biweekly', 'annually'], 10)).toBe(180)
+    expect(roundingDriftToleranceCents(['weekly', 'weekly', 'monthly'], 30)).toBe(360)
+  })
+
+  it('counts an unknown frequency as non-monthly, and gives 0 for no usable years', () => {
+    expect(roundingDriftToleranceCents(['fortnightly', undefined], 1)).toBe(12)
+    expect(roundingDriftToleranceCents(['weekly'], 0)).toBe(0)
+    expect(roundingDriftToleranceCents(['weekly'], -3)).toBe(0)
+    expect(roundingDriftToleranceCents(['weekly'], Number.NaN)).toBe(0)
+    expect(roundingDriftToleranceCents(['weekly'], Number.POSITIVE_INFINITY)).toBe(0)
+  })
+
+  it('bounds the real drift: no amount 0..199,999 drifts more than the tolerance in a year', () => {
+    for (const frequency of FREQUENCIES.filter((f) => f !== 'monthly')) {
+      const p = PERIODS[frequency]
+      let worst = 0
+      for (let a = 0; a < 200_000; a++) {
+        worst = Math.max(worst, Math.abs(Math.round((a * p) / 12) * 12 - a * p))
+      }
+      expect(worst, frequency).toBeLessThanOrEqual(roundingDriftToleranceCents([frequency], 1))
+    }
   })
 })
