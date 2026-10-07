@@ -204,8 +204,8 @@ describe('rows replace the investments total (AC-1, AC-11)', () => {
     expect(rowNames()).toEqual(['Pension', 'Car loan', 'ISA'])
     expect(screen.getByLabelText('Type for Pension')).toHaveValue('investment')
     expect(screen.getByLabelText('Type for Car loan')).toHaveValue('debt')
-    expect(screen.getByLabelText('Balance for Pension')).toHaveValue(10000)
-    expect(screen.getByLabelText('Contribution for Pension')).toHaveValue(50)
+    expect(screen.getByLabelText('Balance for Pension')).toHaveValue('10,000.00')
+    expect(screen.getByLabelText('Contribution for Pension')).toHaveValue('50.00')
     expect(screen.getByLabelText('Frequency for Pension')).toHaveValue('monthly')
     // The flag on investment rows only.
     expect(
@@ -241,7 +241,13 @@ describe('rows replace the investments total (AC-1, AC-11)', () => {
     for (const control of within(section()).getAllByRole('textbox')) {
       expect(control).toHaveAttribute('autocomplete', 'off')
     }
-    for (const control of within(section()).getAllByRole('spinbutton')) {
+    // The money fields were spinbuttons until story 109.1; they are textboxes now,
+    // so the loop above covers them. Pin the COUNT, so the loop cannot pass
+    // without them: a Balance and a Contribution on each of the two rows.
+    const money = within(section()).getAllByLabelText(/^(Balance|Contribution) for Same$/)
+    expect(money).toHaveLength(4)
+    for (const control of money) {
+      expect(control).toHaveRole('textbox')
       expect(control).toHaveAttribute('autocomplete', 'off')
     }
     // The checkbox keeps its visible label text inside its accessible name.
@@ -264,9 +270,9 @@ describe('the seed (AC-6)', () => {
       entry({ id: 'e-3', name: 'Odd', monthlyContribution: 1_000, frequency: 'quarterly' }),
     ])
     render(<ScenarioBuilder onSave={vi.fn()} />)
-    expect(screen.getByLabelText('Contribution for Weekly')).toHaveValue(25)
+    expect(screen.getByLabelText('Contribution for Weekly')).toHaveValue('25.00')
     expect(screen.getByLabelText('Frequency for Weekly')).toHaveValue('weekly')
-    expect(screen.getByLabelText('Contribution for Yearly')).toHaveValue(6000)
+    expect(screen.getByLabelText('Contribution for Yearly')).toHaveValue('6,000.00')
     expect(screen.getByLabelText('Frequency for Yearly')).toHaveValue('annually')
     // An unrecognised frequency degrades to monthly.
     expect(screen.getByLabelText('Frequency for Odd')).toHaveValue('monthly')
@@ -280,11 +286,11 @@ describe('the seed (AC-6)', () => {
       entry({ id: 'e-5', name: 'Neg contrib', type: 'debt', monthlyContribution: -100 }),
     ])
     render(<ScenarioBuilder onSave={vi.fn()} />)
-    expect(screen.getByLabelText('Balance for Mortgage')).toHaveValue(987654321)
+    expect(screen.getByLabelText('Balance for Mortgage')).toHaveValue('987,654,321.00')
     expect(screen.getByLabelText('Balance for Mortgage')).not.toHaveAttribute('aria-invalid')
-    expect(screen.getByLabelText('Balance for Bad fund')).toHaveValue(0)
-    expect(screen.getByLabelText('Balance for NaN debt')).toHaveValue(0)
-    expect(screen.getByLabelText('Contribution for Neg contrib')).toHaveValue(0)
+    expect(screen.getByLabelText('Balance for Bad fund')).toHaveValue('0.00')
+    expect(screen.getByLabelText('Balance for NaN debt')).toHaveValue('0.00')
+    expect(screen.getByLabelText('Contribution for Neg contrib')).toHaveValue('0.00')
   })
 
   it('survives a non-finite stored investment contribution and seeds it as 0', async () => {
@@ -298,10 +304,10 @@ describe('the seed (AC-6)', () => {
     ])
     render(<ScenarioBuilder onSave={vi.fn()} />)
     expect(rowNames()).toEqual(['NaN fund', 'Null fund', 'Inf fund', 'Pension'])
-    expect(screen.getByLabelText('Contribution for NaN fund')).toHaveValue(0)
-    expect(screen.getByLabelText('Contribution for Null fund')).toHaveValue(0)
-    expect(screen.getByLabelText('Contribution for Inf fund')).toHaveValue(0)
-    expect(screen.getByLabelText('Contribution for Pension')).toHaveValue(50)
+    expect(screen.getByLabelText('Contribution for NaN fund')).toHaveValue('0.00')
+    expect(screen.getByLabelText('Contribution for Null fund')).toHaveValue('0.00')
+    expect(screen.getByLabelText('Contribution for Inf fund')).toHaveValue('0.00')
+    expect(screen.getByLabelText('Contribution for Pension')).toHaveValue('50.00')
     await waitForResult()
   })
 
@@ -353,7 +359,7 @@ describe('a debt seeds its payment from its linked expense (story 102.1, AC-10)'
       }),
     ])
     render(<ScenarioBuilder onSave={vi.fn()} />)
-    expect(screen.getByLabelText('Contribution for Car loan')).toHaveValue(150)
+    expect(screen.getByLabelText('Contribution for Car loan')).toHaveValue('150.00')
     expect(screen.getByLabelText('Frequency for Car loan')).toHaveValue('biweekly')
   })
 
@@ -368,7 +374,7 @@ describe('a debt seeds its payment from its linked expense (story 102.1, AC-10)'
       }),
     ])
     render(<ScenarioBuilder onSave={vi.fn()} />)
-    expect(screen.getByLabelText('Contribution for Old loan')).toHaveValue(0)
+    expect(screen.getByLabelText('Contribution for Old loan')).toHaveValue('0.00')
   })
 
   it.each([
@@ -383,7 +389,7 @@ describe('a debt seeds its payment from its linked expense (story 102.1, AC-10)'
       entry({ id: 'e-1', name: 'Loan', type: 'debt', currentBalance: 900_000, paymentExpenseId }),
     ])
     render(<ScenarioBuilder onSave={vi.fn()} />)
-    expect(screen.getByLabelText('Contribution for Loan')).toHaveValue(0)
+    expect(screen.getByLabelText('Contribution for Loan')).toHaveValue('0.00')
   })
 
   it('seeds 0 for a linked expense whose stored amount is unreadable', () => {
@@ -400,7 +406,7 @@ describe('a debt seeds its payment from its linked expense (story 102.1, AC-10)'
       }),
     ])
     render(<ScenarioBuilder onSave={vi.fn()} />)
-    expect(screen.getByLabelText('Contribution for Loan')).toHaveValue(0)
+    expect(screen.getByLabelText('Contribution for Loan')).toHaveValue('0.00')
   })
 })
 
@@ -439,7 +445,7 @@ describe('the linked expense moves into the debt row (story 102.2)', () => {
     linkedFixture()
     render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResult} />)
     expect(expenseRowNames()).toEqual(['Rent'])
-    expect(screen.getByLabelText('Contribution for Loan')).toHaveValue(200)
+    expect(screen.getByLabelText('Contribution for Loan')).toHaveValue('200.00')
     const label = within(section()).getByText('from Expenses: Loan payment')
     expect(label.className.split(/\s+/)).toContain('text-faint')
     // Code review 102.2 (Lucas): a labelled debt row has NO flag checkbox (its
@@ -479,8 +485,8 @@ describe('the linked expense moves into the debt row (story 102.2)', () => {
       }),
     ])
     render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResult} />)
-    expect(screen.getByLabelText('Contribution for Loan')).toHaveValue(200)
-    expect(screen.getByLabelText('Contribution for Twin')).toHaveValue(0)
+    expect(screen.getByLabelText('Contribution for Loan')).toHaveValue('200.00')
+    expect(screen.getByLabelText('Contribution for Twin')).toHaveValue('0.00')
     expect(within(section()).getAllByText(/^from Expenses:/)).toHaveLength(1)
     expect(expenseRowNames()).toEqual(['Rent'])
   })
@@ -498,7 +504,7 @@ describe('the linked expense moves into the debt row (story 102.2)', () => {
     ])
     render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResult} />)
     expect(expenseRowNames()).toEqual(['Rent', 'Loan payment'])
-    expect(screen.getByLabelText('Contribution for Loan')).toHaveValue(0)
+    expect(screen.getByLabelText('Contribution for Loan')).toHaveValue('0.00')
     expect(within(section()).queryByText(/^from Expenses:/)).toBeNull()
   })
 
@@ -585,7 +591,7 @@ describe('the linked expense moves into the debt row (story 102.2)', () => {
       ])
       render(<ScenarioBuilder onSave={vi.fn()} />)
       expect(expenseRowNames()).toEqual(['Rent', 'Loan payment'])
-      expect(screen.getByLabelText('Contribution for Loan')).toHaveValue(0)
+      expect(screen.getByLabelText('Contribution for Loan')).toHaveValue('0.00')
       expect(within(section()).queryByText(/^from Expenses:/)).toBeNull()
       // Unlabelled, so the row offers its flag as any debt does.
       expect(screen.getByLabelText('Payment already in Expenses, for Loan')).not.toBeChecked()
@@ -700,8 +706,8 @@ describe('add, remove and type switch (AC-8)', () => {
     fireEvent.click(screen.getByRole('button', { name: '+ Add Balance' }))
     expect(rowNames()).toEqual(['Pension', 'New Investment'])
     expect(screen.getByLabelText('Type for New Investment')).toHaveValue('investment')
-    expect(screen.getByLabelText('Balance for New Investment')).toHaveValue(0)
-    expect(screen.getByLabelText('Contribution for New Investment')).toHaveValue(0)
+    expect(screen.getByLabelText('Balance for New Investment')).toHaveValue('0.00')
+    expect(screen.getByLabelText('Contribution for New Investment')).toHaveValue('0.00')
     expect(screen.getByLabelText('Frequency for New Investment')).toHaveValue('monthly')
     expect(
       screen.getByLabelText('Not taken from the money left over, for New Investment')
@@ -897,12 +903,14 @@ describe('each money field reports its own validity (AC-9)', () => {
     expect(reason()).toBeNull()
   })
 
-  it('grouped text the browser cannot hold (badInput) is refused, never saved as 0 (replaces bug-3 AC-2, code review)', async () => {
+  it('text that cannot be read (1.2.3) is refused, never saved as 0 (replaces bug-3 AC-2, code review)', async () => {
     // The bug-3 grouped (`12,345.67`) / symbol (`€7,500.50`) cases guarded a
-    // TEXT money field that is gone. On a `type="number"` row field Chromium
-    // reports such text as value "" with `validity.badInput` (MEASURED, 81.1);
-    // jsdom never does, so the browser's report is stubbed. Without the badInput
-    // check `useMoneyDraft` would read "" as an emptied field and write 0.
+    // TEXT money field. Until story 109.1 the row fields were `type="number"`,
+    // where Chromium reports such text as value "" with `validity.badInput`
+    // (MEASURED, 81.1), and this case stubbed that report. The fields are text
+    // again (story 109.1): grouped text is READ now, and text that cannot be
+    // read arrives as itself. Without the "Enter a number." rule `parseFromInput`
+    // would read it as 0 and the row would be written 0.
     useIncomeStore.setState({ incomeSources: [income(500_000)] })
     setEntries([entry({ id: 'e-1', name: 'Fund', currentBalance: 100_000 })])
     const format = formatter()
@@ -910,12 +918,8 @@ describe('each money field reports its own validity (AC-9)', () => {
     await waitForResult()
     await waitFor(() => expect(card('Starting Net Worth')).toBe(format(100_000)))
     const balance = screen.getByLabelText('Balance for Fund')
-    Object.defineProperty(balance, 'validity', {
-      configurable: true,
-      get: () => ({ badInput: true }),
-    })
 
-    fireEvent.change(balance, { target: { value: '' } })
+    fireEvent.change(balance, { target: { value: '1.2.3' } })
 
     expect(balance).toHaveAttribute('aria-invalid', 'true')
     expect(
@@ -979,7 +983,7 @@ describe('the builder is defensive on its own (AC-14, 100.1 review)', () => {
       />
     )
     expect(rowNames()).toEqual(['Ok'])
-    expect(screen.getByLabelText('Balance for Ok')).toHaveValue(10)
+    expect(screen.getByLabelText('Balance for Ok')).toHaveValue('10.00')
 
     document.body.innerHTML = ''
     render(
@@ -995,7 +999,7 @@ describe('the builder is defensive on its own (AC-14, 100.1 review)', () => {
     )
     // Not an array: loads as the v1/v2 total.
     expect(rowNames()).toEqual(['Investments'])
-    expect(screen.getByLabelText('Balance for Investments')).toHaveValue(12.34)
+    expect(screen.getByLabelText('Balance for Investments')).toHaveValue('12.34')
 
     // Story 100.3 code review: the builder's OWN rate coercion
     // (`annualReturnFromSaved`), with no mapper in front of it to strip the bad

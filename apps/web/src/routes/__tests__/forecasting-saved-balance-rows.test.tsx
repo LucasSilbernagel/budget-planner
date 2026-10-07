@@ -103,6 +103,8 @@ async function loadPlan(inputs: unknown, version: number) {
 function rows(): [string, string, number, number, string, boolean | null][] {
   const section = screen.getByRole('region', { name: 'Investments & Debts' })
   const value = (el: HTMLElement) => (el as HTMLInputElement).value
+  // Money fields show grouped text since story 109.1 (`10,000.01`).
+  const amount = (el: HTMLElement) => Number(value(el).replaceAll(',', ''))
   return within(section)
     .queryAllByLabelText(/^Balance Name, row \d+$/)
     .map((name) => {
@@ -117,8 +119,8 @@ function rows(): [string, string, number, number, string, boolean | null][] {
       return [
         value(name),
         value(within(section).getByLabelText(`Type for ${label}`)),
-        Number(value(within(section).getByLabelText(`Balance for ${label}`))),
-        Number(value(within(section).getByLabelText(`Contribution for ${label}`))),
+        amount(within(section).getByLabelText(`Balance for ${label}`)),
+        amount(within(section).getByLabelText(`Contribution for ${label}`)),
         value(within(section).getByLabelText(`Frequency for ${label}`)),
         flag ? flag.checked : null,
       ]
@@ -295,7 +297,7 @@ describe('a v1/v2 forecast reopens as one Investments row, at 6% (AC-13; 100.3 D
     fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Plan' }))
     const field = await screen.findByLabelText('Balance for Investments')
-    expect(field).toHaveValue(-5)
+    expect(field).toHaveValue('-5.00')
     expect(field).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByTestId('save-blocked-reason').textContent).toBe(
       'Fix the highlighted fields to save'

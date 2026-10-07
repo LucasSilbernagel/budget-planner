@@ -224,7 +224,7 @@ describe('the baseline is today (story 107.1)', () => {
 
     // The Income section renders first, so its row's Amount is the first one.
     const salaryAmount = screen.getAllByLabelText('Amount')[0] as HTMLInputElement
-    expect(salaryAmount.value).toBe('6000')
+    expect(salaryAmount.value).toBe('6,000.00')
     fireEvent.change(salaryAmount, { target: { value: '7000' } })
     await waitFor(() => expect(onResult).toHaveBeenCalled(), { timeout: 3000 })
     const after = lastResult()

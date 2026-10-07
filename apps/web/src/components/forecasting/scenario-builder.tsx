@@ -10,6 +10,7 @@
  */
 
 import {
+  type CurrencyOptions,
   DEFAULT_FORECAST_YEARS,
   DEFAULT_INVESTMENT_RETURN,
   type ForecastInputData,
@@ -22,9 +23,11 @@ import {
   calculateFinancialForecast,
   currencySymbol,
   debtOwedCents,
+  formatForInputDisplay,
   isValidForecastYears,
   isValidGrowthRate,
   resolveDebtPaymentExpense,
+  roundingDriftToleranceCents,
   solveAutomaticAllocations,
 } from '@budget-planner/core'
 import type { Frequency, NormalizableFinancialItem } from '@budget-planner/core/finance'
@@ -43,8 +46,10 @@ import React, {
 import { useIsInitialSyncPending } from '../../hooks/useIsInitialSyncPending'
 import { useStoresHydrated } from '../../hooks/useStoresHydrated'
 import { signedAmount, vsTodayCents, withTodayBaseline } from '../../lib/forecasting/today-baseline'
+import { type MoneyDraft, parseMoneyDraft, reformatAmountOnBlur } from '../../lib/money-input'
+import { exceedsMoneyLimit, moneyLimitMessage } from '../../lib/money-limit'
 import { isKnownFrequency } from '../../lib/readable-rows'
-import { sanitizeWithCaret } from '../../lib/sanitized-input'
+import { sanitizeMoneyChange, sanitizeWithCaret } from '../../lib/sanitized-input'
 import { investmentContributionItems } from '../../lib/savings/investment-contribution-items'
 import type { SavedForecast, ScenarioInputs } from '../../routes/forecasting'
 import { useBalanceEntries, useInvestmentEntries } from '../../stores/balanceStore'
@@ -293,8 +298,6 @@ const RETURN_INVALID_MESSAGE = `Enter an annual return from ${MIN_GROWTH_RATE * 
   MAX_GROWTH_RATE * 100
 }%.`
 const AMOUNT_NEGATIVE_MESSAGE = 'Enter an amount of 0 or more.'
-const AMOUNT_TOO_LARGE_MESSAGE = 'Enter a smaller amount.'
-const AMOUNT_NOT_A_NUMBER_MESSAGE = 'Enter a number.'
 /**
  * The Save reason for any invalid field OTHER than the period alone. When the
  * period is the only bad field it keeps `YEARS_INVALID_SHORT` (77.1's copy);
@@ -948,9 +951,9 @@ export function ScenarioBuilder({
 }: ScenarioBuilderProps): React.ReactElement {
   // Display amounts respect the user's currency mode (currency-less vs symbols).
   const formatCurrency = useFormattedAmount()
-  // (Story 100.2 removed the last `parseFromInput` money field, Current
-  // Investments, and with it the builder's read of the currency locale. Every
-  // money field is now a `type="number"` row field, parsed by `useMoneyDraft`.)
+  // (Since story 109.1 every money field is a `type="text"` field that shows the
+  // amount grouped in the user's locale, as on the other pages; each row reads
+  // the locale itself and parses with `parseMoneyDraft`.)
   // State for financial items. When a saved forecast is loaded, seed every field
   // from it (the parent remounts this component via `key` on load, so these lazy
   // initializers run once per load); a fresh builder falls back to the defaults.
@@ -1816,14 +1819,31 @@ export function ScenarioBuilder({
           !account.contributionRecordedAsExpense &&
           account.contribution > 0
       )
+    // Story 111.1 review (D1, Lucas 2026-10-07): automatic rows are seeded from a
+    // MONTHLY-canonical left-over, but the forecast annualises exactly, so the
+    // remainder can dip a few cents below 0 from rounding alone (MEASURED: 5,000.00/mo
+    // in, 100.00/wk out, one automatic row: -0.40 by year 10). A shortfall within
+    // the worst-case drift is not over-contribution: no amber line, and 0.00 shown.
+    const roundingTolerance = roundingDriftToleranceCents(
+      [
+        ...incomeItems.map((item) => item.frequency),
+        ...expenseItems.map((item) => item.frequency),
+        ...balanceAccounts
+          .filter((account) => !account.contributionRecordedAsExpense && account.contribution > 0)
+          .map((account) => account.frequency),
+      ],
+      result.projection.length
+    )
+    const withinRounding =
+      last.unallocatedSavings < 0 && -last.unallocatedSavings <= roundingTolerance
     return {
       years: result.projection.length,
       byRowId,
-      unallocated: last.unallocatedSavings,
+      unallocated: withinRounding ? 0 : last.unallocatedSavings,
       coversRows,
       contributing,
     }
-  }, [result, resultSavingsRowIds, savingsAccounts, balanceAccounts])
+  }, [result, resultSavingsRowIds, savingsAccounts, balanceAccounts, incomeItems, expenseItems])
 
   /**
    * Per-row outcome lines for the investment/debt rows (story 100.2, D9): each
@@ -2473,16 +2493,41 @@ interface FinancialItemRowProps {
 
 /**
  * Why an entry in an amount field cannot be used, or `null` when it can (story
- * 81.1, FR132). Shared by the income/expense and one-time event rows.
+ * 81.1, FR132). Shared by every builder money field.
  *
- * ⚠️ `cents` is checked, not `value`: `1e308` is a finite number the input accepts,
- * and `Math.round(1e308 * 100)` is Infinity. Checking before the ×100 lets exactly
- * that case through (it did, at every site, before 81.1).
+ * Since story 109.1 the fields are text, read by `parseMoneyDraft`: text it cannot
+ * read is "Enter a number." (a text input never reports `badInput`, which is how
+ * the old `type="number"` fields learned of it). An amount above the money limit
+ * every other money form refuses (story 106.1, Q1) is refused here too, which
+ * also keeps it far from overflowing the engine; that limit replaces 81.1's
+ * "Enter a smaller amount.", which only caught a non-finite amount.
+ *
+ * `allowNegative` is for the one-time event row, whose field holds a magnitude
+ * (a typed minus selects "Money out"), so the limit applies to the magnitude.
  */
-function amountProblem(badInput: boolean, cents: number): string | null {
-  if (badInput || Number.isNaN(cents)) return AMOUNT_NOT_A_NUMBER_MESSAGE
-  if (!Number.isFinite(cents)) return AMOUNT_TOO_LARGE_MESSAGE
+function amountProblem(
+  draft: MoneyDraft,
+  preferences: Pick<CurrencyOptions, 'mode' | 'currency' | 'locale'>,
+  allowNegative = false
+): string | null {
+  if ('problem' in draft) return draft.problem
+  if (!allowNegative && draft.cents < 0) return AMOUNT_NEGATIVE_MESSAGE
+  if (exceedsMoneyLimit(Math.abs(draft.cents))) return moneyLimitMessage(preferences)
   return null
+}
+
+/**
+ * The builder's blur re-echo (story 109.1): the shared one, except that text the
+ * field refused stays as typed. Re-echoing `1.2.3` would show `0.00` beside
+ * "Enter a number.", replacing what the user typed (81.1 D5: the draft keeps it).
+ */
+function reechoAmountOnBlur(
+  value: string,
+  locale: string | undefined,
+  setter: (v: string) => void
+): void {
+  if ('problem' in parseMoneyDraft(value, locale)) return
+  reformatAmountOnBlur(value, locale, setter)
 }
 
 /**
@@ -2507,7 +2552,8 @@ function FinancialItemRow({
   // The amount prefix follows the user's currency mode: the selected currency's
   // symbol in symbol mode, nothing in currency-less mode (a hard-coded `$` was
   // wrong in neutral mode and for non-USD currencies).
-  const { mode, currency } = useCurrencyPreferences()
+  const preferences = useCurrencyPreferences()
+  const { mode, currency, locale } = preferences
 
   // Associate each label with its control (story `forecast-2`). The event row has
   // been associated since `forecast-1`; this story closed the rest — the FOUR
@@ -2526,8 +2572,9 @@ function FinancialItemRow({
    * are told it is wrong. The draft keeps it on screen until they fix it.
    * Nothing outside this input changes `item.amount` while the row is mounted:
    * seeding and loading re-key the row, which remounts it with a fresh draft.
+   * The draft opens grouped in the user's locale (`42,000.00`, story 109.1).
    */
-  const [draft, setDraft] = useState<string>(() => String(item.amount / 100))
+  const [draft, setDraft] = useState<string>(() => formatForInputDisplay(item.amount, locale))
   const [amountError, setAmountError] = useState<string | null>(null)
   useWithdrawValidityOnUnmount(item.id, onValidityChange)
 
@@ -2537,23 +2584,15 @@ function FinancialItemRow({
    * engine refused with a banner naming no field. Now a bad entry is reported
    * HERE and nothing is written, so the last good amount stays in the forecast.
    * An EMPTY field is still 0: a cleared amount means nothing, not a mistake.
+   * Since story 109.1 each keystroke is sanitized (a letter is dropped, the
+   * caret kept) and read in the user's locale, as on /income.
    */
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value
+    const raw = sanitizeMoneyChange(e.target, locale)
     setDraft(raw)
-    // `validity` is optional-chained: jsdom never reports badInput (MEASURED,
-    // 81.1), while Chromium reports it for text a number input cannot hold.
-    const badInput = e.target.validity?.badInput === true
-    let problem: string | null = null
-    if (!badInput && raw.trim() === '') {
-      onUpdate('amount', 0)
-    } else {
-      const value = parseFloat(raw)
-      const cents = Math.round(value * 100)
-      problem = amountProblem(badInput, cents)
-      if (problem === null && value < 0) problem = AMOUNT_NEGATIVE_MESSAGE
-      if (problem === null) onUpdate('amount', cents)
-    }
+    const parsed = parseMoneyDraft(raw, locale)
+    const problem = amountProblem(parsed, preferences)
+    if (problem === null && 'cents' in parsed) onUpdate('amount', parsed.cents)
     setAmountError(problem)
     onValidityChange(item.id, problem === null)
   }
@@ -2590,11 +2629,11 @@ function FinancialItemRow({
             )}
             <input
               id={amountId}
-              type="number"
+              type="text"
+              inputMode="decimal"
               value={draft}
               onChange={handleAmountChange}
-              min={0}
-              step={0.01}
+              onBlur={(e) => reechoAmountOnBlur(e.target.value, locale, setDraft)}
               aria-invalid={amountError ? true : undefined}
               aria-describedby={amountError ? amountErrorId : undefined}
               className={`w-full ${
@@ -2664,7 +2703,8 @@ function OneTimeEventRow({
   onValidityChange,
 }: OneTimeEventRowProps): React.ReactElement {
   // Currency-mode-aware amount prefix (see FinancialItemRow) — never a literal `$`.
-  const { mode, currency } = useCurrencyPreferences()
+  const preferences = useCurrencyPreferences()
+  const { mode, currency, locale } = preferences
 
   /**
    * Direction is held locally and the stored `amount` stays SIGNED (story
@@ -2690,8 +2730,8 @@ function OneTimeEventRow({
     event.amount !== 0 ? (event.amount < 0 ? 'out' : 'in') : pendingDirection
 
   /**
-   * The input holds a MAGNITUDE, which is why it keeps `min={0}` — a minus sign
-   * never has to be typed into a money field.
+   * The input holds a MAGNITUDE — a minus sign never has to be typed into a
+   * money field (a typed one selects "Money out", below).
    *
    * ⚠️ `cents === 0` is returned unnegated on purpose: `-0` is not `< 0`, so a
    * stored `-0` would reload as "Money in", and `JSON.stringify` flattens it to
@@ -2705,81 +2745,49 @@ function OneTimeEventRow({
    * `FinancialItemRow` gives: a refused entry is not written to state, and a
    * controlled `value` would snap the input back to the last good amount on the
    * re-render that shows the message. Flipping direction re-signs the stored
-   * amount without changing its magnitude, so the draft stays correct.
+   * amount without changing its magnitude, so the draft stays correct. It opens
+   * grouped in the user's locale (story 109.1).
    */
-  const [draft, setDraft] = useState<string>(() => String(Math.abs(event.amount) / 100))
+  const [draft, setDraft] = useState<string>(() =>
+    formatForInputDisplay(Math.abs(event.amount), locale)
+  )
   const [amountError, setAmountError] = useState<string | null>(null)
   useWithdrawValidityOnUnmount(event.id, onValidityChange)
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value
-    const value = parseFloat(raw)
-    // A typed minus selects "Money out" (below) and the field shows the magnitude,
-    // as it did when the input was controlled by `Math.abs(event.amount)`.
-    setDraft(value < 0 ? raw.replace(/^\s*-/, '') : raw)
+    // Sanitized as on /income (story 109.1): a letter is dropped, the caret kept,
+    // and a minus survives only in front.
+    const raw = sanitizeMoneyChange(e.target, locale)
+    const typedMinus = raw.startsWith('-')
+    const hasDigit = /\d/.test(raw)
+    // A typed minus selects "Money out" (below) and the field shows the magnitude.
+    // A lone "-" stays visible until a digit follows it.
+    setDraft(typedMinus && hasDigit ? raw.slice(1) : raw)
 
-    if (Number.isNaN(value)) {
-      /**
-       * ⚠️ 81.1 code review (R1, Lucas: parity with `FinancialItemRow`). Two
-       * arms used to share this silent branch, and both left the forecast on the
-       * LAST amount while the field showed something else:
-       *   - text the browser cannot hold (`1e999`, a half-typed `1e`, a lone "-"
-       *     in Chromium) arrives as `""` with `badInput`. It is now REPORTED and
-       *     held, exactly as an income/expense row reports it. A lone "-" shows
-       *     the message for one keystroke; the next digit resolves it (below).
-       *   - an EMPTIED field now writes 0, as an income/expense row does. That was
-       *     unsafe while the input was controlled by the amount (see the ⚠️
-       *     below), and is safe since the draft: the input renders exactly what
-       *     the DOM reports, so a 0 in state resets nothing on screen.
-       */
-      const badInput = e.target.validity?.badInput === true
-      if (badInput) {
-        setAmountError(AMOUNT_NOT_A_NUMBER_MESSAGE)
-        onValidityChange(event.id, false)
-        return
-      }
+    if (!hasDigit) {
       setAmountError(null)
       onValidityChange(event.id, true)
-      if (raw.trim() === '') {
-        // Keep the chosen direction through the zero, where the sign cannot hold it.
+      if (raw === '') {
+        /**
+         * An EMPTIED field writes 0, as an income/expense row does (81.1 code
+         * review R1). Keep the chosen direction through the zero, where the sign
+         * cannot hold it.
+         */
         if (pendingDirection !== direction) setPendingDirection(direction)
         onUpdate(event.id, 'amount', 0)
         return
       }
       /**
-       * Mid-edit: the field is empty, or holds a lone "-" (which an
-       * `<input type="number">` reports as `""` — badInput).
+       * Mid-edit: a digit-free partial (`-`, `.`). Nothing is written, so the
+       * row keeps its amount until the next keystroke makes the entry readable.
        *
-       * ⚠️ DO NOT WRITE STATE HERE. The earlier version called
-       * `onUpdate(…, 0)` on every such keystroke. `updateOneTimeEvent` always
-       * builds a new object, so that re-rendered this controlled input, and
-       * React resets a number input's DOM value when the committed value is 0
-       * and `element.value` is `""` — wiping the "-" the user had just typed
-       * before the digits arrived. The minus was then never seen by this
-       * handler at all, and the feature only worked for a paste or an
-       * insertion in front of existing digits.
-       *
-       * Leaving state untouched keeps the partial entry in the DOM. The row is
-       * already 0 if nothing was entered, and a real clear is committed by the
-       * next parseable keystroke.
-       *
-       * (Story 81.1: the `setDraft` above IS a state write, but a safe one. The
-       * input now renders the draft, which is exactly what the DOM reports, so
-       * the re-render has nothing to reset. The hazard was writing the AMOUNT.)
+       * Story 109.1: the field is `type="text"`, so a lone "-" arrives as `"-"`
+       * and THIS arm is how the minus selects "Money out" on its first keystroke.
+       * (While the field was `type="number"`, Chromium reported a lone minus as
+       * `""` with `badInput` — MEASURED in story `forecast-2` — and the minus
+       * only arrived on the second keystroke, as a parseable negative.)
        */
-      /**
-       * MEASURED in Chromium (throwaway Playwright probe, story `forecast-2`):
-       * typing `-500` keystroke-by-keystroke yields
-       *   raw="" badInput=true  ->  "-5"  ->  "-50"  ->  "-500"
-       * ending at amount -50000, direction "out". So the minus IS delivered, on
-       * the SECOND keystroke, as a parseable negative — this branch's job is only
-       * to get out of the way on the first.
-       *
-       * The `startsWith('-')` below is therefore belt-and-braces: Chromium reports
-       * `""` for a lone minus, so it does not fire there. It covers a UA that
-       * reports the partial `"-"` instead.
-       */
-      if (raw.startsWith('-') && direction !== 'out') setPendingDirection('out')
+      if (typedMinus && direction !== 'out') setPendingDirection('out')
       return
     }
 
@@ -2792,29 +2800,24 @@ function OneTimeEventRow({
      * sitting beside it, reaching for the familiar accounting convention
      * (`-500` for an outflow) became the natural wrong guess — and the punishment
      * was losing what you typed. Interpret it as the intent it obviously is.
-     */
-    const cents = Math.round(Math.abs(value) * 100)
-    /**
-     * ⚠️ A finite entry can still overflow once scaled to cents (story 77.1):
-     * `1e308` is a valid number here, and `1e308 * 100` is `Infinity`. The engine
-     * refuses a non-finite event amount, and a saved one would come back as JSON
-     * `null`, so write nothing and keep the last good amount. (`1e999` itself
-     * most likely never gets here: a throwaway Chromium probe in 77.1 found a
-     * GENERIC `<input type="number">` reports it as `""` with `badInput` —
-     * measured on a bare input, not on this field.)
      *
-     * ⚠️ Since story 81.1 (FR132) the refusal is REPORTED on this field. Before,
-     * it returned silently, so the field showed a number the forecast was not using.
+     * The minus is honoured BEFORE the entry is checked (81.1 code review, P2): a
+     * refused `-1.2.3` or an over-limit `-30000000` must keep its "Money out"
+     * intent for the corrected entry, or `5` would be stored as money in.
      */
-    // The minus is honoured BEFORE the overflow check (81.1 code review, P2): a
-    // typed `-1e308` is refused, but its "Money out" intent must survive to the
-    // corrected entry, or `5` would be stored as money in.
-    const nextDirection = value < 0 ? 'out' : direction
+    const nextDirection = typedMinus ? 'out' : direction
     if (nextDirection !== direction) setPendingDirection(nextDirection)
-    const problem = amountProblem(false, cents)
+    const parsed = parseMoneyDraft(raw, locale)
+    /**
+     * Refused: text that cannot be read, or a magnitude above the money limit
+     * (story 109.1, Q1; it replaces 77.1's non-finite check, which `1e308` hit
+     * once scaled to cents). Since story 81.1 (FR132) the refusal is REPORTED on
+     * this field and nothing is written, so the last good amount stays.
+     */
+    const problem = amountProblem(parsed, preferences, true)
     setAmountError(problem)
     onValidityChange(event.id, problem === null)
-    if (problem !== null) {
+    if (problem !== null || !('cents' in parsed)) {
       // A NON-zero amount's sign IS the direction (see `direction` above), so
       // `pendingDirection` alone would be ignored: re-sign the kept amount, as the
       // direction control does. The magnitude is unchanged, and the row is invalid,
@@ -2824,7 +2827,7 @@ function OneTimeEventRow({
       }
       return
     }
-    onUpdate(event.id, 'amount', signed(cents, nextDirection))
+    onUpdate(event.id, 'amount', signed(Math.abs(parsed.cents), nextDirection))
   }
 
   const handleDirectionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -2904,12 +2907,13 @@ function OneTimeEventRow({
             )}
             <input
               id={amountId}
-              type="number"
-              // Magnitude only — `direction` carries the sign.
+              type="text"
+              inputMode="decimal"
+              // Magnitude only — `direction` carries the sign, and the draft never
+              // holds a minus once a digit follows it, so the re-echo is unsigned.
               value={draft}
               onChange={handleAmountChange}
-              min={0}
-              step={0.01}
+              onBlur={(e) => reechoAmountOnBlur(e.target.value, locale, setDraft)}
               aria-invalid={amountError ? true : undefined}
               aria-describedby={amountError ? `${amountId}-error` : undefined}
               className={`w-full ${
@@ -3009,10 +3013,11 @@ interface SavingsAccountRowProps {
  * with the 81.1 rules, and written as cents only when usable — the same contract
  * as `FinancialItemRow`'s amount (see its docblock for why the draft exists).
  *
- * ⚠️ Deliberately NOT `InputField` + `parseFromInput` (story 100.1): rows remount
- * by key when the seed lands, so the `InputField` seed-key / pre-hydration
- * machinery is not needed, and mixing the two parsing paths in one row would show
- * a de-DE user two different number formats side by side.
+ * ⚠️ Deliberately NOT `InputField` (story 100.1): rows remount by key when the
+ * seed lands, so the `InputField` seed-key / pre-hydration machinery is not
+ * needed. Since story 109.1 it reads and shows the amount in the user's locale
+ * (`parseMoneyDraft`, `formatForInputDisplay`), like every builder money field,
+ * so a de-DE user sees one number format across the builder.
  */
 function useMoneyDraft(
   cents: number,
@@ -3020,7 +3025,9 @@ function useMoneyDraft(
   onValidityChange: (key: string, valid: boolean) => void,
   write: (cents: number) => void
 ) {
-  const [draft, setDraft] = useState<string>(() => String(cents / 100))
+  const preferences = useCurrencyPreferences()
+  const { locale } = preferences
+  const [draft, setDraft] = useState<string>(() => formatForInputDisplay(cents, locale))
   // A negative value can ARRIVE, not only be typed: a forecast saved when the old
   // Current Savings field accepted `-5` (Lucas, code review 100.1). Flag it from
   // the first render and report it, exactly as if typed, so Save and the
@@ -3034,25 +3041,17 @@ function useMoneyDraft(
   }, [])
   useWithdrawValidityOnUnmount(validityKey, onValidityChange)
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value
+    const raw = sanitizeMoneyChange(e.target, locale)
     setDraft(raw)
-    // jsdom never reports `badInput`; Chromium does for text a number input
-    // cannot hold (MEASURED, 81.1).
-    const badInput = e.target.validity?.badInput === true
-    let problem: string | null = null
-    if (!badInput && raw.trim() === '') {
-      write(0)
-    } else {
-      const value = parseFloat(raw)
-      const parsed = Math.round(value * 100)
-      problem = amountProblem(badInput, parsed)
-      if (problem === null && value < 0) problem = AMOUNT_NEGATIVE_MESSAGE
-      if (problem === null) write(parsed)
-    }
+    const parsed = parseMoneyDraft(raw, locale)
+    const problem = amountProblem(parsed, preferences)
+    if (problem === null && 'cents' in parsed) write(parsed.cents)
     setError(problem)
     onValidityChange(validityKey, problem === null)
   }
-  return { draft, error, onChange }
+  const onBlur = (e: React.FocusEvent<HTMLInputElement>) =>
+    reechoAmountOnBlur(e.target.value, locale, setDraft)
+  return { draft, error, onChange, onBlur }
 }
 
 /**
@@ -3180,11 +3179,11 @@ function RowMoneyField({
         )}
         <input
           id={id}
-          type="number"
+          type="text"
+          inputMode="decimal"
           value={field.draft}
           onChange={field.onChange}
-          min={0}
-          step={0.01}
+          onBlur={field.onBlur}
           aria-label={`${label} for ${rowLabel}`}
           autoComplete="off"
           aria-invalid={field.error ? true : undefined}

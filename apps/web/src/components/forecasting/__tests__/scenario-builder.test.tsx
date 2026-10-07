@@ -185,6 +185,10 @@ describe('ScenarioBuilder amount prefix (bug-3 AC-1)', () => {
  * filter, pinned in the 28-1 block below), the symbol is a prefix OUTSIDE the
  * input, and what remains to pin is that a typed decimal reaches the save as
  * exact cents, in both currency modes.
+ *
+ * Story 109.1 made the row fields text again (grouped, read by `parseFromInput`
+ * in the user's locale, as on /income), so the grouped case is back below. The
+ * symbol stays a prefix outside the field.
  */
 describe('ScenarioBuilder savings/investments parsing (bug-3 AC-2)', () => {
   // Helper: type `typed` into the seeded Investments row, save, and return the inputs.
@@ -219,6 +223,10 @@ describe('ScenarioBuilder savings/investments parsing (bug-3 AC-2)', () => {
     expect((await inputsAfterTyping('12345.67')).investments).toBe(1234567)
   })
 
+  it('reads a GROUPED value again, now the field is text (story 109.1)', async () => {
+    expect((await inputsAfterTyping('12,345.67')).investments).toBe(1234567)
+  })
+
   it('keeps the cents in symbol mode, with the symbol outside the field (replaces the symbol case)', async () => {
     mockCurrency.mode = 'symbol'
     mockCurrency.currency = 'EUR'
@@ -226,7 +234,8 @@ describe('ScenarioBuilder savings/investments parsing (bug-3 AC-2)', () => {
     // The prefix is a sibling of the input, not part of its value.
     const input = screen.getByLabelText('Balance for Investments')
     expect(within(input.parentElement as HTMLElement).getByText('€')).toBeInTheDocument()
-    expect(input).toHaveValue(7500.5)
+    // The typed text, unchanged until blur (story 109.1).
+    expect(input).toHaveValue('7500.50')
   })
 })
 
@@ -270,8 +279,9 @@ describe('ScenarioBuilder reload hydration (bug-3 AC-4)', () => {
     expect(screen.getByDisplayValue('Bonus')).toBeInTheDocument()
     // savings 1234500 → one v1 `Savings` row of 12345 (story 100.1, AC-12);
     // investments 6789000 → one v1 `Investments` row of 67890 (story 100.2, AC-13)
-    expect(screen.getByLabelText('Balance for Savings')).toHaveValue(12345)
-    expect(screen.getByLabelText('Balance for Investments')).toHaveValue(67890)
+    // Shown grouped, as on the other pages (story 109.1).
+    expect(screen.getByLabelText('Balance for Savings')).toHaveValue('12,345.00')
+    expect(screen.getByLabelText('Balance for Investments')).toHaveValue('67,890.00')
     // years seeded from inputs
     expect(screen.getByDisplayValue('15')).toBeInTheDocument()
   })
@@ -312,17 +322,21 @@ describe('ScenarioBuilder reload hydration (bug-3 AC-4)', () => {
 describe('ScenarioBuilder money inputs reject non-numeric characters (story 28-1)', () => {
   /**
    * Story 100.1 replaced Current Savings with per-account rows. Their money
-   * fields are `type="number"`, like the income/expense amounts, so the browser
-   * is the character filter there and no `sanitize` is passed. Pinned so a row
-   * field cannot quietly become a free-text money field with no filter at all.
+   * fields were `type="number"`, so the browser was the character filter. Since
+   * story 109.1 they are text fields, as on the other pages, and the filter is
+   * `sanitizeMoneyChange`. Pinned so a row field cannot quietly become a
+   * free-text money field with no filter at all.
    */
-  it('makes the savings row money fields number inputs, the filter they rely on', () => {
+  it('filters the savings row money fields: decimal text inputs that drop a letter', () => {
     render(<ScenarioBuilder onSave={vi.fn()} />)
 
     for (const label of ['Balance for Savings', 'Monthly Contribution for Savings']) {
       const input = screen.getByLabelText(label)
-      expect(input).toHaveAttribute('type', 'number')
-      expect(input).toHaveAttribute('min', '0')
+      expect(input).toHaveAttribute('type', 'text')
+      expect(input).toHaveAttribute('inputmode', 'decimal')
+      expect(input).not.toHaveAttribute('min')
+      fireEvent.change(input, { target: { value: '12a3' } })
+      expect(input).toHaveValue('123')
     }
   })
 
@@ -330,16 +344,20 @@ describe('ScenarioBuilder money inputs reject non-numeric characters (story 28-1
    * Story 100.2 replaced Current Investments (the last field with a `sanitize`
    * filter) with investment/debt rows. The two cases that pinned its filter
    * ("strips letters and symbols", "persists the sanitized value") are replaced
-   * by the same pin as the savings rows: the money fields are number inputs, so
-   * the browser is the filter, and what is displayed is what is saved.
+   * by the same pin as the savings rows: the money fields are filtered (number
+   * inputs until story 109.1, `sanitizeMoneyChange` since), and what is displayed
+   * is what is saved.
    */
-  it('makes the investment/debt row money fields number inputs, the filter they rely on', () => {
+  it('filters the investment/debt row money fields: decimal text inputs that drop a letter', () => {
     render(<ScenarioBuilder onSave={vi.fn()} />)
 
     for (const label of ['Balance for Investments', 'Contribution for Investments']) {
       const input = screen.getByLabelText(label)
-      expect(input).toHaveAttribute('type', 'number')
-      expect(input).toHaveAttribute('min', '0')
+      expect(input).toHaveAttribute('type', 'text')
+      expect(input).toHaveAttribute('inputmode', 'decimal')
+      expect(input).not.toHaveAttribute('min')
+      fireEvent.change(input, { target: { value: '12a3' } })
+      expect(input).toHaveValue('123')
     }
   })
 
@@ -349,7 +367,7 @@ describe('ScenarioBuilder money inputs reject non-numeric characters (story 28-1
 
     const field = screen.getByLabelText('Balance for Investments')
     fireEvent.change(field, { target: { value: '12345.67' } })
-    expect(field).toHaveValue(12345.67)
+    expect(field).toHaveValue('12345.67')
     const saveButton = await screen.findByRole(
       'button',
       { name: /save forecast/i },
@@ -420,7 +438,7 @@ describe('One-time events can be an outflow (story forecast-1, AC-1/AC-3)', () =
     fireEvent.change(eventDirection(), { target: { value: 'out' } })
 
     // The magnitude stays positive on screen; only the stored sign flips.
-    expect(eventAmount()).toHaveValue(5000)
+    expect(eventAmount()).toHaveValue('5000')
 
     // The Save button appears only once the debounced forecast has computed —
     // the same `findByRole` wait every other test in this file uses.
@@ -564,7 +582,7 @@ describe('One-time events can be an outflow (story forecast-1, AC-1/AC-3)', () =
 
     expect(screen.getByLabelText(/direction/i)).toHaveValue('out')
     // Magnitude on screen, never a minus sign in the money field.
-    expect(eventAmount()).toHaveValue(40000)
+    expect(eventAmount()).toHaveValue('40,000.00')
   })
 
   it('forecast-2: a typed minus SELECTS money out instead of erasing the entry', async () => {
@@ -578,8 +596,11 @@ describe('One-time events can be an outflow (story forecast-1, AC-1/AC-3)', () =
     fireEvent.change(eventAmount(), { target: { value: '-500' } })
 
     // The magnitude is kept, and the direction control reflects the intent.
-    expect(eventAmount()).toHaveValue(500)
+    expect(eventAmount()).toHaveValue('500')
     expect(eventDirection()).toHaveValue('out')
+    // Blur re-echoes the MAGNITUDE, never the signed amount (story 109.1).
+    fireEvent.blur(eventAmount())
+    expect(eventAmount()).toHaveValue('500.00')
 
     fireEvent.click(
       await screen.findByRole('button', { name: /save forecast/i }, { timeout: 2000 })
@@ -597,7 +618,7 @@ describe('One-time events can be an outflow (story forecast-1, AC-1/AC-3)', () =
 
     // Minus means "out", never "toggle" — typing it twice must not oscillate.
     expect(eventDirection()).toHaveValue('out')
-    expect(eventAmount()).toHaveValue(500)
+    expect(eventAmount()).toHaveValue('500')
   })
 
   it('forecast-2: every financial-item control is labelled for assistive tech', () => {
@@ -635,21 +656,21 @@ describe('One-time events can be an outflow (story forecast-1, AC-1/AC-3)', () =
     const incomeSection = screen
       .getByRole('heading', { name: 'Income Sources' })
       .closest('section') as HTMLElement
-    const salaryAmount = within(incomeSection).getByDisplayValue('5000') // DEFAULT_INCOME, cents/100
+    const salaryAmount = within(incomeSection).getByDisplayValue('5,000.00') // DEFAULT_INCOME, grouped (109.1)
     fireEvent.change(salaryAmount, { target: { value: '-500' } })
     // ⚠️ Story 81.1 (D5, confirmed by Lucas) REPLACED the silent clamp to 0: a
     // negative is now refused ON THE FIELD. The typed text stays so it can be
     // fixed, and nothing is written, so the forecast keeps the last good amount.
     // What this test protects is unchanged: an income/expense row never gains
     // the event row's "minus means money out" reading.
-    expect(salaryAmount).toHaveValue(-500)
+    expect(salaryAmount).toHaveValue('-500')
     expect(salaryAmount).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByText('Enter an amount of 0 or more.')).toBeInTheDocument()
 
     // Positive control: the same field accepts an ordinary positive edit, so the
     // refusal above is a refusal and not an input that rejects everything.
     fireEvent.change(salaryAmount, { target: { value: '6000' } })
-    expect(salaryAmount).toHaveValue(6000)
+    expect(salaryAmount).toHaveValue('6000')
     expect(salaryAmount).not.toHaveAttribute('aria-invalid')
   })
 

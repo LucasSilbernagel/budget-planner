@@ -180,6 +180,6 @@ describe('ScenarioBuilder seeds the solver share with a non-finite contribution'
     seed(Number.NaN)
     render(<ScenarioBuilder onSave={vi.fn()} />)
     // 3000 − 500 rent − 0 = $2,500 to the single automatic row.
-    expect(screen.getByLabelText('Monthly Contribution for Auto one')).toHaveValue(2500)
+    expect(screen.getByLabelText('Monthly Contribution for Auto one')).toHaveValue('2,500.00')
   })
 })
