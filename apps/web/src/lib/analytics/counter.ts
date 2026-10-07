@@ -3,12 +3,25 @@
  *
  * counter.dev is a cookieless, open-source (AGPL) analytics service. Its
  * `script.js` reads its site id **exclusively** from
- * `document.currentScript.getAttribute('data-id')`, which is only populated for
- * a *parser-inserted* `<script>` tag. It is therefore wired through the TanStack
- * Start document head (`head().scripts` in `routes/__root.tsx`), which the
- * already-mounted `<Scripts />` renders as a real server-rendered `<script>` —
- * NOT via `document.createElement`/`appendChild` (which would leave
- * `document.currentScript === null` and the `data-id` unread → silent no-op).
+ * `document.currentScript.getAttribute('data-id')`, synchronously at the top of
+ * the script. `document.currentScript` is set while any CLASSIC script runs and
+ * is null for a module script (or inside a callback). The tag is wired through
+ * the TanStack Start document head (`head().scripts` in `routes/__root.tsx`),
+ * which `<Scripts />` renders as a real server-rendered `<script>`, so the id is
+ * in the HTML the browser parses.
+ *
+ * `defer` (story 117.1, FR185): without it the tag was render-blocking (the
+ * browser stopped parsing to fetch a third-party script before first paint).
+ * A deferred script is still a classic, parser-inserted script, so
+ * `currentScript` is still set when it runs. MEASURED 2026-10-07 in a real
+ * browser (story 117.1 evidence): with `defer` the `/trackpage` beacon carries
+ * the configured id; the same tag as `type="module"` throws on the null
+ * `currentScript` and sends nothing. A classic tag added with
+ * `createElement`/`appendChild` ALSO had `currentScript` set and sent the id in
+ * that run: an earlier version of this comment said it would not. The SSR tag
+ * is kept anyway, because it needs no client code and is in the first HTML.
+ * ⚠️ Never `type="module"`; `async` would also keep the id but lets React 19
+ * treat the tag as a hoistable resource, a bigger change than one attribute.
  *
  * The site id is a *public* identifier (it ships in client HTML by design, like
  * the Formspark form id), so exposing it to the bundle is intentional
@@ -32,6 +45,8 @@ export const COUNTERDEV_SCRIPT_SRC = 'https://cdn.counter.dev/script.js'
 export interface AnalyticsScript {
   src: string
   'data-id': string
+  /** Story 117.1: not render-blocking; keeps `document.currentScript` (see above). */
+  defer: true
 }
 
 /**
@@ -44,10 +59,10 @@ function getCounterDevId(): string {
 
 /**
  * Build the `head().scripts` entries for analytics. Returns a single
- * server-rendered counter.dev `<script src data-id>` when the site id is
+ * server-rendered counter.dev `<script src data-id defer>` when the site id is
  * configured, or `[]` (nothing emitted) when it is unset/whitespace-only.
  */
 export function buildAnalyticsScripts(): AnalyticsScript[] {
   const id = getCounterDevId()
-  return id ? [{ src: COUNTERDEV_SCRIPT_SRC, 'data-id': id }] : []
+  return id ? [{ src: COUNTERDEV_SCRIPT_SRC, 'data-id': id, defer: true }] : []
 }

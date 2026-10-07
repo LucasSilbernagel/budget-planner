@@ -33,6 +33,7 @@ import { registerProfileScopedCollection } from '../lib/profile-cascade'
 import { scopeToActiveProfile } from '../lib/profile-scope'
 import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 import { withUuidIds } from '../lib/uuid'
+import { BALANCE_TRACKING_STORAGE_KEY } from './overview-data-storage-keys'
 import { useProfileStore } from './profileStore'
 
 // ============================================================================
@@ -66,9 +67,9 @@ interface BalanceState {
 // ============================================================================
 
 /**
- * Storage key for localStorage persistence
+ * Storage key for localStorage persistence (one source: `./overview-data-storage-keys`).
  */
-const STORAGE_KEY = 'budget-planner:balance-tracking'
+const STORAGE_KEY = BALANCE_TRACKING_STORAGE_KEY
 
 /**
  * Create balance store with persistence

@@ -110,3 +110,30 @@ describe('ReportPage landmarks (story 116.1)', () => {
     expect(screen.getAllByRole('main')).toHaveLength(1)
   })
 })
+
+/**
+ * Story 117.2 (FR185): when the tier resolves, the loading branch's DOM is
+ * REPLACED, not reused. Reused, the spinner's 32 px <div> became the page's
+ * container and Chrome counted it growing as a layout shift (CLS 0.1153 on
+ * /categories, MEASURED). The branch keys force the replacement; jsdom can show
+ * node identity, the CLS itself was measured by the story's probe.
+ */
+describe('ReportPage loading → resolved (story 117.2)', () => {
+  it.each([
+    ['the locked prompt', { hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true }],
+    ['the paid page', { hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true }],
+  ] as const)('replaces the loading nodes with %s', (_resolved, status) => {
+    mockStatus({ isLoading: true })
+    const { container, rerender } = render(<ReportPage />)
+    const spinner = screen.getByRole('status', { name: 'Loading' })
+    const shell = container.firstElementChild
+    expect(shell, 'anti-vacuity: the loading shell rendered').not.toBeNull()
+
+    mockStatus(status)
+    rerender(<ReportPage />)
+
+    expect(screen.queryByRole('status', { name: 'Loading' })).toBeNull()
+    expect(spinner.isConnected, 'the spinner node was reused').toBe(false)
+    expect(shell?.isConnected, 'the loading shell was reused').toBe(false)
+  })
+})

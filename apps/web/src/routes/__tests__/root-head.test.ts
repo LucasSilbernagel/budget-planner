@@ -45,7 +45,9 @@ describe('__root head() analytics wiring', () => {
     vi.stubEnv('VITE_COUNTERDEV_ID', 'site-test-123')
     const scripts = headScripts()
     const counterScripts = scripts.filter((s) => s?.src === COUNTERDEV_SCRIPT_SRC)
-    expect(counterScripts).toEqual([{ src: COUNTERDEV_SCRIPT_SRC, 'data-id': 'site-test-123' }])
+    expect(counterScripts).toEqual([
+      { src: COUNTERDEV_SCRIPT_SRC, 'data-id': 'site-test-123', defer: true },
+    ])
   })
 
   it('emits no counter.dev script when the id is unset', () => {

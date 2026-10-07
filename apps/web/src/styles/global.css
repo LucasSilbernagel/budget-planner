@@ -228,6 +228,28 @@
   [data-dismiss-account-notice='1'] [data-account-notice] {
     display: none;
   }
+
+  /* --- Pre-paint Overview pending-block reservation (story 117.2, FR185) ---
+     `data-overview-has-data="1"` is set on <html> by the synchronous <head>
+     bootstrap in `lib/overview/no-flash-overview-data-script` when this browser
+     holds budget rows. The server cannot know that, so the pending block is
+     sized like the resolved-EMPTY onboarding card (story 38.2); with data it
+     then grew ~890 px into the charts and pushed "Premium Features" out of the
+     desktop viewport: CLS 0.1285, MEASURED. One viewport of height puts
+     everything after the block below the fold from the first frame, so the
+     growth moves only off-screen content, which CLS does not count.
+
+     ⚠️ ONLY WITH DATA. Without the attribute nothing changes: a new visitor,
+     the case most first visits hit, still gets 38.2's zero shift.
+     The attribute is never removed; that is safe because this hook exists only
+     while the Overview is pending (see the bootstrap's header).
+
+     Specificity 0-2-0 against no min-height utility on the block. jsdom cannot
+     prove the cascade or the first frame; the story's CLS probe and Lighthouse
+     run did. */
+  [data-overview-has-data='1'] [data-hook='overview-sections-pending'] {
+    min-height: 100vh;
+  }
 }
 
 /* Custom utility styles */

@@ -12,6 +12,7 @@ import { registerProfileScopedCollection } from '../lib/profile-cascade'
 import { scopeToActiveProfile } from '../lib/profile-scope'
 import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 import { withUuidIds } from '../lib/uuid'
+import { SAVINGS_GOALS_STORAGE_KEY } from './overview-data-storage-keys'
 import { useProfileStore } from './profileStore'
 
 // Define the type for our store state
@@ -41,9 +42,9 @@ interface SavingsState {
 // Start at -20000 to match the core service constant
 import { toClientSavingsGoal } from '@budget-planner/core/services/savingsGoals'
 
-// Storage key for localStorage
-// Using the key specified in Dev Notes: localStorage: `budget-planner:savings-goals`
-export const SAVINGS_GOALS_STORAGE_KEY = 'budget-planner:savings-goals'
+// Storage key for localStorage (`budget-planner:savings-goals`). Defined in the
+// leaf `./overview-data-storage-keys` (story 117.2) and re-exported here.
+export { SAVINGS_GOALS_STORAGE_KEY }
 
 /**
  * ⚠️ PURE DERIVATIONS — READ BEFORE ADDING A SELECTOR HOOK BELOW (story 38.1, BUG-F).

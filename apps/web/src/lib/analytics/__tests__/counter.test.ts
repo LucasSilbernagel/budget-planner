@@ -19,14 +19,14 @@ describe('buildAnalyticsScripts', () => {
   it('returns the counter.dev script entry when the site id is configured', () => {
     vi.stubEnv('VITE_COUNTERDEV_ID', 'site-test-123')
     expect(buildAnalyticsScripts()).toEqual([
-      { src: COUNTERDEV_SCRIPT_SRC, 'data-id': 'site-test-123' },
+      { src: COUNTERDEV_SCRIPT_SRC, 'data-id': 'site-test-123', defer: true },
     ])
   })
 
   it('trims a surrounding-whitespace site id', () => {
     vi.stubEnv('VITE_COUNTERDEV_ID', '  site-test-123  ')
     expect(buildAnalyticsScripts()).toEqual([
-      { src: COUNTERDEV_SCRIPT_SRC, 'data-id': 'site-test-123' },
+      { src: COUNTERDEV_SCRIPT_SRC, 'data-id': 'site-test-123', defer: true },
     ])
   })
 
