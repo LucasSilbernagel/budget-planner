@@ -1800,13 +1800,15 @@ export function ScenarioBuilder({
     })
     // The section-level line describes the WHOLE list, so it shows only while the
     // result was computed for exactly the rows on screen (code review 100.1):
-    // never under an empty list, and never with a stale year count while a
-    // debounced recompute for an added/removed row is pending.
+    // never with a stale result, e.g. a stale year count while a debounced
+    // recompute for an added/removed row is pending. The empty list is matched
+    // like any other (story 112.1): the amber line needs no rows, the neutral
+    // "Not assigned …" line does (`hasRows`).
     const currentIds = savingsAccounts.map((account) => account.id)
-    const coversRows =
-      currentIds.length > 0 &&
+    const matchesRows =
       currentIds.length === resultSavingsRowIds.length &&
       currentIds.every((id, index) => id === resultSavingsRowIds.at(index))
+    const hasRows = currentIds.length > 0
     // Contributions are what the amber line blames, so it needs some (code
     // review 100.1): a negative remainder with nothing contributed is a deficit
     // in the income itself, not over-contribution. Since story 100.2 a COUNTED
@@ -1840,7 +1842,8 @@ export function ScenarioBuilder({
       years: result.projection.length,
       byRowId,
       unallocated: withinRounding ? 0 : last.unallocatedSavings,
-      coversRows,
+      matchesRows,
+      hasRows,
       contributing,
     }
   }, [result, resultSavingsRowIds, savingsAccounts, balanceAccounts, incomeItems, expenseItems])
@@ -2083,7 +2086,7 @@ export function ScenarioBuilder({
           </div>
         )}
 
-        {savingsOutcome?.coversRows &&
+        {savingsOutcome?.matchesRows &&
           (savingsOutcome.unallocated < 0 && savingsOutcome.contributing ? (
             <p
               data-testid="savings-unassigned"
@@ -2094,10 +2097,12 @@ export function ScenarioBuilder({
               have left over by year {savingsOutcome.years}
             </p>
           ) : (
-            <p data-testid="savings-unassigned" className="text-sm text-body">
-              Not assigned to an account after {yearsLabel(savingsOutcome.years)}:{' '}
-              <GroupedAmount text={formatCurrency(savingsOutcome.unallocated)} />
-            </p>
+            savingsOutcome.hasRows && (
+              <p data-testid="savings-unassigned" className="text-sm text-body">
+                Not assigned to an account after {yearsLabel(savingsOutcome.years)}:{' '}
+                <GroupedAmount text={formatCurrency(savingsOutcome.unallocated)} />
+              </p>
+            )
           ))}
       </section>
 
