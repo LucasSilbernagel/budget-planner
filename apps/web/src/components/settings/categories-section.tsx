@@ -15,9 +15,9 @@
  *    leaves an undimmed strip across the top of the open dialog.
  *  - The locked content renders INSIDE a <button>, so it must contain no nested
  *    link or button. The unlocked branch is the <a>; the locked branch is inert
- *    text only. And `aria-label` REPLACES the subtree, so the locked control's
- *    accessible name is only `Custom Categories — premium, locked`; the label
- *    text below contributes nothing to it.
+ *    text only. Its accessible name IS that text (story 116.2: the gate's
+ *    button no longer has an `aria-label`): "Custom categories", the
+ *    description, then "Premium, locked".
  */
 
 import type React from 'react'

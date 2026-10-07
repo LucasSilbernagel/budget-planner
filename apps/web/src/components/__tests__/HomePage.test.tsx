@@ -27,6 +27,11 @@ import {
   useOverviewDurationStore,
   useSavingsStore,
 } from '../../stores'
+import {
+  ANY_LOCKED_NAME,
+  expectLockedRowsNamedByVisibleText,
+  lockedName,
+} from '../../test/locked-name'
 import { renderAfterReload } from '../../test/reload-chain'
 
 const usePremiumAccess = vi.fn()
@@ -122,9 +127,7 @@ describe('HomePage premium discovery', () => {
     // Scope the badge to the forecasting control: the Premium Features section
     // now also carries a locked Custom Profiles entry (story 13-3), so there is
     // more than one "Premium" badge on the page for a free user.
-    const forecasting = screen.getByRole('button', {
-      name: /advanced forecasting — premium, locked/i,
-    })
+    const forecasting = screen.getByRole('button', { name: lockedName('Advanced Forecasting') })
     expect(within(forecasting).getByText('Premium')).toBeInTheDocument()
     // Not a usable link for free users.
     expect(screen.queryByRole('link', { name: /advanced forecasting/i })).not.toBeInTheDocument()
@@ -137,7 +140,11 @@ describe('HomePage premium discovery', () => {
     const link = screen.getByRole('link', { name: /advanced forecasting/i })
     expect(link).toHaveAttribute('href', '/forecasting')
     expect(screen.queryByText('Premium')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /premium, locked/i })).not.toBeInTheDocument()
+    // Absence of ANY locked row. The link above is the positive control; the
+    // matcher matches both the pre-116.2 `aria-label` name and today's
+    // content-derived one, so a rename cannot turn this silently green.
+    expect(screen.queryByRole('button', { name: ANY_LOCKED_NAME })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('premium-gate-locked')).not.toBeInTheDocument()
   })
 
   it('57.1: pins the Advanced Forecasting subtitle to honest, situation-based copy', () => {
@@ -187,11 +194,19 @@ describe('HomePage premium discovery', () => {
     ).toBeInTheDocument()
   })
 
+  it('116.2: every locked row is named by its visible title and description, then "Premium, locked"', () => {
+    mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
+    const { container } = render(<HomePage />)
+    // Every gated benefit, derived (not a hard-coded 5): the guard below must not
+    // pass on a page that rendered fewer rows.
+    expect(expectLockedRowsNamedByVisibleText(container)).toHaveLength(GATED_COUNT)
+  })
+
   it('AC-1: shows Custom Profiles locked with a Premium badge for a free user (13-3)', () => {
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
     render(<HomePage />)
 
-    const profiles = screen.getByRole('button', { name: /custom profiles — premium, locked/i })
+    const profiles = screen.getByRole('button', { name: lockedName('Custom Profiles') })
     expect(within(profiles).getByText('Premium')).toBeInTheDocument()
     // Not a usable link for free users.
     expect(screen.queryByRole('link', { name: /custom profiles/i })).not.toBeInTheDocument()
@@ -203,8 +218,13 @@ describe('HomePage premium discovery', () => {
 
     const link = screen.getByRole('link', { name: /custom profiles/i })
     expect(link).toHaveAttribute('href', '/profiles')
+    // ⚠️ Absence probe, re-pointed by story 116.2: the old literal
+    // (`/custom profiles — premium, locked/i`) matches NO name since the gate
+    // dropped its `aria-label`, so it would have stayed green against a paid
+    // render that wrongly showed the locked row. The link above is the positive
+    // control; this matcher is the one the free-user test finds the row with.
     expect(
-      screen.queryByRole('button', { name: /custom profiles — premium, locked/i })
+      screen.queryByRole('button', { name: lockedName('Custom Profiles') })
     ).not.toBeInTheDocument()
   })
 
@@ -231,9 +251,7 @@ describe('HomePage premium discovery', () => {
     expect(within(sync).getByText('Premium')).toBeInTheDocument()
     // …and is now an activatable control with the gate's accessible name (the
     // half of 33.1 that UX-DR45 retires — this exact query asserted `not` before).
-    const syncButton = screen.getByRole('button', {
-      name: /multi-device sync — premium, locked/i,
-    })
+    const syncButton = screen.getByRole('button', { name: lockedName('Multi-device sync') })
     expect(sync).toContainElement(syncButton)
     expect(within(sync).getByTestId('premium-gate-locked')).toBe(syncButton)
 
@@ -433,7 +451,7 @@ describe('HomePage premium discovery', () => {
     // …and sync is genuinely one of them, named rather than counted: a count of
     // GATED_COUNT would also be satisfied by five gates none of which is sync.
     expect(screen.getByTestId('premium-benefit-sync')).toContainElement(
-      screen.getByRole('button', { name: /multi-device sync — premium, locked/i })
+      screen.getByRole('button', { name: lockedName('Multi-device sync') })
     )
   })
 
@@ -482,7 +500,8 @@ describe('HomePage premium discovery', () => {
     for (const tile of tiles) {
       const chevron = within(tile).getByText('›')
       expect(chevron.className.split(/\s+/)).toContain('text-accent')
-      // Decorative: the button already announces "<feature> — premium, locked".
+      // Decorative: the button already announces its title, description and
+      // "Premium, locked".
       expect(chevron).toHaveAttribute('aria-hidden', 'true')
     }
 
@@ -516,9 +535,7 @@ describe('HomePage premium discovery', () => {
     const sync = await screen.findByTestId('premium-benefit-sync')
     expect(screen.queryByRole('dialog', { name: /go premium/i })).not.toBeInTheDocument()
 
-    fireEvent.click(
-      within(sync).getByRole('button', { name: /multi-device sync — premium, locked/i })
-    )
+    fireEvent.click(within(sync).getByRole('button', { name: lockedName('Multi-device sync') }))
 
     const dialog = await screen.findByRole('dialog', { name: /go premium/i })
     // Same component the other gates open: same accessible name, same benefit

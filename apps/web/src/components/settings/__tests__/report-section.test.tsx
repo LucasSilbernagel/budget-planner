@@ -9,17 +9,17 @@
  *   - locked   → an inert button, no link
  *   - unlocked → the link to /financial-summary, no lock
  *
- * ⚠️ Accessible-name mechanics, which are NOT symmetrical between the states:
- * the locked branch puts `aria-label={`${featureName} — premium, locked`}` on
- * the <button>, and per accname `aria-label` REPLACES the subtree — so the
- * visible label text contributes nothing to the locked control's name. The
- * unlocked <a> carries no `aria-label` at all, so `featureName` is not involved
- * there and its name comes from its content. It is never a concatenation.
+ * Accessible names: since story 116.2 BOTH states are named by their content,
+ * and `featureName` drives neither (only the upgrade dialog). The locked
+ * <button> has no `aria-label` (it used to, "<featureName> — premium, locked",
+ * which hid the visible label from the name): it reads the visible title, the
+ * description, then "Premium, locked". The unlocked <a> reads its content too.
  */
 
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../../hooks/usePremiumAccess'
+import { lockedName } from '../../../test/locked-name'
 
 const usePremiumAccess = vi.fn()
 
@@ -86,9 +86,9 @@ describe('ReportSection', () => {
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
     render(<ReportSection />)
 
-    // The locked control's accessible name is the aria-label ALONE.
+    // Named by what it shows: the visible title first, "Premium, locked" last.
     expect(
-      screen.getByRole('button', { name: 'Financial Summary Report — premium, locked' })
+      screen.getByRole('button', { name: lockedName('Financial summary report') })
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('link', { name: /financial summary report/i })

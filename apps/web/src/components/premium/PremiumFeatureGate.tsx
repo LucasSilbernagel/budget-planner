@@ -40,8 +40,10 @@ import { PremiumLockBadge } from './PremiumLockBadge'
 
 export interface PremiumFeatureGateProps {
   /**
-   * Human-readable feature name. Used both in the locked control's accessible
-   * name and in the upgrade prompt so the user knows what they are unlocking.
+   * Human-readable feature name, for the upgrade prompt so the user knows what
+   * they are unlocking. NOT the locked control's accessible name since story
+   * 116.2 (FR184): that is the control's own visible `locked` content, then
+   * "Premium, locked".
    */
   featureName: string
   /** Unlocked content, rendered only when the user has active premium access. */
@@ -102,17 +104,25 @@ export function PremiumFeatureGate({
 
   // Everything else (free / lapsed / unauthenticated / errored check) is treated
   // as NOT premium and shown locked but discoverable.
+  //
+  // ⚠️ NO `aria-label` (story 116.2, FR184): it would REPLACE the button's
+  // content in the accessible name, so the visible title and description were
+  // never announced and a voice-control user saying the visible title matched
+  // nothing (axe `label-content-name-mismatch`). The name is now the content
+  // itself: title, description, the badge's "Premium", then the hidden
+  // ", locked" below. It lives here, not in `PremiumLockBadge`, because
+  // `CategoryPicker` shows that badge outside any button.
   return (
     <>
       <button
         type="button"
         onClick={() => setIsPromptOpen(true)}
-        aria-label={`${featureName} — premium, locked`}
         className={className}
         data-testid="premium-gate-locked"
       >
         {locked}
         <PremiumLockBadge />
+        <span className="sr-only">, locked</span>
       </button>
       {isPromptOpen && (
         <PremiumPrompt
