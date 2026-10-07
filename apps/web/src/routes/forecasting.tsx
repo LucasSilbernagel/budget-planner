@@ -20,11 +20,11 @@ import {
 } from '@budget-planner/core'
 import type { Frequency } from '@budget-planner/core/finance'
 import { createFileRoute } from '@tanstack/react-router'
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { PremiumPrompt } from '../components/auth/premium-prompt'
 import { ForecastList } from '../components/forecasting/forecast-list'
 import { ProjectionChart } from '../components/forecasting/projection-chart'
-import { ScenarioBuilder } from '../components/forecasting/scenario-builder'
+import { ScenarioBuilder, useCurrentForecastData } from '../components/forecasting/scenario-builder'
 import { usePremiumAccess } from '../hooks/usePremiumAccess'
 import {
   type ForecastWire,
@@ -35,6 +35,7 @@ import {
   updateForecast,
 } from '../lib/forecasting/forecast-api'
 import { FORECAST_SAVE_VERSION } from '../lib/forecasting/forecast-version'
+import { todayBaseline, withTodayBaseline } from '../lib/forecasting/today-baseline'
 import { isKnownFrequency } from '../lib/readable-rows'
 
 // ============================================================================
@@ -377,6 +378,11 @@ function ForecastingPage(): React.ReactElement {
   // Projections tab reflects the user's real scenario instead of sample data
   // (story bug-3).
   const [scenarioResult, setScenarioResult] = useState<ForecastingResult | null>(null)
+  // Today's data (story 107.1, FR175): every forecast's baseline. The builder
+  // reads the same hook; the page needs it for a reopened forecast's Projections
+  // and for each saved forecast's "vs. today" figure (D2: the stored baseline was
+  // computed from the scenario's own rows, so it is never shown).
+  const today = useCurrentForecastData()
   // The saved forecast the user chose to reopen ("My Forecasts" → Load). Drives
   // the ScenarioBuilder's `key` + `initialForecast` so it remounts seeded.
   const [loadedForecast, setLoadedForecast] = useState<SavedForecast | null>(null)
@@ -669,16 +675,37 @@ function ForecastingPage(): React.ReactElement {
   // Reopen a saved forecast into the Scenario Builder (story bug-3). Seeds the
   // builder (via key + initialForecast), shows its projection immediately, and
   // switches to the builder tab so the user lands on the reloaded scenario.
-  const handleLoadForecast = useCallback((forecast: SavedForecast) => {
-    // Reopening a different scenario retires the previous save confirmation.
-    setSaveSuccess(null)
-    setLoadedForecast(forecast)
-    // `forecast.name` is the server's row name (`mapToSavedForecast`).
-    setSaveTarget({ id: forecast.id, name: forecast.name })
-    setLoadNonce((n) => n + 1)
-    setScenarioResult(forecast.result)
-    setActiveTab('scenarios')
-  }, [])
+  const handleLoadForecast = useCallback(
+    (forecast: SavedForecast) => {
+      // Reopening a different scenario retires the previous save confirmation.
+      setSaveSuccess(null)
+      setLoadedForecast(forecast)
+      // `forecast.name` is the server's row name (`mapToSavedForecast`).
+      setSaveTarget({ id: forecast.id, name: forecast.name })
+      setLoadNonce((n) => n + 1)
+      // Story 107.1 (AC-7): never the stored baseline. `null` until today's data is
+      // ready; the builder's first recompute lifts the full result either way.
+      setScenarioResult(withTodayBaseline(forecast.result, today.data))
+      setActiveTab('scenarios')
+    },
+    [today.data]
+  )
+
+  const savedForecasts = useMemo(
+    () => serverForecasts.map(mapToSavedForecast).filter((f): f is SavedForecast => f !== null),
+    [serverForecasts]
+  )
+  // Each saved forecast's "vs. today" (story 107.1, Q1): its ending net worth
+  // against today's data projected flat over the SAME years. Absent while
+  // today's data is not ready, or when the engine refuses it.
+  const vsTodayById = useMemo(() => {
+    const byId = new Map<string, number>()
+    for (const forecast of savedForecasts) {
+      const end = todayBaseline(today.data, forecast.result.projection.length)?.at(-1)?.netWorth
+      if (end !== undefined) byId.set(forecast.id, forecast.result.summary.endingNetWorth - end)
+    }
+    return byId
+  }, [savedForecasts, today.data])
 
   // Show loading state (SSR + first client paint — see usePremiumAccess).
   if (status.isLoading) {
@@ -747,6 +774,11 @@ function ForecastingPage(): React.ReactElement {
             contribution) claimable. Since story 102.2 a debt row's payment is
             cash out while the debt is owed and stops at payoff, unless the row is
             flagged "Payment already in Expenses".
+            Since story 107.1 (FR175) every one of those row edits SHOWS: the
+            baseline is the user's current saved data (`useCurrentForecastData`),
+            not the builder's edited rows, so only the scenario line moves. Before,
+            both lines came from the edited rows and only the growth rates and
+            one-time events ever differed from the baseline.
             Keep this in step with `PremiumFeatureLabel`'s docblock in HomePage.tsx.
             No positional wording ("below"): the intro renders on every tab, and
             the builder is only on the first one. */}
@@ -809,9 +841,8 @@ function ForecastingPage(): React.ReactElement {
 
           {activeTab === 'saved' && (
             <ForecastList
-              forecasts={serverForecasts
-                .map(mapToSavedForecast)
-                .filter((f): f is SavedForecast => f !== null)}
+              forecasts={savedForecasts}
+              vsToday={vsTodayById}
               onDelete={handleDeleteForecast}
               onLoad={handleLoadForecast}
             />
@@ -843,34 +874,23 @@ function PageHeader(): React.ReactElement {
               `forecasting-intro` paragraph, so the page opened with two stacked
               taglines saying the same thing at different levels of vagueness.
               57.1 flagged it and left the call to Lucas; DECIDED 2026-09-21 —
-              delete the subtitle, keep the intro. The `<h1>` plus the Premium
-              badge identify the page; the intro does the explaining, and it is
-              the one that names situations the engine can actually model.
+              delete the subtitle, keep the intro. The `<h1>` identifies the
+              page; the intro does the explaining, and it is the one that names
+              situations the engine can actually model.
               This header is `sticky`, so every line here costs vertical space on
               a phone for the whole scroll.
               ⚠️ Do NOT "restore the missing subtitle" — its absence is pinned by
-              `__tests__/forecasting-intro.test.tsx`. */}
+              `__tests__/forecasting-intro.test.tsx`.
+              ⚠️ NO "Premium Feature" BADGE EITHER (story 108.1, FR176, D5,
+              Lucas 2026-10-06: removed at every width). Only a premium user
+              reaches this header, so the badge told them nothing. Pinned by
+              `__tests__/forecasting-header.test.tsx`. */}
           <div>
             <h1 className="text-2xl font-bold text-subheading">Financial Forecasting</h1>
-          </div>
-          <div className="flex items-center space-x-4">
-            <PremiumBadge />
           </div>
         </div>
       </div>
     </header>
-  )
-}
-
-/**
- * Premium Badge Component
- */
-function PremiumBadge(): React.ReactElement {
-  return (
-    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-      <CrownIcon className="w-3 h-3 mr-1.5" />
-      Premium Feature
-    </span>
   )
 }
 
@@ -1002,25 +1022,6 @@ function LoadingSpinner(): React.ReactElement {
 // ============================================================================
 // Icon Components
 // ============================================================================
-
-function CrownIcon({ className }: { className: string }): React.ReactElement {
-  return (
-    <svg
-      aria-hidden="true"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M5 18V6a2 2 0 012-2h10a2 2 0 012 2v12M9 18h6M9 18h6M9 18V8m6 10V8m-6 10a2 2 0 002 2h2a2 2 0 002-2M9 18a2 2 0 00-2-2h2a2 2 0 002 2"
-      />
-    </svg>
-  )
-}
 
 function ScenarioIcon({ className }: { className: string }): React.ReactElement {
   return (

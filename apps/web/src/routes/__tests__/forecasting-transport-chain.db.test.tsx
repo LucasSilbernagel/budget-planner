@@ -204,7 +204,7 @@ async function saveThenLoad() {
   const [first] = await storedRows()
   if (!first) throw new Error('the first save stored no row')
   rtl.fireEvent.click(
-    await view.findByRole('button', { name: 'Load My Financial Forecast' }, { timeout: 5000 })
+    await view.findByRole('button', { name: 'Edit My Financial Forecast' }, { timeout: 5000 })
   )
   return { view, first }
 }
@@ -422,10 +422,10 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
     const [first, ...others] = await storedRows()
     expect(others).toEqual([])
     const listRowBefore = (
-      await view.findByRole('button', { name: 'Load My Financial Forecast' })
+      await view.findByRole('button', { name: 'Edit My Financial Forecast' })
     ).closest('tr')?.textContent
 
-    rtl.fireEvent.click(view.getByRole('button', { name: 'Load My Financial Forecast' }))
+    rtl.fireEvent.click(view.getByRole('button', { name: 'Edit My Financial Forecast' }))
     await setIncomeGrowth(view, '5')
     await pressSave(view)
 
@@ -449,7 +449,7 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
     expect(after.result.summary.endingNetWorth).not.toBe(before.result.summary.endingNetWorth)
 
     // "My Forecasts" lists ONE entry, now showing the new values.
-    const loads = await view.findAllByRole('button', { name: 'Load My Financial Forecast' })
+    const loads = await view.findAllByRole('button', { name: 'Edit My Financial Forecast' })
     expect(loads).toHaveLength(1)
     await rtl.waitFor(() => expect(loads[0]?.closest('tr')?.textContent).not.toBe(listRowBefore))
 
@@ -626,8 +626,14 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
     // Forecasts, so it cannot be Loaded again only to 404 a second time.
     // (The list is only rendered on its own tab, so look there.)
     rtl.fireEvent.click(view.getByRole('button', { name: /My Forecasts/ }))
+    // Positive control (108.1): the list's empty state IS on screen, so the null
+    // below is the row gone and not a stale button name matching nothing (the
+    // action was renamed Load → Edit; `name` is a full-string match).
+    expect(
+      await view.findByRole('heading', { name: 'No Saved Forecasts' }, { timeout: 5000 })
+    ).toBeTruthy()
     await rtl.waitFor(() =>
-      expect(view.queryByRole('button', { name: 'Load My Financial Forecast' })).toBeNull()
+      expect(view.queryByRole('button', { name: 'Edit My Financial Forecast' })).toBeNull()
     )
     rtl.fireEvent.click(view.getByRole('button', { name: /Scenario Builder/ }))
 
@@ -716,7 +722,7 @@ describe('savings rows round-trip through the real routes (story 100.1, AC-11)',
     expect(inputs.savings).toBe(350_001)
 
     rtl.fireEvent.click(
-      await view.findByRole('button', { name: 'Load My Financial Forecast' }, { timeout: 5000 })
+      await view.findByRole('button', { name: 'Edit My Financial Forecast' }, { timeout: 5000 })
     )
     const value = (label: string) => (view.getByLabelText(label) as HTMLInputElement).value
     await rtl.waitFor(() => expect(value('Balance for Emergency fund')).toBe('1000'))
@@ -872,7 +878,7 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
     // Change the live store so a reload that read it would show different rows.
     useBalanceStore.setState({ entries: [] })
     rtl.fireEvent.click(
-      await view.findByRole('button', { name: 'Load My Financial Forecast' }, { timeout: 5000 })
+      await view.findByRole('button', { name: 'Edit My Financial Forecast' }, { timeout: 5000 })
     )
     const value = (label: string) => (view.getByLabelText(label) as HTMLInputElement).value
     await rtl.waitFor(() => expect(value('Balance for Pension')).toBe('10000.01'))
@@ -935,7 +941,7 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
     // real handlers too. The builder remounts on Load, so the typed draft `-2.5`
     // is replaced by the formatted `-2.50%` only if the stored rate was read.
     rtl.fireEvent.click(
-      await view.findByRole('button', { name: 'Load My Financial Forecast' }, { timeout: 5000 })
+      await view.findByRole('button', { name: 'Edit My Financial Forecast' }, { timeout: 5000 })
     )
     await rtl.waitFor(() => expect(value('Annual return for ISA')).toBe('-2.50%'))
     expect(value('Annual return for Pension')).toBe('0.00%')

@@ -12,6 +12,7 @@
 import {
   DEFAULT_FORECAST_YEARS,
   DEFAULT_INVESTMENT_RETURN,
+  type ForecastInputData,
   type ForecastingResult,
   type ForecastingScenario,
   MAX_FORECAST_YEARS,
@@ -41,6 +42,7 @@ import React, {
 } from 'react'
 import { useIsInitialSyncPending } from '../../hooks/useIsInitialSyncPending'
 import { useStoresHydrated } from '../../hooks/useStoresHydrated'
+import { signedAmount, vsTodayCents, withTodayBaseline } from '../../lib/forecasting/today-baseline'
 import { isKnownFrequency } from '../../lib/readable-rows'
 import { sanitizeWithCaret } from '../../lib/sanitized-input'
 import { investmentContributionItems } from '../../lib/savings/investment-contribution-items'
@@ -636,6 +638,192 @@ function debtPaymentFromExpense(expense: { amount: unknown; frequency: unknown }
   }
 }
 
+/** The four kinds of what-if row a scenario holds. */
+export interface ForecastRows {
+  incomeItems: LocalFinancialItem[]
+  expenseItems: LocalFinancialItem[]
+  savingsAccounts: LocalSavingsAccount[]
+  balanceAccounts: LocalBalanceAccount[]
+}
+
+/**
+ * The engine input for a set of rows (story 107.1: one conversion for the
+ * scenario's rows AND today's, so an unedited scenario reaches the engine exactly
+ * as today's data does; AC-5).
+ *
+ * - `savings` / `investments` are the rows' sums, never stored separately, so
+ *   the totals and the rows cannot disagree (the engine refuses a mismatch:
+ *   `SAVINGS_ROWS_MISMATCH`, `BALANCE_ROWS_MISMATCH`).
+ * - Story 100.1: the savings rows split `savings`. They change no total, only
+ *   the per-row figures.
+ * - Story 100.2: investment and debt rows DO move totals: contributions move
+ *   money from savings into investments, debts lower net worth and fall by their
+ *   payment. Story 100.3: each investment row's own rate; a debt row's hidden
+ *   rate is not sent (the engine would ignore it anyway).
+ */
+export function forecastInputFromRows(rows: ForecastRows): ForecastInputData {
+  return {
+    income: toNormalizableItems(rows.incomeItems),
+    expenses: toNormalizableItems(rows.expenseItems),
+    savings: rows.savingsAccounts.reduce((sum, account) => sum + account.balance, 0),
+    investments: rows.balanceAccounts.reduce(
+      (sum, account) => (account.type === 'investment' ? sum + account.balance : sum),
+      0
+    ),
+    savingsAccounts: rows.savingsAccounts.map(({ balance, monthlyContribution }) => ({
+      balance,
+      monthlyContribution,
+    })),
+    balanceAccounts: rows.balanceAccounts.map(
+      ({
+        type,
+        balance,
+        contribution,
+        frequency,
+        contributionRecordedAsExpense,
+        annualReturn,
+      }) => ({
+        type,
+        balance,
+        contribution,
+        frequency,
+        contributionRecordedAsExpense,
+        ...(type === 'investment' ? { annualReturn } : {}),
+      })
+    ),
+  }
+}
+
+/**
+ * The user's own finances as what-if rows (story 62.1, FR94; split out by story
+ * 107.1 so the builder's SEED and the forecast's BASELINE are the same mapping).
+ *
+ * - Investment/debt rows (story 100.2). Each balance is coerced per row in
+ *   `balanceFromStore` (a corrupt one seeds 0), which also closes the 62.1 review
+ *   hazard of one non-finite row turning the old single total into NaN. Story
+ *   102.1: debts seed their payment from the linked expense.
+ * - Story 102.2 (D5): that expense MOVES into the debt row, so it leaves the
+ *   Expenses rows (`expenseItems`). `unfilteredExpenseItems` keeps every expense,
+ *   for a seed whose balance rows were touched first: then no debt row carries
+ *   the payment, and removing it would make it vanish from the scenario. Ids are
+ *   by index, so filter before mapping.
+ * - Savings rows (story 100.1): the solver throws on a corrupt persisted amount
+ *   (`normalizeToMonthly`). It keeps the FULL expenses (story 102.2): it mirrors
+ *   /savings, where the linked expense is still an ordinary expense. Automatic
+ *   rows then seed 0; the builder must still render (AC-3).
+ */
+export function rowsFromStores(stores: {
+  income: ReturnType<typeof useIncomeSources>
+  expenses: ReturnType<typeof useExpenses>
+  savingsGoals: ReturnType<typeof useSavingsGoals>
+  balanceEntries: readonly ClientBalanceTracking[]
+  contributionItems: Parameters<typeof solveAutomaticAllocations>[0]['investmentContributions']
+}): ForecastRows & { unfilteredExpenseItems: LocalFinancialItem[] } {
+  const seeded = balanceFromStore(stores.balanceEntries, stores.expenses)
+  let allocations: Record<string, number> | null = null
+  try {
+    allocations = solveAutomaticAllocations({
+      incomeSources: stores.income,
+      expenses: stores.expenses,
+      investmentContributions: stores.contributionItems,
+      savingsAccounts: stores.savingsGoals,
+    }).allocations
+  } catch {
+    allocations = null
+  }
+  return {
+    incomeItems: itemsFromStore(stores.income, 'income'),
+    expenseItems: itemsFromStore(
+      stores.expenses.filter((row) => !seeded.consumedExpenseIds.has(row.id)),
+      'expense'
+    ),
+    unfilteredExpenseItems: itemsFromStore(stores.expenses, 'expense'),
+    savingsAccounts: savingsFromStore(stores.savingsGoals, allocations),
+    balanceAccounts: seeded.rows,
+  }
+}
+
+/**
+ * Today's data for the forecast (story 107.1, FR175): the active profile's
+ * stores as what-if rows (`rows`, which seed a fresh builder) and as engine input
+ * (`data`, the BASELINE of every forecast, D1). Both are `null` until `ready`.
+ *
+ * ⚠️⚠️ WHY `ready` WAITS (story 62.1, and its code review). All four store hooks
+ * are zustand selectors, and zustand passes `getInitialState` to React as
+ * `getServerSnapshot`. React uses that snapshot for the WHOLE hydration pass, so
+ * they report empty/zero on the first client render however full localStorage
+ * already is — the BUG-F distinction story 38.1 turned on, measured in
+ * `hooks/useStoresHydrated.ts`'s docblock. `useStoresHydrated()` is the house
+ * gate for "has the client taken over yet".
+ *
+ * ⚠️ A PAID USER ON A FRESH DEVICE (code review 62.1). `useStoresHydrated()`
+ * resolves off localStorage alone, which on a new browser is EMPTY while
+ * `ActiveSync`'s first-ever pull is still in flight over the network. Without
+ * the second gate the builder would seed `[]`/`0` and the baseline would be
+ * zeros, landing the user in a state indistinguishable from the legitimate
+ * empty-user one. `useIsInitialSyncPending` is the house hook for this window
+ * and all five data pages already use it in the same `hydrated && !pending`
+ * shape. It takes the CALLER's own emptiness so a device with anything to seed is
+ * never gated.
+ */
+export function useCurrentForecastData(): {
+  ready: boolean
+  rows: (ForecastRows & { unfilteredExpenseItems: LocalFinancialItem[] }) | null
+  data: ForecastInputData | null
+} {
+  const storesHydrated = useStoresHydrated()
+  const storeIncome = useIncomeSources()
+  const storeExpenses = useExpenses()
+  const storeSavingsGoals = useSavingsGoals()
+  // Profile-scoped (`balanceStore.ts` selector docblock); never `state.entries`.
+  const storeBalanceEntries = useBalanceEntries()
+  // The in-scope rows (story 100.2, D1): investments and debts, not assets.
+  const storeBalanceRowCount = useMemo(
+    () => storeBalanceEntries.filter((entry) => balanceRowType(entry.type) !== null).length,
+    [storeBalanceEntries]
+  )
+  // The solver inputs /savings uses, built by the SAME mapping (story 100.1, AC-3).
+  const storeInvestmentEntries = useInvestmentEntries()
+  const storeContributionItems = useMemo(
+    () => investmentContributionItems(storeInvestmentEntries),
+    [storeInvestmentEntries]
+  )
+  const nothingToSeed =
+    storeIncome.length === 0 &&
+    storeExpenses.length === 0 &&
+    // ROWS, not the total (story 100.1): a goal with a 0 balance is still a row
+    // to seed.
+    storeSavingsGoals.length === 0 &&
+    // ROWS again (story 100.2), not the investment total: a debt-only user, or an
+    // investment at 0, is still something to seed.
+    storeBalanceRowCount === 0
+  const isInitialSyncPending = useIsInitialSyncPending(nothingToSeed)
+  const ready = storesHydrated && !isInitialSyncPending
+
+  const rows = useMemo(
+    () =>
+      ready
+        ? rowsFromStores({
+            income: storeIncome,
+            expenses: storeExpenses,
+            savingsGoals: storeSavingsGoals,
+            balanceEntries: storeBalanceEntries,
+            contributionItems: storeContributionItems,
+          })
+        : null,
+    [
+      ready,
+      storeIncome,
+      storeExpenses,
+      storeSavingsGoals,
+      storeBalanceEntries,
+      storeContributionItems,
+    ]
+  )
+  const data = useMemo(() => (rows ? forecastInputFromRows(rows) : null), [rows])
+  return { ready, rows, data }
+}
+
 /**
  * Rebuild what-if investment/debt rows from a saved forecast's inputs (story
  * 100.2, AC-13).
@@ -875,20 +1063,13 @@ export function ScenarioBuilder({
   //
   // ⚠️⚠️ WHY THIS IS AN EFFECT AND NOT A LAZY `useState` INITIALIZER.
   //
-  // All four hooks below are zustand selectors, and zustand passes
-  // `getInitialState` to React as `getServerSnapshot`. React uses that snapshot
-  // for the WHOLE hydration pass, so they report empty/zero on the first client
-  // render however full localStorage already is — the BUG-F distinction story
-  // 38.1 turned on, measured in `hooks/useStoresHydrated.ts`'s docblock
-  // (`liveSavings=1` beside `snapshotSavings=0`).
-  //
-  // A lazy initializer runs exactly once, during that render. It would capture
-  // the empty snapshot and NEVER RECOVER — and an empty builder is
-  // indistinguishable from the legitimate empty-user state, so the failure would
-  // be silent. `useStoresHydrated()` is the house gate for "has the client taken
-  // over yet"; it is `false` on the server and during hydration by construction
-  // and flips on the commit after mount, by which point these hooks report live
-  // data.
+  // The stores' hooks are zustand selectors, which report the EMPTY server
+  // snapshot for the whole hydration pass (`useCurrentForecastData`'s docblock
+  // has the full story). A lazy initializer runs exactly once, during that
+  // render. It would capture the empty snapshot and NEVER RECOVER — and an empty
+  // builder is indistinguishable from the legitimate empty-user state, so the
+  // failure would be silent. `today.ready` is `useStoresHydrated()` plus the
+  // fresh-device initial-sync gate (code review 62.1).
   //
   // ⚠️ `hasSeeded` starts TRUE for a loaded forecast, so this is a no-op on that
   // path and cannot re-baseline a saved scenario (AC-7). It flips on the first
@@ -897,46 +1078,11 @@ export function ScenarioBuilder({
   // ⚠️ Known, accepted: the builder paints one commit with empty rows before the
   // seed lands. That is a transient, not a hydration mismatch, and the 500 ms
   // debounce means the chart never flickers.
-  const storesHydrated = useStoresHydrated()
-  const storeIncome = useIncomeSources()
-  const storeExpenses = useExpenses()
-  const storeSavingsGoals = useSavingsGoals()
-  // Profile-scoped (`balanceStore.ts` selector docblock); never `state.entries`.
-  const storeBalanceEntries = useBalanceEntries()
-  // The in-scope rows (story 100.2, D1): investments and debts, not assets.
-  const storeBalanceRowCount = useMemo(
-    () => storeBalanceEntries.filter((entry) => balanceRowType(entry.type) !== null).length,
-    [storeBalanceEntries]
-  )
-  // The solver inputs /savings uses, built by the SAME mapping (story 100.1, AC-3).
-  const storeInvestmentEntries = useInvestmentEntries()
-  const storeContributionItems = useMemo(
-    () => investmentContributionItems(storeInvestmentEntries),
-    [storeInvestmentEntries]
-  )
-
-  // ⚠️ A PAID USER ON A FRESH DEVICE (code review 62.1). `useStoresHydrated()`
-  // resolves off localStorage alone, which on a new browser is EMPTY while
-  // `ActiveSync`'s first-ever pull is still in flight over the network. Without
-  // this gate the builder seeds `[]`/`0`, latches `hasSeeded`, and the rows that
-  // arrive moments later reach `/income` but never the builder — landing the
-  // user in a state indistinguishable from the legitimate empty-user one, which
-  // is the exact silent failure this story's AC-9 exists to prevent.
   //
-  // `useIsInitialSyncPending` is the house hook for this window and all five
-  // data pages already use it in the same `hydrated && !pending` shape. It takes
-  // the CALLER's own emptiness so a device with anything to seed is never gated.
-  const nothingToSeed =
-    storeIncome.length === 0 &&
-    storeExpenses.length === 0 &&
-    // ROWS, not the total (story 100.1): a goal with a 0 balance is still a row
-    // to seed.
-    storeSavingsGoals.length === 0 &&
-    // ROWS again (story 100.2), not the investment total: a debt-only user, or an
-    // investment at 0, is still something to seed.
-    storeBalanceRowCount === 0
-  const isInitialSyncPending = useIsInitialSyncPending(nothingToSeed)
-  const readyToSeed = storesHydrated && !isInitialSyncPending
+  // Story 107.1 (FR175): the SAME data, through the SAME mapping, is every
+  // forecast's baseline (`today.data`), so an unedited scenario equals it (AC-5).
+  const today = useCurrentForecastData()
+  const readyToSeed = today.ready
 
   const [hasSeeded, setHasSeeded] = useState<boolean>(() => Boolean(initialForecast))
   // Whether the user has edited each seeded part. The seed waits for
@@ -958,65 +1104,58 @@ export function ScenarioBuilder({
   const balanceRowsTouched = useRef(false)
 
   useEffect(() => {
-    if (hasSeeded || !readyToSeed) return
-    if (!incomeRowsTouched.current) setIncomeItems(itemsFromStore(storeIncome, 'income'))
-    // Investment/debt rows (story 100.2). Each balance is coerced per row in
-    // `balanceFromStore` (a corrupt one seeds 0), which also closes the 62.1
-    // review hazard of one non-finite row turning the old single total into NaN.
-    // Story 102.1: debts seed their payment from the linked expense.
-    // Story 102.2 (D5): that expense MOVES into the debt row, so it leaves the
-    // Expenses rows, but ONLY in this same pass: when the balance rows were
-    // touched first no debt row carries it, and removing it would make the
-    // payment vanish from the scenario. Seeded BEFORE the Expenses rows so the
-    // consumed ids are known; ids are by index, so filter before mapping.
-    let consumedExpenseIds: ReadonlySet<string> = new Set()
-    if (!balanceRowsTouched.current) {
-      const seeded = balanceFromStore(storeBalanceEntries, storeExpenses)
-      setBalanceAccounts(seeded.rows)
-      consumedExpenseIds = seeded.consumedExpenseIds
-    }
+    const seeded = today.rows
+    if (hasSeeded || !readyToSeed || !seeded) return
+    if (!incomeRowsTouched.current) setIncomeItems(seeded.incomeItems)
+    // Story 102.2 (D5): a linked expense MOVES into its debt row, so it leaves the
+    // Expenses rows, but ONLY when the balance rows are seeded in this same pass:
+    // when they were touched first no debt row carries it, and removing it would
+    // make the payment vanish from the scenario (`rowsFromStores`).
+    if (!balanceRowsTouched.current) setBalanceAccounts(seeded.balanceAccounts)
     if (!expenseRowsTouched.current) {
       setExpenseItems(
-        itemsFromStore(
-          storeExpenses.filter((row) => !consumedExpenseIds.has(row.id)),
-          'expense'
-        )
+        balanceRowsTouched.current ? seeded.unfilteredExpenseItems : seeded.expenseItems
       )
     }
-    if (!savingsRowsTouched.current) {
-      // The solver throws on a corrupt persisted amount (`normalizeToMonthly`).
-      // It keeps the FULL `storeExpenses` (story 102.2): it mirrors /savings,
-      // where the linked expense is still an ordinary expense.
-      // Automatic rows then seed 0; the builder must still render (AC-3).
-      let allocations: Record<string, number> | null = null
-      try {
-        allocations = solveAutomaticAllocations({
-          incomeSources: storeIncome,
-          expenses: storeExpenses,
-          investmentContributions: storeContributionItems,
-          savingsAccounts: storeSavingsGoals,
-        }).allocations
-      } catch {
-        allocations = null
-      }
-      setSavingsAccounts(savingsFromStore(storeSavingsGoals, allocations))
-    }
+    if (!savingsRowsTouched.current) setSavingsAccounts(seeded.savingsAccounts)
     setHasSeeded(true)
-  }, [
-    hasSeeded,
-    readyToSeed,
-    storeIncome,
-    storeExpenses,
-    storeSavingsGoals,
-    storeContributionItems,
-    storeBalanceEntries,
-  ])
+  }, [hasSeeded, readyToSeed, today.rows])
 
   // State for results — seed from the loaded forecast so its summary shows
   // immediately, before the debounced recompute runs.
-  const [result, setResult] = useState<ForecastingResult | null>(
-    () => initialForecast?.result ?? null
+  //
+  // ⚠️ Story 107.1 (D2, AC-7): with its baseline replaced by TODAY's. The stored
+  // one was computed from the scenario's own rows, so it is never shown. Until
+  // today's data is ready the baseline is EMPTY (no "vs. today" card), not the
+  // stored one; the effect below fills it. The result itself must still show:
+  // the Save button lives in the summary, and a loaded forecast with a field
+  // flagged from the start never recomputes until it is fixed (100.1 review).
+  const [result, setResult] = useState<ForecastingResult | null>(() =>
+    initialForecast?.result
+      ? withTodayBaseline(initialForecast.result, today.data) ?? {
+          ...initialForecast.result,
+          baseline: [],
+        }
+      : null
   )
+  // Fill the loaded result's empty baseline once today's data is ready. A
+  // recomputed result always carries a full baseline (years >= 1), so an empty
+  // one can only be that placeholder.
+  //
+  // ⚠️ It is LIFTED too (code review 107.1). The page shows a reopened forecast
+  // on Projections only when today's data was ready at the click; otherwise it
+  // waits for this builder's first recompute, which a forecast with a field
+  // flagged on load never runs. Without the lift that forecast's Projections
+  // stayed empty until the field was fixed (MEASURED: RED in
+  // `routes/__tests__/forecasting-vs-today.test.tsx`).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on today's data alone — `result` is read only to find the placeholder, and re-running on every recompute would be wasted work (a recomputed baseline is never empty).
+  useEffect(() => {
+    if (!today.data || !result || result.baseline.length > 0) return
+    const filled = withTodayBaseline(result, today.data)
+    if (!filled) return
+    setResult(filled)
+    onResultChangeRef.current?.(filled)
+  }, [today.data])
   /**
    * The savings row ids the current `result` was computed for, in engine input
    * order (story 100.1). The engine reports per-row balances by INDEX; mapping
@@ -1171,6 +1310,8 @@ export function ScenarioBuilder({
     balanceAccounts,
     oneTimeEvents,
     invalidAmountRows,
+    // Story 107.1 (D1): the baseline is today, so a store change recomputes.
+    today.data,
   ])
 
   /**
@@ -1202,6 +1343,11 @@ export function ScenarioBuilder({
       setError(null)
       return
     }
+    // ⚠️ Story 107.1 (AC-6): no baseline until today's data is ready (hydrated,
+    // and on a paid user's fresh device the first pull landed). Calculating now
+    // would compare the scenario against zeros; the effect re-runs when it lands.
+    const baselineData = today.data
+    if (!baselineData) return
     setIsCalculating(true)
     setError(null)
     // AC-9: a recompute retires the previous save outcome, so the user never sees
@@ -1219,43 +1365,23 @@ export function ScenarioBuilder({
         oneTimeEvents: oneTimeEvents.map(({ id: _id, ...rest }) => rest),
       }
 
-      const currentData = {
-        income: toNormalizableItems(incomeItems),
-        expenses: toNormalizableItems(expenseItems),
-        savings,
-        investments,
-        // Story 100.1: the rows split `savings` (their balances sum to it by
-        // construction). They change no total, only the per-row figures.
-        savingsAccounts: savingsAccounts.map(({ balance, monthlyContribution }) => ({
-          balance,
-          monthlyContribution,
-        })),
-        // Story 100.2: investment and debt rows. `investments` above is the
-        // investment rows' sum by construction. Unlike the savings rows these DO
-        // move totals: contributions move money from savings into investments,
-        // debts lower net worth and fall by their payment.
-        // Story 100.3: each investment row's own rate. A debt row's hidden rate is
-        // not sent (the engine would ignore it anyway).
-        balanceAccounts: balanceAccounts.map(
-          ({
-            type,
-            balance,
-            contribution,
-            frequency,
-            contributionRecordedAsExpense,
-            annualReturn,
-          }) => ({
-            type,
-            balance,
-            contribution,
-            frequency,
-            contributionRecordedAsExpense,
-            ...(type === 'investment' ? { annualReturn } : {}),
-          })
-        ),
-      }
+      // The scenario's own (edited) rows. `forecastInputFromRows` documents what
+      // each row kind does to the totals (stories 100.1-100.3).
+      const currentData = forecastInputFromRows({
+        incomeItems,
+        expenseItems,
+        savingsAccounts,
+        balanceAccounts,
+      })
 
-      const newResult = calculateFinancialForecast(currentData, scenario, formData.years)
+      // Story 107.1 (FR175, D1): the baseline is TODAY's data (`today.data`), so
+      // an edited row moves only the projection.
+      const newResult = calculateFinancialForecast(
+        currentData,
+        scenario,
+        formData.years,
+        baselineData
+      )
       setResult(newResult)
       setResultSavingsRowIds(savingsAccounts.map((account) => account.id))
       setResultBalanceRowIds(balanceAccounts.map((account) => account.id))
@@ -1273,12 +1399,11 @@ export function ScenarioBuilder({
     incomeItems,
     expenseItems,
     formData,
-    savings,
     savingsAccounts,
-    investments,
     balanceAccounts,
     oneTimeEvents,
     invalidAmountRows,
+    today.data,
   ])
 
   /**
@@ -1726,6 +1851,7 @@ export function ScenarioBuilder({
       averageAnnualGrowth: result.summary.averageAnnualGrowth,
     }
   }, [result])
+  const vsToday = useMemo(() => (result ? vsTodayCents(result) : null), [result])
 
   return (
     <div className="space-y-8">
@@ -2102,7 +2228,7 @@ export function ScenarioBuilder({
         <section className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-6">
           <h3 className="text-lg font-semibold text-subheading mb-4">Forecast Summary</h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <StatCard
               label="Starting Net Worth"
               value={formatCurrency(summary?.startingNetWorth || 0)}
@@ -2120,6 +2246,11 @@ export function ScenarioBuilder({
               label="Avg Annual Growth"
               value={formatCurrency(Math.round(summary?.averageAnnualGrowth || 0))}
             />
+            {/* Story 107.1 (FR175, Q1): ending net worth against TODAY's data
+                projected flat (the baseline), signed. */}
+            {vsToday !== null && (
+              <StatCard label="vs. today" value={signedAmount(vsToday, formatCurrency)} />
+            )}
           </div>
 
           {/* The save outcome renders HERE, not at the top of the form.
@@ -2708,6 +2839,13 @@ function OneTimeEventRow({
   const directionId = `event-direction-${event.id}`
   const yearId = `event-year-${event.id}`
   const nameId = `event-name-${event.id}`
+  const yearCalendarId = `${yearId}-calendar`
+  const yearHelpId = `${yearId}-help`
+  // The calendar year the value lands in (story 108.1, D6): year 1 is the first
+  // projected year, so in 2026 it is 2027. Read at render: an event row only
+  // exists after a client-side add or load (a fresh builder SSRs with no
+  // events), so this never renders on the server and cannot mismatch hydration.
+  const calendarYear = new Date().getFullYear() + event.year
 
   const handleYearChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const year = Math.max(1, Math.min(maxYear, parseInt(e.target.value, 10) || 1))
@@ -2716,7 +2854,10 @@ function OneTimeEventRow({
 
   return (
     <div className="surface rounded-lg p-4 shadow-sm border border-default">
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+      {/* `items-start` since story 108.1: the year cell carries two lines under its
+          input, and `items-end` would have pushed every other input up out of
+          line with it. Labels are one line at md+, so tops align the inputs. */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-start">
         {/* Name */}
         <div>
           <label htmlFor={nameId} className="block text-sm font-medium text-label mb-1">
@@ -2784,25 +2925,48 @@ function OneTimeEventRow({
           )}
         </div>
 
-        {/* Year */}
+        {/* Year (story 108.1, FR176, D6). It was labelled just "Year", which
+            reads as a calendar year (2027) as easily as a count. It is a count
+            from the start of the forecast — the engine applies the event in
+            loop year `event.year` — so the label says so, the help line says
+            where counting starts, and the calendar year sits beside the value.
+            The stored value and its clamp are unchanged (1..`maxYear`). */}
         <div>
-          <label htmlFor={yearId} className="block text-sm font-medium text-label mb-1">
-            Year
+          {/* `whitespace-nowrap` (108.1 review): under DejaVu Sans (CI, many Linux
+              desktops) this label is 107.3 px, wider than a column at 768-776 px
+              (105 px), so it wrapped to two lines and dropped this input 20 px
+              below the others in a top-aligned row. MEASURED; unwrapped it
+              overhangs ≤ 3 px into the 12 px gap. */}
+          <label
+            htmlFor={yearId}
+            className="block whitespace-nowrap text-sm font-medium text-label mb-1"
+          >
+            Years from now
           </label>
-          <input
-            id={yearId}
-            type="number"
-            value={event.year}
-            onChange={handleYearChange}
-            min={1}
-            max={maxYear}
-            step={1}
-            className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
-          />
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <input
+              id={yearId}
+              type="number"
+              value={event.year}
+              onChange={handleYearChange}
+              min={1}
+              max={maxYear}
+              step={1}
+              aria-describedby={`${yearCalendarId} ${yearHelpId}`}
+              className="w-20 shrink-0 px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
+            />
+            <span id={yearCalendarId} className="text-sm text-muted whitespace-nowrap">
+              Year {event.year} ({calendarYear})
+            </span>
+          </div>
+          <p id={yearHelpId} className="mt-1 text-xs text-muted">
+            1 = the first year of your forecast
+          </p>
         </div>
 
-        {/* Delete */}
-        <div className="flex justify-end">
+        {/* Delete. `md:pt-6` (the label's line + margin) lines it up with the
+            inputs now that the row aligns to the top (108.1). */}
+        <div className="flex justify-end md:pt-6">
           <button
             type="button"
             onClick={() => onDelete(event.id)}

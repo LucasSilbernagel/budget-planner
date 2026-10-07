@@ -113,7 +113,7 @@ describe('a saved forecast with an out-of-range years reopens at the default per
       renderWithRouter(<ForecastingPage />)
 
       fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
-      const loadButton = await screen.findByRole('button', { name: 'Load Long plan' })
+      const loadButton = await screen.findByRole('button', { name: 'Edit Long plan' })
       // Only calls made AFTER the load count (review P4): the builder mounted on
       // first render may already have computed its own default period.
       const callsBeforeLoad = engineYears.length
@@ -154,7 +154,7 @@ describe('a saved forecast with an out-of-range years reopens at the default per
     renderWithRouter(<ForecastingPage />)
 
     fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Load Long plan' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Long plan' }))
 
     expect(await screen.findByLabelText('Projection Period (years)')).toHaveValue(25)
     await waitFor(() => expect(engineYears).toContain(25), { timeout: 3000 })

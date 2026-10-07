@@ -87,7 +87,7 @@ async function loadPlan(inputs: unknown, version?: number) {
   fetchForecasts.mockResolvedValue({ success: true, data: [savedRow(inputs, version)] })
   renderWithRouter(<ForecastingPage />)
   fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
-  const load = await screen.findByRole('button', { name: 'Load Plan' })
+  const load = await screen.findByRole('button', { name: 'Edit Plan' })
   const before = engineCalls.length
   fireEvent.click(load)
   await waitFor(() => expect(screen.getByLabelText('Scenario Name')).toHaveValue('Plan'))
