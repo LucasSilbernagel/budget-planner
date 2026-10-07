@@ -1657,7 +1657,7 @@ function LockedTileContent({
  *   1. `incomeGrowthRate` — compounds from year 1 over the user's income items.
  *   2. `expenseGrowthRate` — likewise over expenses.
  *   3. `oneTimeEvents: {year, amount}` — the ONLY dated input. `amount` is SIGNED
- *      and simply added (`netIncome * MONTHS_PER_YEAR + oneTimeForYear`, `:278`); since story
+ *      and simply added to the year's recurring flow (`annualIncome - annualExpenses + oneTimeForYear`); since story
  *      `forecast-1` the builder offers an explicit Money in / Money out direction,
  *      so an outflow is enterable.
  *   4. `currentData.savingsAccounts` (story 100.1) — per-account balances and

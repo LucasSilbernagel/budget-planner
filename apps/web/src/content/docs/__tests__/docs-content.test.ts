@@ -1,4 +1,5 @@
 import {
+  calculateFinancialForecast,
   calculateTotalMonthlyNormalized,
   denormalizeFromMonthly,
   normalizeToMonthly,
@@ -688,6 +689,38 @@ describe('documentation content accuracy (story 10-4)', () => {
     // The documented app-wide convention behind the $100 → $99.96 report, so the
     // next sighting resolves against this page instead of a re-investigation.
     expect(rounding).toContain('$99.96')
+  })
+
+  it('names forecasts as the exception, with the figure the engine actually computes (story 111.1)', () => {
+    // ⚠️ COMPUTED FROM THE ENGINE, like the worked example below: since story
+    // 111.1 a forecast year counts each entry in full, so the example's first
+    // forecast year at 0% growth is the spreadsheet figure, not the yearly view's.
+    // If the engine ever goes back to monthly × 12, this goes red.
+    const forecast = calculateFinancialForecast(
+      {
+        income: [
+          { amount: 200_000, frequency: 'biweekly' },
+          { amount: 60_000, frequency: 'monthly' },
+          { amount: 120_000, frequency: 'annually' },
+        ],
+        expenses: [],
+        savings: 0,
+        investments: 0,
+      },
+      { name: 'flat', incomeGrowthRate: 0, expenseGrowthRate: 0, oneTimeEvents: [] },
+      1
+    )
+    const firstYear = forecast.projection[0]?.income ?? Number.NaN
+    expect(firstYear).toBe(6_040_000)
+
+    const { rounding } = howTotalsSections()
+    expect(rounding).toMatch(/Forecasts\s+are\s+the\s+one\s+exception/)
+    expect(rounding).toContain(`$${formatCents(firstYear)}`) // '$60,400.00'
+    // The "never recomputed a second way" claim is scoped to the budget pages,
+    // so it no longer contradicts the exception beside it.
+    expect(rounding).toMatch(
+      /a\s+total\s+on\s+your\s+budget\s+pages\s+is\s+never\s+quietly\s+recomputed/
+    )
   })
 
   it('makes no claim about WHERE entries are stored (the app stores what you entered)', () => {

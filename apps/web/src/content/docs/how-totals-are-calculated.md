@@ -93,9 +93,13 @@ beside it, Longhand Budget says so on the page rather than leaving you to find i
 This is also why a single **$100.00 yearly** entry shows as **$99.96** at the
 yearly view: $100.00 ÷ 12 is $8.333…, which becomes $8.33, and $8.33 × 12 is
 $99.96. The four cents are the rounding, not a lost payment. Longhand Budget rounds this
-way on purpose, and always from the same monthly figure, so a total is never
-quietly recomputed a second way — the few cents you see are the ones described
-here.
+way on purpose, and always from the same monthly figure, so a total on your
+budget pages is never quietly recomputed a second way — the few cents you see are
+the ones described here.
+
+Forecasts are the one exception: each forecast year counts every entry in full
+(2,000 × 26 + 600 × 12 + 1,200 = $60,400.00), so a forecast's first year can be a
+few cents away from the yearly view.
 
 Still have a figure you cannot reconcile? Reach us through the
 [contact form](/contact), or see the
