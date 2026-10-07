@@ -111,10 +111,10 @@ export const Route = createRootRoute({
       { rel: 'manifest', href: '/manifest.webmanifest' },
     ],
     // Cookieless counter.dev analytics (story 10-1, FR28). Emitted here as a
-    // real SSR <script data-id> by <Scripts /> so counter.dev's
-    // `document.currentScript` data-id read works (a DOM-injected tag would be
-    // read as null). Omitted entirely when VITE_COUNTERDEV_ID is unset. See
-    // lib/analytics/counter.ts + ADR-005.
+    // real SSR <script data-id defer> by <Scripts />, so the id is in the first
+    // HTML and counter.dev's `document.currentScript` data-id read works.
+    // `defer` (story 117.1) keeps it off the first-paint path. Omitted entirely
+    // when VITE_COUNTERDEV_ID is unset. See lib/analytics/counter.ts + ADR-005.
     scripts: buildAnalyticsScripts(),
   }),
   component: RootComponent,
