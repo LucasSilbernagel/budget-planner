@@ -81,6 +81,19 @@ describe('parsePercentageToDecimal', () => {
     expect(() => parsePercentageToDecimal('6x')).toThrow(/non-numeric/)
     expect(() => parsePercentageToDecimal('1.2.3')).toThrow(/multiple decimal points/)
   })
+
+  it('reads a single decimal comma as the point (story 110.1, D3)', () => {
+    expect(parsePercentageToDecimal('2,5')).toBeCloseTo(0.025, 10)
+    expect(parsePercentageToDecimal('2,5%')).toBeCloseTo(0.025, 10)
+    expect(parsePercentageToDecimal(' 2,5 % ')).toBeCloseTo(0.025, 10)
+  })
+
+  it('still refuses a negative or ambiguous comma form', () => {
+    expect(() => parsePercentageToDecimal('-2,5')).toThrow(/negative/)
+    expect(() => parsePercentageToDecimal('2,5,1')).toThrow(/non-numeric/)
+    expect(() => parsePercentageToDecimal('1.000,5')).toThrow(/non-numeric/)
+    expect(() => parsePercentageToDecimal('1,000.5')).toThrow(/non-numeric/)
+  })
 })
 
 describe('parseAge', () => {

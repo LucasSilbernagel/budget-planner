@@ -1602,9 +1602,29 @@ describe('each investment row has its own annual return (story 100.3)', () => {
     // sequential gate run, past the 5 s default.
   }, 15_000)
 
-  // `5abc`, `1,5` and `1e2` (code review): `parseFloat` alone would read 5%, 1%
-  // and 100% from them, silently.
-  for (const bad of ['', 'abc', '150', '-101', '5abc', '1,5', '1e2']) {
+  it('a decimal comma is the decimal point: 2,5 means 2.5% (story 110.1, D3)', async () => {
+    fillFixture()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+    const calls = engineRows.length
+
+    fireEvent.change(rateField('Fund'), { target: { value: '2,5' } })
+
+    await waitFor(() => expect(engineRows.length).toBeGreaterThan(calls), { timeout: 3000 })
+    // Fund is the fixture's only investment row (engine rows carry no name).
+    const fund = (engineRows.at(-1) as Array<{ type: string; annualReturn?: unknown }>).find(
+      (row) => row.type === 'investment'
+    )
+    expect(fund?.annualReturn).toBeCloseTo(0.025, 12)
+    // The field keeps what was typed (no blur reformat) and carries no error.
+    expect(rateField('Fund')).toHaveValue('2,5')
+    expect(rateField('Fund')).not.toHaveAttribute('aria-invalid')
+  })
+
+  // `5abc` and `1e2` (code review): `parseFloat` alone would read 5% and 100% from
+  // them, silently. A SINGLE decimal comma is a rate since story 110.1 (D3), but
+  // `2,5,1`, `1.000,5` and `1,000.5` stay ambiguous and are refused.
+  for (const bad of ['', 'abc', '150', '-101', '5abc', '1e2', '2,5,1', '1.000,5', '1,000.5']) {
     it(`"${bad}" is refused: error on the field, recompute and Save held, last result kept (AC-9)`, async () => {
       fillFixture()
       const format = formatter()

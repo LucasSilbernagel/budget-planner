@@ -1369,15 +1369,22 @@ function RetirementAccumulationPlannerInner() {
             Expected Annual Return
           </label>
           <div className="relative">
+            {/* ⚠️ `type="text"`, NOT `type="number"` (story 110.1, FR178). A number
+                input drops the `,` keystroke, so `2,5` became `25` and the plan
+                silently solved at 25% (MEASURED in Chromium, story Dev Notes §2).
+                A text input passes exactly what was typed to
+                `parsePercentageToDecimal`, which reads a single comma as the
+                decimal point. `inputMode="decimal"` keeps the numeric keypad;
+                `min`/`step` are dropped as inert on a text input (the same
+                reasoning as the forecasting growth-rate fields, code review 62.1).
+                The post-retirement field below follows this one. */}
             <input
-              type="number"
+              type="text"
               id="annualReturn"
               name="annualReturn"
               value={annualReturnInput}
               onChange={(e) => setAnnualReturnInput(e.target.value)}
               inputMode="decimal"
-              min="0"
-              step="0.1"
               placeholder="6.0"
               className={`${inputClass(false)} pr-10`}
               aria-label="Expected Annual Return"
@@ -1412,7 +1419,8 @@ function RetirementAccumulationPlannerInner() {
           </label>
           <div className="relative">
             <input
-              type="number"
+              // `text`, not `number`: see the Expected Annual Return field (110.1).
+              type="text"
               id="postRetirementReturn"
               name="postRetirementReturn"
               value={effectivePostRetirementReturnInput}
@@ -1420,8 +1428,6 @@ function RetirementAccumulationPlannerInner() {
               // pair can never be persisted out of step (story 44.1, AC-3).
               onChange={(e) => setPostRetirementReturn(e.target.value)}
               inputMode="decimal"
-              min="0"
-              step="0.1"
               placeholder="6.0"
               className={`${inputClass(false)} pr-10`}
               aria-label="Post-Retirement Annual Return"
