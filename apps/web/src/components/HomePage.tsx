@@ -25,6 +25,7 @@ import { buildBalancesBarData } from '../lib/balances-bar-data'
 import { barDomainTicks, categoryChartHeight } from '../lib/chart-axis'
 import { useChartColors } from '../lib/chartTheme'
 import { lazyWithRetry } from '../lib/lazy-with-retry'
+import { OVERVIEW_SECTIONS_PENDING_HOOK } from '../lib/overview/no-flash-overview-data-script'
 import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../lib/premium/benefits'
 import { isEntitledSeed } from '../lib/premium/entitlement'
 import { useVerifiedSession } from '../lib/session/verifiedSession'
@@ -829,6 +830,12 @@ export function HomePage() {
               height could avoid (the two resolved states differ by ~1000px); the
               residual shift is measured and recorded in the story rather than
               claimed to be zero.
+              Story 117.2 (FR185) removed that residual from the viewport: when
+              the browser holds data, the <head> bootstrap
+              `lib/overview/no-flash-overview-data-script` marks <html> and
+              `styles/global.css` makes this block (`data-hook`) at least one
+              viewport tall, so what follows starts below the fold and the growth
+              is not counted as a shift. The empty footprint is unchanged.
               ⚠️ The bars carry no `animate-pulse` of their own — the wrapping
               `SkeletonBlock` already pulses, and nesting the animation makes the
               two tick out of phase. */}
@@ -836,6 +843,7 @@ export function HomePage() {
             <SkeletonBlock
               className="surface rounded-lg shadow-md p-4 sm:p-6"
               testId="overview-sections-skeleton"
+              hook={OVERVIEW_SECTIONS_PENDING_HOOK}
             >
               <div className="surface-inset rounded-lg p-6 sm:p-8 text-center">
                 <p className="mb-1 text-lg font-medium">

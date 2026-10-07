@@ -136,10 +136,11 @@ describe('the document response headers (was e2e security-headers AC-1)', () => 
       const inline = [...response.body.matchAll(/<script(\s[^>]*)?>([\s\S]*?)<\/script>/g)].filter(
         ([, attributes = '']) => !/\ssrc=/.test(attributes)
       )
-      // Anti-vacuity: the two pre-paint bootstraps are hash-authorized inline
-      // scripts in <head>, so a parse that found none would be blind.
+      // Anti-vacuity: the three pre-paint bootstraps (story 117.2 added the
+      // third) are hash-authorized inline scripts in <head>, so a parse that
+      // found none would be blind.
       const hashed = inline.filter(([, attributes = '']) => !/\snonce=/.test(attributes))
-      expect(hashed.length, 'expected the hash-authorized bootstraps').toBeGreaterThanOrEqual(2)
+      expect(hashed.length, 'expected the hash-authorized bootstraps').toBeGreaterThanOrEqual(3)
 
       for (const [tag, attributes = '', text = ''] of inline) {
         const scriptNonce = attributes.match(/\snonce="([^"]*)"/)?.[1]

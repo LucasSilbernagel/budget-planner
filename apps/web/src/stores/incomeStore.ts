@@ -9,6 +9,7 @@ import { scopeToActiveProfile } from '../lib/profile-scope'
 import { countUnreadableRows, toNormalizableItems } from '../lib/readable-rows'
 import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 import { generateUUID, withUuidIds } from '../lib/uuid'
+import { INCOME_STORAGE_KEY } from './overview-data-storage-keys'
 import { useProfileStore } from './profileStore'
 
 // Client-side type for income source (with string timestamps for localStorage)
@@ -240,7 +241,7 @@ export const useIncomeStore = create<IncomeState>()(
       },
     }),
     {
-      name: 'budget-planner-income-v1',
+      name: INCOME_STORAGE_KEY,
       // SSR-safe: defer the localStorage read until client-side rehydration (see lib/store-hydration)
       skipHydration: true,
       // v1 (Story 5-14): entity ids became uuid strings — convert any legacy

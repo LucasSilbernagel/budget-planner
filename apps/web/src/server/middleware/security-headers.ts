@@ -21,6 +21,7 @@ import { createHash } from 'node:crypto'
 import { getPaddleConfig } from '@budget-planner/config'
 import { NO_FLASH_PLANNER_SCRIPT } from '../../lib/nav/no-flash-planner-visibility-script'
 import { NO_FLASH_ACCOUNT_NOTICE_SCRIPT } from '../../lib/overview/no-flash-account-notice-script'
+import { NO_FLASH_OVERVIEW_DATA_SCRIPT } from '../../lib/overview/no-flash-overview-data-script'
 import {
   PADDLE_CHECKOUT_FRAME_ORIGIN,
   PADDLE_LOADER_STYLE_TEXT,
@@ -43,7 +44,9 @@ import {
  *
  * ⚠️ There used to be a THEME_SCRIPT_CSP_HASH here as well, the first of these
  * (story sec-1, AC-5). Story 61.1 deleted the theme bootstrap, so its hash went
- * with it — `script-src` now carries TWO static hashes, not three. A hash left
+ * with it — `script-src` then carried TWO static hashes. Story 117.2 added a new
+ * third (the Overview pending-block bootstrap), so it carries THREE again, none
+ * of them the theme's. A hash left
  * behind for a script that no longer ships is not a test failure; it is a silent
  * stale allowance, which is why `__tests__/security-headers.test.ts` asserts its
  * ABSENCE rather than merely not asserting its presence.
@@ -59,7 +62,7 @@ export const PLANNER_SCRIPT_CSP_HASH = `sha256-${createHash('sha256')
  * the script it authorizes (a drifted hash = blocked bootstrap = the dismissed
  * "No account needed" box flashes in before React removes it). Pinned by a test.
  *
- * ⚠️ This is the SECOND static hash, and it belongs in `script-src` ONLY. Do not
+ * ⚠️ This is the SECOND static hash (of three), and it belongs in `script-src` ONLY. Do not
  * "help" by adding a `script-src-elem` directive: none is emitted today, that
  * directive OVERRIDES `script-src` for every script element, and the
  * "closes the DIRECTIVE SET" test in `__tests__/security-headers.test.ts`
@@ -67,6 +70,18 @@ export const PLANNER_SCRIPT_CSP_HASH = `sha256-${createHash('sha256')
  */
 export const ACCOUNT_NOTICE_SCRIPT_CSP_HASH = `sha256-${createHash('sha256')
   .update(NO_FLASH_ACCOUNT_NOTICE_SCRIPT, 'utf8')
+  .digest('base64')}`
+
+/**
+ * sha256 of the exact inline Overview pending-block bootstrap rendered at
+ * `routes/__root.tsx` (story 117.2, FR185). The THIRD static hash, same
+ * discipline as the two above: derived from the imported constant (a drifted
+ * hash = blocked bootstrap = the Overview jumps again for a returning user, in
+ * production only, silently), `script-src` ONLY (no `script-src-elem`; see the
+ * account-notice hash). Pinned by a test.
+ */
+export const OVERVIEW_DATA_SCRIPT_CSP_HASH = `sha256-${createHash('sha256')
+  .update(NO_FLASH_OVERVIEW_DATA_SCRIPT, 'utf8')
   .digest('base64')}`
 
 /**
@@ -248,7 +263,7 @@ export function buildContentSecurityPolicy(
   const inlineStyleElementSource = isDev ? `'unsafe-inline'` : `'${PADDLE_LOADER_STYLE_CSP_HASH}'`
   return [
     `default-src 'self'`,
-    `script-src 'self' 'nonce-${nonce}' '${PLANNER_SCRIPT_CSP_HASH}' '${ACCOUNT_NOTICE_SCRIPT_CSP_HASH}' https://cdn.paddle.com https://cdn.counter.dev`,
+    `script-src 'self' 'nonce-${nonce}' '${PLANNER_SCRIPT_CSP_HASH}' '${ACCOUNT_NOTICE_SCRIPT_CSP_HASH}' '${OVERVIEW_DATA_SCRIPT_CSP_HASH}' https://cdn.paddle.com https://cdn.counter.dev`,
     `style-src 'self' 'unsafe-inline' ${paddleHosts}`,
     `style-src-elem 'self' ${inlineStyleElementSource} ${paddleHosts}`,
     `style-src-attr 'unsafe-inline'`,

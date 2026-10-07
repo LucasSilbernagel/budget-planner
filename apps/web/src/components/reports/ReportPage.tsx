@@ -26,8 +26,17 @@ export function ReportPage(): React.ReactElement {
   const { status } = usePremiumAccess()
 
   if (status.isLoading) {
+    // ⚠️ Each branch's outer element has its OWN `key` (story 117.2, FR185):
+    // without them React can reuse the spinner's <div> as the resolved page's
+    // container, and Chrome counts the 32 px node growing into the page as a
+    // layout shift (CLS 0.1153 on /categories, MEASURED). This page escaped only
+    // because `FinancialSummaryReport`'s root happens to differ; the keys make
+    // that deliberate. Do not tidy them away.
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
+      <div
+        key="premium-loading"
+        className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900"
+      >
         <div
           role="status"
           aria-label="Loading"
@@ -39,7 +48,10 @@ export function ReportPage(): React.ReactElement {
 
   if (!status.hasAccess) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4 dark:bg-gray-900">
+      <div
+        key="premium-locked"
+        className="flex min-h-screen items-center justify-center bg-gray-50 p-4 dark:bg-gray-900"
+      >
         <PremiumPrompt
           featureName="Financial Summary Report"
           message="Produce a printable summary of your budget, net worth and savings, built entirely in your browser and saved as a PDF through your own print dialog."
@@ -49,5 +61,5 @@ export function ReportPage(): React.ReactElement {
     )
   }
 
-  return <FinancialSummaryReport />
+  return <FinancialSummaryReport key="premium-content" />
 }

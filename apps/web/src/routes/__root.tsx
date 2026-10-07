@@ -21,6 +21,7 @@ import { buildAnalyticsScripts } from '../lib/analytics/counter'
 // engine before the first frame with no script and no CSP hash.
 import { NO_FLASH_PLANNER_SCRIPT } from '../lib/nav/no-flash-planner-visibility-script'
 import { NO_FLASH_ACCOUNT_NOTICE_SCRIPT } from '../lib/overview/no-flash-account-notice-script'
+import { NO_FLASH_OVERVIEW_DATA_SCRIPT } from '../lib/overview/no-flash-overview-data-script'
 import { StoreHydration } from '../lib/store-hydration'
 import { getSessionSeed } from '../server/api/auth/session-seed'
 import appCss from '../styles/global.css?url'
@@ -138,16 +139,17 @@ function RootDocument({ children, seed }: { children: ReactNode; seed: SessionSe
     // suppressHydrationWarning: the no-flash scripts mutate <html> before
     // hydration — the planner-visibility one (story 35.2) adds
     // `data-hide-retirement="1"` and the account-notice one (story 55.1) adds
-    // `data-dismiss-account-notice="1"` — neither of which the server HTML
-    // carries. (Story 61.1 removed a third, the theme bootstrap: the theme is
+    // `data-dismiss-account-notice="1"`, and the Overview one (story 117.2)
+    // adds `data-overview-has-data="1"` — none of which the server HTML
+    // carries. (Story 61.1 removed another, the theme bootstrap: the theme is
     // now pure CSS keyed off `prefers-color-scheme`, so there is nothing left to
     // set before paint.)
     <html lang="en" suppressHydrationWarning>
       <head>
         {/* Blocking, self-authored bootstraps — must run before the stylesheet
-            paints. Both are authorized in the CSP by sha256 HASH (not the
+            paints. All three are authorized in the CSP by sha256 HASH (not the
             per-request nonce), each derived from its own imported constant in
-            `server/middleware/security-headers.ts`, so neither can silently
+            `server/middleware/security-headers.ts`, so none can silently
             drift out of sync with the policy that allows it.
             1. Planner visibility (story 35.2, AC-4) — prevents the Retirement nav
                entry painting for a user who turned it off. Necessary because every
@@ -159,8 +161,14 @@ function RootDocument({ children, seed }: { children: ReactNode; seed: SessionSe
                it and must render the box present (which the SEO fence in
                `src/__tests__/served-pages.served.test.ts` also requires); the component's own read
                is in an effect, i.e. after first paint.
+            3. Overview pending block (story 117.2, FR185) — reserves one viewport
+               of height for the Overview's pending block when this browser holds
+               budget rows, so its growth into the charts happens below the fold
+               instead of pushing "Premium Features" out of view (a layout shift).
+               The server cannot know the rows (localStorage), and the stores
+               hydrate after first paint.
 
-            ⚠️ There used to be a THIRD, the theme bootstrap (story 7-3, AC-4).
+            ⚠️ There used to be another, the theme bootstrap (story 7-3, AC-4).
             Story 61.1 deleted it: the theme is now `prefers-color-scheme` in CSS,
             which the browser resolves before the first frame with no script at
             all. A bootstrap can be blocked or throw; a media query cannot. */}
@@ -168,6 +176,8 @@ function RootDocument({ children, seed }: { children: ReactNode; seed: SessionSe
         <script dangerouslySetInnerHTML={{ __html: NO_FLASH_PLANNER_SCRIPT }} />
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: static inline bootstrap with no user input; must execute before React hydration. */}
         <script dangerouslySetInnerHTML={{ __html: NO_FLASH_ACCOUNT_NOTICE_SCRIPT }} />
+        {/* biome-ignore lint/security/noDangerouslySetInnerHtml: static inline bootstrap with no user input; must execute before React hydration. */}
+        <script dangerouslySetInnerHTML={{ __html: NO_FLASH_OVERVIEW_DATA_SCRIPT }} />
         <HeadContent />
       </head>
       <body suppressHydrationWarning>
