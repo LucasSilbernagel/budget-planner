@@ -19,6 +19,7 @@ import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type SessionSeed, SessionSeedProvider } from '../../../context/session-seed'
 import type { PremiumAccessStatus } from '../../../hooks/usePremiumAccess'
+import { expectLockedRowsNamedByVisibleText, lockedName } from '../../../test/locked-name'
 
 const usePremiumAccess = vi.fn()
 
@@ -76,6 +77,17 @@ describe('SettingsPage', () => {
     render(<SettingsPage />)
     expect(screen.getByRole('heading', { level: 1, name: /^settings$/i })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: /^display$/i })).toBeInTheDocument()
+  })
+
+  it('names both locked premium rows by their visible title and description (story 116.2)', () => {
+    const { container } = render(<SettingsPage />)
+    // Financial summary report + Custom categories (the free default above).
+    expect(expectLockedRowsNamedByVisibleText(container)).toHaveLength(2)
+  })
+
+  it('is exactly one <main> landmark (story 116.1, FR184)', () => {
+    render(<SettingsPage />)
+    expect(screen.getAllByRole('main')).toHaveLength(1)
   })
 
   it('consolidates the currency control here, with its global scope made explicit (AC-2)', () => {
@@ -152,7 +164,7 @@ describe('SettingsPage', () => {
       screen.getByRole('heading', { level: 2, name: /^financial summary$/i })
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'Financial Summary Report — premium, locked' })
+      screen.getByRole('button', { name: lockedName('Financial summary report') })
     ).toBeInTheDocument()
   })
 
@@ -174,7 +186,7 @@ describe('SettingsPage', () => {
 
     expect(screen.getByRole('heading', { level: 2, name: /^categories$/i })).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'Custom Categories — premium, locked' })
+      screen.getByRole('button', { name: lockedName('Custom categories') })
     ).toBeInTheDocument()
     // …and NOT a way through (was e2e categories-premium:235): a locked button
     // beside a live link would let a free visitor straight into the manager.
@@ -305,10 +317,10 @@ describe('58.2: the premium Settings sections are tier-conditional (D2)', () => 
     ).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: /^categories$/i })).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'Financial Summary Report — premium, locked' })
+      screen.getByRole('button', { name: lockedName('Financial summary report') })
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'Custom Categories — premium, locked' })
+      screen.getByRole('button', { name: lockedName('Custom categories') })
     ).toBeInTheDocument()
     // The free tier keeps the privacy sentence exactly as today.
     expect(screen.getByText(/nothing is sent anywhere to produce it/i)).toBeInTheDocument()

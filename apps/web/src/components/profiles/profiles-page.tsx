@@ -38,13 +38,13 @@ export function ProfilesPage() {
   // leaks the management UI to a not-yet-verified user (fail-closed).
   if (status.isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
+      <main className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div
           role="status"
           aria-label="Loading"
           className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
         />
-      </div>
+      </main>
     )
   }
 
@@ -53,19 +53,19 @@ export function ProfilesPage() {
   // functions enforce the same boundary independently (Story 13-3, AC-1/AC-2).
   if (!status.hasAccess) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4 dark:bg-gray-900">
+      <main className="flex min-h-screen items-center justify-center bg-gray-50 p-4 dark:bg-gray-900">
         <PremiumPrompt
           featureName="Custom Profiles"
           message="Keep separate sets of finances (e.g. personal vs. household) in custom profiles and switch between them, synced across your devices."
           asDialog={false}
         />
-      </div>
+      </main>
     )
   }
 
   // Active premium: the full management experience (unchanged behavior, AC-3).
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8 dark:bg-gray-900">
+    <main className="min-h-screen bg-gray-50 p-4 md:p-8 dark:bg-gray-900">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
@@ -116,6 +116,6 @@ export function ProfilesPage() {
           </p>
         </div>
       </div>
-    </div>
+    </main>
   )
 }

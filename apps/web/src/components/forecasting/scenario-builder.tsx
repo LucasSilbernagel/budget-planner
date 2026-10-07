@@ -2420,7 +2420,7 @@ export function ScenarioBuilder({
         <section className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-6">
           <h3 className="text-lg font-semibold text-subheading mb-4">Forecast Summary</h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <dl className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <StatCard
               label="Starting Net Worth"
               value={formatCurrency(summary?.startingNetWorth || 0)}
@@ -2443,7 +2443,7 @@ export function ScenarioBuilder({
             {vsToday !== null && (
               <StatCard label="vs. today" value={signedAmount(vsToday, formatCurrency)} />
             )}
-          </div>
+          </dl>
 
           {/* The save outcome renders HERE, not at the top of the form.
               ⚠️ Adjacency is structural, not cosmetic: the message shares this

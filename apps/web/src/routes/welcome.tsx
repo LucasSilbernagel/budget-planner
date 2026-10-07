@@ -31,7 +31,7 @@ export const Route = createFileRoute('/welcome')({
 
 function WelcomePage() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center surface-sunken p-4">
+    <main className="min-h-screen flex flex-col items-center justify-center surface-sunken p-4">
       <div className="w-full max-w-md text-center">
         <div className="surface shadow-md rounded-2xl p-6 sm:p-8 border border-default">
           <h1 className="text-2xl font-semibold text-heading mb-2">Welcome to Premium 🎉</h1>
@@ -64,6 +64,6 @@ function WelcomePage() {
           </p>
         </div>
       </div>
-    </div>
+    </main>
   )
 }

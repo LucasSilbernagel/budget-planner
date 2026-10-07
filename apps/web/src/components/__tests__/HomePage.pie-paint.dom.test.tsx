@@ -179,12 +179,28 @@ describe('Overview breakdown pies paint no in-plot slice labels (was e2e breakdo
     expect(screen.getByTestId('breakdown-pie-total-expense')).toHaveTextContent('68,400.00')
     expect(screen.getByTestId('breakdown-pie-total-expense-ratio')).toHaveTextContent(/^54%$/)
 
-    expect(
-      screen.getByRole('img', { name: 'Expenses as % of income (per year) breakdown chart' })
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('img', { name: 'Expenses by category (per year) breakdown chart' })
-    ).toBeInTheDocument()
+    // Story 116.1 (FR184, D4): each plot is hidden from screen readers (the list
+    // above carries every slice), and holds no tab stop (D2), or a keyboard user
+    // would land on something a screen reader cannot see (axe
+    // `aria-hidden-focus`). Real Recharts SVG renders here, so the `tabindex`
+    // probe sees the pie layer Recharts actually draws (`rootTabIndex`).
+    for (const testId of [RATIO, EXPENSE]) {
+      const sectors = screen.getByTestId(testId).querySelectorAll('.recharts-sector')
+      expect(sectors.length, `${testId}: sectors drawn (control)`).toBeGreaterThan(0)
+      const plot = sectors[0]?.closest('[aria-hidden="true"]') as HTMLElement | null
+      expect(plot, `${testId}: the plot sits in an aria-hidden wrapper`).not.toBeNull()
+      // The wrapper is the plot's own box, not the whole card: the list stays exposed.
+      expect(plot).not.toContainElement(within(screen.getByTestId(testId)).getAllByRole('list')[0])
+      const focusable = Array.from(plot?.querySelectorAll('[tabindex]') ?? []).filter(
+        (el) => Number(el.getAttribute('tabindex')) >= 0
+      )
+      expect(focusable, `${testId}: no tab stop inside the hidden plot`).toHaveLength(0)
+      // Recharts DOES render the pie layer with a tabindex: pin it is -1, so the
+      // probe above is not passing on an attribute that is simply absent.
+      expect(plot?.querySelector('.recharts-pie')?.getAttribute('tabindex')).toBe('-1')
+    }
+    // Nothing on the Overview is announced as an unnamed image any more.
+    expect(screen.queryAllByRole('img')).toHaveLength(0)
   })
 
   it('a two-slice pie is still readable with no in-plot labels (was :275, AC-8)', async () => {
@@ -238,5 +254,45 @@ describe('Overview breakdown pies paint no in-plot slice labels (was e2e breakdo
     seed(INCOME, EXPENSES)
     const { container } = render(<HomePage />)
     await assertNoInPlotLabels(container, { ratioSlices: EXPENSES.length + 1, expenseSlices: 6 })
+  })
+})
+
+describe('Overview bar charts and screen readers (story 116.1, FR184, D4)', () => {
+  it('hides the flows chart (its bars ARE the total cards) but NOT the balances chart (no text twin)', async () => {
+    seed(INCOME, EXPENSES)
+    useBalanceStore.setState({
+      entries: [
+        {
+          id: 'inv-1',
+          type: 'investment' as const,
+          name: 'RRSP',
+          currentBalance: 1_000_000,
+          monthlyContribution: 0,
+          frequency: 'monthly' as const,
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+      ],
+    })
+    render(<HomePage />)
+
+    // Both charts drawn (control): each has real Recharts bars.
+    const flows = screen.getByTestId('category-bar-flows')
+    const balances = screen.getByTestId('category-bar-balances')
+    await waitFor(() => {
+      expect(flows.querySelectorAll('.recharts-bar-rectangle').length).toBeGreaterThan(0)
+      expect(balances.querySelectorAll('.recharts-bar-rectangle').length).toBeGreaterThan(0)
+    })
+    // Both directions, so a blanket hide (or none) goes RED.
+    expect(flows).toHaveAttribute('aria-hidden', 'true')
+    // …and holds no tab stop (axe `aria-hidden-focus`). Recharts 2 leaves a bar
+    // chart unfocusable, but its `accessibilityLayer` (default ON in Recharts 3)
+    // puts `tabindex="0"` on the surface: an upgrade must turn this RED.
+    const flowStops = Array.from(flows.querySelectorAll('[tabindex]')).filter(
+      (el) => Number(el.getAttribute('tabindex')) >= 0
+    )
+    expect(flowStops, 'no tab stop inside the hidden flows chart').toHaveLength(0)
+    expect(balances).not.toHaveAttribute('aria-hidden')
+    expect(balances.closest('[aria-hidden="true"]')).toBeNull()
   })
 })

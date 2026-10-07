@@ -111,3 +111,18 @@ describe('CategoriesPage', () => {
     expect(screen.queryByTestId('premium-prompt')).not.toBeInTheDocument()
   })
 })
+
+// Story 116.1 (FR184, A4): every state of the page is ONE `<main>` landmark. The
+// loading and locked states were never audited by Lighthouse (prod ran signed
+// out, local ran paid), so they are pinned here. The active state's `<main>` is
+// `CategoryManager`'s own (mocked above), so it is not counted in this file.
+describe('CategoriesPage landmarks (story 116.1)', () => {
+  it.each([
+    ['loading', { isLoading: true }],
+    ['locked', { hasAccess: false, subscriptionStatus: 'free' as const }],
+  ])('the %s state is exactly one <main>', (_state, overrides) => {
+    mockStatus(overrides)
+    render(<CategoriesPage />)
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+  })
+})

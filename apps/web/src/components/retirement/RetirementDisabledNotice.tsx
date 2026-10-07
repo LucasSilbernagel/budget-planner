@@ -28,7 +28,7 @@ export function RetirementDisabledNotice(): React.ReactElement {
   const setShowRetirementPlanner = useSetShowRetirementPlanner()
 
   return (
-    <div className="min-h-screen surface-sunken py-6 sm:py-12 px-4 sm:px-6 lg:px-8">
+    <main className="min-h-screen surface-sunken py-6 sm:py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-2xl mx-auto surface rounded-2xl shadow-lg p-6 sm:p-8">
         <h1 className="text-2xl sm:text-3xl font-bold text-heading mb-4">
           The Retirement planner is turned off
@@ -58,6 +58,6 @@ export function RetirementDisabledNotice(): React.ReactElement {
           </Link>
         </div>
       </div>
-    </div>
+    </main>
   )
 }

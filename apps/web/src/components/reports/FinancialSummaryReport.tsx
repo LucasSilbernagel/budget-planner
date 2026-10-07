@@ -447,7 +447,7 @@ export function FinancialSummaryReport({
     // stretching, so without it the column takes fit-content width, never
     // narrower than its widest table (543 px at a 320 px window with short
     // names). `max-w-3xl` still caps it and `mx-auto` still centres it.
-    <div className="mx-auto w-full max-w-3xl px-4 py-10">
+    <main className="mx-auto w-full max-w-3xl px-4 py-10">
       {/* `data-print-hide`: the control that triggers the print must not appear
           on the printed page itself. */}
       {/* Story 56.1 (UX-DR61): `justify-end`, not `justify-between`. The row
@@ -812,7 +812,7 @@ export function FinancialSummaryReport({
           </>
         )}
       </article>
-    </div>
+    </main>
   )
 }
 

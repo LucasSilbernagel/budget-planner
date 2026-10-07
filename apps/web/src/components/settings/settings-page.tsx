@@ -73,7 +73,7 @@ export function SettingsPage() {
     verifiedSession === undefined ? seedReachesPremium : isEntitledSeed(verifiedSession)
 
   return (
-    <div className="mx-auto max-w-xl px-4 py-10">
+    <main className="mx-auto max-w-xl px-4 py-10">
       <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Settings</h1>
       <p className="mt-2 text-gray-600 dark:text-gray-400">
         These preferences apply across the whole app.
@@ -162,6 +162,6 @@ export function SettingsPage() {
           Renders only for authenticated users; free/unauthenticated visitors
           see just the Display + Local data sections above. */}
       <AccountSection />
-    </div>
+    </main>
   )
 }

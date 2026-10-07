@@ -159,8 +159,6 @@ export function CategoryBarCanvas({
 }
 
 interface BreakdownPieCanvasProps {
-  /** Sub-heading text, used only to build the chart's accessible name. */
-  title: string
   /** Pie slices for a SINGLE type, already period-scaled. Never empty here. */
   data: RechartsDataItem[]
   /** Sum of `data` values — the pie's own 100% denominator. */
@@ -183,9 +181,15 @@ interface BreakdownPieCanvasProps {
  * plain text, which the period-control test asserts precisely because Recharts'
  * SVG is not laid out under jsdom. Moving it behind the lazy boundary would put
  * a `await`-shaped hole in a test that has nothing to do with charts.
+ *
+ * ⚠️ NO accessible name, on purpose (story 116.1, FR184, D4): `HomePage` hides
+ * this whole plot from screen readers (`aria-hidden` on its sized wrapper)
+ * because the list below already reads out every slice. Recharts gives every
+ * slice `role="img"` with no name (`Sector.js`), which Lighthouse flagged
+ * (`svg-img-alt`), and the old `role="img"` + `aria-label` on `<PieChart>` was
+ * dead once hidden.
  */
 export function BreakdownPieCanvas({
-  title,
   data,
   total,
   isNarrow,
@@ -193,8 +197,13 @@ export function BreakdownPieCanvas({
 }: BreakdownPieCanvasProps): React.ReactElement {
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <PieChart aria-label={`${title} breakdown chart`} role="img">
+      <PieChart>
         <Pie
+          // ⚠️ Not a tab stop (story 116.1, D2). Recharts' pie layer defaults to
+          // `tabIndex={0}` (`Pie.js`, `rootTabIndex`); inside an `aria-hidden`
+          // wrapper that is a keyboard stop a screen reader cannot see (axe
+          // `aria-hidden-focus`). Mouse hover still shows the tooltip.
+          rootTabIndex={-1}
           data={data}
           cx="50%"
           cy="50%"
@@ -209,8 +218,8 @@ export function BreakdownPieCanvas({
           // tangle on desktop; below 640px they overflowed the container
           // outright (story 6-1). The list below names every slice, and the
           // hover tooltip carries the per-slice figure and share — so nothing is
-          // lost. The chart is `role="img"`, so the labels never reached the
-          // accessibility tree in the first place.
+          // lost. The plot is hidden from the accessibility tree (see above), so
+          // the labels never reached it in the first place.
           //
           // ⚠️ `labelLine` above is now INERT: Recharts guards with
           // `label && this.renderLabels(sectors)`, and `labelLine` is read only

@@ -1023,6 +1023,7 @@ export function HomePage() {
                           formatAmount={formatAmount}
                           mode={mode}
                           currency={currency}
+                          hiddenFromScreenReaders
                         />
                       </div>
                     )}
@@ -1395,6 +1396,14 @@ interface CategoryBarChartProps {
   formatAmount: (cents: number) => string
   mode: ReturnType<typeof useCurrencyPreferences>['mode']
   currency: ReturnType<typeof useCurrencyPreferences>['currency']
+  /**
+   * Hide the chart from screen readers (story 116.1, FR184, D4): ONLY when every
+   * bar is already on the page as text. True for the flows chart (its two bars
+   * are the Total Income / Total Expenses cards, same period). NOT for balances:
+   * the Overview shows no Savings / Investments / Assets / Debts totals as text,
+   * so that chart is the only place a screen reader can reach them.
+   */
+  hiddenFromScreenReaders?: boolean
 }
 
 /**
@@ -1415,9 +1424,16 @@ function CategoryBarChart({
   formatAmount,
   mode,
   currency,
+  hiddenFromScreenReaders = false,
 }: CategoryBarChartProps): React.ReactElement {
   return (
-    <div style={{ height: categoryChartHeight(data.length) }} data-testid={testId}>
+    // `aria-hidden` on the sized wrapper, not inside the lazy canvas, so the
+    // pending skeleton and the error fallback are hidden too.
+    <div
+      style={{ height: categoryChartHeight(data.length) }}
+      data-testid={testId}
+      aria-hidden={hiddenFromScreenReaders || undefined}
+    >
       <ErrorBoundary
         fallback={<div className="p-4 text-red-600 dark:text-red-400">Chart error occurred</div>}
       >
@@ -1489,7 +1505,14 @@ function BreakdownPie({
         </div>
       ) : (
         <>
-          <div className="h-[240px]">
+          {/* Hidden from screen readers (story 116.1, FR184, D4): the list below
+              reads out every slice's name and figure, so the plot adds nothing
+              to the accessibility tree but Recharts' unnamed `role="img"`
+              slices (Lighthouse `svg-img-alt`). On this sized wrapper, not
+              inside the lazy canvas, so the pending skeleton and the error
+              fallback are hidden too. The pie's tab stop is removed in
+              `BreakdownPieCanvas` (`rootTabIndex`). */}
+          <div className="h-[240px]" aria-hidden="true">
             <ErrorBoundary
               fallback={
                 <div className="p-4 text-red-600 dark:text-red-400">Chart error occurred</div>
@@ -1501,7 +1524,6 @@ function BreakdownPie({
                   placeholder height; this avoids the guess. */}
               <Suspense fallback={<ChartPending />}>
                 <BreakdownPieCanvas
-                  title={title}
                   data={data}
                   total={total}
                   isNarrow={isNarrow}
@@ -1597,8 +1619,8 @@ const PREMIUM_BOX_INTERACTIVE = `${PREMIUM_BOX_BASE} surface-interactive text-le
  * and chevron stay packed together on the right.
  *
  * `aria-hidden` on the chevron for two different reasons depending on call site:
- * in an activatable box the `<button>` already carries an accessible name
- * ("<feature> — premium, locked") and the glyph would only add noise; where
+ * in an activatable box the control's accessible name is already its visible
+ * label (plus "Premium, locked" when locked) and the glyph would only add noise; where
  * `chevronHidden` is passed the glyph is `invisible` and exists purely to reserve
  * width, so announcing it would be announcing a spacer.
  *
@@ -1704,28 +1726,22 @@ function LockedTileContent({
  * full-string `getByText`, so it breaks on ANY edit, not selectively on overpromises;
  * what keeps it an honesty guard is this list being re-checked when the copy changes.
  *
- * ⚠️ The two states derive their accessible name by DIFFERENT routes, and
- * neither is a backstop for the other:
- *   - LOCKED: `PremiumFeatureGate` puts `aria-label={`${featureName} — premium,
- *     locked`}` on the button (`PremiumFeatureGate.tsx:110`). Per accname an
- *     `aria-label` REPLACES the content, so this subtree contributes nothing.
- *     The locked queries (`HomePage.test.tsx:123`; until story 84.5 also
- *     `e2e/premium-locked.spec.ts:65`) ride on the `featureName` prop alone.
- *   - UNLOCKED: the `<a>` carries no `aria-label`, so its name is its CONTENTS —
- *     the title span AND the subtitle span, concatenated. The name therefore
- *     changes whenever the subtitle changes (story 57.1 did exactly that). Its
- *     queries still resolve because each is a REGEX matching a substring of that
- *     concatenation, not because the name is stable: `HomePage.test.tsx:134` is a
- *     hand-written `/advanced forecasting/i` literal, while `OPENABLE_ROUTES`
- *     (`:63-72`) builds its regex from `featureName`.
- * So: renaming the title breaks BOTH unlocked queries (neither regex would match
- * the new contents), while changing `featureName` breaks the locked ones and the
- * `OPENABLE_ROUTES` half of the unlocked ones. Keep the title span and
- * `featureName` identical to each other. (Story 30-2 §6 described the name as a
- * concatenation of the title and `featureName` — it is neither state's actual
- * mechanism. Corrected in 30-2 review.)
+ * ⚠️ BOTH states derive their accessible name from these CONTENTS (since story
+ * 116.2, FR184), the title span AND the subtitle span, concatenated:
+ *   - LOCKED: `PremiumFeatureGate`'s button has no `aria-label` (it used to,
+ *     "<featureName> — premium, locked", which REPLACED this subtree and hid the
+ *     visible text: axe `label-content-name-mismatch`). Its name is title +
+ *     subtitle + the badge's "Premium" + a hidden ", locked".
+ *   - UNLOCKED: the `<a>` carries no `aria-label` either, so its name is title +
+ *     subtitle.
+ * The name therefore changes whenever the subtitle changes (story 57.1 did
+ * exactly that). The queries still resolve because each is a REGEX anchored on
+ * the TITLE, not because the name is stable. Renaming the title breaks the
+ * locked and unlocked queries alike. `featureName` now drives only the upgrade
+ * dialog's wording (and `OPENABLE_ROUTES`' regex in `HomePage.test.tsx`), so
+ * keep it matching the title's words.
  *
- * ⚠️ Because the subtitle is part of the unlocked accessible name, a subtitle
+ * ⚠️ Because the subtitle is part of the accessible name, a subtitle
  * wording that also matches another element's role-query regex makes `getByRole`
  * ambiguous, and it THROWS on multiple matches. Sweep the suite's role-query
  * regexes before changing this copy.
@@ -1871,7 +1887,7 @@ type OverviewBenefit =
   | {
       activation: 'prompt'
       label: () => React.ReactElement
-      /** Drives `PremiumFeatureGate`'s "<featureName> — premium, locked" name. */
+      /** Names the feature in `PremiumFeatureGate`'s upgrade dialog. */
       featureName: string
     }
   | {
@@ -1879,7 +1895,7 @@ type OverviewBenefit =
       label: () => React.ReactElement
       /** Route the box links to for an entitled user. */
       href: string
-      /** Drives `PremiumFeatureGate`'s "<featureName> — premium, locked" name. */
+      /** Names the feature in `PremiumFeatureGate`'s upgrade dialog. */
       featureName: string
     }
 
@@ -1899,15 +1915,16 @@ type OverviewBenefit =
  * six stale literals across four files had to be hunted down to land this story.
  *
  * `featureName` values match the shipped `/settings` tiles exactly
- * ("Financial Summary Report", "Custom Categories") so one feature does not gain a
- * second accessible name. (The upgrade prompt's benefit list is the decided
- * exception: "Downloadable Financial Summary Report", story 95.1 D1.)
+ * ("Financial Summary Report", "Custom Categories") so the upgrade dialog names
+ * one feature one way from either surface. (The upgrade prompt's benefit list is
+ * the decided exception: "Downloadable Financial Summary Report", story 95.1 D1.)
+ * Since story 116.2 it is no longer any control's accessible name: a locked row
+ * is named by its visible label.
  */
 export const OVERVIEW_BENEFITS: Record<PremiumBenefitId, OverviewBenefit> = {
   // Activatable, but not a route: there is no /sync page to send anyone to, so
   // it opens the upgrade dialog instead (story 41.1, UX-DR45). `featureName`
-  // matches the box's own visible label so the button a screen reader announces
-  // and the words on screen are the same string.
+  // matches the box's own visible label so the dialog names it in the same words.
   sync: { activation: 'prompt', label: MultiDeviceSyncLabel, featureName: 'Multi-device sync' },
   forecasting: {
     activation: 'route',

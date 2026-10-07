@@ -8,17 +8,17 @@
  *   - locked   → an inert button, no link
  *   - unlocked → the link to /categories, no lock
  *
- * ⚠️ Accessible-name mechanics, which are NOT symmetrical between the states:
- * the locked branch puts `aria-label={`${featureName} — premium, locked`}` on
- * the <button>, and per accname `aria-label` REPLACES the subtree — so the
- * visible label text contributes nothing to the locked control's name. The
- * unlocked <a> carries no `aria-label` at all, so its name comes from its
- * content. It is never a concatenation.
+ * Accessible names: since story 116.2 BOTH states are named by their content.
+ * The locked <button> has no `aria-label` (it used to, "<featureName> —
+ * premium, locked", which hid the visible label from the name): it reads the
+ * visible title, the description, then "Premium, locked". The unlocked <a>
+ * reads its content too.
  */
 
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../../hooks/usePremiumAccess'
+import { lockedName } from '../../../test/locked-name'
 
 const usePremiumAccess = vi.fn()
 
@@ -79,9 +79,9 @@ describe('CategoriesSection', () => {
     mockStatus({ hasAccess: false, subscriptionStatus, isAuthenticated })
     render(<CategoriesSection />)
 
-    // `aria-label` REPLACES the subtree: this exact string IS the whole name.
+    // Named by what it shows: the visible title first, "Premium, locked" last.
     expect(
-      screen.getByRole('button', { name: 'Custom Categories — premium, locked' })
+      screen.getByRole('button', { name: lockedName('Custom categories') })
     ).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /custom categories/i })).not.toBeInTheDocument()
     // Discoverable, not hidden (FR24).

@@ -106,7 +106,7 @@ function RetirementPage() {
 
   return (
     <ErrorBoundary>
-      <div className="min-h-screen surface-sunken py-6 sm:py-12 px-4 sm:px-6 lg:px-8">
+      <main className="min-h-screen surface-sunken py-6 sm:py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
           {/* Header */}
           <header className="mb-8 sm:mb-12">
@@ -197,7 +197,7 @@ function RetirementPage() {
             </p>
           </div>
         </div>
-      </div>
+      </main>
     </ErrorBoundary>
   )
 }

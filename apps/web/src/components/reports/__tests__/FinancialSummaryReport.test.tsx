@@ -213,6 +213,12 @@ afterEach(() => {
 })
 
 describe('FinancialSummaryReport — content', () => {
+  it('is exactly one <main> landmark (story 116.1, FR184)', () => {
+    seedTypicalData()
+    render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+  })
+
   it('renders the monthly-normalized budget totals from the seeded stores', () => {
     seedTypicalData()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)

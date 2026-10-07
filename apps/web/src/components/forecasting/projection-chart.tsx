@@ -538,7 +538,7 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
         {/* Summary Statistics — gated on chartData (not just `result`) so an
             empty-arrays result can't show the cards alongside the empty state. */}
         {result && chartData.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <dl className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <SummaryCard
               label="Starting Net Worth"
               value={formatCurrency(result.summary.startingNetWorth)}
@@ -572,7 +572,7 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
                 positive={vsToday >= 0}
               />
             )}
-          </div>
+          </dl>
         )}
       </div>
     </ErrorBoundary>
@@ -605,21 +605,25 @@ function SummaryCard({ label, value, change }: SummaryCardProps): React.ReactEle
   const isPositive = change >= 0
 
   return (
+    // A `<dl>` group (story 116.1, FR184): it may hold only `<dt>` and `<dd>`, so
+    // the change line lives INSIDE the `<dd>` as a block span (it was a `<p>`
+    // sibling, which axe's `definition-list` rule rejects). Same classes plus
+    // `block`, so it paints where the `<p>` did.
     <div className="surface-inset rounded-lg p-4">
       <dt className="text-sm font-medium text-muted">{label}</dt>
       <dd className="mt-1 text-lg font-semibold text-subheading">
         <GroupedAmount text={value} />
+        {change !== 0 && (
+          <span
+            className={`mt-1 block text-xs font-medium ${
+              isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+            }`}
+          >
+            {isPositive ? '+' : ''}
+            {changeFormatted}
+          </span>
+        )}
       </dd>
-      {change !== 0 && (
-        <p
-          className={`mt-1 text-xs font-medium ${
-            isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-          }`}
-        >
-          {isPositive ? '+' : ''}
-          {changeFormatted}
-        </p>
-      )}
     </div>
   )
 }

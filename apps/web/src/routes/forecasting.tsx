@@ -746,16 +746,16 @@ function ForecastingPage(): React.ReactElement {
   // Show loading state (SSR + first client paint — see usePremiumAccess).
   if (status.isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <main className="flex items-center justify-center min-h-screen">
         <LoadingSpinner />
-      </div>
+      </main>
     )
   }
 
   // Show premium prompt if user doesn't have access
   if (!status.hasAccess) {
     return (
-      <div className="min-h-screen surface-sunken flex items-center justify-center p-4">
+      <main className="min-h-screen surface-sunken flex items-center justify-center p-4">
         {/* The free user's pitch for this page. Named situations, not "advanced
             tools" — same set as the intro, the meta description above, and the
             `PREMIUM_FEATURES.forecasting` bullet the prompt lists directly below
@@ -777,7 +777,7 @@ function ForecastingPage(): React.ReactElement {
           message="See how a raise, rising bills, a big one-off cost, paying down a loan or saving more each month would change your finances over the years ahead — and save each scenario to reopen later."
           asDialog={false}
         />
-      </div>
+      </main>
     )
   }
 
