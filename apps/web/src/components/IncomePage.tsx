@@ -10,6 +10,7 @@ import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
 import { usePremiumAccess } from '../hooks/usePremiumAccess'
 import { useStoresHydrated } from '../hooks/useStoresHydrated'
 import { useTableSort } from '../hooks/useTableSort'
+import { reformatAmountOnBlur } from '../lib/money-input'
 import { exceedsMoneyLimit, moneyLimitMessage } from '../lib/money-limit'
 import { summarizeReadableRows } from '../lib/readable-rows'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
@@ -154,15 +155,6 @@ export function IncomePage() {
   // grouping uses the neutral en-US locale (per the store).
   const { mode, currency, locale } = useCurrencyPreferences()
 
-  // Re-echo an amount field in grouped, locale-aware form on blur. Both guard arms
-  // are load-bearing and must stay: the empty arm keeps "not filled in" from
-  // becoming "entered zero", and the no-digit arm keeps the digit-free partials
-  // sanitizeMoneyInput deliberately allows through (story 28-1) VISIBLE — without
-  // it a half-typed "-" would silently become "0.00" under the user's cursor.
-  const reformatAmountOnBlur = (value: string, setter: (v: string) => void) => {
-    if (value.trim() === '' || !/\d/.test(value)) return
-    setter(formatForInputDisplay(parseFromInput(value, locale), locale))
-  }
   // Monthly-normalized cents (story 32.1) — `PeriodTotal` denormalizes it to the
   // selected period. `summarizeReadableRows` supplies the disclosure inputs from
   // READABLE rows only: a raw total that never quotes excluded money, and a
@@ -633,7 +625,7 @@ export function IncomePage() {
                   id="amount"
                   value={amount}
                   onChange={(e) => setAmount(sanitizeMoneyChange(e.target, locale))}
-                  onBlur={(e) => reformatAmountOnBlur(e.target.value, setAmount)}
+                  onBlur={(e) => reformatAmountOnBlur(e.target.value, locale, setAmount)}
                   placeholder="0.00"
                   className={`w-full px-3 py-2 ${
                     mode === 'symbol' ? 'pl-7' : ''

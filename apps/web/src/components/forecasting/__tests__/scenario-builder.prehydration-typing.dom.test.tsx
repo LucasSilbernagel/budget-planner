@@ -189,8 +189,8 @@ describe('typing before hydration is kept', () => {
     })
 
     expect(screen.getByDisplayValue('Consulting')).toBeInTheDocument()
-    expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue(3456)
-    expect(screen.getByLabelText('Balance for Index fund')).toHaveValue(9876)
+    expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue('3,456.00')
+    expect(screen.getByLabelText('Balance for Index fund')).toHaveValue('9,876.00')
 
     const saved = await saveAndRead(onSave)
     expect(saved.inputs.savings).toBe(345_600)
@@ -233,8 +233,8 @@ describe('typing before hydration is kept', () => {
     await hydrateAfterTyping(onSave, () => {})
 
     expect(screen.getByLabelText('Scenario Name')).toHaveValue('My Financial Forecast')
-    expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue(3456)
-    expect(screen.getByLabelText('Balance for Index fund')).toHaveValue(9876)
+    expect(screen.getByLabelText('Balance for Emergency fund')).toHaveValue('3,456.00')
+    expect(screen.getByLabelText('Balance for Index fund')).toHaveValue('9,876.00')
 
     const saved = await saveAndRead(onSave)
     expect(saved.name).toBe('My Financial Forecast')

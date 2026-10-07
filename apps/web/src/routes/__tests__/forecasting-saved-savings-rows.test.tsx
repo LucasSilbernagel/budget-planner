@@ -100,14 +100,16 @@ async function loadPlan(inputs: unknown, version?: number) {
 /** Every savings row as `[name, balance, contribution]`, zipped by position. */
 function rows(): [string, number, number][] {
   const value = (el: HTMLElement) => (el as HTMLInputElement).value
+  // Money fields show grouped text since story 109.1 (`1,234.00`).
+  const amount = (el: HTMLElement) => Number(value(el).replaceAll(',', ''))
   const balances = screen.queryAllByLabelText(/^Balance for /)
   const contributions = screen.queryAllByLabelText(/^Monthly Contribution for /)
   return screen
     .queryAllByLabelText(/^Account Name, row \d+$/)
     .map((name, i) => [
       value(name),
-      Number(value(balances[i] as HTMLElement)),
-      Number(value(contributions[i] as HTMLElement)),
+      amount(balances[i] as HTMLElement),
+      amount(contributions[i] as HTMLElement),
     ])
 }
 

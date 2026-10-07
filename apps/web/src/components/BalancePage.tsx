@@ -11,6 +11,7 @@ import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
 import { useNetWorth } from '../hooks/useNetWorth'
 import { useStoresHydrated } from '../hooks/useStoresHydrated'
 import { useTableSort } from '../hooks/useTableSort'
+import { reformatAmountOnBlur } from '../lib/money-input'
 import { exceedsMoneyLimit, moneyLimitMessage } from '../lib/money-limit'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import {
@@ -331,16 +332,6 @@ export function BalancePage() {
   // grouping/parsing (story 14-3). Currency-less mode shows no symbol and groups
   // with the neutral en-US locale (per the store).
   const { mode, currency, locale } = useCurrencyPreferences()
-
-  // Re-echo an amount field in grouped, locale-aware form on blur. Both guard arms
-  // are load-bearing and must stay: the empty arm keeps "not filled in" from
-  // becoming "entered zero", and the no-digit arm keeps the digit-free partials
-  // sanitizeMoneyInput deliberately allows through (story 28-1) VISIBLE — without
-  // it a half-typed "-" would silently become "0.00" under the user's cursor.
-  const reformatAmountOnBlur = (value: string, setter: (v: string) => void) => {
-    if (value.trim() === '' || !/\d/.test(value)) return
-    setter(formatForInputDisplay(parseFromInput(value, locale), locale))
-  }
 
   // State for the add/edit modal
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -1089,7 +1080,7 @@ export function BalancePage() {
                   id="currentBalance"
                   value={currentBalance}
                   onChange={(e) => setCurrentBalance(sanitizeMoneyChange(e.target, locale))}
-                  onBlur={(e) => reformatAmountOnBlur(e.target.value, setCurrentBalance)}
+                  onBlur={(e) => reformatAmountOnBlur(e.target.value, locale, setCurrentBalance)}
                   placeholder="0.00"
                   className={`shadow-sm px-3 py-2 ${
                     mode === 'symbol' ? 'pl-7' : ''
@@ -1287,7 +1278,9 @@ export function BalancePage() {
                       onChange={(e) =>
                         setMonthlyContribution(sanitizeMoneyChange(e.target, locale))
                       }
-                      onBlur={(e) => reformatAmountOnBlur(e.target.value, setMonthlyContribution)}
+                      onBlur={(e) =>
+                        reformatAmountOnBlur(e.target.value, locale, setMonthlyContribution)
+                      }
                       placeholder="0.00"
                       className={`shadow-sm px-3 py-2 ${
                         mode === 'symbol' ? 'pl-7' : ''
