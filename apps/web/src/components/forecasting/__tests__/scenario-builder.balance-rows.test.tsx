@@ -949,6 +949,28 @@ describe('over-contribution without savings rows (story 112.1, FR180)', () => {
     )
     expect(screen.getByTestId('savings-unassigned').className).toContain('text-amber-800')
   })
+
+  it('hides the no-rows line when the first savings row is added until the recompute (AC-4)', async () => {
+    useIncomeStore.setState({ incomeSources: [income(500_000)] })
+    useExpenseStore.setState({ expenses: [expense(400_000)] })
+    setEntries([entry({ id: 'e-1', name: 'Fund', monthlyContribution: 150_000 })])
+    const format = formatter()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+    expect(screen.getByTestId('savings-unassigned').className).toContain('text-amber-800')
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Add Account' }))
+    // Before the debounced recompute: the result describes no rows, the list has one.
+    expect(screen.queryByTestId('savings-unassigned')).toBeNull()
+    // The new row holds 0 and contributes 0, so the remainder is unchanged.
+    await waitFor(
+      () =>
+        expect(screen.getByTestId('savings-unassigned').textContent).toBe(
+          `Your contributions are ${format(6_000_000)} more than you have left over by year 10`
+        ),
+      { timeout: 3000 }
+    )
+  })
 })
 
 describe('each money field reports its own validity (AC-9)', () => {
