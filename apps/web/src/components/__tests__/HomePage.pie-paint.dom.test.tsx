@@ -285,6 +285,13 @@ describe('Overview bar charts and screen readers (story 116.1, FR184, D4)', () =
     })
     // Both directions, so a blanket hide (or none) goes RED.
     expect(flows).toHaveAttribute('aria-hidden', 'true')
+    // …and holds no tab stop (axe `aria-hidden-focus`). Recharts 2 leaves a bar
+    // chart unfocusable, but its `accessibilityLayer` (default ON in Recharts 3)
+    // puts `tabindex="0"` on the surface: an upgrade must turn this RED.
+    const flowStops = Array.from(flows.querySelectorAll('[tabindex]')).filter(
+      (el) => Number(el.getAttribute('tabindex')) >= 0
+    )
+    expect(flowStops, 'no tab stop inside the hidden flows chart').toHaveLength(0)
     expect(balances).not.toHaveAttribute('aria-hidden')
     expect(balances.closest('[aria-hidden="true"]')).toBeNull()
   })
