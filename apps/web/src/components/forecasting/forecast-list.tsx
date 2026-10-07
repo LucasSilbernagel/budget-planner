@@ -141,8 +141,14 @@ export function ForecastList({
     return result
   }, [forecasts, searchQuery, sortBy, sortDirection])
 
-  // Calculate selection statistics
-  const selectedCount = selectedIds.size
+  // Story 119.1 (FR187): only VISIBLE selections count, delete or drive Select
+  // all. `selectedIds` keeps ids hidden by the search (they come back when it is
+  // cleared) and ids gone from `forecasts`; neither is ever deleted from here.
+  const visibleSelectedIds = useMemo(
+    () => filteredForecasts.filter((f) => selectedIds.has(f.id)).map((f) => f.id),
+    [filteredForecasts, selectedIds]
+  )
+  const selectedCount = visibleSelectedIds.length
   const totalCount = filteredForecasts.length
 
   // Toggle selection for a single forecast
@@ -158,13 +164,17 @@ export function ForecastList({
     })
   }, [])
 
-  // Toggle selection for all forecasts
+  // Toggle selection for all visible forecasts; hidden selections are untouched
   const toggleAllSelection = useCallback(() => {
-    if (selectedCount === totalCount && totalCount > 0) {
-      setSelectedIds(new Set())
-    } else {
-      setSelectedIds(new Set(filteredForecasts.map((f) => f.id)))
-    }
+    const allVisibleSelected = selectedCount === totalCount && totalCount > 0
+    setSelectedIds((prev) => {
+      const newSet = new Set(prev)
+      for (const f of filteredForecasts) {
+        if (allVisibleSelected) newSet.delete(f.id)
+        else newSet.add(f.id)
+      }
+      return newSet
+    })
   }, [selectedCount, totalCount, filteredForecasts])
 
   // Open the themed confirmation for a single forecast
@@ -191,13 +201,17 @@ export function ForecastList({
         return newSet
       })
     } else {
-      for (const id of selectedIds) {
+      for (const id of visibleSelectedIds) {
         onDelete(id)
       }
-      setSelectedIds(new Set())
+      setSelectedIds((prev) => {
+        const newSet = new Set(prev)
+        for (const id of visibleSelectedIds) newSet.delete(id)
+        return newSet
+      })
     }
     setPendingDelete(null)
-  }, [pendingDelete, selectedIds, onDelete])
+  }, [pendingDelete, visibleSelectedIds, onDelete])
 
   // Handle load forecast
   const handleLoad = useCallback(

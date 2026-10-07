@@ -1,4 +1,7 @@
 # generated: 2026-06-18
+# last_updated: 2026-10-07i (119.1 reviewed + done; epic 119 done.)
+# last_updated: 2026-10-07h (119.1 dev done -> review.)
+# last_updated: 2026-10-07g (epic 119 added from 118.1 review LOW (FR187); 119.1 created -> ready-for-dev.)
 # last_updated: 2026-10-07f (110.1, 112.1, 114.1 reviewed + approved -> done; epics 110, 112, 114 done (triage-7 batch complete). Integration gates green, compare 37654052670 27/27.)
 # last_updated: 2026-10-07e (114.1 dev done -> review.)
 # last_updated: 2026-10-07d (110.1 dev done -> review.)
@@ -1425,6 +1428,9 @@ development_status:
   epic-118: done  # DONE 2026-10-07 (118.1 reviewed, merge pending).  # Added 2026-10-07 from deferred-work (115.2 dev finding), MEASURED at 09327d6 (FR186)
   118-1-the-forecast-row-checkbox-selects-its-row: done  # REVIEWED 2026-10-07 (inline 3 layers): APPROVED, 0 patches/decisions, 1 LOW deferred (pre-existing), 5 dismissed. Done after merge. DEV DONE 2026-10-07 (branch story/118-1-forecast-row-checkbox, uncommitted): gates ALL GREEN 5m33s (web 5237->5242, e2e 23), 3/3 RED before fix, mutation arm RED; no screenshot impact. Next: code review.  # CREATED 2026-10-07 at 09327d6; no open questions; RED measured by throwaway RTL probe (click + Space unchecked, row click checked)
   epic-118-retrospective: optional
+  epic-119: done  # DONE 2026-10-07 (119.1 reviewed, merge pending).  # Added 2026-10-07 from deferred-work (118.1 review LOW), value judgment by Lucas: scheduled; REASONED at 2b04746 (FR187)
+  119-1-bulk-delete-acts-only-on-visible-forecasts: done  # REVIEWED 2026-10-07 (Fable, 3 layers): APPROVED, 1 test patch applied; reload race (deferred) MEASURED + FIXED here by Lucas's call; 5 deferred CLOSED by decision; gates ALL GREEN 6m37s (web 5249). Done after merge.  # DEV DONE 2026-10-07 (branch story/119-1-bulk-delete-visible, uncommitted): gates ALL GREEN 6m09s (web 5242->5248, e2e 23); 6/6 RED before fix; mutation arms RED (5, 2). Next: code review.  # DEV STARTED 2026-10-07 on branch story/119-1-bulk-delete-visible; baseline gates at 2b04746 ALL GREEN 5m56s (web 5242, e2e 23); D1-D3 CONFIRMED by Lucas (all rec).  # CREATED 2026-10-07 at 2b04746; defect MEASURED by throwaway RTL probe (hidden A deleted: onDelete [[a],[b]]; Select all checked with visible row unchecked; removed id still counted); D1-D3 await Lucas (rec as written)
+  epic-119-retrospective: optional
 
 action_items:
   - epic: 6

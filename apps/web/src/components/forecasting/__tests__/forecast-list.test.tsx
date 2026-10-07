@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import type { SavedForecast } from '../../../routes/forecasting'
 import { PencilIcon } from '../../ui/RowActionIcons'
@@ -262,5 +263,134 @@ describe('row checkbox selects its row (story 118.1, FR186)', () => {
     await user.click(screen.getByRole('button', { name: 'Delete Retirement Plan' }))
     expect(screen.getByRole('alertdialog')).toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: 'Select Retirement Plan' })).not.toBeChecked()
+  })
+})
+
+describe('selection acts only on visible forecasts (story 119.1, FR187)', () => {
+  // Before 119.1 the selection counted every selected id, so a forecast hidden by
+  // the search was still counted, still deleted by Delete Selected, and Select all
+  // compared counts, not ids. Each forecast gets its own scenario name: the search
+  // matches `scenario.name` too, and sampleForecast's would match both.
+  const forecast = (id: string, name: string): SavedForecast => ({
+    ...sampleForecast,
+    id,
+    name,
+    scenario: { ...sampleForecast.scenario, name },
+  })
+  const alpha = forecast('a', 'Alpha')
+  const bravo = forecast('b', 'Bravo')
+  const checkbox = (name: string) => screen.getByRole('checkbox', { name })
+
+  // Owns the list like the page does: a delete drops the forecast from it.
+  function Harness({ initial }: { initial: SavedForecast[] }) {
+    const [list, setList] = useState(initial)
+    return (
+      <ForecastList
+        forecasts={list}
+        onDelete={(id) => setList((prev) => prev.filter((f) => f.id !== id))}
+      />
+    )
+  }
+
+  it('deletes only the visible selection, never a forecast hidden by the search', async () => {
+    const user = userEvent.setup()
+    const onDelete = vi.fn()
+    render(<ForecastList forecasts={[alpha, bravo]} onDelete={onDelete} />)
+
+    await user.click(checkbox('Select Alpha'))
+    await user.type(screen.getByRole('searchbox'), 'Bravo')
+    await user.click(checkbox('Select Bravo'))
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Delete Selected' }))
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('delete 1 selected forecast(s)?')
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' })
+    )
+    expect(onDelete).toHaveBeenCalledTimes(1)
+    expect(onDelete).toHaveBeenCalledWith('b')
+    // Still rendered (onDelete is a mock), but no longer selected (D1, review P1).
+    expect(checkbox('Select Bravo')).not.toBeChecked()
+    expect(screen.queryByText(/selected$/)).toBeNull()
+  })
+
+  it('offers no bulk delete when every selected forecast is hidden', async () => {
+    const user = userEvent.setup()
+    render(<ForecastList forecasts={[alpha, bravo]} onDelete={vi.fn()} />)
+    const bulk = screen.getByRole('button', { name: 'Delete Selected' })
+
+    await user.click(checkbox('Select Alpha'))
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
+    expect(bulk).toBeEnabled()
+
+    await user.type(screen.getByRole('searchbox'), 'Bravo')
+    expect(screen.queryByText(/selected$/)).toBeNull()
+    expect(bulk).toBeDisabled()
+  })
+
+  it('checks Select all only when every visible row is selected, and leaves hidden ones alone', async () => {
+    const user = userEvent.setup()
+    render(<ForecastList forecasts={[alpha, bravo]} onDelete={vi.fn()} />)
+
+    await user.click(checkbox('Select Alpha'))
+    await user.type(screen.getByRole('searchbox'), 'Bravo')
+    expect(checkbox('Select all')).not.toBeChecked()
+
+    await user.click(checkbox('Select all'))
+    expect(checkbox('Select Bravo')).toBeChecked()
+    expect(checkbox('Select all')).toBeChecked()
+    await user.click(checkbox('Select all'))
+    expect(checkbox('Select Bravo')).not.toBeChecked()
+
+    await user.clear(screen.getByRole('searchbox'))
+    expect(checkbox('Select Alpha')).toBeChecked()
+  })
+
+  it('keeps a hidden selection through a bulk delete and shows it when the search is cleared', async () => {
+    const user = userEvent.setup()
+    render(<Harness initial={[alpha, bravo]} />)
+
+    await user.click(checkbox('Select Alpha'))
+    await user.type(screen.getByRole('searchbox'), 'Bravo')
+    await user.click(checkbox('Select Bravo'))
+    await user.click(screen.getByRole('button', { name: 'Delete Selected' }))
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' })
+    )
+    expect(screen.queryByRole('checkbox', { name: 'Select Bravo' })).toBeNull()
+
+    await user.clear(screen.getByRole('searchbox'))
+    expect(checkbox('Select Alpha')).toBeChecked()
+    expect(checkbox('Select Alpha').closest('tr')).toHaveClass('bg-blue-50')
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
+  })
+
+  it('stops counting a selected forecast once it leaves the list', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(<ForecastList forecasts={[alpha, bravo]} onDelete={vi.fn()} />)
+
+    await user.click(checkbox('Select Alpha'))
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
+
+    rerender(<ForecastList forecasts={[bravo]} onDelete={vi.fn()} />)
+    expect(screen.queryByText(/selected$/)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Delete Selected' })).toBeDisabled()
+    expect(checkbox('Select all')).not.toBeChecked()
+    expect(checkbox('Select Bravo')).not.toBeChecked()
+  })
+
+  it('adds the visible rows to the selection with Select all instead of replacing it', async () => {
+    const user = userEvent.setup()
+    render(<ForecastList forecasts={[alpha, bravo]} onDelete={vi.fn()} />)
+
+    await user.click(checkbox('Select Alpha'))
+    await user.type(screen.getByRole('searchbox'), 'Bravo')
+    await user.click(checkbox('Select all'))
+    expect(checkbox('Select Bravo')).toBeChecked()
+
+    await user.clear(screen.getByRole('searchbox'))
+    expect(checkbox('Select Alpha')).toBeChecked()
+    expect(checkbox('Select Bravo')).toBeChecked()
+    expect(screen.getByText('2 selected')).toBeInTheDocument()
   })
 })
