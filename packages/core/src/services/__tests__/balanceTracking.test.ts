@@ -12,6 +12,7 @@ import {
   BalanceTrackingWithTimeline,
   ClientBalanceTracking,
   ClientNewBalanceTracking,
+  annualContributionCents,
   debtOwedCents,
   filterBalanceTracking,
   generateBalanceTrackingTempId,
@@ -302,6 +303,32 @@ describe('monthlyContributionCents (Story 16-2)', () => {
     }
     expect(() => monthlyContributionCents(corrupt)).not.toThrow()
     expect(monthlyContributionCents(corrupt)).toBe(50000)
+  })
+})
+
+describe('annualContributionCents (story 111.1)', () => {
+  // amount × periods per year, exactly. The monthly round trip
+  // `monthlyContributionCents(...) × 12` gives 260004 / 2600004 / 600000 / 50004.
+  it.each([
+    ['weekly', 5000, 260_000],
+    ['biweekly', 100_000, 2_600_000],
+    ['monthly', 50_000, 600_000],
+    ['annually', 50_000, 50_000],
+  ] as const)('annualises a %s contribution of %i to %i', (frequency, amount, annual) => {
+    expect(annualContributionCents({ monthlyContribution: amount, frequency })).toBe(annual)
+  })
+
+  it('coerces a missing or unrecognized frequency to monthly, as monthlyContributionCents does', () => {
+    const legacy = { monthlyContribution: 50000 } as Pick<
+      ClientBalanceTracking,
+      'monthlyContribution' | 'frequency'
+    >
+    const corrupt = {
+      monthlyContribution: 50000,
+      frequency: 'daily' as unknown as ClientBalanceTracking['frequency'],
+    }
+    expect(annualContributionCents(legacy)).toBe(600_000)
+    expect(annualContributionCents(corrupt)).toBe(600_000)
   })
 })
 

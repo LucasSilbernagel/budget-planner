@@ -13,7 +13,7 @@
 
 import type { BalanceTracking as DbBalanceTracking, FinanceType } from '@budget-planner/db'
 import { MAX_MONEY_CENTS } from '../finance/money-limits'
-import { type Frequency, normalizeToMonthly } from '../finance/normalization'
+import { type Frequency, normalizeToAnnual, normalizeToMonthly } from '../finance/normalization'
 import {
   DebtCalculationResult,
   DebtSubType,
@@ -218,6 +218,23 @@ export function monthlyContributionCents(
 ): number {
   const frequency = VALID_FREQUENCIES.includes(entry.frequency) ? entry.frequency : 'monthly'
   return normalizeToMonthly(entry.monthlyContribution, frequency)
+}
+
+/**
+ * One year of an entry's contribution, in cents (story 111.1, FR179): the
+ * contribution × its periods per year, exactly, not `monthlyContributionCents × 12`
+ * (which is off by up to 6 cents a year for a non-monthly cadence). For the
+ * forecast, whose rows are years. Same unknown-frequency → `'monthly'` coercion
+ * as `monthlyContributionCents`, for the same reason.
+ *
+ * @param entry - Object carrying the raw contribution and its cadence
+ * @returns The annual contribution in cents (rounded)
+ */
+export function annualContributionCents(
+  entry: Pick<ClientBalanceTracking, 'monthlyContribution' | 'frequency'>
+): number {
+  const frequency = VALID_FREQUENCIES.includes(entry.frequency) ? entry.frequency : 'monthly'
+  return normalizeToAnnual(entry.monthlyContribution, frequency)
 }
 
 /**

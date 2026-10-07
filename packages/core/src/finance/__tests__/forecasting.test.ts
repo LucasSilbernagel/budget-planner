@@ -273,7 +273,7 @@ describe('calculateFinancialForecast — annual accumulation', () => {
     expect(r.summary.averageAnnualGrowth, '3600000 / 3').toBe(1_200_000)
   })
 
-  it('normalizes frequency BEFORE annualizing, rather than scaling the raw amount', () => {
+  it('annualizes a weekly item EXACTLY (amount × 52), not through a rounded monthly figure', () => {
     const weekly = calculateFinancialForecast(
       {
         income: [{ amount: 100000, frequency: 'weekly' as const }],
@@ -285,18 +285,19 @@ describe('calculateFinancialForecast — annual accumulation', () => {
       1
     )
 
-    // BY HAND: `calculateTotalMonthlyNormalized` applies 52/12 and rounds PER ITEM:
-    // 100000 × 52/12 = 433333.33… ⇒ 433333. A year of that is 433333 × 12 = 5199996.
+    // BY HAND (story 111.1, FR179): a year of a weekly 1,000.00 is 52 of them,
+    // 100000 × 52 = 5200000.
     //
     // ⚠️ This is the discriminating assertion for the two wrong ways to annualize:
-    //   - raw × 52            = 5200000  (skips per-item rounding; off by 4 cents)
-    //   - raw × 12            = 1200000  (ignores frequency entirely)
-    // The 4-cent gap against 5200000 is the whole point — it proves the rounding
-    // happened in monthly space, where every other surface in the app rounds.
-    expect(weekly.projection[0].income, 'round(100000 × 52/12) = 433333, × 12').toBe(5_199_996)
+    //   - round(raw × 52/12) × 12 = 5199996  (the monthly round trip this story
+    //     REMOVED: 433333.33… ⇒ 433333, × 12; four cents light)
+    //   - raw × 12                = 1200000  (ignores frequency entirely)
+    // Until 111.1 this test pinned 5199996 as a deliberate trade (forecast agrees
+    // with the Overview's monthly-canonical figures). Lucas reversed it 2026-10-06.
+    expect(weekly.projection[0].income, '100000 × 52').toBe(5_200_000)
     // Documents the rejected alternative; cannot itself be the failing assertion.
-    expect(weekly.projection[0].income).not.toBe(5_200_000)
-    expect(weekly.projection[0].netIncome, 'no expenses, so net === gross').toBe(5_199_996)
+    expect(weekly.projection[0].income).not.toBe(5_199_996)
+    expect(weekly.projection[0].netIncome, 'no expenses, so net === gross').toBe(5_200_000)
   })
 
   it('keeps a row internally consistent: income − expenses === netIncome', () => {
@@ -407,7 +408,7 @@ describe('calculateFinancialForecast — annual accumulation', () => {
  * Every test below therefore uses a NON-MONTHLY frequency and checks BOTH loops.
  */
 describe('calculateFinancialForecast — frequency normalization, both loops', () => {
-  /** One weekly expense, nothing else. round(100000 × 52/12) = 433333, × 12 = 5199996. */
+  /** One weekly expense, nothing else. 100000 × 52 = 5200000 a year (story 111.1). */
   const WEEKLY_EXPENSE = {
     income: [],
     expenses: [{ amount: 100000, frequency: 'weekly' as const }],
@@ -418,10 +419,10 @@ describe('calculateFinancialForecast — frequency normalization, both loops', (
   it('normalizes a weekly EXPENSE on the projection row, not just income', () => {
     const r = calculateFinancialForecast(WEEKLY_EXPENSE, FLAT, 1)
 
-    // BY HAND: round(100000 × 52/12) = round(433333.33…) = 433333; × 12 = 5199996.
+    // BY HAND: 100000 × 52 = 5200000 (the pre-111.1 monthly round trip gave 5199996).
     // A raw sum would report 100000 × 12 = 1200000 — the mutation this closes.
-    expect(r.projection[0].expenses, 'round(100000 × 52/12) × 12').toBe(5_199_996)
-    expect(r.projection[0].netIncome, 'no income, so net === −expenses').toBe(-5_199_996)
+    expect(r.projection[0].expenses, '100000 × 52').toBe(5_200_000)
+    expect(r.projection[0].netIncome, 'no income, so net === −expenses').toBe(-5_200_000)
   })
 
   it('normalizes a weekly expense on the BASELINE row too', () => {
@@ -430,9 +431,9 @@ describe('calculateFinancialForecast — frequency normalization, both loops', (
     // The baseline builds its fields from a separate set of hoisted constants
     // (`baselineAnnualIncome`/`baselineAnnualExpenses`), so it needs its own
     // assertion — the projection passing proves nothing about it.
-    expect(r.baseline[0].expenses, 'same figure via the baseline path').toBe(5_199_996)
-    expect(r.baseline[0].netIncome).toBe(-5_199_996)
-    expect(r.baseline[0].savings, '0 opening − 5199996').toBe(-5_199_996)
+    expect(r.baseline[0].expenses, 'same figure via the baseline path').toBe(5_200_000)
+    expect(r.baseline[0].netIncome).toBe(-5_200_000)
+    expect(r.baseline[0].savings, '0 opening − 5200000').toBe(-5_200_000)
   })
 
   it('normalizes a weekly INCOME on the baseline row too', () => {
@@ -447,29 +448,19 @@ describe('calculateFinancialForecast — frequency normalization, both loops', (
       1
     )
 
-    expect(r.baseline[0].income, 'round(100000 × 52/12) × 12').toBe(5_199_996)
-    expect(r.baseline[0].netIncome).toBe(5_199_996)
+    expect(r.baseline[0].income, '100000 × 52').toBe(5_200_000)
+    expect(r.baseline[0].netIncome).toBe(5_200_000)
   })
 
   /**
-   * ⚠️ A KNOWN, ACCEPTED PRECISION LOSS — pinned so it cannot drift unnoticed.
-   *
-   * `annually` is the one frequency whose round trip used to be EXACT: the deleted
-   * raw-sum helper reported the entered amount verbatim. Going through monthly
-   * space costs a few cents per item per year, because the monthly figure is
-   * rounded before being lifted back. This is deliberate — it makes forecasting
-   * agree with the app-wide monthly-canonical convention rather than be exact on
-   * its own — and it is the trade named in the `MONTHS_PER_YEAR` docblock.
-   *
-   * ⚠️⚠️ The error goes BOTH WAYS and is bounded by -5..+6 cents, NOT "up to 11
-   * cents light". `normalization.ts` uses `Math.round`: writing `x = 12k + r`
-   * with `r` in 0..11, `round(x/12)` is `k` for `r <= 5` (short by `r`) and `k+1`
-   * for `r >= 6` (OVER by `12 - r`). 11 is the TRUNCATION bound. A code review
-   * found the old figure stated twice — here and in the module docblock — beside
-   * a derivation that correctly used `round()`, pinned by a fixture that cannot
-   * expose either error. Both arms are now pinned.
+   * Story 111.1 (FR179, Lucas 2026-10-06): an `annually` row counts its FULL
+   * amount each year. Until 111.1 these two fixtures pinned "a known, accepted
+   * precision loss": the monthly round trip `round(x / 12) × 12` was off by
+   * -5..+6 cents per item per year (writing `x = 12k + r`: short by `r` for
+   * `r <= 5`, OVER by `12 - r` for `r >= 6`). That trade is reversed, and the two
+   * fixtures stay as exactness probes, one per arm of the old error.
    */
-  it('loses a cent on an annually row (r <= 5), the accepted monthly-canonical cost', () => {
+  it('counts an annually row in full when r <= 5 (was one cent light)', () => {
     const r = calculateFinancialForecast(
       {
         income: [{ amount: 1_200_013, frequency: 'annually' as const }],
@@ -481,14 +472,13 @@ describe('calculateFinancialForecast — frequency normalization, both loops', (
       1
     )
 
-    // BY HAND: 1200013 = 12 × 100001 + 1, so r = 1.
-    // 1200013 / 12 = 100001.083… ⇒ round = 100001; × 12 = 1200012.
-    // One cent under the entered 1200013. NOT a bug; a pinned convention.
-    expect(r.projection[0].income, 'round(1200013 / 12) × 12 = 1200012').toBe(1_200_012)
-    expect(r.projection[0].income).toBeLessThan(1_200_013)
+    // BY HAND: 1200013 × 1 = 1200013. Old: 1200013 = 12 × 100001 + 1, so r = 1,
+    // round(100001.08…) × 12 = 1200012, one cent light.
+    expect(r.projection[0].income, '1200013 × 1').toBe(1_200_013)
+    expect(r.baseline[0].income, 'same via the baseline').toBe(1_200_013)
   })
 
-  it('OVERSTATES an annually row by six cents when r >= 6 — the arm "always light" missed', () => {
+  it('counts an annually row in full when r >= 6 (was six cents HEAVY)', () => {
     const r = calculateFinancialForecast(
       {
         income: [{ amount: 1_200_018, frequency: 'annually' as const }],
@@ -500,12 +490,68 @@ describe('calculateFinancialForecast — frequency normalization, both loops', (
       1
     )
 
-    // BY HAND: 1200018 = 12 × 100001 + 6, so r = 6 — the worst overstatement.
-    // 1200018 / 12 = 100001.5 ⇒ round = 100002; × 12 = 1200024.
-    // Six cents ABOVE the entered amount. This is also the fixture that
-    // discriminates round from trunc: truncation would give 1200012 here.
-    expect(r.projection[0].income, 'round(1200018 / 12) × 12 = 1200024').toBe(1_200_024)
-    expect(r.projection[0].income).toBeGreaterThan(1_200_018)
+    // BY HAND: 1200018 × 1 = 1200018. Old: r = 6, round(100001.5) = 100002, × 12 =
+    // 1200024, six cents OVER the entered amount.
+    expect(r.projection[0].income, '1200018 × 1').toBe(1_200_018)
+    expect(r.baseline[0].income, 'same via the baseline').toBe(1_200_018)
+  })
+
+  it('counts an annual 10.00 as 10.00 a year, on both loops (story 111.1 AC 2)', () => {
+    const r = calculateFinancialForecast(
+      {
+        income: [{ amount: 1000, frequency: 'annually' as const }],
+        expenses: [{ amount: 1000, frequency: 'annually' as const }],
+        savings: 0,
+        investments: 0,
+      },
+      FLAT,
+      1
+    )
+    // BY HAND: 1000 × 1. Old: round(1000 / 12) = 83, × 12 = 996.
+    for (const row of [r.projection[0], r.baseline[0]]) {
+      expect(row.income).toBe(1000)
+      expect(row.expenses).toBe(1000)
+      expect(row.netIncome).toBe(0)
+    }
+  })
+
+  /**
+   * The AC 2 sweep: for EVERY frequency, the forecast's first year at 0% growth is
+   * the integer `amount × periods`, on both loops. The oracle is integer
+   * arithmetic, never the engine's own formula. The old error depended only on
+   * `amount × periods` mod 12, so 0..2399 (every residue, 200 times) covers every
+   * class; `normalization.annual.test.ts` sweeps the helper over 0..1,999,999.
+   */
+  it('year 1 at 0% growth is exactly amount × periods, for every frequency (sweep)', () => {
+    const PERIODS = { weekly: 52, biweekly: 26, monthly: 12, annually: 1 } as const
+    const misses: string[] = []
+    for (const frequency of Object.keys(PERIODS) as (keyof typeof PERIODS)[]) {
+      for (let amount = 0; amount < 2400; amount++) {
+        const r = calculateFinancialForecast(
+          {
+            income: [{ amount, frequency }],
+            expenses: [{ amount, frequency }],
+            savings: 0,
+            investments: 0,
+          },
+          FLAT,
+          1
+        )
+        const want = amount * PERIODS[frequency]
+        const p = r.projection[0]
+        const b = r.baseline[0]
+        if (
+          p?.income !== want ||
+          p.expenses !== want ||
+          b?.income !== want ||
+          b.expenses !== want
+        ) {
+          misses.push(`${frequency} ${amount}: ${p?.income}/${b?.income} want ${want}`)
+        }
+      }
+    }
+    expect(misses.slice(0, 5)).toEqual([])
+    expect(misses).toHaveLength(0)
   })
 
   /**
@@ -878,9 +924,9 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
   /**
    * Three rows over CURRENT_DATA (1,000.00/mo net, so 12,000.00 a year):
    *   - counted investment 10,000.00, contributing 100.00/mo (1,200.00 a year);
-   *   - flagged investment 1,000.07, contributing 50.00/WEEK:
-   *     normalizeToMonthly(5000, weekly) = round(5000 × 52/12) = round(21666.67)
-   *     = 21667, × 12 = 260004 a year (the raw `5000 × 12` would be 60000);
+   *   - flagged investment 1,000.07, contributing 50.00/WEEK: 5000 × 52 =
+   *     260000 a year (story 111.1; the raw `5000 × 12` would be 60000, and the
+   *     pre-111.1 monthly round trip round(5000 × 52/12) × 12 gave 260004);
    *   - debt 5,000.00, paying 200.00/mo (2,400.00 a year).
    */
   const MIXED: BalanceAccountInput[] = [
@@ -918,25 +964,25 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
     // round(1190000 × 1.07) = 1273300, + 120000 = 1393300; round(1393300 × 1.07)
     // = 1490831, + 120000 = 1610831.
     // Flagged investment: round(100007 × 1.07) = round(107007.49) = 107007,
-    // + 260004 = 367011; round(367011 × 1.07) = round(392701.77) = 392702,
-    // + 260004 = 652706; round(652706 × 1.07) = round(698395.42) = 698395,
-    // + 260004 = 958399.
+    // + 260000 = 367007; round(367007 × 1.07) = round(392697.49) = 392697,
+    // + 260000 = 652697; round(652697 × 1.07) = round(698385.79) = 698386,
+    // + 260000 = 958386. (Pre-111.1, at 260004 a year: 367011, 652706, 958399.)
     // Debt: 500000 − 240000 = 260000; − 240000 = 20000; max(0, −220000) = 0.
     expect(r.projection.map((p) => p.balanceAccounts)).toEqual([
-      [1_190_000, 367_011, 260_000],
-      [1_393_300, 652_706, 20_000],
-      [1_610_831, 958_399, 0],
+      [1_190_000, 367_007, 260_000],
+      [1_393_300, 652_697, 20_000],
+      [1_610_831, 958_386, 0],
     ])
-    expect(r.projection.map((p) => p.investments)).toEqual([1_557_011, 2_046_006, 2_569_230])
+    expect(r.projection.map((p) => p.investments)).toEqual([1_557_007, 2_045_997, 2_569_217])
     expect(r.projection.map((p) => p.debts)).toEqual([260_000, 20_000, 0])
     // Savings: + 1,200,000 net income − 120,000 counted contribution a year. The
     // flagged contribution and the flagged debt payment take nothing more (D4, 45.1).
     expect(r.projection.map((p) => p.savings)).toEqual([1_180_000, 2_260_000, 3_340_000])
     // netWorth = savings + investments − debts.
-    expect(r.projection.map((p) => p.netWorth)).toEqual([2_477_011, 4_286_006, 5_909_230])
+    expect(r.projection.map((p) => p.netWorth)).toEqual([2_477_007, 4_285_997, 5_909_217])
     // Starting: 100000 + 1100007 − 500000.
     expect(r.summary.startingNetWorth).toBe(700_007)
-    expect(r.summary.endingNetWorth).toBe(5_909_230)
+    expect(r.summary.endingNetWorth).toBe(5_909_217)
   })
 
   it('models the rows in the baseline too, so a flat scenario keeps baseline === projection (D5, 67.1)', () => {
@@ -946,9 +992,9 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
     expect(r.baseline.map((b) => b.debts)).toEqual([260_000, 20_000, 0])
   })
 
-  it('normalises an annual contribution through the chokepoint', () => {
-    // annually 1200013: round(1200013 / 12) = round(100001.08) = 100001, × 12 =
-    // 1200012 a year (one cent light, the module's documented monthly round trip).
+  it('annualises an annual contribution exactly (story 111.1)', () => {
+    // annually 1200013: 1200013 × 1 = 1200013 a year. (Pre-111.1 the monthly
+    // round trip round(1200013 / 12) × 12 gave 1200012, one cent light.)
     const r = calculateFinancialForecast(
       {
         ...CURRENT_DATA,
@@ -966,9 +1012,9 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
       FLAT,
       1
     )
-    expect(r.projection[0]?.investments).toBe(1_200_012)
-    // Counted, so savings loses the same: 100000 + 1200000 − 1200012.
-    expect(r.projection[0]?.savings).toBe(99_988)
+    expect(r.projection[0]?.investments).toBe(1_200_013)
+    // Counted, so savings loses the same: 100000 + 1200000 − 1200013.
+    expect(r.projection[0]?.savings).toBe(99_987)
   })
 
   it('degrades an unrecognised frequency to monthly, as the chokepoint does', () => {
@@ -1265,7 +1311,7 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
   })
 
   it('refuses a debt payment that normalises to Infinity, rather than flooring the debt to 0 (code review)', () => {
-    // 1e308 weekly × 52 / 12 overflows; without the guard the debt silently reads 0.
+    // 1e308 weekly × 52 overflows; without the guard the debt silently reads 0.
     expect(() =>
       calculateFinancialForecast(
         {
@@ -1278,6 +1324,30 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
         YEARS
       )
     ).toThrow(FORECAST_OUT_OF_RANGE)
+  })
+
+  /**
+   * Story 111.1 AC 5: an income or expense whose ANNUAL figure overflows is
+   * refused on the BASELINE too. The projection's running-balance check already
+   * caught it there; the baseline had no guard, so a separate `baselineInput`
+   * (107.1) carrying 1e307 weekly (× 52 = Infinity) leaked `Infinity` into every
+   * baseline row.
+   */
+  it('refuses an income or expense whose annual figure overflows, on the baseline too (111.1)', () => {
+    const huge = (field: 'income' | 'expenses') => ({
+      ...CURRENT_DATA,
+      [field]: [{ amount: 1e307, frequency: 'weekly' as const }],
+    })
+    for (const field of ['income', 'expenses'] as const) {
+      // Projection side (already refused before 111.1, by the running balance).
+      expect(() => calculateFinancialForecast(huge(field), FLAT, YEARS)).toThrow(
+        FORECAST_OUT_OF_RANGE
+      )
+      // Baseline side only: the projection data is ordinary.
+      expect(() => calculateFinancialForecast(CURRENT_DATA, FLAT, YEARS, huge(field))).toThrow(
+        FORECAST_OUT_OF_RANGE
+      )
+    }
   })
 })
 
@@ -1366,16 +1436,16 @@ describe('calculateFinancialForecast — a debt payment stops at payoff (102.2)'
     expect(r.projection.map((p) => p.debts)).toEqual([0, 0])
   })
 
-  it('normalises a weekly payment through the chokepoint before deducting it', () => {
-    // 50.00/week: round(5000 × 52/12) = 21667 a month, × 12 = 260,004 a year.
-    // Net 1,200,000 − 260,004 = 939,996.
+  it('annualises a weekly payment exactly before deducting it (story 111.1)', () => {
+    // 50.00/week: 5000 × 52 = 260,000 a year (pre-111.1: round(5000 × 52/12) =
+    // 21667 a month, × 12 = 260,004). Net 1,200,000 − 260,000 = 940,000.
     const r = calculateFinancialForecast(
       { ...CURRENT_DATA, balanceAccounts: [debt(1_000_000, 5_000, { frequency: 'weekly' })] },
       FLAT,
       1
     )
-    expect(r.projection[0]?.netIncome).toBe(939_996)
-    expect(r.projection[0]?.debts).toBe(739_996)
+    expect(r.projection[0]?.netIncome).toBe(940_000)
+    expect(r.projection[0]?.debts).toBe(740_000)
   })
 
   it('does not grow the payment with the expense growth rate (D4: a fixed instalment)', () => {
@@ -1555,20 +1625,21 @@ describe('calculateFinancialForecast — per-investment annual return (100.3)', 
    * AC-3: at 0.07 every row reproduces 100.2's pinned figures to the cent. The
    * constants are COPIED from the 100.2 tests above (`grows, pays down and moves
    * money between buckets, by hand` and `rounds each investment row on its own`),
-   * not recomputed.
+   * not recomputed. (Re-copied by story 111.1: the weekly contribution now
+   * annualises to 260000, not 260004, so the flagged row's chain moved.)
    */
   it('at 7% the 100.2 fixtures give the 100.2 figures exactly (parity)', () => {
     const PINNED_100_2 = {
       balanceAccounts: [
-        [1_190_000, 367_011, 260_000],
-        [1_393_300, 652_706, 20_000],
-        [1_610_831, 958_399, 0],
+        [1_190_000, 367_007, 260_000],
+        [1_393_300, 652_697, 20_000],
+        [1_610_831, 958_386, 0],
       ],
-      investments: [1_557_011, 2_046_006, 2_569_230],
+      investments: [1_557_007, 2_045_997, 2_569_217],
       savings: [1_180_000, 2_260_000, 3_340_000],
-      netWorth: [2_477_011, 4_286_006, 5_909_230],
+      netWorth: [2_477_007, 4_285_997, 5_909_217],
       startingNetWorth: 700_007,
-      endingNetWorth: 5_909_230,
+      endingNetWorth: 5_909_217,
     }
     const mixed = calculateFinancialForecast(
       {

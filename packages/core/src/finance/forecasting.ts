@@ -7,52 +7,56 @@
  * Architecture Requirement: FR5 - Core calculations (premium features)
  */
 
-import { monthlyContributionCents } from '../services/balanceTracking'
-import {
-  type NormalizableFinancialItem,
-  calculateGrossPeriodIncome,
-  calculateNetPeriodIncome,
-  calculateTotalPeriodExpenses,
-} from './netIncome'
-import { type Frequency, validateAmount } from './normalization'
+import { annualContributionCents } from '../services/balanceTracking'
+import type { NormalizableFinancialItem } from './netIncome'
+import { type Frequency, calculateTotalAnnualNormalized, validateAmount } from './normalization'
 
 /**
  * ⚠️ THE UNIT BRIDGE OF THIS WHOLE MODULE. Read before touching either loop.
  *
- * Everything in `./netIncome` and `./normalization` speaks MONTHLY — a row's
- * frequency is folded into a monthly-normalized figure (`normalizeToMonthly`:
- * `amount × periodsPerYear / 12`, story 105.1), rounded per item. But an iteration of the
- * loops below is a YEAR. Multiplying by this constant is what reconciles the two.
+ * An iteration of the loops below is a YEAR, so every recurring money term is
+ * ANNUALISED, per item and exactly: `amount × periods per year`
+ * (`calculateTotalAnnualNormalized` / `normalizeToAnnual` in `./normalization`,
+ * `annualContributionCents` for balance rows). Story 111.1 (FR179, Lucas
+ * 2026-10-06). An annual 1,000.00 bill costs 1,000.00 a year, a weekly 1,000.00
+ * costs 52,000.00.
  *
- * ⚠️ Apply it to the RECURRING FLOW ONLY. `oneTimeEvents` amounts are already
- * absolute for the year they name, so scaling them is a 12x overstatement of
- * every windfall and every planned cost — see the projection loop.
+ * ⚠️ Annualise the RECURRING FLOW ONLY. `oneTimeEvents` amounts are already
+ * absolute for the year they name, so scaling them is a 12x (or 52x) overstatement
+ * of every windfall and every planned cost — see the projection loop.
  *
- * ⚠️ Apply it AFTER normalization, never instead of it — and understand that this
- * is a deliberate TRADE-OFF, not a free win. `weekly * 52` is arithmetically the
- * more exact annual figure; `round(amount * 52/12) * 12` is off by 4 cents on a
- * 100000/wk row (5199996 against 5200000). We take the 4 cents to keep the
+ * ⚠️ Growth comes FIRST: each item is grown and rounded to whole cents
+ * (`roundCents`, story 104.1), THEN annualised. A whole-cent amount × an integer
+ * period is exact (below `MAX_SAFE_INTEGER / 52`), so no second rounding rule
+ * enters. Annualising then growing would round a different number.
+ *
+ * ## ⚠️ This REVERSES a deliberate, pinned trade (story 111.1)
+ *
+ * Until 111.1 the forecast lifted each item's ROUNDED MONTHLY figure by this
+ * constant: `round(amount × periods / 12) × 12`. That was chosen "to keep the
  * forecast agreeing with every other surface in the app, all of which round in
- * MONTHLY space. Consistency beats per-surface precision here, because a user
- * comparing the Overview to a forecast must not see two different numbers.
+ * MONTHLY space", on the argument that "a user comparing the Overview to a
+ * forecast must not see two different numbers". The cost, MEASURED over amounts
+ * 0..1,999,999: an error of **-5..+6 cents per non-monthly item per year**, in
+ * EITHER direction (writing `x = amount × periods = 12k + r`, `round(x/12)` is
+ * `k` for `r <= 5`, short by `r`, and `k+1` for `r >= 6`, OVER by `12 - r`).
+ * Examples: annual 1000 → 996; weekly 100000 → 5199996; annual 1200018 →
+ * 1200024 (six cents HEAVY); a 50.00/week contribution → 260004.
+ * `monthly` items were always exact (`round(12a/12) × 12 = 12a`), so all-monthly
+ * data gives the same forecast before and after.
  *
- * ⚠️ The same trade costs the `annually` frequency more than it costs `weekly`,
- * and it is a REGRESSION against the raw-sum helpers this replaced: an `annually`
- * row of 1200013 cents round-trips as `round(1200013/12) * 12` = 1200012, one cent
- * light, where a raw sum reported it exactly.
+ * Lucas reversed it 2026-10-06 (story 111.1, Q1): a forecast is a multi-year
+ * projection where the cents compound, and no page puts a forecast figure beside
+ * a yearly-view figure. ⚠️ The divergence it creates: the Overview's yearly view
+ * (`PeriodTotal`) and the Report's section totals stay monthly-canonical × 12,
+ * so a forecast's first year at 0% growth can sit a few cents (up to ~6 per
+ * non-monthly entry) away from them. The docs' worked example: the yearly view
+ * shows $60,399.96, the forecast $60,400.00 (`how-totals-are-calculated.md`
+ * says so). Do not "fix" one to match the other without a product decision.
  *
- * The round-trip error is bounded by **-5..+6 cents per item per year**, and it
- * can go EITHER WAY. Writing `x = 12k + r` with `r` in 0..11, `round(x/12)` is
- * `k` for `r <= 5` (short by `r`) and `k+1` for `r >= 6` (OVER by `12 - r`).
- * MEASURED over x = 1..2_000_000: the error range is exactly -5..+6.
- * Counterexample to the "always light" reading: 1200018 -> 1200024, six cents
- * HEAVY. (An earlier version of this docblock said "up to 11 cents" and framed
- * the error as always light. 11 is the bound for TRUNCATION; `normalization.ts`
- * uses `Math.round`, so that figure was wrong in both magnitude and sign.)
- * This matches the app-wide monthly-canonical convention already recorded in
- * `deferred-work.md` ("annual entries display a few cents below the entered
- * amount"), so forecasting is now consistent with the rest of the app rather than
- * exact. Pinned by a test so the figure cannot drift unnoticed.
+ * `MONTHS_PER_YEAR` itself now lifts only the savings rows'
+ * `monthlyContribution`, which has no frequency and is monthly by definition, so
+ * `× 12` is already exact there.
  *
  * ## ⚠️ `calculateTotalIncome` / `calculateTotalExpenses` were DELETED 2026-09-24
  *
@@ -64,23 +68,23 @@ import { type Frequency, validateAmount } from './normalization'
  * 100000), which is why nothing noticed; for a `weekly` row they disagreed by the
  * 52/12 factor, silently.
  *
- * Rows now use `calculateGrossPeriodIncome` / `calculateTotalPeriodExpenses`
- * (`./netIncome`) lifted by `MONTHS_PER_YEAR`, so the money fields share one
- * period and reconcile: `income - expenses === netIncome` **for the RECURRING
- * terms only**.
+ * Rows now annualise each item through `calculateTotalAnnualNormalized` (story
+ * 111.1; frequency-normalised monthly figures × 12 from 2026-09-24 until then),
+ * so the money fields share one period and reconcile:
+ * `income - expenses === netIncome` **for the RECURRING terms only**.
  *
  * ⚠️ In any year matching a `oneTimeEvents` entry the row does NOT reconcile:
- * `netIncome` carries `netIncome * 12 + oneTimeForYear` while `income` and
+ * `netIncome` carries the annual recurring net `+ oneTimeForYear` while `income` and
  * `expenses` carry only the recurring annualized terms, so
  * `income - expenses === netIncome - oneTimeForYear`. The annualization WIDENED
- * this gap, because the recurring half is now 12x and the event half is not.
+ * this gap, because the recurring half is a year's worth and the event half is not.
  * Anything deriving a surplus or savings-rate from `row.income - row.expenses`
  * gets a different number than `row.netIncome` in exactly the years a user cares
  * about most. Pinned by the one-time-event test, which asserts the discrepancy.
  *
  * The row is in whole cents for the one-time term too (story 77.1): every event
  * dated INSIDE the projection window passes `validateAmount` and is then
- * rounded, exactly as `normalizeToMonthly` treats every recurring amount — see
+ * rounded, exactly as `normalizeToAnnual` treats every recurring amount — see
  * `eventAmountInCents`. (An event dated outside the window is never summed, so
  * it is never validated either; it contributes nothing.) Until 77.1 it was the
  * one money term that skipped both, so `0.5` left fractional savings and
@@ -233,8 +237,8 @@ export const SAVINGS_ROW_NEGATIVE = 'Savings account balances and contributions 
  * One investment or debt the projection tracks separately (story 100.2, FR165).
  * Money in cents. `balance` is a positive MAGNITUDE for both types (a debt of
  * 5,000.00 is `500000`, never `-500000`). `contribution` is the amount at
- * `frequency` cadence, as `/balance` stores it, and is normalised through
- * `monthlyContributionCents` (the single chokepoint), never read raw.
+ * `frequency` cadence, as `/balance` stores it, and is annualised through
+ * `annualContributionCents` (exactly, story 111.1), never read raw.
  *
  * Each year, after the year's net income and before the row is taken:
  *   - investment: `round(balance × (1 + annualReturn)) + annual contribution`
@@ -575,12 +579,12 @@ function prepareForecastData(data: ForecastInputData): {
       } else {
         balanceGrowthMultipliers.push(1)
       }
-      const annual =
-        monthlyContributionCents({
-          monthlyContribution: account.contribution,
-          frequency: account.frequency,
-        }) * MONTHS_PER_YEAR
-      // A finite contribution can normalise to Infinity (1e308 weekly). On an
+      // Exact: contribution × periods per year (story 111.1, FR179).
+      const annual = annualContributionCents({
+        monthlyContribution: account.contribution,
+        frequency: account.frequency,
+      })
+      // A finite contribution can annualise to Infinity (1e308 weekly). On an
       // investment the total check below would catch it, but a debt would just
       // floor to 0 silently, so refuse it here for both (code review 100.2).
       if (!Number.isFinite(annual)) throw new Error(FORECAST_OUT_OF_RANGE)
@@ -702,13 +706,17 @@ export function calculateFinancialForecast(
   // untouched.
   let baselineRowBalances = baseBalanceAccounts?.map((account) => account.balance)
   let currentDebts = baseStartingDebts
-  // Every figure a baseline row reports is ANNUAL: the monthly-normalized totals
-  // are lifted to a year once, here, rather than per iteration.
-  const baselineAnnualIncome = calculateGrossPeriodIncome(baselineData.income) * MONTHS_PER_YEAR
-  const baselineAnnualExpenses =
-    calculateTotalPeriodExpenses(baselineData.expenses) * MONTHS_PER_YEAR
-  const baselineAnnualNetIncome =
-    calculateNetPeriodIncome(baselineData.income, baselineData.expenses) * MONTHS_PER_YEAR
+  // Every figure a baseline row reports is ANNUAL: each item is annualised
+  // exactly (story 111.1, see the `MONTHS_PER_YEAR` docblock) once, here, rather
+  // than per iteration. `|| []` as the monthly helpers this replaced did.
+  const baselineAnnualIncome = calculateTotalAnnualNormalized(baselineData.income || [])
+  const baselineAnnualExpenses = calculateTotalAnnualNormalized(baselineData.expenses || [])
+  const baselineAnnualNetIncome = baselineAnnualIncome - baselineAnnualExpenses
+  // Story 111.1 AC 5: the projection's running-balance check refuses an
+  // overflowing income or expense there, but this loop has no such check, so a
+  // separate `baselineInput` (107.1) leaked Infinity/NaN into every row. A
+  // non-finite income or expense makes the difference non-finite too.
+  if (!Number.isFinite(baselineAnnualNetIncome)) throw new Error(FORECAST_OUT_OF_RANGE)
 
   for (let year = 1; year <= years; year++) {
     // Apply the year's net income BEFORE recording the row, so the row reports
@@ -762,7 +770,7 @@ export function calculateFinancialForecast(
     //
     // ⚠️ The recurring flow was never a term in that old gap and is not one now.
     // With a flat scenario this loop adds `baselineAnnualNetIncome` and the
-    // projection adds `netIncome * MONTHS_PER_YEAR` — identical values, so it
+    // projection adds `annualIncome - annualExpenses` — identical values, so it
     // cancels exactly at any scale. (An earlier version of this comment claimed
     // the 2026-09-24 annualization made the divergence "numerically LARGER, since
     // the flow driving it is now 12x". It did not, in either direction. Twelve
@@ -853,8 +861,11 @@ export function calculateFinancialForecast(
       amount: roundCents(item.amount * (1 + scenario.expenseGrowthRate) ** year),
     }))
 
-    // Calculate net income with adjustments
-    const netIncome = calculateNetPeriodIncome(adjustedIncome, adjustedExpenses)
+    // The year's recurring flow, each (already grown and rounded) item annualised
+    // exactly (story 111.1). Grow-then-annualise, never the reverse: the grown
+    // amount is whole cents, so `amount × periods` adds no second rounding.
+    const annualIncome = calculateTotalAnnualNormalized(adjustedIncome)
+    const annualExpenses = calculateTotalAnnualNormalized(adjustedExpenses)
 
     // Add one-time events for this year. Each amount is validated and rounded
     // (story 77.1). ⚠️ Do not reintroduce a `|| 0` on this sum to "absorb" a bad
@@ -865,10 +876,10 @@ export function calculateFinancialForecast(
       .reduce((sum, e) => sum + eventAmountInCents(e.amount), 0)
 
     // ⚠️ THE ONE-TIME EVENT IS NOT SCALED, AND MUST NOT BE.
-    // `netIncome` is a monthly-normalized RECURRING flow, so it needs lifting to
-    // a year. `oneTimeForYear` is already the absolute amount for THIS year — a
-    // 50,000.00 house deposit is 50,000.00, not 600,000.00. Writing this as
-    // `(netIncome + oneTimeForYear) * MONTHS_PER_YEAR` would overstate every
+    // The recurring flow is annualised per item (`annualIncome - annualExpenses`,
+    // story 111.1). `oneTimeForYear` is already the absolute amount for THIS year — a
+    // 50,000.00 house deposit is 50,000.00, not 600,000.00. Scaling it as though
+    // it were a monthly figure (× 12, as before 111.1) would overstate every
     // windfall and every planned cost twelvefold; the one-time-event tests above
     // fail on exactly that mutation, because their deltas are asserted as the
     // event's own amount.
@@ -887,7 +898,7 @@ export function calculateFinancialForecast(
           )
         : null
     const projDebtPaid = projStep?.countedDebtPaid ?? 0
-    const totalNetIncome = netIncome * MONTHS_PER_YEAR + oneTimeForYear - projDebtPaid
+    const totalNetIncome = annualIncome - annualExpenses + oneTimeForYear - projDebtPaid
 
     /**
      * ⚠️ APPLY THIS YEAR'S FLOW BEFORE RECORDING THE ROW (story `forecast-2`).
@@ -912,9 +923,11 @@ export function calculateFinancialForecast(
      * It was not until 2026-09-24: `calculateNetPeriodIncome` returns a MONTHLY
      * figure and this loop used to add one of them per YEARLY iteration, making
      * every savings and net-worth figure roughly a twelfth of the truth (a
-     * 1000.00/mo surplus accumulated 1000.00 a year instead of 12,000.00). The
-     * `* MONTHS_PER_YEAR` below is that fix. Do not remove it to "simplify" —
-     * see the `MONTHS_PER_YEAR` docblock for which term it may and may not touch.
+     * 1000.00/mo surplus accumulated 1000.00 a year instead of 12,000.00). That
+     * fix was `* MONTHS_PER_YEAR` on the monthly figure; since story 111.1 the
+     * flow is annualised per item instead (`calculateTotalAnnualNormalized`,
+     * above). Either way it is a YEAR of flow — see the `MONTHS_PER_YEAR`
+     * docblock for which term may and may not be annualised.
      */
     projSavings += totalNetIncome
     if (balanceAccounts && projStep) {
@@ -958,8 +971,8 @@ export function calculateFinancialForecast(
 
     const yearProjection: YearlyForecast = {
       year,
-      income: calculateGrossPeriodIncome(adjustedIncome) * MONTHS_PER_YEAR,
-      expenses: calculateTotalPeriodExpenses(adjustedExpenses) * MONTHS_PER_YEAR + projDebtPaid,
+      income: annualIncome,
+      expenses: annualExpenses + projDebtPaid,
       netIncome: totalNetIncome,
       savings: projSavings,
       investments: projInvestments,
