@@ -56,10 +56,17 @@ vi.mock('../../../lib/chartTheme', () => ({
   useChartColors: () => ({ grid: '#cccccc', axis: '#333333', tooltipText: '#333333' }),
 }))
 
-/** The text runs between `<wbr>`s; a plain string comes back as ONE run. */
+/**
+ * The text runs between `<wbr>`s; a plain string comes back as ONE run.
+ *
+ * Skips the Projections card's change line ("+$…"), which story 116.1 moved
+ * INSIDE the `<dd>` as a block span (a `<dl>` group may hold only `<dt>`/`<dd>`):
+ * it is a second figure under the headline one, not part of it.
+ */
 function runsOf(el: Element): string[] {
   const out = ['']
   for (const node of Array.from(el.childNodes)) {
+    if (node instanceof HTMLElement && node.matches('dd > span.block')) continue
     if (node.nodeName === 'WBR') out.push('')
     else out[out.length - 1] += node.textContent ?? ''
   }

@@ -136,3 +136,17 @@ describe('ProfilesPage header (story 63.1)', () => {
     expect(screen.queryByText('Switch Profile', { exact: true })).toBeNull()
   })
 })
+
+// Story 116.1 (FR184, A4): every state of `/profiles` is ONE `<main>` landmark.
+// Lighthouse saw only the paid one; loading and locked were never audited.
+describe('ProfilesPage landmarks (story 116.1)', () => {
+  it.each([
+    ['loading', { isLoading: true }],
+    ['locked', { hasAccess: false, subscriptionStatus: 'free' as const }],
+    ['active', { hasAccess: true, subscriptionStatus: 'active' as const, isAuthenticated: true }],
+  ])('the %s state is exactly one <main>', (_state, overrides) => {
+    mockStatus(overrides)
+    render(<ProfilesPage />)
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+  })
+})

@@ -1023,6 +1023,7 @@ export function HomePage() {
                           formatAmount={formatAmount}
                           mode={mode}
                           currency={currency}
+                          hiddenFromScreenReaders
                         />
                       </div>
                     )}
@@ -1395,6 +1396,14 @@ interface CategoryBarChartProps {
   formatAmount: (cents: number) => string
   mode: ReturnType<typeof useCurrencyPreferences>['mode']
   currency: ReturnType<typeof useCurrencyPreferences>['currency']
+  /**
+   * Hide the chart from screen readers (story 116.1, FR184, D4): ONLY when every
+   * bar is already on the page as text. True for the flows chart (its two bars
+   * are the Total Income / Total Expenses cards, same period). NOT for balances:
+   * the Overview shows no Savings / Investments / Assets / Debts totals as text,
+   * so that chart is the only place a screen reader can reach them.
+   */
+  hiddenFromScreenReaders?: boolean
 }
 
 /**
@@ -1415,9 +1424,16 @@ function CategoryBarChart({
   formatAmount,
   mode,
   currency,
+  hiddenFromScreenReaders = false,
 }: CategoryBarChartProps): React.ReactElement {
   return (
-    <div style={{ height: categoryChartHeight(data.length) }} data-testid={testId}>
+    // `aria-hidden` on the sized wrapper, not inside the lazy canvas, so the
+    // pending skeleton and the error fallback are hidden too.
+    <div
+      style={{ height: categoryChartHeight(data.length) }}
+      data-testid={testId}
+      aria-hidden={hiddenFromScreenReaders || undefined}
+    >
       <ErrorBoundary
         fallback={<div className="p-4 text-red-600 dark:text-red-400">Chart error occurred</div>}
       >
@@ -1489,7 +1505,14 @@ function BreakdownPie({
         </div>
       ) : (
         <>
-          <div className="h-[240px]">
+          {/* Hidden from screen readers (story 116.1, FR184, D4): the list below
+              reads out every slice's name and figure, so the plot adds nothing
+              to the accessibility tree but Recharts' unnamed `role="img"`
+              slices (Lighthouse `svg-img-alt`). On this sized wrapper, not
+              inside the lazy canvas, so the pending skeleton and the error
+              fallback are hidden too. The pie's tab stop is removed in
+              `BreakdownPieCanvas` (`rootTabIndex`). */}
+          <div className="h-[240px]" aria-hidden="true">
             <ErrorBoundary
               fallback={
                 <div className="p-4 text-red-600 dark:text-red-400">Chart error occurred</div>
@@ -1501,7 +1524,6 @@ function BreakdownPie({
                   placeholder height; this avoids the guess. */}
               <Suspense fallback={<ChartPending />}>
                 <BreakdownPieCanvas
-                  title={title}
                   data={data}
                   total={total}
                   isNarrow={isNarrow}

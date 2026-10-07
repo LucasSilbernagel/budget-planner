@@ -49,4 +49,17 @@ describe('the /retirement route gate', () => {
     // whole point of gating at the component rather than hiding with CSS.
     expect(screen.queryByRole('heading', { name: /when can you retire\?/i })).toBeNull()
   })
+
+  // Story 116.1 (FR184, A4): both branches are ONE `<main>` landmark. The
+  // hidden-planner branch was never audited by Lighthouse.
+  it.each([
+    ['planner on', true, /when can you retire\?/i],
+    ['planner hidden', false, /retirement planner is turned off/i],
+  ])('the %s page is exactly one <main>', async (_state, show, heading) => {
+    usePlannerVisibilityStore.setState({ showRetirementPlanner: show })
+    renderWithRouter(<RetirementPage />)
+
+    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+  })
 })

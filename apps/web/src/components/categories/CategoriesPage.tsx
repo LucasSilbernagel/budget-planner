@@ -28,25 +28,25 @@ export function CategoriesPage(): React.ReactElement {
 
   if (status.isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
+      <main className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div
           role="status"
           aria-label="Loading"
           className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
         />
-      </div>
+      </main>
     )
   }
 
   if (!status.hasAccess) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4 dark:bg-gray-900">
+      <main className="flex min-h-screen items-center justify-center bg-gray-50 p-4 dark:bg-gray-900">
         <PremiumPrompt
           featureName="Custom Categories"
           message="Create your own income and expense categories, assign them to your entries, and see your overview grouped the way you think about your money."
           asDialog={false}
         />
-      </div>
+      </main>
     )
   }
 

@@ -78,6 +78,11 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('heading', { level: 2, name: /^display$/i })).toBeInTheDocument()
   })
 
+  it('is exactly one <main> landmark (story 116.1, FR184)', () => {
+    render(<SettingsPage />)
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+  })
+
   it('consolidates the currency control here, with its global scope made explicit (AC-2)', () => {
     render(<SettingsPage />)
     // The relocated currency toggle (its accessible group name).

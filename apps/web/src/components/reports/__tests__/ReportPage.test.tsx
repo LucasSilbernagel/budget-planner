@@ -96,3 +96,17 @@ describe('ReportPage', () => {
     expect(screen.queryByTestId('premium-prompt')).not.toBeInTheDocument()
   })
 })
+
+// Story 116.1 (FR184, A4): the gate's loading and locked states are each ONE
+// `<main>` landmark (the active state is `FinancialSummaryReport`'s, stubbed
+// here and pinned in its own suite).
+describe('ReportPage landmarks (story 116.1)', () => {
+  it.each([
+    ['loading', { isLoading: true }],
+    ['locked', { hasAccess: false, subscriptionStatus: 'free' as const }],
+  ])('the %s state is exactly one <main>', (_state, overrides) => {
+    mockStatus(overrides)
+    render(<ReportPage />)
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+  })
+})

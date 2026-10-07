@@ -215,6 +215,43 @@ describe('a saved forecast is compared against today (story 107.1)', () => {
     expect(card.nextElementSibling?.textContent).toBe(`+${format(STORED_ENDING - todayEnding())}`)
   })
 
+  // Story 116.1 (FR184, A5): both summaries (the builder's "Forecast Summary" and
+  // the Projections cards) are real description lists. Lighthouse flagged the
+  // builder's `<dt>`/`<dd>` for sitting outside a `<dl>` (axe `dlitem`); the
+  // Projections cards had the same bug plus a `<p>` change line beside the
+  // `<dd>`, which axe's `definition-list` rule rejects inside a `<dl>` group.
+  it('both summaries are description lists: every term in a <dl>, groups hold only <dt>/<dd> (story 116.1)', async () => {
+    renderWithRouter(<ForecastingPage />)
+    fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Big plan' }))
+    fireEvent.click(screen.getByRole('button', { name: /projections/i }))
+
+    // Positive control: both summaries rendered (builder, CSS-hidden, + Projections).
+    const lists = Array.from(document.querySelectorAll('dl')).filter((dl) =>
+      dl.textContent?.includes('Starting Net Worth')
+    )
+    expect(lists).toHaveLength(2)
+    for (const dl of lists) {
+      const groups = Array.from(dl.children)
+      // Five cards: Starting / Ending Net Worth, Total Growth, Avg Annual Growth, vs. today.
+      expect(groups).toHaveLength(5)
+      for (const group of groups) {
+        expect(Array.from(group.children).map((child) => child.tagName)).toEqual(['DT', 'DD'])
+      }
+    }
+    // No term anywhere on the page sits outside a `<dl>` (the `dlitem` rule).
+    const terms = Array.from(document.querySelectorAll('dt'))
+    expect(terms.length).toBeGreaterThanOrEqual(10)
+    expect(terms.filter((dt) => dt.closest('dl') === null)).toHaveLength(0)
+
+    // The Projections "Ending Net Worth" change line is still there, now in its `<dd>`.
+    const ending = screen
+      .getAllByText('Ending Net Worth', { selector: 'dt' })
+      .find((dt) => dt.closest('.hidden') === null) as HTMLElement
+    const change = ending.nextElementSibling?.querySelector('span.block')
+    expect(change?.textContent).toMatch(/^[+-]?\S*\d/)
+  })
+
   it("a forecast reopened before today's data is ready shows on Projections once it is, even if it never recomputes (code review 107.1)", async () => {
     // A saved rate outside -100%..100% is flagged on load, so the builder never
     // recomputes until it is fixed (100.3 D9): only the "fill today's baseline"
