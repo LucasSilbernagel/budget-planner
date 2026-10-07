@@ -66,12 +66,6 @@ function truncate(text: string, maxLength: number): string {
 // ============================================================================
 
 /**
- * Forecast List Component
- *
- * Displays and manages saved forecasting scenarios.
- * Provides search, filter, and bulk action capabilities.
- */
-/**
  * Secondary text in a forecast row (story 115.2, FR183). A selected row is
  * `bg-blue-50`, where `.text-muted` (gray-500) measures 4.44:1, just below WCAG
  * AA's 4.5:1; `.text-body` (gray-600) is 6.94:1. An unselected row keeps the
@@ -81,6 +75,12 @@ function mutedOnRow(selected: boolean): 'text-body' | 'text-muted' {
   return selected ? 'text-body' : 'text-muted'
 }
 
+/**
+ * Forecast List Component
+ *
+ * Displays and manages saved forecasting scenarios.
+ * Provides search, filter, and bulk action capabilities.
+ */
 export function ForecastList({
   forecasts,
   onDelete,
@@ -281,7 +281,7 @@ export function ForecastList({
               type="button"
               onClick={handleBulkDelete}
               disabled={selectedCount === 0}
-              className="px-4 py-2 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 text-sm font-medium rounded-lg hover:bg-red-200 hover:text-red-800 dark:hover:bg-red-900/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 text-sm font-medium rounded-lg hover:bg-red-200 hover:text-red-800 dark:hover:bg-red-900/60 dark:hover:text-red-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Delete Selected
             </button>

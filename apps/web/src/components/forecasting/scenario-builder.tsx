@@ -2845,7 +2845,7 @@ function FinancialItemRow({
           <button
             type="button"
             onClick={onDelete}
-            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 hover:text-red-800 dark:hover:bg-red-900/60 transition-colors"
+            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 hover:text-red-800 dark:hover:bg-red-900/60 dark:hover:text-red-300 transition-colors"
           >
             Remove
           </button>
@@ -3146,7 +3146,7 @@ function OneTimeEventRow({
           <button
             type="button"
             onClick={() => onDelete(event.id)}
-            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 hover:text-red-800 dark:hover:bg-red-900/60 transition-colors"
+            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 hover:text-red-800 dark:hover:bg-red-900/60 dark:hover:text-red-300 transition-colors"
           >
             Remove
           </button>
@@ -3437,7 +3437,7 @@ function SavingsAccountRow({
             // Unique per row (AC-5): "Remove" alone would name every row's button
             // the same, and `getByRole` names are full-string.
             aria-label={rowName === '' ? 'Remove account' : `Remove ${rowName}`}
-            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 hover:text-red-800 dark:hover:bg-red-900/60 transition-colors"
+            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 hover:text-red-800 dark:hover:bg-red-900/60 dark:hover:text-red-300 transition-colors"
           >
             Remove
           </button>
@@ -3601,7 +3601,7 @@ function BalanceAccountRow({
             onClick={() => onDelete(account.id)}
             // Unique per row (AC-8): `getByRole` names are full-string.
             aria-label={rowName === '' ? 'Remove balance' : `Remove ${rowName}`}
-            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 hover:text-red-800 dark:hover:bg-red-900/60 transition-colors"
+            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 hover:text-red-800 dark:hover:bg-red-900/60 dark:hover:text-red-300 transition-colors"
           >
             Remove
           </button>
@@ -3745,7 +3745,7 @@ function AssetAccountRow({
             onClick={() => onDelete(account.id)}
             // Unique per row: `getByRole` names are full-string.
             aria-label={rowName === '' ? 'Remove asset' : `Remove ${rowName}`}
-            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 hover:text-red-800 dark:hover:bg-red-900/60 transition-colors"
+            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 hover:text-red-800 dark:hover:bg-red-900/60 dark:hover:text-red-300 transition-colors"
           >
             Remove
           </button>

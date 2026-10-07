@@ -67,4 +67,21 @@ describe('helper text and row buttons (story 115.2)', () => {
     )
     expect(pairs).toHaveLength(6)
   })
+
+  it('a red-800 hover never reaches dark mode', () => {
+    // `.hover\:text-red-800:hover` (two classes' worth of specificity) outranks
+    // `.dark\:text-red-300` (one) inside the dark media query, so without a
+    // `dark:hover:` text colour a hovered button turns red-800 on dark red
+    // (review 2026-10-07; measured in the compiled CSS).
+    const bare = appTsx(SRC).flatMap((path) =>
+      readFileSync(path, 'utf-8')
+        .split('\n')
+        .flatMap((line, i) =>
+          /(^|[\s"'`])hover:text-red-800\b/.test(line) && !/\bdark:hover:text-red-300\b/.test(line)
+            ? [`${relative(SRC, path)}:${i + 1}`]
+            : []
+        )
+    )
+    expect(bare).toEqual([])
+  })
 })
