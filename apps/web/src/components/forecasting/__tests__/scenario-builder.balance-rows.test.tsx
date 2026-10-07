@@ -892,6 +892,98 @@ describe('the per-row outcome and the totals (AC-10)', () => {
   })
 })
 
+describe('over-contribution without savings rows (story 112.1, FR180)', () => {
+  it('blames counted investment contributions even when there are no savings rows (AC-1)', async () => {
+    // The fixture above without its savings row: 1,000.00/mo left over, 1,500.00/mo
+    // into an investment NOT flagged as an expense.
+    useIncomeStore.setState({ incomeSources: [income(500_000)] })
+    useExpenseStore.setState({ expenses: [expense(400_000)] })
+    setEntries([entry({ id: 'e-1', name: 'Fund', monthlyContribution: 150_000 })])
+    const format = formatter()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+
+    expect(screen.getByText('No savings accounts in this scenario')).toBeInTheDocument()
+    const line = await screen.findByTestId('savings-unassigned')
+    // (12,000.00 − 18,000.00) × 10.
+    expect(line.textContent).toBe(
+      `Your contributions are ${format(6_000_000)} more than you have left over by year 10`
+    )
+    expect(line.className).toContain('text-amber-800')
+  })
+
+  it('shows no line without savings rows when the deficit is in the income itself (AC-3)', async () => {
+    useIncomeStore.setState({ incomeSources: [income(400_000)] })
+    useExpenseStore.setState({ expenses: [expense(500_000)] })
+    setEntries([entry({ id: 'e-1', name: 'Fund', monthlyContribution: 0 })])
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+
+    expect(screen.queryByTestId('savings-unassigned')).toBeNull()
+  })
+
+  it('shows no line without savings rows for a rounding-only shortfall (111.1 review D1)', async () => {
+    // 5,000.00/mo in, 100.00/wk out: 4,566.67/mo left over once rounded monthly,
+    // 54,800.00 a year exactly. Contributing the rounded 4,566.67/mo takes 54,800.04
+    // a year: −0.04 a year, −0.40 by year 10, within the 0.60 drift tolerance
+    // (6¢ × 1 weekly entry × 10 years). Not over-contribution.
+    useIncomeStore.setState({ incomeSources: [income(500_000)] })
+    useExpenseStore.setState({ expenses: [expense(10_000, { frequency: 'weekly' })] })
+    setEntries([entry({ id: 'e-1', name: 'Fund', monthlyContribution: 456_667 })])
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+
+    expect(screen.queryByTestId('savings-unassigned')).toBeNull()
+  })
+
+  it('hides the line when the last savings row goes until the recompute, then shows the no-rows figure (AC-4)', async () => {
+    useIncomeStore.setState({ incomeSources: [income(500_000)] })
+    useExpenseStore.setState({ expenses: [expense(400_000)] })
+    useSavingsStore.setState({
+      savingsGoals: [savingsRow({ id: 'g-1', name: 'Pot', currentBalance: 100_000 })],
+    })
+    setEntries([entry({ id: 'e-1', name: 'Fund', monthlyContribution: 150_000 })])
+    const format = formatter()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+    expect(screen.getByTestId('savings-unassigned').className).toContain('text-amber-800')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Pot' }))
+    // Before the debounced recompute: the result describes one row, the list has none.
+    expect(screen.queryByTestId('savings-unassigned')).toBeNull()
+    await waitFor(
+      () =>
+        expect(screen.getByTestId('savings-unassigned').textContent).toBe(
+          `Your contributions are ${format(6_000_000)} more than you have left over by year 10`
+        ),
+      { timeout: 3000 }
+    )
+    expect(screen.getByTestId('savings-unassigned').className).toContain('text-amber-800')
+  })
+
+  it('hides the no-rows line when the first savings row is added until the recompute (AC-4)', async () => {
+    useIncomeStore.setState({ incomeSources: [income(500_000)] })
+    useExpenseStore.setState({ expenses: [expense(400_000)] })
+    setEntries([entry({ id: 'e-1', name: 'Fund', monthlyContribution: 150_000 })])
+    const format = formatter()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+    expect(screen.getByTestId('savings-unassigned').className).toContain('text-amber-800')
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Add Account' }))
+    // Before the debounced recompute: the result describes no rows, the list has one.
+    expect(screen.queryByTestId('savings-unassigned')).toBeNull()
+    // The new row holds 0 and contributes 0, so the remainder is unchanged.
+    await waitFor(
+      () =>
+        expect(screen.getByTestId('savings-unassigned').textContent).toBe(
+          `Your contributions are ${format(6_000_000)} more than you have left over by year 10`
+        ),
+      { timeout: 3000 }
+    )
+  })
+})
+
 describe('each money field reports its own validity (AC-9)', () => {
   it('two bad fields in one row both block Save, and fixing one does not unblock the other', async () => {
     useIncomeStore.setState({ incomeSources: [income(500_000)] })
