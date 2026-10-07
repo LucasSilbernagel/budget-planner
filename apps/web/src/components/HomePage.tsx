@@ -1680,6 +1680,10 @@ function LockedTileContent({
  *      raising the row alone is an honest "pay it down faster" what-if. Only a
  *      row flagged "Payment already in Expenses" (every debt of a forecast saved
  *      before version 5) still leaves the cash to its Expenses line.
+ *   6. `currentData.assets` (story 114.1) — the asset rows' total, a CONSTANT
+ *      (no growth, no contribution). It lifts every year's net worth by the
+ *      same amount, so the starting net worth matches the Overview's, but it
+ *      changes no growth figure. Not scenario-expressive for this copy.
  * ⚠️ `newIncome`/`newExpenses` are **not read by the CALCULATION** — they
  * are the SAVE FORMAT for the builder's rows, which reload depends on. Do not cite
  * them as scenario-expressive, and do not delete them as dead.

@@ -191,7 +191,7 @@ async function setYears(years: number) {
 }
 
 describe('rows replace the investments total (AC-1, AC-11)', () => {
-  it('lists the active profile investments and debts in store order, with every field; assets and other profiles are left out', () => {
+  it('lists the active profile investments and debts in store order, with every field; assets (their own section since 114.1) and other profiles are left out', () => {
     setEntries([
       entry({ id: 'e-1', name: 'Pension', currentBalance: 1_000_000, monthlyContribution: 5_000 }),
       entry({ id: 'e-2', name: 'House', type: 'asset', currentBalance: 30_000_000 }),
@@ -202,6 +202,10 @@ describe('rows replace the investments total (AC-1, AC-11)', () => {
     render(<ScenarioBuilder onSave={vi.fn()} />)
 
     expect(rowNames()).toEqual(['Pension', 'Car loan', 'ISA'])
+    // Story 114.1: the asset is an Assets row instead, never a balance row.
+    expect(
+      within(screen.getByRole('region', { name: 'Assets' })).getByLabelText('Asset Name, row 1')
+    ).toHaveValue('House')
     expect(screen.getByLabelText('Type for Pension')).toHaveValue('investment')
     expect(screen.getByLabelText('Type for Car loan')).toHaveValue('debt')
     expect(screen.getByLabelText('Balance for Pension')).toHaveValue('10,000.00')
@@ -225,7 +229,7 @@ describe('rows replace the investments total (AC-1, AC-11)', () => {
     ).toBeInTheDocument()
     expect(
       within(section()).getByText(
-        "What-if only: changes here don't change your Balance Tracking page. Debts count against your starting net worth. Things you own outright (assets) aren't included."
+        "What-if only: changes here don't change your Balance Tracking page. Debts count against your starting net worth."
       )
     ).toBeInTheDocument()
   })
@@ -335,10 +339,17 @@ describe('the seed (AC-6)', () => {
     render(<ScenarioBuilder onSave={vi.fn()} />)
     expect(syncPendingCalls.length).toBeGreaterThan(0)
     expect(syncPendingCalls.every((empty) => empty === false)).toBe(true)
-    // Control: an asset alone is NOT something to seed.
+    // Story 114.1 flipped this: an asset alone IS something to seed now (it
+    // seeds an Assets row). Before, it was the control for "not in scope".
     syncPendingCalls.length = 0
     document.body.innerHTML = ''
     setEntries([entry({ id: 'e-2', name: 'House', type: 'asset', currentBalance: 100_000 })])
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    expect(syncPendingCalls.at(-1)).toBe(false)
+    // Control: an empty store is still nothing to seed.
+    syncPendingCalls.length = 0
+    document.body.innerHTML = ''
+    setEntries([])
     render(<ScenarioBuilder onSave={vi.fn()} />)
     expect(syncPendingCalls.at(-1)).toBe(true)
   })
@@ -881,6 +892,98 @@ describe('the per-row outcome and the totals (AC-10)', () => {
   })
 })
 
+describe('over-contribution without savings rows (story 112.1, FR180)', () => {
+  it('blames counted investment contributions even when there are no savings rows (AC-1)', async () => {
+    // The fixture above without its savings row: 1,000.00/mo left over, 1,500.00/mo
+    // into an investment NOT flagged as an expense.
+    useIncomeStore.setState({ incomeSources: [income(500_000)] })
+    useExpenseStore.setState({ expenses: [expense(400_000)] })
+    setEntries([entry({ id: 'e-1', name: 'Fund', monthlyContribution: 150_000 })])
+    const format = formatter()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+
+    expect(screen.getByText('No savings accounts in this scenario')).toBeInTheDocument()
+    const line = await screen.findByTestId('savings-unassigned')
+    // (12,000.00 − 18,000.00) × 10.
+    expect(line.textContent).toBe(
+      `Your contributions are ${format(6_000_000)} more than you have left over by year 10`
+    )
+    expect(line.className).toContain('text-amber-800')
+  })
+
+  it('shows no line without savings rows when the deficit is in the income itself (AC-3)', async () => {
+    useIncomeStore.setState({ incomeSources: [income(400_000)] })
+    useExpenseStore.setState({ expenses: [expense(500_000)] })
+    setEntries([entry({ id: 'e-1', name: 'Fund', monthlyContribution: 0 })])
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+
+    expect(screen.queryByTestId('savings-unassigned')).toBeNull()
+  })
+
+  it('shows no line without savings rows for a rounding-only shortfall (111.1 review D1)', async () => {
+    // 5,000.00/mo in, 100.00/wk out: 4,566.67/mo left over once rounded monthly,
+    // 54,800.00 a year exactly. Contributing the rounded 4,566.67/mo takes 54,800.04
+    // a year: −0.04 a year, −0.40 by year 10, within the 0.60 drift tolerance
+    // (6¢ × 1 weekly entry × 10 years). Not over-contribution.
+    useIncomeStore.setState({ incomeSources: [income(500_000)] })
+    useExpenseStore.setState({ expenses: [expense(10_000, { frequency: 'weekly' })] })
+    setEntries([entry({ id: 'e-1', name: 'Fund', monthlyContribution: 456_667 })])
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+
+    expect(screen.queryByTestId('savings-unassigned')).toBeNull()
+  })
+
+  it('hides the line when the last savings row goes until the recompute, then shows the no-rows figure (AC-4)', async () => {
+    useIncomeStore.setState({ incomeSources: [income(500_000)] })
+    useExpenseStore.setState({ expenses: [expense(400_000)] })
+    useSavingsStore.setState({
+      savingsGoals: [savingsRow({ id: 'g-1', name: 'Pot', currentBalance: 100_000 })],
+    })
+    setEntries([entry({ id: 'e-1', name: 'Fund', monthlyContribution: 150_000 })])
+    const format = formatter()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+    expect(screen.getByTestId('savings-unassigned').className).toContain('text-amber-800')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Pot' }))
+    // Before the debounced recompute: the result describes one row, the list has none.
+    expect(screen.queryByTestId('savings-unassigned')).toBeNull()
+    await waitFor(
+      () =>
+        expect(screen.getByTestId('savings-unassigned').textContent).toBe(
+          `Your contributions are ${format(6_000_000)} more than you have left over by year 10`
+        ),
+      { timeout: 3000 }
+    )
+    expect(screen.getByTestId('savings-unassigned').className).toContain('text-amber-800')
+  })
+
+  it('hides the no-rows line when the first savings row is added until the recompute (AC-4)', async () => {
+    useIncomeStore.setState({ incomeSources: [income(500_000)] })
+    useExpenseStore.setState({ expenses: [expense(400_000)] })
+    setEntries([entry({ id: 'e-1', name: 'Fund', monthlyContribution: 150_000 })])
+    const format = formatter()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+    expect(screen.getByTestId('savings-unassigned').className).toContain('text-amber-800')
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Add Account' }))
+    // Before the debounced recompute: the result describes no rows, the list has one.
+    expect(screen.queryByTestId('savings-unassigned')).toBeNull()
+    // The new row holds 0 and contributes 0, so the remainder is unchanged.
+    await waitFor(
+      () =>
+        expect(screen.getByTestId('savings-unassigned').textContent).toBe(
+          `Your contributions are ${format(6_000_000)} more than you have left over by year 10`
+        ),
+      { timeout: 3000 }
+    )
+  })
+})
+
 describe('each money field reports its own validity (AC-9)', () => {
   it('two bad fields in one row both block Save, and fixing one does not unblock the other', async () => {
     useIncomeStore.setState({ incomeSources: [income(500_000)] })
@@ -984,6 +1087,13 @@ describe('the builder is defensive on its own (AC-14, 100.1 review)', () => {
     )
     expect(rowNames()).toEqual(['Ok'])
     expect(screen.getByLabelText('Balance for Ok')).toHaveValue('10.00')
+    // Story 114.1: an asset entry inside `balanceAccounts` is still dropped, not
+    // moved to the Assets section: the assets channel is `assetAccounts`.
+    expect(
+      within(screen.getByRole('region', { name: 'Assets' })).queryAllByLabelText(
+        /^Asset Name, row \d+$/
+      )
+    ).toEqual([])
 
     document.body.innerHTML = ''
     render(
@@ -1257,10 +1367,16 @@ describe('a forecast saved before version 5 keeps its figures (story 102.2, AC-6
       const recomputed = onResult.mock.calls.at(-1)?.[0]
       // Story 107.1 (D2): the BASELINE is today's data (empty stores here), not the
       // saved rows', so only the scenario's own figures are the T0 ones.
+      // Story 114.1: the builder always sends an asset total (0 here: a forecast
+      // saved before version 6 has no asset rows), so every recomputed row also
+      // carries `assets: 0`. Every figure is still the T0 one.
       expect({
         projection: recomputed?.projection,
         summary: recomputed?.summary,
-      }).toEqual({ projection: V4_RESULT.projection, summary: V4_RESULT.summary })
+      }).toEqual({
+        projection: V4_RESULT.projection.map((row) => ({ ...row, assets: 0 })),
+        summary: V4_RESULT.summary,
+      })
     }
   )
 
@@ -1486,9 +1602,29 @@ describe('each investment row has its own annual return (story 100.3)', () => {
     // sequential gate run, past the 5 s default.
   }, 15_000)
 
-  // `5abc`, `1,5` and `1e2` (code review): `parseFloat` alone would read 5%, 1%
-  // and 100% from them, silently.
-  for (const bad of ['', 'abc', '150', '-101', '5abc', '1,5', '1e2']) {
+  it('a decimal comma is the decimal point: 2,5 means 2.5% (story 110.1, D3)', async () => {
+    fillFixture()
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    await waitForResult()
+    const calls = engineRows.length
+
+    fireEvent.change(rateField('Fund'), { target: { value: '2,5' } })
+
+    await waitFor(() => expect(engineRows.length).toBeGreaterThan(calls), { timeout: 3000 })
+    // Fund is the fixture's only investment row (engine rows carry no name).
+    const fund = (engineRows.at(-1) as Array<{ type: string; annualReturn?: unknown }>).find(
+      (row) => row.type === 'investment'
+    )
+    expect(fund?.annualReturn).toBeCloseTo(0.025, 12)
+    // The field keeps what was typed (no blur reformat) and carries no error.
+    expect(rateField('Fund')).toHaveValue('2,5')
+    expect(rateField('Fund')).not.toHaveAttribute('aria-invalid')
+  })
+
+  // `5abc` and `1e2` (code review): `parseFloat` alone would read 5% and 100% from
+  // them, silently. A SINGLE decimal comma is a rate since story 110.1 (D3), but
+  // `2,5,1`, `1.000,5` and `1,000.5` stay ambiguous and are refused.
+  for (const bad of ['', 'abc', '150', '-101', '5abc', '1e2', '2,5,1', '1.000,5', '1,000.5']) {
     it(`"${bad}" is refused: error on the field, recompute and Save held, last result kept (AC-9)`, async () => {
       fillFixture()
       const format = formatter()

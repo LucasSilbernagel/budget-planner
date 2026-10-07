@@ -28,6 +28,8 @@
  * number is still there to be rejected.
  */
 
+import { decimalCommaToPoint } from './percent-text'
+
 /** Separators assumed when no locale is supplied (the app's neutral default). */
 const FALLBACK_GROUP_SEPARATOR = ','
 const FALLBACK_DECIMAL_SEPARATOR = '.'
@@ -140,7 +142,9 @@ export function parseCurrencyToCents(value: string, locale?: string): number {
 
 /**
  * Parses a percentage string to a decimal (strict). "6" / "6%" / "6.5" → 0.06 /
- * 0.065. Empty string → 0.
+ * 0.065. Empty string → 0. A single decimal comma reads as the point ("2,5" →
+ * 0.025, story 110.1, D3); it is converted BEFORE every check below, so an
+ * ambiguous form ("1.000,5", "2,5,1") keeps a comma and fails `non-numeric`.
  *
  * @throws Error on malformed or negative input.
  */
@@ -153,7 +157,7 @@ export function parsePercentageToDecimal(value: string): number {
     return 0
   }
 
-  const trimmed = value.trim()
+  const trimmed = decimalCommaToPoint(value.trim())
 
   if ((trimmed.match(/\./g) || []).length > 1) {
     throw new Error('Invalid percentage: multiple decimal points not allowed')

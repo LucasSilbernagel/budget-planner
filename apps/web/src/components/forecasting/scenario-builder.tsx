@@ -48,6 +48,7 @@ import { useStoresHydrated } from '../../hooks/useStoresHydrated'
 import { signedAmount, vsTodayCents, withTodayBaseline } from '../../lib/forecasting/today-baseline'
 import { type MoneyDraft, parseMoneyDraft, reformatAmountOnBlur } from '../../lib/money-input'
 import { exceedsMoneyLimit, moneyLimitMessage } from '../../lib/money-limit'
+import { decimalCommaToPoint } from '../../lib/percent-text'
 import { isKnownFrequency } from '../../lib/readable-rows'
 import { sanitizeMoneyChange, sanitizeWithCaret } from '../../lib/sanitized-input'
 import { investmentContributionItems } from '../../lib/savings/investment-contribution-items'
@@ -133,6 +134,17 @@ export interface LocalBalanceAccount {
    * Absent when the row has no source (unlinked, added here, older forecasts).
    */
   paidByExpenseName?: string
+}
+
+/**
+ * One asset (a house, a car) as a what-if row (story 114.1, FR182). Money in
+ * cents. A CONSTANT (D7): no growth, no contribution, so the row is only a name
+ * and a value. Never written back to the balance store (D0).
+ */
+export interface LocalAssetAccount {
+  id: string
+  name: string
+  balance: number
 }
 
 /**
@@ -314,12 +326,20 @@ export const NO_SAVINGS_ACCOUNTS = 'No savings accounts in this scenario'
 
 /**
  * Copy for the Investments & Debts section (story 100.2, AC-11). Lucas may tweak
- * it; a copy test pins it. The last two sentences say why the starting net worth
- * is not the Overview's: debts now count, assets do not (D1).
+ * it; a copy test pins it. The last sentence says debts count against the
+ * starting net worth. (Until story 114.1 a third one said assets were not
+ * included; they have their own section now.)
  */
 export const BALANCE_WHAT_IF_NOTE =
-  "What-if only: changes here don't change your Balance Tracking page. Debts count against your starting net worth. Things you own outright (assets) aren't included."
+  "What-if only: changes here don't change your Balance Tracking page. Debts count against your starting net worth."
 export const NO_BALANCE_ACCOUNTS = 'No investments or debts in this scenario'
+/**
+ * Copy for the Assets section (story 114.1, AC-5). Lucas may tweak it; a copy
+ * test pins it. The second sentence is D7: an asset does not grow.
+ */
+export const ASSET_WHAT_IF_NOTE =
+  "What-if only: changes here don't change your Balance Tracking page. An asset keeps the value you enter every year."
+export const NO_ASSET_ACCOUNTS = 'No assets in this scenario'
 /** The same label `/balance` gives the flag (story 45.1). */
 const NOT_FROM_LEFT_OVER_LABEL = 'Not taken from the money left over'
 /** The same flag on a debt row (story 102.2, D2): the payment is already an Expenses line. */
@@ -533,14 +553,42 @@ function savingsFromSaved(inputs: ScenarioInputs | undefined): LocalSavingsAccou
   return []
 }
 
-/** A balance row's type, or `null` for anything else (assets, corrupt values). */
+/**
+ * A balance row's type, or `null` for anything else: corrupt values, and assets,
+ * which have their own rows (story 114.1, `assetsFromStore`).
+ */
 function balanceRowType(type: unknown): LocalBalanceAccount['type'] | null {
   return type === 'investment' || type === 'debt' ? type : null
 }
 
 /**
+ * Build what-if asset rows from the active profile's balance entries of type
+ * `asset`, in store order, for a FRESH scenario (story 114.1, AC-3, D7).
+ *
+ * - `balance` is the stored value as a non-negative amount: negative or
+ *   non-finite seeds 0, the same coercion as an investment or savings row.
+ *   ⚠️ Known, CLOSED by decision (103.1 D3 residual, 2026-10-06): the Overview
+ *   sums a stored-negative asset RAW (`balanceStore.ts` `totalBalanceOfType`), so
+ *   for such a row the two starting net worths differ. Every write path refuses
+ *   a negative balance since story 103.1, so only a legacy or hand-edited row can.
+ *
+ * ⚠️ Fields mapped explicitly, as in `itemsFromStore`: a spread would carry
+ * `profileId` and friends into the saved JSON.
+ */
+function assetsFromStore(entries: readonly ClientBalanceTracking[]): LocalAssetAccount[] {
+  return entries
+    .filter((entry) => entry.type === 'asset')
+    .map((entry, index) => ({
+      id: `asset-seeded-${index}`,
+      name: typeof entry.name === 'string' ? entry.name : '',
+      balance: nonNegativeCents(entry.currentBalance),
+    }))
+}
+
+/**
  * Build what-if investment/debt rows from the active profile's balance entries,
- * for a FRESH scenario (story 100.2, AC-6). Assets are not rows (D1).
+ * for a FRESH scenario (story 100.2, AC-6). Assets are not balance rows (D1);
+ * since story 114.1 they are asset rows (`assetsFromStore`).
  *
  * - `contribution` is the entry's RAW `monthlyContribution` at its own
  *   `frequency`, so the row shows what `/balance` shows; the engine normalises it.
@@ -641,12 +689,14 @@ function debtPaymentFromExpense(expense: { amount: unknown; frequency: unknown }
   }
 }
 
-/** The four kinds of what-if row a scenario holds. */
+/** The five kinds of what-if row a scenario holds. */
 export interface ForecastRows {
   incomeItems: LocalFinancialItem[]
   expenseItems: LocalFinancialItem[]
   savingsAccounts: LocalSavingsAccount[]
   balanceAccounts: LocalBalanceAccount[]
+  /** Story 114.1. */
+  assetAccounts: LocalAssetAccount[]
 }
 
 /**
@@ -663,6 +713,9 @@ export interface ForecastRows {
  *   money from savings into investments, debts lower net worth and fall by their
  *   payment. Story 100.3: each investment row's own rate; a debt row's hidden
  *   rate is not sent (the engine would ignore it anyway).
+ * - Story 114.1: `assets` is the asset rows' sum, ALWAYS sent (0 with no rows),
+ *   so the scenario and today's baseline carry the same keys (107.1 AC-5). The
+ *   engine adds it to every year's net worth; nothing grows (D7).
  */
 export function forecastInputFromRows(rows: ForecastRows): ForecastInputData {
   return {
@@ -694,6 +747,7 @@ export function forecastInputFromRows(rows: ForecastRows): ForecastInputData {
         ...(type === 'investment' ? { annualReturn } : {}),
       })
     ),
+    assets: rows.assetAccounts.reduce((sum, account) => sum + account.balance, 0),
   }
 }
 
@@ -714,6 +768,8 @@ export function forecastInputFromRows(rows: ForecastRows): ForecastInputData {
  *   (`normalizeToMonthly`). It keeps the FULL expenses (story 102.2): it mirrors
  *   /savings, where the linked expense is still an ordinary expense. Automatic
  *   rows then seed 0; the builder must still render (AC-3).
+ * - Asset rows (story 114.1): HERE, not beside this mapping, so today's baseline
+ *   carries the assets too and an unedited scenario still equals it (107.1 AC-5).
  */
 export function rowsFromStores(stores: {
   income: ReturnType<typeof useIncomeSources>
@@ -743,6 +799,7 @@ export function rowsFromStores(stores: {
     unfilteredExpenseItems: itemsFromStore(stores.expenses, 'expense'),
     savingsAccounts: savingsFromStore(stores.savingsGoals, allocations),
     balanceAccounts: seeded.rows,
+    assetAccounts: assetsFromStore(stores.balanceEntries),
   }
 }
 
@@ -750,6 +807,7 @@ export function rowsFromStores(stores: {
  * Today's data for the forecast (story 107.1, FR175): the active profile's
  * stores as what-if rows (`rows`, which seed a fresh builder) and as engine input
  * (`data`, the BASELINE of every forecast, D1). Both are `null` until `ready`.
+ * "Today" includes the assets (story 114.1), so its net worth is the Overview's.
  *
  * ⚠️⚠️ WHY `ready` WAITS (story 62.1, and its code review). All four store hooks
  * are zustand selectors, and zustand passes `getInitialState` to React as
@@ -780,9 +838,13 @@ export function useCurrentForecastData(): {
   const storeSavingsGoals = useSavingsGoals()
   // Profile-scoped (`balanceStore.ts` selector docblock); never `state.entries`.
   const storeBalanceEntries = useBalanceEntries()
-  // The in-scope rows (story 100.2, D1): investments and debts, not assets.
+  // The in-scope rows: investments and debts (story 100.2, D1), and since story
+  // 114.1 assets, which seed rows of their own.
   const storeBalanceRowCount = useMemo(
-    () => storeBalanceEntries.filter((entry) => balanceRowType(entry.type) !== null).length,
+    () =>
+      storeBalanceEntries.filter(
+        (entry) => balanceRowType(entry.type) !== null || entry.type === 'asset'
+      ).length,
     [storeBalanceEntries]
   )
   // The solver inputs /savings uses, built by the SAME mapping (story 100.1, AC-3).
@@ -798,7 +860,7 @@ export function useCurrentForecastData(): {
     // to seed.
     storeSavingsGoals.length === 0 &&
     // ROWS again (story 100.2), not the investment total: a debt-only user, or an
-    // investment at 0, is still something to seed.
+    // investment at 0, is still something to seed. So is an asset-only user (114.1).
     storeBalanceRowCount === 0
   const isInitialSyncPending = useIsInitialSyncPending(nothingToSeed)
   const ready = storesHydrated && !isInitialSyncPending
@@ -912,6 +974,27 @@ function balanceFromSaved(
 }
 
 /**
+ * Rebuild what-if asset rows from a saved forecast's inputs (story 114.1,
+ * AC-10). A forecast saved before version 6 has no `assetAccounts` and reloads
+ * with NO asset rows. Defensive on its own, as `balanceFromSaved` is: a
+ * non-array is ignored, a non-object entry becomes a blank row at 0, a
+ * non-string name blank, and a non-finite or negative value 0.
+ */
+function assetsFromSaved(inputs: ScenarioInputs | undefined): LocalAssetAccount[] {
+  const saved: unknown = inputs?.assetAccounts
+  if (!Array.isArray(saved)) return []
+  return saved.map((entry: unknown, index) => {
+    const account =
+      typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : {}
+    return {
+      id: `asset-loaded-${index}`,
+      name: typeof account['name'] === 'string' ? account['name'] : '',
+      balance: nonNegativeCents(account['balance']),
+    }
+  })
+}
+
+/**
  * Rebuild local one-time events from a saved scenario. The persisted events may
  * carry a `name` (the builder writes one) even though `ForecastingScenario` types
  * `oneTimeEvents` as `{ year, amount }`; default the name when absent (e.g. an
@@ -995,8 +1078,9 @@ export function ScenarioBuilder({
   /**
    * The fields currently holding a value that was NOT written to state (story
    * 81.1, D4): income, expense and event amounts keyed by row id, and the what-if
-   * rows' fields keyed `<rowId>:<field>` (balance, contribution, and since story
-   * 100.3 an investment row's `annualReturn`). Each row reports
+   * rows' fields keyed `<rowId>:<field>` (balance, contribution, since story
+   * 100.3 an investment row's `annualReturn`, and since story 114.1 an asset
+   * row's `value`). Each row reports
    * from its own change handler — synchronously, in the same batch as any write —
    * so the debounced recompute below never runs with a bad value it cannot see.
    * A row that unmounts (removed, or re-keyed by a load) withdraws its key.
@@ -1058,6 +1142,11 @@ export function ScenarioBuilder({
       ),
     [balanceAccounts]
   )
+  // Asset rows (story 114.1). Their sum is computed where the engine input is
+  // built (`forecastInputFromRows`), like every other total.
+  const [assetAccounts, setAssetAccounts] = useState<LocalAssetAccount[]>(() =>
+    initialForecast ? assetsFromSaved(initialForecast.inputs) : []
+  )
   const [oneTimeEvents, setOneTimeEvents] = useState<OneTimeEvent[]>(() =>
     initialForecast ? eventsFromSaved(initialForecast.scenario.oneTimeEvents) : []
   )
@@ -1105,6 +1194,8 @@ export function ScenarioBuilder({
   const savingsRowsTouched = useRef(false)
   // Investment/debt rows (story 100.2): the same rule, through `editBalanceAccounts`.
   const balanceRowsTouched = useRef(false)
+  // Asset rows (story 114.1): the same rule, through `editAssetAccounts`.
+  const assetRowsTouched = useRef(false)
 
   useEffect(() => {
     const seeded = today.rows
@@ -1121,6 +1212,7 @@ export function ScenarioBuilder({
       )
     }
     if (!savingsRowsTouched.current) setSavingsAccounts(seeded.savingsAccounts)
+    if (!assetRowsTouched.current) setAssetAccounts(seeded.assetAccounts)
     setHasSeeded(true)
   }, [hasSeeded, readyToSeed, today.rows])
 
@@ -1212,6 +1304,7 @@ export function ScenarioBuilder({
   const saveOutcomeRef = useRef<HTMLDivElement>(null)
   const savingsHeadingId = useId()
   const balanceHeadingId = useId()
+  const assetHeadingId = useId()
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   /**
@@ -1311,6 +1404,7 @@ export function ScenarioBuilder({
     formData,
     savingsAccounts,
     balanceAccounts,
+    assetAccounts,
     oneTimeEvents,
     invalidAmountRows,
     // Story 107.1 (D1): the baseline is today, so a store change recomputes.
@@ -1375,6 +1469,7 @@ export function ScenarioBuilder({
         expenseItems,
         savingsAccounts,
         balanceAccounts,
+        assetAccounts,
       })
 
       // Story 107.1 (FR175, D1): the baseline is TODAY's data (`today.data`), so
@@ -1404,6 +1499,7 @@ export function ScenarioBuilder({
     formData,
     savingsAccounts,
     balanceAccounts,
+    assetAccounts,
     oneTimeEvents,
     invalidAmountRows,
     today.data,
@@ -1613,6 +1709,40 @@ export function ScenarioBuilder({
     [editBalanceAccounts]
   )
 
+  // Asset rows (story 114.1): the same single setter, so every edit, add and
+  // remove marks the list touched. None touches the balance store (D0).
+  const editAssetAccounts: React.Dispatch<React.SetStateAction<LocalAssetAccount[]>> = useCallback(
+    (update) => {
+      assetRowsTouched.current = true
+      setAssetAccounts(update)
+    },
+    []
+  )
+
+  const addAssetAccount = useCallback(() => {
+    editAssetAccounts((prev) => [
+      ...prev,
+      { id: generateId('asset'), name: 'New Asset', balance: 0 },
+    ])
+  }, [editAssetAccounts])
+
+  const updateAssetAccount = useCallback(
+    (id: string, field: 'name' | 'balance', value: string | number) => {
+      editAssetAccounts((prev) =>
+        prev.map((account) => (account.id === id ? { ...account, [field]: value } : account))
+      )
+    },
+    [editAssetAccounts]
+  )
+
+  // The list may be emptied: a scenario with no assets is fine.
+  const deleteAssetAccount = useCallback(
+    (id: string) => {
+      editAssetAccounts((prev) => prev.filter((account) => account.id !== id))
+    },
+    [editAssetAccounts]
+  )
+
   /**
    * Add one-time event
    */
@@ -1744,6 +1874,8 @@ export function ScenarioBuilder({
               ...(type === 'debt' && paidByExpenseName ? { paidByExpenseName } : {}),
             })
           ),
+          // Story 114.1 (version 6): always present, possibly `[]`.
+          assetAccounts: assetAccounts.map(({ name, balance }) => ({ name, balance })),
         },
       })
       // Failures land in `saveOutcome`, beside the button. Successes are reported
@@ -1780,6 +1912,7 @@ export function ScenarioBuilder({
     savingsAccounts,
     investments,
     balanceAccounts,
+    assetAccounts,
     onSave,
   ])
 
@@ -1800,13 +1933,15 @@ export function ScenarioBuilder({
     })
     // The section-level line describes the WHOLE list, so it shows only while the
     // result was computed for exactly the rows on screen (code review 100.1):
-    // never under an empty list, and never with a stale year count while a
-    // debounced recompute for an added/removed row is pending.
+    // never with a stale result, e.g. a stale year count while a debounced
+    // recompute for an added/removed row is pending. The empty list is matched
+    // like any other (story 112.1): the amber line needs no rows, the neutral
+    // "Not assigned …" line does (`hasRows`).
     const currentIds = savingsAccounts.map((account) => account.id)
-    const coversRows =
-      currentIds.length > 0 &&
+    const matchesRows =
       currentIds.length === resultSavingsRowIds.length &&
       currentIds.every((id, index) => id === resultSavingsRowIds.at(index))
+    const hasRows = currentIds.length > 0
     // Contributions are what the amber line blames, so it needs some (code
     // review 100.1): a negative remainder with nothing contributed is a deficit
     // in the income itself, not over-contribution. Since story 100.2 a COUNTED
@@ -1840,7 +1975,8 @@ export function ScenarioBuilder({
       years: result.projection.length,
       byRowId,
       unallocated: withinRounding ? 0 : last.unallocatedSavings,
-      coversRows,
+      matchesRows,
+      hasRows,
       contributing,
     }
   }, [result, resultSavingsRowIds, savingsAccounts, balanceAccounts, incomeItems, expenseItems])
@@ -2083,7 +2219,7 @@ export function ScenarioBuilder({
           </div>
         )}
 
-        {savingsOutcome?.coversRows &&
+        {savingsOutcome?.matchesRows &&
           (savingsOutcome.unallocated < 0 && savingsOutcome.contributing ? (
             <p
               data-testid="savings-unassigned"
@@ -2094,10 +2230,12 @@ export function ScenarioBuilder({
               have left over by year {savingsOutcome.years}
             </p>
           ) : (
-            <p data-testid="savings-unassigned" className="text-sm text-body">
-              Not assigned to an account after {yearsLabel(savingsOutcome.years)}:{' '}
-              <GroupedAmount text={formatCurrency(savingsOutcome.unallocated)} />
-            </p>
+            savingsOutcome.hasRows && (
+              <p data-testid="savings-unassigned" className="text-sm text-body">
+                Not assigned to an account after {yearsLabel(savingsOutcome.years)}:{' '}
+                <GroupedAmount text={formatCurrency(savingsOutcome.unallocated)} />
+              </p>
+            )
           ))}
       </section>
 
@@ -2150,6 +2288,40 @@ export function ScenarioBuilder({
                 />
               )
             })}
+          </div>
+        )}
+      </section>
+
+      {/* Assets (story 114.1, FR182): a name and a value each, no growth (D7). */}
+      <section className="surface-inset rounded-xl p-6 space-y-4" aria-labelledby={assetHeadingId}>
+        <div className="flex items-center justify-between">
+          <h3 id={assetHeadingId} className="text-lg font-semibold text-subheading">
+            Assets
+          </h3>
+          <button
+            type="button"
+            onClick={addAssetAccount}
+            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            + Add Asset
+          </button>
+        </div>
+        <p className="text-muted text-sm">{ASSET_WHAT_IF_NOTE}</p>
+
+        {assetAccounts.length === 0 ? (
+          <p className="text-muted text-sm">{NO_ASSET_ACCOUNTS}</p>
+        ) : (
+          <div className="space-y-4">
+            {assetAccounts.map((account, index) => (
+              <AssetAccountRow
+                key={account.id}
+                account={account}
+                position={index + 1}
+                onUpdate={updateAssetAccount}
+                onDelete={deleteAssetAccount}
+                onValidityChange={setAmountRowValidity}
+              />
+            ))}
           </div>
         )}
       </section>
@@ -3059,8 +3231,9 @@ function useMoneyDraft(
  * `useMoneyDraft`: a DRAFT string, and the parsed rate written to the row only
  * when usable. Parsed like the growth-rate fields (`parseFloat(raw) / 100`, so
  * `7`, `7%` and `7.00%` all mean 0.07), but only when the WHOLE text is a number
- * (`PERCENT_TEXT`), and bounded by the same rule (`isValidGrowthRate`). Empty,
- * not a number (`abc`, `5abc`, `1,5`, `1e2`) or outside −100%..100% shows
+ * (`PERCENT_TEXT`), and bounded by the same rule (`isValidGrowthRate`). A single
+ * decimal comma reads as the point (`2,5` = 2.5%, story 110.1). Empty, not a
+ * number (`abc`, `5abc`, `2,5,1`, `1.000,5`, `1e2`) or outside −100%..100% shows
  * `RETURN_INVALID_MESSAGE`, is NOT written, and reports invalid under its own key,
  * which holds the recompute and Save. A finite out-of-range rate can ARRIVE from a
  * saved forecast (D9): flagged from the first render, as `useMoneyDraft` flags a
@@ -3072,12 +3245,16 @@ const PERCENT_TEXT = /^\s*[-+]?(?:\d+\.?\d*|\.\d+)\s*%?\s*$/
 /**
  * A typed percentage as a decimal rate (`5`, `5%`, `5.00%` → 0.05), or NaN when the
  * WHOLE text is not a plain number with an optional `%`. `parseFloat` alone reads a
- * PREFIX: `5abc` → 5, `1,5` → 1 (a decimal comma silently dropped), `1e2` → 100.
- * Shared by the Annual return field and both growth-rate fields; the caller's
- * `isValidGrowthRate` turns the NaN into the field's message.
+ * PREFIX: `5abc` → 5, `2,5` → 2 (a decimal comma silently dropped), `1e2` → 100.
+ * A single decimal comma is converted to a point FIRST (story 110.1, D3:
+ * `decimalCommaToPoint`), so `2,5` → 0.025; an ambiguous comma form keeps its
+ * comma and fails `PERCENT_TEXT`. Shared by the Annual return field and both
+ * growth-rate fields; the caller's `isValidGrowthRate` turns the NaN into the
+ * field's message.
  */
 function parsePercentText(raw: string): number {
-  return PERCENT_TEXT.test(raw) ? parseFloat(raw) / 100 : Number.NaN
+  const text = decimalCommaToPoint(raw)
+  return PERCENT_TEXT.test(text) ? parseFloat(text) / 100 : Number.NaN
 }
 
 function usePercentDraft(
@@ -3506,6 +3683,76 @@ function AnnualReturnField({
     (r) => onUpdate(account.id, 'annualReturn', r)
   )
   return <RowPercentField label="Annual return" rowLabel={rowLabel} field={rate} />
+}
+
+/**
+ * Asset Row Component (story 114.1, FR182): a name and a value. No contribution,
+ * frequency, return, flag or per-row outcome: the value never changes (D7).
+ */
+interface AssetAccountRowProps {
+  account: LocalAssetAccount
+  /** 1-based place in the list, so the name field is told apart even when two rows share a name. */
+  position: number
+  onUpdate: (id: string, field: 'name' | 'balance', value: string | number) => void
+  onDelete: (id: string) => void
+  /** Under `<rowId>:value`. */
+  onValidityChange: (key: string, valid: boolean) => void
+}
+
+function AssetAccountRow({
+  account,
+  position,
+  onUpdate,
+  onDelete,
+  onValidityChange,
+}: AssetAccountRowProps): React.ReactElement {
+  const nameId = useId()
+  // The same money field and hook as the balance rows (story 109.1's format).
+  const value = useMoneyDraft(account.balance, `${account.id}:value`, onValidityChange, (c) =>
+    onUpdate(account.id, 'balance', c)
+  )
+  const rowName = account.name.trim()
+  const rowLabel = rowName === '' ? 'unnamed asset' : rowName
+
+  return (
+    <div className="surface rounded-lg p-4 shadow-sm border border-default">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+        {/* Name */}
+        <div className="min-w-0">
+          <label htmlFor={nameId} className="block text-sm font-medium text-label mb-1">
+            Name
+          </label>
+          <input
+            id={nameId}
+            type="text"
+            value={account.name}
+            onChange={(e) => onUpdate(account.id, 'name', e.target.value)}
+            // By position, not by name: this field IS the name (100.1 review).
+            aria-label={`Asset Name, row ${position}`}
+            autoComplete="off"
+            className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
+            placeholder="House, car"
+          />
+        </div>
+
+        {/* "Value", not "Balance", so it is never named like a balance row's field. */}
+        <RowMoneyField label="Value" rowLabel={rowLabel} field={value} />
+
+        {/* Delete */}
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => onDelete(account.id)}
+            // Unique per row: `getByRole` names are full-string.
+            aria-label={rowName === '' ? 'Remove asset' : `Remove ${rowName}`}
+            className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors"
+          >
+            Remove
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 /**

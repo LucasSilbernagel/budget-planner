@@ -285,6 +285,9 @@ export interface BalanceAccountInput {
 export const BALANCE_ROW_NEGATIVE =
   'Investment and debt balances and contributions must be 0 or more'
 
+/** The refusal for a negative asset total (story 114.1). */
+export const ASSETS_NEGATIVE = 'Asset values must be 0 or more'
+
 /**
  * The refusal when the investment rows' balances do not add up to
  * `currentData.investments` (story 100.2), the same rule as `SAVINGS_ROWS_MISMATCH`.
@@ -464,11 +467,17 @@ export interface YearlyForecast {
   /**
    * Σ of the debt rows' closing balances (story 100.2). Present on BASELINE and
    * PROJECTION rows (D5), only when `currentData.balanceAccounts` was given.
-   * `netWorth === savings + investments − debts`.
+   * `netWorth === savings + investments + assets − debts` (`assets` 0 when absent).
    */
   debts?: number
   /** Each investment/debt row's CLOSING balance, in input order. Same presence rule. */
   balanceAccounts?: number[]
+  /**
+   * The asset total (story 114.1), the same every year: an asset does not grow.
+   * Present only when the dataset this row came from had `assets` (the
+   * baseline's own input for a baseline row, `currentData` for a projection row).
+   */
+  assets?: number
 }
 
 /**
@@ -505,6 +514,13 @@ export interface ForecastInputData {
    * `annualReturn` (story 100.3).
    */
   balanceAccounts?: BalanceAccountInput[]
+  /**
+   * Optional total value of the user's assets, in cents (story 114.1, FR182): a
+   * house, a car. A CONSTANT: no growth, no contribution (D7). It adds to every
+   * year's `netWorth` and to `startingNetWorth`, and changes nothing else.
+   * Absent: the output is identical to before the story (no `assets` keys).
+   */
+  assets?: number
 }
 
 /**
@@ -519,6 +535,7 @@ function prepareForecastData(data: ForecastInputData): {
   balanceGrowthMultipliers: number[]
   countedContributionTotal: number
   startingDebts: number
+  assets: number | undefined
 } {
   // The starting balances are money terms like every other (story 81.1, the 77.1
   // review rider). Unvalidated, a NaN/Infinity here was caught only by the
@@ -526,6 +543,12 @@ function prepareForecastData(data: ForecastInputData): {
   // to project"), which misdescribes a missing or corrupt starting figure.
   validateAmount(data.savings)
   validateAmount(data.investments)
+  // Assets (story 114.1), the same rule, and never negative.
+  const assets = data.assets
+  if (assets !== undefined) {
+    validateAmount(assets)
+    if (assets < 0) throw new Error(ASSETS_NEGATIVE)
+  }
   // Savings rows (story 100.1): every money term validated like the totals above,
   // never negative, and summing to `savings` exactly so the engine and its caller
   // cannot disagree about where the projection starts.
@@ -607,6 +630,7 @@ function prepareForecastData(data: ForecastInputData): {
     balanceGrowthMultipliers,
     countedContributionTotal,
     startingDebts,
+    assets,
   }
 }
 
@@ -634,9 +658,10 @@ function prepareForecastData(data: ForecastInputData): {
  *   (`validateAmount`), a negative one (`BALANCE_ROW_NEGATIVE`), or the investment
  *   rows do not sum to `investments` (`BALANCE_ROWS_MISMATCH`); if an investment
  *   row's `annualReturn` is missing, not finite or outside −1..1
- *   (`INVESTMENT_RETURN_OUT_OF_RANGE`; a debt row's is ignored); or if the
- *   projection's balance, investment total or debt total overflows
- *   (`FORECAST_OUT_OF_RANGE`)
+ *   (`INVESTMENT_RETURN_OUT_OF_RANGE`; a debt row's is ignored); if `assets` is
+ *   given and not finite (`validateAmount`) or negative (`ASSETS_NEGATIVE`); or if
+ *   the projection's balance (with the assets), investment total or debt total
+ *   overflows (`FORECAST_OUT_OF_RANGE`)
  */
 export function calculateFinancialForecast(
   currentData: ForecastInputData,
@@ -671,6 +696,7 @@ export function calculateFinancialForecast(
     balanceGrowthMultipliers,
     countedContributionTotal,
     startingDebts,
+    assets,
   } = prepareForecastData(currentData)
   // Story 107.1 (FR175): the baseline is projected from its OWN dataset when one
   // is given (the builder passes the user's current saved data, so an edited row
@@ -683,6 +709,7 @@ export function calculateFinancialForecast(
     balanceGrowthMultipliers: baseBalanceGrowthMultipliers,
     countedContributionTotal: baseCountedContributionTotal,
     startingDebts: baseStartingDebts,
+    assets: baseAssets,
   } = baselineInput === undefined
     ? {
         balanceAccounts,
@@ -690,6 +717,7 @@ export function calculateFinancialForecast(
         balanceGrowthMultipliers,
         countedContributionTotal,
         startingDebts,
+        assets,
       }
     : prepareForecastData(baselineInput)
 
@@ -828,9 +856,15 @@ export function calculateFinancialForecast(
       netIncome: baselineNetIncomeThisYear,
       savings: currentSavings,
       investments: currentInvestments,
-      netWorth: currentSavings + currentInvestments - currentDebts,
+      // Story 114.1: the baseline dataset's OWN assets, a constant. Without them
+      // the expression is exactly the old one (no `+ 0`), so the output is too.
+      netWorth:
+        baseAssets === undefined
+          ? currentSavings + currentInvestments - currentDebts
+          : currentSavings + currentInvestments + baseAssets - currentDebts,
       // Absent (not `undefined`) without rows, so existing `toEqual`s are unchanged.
       ...(baselineRowBalances ? { debts: currentDebts, balanceAccounts: baselineRowBalances } : {}),
+      ...(baseAssets === undefined ? {} : { assets: baseAssets }),
     }
     baseline.push(baselineYear)
   }
@@ -947,9 +981,10 @@ export function calculateFinancialForecast(
     // individually valid events can sum past MAX_VALUE. Checked on the SUM, so an
     // overflow in either term (Infinity, or Infinity + -Infinity = NaN) is caught.
     // The investment and debt totals are checked on their own too (story 100.2):
-    // two individually finite debts can sum to Infinity.
+    // two individually finite debts can sum to Infinity. The assets (story 114.1)
+    // join the sum: two finite figures can still sum past MAX_VALUE.
     if (
-      !Number.isFinite(projSavings + projInvestments) ||
+      !Number.isFinite(projSavings + projInvestments + (assets ?? 0)) ||
       !Number.isFinite(projInvestments) ||
       !Number.isFinite(projDebts)
     ) {
@@ -976,17 +1011,26 @@ export function calculateFinancialForecast(
       netIncome: totalNetIncome,
       savings: projSavings,
       investments: projInvestments,
-      netWorth: projSavings + projInvestments - projDebts,
+      // Story 114.1: `currentData`'s assets, as in the baseline loop.
+      netWorth:
+        assets === undefined
+          ? projSavings + projInvestments - projDebts
+          : projSavings + projInvestments + assets - projDebts,
       // Absent (not `undefined`) without rows, so existing `toEqual`s are unchanged.
       ...(rowBalances ? { savingsAccounts: rowBalances, unallocatedSavings } : {}),
       ...(projRowBalances ? { debts: projDebts, balanceAccounts: projRowBalances } : {}),
+      ...(assets === undefined ? {} : { assets }),
     }
     projection.push(yearProjection)
   }
 
   // Calculate summary
-  // Debts count against the start (story 100.2, D1); 0 without debt rows.
-  const startingNetWorth = currentData.savings + currentData.investments - startingDebts
+  // Debts count against the start (story 100.2, D1); 0 without debt rows. Assets
+  // count for it (story 114.1), so it matches the Overview's net worth.
+  const startingNetWorth =
+    assets === undefined
+      ? currentData.savings + currentData.investments - startingDebts
+      : currentData.savings + currentData.investments + assets - startingDebts
   // `projection` has one entry per year and the guard at the top makes `years`
   // at least 1, so it is never empty here. The fallback is kept only as a
   // defensive default; it is no longer reachable (it was, for `years = 0`,

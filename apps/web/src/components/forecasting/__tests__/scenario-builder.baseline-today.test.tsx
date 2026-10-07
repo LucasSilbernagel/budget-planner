@@ -167,6 +167,8 @@ function comparable(rows: ForecastingResult['baseline']) {
       netWorth,
       debts,
       balanceAccounts,
+      // Story 114.1: both series carry the asset total.
+      assets,
     }) => ({
       year,
       income,
@@ -177,6 +179,7 @@ function comparable(rows: ForecastingResult['baseline']) {
       netWorth,
       debts,
       balanceAccounts,
+      assets,
     })
   )
 }

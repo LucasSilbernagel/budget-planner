@@ -97,7 +97,7 @@ describe('first visit (AC-2)', () => {
 
   it('leaves the 6.0% return and the deplete model as they were', () => {
     renderWithProviders(<RetirementAccumulationPlanner />)
-    expect(screen.getByLabelText('Expected Annual Return')).toHaveValue(6)
+    expect(screen.getByLabelText('Expected Annual Return')).toHaveValue('6.0')
     expect(screen.getByRole('radio', { name: /deplete/i })).toBeChecked()
   })
 })
@@ -132,9 +132,28 @@ describe('the plan outlives the component (AC-1)', () => {
     expect(screen.getByLabelText('Life Expectancy')).toHaveValue(88)
     expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('55,000.00')
     expect(screen.getByLabelText('Income period')).toHaveValue('monthly')
-    expect(screen.getByLabelText('Expected Annual Return')).toHaveValue(7.5)
-    expect(screen.getByLabelText('Post-Retirement Annual Return')).toHaveValue(3.25)
+    expect(screen.getByLabelText('Expected Annual Return')).toHaveValue('7.5')
+    expect(screen.getByLabelText('Post-Retirement Annual Return')).toHaveValue('3.25')
     expect(screen.getByRole('radio', { name: /perpetual/i })).toBeChecked()
+  })
+
+  it('restores a comma rate as typed and solves it as the point rate (story 110.1)', async () => {
+    useBalanceStore.setState({ entries: [investmentRow(1_000_000_00, 150_000)] })
+    // The point form first: its outcome is what the comma form must reproduce.
+    seedStoredPlan({ ...SAVED_PLAN, annualReturnInput: '7.5', postRetirementReturnInput: '3.25' })
+    await rehydrate()
+    const first = renderWithProviders(<RetirementAccumulationPlanner />)
+    const outcome = () => screen.getByTestId('accumulation-outputs').textContent
+    const atPoint = outcome()
+    first.unmount()
+
+    seedStoredPlan({ ...SAVED_PLAN, annualReturnInput: '7,5', postRetirementReturnInput: '3,25' })
+    await rehydrate()
+    renderWithProviders(<RetirementAccumulationPlanner />)
+
+    expect(screen.getByLabelText('Expected Annual Return')).toHaveValue('7,5')
+    expect(screen.getByLabelText('Post-Retirement Annual Return')).toHaveValue('3,25')
+    expect(outcome()).toBe(atPoint)
   })
 })
 
@@ -199,7 +218,7 @@ describe('a deliberately cleared field stays cleared (AC-4)', () => {
     expect(screen.getByLabelText('Current Age')).toHaveValue(null)
     expect(screen.getByLabelText('Life Expectancy')).toHaveValue(null)
     // ...while a field the payload still carries keeps its SAVED value.
-    expect(screen.getByLabelText('Expected Annual Return')).toHaveValue(7.5)
+    expect(screen.getByLabelText('Expected Annual Return')).toHaveValue('7.5')
   })
 
   it('takes the default for a field genuinely ABSENT from the payload', async () => {
@@ -211,7 +230,7 @@ describe('a deliberately cleared field stays cleared (AC-4)', () => {
     await rehydrate()
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(screen.getByLabelText('Expected Annual Return')).toHaveValue(6)
+    expect(screen.getByLabelText('Expected Annual Return')).toHaveValue('6.0')
     expect(screen.getByLabelText('Current Age')).toHaveValue(null)
   })
 })
@@ -222,7 +241,7 @@ describe('the mirror hint matches the restored plan (AC-3)', () => {
     await rehydrate()
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(screen.getByLabelText('Post-Retirement Annual Return')).toHaveValue(3.25)
+    expect(screen.getByLabelText('Post-Retirement Annual Return')).toHaveValue('3.25')
     expect(screen.queryByText(MIRROR_HINT)).not.toBeInTheDocument()
   })
 
@@ -237,7 +256,7 @@ describe('the mirror hint matches the restored plan (AC-3)', () => {
 
     expect(screen.getByText(MIRROR_HINT)).toBeInTheDocument()
     // Mirroring means it shows the ACCUMULATION rate, not its own empty value.
-    expect(screen.getByLabelText('Post-Retirement Annual Return')).toHaveValue(7.5)
+    expect(screen.getByLabelText('Post-Retirement Annual Return')).toHaveValue('7.5')
   })
 
   it('sets the flag as the user edits, so the hint and the value never disagree', async () => {
