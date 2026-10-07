@@ -191,7 +191,7 @@ async function setYears(years: number) {
 }
 
 describe('rows replace the investments total (AC-1, AC-11)', () => {
-  it('lists the active profile investments and debts in store order, with every field; assets and other profiles are left out', () => {
+  it('lists the active profile investments and debts in store order, with every field; assets (their own section since 114.1) and other profiles are left out', () => {
     setEntries([
       entry({ id: 'e-1', name: 'Pension', currentBalance: 1_000_000, monthlyContribution: 5_000 }),
       entry({ id: 'e-2', name: 'House', type: 'asset', currentBalance: 30_000_000 }),
@@ -202,6 +202,10 @@ describe('rows replace the investments total (AC-1, AC-11)', () => {
     render(<ScenarioBuilder onSave={vi.fn()} />)
 
     expect(rowNames()).toEqual(['Pension', 'Car loan', 'ISA'])
+    // Story 114.1: the asset is an Assets row instead, never a balance row.
+    expect(
+      within(screen.getByRole('region', { name: 'Assets' })).getByLabelText('Asset Name, row 1')
+    ).toHaveValue('House')
     expect(screen.getByLabelText('Type for Pension')).toHaveValue('investment')
     expect(screen.getByLabelText('Type for Car loan')).toHaveValue('debt')
     expect(screen.getByLabelText('Balance for Pension')).toHaveValue('10,000.00')
@@ -225,7 +229,7 @@ describe('rows replace the investments total (AC-1, AC-11)', () => {
     ).toBeInTheDocument()
     expect(
       within(section()).getByText(
-        "What-if only: changes here don't change your Balance Tracking page. Debts count against your starting net worth. Things you own outright (assets) aren't included."
+        "What-if only: changes here don't change your Balance Tracking page. Debts count against your starting net worth."
       )
     ).toBeInTheDocument()
   })
@@ -335,10 +339,17 @@ describe('the seed (AC-6)', () => {
     render(<ScenarioBuilder onSave={vi.fn()} />)
     expect(syncPendingCalls.length).toBeGreaterThan(0)
     expect(syncPendingCalls.every((empty) => empty === false)).toBe(true)
-    // Control: an asset alone is NOT something to seed.
+    // Story 114.1 flipped this: an asset alone IS something to seed now (it
+    // seeds an Assets row). Before, it was the control for "not in scope".
     syncPendingCalls.length = 0
     document.body.innerHTML = ''
     setEntries([entry({ id: 'e-2', name: 'House', type: 'asset', currentBalance: 100_000 })])
+    render(<ScenarioBuilder onSave={vi.fn()} />)
+    expect(syncPendingCalls.at(-1)).toBe(false)
+    // Control: an empty store is still nothing to seed.
+    syncPendingCalls.length = 0
+    document.body.innerHTML = ''
+    setEntries([])
     render(<ScenarioBuilder onSave={vi.fn()} />)
     expect(syncPendingCalls.at(-1)).toBe(true)
   })
@@ -984,6 +995,13 @@ describe('the builder is defensive on its own (AC-14, 100.1 review)', () => {
     )
     expect(rowNames()).toEqual(['Ok'])
     expect(screen.getByLabelText('Balance for Ok')).toHaveValue('10.00')
+    // Story 114.1: an asset entry inside `balanceAccounts` is still dropped, not
+    // moved to the Assets section: the assets channel is `assetAccounts`.
+    expect(
+      within(screen.getByRole('region', { name: 'Assets' })).queryAllByLabelText(
+        /^Asset Name, row \d+$/
+      )
+    ).toEqual([])
 
     document.body.innerHTML = ''
     render(
@@ -1257,10 +1275,16 @@ describe('a forecast saved before version 5 keeps its figures (story 102.2, AC-6
       const recomputed = onResult.mock.calls.at(-1)?.[0]
       // Story 107.1 (D2): the BASELINE is today's data (empty stores here), not the
       // saved rows', so only the scenario's own figures are the T0 ones.
+      // Story 114.1: the builder always sends an asset total (0 here: a forecast
+      // saved before version 6 has no asset rows), so every recomputed row also
+      // carries `assets: 0`. Every figure is still the T0 one.
       expect({
         projection: recomputed?.projection,
         summary: recomputed?.summary,
-      }).toEqual({ projection: V4_RESULT.projection, summary: V4_RESULT.summary })
+      }).toEqual({
+        projection: V4_RESULT.projection.map((row) => ({ ...row, assets: 0 })),
+        summary: V4_RESULT.summary,
+      })
     }
   )
 

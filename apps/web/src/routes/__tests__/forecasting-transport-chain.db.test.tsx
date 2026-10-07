@@ -50,6 +50,7 @@ vi.mock('@/lib/logger', () => ({
 
 vi.mock('@/server/api/auth/paddle', () => ({ getCurrentUserSession: vi.fn() }))
 
+import { FORECAST_SAVE_VERSION } from '@/lib/forecasting/forecast-version'
 import { GET as meGET } from '@/routes/api/auth/me'
 import {
   DELETE as forecastsDELETE,
@@ -695,7 +696,7 @@ describe('savings rows round-trip through the real routes (story 100.1, AC-11)',
     useSavingsStore.setState({ savingsGoals: [] })
   })
 
-  it('POST and PUT store the current version (5 since story 102.2) with the rows and their sum, and Load brings the rows back', async () => {
+  it('POST and PUT store the current version (FORECAST_SAVE_VERSION: 6 since story 114.1) with the rows and their sum, and Load brings the rows back', async () => {
     await seedSavingsRows()
     const view = renderWithRouter(<ForecastingPage />)
     await pressSave(view)
@@ -710,7 +711,7 @@ describe('savings rows round-trip through the real routes (story 100.1, AC-11)',
         .from(forecastingProfiles)
     const [created, ...more] = await versioned()
     expect(more).toEqual([])
-    expect(created?.version).toBe(5)
+    expect(created?.version).toBe(FORECAST_SAVE_VERSION)
     const inputs = (
       JSON.parse(String(created?.scenarioData)) as { inputs: Record<string, unknown> }
     ).inputs
@@ -740,7 +741,7 @@ describe('savings rows round-trip through the real routes (story 100.1, AC-11)',
       timeout: 5000,
     })
     const [updated] = await versioned()
-    expect(updated?.version).toBe(5)
+    expect(updated?.version).toBe(FORECAST_SAVE_VERSION)
     expect(
       (JSON.parse(String(updated?.scenarioData)) as { inputs: { savingsAccounts: unknown[] } })
         .inputs.savingsAccounts
@@ -758,7 +759,7 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
     useExpenseStore.setState({ expenses: [] })
   })
 
-  it('POST stores version 5 with the rows, their rates, the debt flag and label, and the investment sum; Load brings every field back; PUT keeps a changed rate and flag', async () => {
+  it('POST stores the current version with the rows, their rates, the debt flag and label, and the investment sum; Load brings every field back; PUT keeps a changed rate and flag', async () => {
     const { useBalanceStore } = await import('@/stores/balanceStore')
     const { useExpenseStore } = await import('@/stores/expenseStore')
     // Story 102.1 (FR169): the Car loan's 300.00 payment is its linked expense.
@@ -836,7 +837,7 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
         .from(forecastingProfiles)
     const [created, ...more] = await stored()
     expect(more).toEqual([])
-    expect(created?.version).toBe(5)
+    expect(created?.version).toBe(FORECAST_SAVE_VERSION)
     const inputs = (
       JSON.parse(String(created?.scenarioData)) as { inputs: Record<string, unknown> }
     ).inputs
@@ -912,7 +913,7 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
     expect(rtl.within(section).getByText('from Expenses: Car payment')).toBeInTheDocument()
     expect(view.queryByLabelText('Payment already in Expenses, for Car loan')).toBeNull()
 
-    // Save over it (PUT) with a NEGATIVE rate: same row, version 5, rate kept.
+    // Save over it (PUT) with a NEGATIVE rate: same row, same version, rate kept.
     typeInto(view.getByLabelText('Annual return for ISA'), '-2.5')
     await new Promise((resolve) => setTimeout(resolve, 800))
     await pressSave(view)
@@ -921,7 +922,7 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
     })
     const [updated, ...others] = await stored()
     expect(others).toEqual([])
-    expect(updated?.version).toBe(5)
+    expect(updated?.version).toBe(FORECAST_SAVE_VERSION)
     const after = (
       JSON.parse(String(updated?.scenarioData)) as {
         inputs: {
@@ -948,4 +949,70 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
     expect(view.queryByLabelText('Annual return for Car loan')).toBeNull()
     expect(view.getByText('from Expenses: Car payment')).toBeInTheDocument()
   }, 30_000)
+})
+
+describe('asset rows round-trip through the real routes (story 114.1, AC-9, AC-10)', () => {
+  const ISO = '2026-10-06T00:00:00.000Z'
+
+  afterEach(async () => {
+    const { useBalanceStore } = await import('@/stores/balanceStore')
+    useBalanceStore.setState({ entries: [] })
+  })
+
+  it('POST stores version 6 with the asset rows; Load brings them back from the database, not the store', async () => {
+    const { useBalanceStore } = await import('@/stores/balanceStore')
+    const asset = (id: string, name: string, currentBalance: number, sortOrder: number) => ({
+      id,
+      profileId: PROFILE,
+      type: 'asset',
+      name,
+      currentBalance,
+      monthlyContribution: 0,
+      frequency: 'monthly',
+      sortOrder,
+      createdAt: ISO,
+      updatedAt: ISO,
+    })
+    useBalanceStore.setState({
+      entries: [asset('a-1', 'House', 30_000_001, 0), asset('a-2', 'Car', 1_250_099, 1)] as never,
+    })
+    const view = renderWithRouter(<ForecastingPage />)
+    await pressSave(view)
+    await view.findByTestId('save-success', {}, { timeout: 5000 })
+
+    const [created, ...more] = await db
+      .select({
+        version: forecastingProfiles.version,
+        scenarioData: forecastingProfiles.scenarioData,
+      })
+      .from(forecastingProfiles)
+    expect(more).toEqual([])
+    expect(created?.version).toBe(6)
+    const saved = JSON.parse(String(created?.scenarioData)) as {
+      inputs: Record<string, unknown>
+      result: { summary: { startingNetWorth: number } }
+    }
+    expect(saved.inputs.assetAccounts).toEqual([
+      { name: 'House', balance: 30_000_001 },
+      { name: 'Car', balance: 1_250_099 },
+    ])
+    // The stored result counted them.
+    expect(saved.result.summary.startingNetWorth).toBe(31_250_100)
+
+    // Change the live store so a reload that read it would show different rows.
+    useBalanceStore.setState({ entries: [asset('a-9', 'Live boat', 5, 0)] as never })
+    rtl.fireEvent.click(
+      await view.findByRole('button', { name: 'Edit My Financial Forecast' }, { timeout: 5000 })
+    )
+    const value = (label: string) => (view.getByLabelText(label) as HTMLInputElement).value
+    await rtl.waitFor(() => expect(value('Value for House')).toBe('300,000.01'))
+    const section = view.getByRole('region', { name: 'Assets' })
+    expect(
+      rtl
+        .within(section)
+        .getAllByLabelText(/^Asset Name, row \d+$/)
+        .map((el) => (el as HTMLInputElement).value)
+    ).toEqual(['House', 'Car'])
+    expect(value('Value for Car')).toBe('12,500.99')
+  }, 20_000)
 })
