@@ -1,6 +1,4 @@
-// `sql` is exported from the drizzle-orm package root (NOT pg-core) in
-// drizzle-orm 0.30.x; importing it from pg-core yields undefined and throws
-// "sql is not a function" when drizzle() walks the schema's CHECK constraints.
+// `sql` must come from the drizzle-orm root, not pg-core, where it is undefined in 0.30.x.
 import { sql } from 'drizzle-orm'
 import {
   bigint,
@@ -20,96 +18,38 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core'
 
-// Type imports for Drizzle
-// Note: Using InferSelectModel and InferInsertModel (InferModel is deprecated)
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm'
 
-// VALIDATION STRATEGY:
-// - Application-layer validation (Zod schemas) will be added in Story 2-2 for better UX/error messages
-// - All monetary amounts use integer type (cents) for precision
-// - Positive constraints: > 0 for strictly positive, >= 0 for non-negative, NULL allowed where optional
-// - Database-level CHECK constraints: declared here AND enforced by the database
-//   since story 66.5 / migration 0020. ⚠️ That migration is HAND-AUTHORED —
-//   drizzle-kit 0.23 emits no CHECK DDL, so `drizzle-kit generate` will not
-//   reproduce it and a regeneration silently drops all eight. The tripwires are
-//   `migration-replay.test.ts` (they exist, with these predicates) and
-//   `check-constraints.test.ts` (they refuse what they say they refuse).
-// - Timestamps use default mode (returns strings) for JSON serialization compatibility
-// - Indexes: paddleId has implicit index via unique constraint, explicit indexes added on userProfiles.userId, rateLimits.userId, forecastingProfiles
-// - Soft-delete: Users table has isDeleted flag; all foreign keys use RESTRICT (no CASCADE) to prevent accidental data loss
+// Money is integer cents. CHECKs reach SQL via a hand-authored migration: drizzle-kit 0.23 emits
+// no CHECK DDL, so a regeneration silently drops them.
 
-// Frequency enum for income and expense recurrence
-// Values use snake_case as per architecture: weekly, biweekly, monthly, annually
 export const frequencyEnum = pgEnum('frequency', ['weekly', 'biweekly', 'monthly', 'annually'])
 
-// Finance type enum for balance tracking
-// Values use snake_case as per architecture
-//
-// `asset` (story 43.4 / FR70) is something the user owns outright — a property,
-// a vehicle, or a cash holding. It counts on the ASSET side of net worth, so a
-// homeowner who records a mortgage can also record the property it is against.
-// It deliberately carries NO contribution: an owned asset changes value by
-// appreciation, not by deposits (story 43.4, D2). (It also carried no
-// contribution LIMIT — a field story 49.1 / FR75 removed for every type.)
+// `asset` is owned outright and carries no contribution: it changes value by appreciation.
 export const financeTypeEnum = pgEnum('financeType', ['investment', 'debt', 'asset'])
 
-/**
- * The single source of truth for the finance-type values, DERIVED from the enum
- * so it cannot drift from it.
- *
- * ⚠️ Every zod schema, validation whitelist and option list that used to restate
- * `['investment', 'debt']` now derives from this (story 43.4). Restating the
- * values is what let the two-value assumption spread to ~24 sites, only ONE of
- * which the compiler could catch.
- *
- * ⚠️ Do NOT rewrite this as `[...] as const satisfies readonly FinanceType[]`.
- * `satisfies` checks assignability, and a SHORT tuple is assignable to
- * `readonly FinanceType[]` — so a MISSING member compiles clean. It catches
- * misspellings, never omissions. Deriving from `enumValues` is what makes drift
- * impossible.
- *
- * ⚠️ CLIENT CODE MUST NOT IMPORT THIS FROM THE PACKAGE BARREL. `src/index.ts`
- * re-exports `./client`, which throws at module scope when `window` is defined.
- * Import from `@budget-planner/db/src/schema` instead (aliased in
- * `apps/web/vite.config.ts`); a TYPE-only import of `FinanceType` is safe either
- * way because it is erased at compile time.
- */
+// Derived from the enum: a `satisfies` tuple would compile with a member missing. Client code must
+// import this from `src/schema`, not the barrel, which pulls in the server-only client.
 export const ALL_FINANCE_TYPES = financeTypeEnum.enumValues
 
-// Allocation mode for savings accounts/goals (Story 26.1): a 'manual' account
-// holds a fixed monthlyAllocation; an 'automatic' account receives an even share
-// of the leftover pool (computed in Story 26.2). Defaults to 'automatic'.
+// 'manual' holds a fixed monthlyAllocation; 'automatic' gets an even share of the leftover pool.
 export const allocationModeEnum = pgEnum('allocationMode', ['manual', 'automatic'])
 
-// Which side of the ledger a user-defined category applies to (Story 30.4a).
-// Income and expense categories are separate namespaces so an expense category
-// ("Groceries") can never be offered on the income form, and so core's
-// aggregateByCategoryAndType — which already partitions by `${type}:${category}`
-// — is matched rather than fought. A NEW enum is deliberate: extending an
-// existing one needs `ALTER TYPE ... ADD VALUE`, which cannot run inside a
-// transaction block on older PG (see 0009_absent_molten_man.sql).
+// A new enum on purpose: `ALTER TYPE ... ADD VALUE` can't run inside a transaction on older PG.
 export const categoryKindEnum = pgEnum('categoryKind', ['income', 'expense'])
 
-// Subscription status enum for user accounts
-// Values use snake_case as per architecture
 export const subscriptionStatusEnum = pgEnum('subscriptionStatus', [
   'free',
   'active',
   'past_due',
   'canceled',
-  // Permanent Premium from a one-time lifetime purchase (story 25-2). Distinct
-  // from 'active' so a subscription-lifecycle event (e.g. cancelling a redundant
-  // annual sub after buying lifetime) can NEVER downgrade a lifetime buyer.
+  // Distinct from 'active' so a subscription event can never downgrade a lifetime buyer.
   'lifetime',
 ])
 
-// The billing cadence the user bought (Story 70.1, FR111). Recorded from the
-// TOP-LEVEL `billing_cycle` of Paddle's subscription entity, which Paddle sets
-// from the subscription's prices. Only the two cadences this product sells are
-// representable; anything else is stored as NULL, never guessed.
+// From Paddle's top-level `billing_cycle`; a cadence not sold here is stored as NULL.
 export const billingIntervalEnum = pgEnum('billingInterval', ['month', 'year'])
 
-// Currency enum for user currency preferences
 export const currencyEnum = pgEnum('currency', [
   'NONE',
   'USD',
@@ -134,140 +74,50 @@ export const currencyEnum = pgEnum('currency', [
   'TRY',
 ])
 
-// Users table - referenced by incomeSources, expenses, savingsGoals, and balanceTracking
 export const users = pgTable(
   'users',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    email: varchar('email', { length: 254 }).unique().notNull(), // RFC 5321 max length
-    paddleId: varchar('paddleId', { length: 255 }).unique().notNull(), // Paddle customer ID
+    email: varchar('email', { length: 254 }).unique().notNull(),
+    paddleId: varchar('paddleId', { length: 255 }).unique().notNull(),
     subscriptionStatus: subscriptionStatusEnum('subscriptionStatus').default('free').notNull(),
-    // --- The plan the user bought (Story 70.1, FR111) ---------------------------
-    //
-    // Monthly and annual subscribers are both `active`, so without this the plan
-    // was unrecoverable from the row and Settings could only say "Active". The
-    // Settings label is DERIVED at render from (subscriptionStatus,
-    // billingInterval) — `lib/account/plan-label.ts`. `lifetime` needs no value
-    // here: the status identifies it. NULL = not known (every row that predates
-    // this column until its next `subscription.*` event, or a cadence this
-    // product does not sell), and the label then falls back to "Active".
-    //
-    // ⚠️ WHY AN INTERVAL AND NOT A PADDLE PRICE ID. A price id must be mapped back
-    // to a plan through the `PADDLE_*_PRICE_ID` env vars, and that mapping misses
-    // SILENTLY on any id the env does not name: a re-price, a grandfathered
-    // price, and the sandbox→production re-key `reconcileEmailCollision` exists
-    // for. The interval survives all of those.
-    //
-    // ⚠️ WHY IT SHARES `entitlementUpdatedAt` (unlike `emailUpdatedAt` below).
-    // It is written by the SAME `subscription.*` events, from the same entity
-    // snapshot, in the same UPDATE as `subscriptionStatus`. It is not a separate
-    // event stream, so it must not have a separate watermark: one would let the
-    // status come from one event and the interval from another — a row
-    // describing a subscription that never existed. Write it ONLY inside a write
-    // that also advances `entitlementUpdatedAt`. Where the write is ordered, the
-    // guard is IN the statement (`entitlementWatermarkGuard` on the UPDATEs, the
-    // `setWhere` on the conflict paths — a pre-read alone races, Story 70.1
-    // review). The one unguarded site is the re-key adoption in
-    // `reconcileEmailCollision`, which advances the watermark on a row that is
-    // unentitled by construction and belongs to a different customer's stream.
-    //
-    // ⚠️ It is NOT an entitlement signal. No gate may read it; access is decided
-    // by `subscriptionStatus` alone.
+    // Written only alongside `subscriptionStatus`, in a write that advances `entitlementUpdatedAt`.
+    // Not an entitlement signal: access depends on `subscriptionStatus` alone.
     billingInterval: billingIntervalEnum('billingInterval'),
     currency: currencyEnum('currency').default('NONE'),
-    isDeleted: boolean('isDeleted').default(false).notNull(), // Soft-delete flag for data safety
-    // --- Billing-event ordering + lifetime accounting (Story 5-19) -------------
-    //
-    // `entitlementUpdatedAt` is the ORDERING WATERMARK: the `occurred_at` (epoch
-    // ms) of the newest Paddle event that has changed this user's entitlement.
-    // Every entitlement-changing webhook path requires an event STRICTLY NEWER
-    // than this, so a late retry cannot flip entitlement backwards — Paddle
-    // re-signs each retry with a fresh `ts`, so the signature freshness window
-    // filters nothing here (AC-2). NULL = no billing event processed yet.
+    isDeleted: boolean('isDeleted').default(false).notNull(),
+    // Ordering watermark: entitlement changes need a strictly newer event, since Paddle re-signs
+    // retries with a fresh `ts` and signature freshness filters nothing.
     entitlementUpdatedAt: bigint('entitlementUpdatedAt', { mode: 'number' }),
-    // --- Email-change ordering (Story 68.1) ------------------------------------
-    //
-    // `emailUpdatedAt` is the ORDERING WATERMARK for `customer.updated`: the
-    // `occurred_at` (epoch ms) of the newest Paddle customer event that has
-    // changed this user's email. NULL = no email change processed yet.
-    //
-    // ⚠️ IT IS DELIBERATELY SEPARATE FROM `entitlementUpdatedAt`, AND SHARING
-    // ONE WOULD BE SILENT DATA LOSS. Every entitlement path gates on
-    // `entitlementUpdatedAt` being strictly older than the incoming event
-    // (webhooks/paddle.ts:347, :503, :760, and the `setWhere` at :418, :571).
-    // An email change that advanced that watermark would make a subsequent
-    // LEGITIMATE `subscription.*` / `transaction.*` carrying an earlier
-    // `occurred_at` look stale, and it would be DROPPED — so changing an email
-    // could silently cost the user the entitlement they are paying for. The two
-    // event streams are independent, so they order independently.
+    // Separate from `entitlementUpdatedAt`: sharing it would make a later legitimate entitlement event
+    // with an earlier `occurred_at` look stale and be dropped.
     emailUpdatedAt: bigint('emailUpdatedAt', { mode: 'number' }),
-    // The transaction that bought a `lifetime` grant, and its grand total in the
-    // currency's lowest unit. Recorded at grant time so a later refund can be
-    // judged FULL vs PARTIAL without a second Paddle API round trip (AC-1). A
-    // 100%-coupon grant records a total of 0 (Story 74.1); no money moved, so it
-    // is revocable only by hand. An UNEXPLAINED zero total still cannot grant.
+    // Recorded at grant so a refund can be judged full vs partial. A 100%-coupon grant records 0.
     lifetimeTransactionId: varchar('lifetimeTransactionId', { length: 255 }),
     lifetimeGrantTotal: bigint('lifetimeGrantTotal', { mode: 'number' }),
-    // ⚠️ There is deliberately NO `lifetimeRefundedTotal` counter here. An
-    // earlier draft of this story had one and incremented it in place, which
-    // was wrong twice over: it was never reset when a new grant was recorded
-    // (so a re-purchase inherited the previous grant's refunds, and a €1 refund
-    // revoked a fresh €99 entitlement), and an incremented counter cannot be
-    // made idempotent against Paddle's duplicate deliveries. The refunded total
-    // is DERIVED instead, by summing `paddleAdjustments` for the transaction
-    // that granted the entitlement — see that table's docblock.
-    // Session revocation watermark (Story 5-8): epoch-ms timestamp of the user's
-    // last logout/"sign out everywhere". A signed session token is rejected when
-    // its issued-at (`iat`) is at or before this value, so an exfiltrated token
-    // can be invalidated server-side before its 7-day TTL. NULL = never revoked.
+    // No refunded-total counter: it is summed from `paddleAdjustments`, which stays idempotent.
+    // A session whose `iat` is at or before `sessionsRevokedAt` is rejected.
     sessionsRevokedAt: bigint('sessionsRevokedAt', { mode: 'number' }),
-    // --- Retention clock (Story 73.2) -----------------------------------------
-    //
-    // `accessEndedAt` is the epoch-ms `occurred_at` of the Paddle event that
-    // ENDED Premium access (entitled -> `canceled`/`free`). The privacy policy's
-    // 12-month retention period runs from it. NULL = access has not ended
-    // (entitled), or the row predates this column and was entitled at backfill.
-    //
-    // ⚠️ Written ONLY in the same statement as `subscriptionStatus`, through
-    // `server/retention/status-classes.ts` (`accessEndedAtFor` /
-    // `insertedAccessEndedAt`): regaining access clears it, losing access sets
-    // it, and a further unentitled event KEEPS it. That KEEP is why this is not
-    // `entitlementUpdatedAt`, which advances on every later `subscription.*`
-    // event and would silently restart the clock.
-    //
-    // ⚠️ It is NOT an entitlement signal. No gate may read it for access;
-    // access is decided by `subscriptionStatus` alone. Only the retention sweep
-    // (`server/retention/sweep.ts`) reads it.
+    // Not `entitlementUpdatedAt`: a further unentitled event must keep this, not restart the
+    // retention clock. Not an entitlement signal.
     accessEndedAt: bigint('accessEndedAt', { mode: 'number' }),
-    // Epoch ms at which Brevo ACCEPTED the retention warning email for the
-    // CURRENT lapse (Story 73.2, D2). The purge requires it to be at least 30
-    // days old and not older than `accessEndedAt`, so deletion can never be
-    // unannounced. Cleared whenever access is regained.
+    // The purge requires this to be 30+ days old and not older than `accessEndedAt`: never delete unwarned.
     retentionNoticeSentAt: bigint('retentionNoticeSentAt', { mode: 'number' }),
-    // Epoch ms of the last ATTEMPT to send that notice, successful or not
-    // (Story 73.2 review). Notice candidates are taken oldest-attempt-first,
-    // never-attempted first, so an address Brevo keeps refusing rotates to the
-    // back of the queue instead of blocking every account behind it. A row
-    // whose notice never succeeds is NEVER deleted (Lucas, 2026-09-28: never
-    // delete unwarned). Cleared whenever access is regained.
+    // Candidates go oldest-attempt-first, so a refused address rotates back instead of blocking the queue.
     retentionNoticeAttemptedAt: bigint('retentionNoticeAttemptedAt', { mode: 'number' }),
     createdAt: timestamp('createdAt').defaultNow().notNull(),
     updatedAt: timestamp('updatedAt').defaultNow().notNull(),
   },
   (table) => ({
-    // CHECK constraints: Prevent empty strings for required fields
     emailNotEmpty: check('users_email_not_empty', sql`${table.email} <> ''`),
     paddleIdNotEmpty: check('users_paddleId_not_empty', sql`${table.paddleId} <> ''`),
   })
 )
 
-// Income Sources table - camelCase name per architecture
 export const incomeSources = pgTable(
   'incomeSources',
   {
-    // Client-generatable uuid PK (Story 5-14): a row created offline holds the
-    // SAME id everywhere, so a pull can reconcile by id with no duplicates. The
-    // DB default covers server-originated rows; the client MAY supply the id.
+    // The client may supply the id, so an offline-created row has the same id everywhere.
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('userId')
       .references(() => users.id)
@@ -276,38 +126,14 @@ export const incomeSources = pgTable(
       .references(() => userProfiles.id)
       .notNull(),
     name: varchar('name', { length: 255 }).notNull(),
-    amount: integer('amount').notNull(), // Amount in cents for precision (> 0 required)
+    amount: integer('amount').notNull(),
     frequency: frequencyEnum('frequency').notNull(),
-    // User-defined category (Story 30.4a, FR54). NULLABLE: uncategorized is a
-    // permanently valid state, so every row predating this column stays valid
-    // and no form gains a required field.
+    // Nullable: uncategorized is a permanently valid state.
     categoryId: uuid('categoryId').references(() => categories.id),
-    // Explicit display order (Story 34.1a, FR60). Zero-based integer scoped per
-    // (userId, profileId) list. The CLIENT assigns it as max+1 on insert; the
-    // server never computes or reshuffles it.
-    //
-    // ⚠️ "Dense" holds only immediately after the backfill. Deletes deliberately
-    // leave GAPS (see below), so treat the values as ORDERED, never as contiguous
-    // or as an index — 34.1b must not assume position N sits at sortOrder N.
-    //
-    // ⚠️ DELIBERATELY NOT UNIQUE and deliberately no CHECK (story 34.1a decision 4).
-    // Duplicates are EXPECTED: two devices reordering the same list offline both
-    // produce values in 0..n-1, and last-write-wins resolves each row independently.
-    // A unique index would make the losing insert fail at the database — the same
-    // failure class deferred-work.md records for `categories`. Convergence comes
-    // from the read-time tiebreaker instead (sortOrder -> createdAt -> id, all three
-    // device-independent). ⚠️ A CHECK would not help here anyway, and the reason is
-    // no longer "it would be inert": since story 66.5 / migration 0020 a declared
-    // CHECK does reach the database. The point is that duplicate `sortOrder` values
-    // are LEGAL, so there is nothing for one to assert — uniqueness is what would be
-    // wrong, not enforcement.
-    //
-    // Deletes leave GAPS on purpose — max+1 is gap-tolerant, and reindexing would
-    // emit N sync updates for a single deletion (decision 3).
+    // Not unique, no CHECK: duplicates are expected under two-device LWW, and reads converge on a
+    // tiebreaker. Deletes leave gaps, so treat values as ordered, never contiguous.
     sortOrder: integer('sortOrder').notNull().default(0),
-    // Soft-delete tombstone (Story 4-18): cross-device delete propagation. A hard
-    // DELETE can never be surfaced by a delta-by-updatedAt pull, so deletes are
-    // soft (isDeleted=true + updatedAt bump) and filtered from normal reads.
+    // Soft delete: a hard DELETE can't be surfaced by a delta-by-updatedAt pull.
     isDeleted: boolean('isDeleted').default(false).notNull(),
     createdAt: timestamp('createdAt').defaultNow().notNull(),
     updatedAt: timestamp('updatedAt').defaultNow().notNull(),
@@ -317,16 +143,13 @@ export const incomeSources = pgTable(
       table.userId,
       table.profileId
     ),
-    // CHECK constraint: amount must be positive (> 0)
     amountPositive: check('incomeSources_amount_positive', sql`${table.amount} > 0`),
   })
 )
 
-// Expenses table - camelCase name per architecture
 export const expenses = pgTable(
   'expenses',
   {
-    // Client-generatable uuid PK (Story 5-14); see incomeSources note above.
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('userId')
       .references(() => users.id)
@@ -335,43 +158,25 @@ export const expenses = pgTable(
       .references(() => userProfiles.id)
       .notNull(),
     name: varchar('name', { length: 255 }).notNull(),
-    amount: integer('amount').notNull(), // Amount in cents for precision (> 0 required)
+    amount: integer('amount').notNull(),
     frequency: frequencyEnum('frequency').notNull(),
-    // User-defined category (Story 30.4a, FR54); see incomeSources note above.
     categoryId: uuid('categoryId').references(() => categories.id),
-    // Story 65.2 (FR101): the user's statement that this expense ENDS before they
-    // retire, so the retirement planner can suggest what the desired income
-    // actually needs to cover. Defaults false = today's behaviour, unchanged.
-    // ⚠️ Named for the RULE, not the case. A commute that ends, daycare that
-    // ends, tuition that ends and a mortgage that ends are the same question, and
-    // one control answers all four — `isDebtPayoff` would answer only one and
-    // quietly imply the others do not count. `contributionRecordedAsExpense`
-    // below is the standing monument to getting this backwards (see its note and
-    // `contribution-flag-naming.guard.test.ts`): that name is now permanent
-    // because renaming it would be a six-gate sync change for no visible gain.
-    // ⚠️ This is a USER-SUPPLIED prediction, not an inference. Nothing the app
-    // can compute distinguishes a mortgage that ends in 2041 from rent that never
-    // does — the app has no amortization and `calculateDebtMetrics` is dormant.
+    // A user-supplied prediction: the app cannot compute whether an expense ends.
     endsBeforeRetirement: boolean('endsBeforeRetirement').notNull().default(false),
-    // Explicit display order (Story 34.1a, FR60); see incomeSources note above.
     sortOrder: integer('sortOrder').notNull().default(0),
-    // Soft-delete tombstone (Story 4-18): see incomeSources note above.
     isDeleted: boolean('isDeleted').default(false).notNull(),
     createdAt: timestamp('createdAt').defaultNow().notNull(),
     updatedAt: timestamp('updatedAt').defaultNow().notNull(),
   },
   (table) => ({
     userIdProfileIdIdx: index('expenses_userId_profileId_idx').on(table.userId, table.profileId),
-    // CHECK constraint: amount must be positive (> 0)
     amountPositive: check('expenses_amount_positive', sql`${table.amount} > 0`),
   })
 )
 
-// Savings Goals table - camelCase name per architecture
 export const savingsGoals = pgTable(
   'savingsGoals',
   {
-    // Client-generatable uuid PK (Story 5-14); see incomeSources note above.
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('userId')
       .references(() => users.id)
@@ -380,26 +185,12 @@ export const savingsGoals = pgTable(
       .references(() => userProfiles.id)
       .notNull(),
     name: varchar('name', { length: 255 }).notNull(),
-    // Nullable (Story 16-1): null ⇒ savings account (no target), a positive
-    // integer ⇒ goal — so "no target" is an ABSENT value, not a sentinel 0.
-    // (This shape was originally described as mirroring
-    // balanceTracking.maxContributionLimit, dropped by story 49.1 / FR75.)
-    targetAmount: integer('targetAmount'), // Target amount in cents (> 0 if provided; null = account)
-    currentBalance: integer('currentBalance').notNull().default(0), // Current balance in cents (>= 0 required)
-    // Per-account monthly allocation (Story 26.1). Nullable cents (>= 0 if
-    // provided; null = no manual amount) — mirrors targetAmount's optional shape.
+    // Nullable: null means a savings account with no target, not a sentinel 0.
+    targetAmount: integer('targetAmount'),
+    currentBalance: integer('currentBalance').notNull().default(0),
     monthlyAllocation: integer('monthlyAllocation'),
-    // Allocation mode (Story 26.1): 'manual' (fixed amount) or 'automatic' (even
-    // share of the leftover pool). NOT NULL default 'automatic' so pre-26.1 rows
-    // migrate non-destructively — mirrors balanceTracking.frequency's shape.
     allocationMode: allocationModeEnum('allocationMode').notNull().default('automatic'),
-    // Explicit display order (Story 34.1a, FR60); see incomeSources note above.
-    // ⚠️ This list previously ordered NEWEST-FIRST via core's `sortByCreationDate`;
-    // 34.1a normalizes it to oldest-first + append-at-bottom, so the backfill below
-    // (createdAt ASC) intentionally REVERSES the visible order once. Pre-launch, so
-    // no user's data is affected.
     sortOrder: integer('sortOrder').notNull().default(0),
-    // Soft-delete tombstone (Story 4-18): see incomeSources note above.
     isDeleted: boolean('isDeleted').default(false).notNull(),
     createdAt: timestamp('createdAt').defaultNow().notNull(),
     updatedAt: timestamp('updatedAt').defaultNow().notNull(),
@@ -409,8 +200,6 @@ export const savingsGoals = pgTable(
       table.userId,
       table.profileId
     ),
-    // CHECK constraints: targetAmount must be positive if provided (null = account,
-    // Story 16-1), currentBalance must be non-negative
     targetAmountPositive: check(
       'savingsGoals_targetAmount_positive',
       sql`${table.targetAmount} IS NULL OR ${table.targetAmount} > 0`
@@ -419,12 +208,6 @@ export const savingsGoals = pgTable(
       'savingsGoals_currentBalance_non_negative',
       sql`${table.currentBalance} >= 0`
     ),
-    // Story 26.1: monthlyAllocation non-negative if provided (null = no manual
-    // amount). ⚠️ This was doc-only until story 66.5: drizzle-kit 0.23 emits no
-    // CHECK DDL, so the app-layer bounds (validateSavingsGoal + the sync zod
-    // schemas) were the ONLY enforcement. Migration 0020 adds it by hand, so the
-    // database now refuses a negative allocation too — the zod bounds are a first
-    // line of defence in front of it, not a substitute for it.
     monthlyAllocationNonNegative: check(
       'savingsGoals_monthlyAllocation_non_negative',
       sql`${table.monthlyAllocation} IS NULL OR ${table.monthlyAllocation} >= 0`
@@ -432,11 +215,9 @@ export const savingsGoals = pgTable(
   })
 )
 
-// Balance Tracking table - camelCase name per architecture
 export const balanceTracking = pgTable(
   'balanceTracking',
   {
-    // Client-generatable uuid PK (Story 5-14); see incomeSources note above.
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('userId')
       .references(() => users.id)
@@ -444,45 +225,22 @@ export const balanceTracking = pgTable(
     profileId: uuid('profileId')
       .references(() => userProfiles.id)
       .notNull(),
-    type: financeTypeEnum('type').notNull(), // investment, debt or asset
+    type: financeTypeEnum('type').notNull(),
     name: varchar('name', { length: 255 }).notNull(),
-    // Current balance in cents. Story 103.1 (FR171): a non-negative magnitude for
-    // every type (a debt is the amount OWED). The client validator refuses a
-    // negative value; readers treat a legacy negative debt as owed. NOT enforced
-    // here on purpose: see the constraint note below.
+    // A non-negative magnitude (a debt is the amount owed), refused only by the client validator.
     currentBalance: integer('currentBalance').notNull().default(0),
-    // Contribution amount in cents (>= 0 required). Story 16-2: no longer implicitly
-    // monthly — `frequency` (below) is its cadence; the monthly-equivalent is derived
-    // via the normalization engine. Column name retained for call-site stability.
+    // Its cadence is `frequency`; the name is kept for call-site stability.
     monthlyContribution: integer('monthlyContribution').notNull().default(0),
-    // Story 16-2: cadence of `monthlyContribution`, reusing the shared frequency enum.
-    // Defaults to 'monthly' so existing rows preserve their current (monthly) behavior.
     frequency: frequencyEnum('frequency').notNull().default('monthly'),
-    // Story 45.1 (FR72): the user's statement that this row's `monthlyContribution`
-    // is ALREADY recorded as an expense line, so the savings distributable pool must
-    // not subtract it a second time. Defaults false = today's arithmetic, unchanged.
-    // ⚠️ This is a USER-SUPPLIED distinguisher, not an inference. A same-money and a
-    // different-money user are byte-identical in every other column, so nothing the
-    // app can compute tells them apart — see `savingsAllocation.ts` and FR72.
+    // User-supplied: the contribution is already an expense line, so the savings pool must not
+    // subtract it twice. Nothing else distinguishes such rows.
     contributionRecordedAsExpense: boolean('contributionRecordedAsExpense')
       .notNull()
       .default(false),
-    // Story 102.1 (FR169): the expense row that pays this DEBT, so the payment is
-    // entered once (on Expenses) and the debt reads its amount from there. Null =
-    // not linked. Only a debt carries one (`validateBalanceTracking`).
-    // ⚠️⚠️ DELIBERATELY NO `.references()`. `expenses.categoryId` is a real FK and
-    // its sync is still pinned to null (`syncBridge.ts` `cashflowPayload`): a 23503
-    // comes back as a 200 envelope, stays queued and opens the circuit breaker for
-    // ALL of the account's sync. Pull is paginated by `updatedAt`, so a device can
-    // legitimately hold a link to an expense it has not pulled yet, or one that was
-    // deleted. A dangling value is therefore a NORMAL state: every reader resolves
-    // it against the active profile's expenses and treats a miss as "not linked".
+    // Deliberately no `.references()`: a dangling link is a normal state, and a 23503 on push would
+    // replay until the circuit breaker stops all sync.
     paymentExpenseId: uuid('paymentExpenseId'),
-    // Explicit display order (Story 34.1a, FR60); see incomeSources note above.
-    // ⚠️ Like savingsGoals, this list was newest-first via `sortByCreationDate` and
-    // is normalized to oldest-first here — the backfill reverses it once.
     sortOrder: integer('sortOrder').notNull().default(0),
-    // Soft-delete tombstone (Story 4-18): see incomeSources note above.
     isDeleted: boolean('isDeleted').default(false).notNull(),
     createdAt: timestamp('createdAt').defaultNow().notNull(),
     updatedAt: timestamp('updatedAt').defaultNow().notNull(),
@@ -492,22 +250,8 @@ export const balanceTracking = pgTable(
       table.userId,
       table.profileId
     ),
-    // CHECK constraint: monthlyContribution must be non-negative. Enforced by the
-    // database since story 66.5 / migration 0020.
-    // ⚠️ Story 49.1 removed `balanceTracking_maxContributionLimit_valid` alongside
-    // the column it guarded and carried NO `DROP CONSTRAINT`. That was correct and
-    // stays correct: at the time drizzle-kit 0.23 had never emitted ANY check() to
-    // a migration, so there was nothing in SQL to drop. Migration 0020 adds the
-    // eight that still exist — it does not resurrect the one 49.1 deleted.
-    // ⚠️ `currentBalance` deliberately gets NO constraint on this table, and the
-    // reason CHANGED in story 103.1. It used to be "debt balances are negative by
-    // design"; since FR171 every balance is non-negative, but a CHECK here would
-    // be a permanent refusal past the client's sync queue (a 23514 is classified
-    // `constraint` and never cleared), so a legacy negative debt could never be
-    // pushed and the device would keep a row the server refuses. The sign is
-    // refused ONLY by `validateBalanceTracking`, before anything is queued
-    // (memory: schema-as-gate trap 5). Only `savingsGoals.currentBalance` is
-    // bounded, and `check-constraints.test.ts` pins both halves of that asymmetry.
+    // No CHECK on `currentBalance` here: a 23514 past the client's sync queue is never cleared, so a
+    // legacy negative debt could never be pushed.
     monthlyContributionNonNegative: check(
       'balanceTracking_monthlyContribution_non_negative',
       sql`${table.monthlyContribution} >= 0`
@@ -515,9 +259,6 @@ export const balanceTracking = pgTable(
   })
 )
 
-// User Profiles table - camelCase name per architecture
-// Profiles allow users to organize their financial data for different purposes
-// Only available for paid tier users
 export const userProfiles = pgTable(
   'userProfiles',
   {
@@ -529,82 +270,28 @@ export const userProfiles = pgTable(
     description: text('description'),
     isDefault: boolean('isDefault').default(false).notNull(),
     currency: currencyEnum('currency').default('NONE'),
-    // User-chosen avatar emoji (Story 54.2, FR78).
-    //
-    // ⚠️ NULLABLE ON PURPOSE, and there is deliberately no backfill. `null` means
-    // "never chosen", and the client renders the hash-derived fallback it has
-    // always rendered (`apps/web/src/lib/profile-appearance.ts`). That is what
-    // makes this column invisible to every user who does not open the picker.
-    //
-    // ⚠️ NOT an enum and NOT CHECK-constrained, so the stored value is not
-    // trustworthy. ⚠️ The REASON changed with story 66.5 even though the fact did
-    // not: CHECK constraints do now reach the database (migration 0020), so one
-    // here WOULD be enforcement — there simply isn't one, because no `check()` is
-    // declared for this column and 66.5 added no new declarations. The real gate
-    // is still `isProfileIcon` at the render boundary, which falls back to the
-    // hash for anything that is not one of the eight known emoji.
-    //
-    // 16 is comfortable for a multi-code-point emoji: '✈️' alone carries a
-    // variation selector, and a flag or ZWJ sequence is longer still.
+    // Nullable (never chosen) and unconstrained: `isProfileIcon` at render is the real gate.
+    // 16 fits multi-code-point emoji.
     icon: varchar('icon', { length: 16 }),
-    // Soft-delete tombstone (Story 4-18): see incomeSources note above.
     isDeleted: boolean('isDeleted').default(false).notNull(),
     createdAt: timestamp('createdAt').defaultNow().notNull(),
     updatedAt: timestamp('updatedAt').defaultNow().notNull(),
   },
   (table) => ({
     userIdIdx: index('userProfiles_userId_idx').on(table.userId),
-    // ⚠️ Partial unique index (Story 5-19, AC-4): AT MOST ONE default profile per
-    // user, enforced by the DATABASE rather than by a read-then-write check.
-    //
-    // `createDefaultProfileForUser` is check-then-insert outside any transaction,
-    // and one lifetime purchase emits BOTH `transaction.paid` and
-    // `transaction.completed` — processed concurrently, both saw zero rows and
-    // both inserted, leaving two "Main Profile" rows with `isDefault: true`,
-    // after which profile-scoped reads pick arbitrarily and the buyer's data
-    // appears to vanish between requests. No application-level guard closes that
-    // window; only a constraint does.
-    //
-    // Tombstoned rows are excluded: a soft-deleted default (Story 4-18) must not
-    // block creating a new one.
+    // At most one default profile per user, enforced by the database: concurrent webhooks raced
+    // the app-level check-then-insert.
     oneDefaultPerUser: uniqueIndex('userProfiles_one_default_per_user')
       .on(table.userId)
       .where(sql`${table.isDefault} AND NOT ${table.isDeleted}`),
   })
 )
 
-// Categories table - user-defined income/expense categories (Story 30.4a, FR54)
-//
-// Premium capability. Modelled as a first-class entity rather than a
-// denormalized string on each row because the feature requires rename and
-// delete: renaming must update every referencing row with no per-row edit, and
-// a denormalized copy cannot be renamed or deleted coherently.
-//
-// `incomeSources.categoryId` / `expenses.categoryId` reference this table and
-// are NULLABLE — every pre-existing row stays valid and uncategorized, and no
-// form gains a required field.
-//
-// ⚠️ This is the FIRST foreign key in this schema between two entities the user
-// creates at will. Every other FK targets `users` or `userProfiles`, which
-// always exist before any child row. Consequences the sync layer must respect:
-//   - PUSH: a category must reach the server before any row referencing it.
-//     Interactive use is safe because the queue is timestamp-FIFO, but
-//     seedLocalData's free->paid backfill enqueues in hard-coded entity order,
-//     so categories are seeded FIRST there (see lib/sync/seedLocalData.ts).
-//   - PULL: changes are paginated by updatedAt, so a device can legitimately
-//     receive a row whose category it has not pulled yet. There is no FK in
-//     localStorage, so a dangling categoryId is a NORMAL client state that must
-//     be rendered as "uncategorized" rather than assumed to resolve.
-//     ⚠️ Code review 30.4a: this paragraph previously asserted "the UI resolves
-//     it to uncategorized" as though that were implemented. It is not — no
-//     resolver exists anywhere in the client, and the pickable-set filters do
-//     not cover a cashflow row pointing at a category this device has never
-//     seen. Story 30.4b OWNS building it; until then this is a documented
-//     requirement, not a description of the code.
+// First FK between user-created entities: categories must push before rows referencing them, and
+// a pulled row may reference a category not yet pulled.
 export const categories = pgTable(
   'categories',
   {
-    // Client-generatable uuid PK, same rationale as incomeSources (Story 5-14).
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('userId')
       .references(() => users.id)
@@ -614,60 +301,26 @@ export const categories = pgTable(
       .notNull(),
     name: varchar('name', { length: 255 }).notNull(),
     kind: categoryKindEnum('kind').notNull(),
-    // Soft-delete tombstone (Story 4-18), as on every other synced entity.
     isDeleted: boolean('isDeleted').default(false).notNull(),
     createdAt: timestamp('createdAt').defaultNow().notNull(),
     updatedAt: timestamp('updatedAt').defaultNow().notNull(),
   },
   (table) => ({
     userIdProfileIdIdx: index('categories_userId_profileId_idx').on(table.userId, table.profileId),
-    // Duplicate names are rejected per (user, profile, kind) — but ONLY among
-    // LIVE rows. A plain `unique(...)` like forecastingProfiles' would collide
-    // with the soft-delete tombstone above: deleting "Groceries" and creating it
-    // again would hit a 23505 while the client store happily kept the new row —
-    // silent client/server divergence that no test would surface.
-    // forecastingProfiles has no isDeleted column, which is why its unmodified
-    // pattern is not safe here.
-    //
-    // ⚠️ CASE-INSENSITIVE on `lower(name)` (code review 30.4a, Lucas's call;
-    // migration 0012). The client's `isDuplicateName` has always compared
-    // `trim().toLocaleLowerCase()`, so a case-SENSITIVE index disagreed with it
-    // in both directions: it accepted "Groceries" and "groceries" as distinct
-    // rows that every client then treated as duplicates and no code path
-    // reconciled. Keep this expression and the client's `normalizeName` in step
-    // — they are one rule expressed twice.
+    // Unique only among live rows, or re-creating a deleted name hits its tombstone. Case-insensitive
+    // to match the client's `normalizeName`; keep the two in step.
     liveNameUnique: uniqueIndex('categories_userId_profileId_kind_name_live_unique')
       .on(table.userId, table.profileId, table.kind, sql`lower(${table.name})`)
       .where(sql`${table.isDeleted} = false`),
   })
 )
 
-// Rate Limit table - unified server-side rate limiting (Story SEC-2).
-//
-// One fixed-window counter per (scope, subject, windowStart) bucket, shared
-// across app instances so horizontal scaling can't multiply the effective limit.
-// Backs BOTH the sync per-user limiter AND the auth limiters (magic-link
-// request per-IP/per-email, verify per-IP), replacing the former in-memory
-// single-instance `sliding-window.ts`. The Paddle OAuth callback route this
-// once also rate-limited was deleted by story 5-3 (AC-1); its 'paddle-cb'
-// scope was removed from the union with it — no CHECK constraint or prune
-// query ever referenced the value, so this was doc-only drift.
-//
-// - `scope`   namespaces buckets so an IP/email/user can never consume another
-//             bucket's budget: 'ip' | 'email' | 'login-verify' | 'sync'.
-// - `subject` is the bucket key within a scope (IP string, lowercased email, or userId).
-// - `userId`  is populated ONLY for the 'sync' scope (FK → users), so account
-//             erasure (account.ts) still removes a user's sync counters; it is
-//             NULL for IP/email buckets, which have no owning user. Erasure
-//             removes the account's email bucket by `subject` instead (74.2).
-// - `windowStart` is the fixed bucket boundary (floor(now / windowMs) * windowMs);
-//             the UNIQUE (scope, subject, windowStart) index is the ON CONFLICT
-//             target for the atomic upsert in server/rate-limit/db-window.ts.
+// Fixed-window counters shared across instances. `userId` is set only for the 'sync' scope, so
+// account erasure removes it; email buckets are erased by `subject`.
 export const rateLimits = pgTable(
   'rateLimits',
   {
     id: serial('id').primaryKey(),
-    // Nullable now: only 'sync' rows carry an owning user; IP/email rows do not.
     userId: uuid('userId').references(() => users.id),
     scope: varchar('scope', { length: 32 }).notNull(),
     subject: text('subject').notNull(),
@@ -678,12 +331,7 @@ export const rateLimits = pgTable(
   },
   (table) => ({
     userIdIdx: index('rateLimits_userId_idx').on(table.userId),
-    // Story sec-3: the expired-window reaper deletes on `windowStart` ALONE.
-    // The unique index below leads with `scope`, so a range scan on windowStart
-    // cannot use it. NOTE the honest scope of the benefit: under a heavy flood
-    // most rows are stale, so the planner will pick a seq scan regardless — the
-    // index pays off in STEADY STATE, where few rows are eligible and a seq scan
-    // over a large table would otherwise run on the auth hot path.
+    // The reaper deletes on `windowStart` alone, which the unique index (leading with `scope`) can't serve.
     windowStartIdx: index('rateLimits_windowStart_idx').on(table.windowStart),
     // Atomic-upsert conflict target: one row per bucket.
     scopeSubjectWindowIdx: uniqueIndex('rateLimits_scope_subject_window_idx').on(
@@ -694,9 +342,6 @@ export const rateLimits = pgTable(
   })
 )
 
-// Forecasting Profiles table - for saving premium forecasting scenarios
-// Only available for paid tier users
-// Allows users to save, load, and manage their forecasting scenarios
 export const forecastingProfiles = pgTable(
   'forecastingProfiles',
   {
@@ -709,9 +354,7 @@ export const forecastingProfiles = pgTable(
       .notNull(),
     name: varchar('name', { length: 255 }).notNull(),
     description: text('description'),
-    // Serialized forecasting scenario data
-    scenarioData: text('scenarioData').notNull(), // JSON string
-    // Version for schema evolution
+    scenarioData: text('scenarioData').notNull(),
     version: integer('version').default(1).notNull(),
     isDefault: boolean('isDefault').default(false).notNull(),
     createdAt: timestamp('createdAt').defaultNow().notNull(),
@@ -724,7 +367,6 @@ export const forecastingProfiles = pgTable(
       table.userId,
       table.profileId
     ),
-    // Prevent duplicate forecast names within the same user/profile (P6)
     userIdProfileIdNameUnique: unique('forecastingProfiles_userId_profileId_name_unique').on(
       table.userId,
       table.profileId,
@@ -733,25 +375,8 @@ export const forecastingProfiles = pgTable(
   })
 )
 
-// Retirement Plans table - one synced retirement plan per ACCOUNT (story 99.2, FR161).
-//
-// ⚠️ ONE ROW PER USER, and `id` IS the user's id (decision D3): the client always
-// sends `entityId = userId` and the sync server refuses any other id, so a user can
-// never hold a second row (no 23505 path) and no `defaultRandom()` is declared.
-//
-// ⚠️ `plan` is ONE jsonb column holding all eleven `RetirementPlan` fields
-// (decision D1), validated by core's `retirementPlanSyncSchema` on push and coerced
-// field by field on pull. NO `check()` here, deliberately (schema-as-gate trap 5):
-// in this product a database rejection on the push path is kept queued and replays
-// until the circuit breaker stops ALL sync for the account.
-//
-// ⚠️ NO `profileId` column, and its absence is load-bearing: the sync server's
-// `'profileId' in table` tests route a plan op past every profile-ownership check.
-// `isDeleted` is never set true (there is no delete op); it exists because the pull
-// (`fetchTableChangesSafely`) and `tombstoneExists` read it on every synced table.
-//
-// FK is RESTRICT like every other: account erasure (`eraseAccountRows`) deletes
-// this row before `users`, or erasure and the retention purge THROW.
+// One row per user, `id` = the user's id. No `profileId` (its absence routes plan ops past
+// profile checks) and no `check()`: a push-side DB rejection replays until sync stops.
 export const retirementPlans = pgTable(
   'retirementPlans',
   {
@@ -769,18 +394,7 @@ export const retirementPlans = pgTable(
   })
 )
 
-// Login Tokens table - single-use magic-link tokens for passwordless re-auth (Story 5-16)
-//
-// Authentication is APP-OWNED email magic-link (ADR-003): a returning paid user
-// requests a link, we email a one-time token, and consuming it mints the existing
-// HMAC-signed session. We store ONLY the SHA-256 hash of the token (never the raw
-// value), so a leaked database row cannot be replayed as a login link. Single-use
-// is enforced by the `consumedAt` watermark inside one atomic UPDATE, which is
-// naturally correct under Rapids horizontal scaling (unlike an in-memory cache).
-//
-// This table authenticates EXISTING users only — account creation happens at
-// Paddle Billing checkout (Story 5-3). A request for an unknown email creates no
-// row and no token.
+// Stores only the SHA-256 of each token; single-use via `consumedAt` in one atomic UPDATE.
 export const loginTokens = pgTable(
   'loginTokens',
   {
@@ -788,16 +402,9 @@ export const loginTokens = pgTable(
     userId: uuid('userId')
       .references(() => users.id)
       .notNull(),
-    // SHA-256 of the raw token, lowercase hex (64 chars). The raw token lives
-    // only in the emailed link; we look up by re-hashing the presented value.
     tokenHash: varchar('tokenHash', { length: 64 }).unique().notNull(),
-    // Short TTL (≤15 min, set in the token service). timestamptz so TTL math is
-    // timezone-safe across the app server and DB.
     expiresAt: timestamp('expiresAt', { mode: 'date', withTimezone: true }).notNull(),
-    // NULL until the link is opened; set atomically on consume to enforce single-use.
     consumedAt: timestamp('consumedAt', { mode: 'date', withTimezone: true }),
-    // timestamptz to match expiresAt/consumedAt — one consistent tz convention
-    // within the table (the column is currently audit-only, not used for TTL).
     createdAt: timestamp('createdAt', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
@@ -805,30 +412,15 @@ export const loginTokens = pgTable(
   })
 )
 
-// Paddle webhook event log (Story 5-19, AC-2) — the idempotency store.
-//
-// Signature + freshness were the only defences on the webhook, and NEITHER
-// stops a duplicate: Paddle re-signs every retry with a fresh `ts`, so a retry
-// is indistinguishable from a first delivery by signature alone.
-//
-// One row per Paddle event id. The PRIMARY KEY is the dedup mechanism: the
-// handler inserts BEFORE doing any work, and a conflict means "already seen" →
-// return a terminal 200 and do nothing. There is deliberately no FK to `users`:
-// an event can arrive for a customer we have no row for yet (that is the
-// first-seen-buyer path), and the log must survive account erasure so a replay
-// after deletion is still recognised as a replay.
+// Idempotency store: the PK dedups, since Paddle re-signs retries. No FK to users, so it
+// survives erasure and handles first-seen buyers.
 export const paddleWebhookEvents = pgTable(
   'paddleWebhookEvents',
   {
-    // Paddle's own event id (`evt_...`), or `data.id` when the envelope omits
-    // one. Supplied by us, never generated — it IS the identity of the delivery.
     eventId: varchar('eventId', { length: 255 }).primaryKey(),
     eventType: varchar('eventType', { length: 255 }).notNull(),
-    // Nullable: a few event types carry no customer (and we still want the
-    // delivery deduplicated).
     customerId: varchar('customerId', { length: 255 }),
-    // The event's own `occurred_at`, epoch ms — the ordering key. NOT arrival
-    // time: arrival order is exactly what cannot be trusted here.
+    // The event's own `occurred_at`; arrival order can't be trusted.
     occurredAt: bigint('occurredAt', { mode: 'number' }),
     processedAt: timestamp('processedAt', { mode: 'date', withTimezone: true })
       .defaultNow()
@@ -839,28 +431,13 @@ export const paddleWebhookEvents = pgTable(
   })
 )
 
-// Paddle adjustment ledger (Story 5-19 review) — one row per ADJUSTMENT.
-//
-// ⚠️ This exists because the webhook-event store cannot do this job. Paddle
-// emits BOTH `adjustment.created` and `adjustment.updated` for the SAME
-// adjustment, as two deliveries with two different `event_id`s. Event-level
-// dedup therefore lets both through, and an accumulator keyed on the customer
-// counted one €50 partial refund twice — revoking a €99 lifetime grant that
-// was only half refunded.
-//
-// The refunded total is now DERIVED by summing this table rather than
-// incremented in place, so replaying any delivery any number of times cannot
-// change the result. `adjustmentId` is the primary key; re-delivery is an
-// `ON CONFLICT DO NOTHING`.
+// One row per adjustment: Paddle sends created and updated for the same one under different event
+// ids. Refunded totals are summed from here, so replays can't change them.
 export const paddleAdjustments = pgTable(
   'paddleAdjustments',
   {
-    // Paddle's adjustment id (`adj_...`) — the identity of the MONEY MOVEMENT,
-    // as distinct from the identity of the delivery that told us about it.
     adjustmentId: varchar('adjustmentId', { length: 255 }).primaryKey(),
     customerId: varchar('customerId', { length: 255 }).notNull(),
-    // The transaction the adjustment is against, so a refund can be matched to
-    // the grant it belongs to rather than to the customer at large.
     transactionId: varchar('transactionId', { length: 255 }),
     /** `refund` | `credit` | `chargeback` | `chargeback_warning` | reversals. */
     action: varchar('action', { length: 64 }).notNull(),
@@ -874,29 +451,14 @@ export const paddleAdjustments = pgTable(
   })
 )
 
-// Job Runs table — single-flight lease + success heartbeat for unattended jobs
-// (Story 73.2). One row per job `name`, seeded by its migration.
-//
-// - `leaseUntil` (epoch ms): a run claims the job with ONE atomic
-//   `UPDATE … WHERE leaseUntil IS NULL OR leaseUntil < now RETURNING`. No row
-//   back → another run holds it. Pool-safe, unlike a session advisory lock,
-//   and it self-heals: a run that dies mid-way stops blocking once it expires.
-// - `lastCompletedAt` (epoch ms): the end of the last run that reached its end,
-//   whether or not individual accounts failed (Story 73.2 review: one address
-//   Brevo refuses must not look like a stopped schedule). The in-app backstop
-//   reads it to decide whether the scheduled trigger has stopped (GitHub
-//   disables schedules on a public repo after 60 idle days). Per-account
-//   failures still turn the scheduled run red via the route's 500.
-//
-// No FK, no user data: it records that a job ran, never what it touched.
+// `leaseUntil` is claimed by one atomic conditional UPDATE and self-heals on expiry.
+// `lastCompletedAt` lets a backstop notice a stopped schedule (GitHub disables idle ones).
 export const jobRuns = pgTable('jobRuns', {
   name: varchar('name', { length: 64 }).primaryKey(),
   leaseUntil: bigint('leaseUntil', { mode: 'number' }),
   lastCompletedAt: bigint('lastCompletedAt', { mode: 'number' }),
 })
 
-// Type exports for TypeScript type safety
-// Note: Using InferSelectModel instead of deprecated InferModel
 export type User = InferSelectModel<typeof users>
 export type NewUser = InferInsertModel<typeof users>
 
@@ -937,23 +499,17 @@ export type NewPaddleWebhookEvent = InferInsertModel<typeof paddleWebhookEvents>
 export type PaddleAdjustment = InferSelectModel<typeof paddleAdjustments>
 export type NewPaddleAdjustment = InferInsertModel<typeof paddleAdjustments>
 
-// Frequency enum type
 export type Frequency = (typeof frequencyEnum.enumValues)[number]
 
-// Finance type enum type
 export type FinanceType = (typeof financeTypeEnum.enumValues)[number]
 
-// Subscription status enum type
 export type SubscriptionStatus = (typeof subscriptionStatusEnum.enumValues)[number]
 
-// Currency enum type
 export type Currency = (typeof currencyEnum.enumValues)[number]
 export type BillingInterval = (typeof billingIntervalEnum.enumValues)[number]
 
-// Category kind enum type (Story 30.4a)
 export type CategoryKind = (typeof categoryKindEnum.enumValues)[number]
 
-// Export all tables for use in migrations and queries
 export const allTables = {
   users,
   incomeSources,
@@ -970,7 +526,3 @@ export const allTables = {
   paddleAdjustments,
   jobRuns,
 }
-
-// NOTE: Database constraint testing requires a live PostgreSQL connection (DATABASE_URL)
-// Unit tests for schema validation will be added when database is configured
-// See: pnpm --filter db db:generate (requires DATABASE_URL)

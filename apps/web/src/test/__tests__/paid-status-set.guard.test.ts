@@ -2,54 +2,14 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-/**
- * Story 78.3 (FR127) guard: which statuses grant access is defined ONCE, in
- * `lib/premium/access-statuses.ts`. This walks the web source and fails if a
- * new hand-written copy of a status set appears anywhere else.
- *
- * Why a guard and not a comment: the paid-access set was hand-copied six times
- * and the premium-features rule written inline fifteen times. `lifetime` went
- * missing from copies twice (30.4a, 34.1a), and Story 73.2's inventory of the
- * copies counted five of six — its grep's PATTERN was too narrow. So this guard
- * matches SHAPES, not one spelling. A "status" is any value of the
- * `subscriptionStatus` enum; a shape naming TWO DIFFERENT statuses is a set:
- *
- *  (a) an array / `Set` literal (any order or quote, `as const` or not, multi-line);
- *  (b) comparisons against two different statuses in ONE expression joined by
- *      `||` / `&&` — whatever sits between them (`|| s === 'trialing' ||`,
- *      `|| isLegacy ||`) and whatever the operand looks like (`u['status']`,
- *      `(x as U).status`); `.includes('<status>')` counts as a comparison, and
- *      the complement (`!== 'free' && !== 'canceled'`) is a set too;
- *  (c) two statuses as fall-through `case` labels;
- *  (d) a keyed table — an object literal with two statuses as keys
- *      (`{ active: true, lifetime: true }`, the pre-78.3 `STATUS_CLASS` shape).
- *
- * A single-status test (`=== 'lifetime'` for the no-downgrade rule, message
- * branching, a display `switch` with one label and a body per branch) is NOT a
- * set and is not flagged — pinned by the negative cases below.
- *
- * SCOPE — TEST FILES ARE NOT WALKED (decision, Lucas 2026-09-29, 78.3 review).
- * Tests legitimately restate these sets as value pins. The one test-side copy
- * that did drift (the sync route tests' `vi.mock` `['active','past_due']`) was
- * removed by 78.3, and those tests now exercise the real `hasPaidAccess`. The
- * matcher RECOGNISES that shape (fixture below); the walk does not look there.
- *
- * Known limitation (as the no-browser-confirm guard): aliasing, computed
- * strings, regex literals, ternary chains and spreads can evade a text scan. It
- * is defence in depth against the copy-paste that actually happened, not an AST
- * proof.
- */
+// Matches SHAPES, not one spelling: anything naming two different statuses is a set. Test
+// files are not walked: they legitimately restate sets as value pins.
 
 const SRC_ROOT = resolve(__dirname, '../..')
 
-/** The one definition. It is exempt: it IS the keyed table. */
 const DEFINITION = 'lib/premium/access-statuses.ts'
 
-/**
- * Files allowed to contain a matching shape, with the EXACT number of matches.
- * A count, not a presence flag: a second copy added to an allowed file must
- * still fail (allow-list masking — see memory "allow-list needs exact counts").
- */
+// A count, not a presence flag: a second copy added to an allowed file must still fail.
 const ALLOWED: Readonly<Record<string, number>> = {
   // Paddle's OWN subscription statuses (`trialing`, `paused` are not ours), the
   // set of subscriptions to cancel on account deletion — not an access rule.
@@ -63,12 +23,8 @@ const STATUS_WORDS = ['free', 'active', 'past_due', 'canceled', 'lifetime'] as c
 const STATUS = `(${STATUS_WORDS.join('|')})`
 const Q = '[\'"`]'
 
-/**
- * Blank comments while keeping strings, template literals and regex literals
- * intact, so a `/*` or `//` INSIDE a string (a CSP source, a glob, a URL) can
- * never hide the code after it. Comment characters become spaces; newlines are
- * kept.
- */
+// Blank comments but keep strings, templates and regex literals, so a `/*` inside a string
+// can't hide the code after it.
 export function stripComments(source: string): string {
   let out = ''
   let i = 0
@@ -106,7 +62,6 @@ export function stripComments(source: string): string {
       continue
     }
     if (ch === '/' && (prev === '' || /[(,=:[!&|?{};+\-*%<>~^]/.test(prev))) {
-      // Regex literal: copy through its closing `/`, honouring escapes and classes.
       let j = i + 1
       let inClass = false
       while (j < n && source[j] !== '\n') {
@@ -137,12 +92,10 @@ function distinctStatuses(text: string): Set<string> {
   return found
 }
 
-/** Whether the text between two positions stays inside ONE expression. */
 function sameExpression(between: string): boolean {
   return !/[;{}]/.test(between) && /\|\||&&/.test(between)
 }
 
-/** Whether the text between two keys stays inside ONE object literal (balanced, no `;`). */
 function sameObject(between: string): boolean {
   if (between.includes(';')) return false
   let depth = 0
@@ -154,21 +107,15 @@ function sameObject(between: string): boolean {
   return depth === 0
 }
 
-/**
- * Every status-set shape in `source` (comments are stripped here). Returns the
- * offending snippets, whitespace-collapsed.
- */
 export function findStatusSetCopies(source: string): string[] {
   const code = stripComments(source)
   const hits: string[] = []
   const show = (s: string) => s.replace(/\s+/g, ' ').trim()
 
-  // (a) bracketed literal (no nested brackets) naming 2+ statuses.
   for (const m of code.matchAll(/\[[^[\]]*\]/g)) {
     if (distinctStatuses(m[0]).size >= 2) hits.push(show(m[0]))
   }
 
-  // (b) comparison atoms, matched by operator + literal only (any operand).
   const cmp = '(?:===|!==|==|!=)'
   const atom = new RegExp(
     `${cmp}\\s*(${Q})${STATUS}\\1|(${Q})${STATUS}\\3\\s*${cmp}|\\.includes\\(\\s*(${Q})${STATUS}\\5\\s*\\)`,
@@ -182,7 +129,6 @@ export function findStatusSetCopies(source: string): string[] {
   for (let i = 0; i < atoms.length; i++) {
     const a = atoms[i]
     if (!a) continue
-    // The nearest later atom with a DIFFERENT status, still in the same expression.
     for (let k = i + 1; k < atoms.length; k++) {
       const b = atoms[k]
       if (!b) break
@@ -197,12 +143,10 @@ export function findStatusSetCopies(source: string): string[] {
     }
   }
 
-  // (c) fall-through case labels: `case 'active': case 'lifetime':` with no body between.
   for (const m of code.matchAll(new RegExp(`(?:case\\s*(${Q})${STATUS}\\1\\s*:\\s*){2,}`, 'g'))) {
     if (distinctStatuses(m[0]).size >= 2) hits.push(show(m[0]))
   }
 
-  // (d) keyed table: two different status keys in one object literal.
   const key = new RegExp(`[{,]\\s*(?:(${Q})${STATUS}\\1|\\b${STATUS}\\b)\\s*:`, 'g')
   const keys = [...code.matchAll(key)].map((m) => ({
     status: (m[2] ?? m[3]) as string,
@@ -228,7 +172,6 @@ export function findStatusSetCopies(source: string): string[] {
   return hits
 }
 
-/** Recursively collect non-test source files (.ts/.tsx/.js/.mjs/.cjs). */
 function collectSourceFiles(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry)
@@ -271,23 +214,18 @@ describe('stripComments — strings are not comments', () => {
 
 describe('findStatusSetCopies — catches every historical spelling', () => {
   it.each([
-    // The six copies Story 78.3 removed, verbatim.
     ["const ENTITLED_STATUSES: readonly string[] = ['active', 'past_due', 'lifetime']"],
     ["const PAID_ACCESS_STATUSES: readonly string[] = ['active', 'past_due', 'lifetime']"],
     ["export const PAID_SYNC_STATUSES = ['active', 'past_due', 'lifetime'] as const"],
     ["export const PAID_SYNC_STATUSES = ['active', 'past_due', 'lifetime']"],
     ["const ALREADY_PREMIUM_STATUSES = ['active', 'past_due', 'lifetime'] as const"],
-    // The stale two-status shape the sync route TESTS carried (the matcher knows
-    // it; test files are outside the walk — see SCOPE above).
     ["PAID_SYNC_STATUSES: ['active', 'past_due'],"],
-    // Reordered, double-quoted, backticks, Set, multi-line, the lapsed complement.
     ["const X = ['lifetime', 'active']"],
     ['const X = ["past_due", "lifetime"]'],
     ['const X = [`active`, `lifetime`]'],
     ["const X = new Set(['active', 'lifetime'])"],
     ["const X = [\n  'lifetime',\n  'past_due',\n  'active',\n] as const"],
     ["const LAPSED = ['free', 'canceled']"],
-    // Inline comparisons — the fifteen premium-features sites' shapes.
     ["return subscriptionStatus === 'active' || subscriptionStatus === 'lifetime'"],
     ["(seed.subscriptionStatus === 'active' || seed.subscriptionStatus === 'lifetime')"],
     ["if (user.subscriptionStatus !== 'active' && user.subscriptionStatus !== 'lifetime') {"],
@@ -297,7 +235,6 @@ describe('findStatusSetCopies — catches every historical spelling', () => {
     ['if (s === "past_due" || s === "active") {'],
     ["if ('active' === s || 'lifetime' === s) {"],
     ["if (s === 'active' || (s === 'lifetime')) {"],
-    // Review 2026-09-29: a middle term, odd operands, backticks, includes, complement.
     ["if (s === 'active' || s === 'trialing' || s === 'lifetime') {"],
     ["if (s === 'active' || isLegacy || s === 'lifetime') {"],
     ["if (u['status'] === 'active' || u['status'] === 'lifetime') {"],
@@ -305,9 +242,7 @@ describe('findStatusSetCopies — catches every historical spelling', () => {
     ['if (s === `active` || s === `lifetime`) {'],
     ["if (s.includes('active') || s.includes('lifetime')) {"],
     ["if (s !== 'free' && s !== 'canceled') {"],
-    // Switch-shaped set.
     ["switch (s) {\n  case 'active':\n  case 'lifetime':\n    return true\n}"],
-    // Keyed tables — the STATUS_ACCESS / pre-78.3 STATUS_CLASS shapes.
     ['const X = { active: true, lifetime: true }'],
     [
       "const STATUS_CLASS = {\n  free: 'lapsed',\n  active: 'entitled',\n  past_due: 'entitled',\n} as const",
@@ -321,26 +256,19 @@ describe('findStatusSetCopies — catches every historical spelling', () => {
   })
 
   it.each([
-    // Single-status rules — legitimate, and present in the source today.
     ["if (existing[0]?.status === 'lifetime') {"],
     ["sql`${users.subscriptionStatus} <> 'lifetime'`"],
     ["if (status === 'lifetime') {\n  return 1\n}\nif (status === 'past_due') {\n  return 2\n}"],
-    // One label per branch (plan-label.ts) and a mapping with one of ours per group.
     [
       "switch (status) {\n  case 'lifetime':\n    return 'Lifetime Plan'\n  case 'active':\n    return 'Active'\n}",
     ],
     ["switch (s) {\n  case 'active':\n  case 'trialing':\n    return 'active'\n}"],
-    // Type unions are not sets that grant anything.
     ["subscriptionStatus: 'free' | 'active' | 'past_due' | 'canceled' | 'lifetime' | null"],
-    // A single status in a literal, and the same status twice.
     ["const X = ['lifetime']"],
     ["if (a === 'active' || b === 'active') {"],
-    // Two statuses in DIFFERENT statements / objects.
     ["const a = s === 'active'; const b = s === 'lifetime'"],
     ["const P = { monthly: '€5.99', lifetime: '€99' }\nconst Q = { active: 1 }"],
-    // An object type with `;` separators, and one status key per object.
     ['type T = { active: boolean; lifetime: boolean }'],
-    // Prose.
     ["// was ['active', 'past_due', 'lifetime'] before 78.3"],
     ["/* s === 'active' || s === 'lifetime' */"],
   ])('does not flag %j', (snippet) => {
@@ -375,8 +303,7 @@ describe('guard: the status sets are defined once (Story 78.3)', () => {
   })
 
   it('the walk actually covers the source tree, .mjs included', () => {
-    // A guard that scans nothing passes. Pin a floor, one file known to import
-    // the definition, and one server `.mjs` (the walk once skipped them).
+    // A guard that scans nothing passes. Pin a floor, one importer, and one server `.mjs`.
     const files = collectSourceFiles(SRC_ROOT).map((f) => relative(SRC_ROOT, f))
     expect(files.length).toBeGreaterThan(200)
     expect(files).toContain('server/api/sync.ts')

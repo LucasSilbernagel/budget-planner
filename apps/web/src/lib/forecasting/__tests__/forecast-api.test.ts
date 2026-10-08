@@ -1,13 +1,3 @@
-/**
- * The forecasting page's transport (story 83.1, FR136).
- *
- * The page's arms depend on three properties pinned here: every call is the
- * route's `ApiResult` for ANY status (a refusal's `error` is shown verbatim), a
- * body that is not an `ApiResult` becomes a fallback failure instead of a throw,
- * and a NETWORK failure still rejects (the page's catch arms). That the URLs and
- * bodies match the real routes is proven by `forecasting-transport-chain.db.test.tsx`.
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   deleteForecast,

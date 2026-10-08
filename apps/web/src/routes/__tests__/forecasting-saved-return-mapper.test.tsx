@@ -6,18 +6,7 @@ import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
 import { useProfileStore } from '../../stores/profileStore'
 import { Route, type SavedForecast } from '../forecasting'
 
-/**
- * The MAPPER's half of the saved-rate rules (story 100.3, AC-12), read at the
- * mapper itself: `ScenarioBuilder` is replaced by a stub that records the
- * `initialForecast` the page hands it, i.e. exactly what `mapToSavedForecast`
- * produced.
- *
- * Why a separate file (100.2 W11 lesson): the builder's `balanceFromSaved`
- * coerces the same rates on its own, so a test through the real builder cannot
- * see a mapper that, say, kept a string rate. Each rule is pinned here, on the
- * mapper's output, and again through the builder in
- * `forecasting-saved-balance-rows.test.tsx`.
- */
+// The builder coerces the same rates itself, so only a stubbed builder can see the mapper's output.
 
 const received = vi.hoisted(() => [] as Array<SavedForecast | undefined>)
 vi.mock('../../components/forecasting/scenario-builder', () => ({
@@ -25,8 +14,6 @@ vi.mock('../../components/forecasting/scenario-builder', () => ({
     received.push(props.initialForecast)
     return null
   },
-  // Story 107.1: the page reads today's data from the same module. Not ready
-  // here: this file is about the mapper, not the baseline.
   useCurrentForecastData: () => ({ ready: false, rows: null, data: null }),
 }))
 
@@ -83,7 +70,6 @@ function row(name: string, extra: Record<string, unknown>, type = 'investment') 
   }
 }
 
-/** Load "Plan" and return the balance rows the mapper handed the builder. */
 async function mapped(balanceAccounts: unknown[]) {
   fetchForecasts.mockResolvedValue({ success: true, data: [savedRow(balanceAccounts)] })
   renderWithRouter(<ForecastingPage />)

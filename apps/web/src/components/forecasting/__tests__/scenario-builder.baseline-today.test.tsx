@@ -1,16 +1,3 @@
-/**
- * Story 107.1 (FR175): the builder compares the scenario against TODAY.
- *
- * The baseline is projected from the user's current store data, mapped by the
- * same functions that seed the builder's rows; the projection from the builder's
- * own (edited) rows. Before the story both came from the edited rows, so raising
- * an investment contribution moved the two lines together and the difference was
- * always 0 (MEASURED at create-story, `621ee31`).
- *
- * Real stores and the real engine; only the initial-sync hook is stubbed, so a
- * test can hold the "first pull still in flight" window open (AC-6).
- */
-
 import type { ForecastingResult } from '@budget-planner/core'
 import { fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -103,9 +90,6 @@ function seedStores(): void {
         updatedAt: ISO,
       },
       {
-        // A debt paid by a linked expense (102.2): the seed MOVES that expense into
-        // the debt row, so an unedited scenario only equals the baseline when the
-        // baseline is mapped by the same function (AC-5).
         id: 'bal-2',
         profileId: PROFILE,
         name: 'Car loan',
@@ -154,7 +138,6 @@ function formatter(): (cents: number) => string {
   return renderHook(() => useFormattedAmount()).result.current
 }
 
-/** The fields a baseline row and a projection row both report. */
 function comparable(rows: ForecastingResult['baseline']) {
   return rows.map(
     ({
@@ -167,7 +150,6 @@ function comparable(rows: ForecastingResult['baseline']) {
       netWorth,
       debts,
       balanceAccounts,
-      // Story 114.1: both series carry the asset total.
       assets,
     }) => ({
       year,
@@ -192,7 +174,6 @@ describe('the baseline is today (story 107.1)', () => {
 
     const result = lastResult()
     expect(comparable(result.baseline)).toEqual(comparable(result.projection))
-    // The debt row carries the moved payment, so the case is not vacuous.
     expect(result.baseline.at(-1)?.debts).toBe(0)
   })
 
@@ -225,7 +206,6 @@ describe('the baseline is today (story 107.1)', () => {
     const before = lastResult()
     onResult.mockClear()
 
-    // The Income section renders first, so its row's Amount is the first one.
     const salaryAmount = screen.getAllByLabelText('Amount')[0] as HTMLInputElement
     expect(salaryAmount.value).toBe('6,000.00')
     fireEvent.change(salaryAmount, { target: { value: '7000' } })
@@ -247,10 +227,8 @@ describe('the baseline is today (story 107.1)', () => {
   it('does not calculate while the first pull is still in flight (AC-6)', async () => {
     syncPending.value = true
     render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResult} />)
-    // Longer than the 500 ms debounce: no result against an empty baseline.
     await new Promise((resolve) => setTimeout(resolve, 800))
     expect(onResult).not.toHaveBeenCalled()
-    // Positive control: the builder itself rendered.
     expect(screen.getByRole('heading', { name: 'Scenario Builder' })).toBeInTheDocument()
   })
 })

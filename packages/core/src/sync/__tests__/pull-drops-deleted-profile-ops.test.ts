@@ -1,32 +1,5 @@
-/**
- * A profile deleted on another device no longer strands this device's queue
- * (story 76.2, FR121).
- *
- * ## The defect this closes
- *
- * Device A deletes profile P, and the server cascade tombstones P's rows. Device
- * B still holds queued ops stamped `profileId === P`. The server answers them for
- * ever: a child `create` fails `Profile not found` with no permanent status (kept
- * queued), and a child `update` of a cascade-tombstoned row is an `update-delete`
- * CONFLICT (never removed). MEASURED at `145cb27` with a two-device PGlite probe:
- * both survived B's pull and every later push. B's pull DID deliver P's
- * tombstone (profiles are pulled by user, tombstones included), but the child
- * rows are pulled only for the ACTIVE profile and a child create never reached
- * the server, so last-writer-wins never saw those ops.
- *
- * Now an APPLIED profile tombstone takes those ops with it, in the same pull.
- *
- * ## The pair (decision D1 = A, Lucas 2026-09-28)
- *
- * `removeProfile` queues `delete X` then a promotion of the survivor Y. When
- * the pull drops `delete X` by LWW (X was edited elsewhere, so the deletion lost),
- * the promotion is dropped too: it names the delete in `dependsOn`. The reverse
- * is deliberately NOT true: a lost promotion leaves the delete queued, because
- * the delete is the user's intent and the promotion only its consequence.
- *
- * ⚠️ Every "was dropped" assertion reads the QUEUE first. That observable exists
- * on `main`, so the RED output names the ops still queued, not a missing field.
- */
+// A lost delete drops the promotion that depends on it; a lost promotion leaves the delete
+// queued, since the delete is the user's intent.
 
 import { type Mock, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SyncQueue } from '../queue'
@@ -74,7 +47,6 @@ function op(id: string, overrides: Partial<SyncOperation> = {}): SyncOperation {
   }
 }
 
-/** A production-shaped pulled profile row (every field valid for core's schema). */
 function profileChange(
   id: string,
   { isDeleted = false, isDefault = false, updatedAt = 2_000 } = {}
@@ -113,8 +85,7 @@ describe('pull() lets go of a remotely deleted profile’s queued ops (story 76.
     vi.useFakeTimers()
     storage = createStorage()
     fetchServerChanges = vi.fn(async (_since: number | null) => [] as ServerChange[])
-    // The server's real answers for a stranded op (MEASURED at 145cb27): a
-    // child create fails with no permanent status, so it would stay queued.
+    // A child create fails with no permanent status, so it would stay queued.
     processOperation = vi.fn(async () => ({ success: false, retryable: false }))
     service = new SynchronizationService(USER, {
       autoSync: false,
@@ -146,14 +117,11 @@ describe('pull() lets go of a remotely deleted profile’s queued ops (story 76.
 
       const result = await service.pull()
 
-      // RED at 145cb27: all three stay queued.
       expect(queuedIds()).toEqual([])
       expect(storage.persistedIds()).toEqual([])
-      // Positive anchor: the tombstone was applied by this pull.
       expect(result.applied.map((c) => [c.entityId, c.isDeleted])).toEqual([[P, true]])
-      // The same pass: already gone when the web layer hears about the pull.
       expect(queueSeenByPulledCallback).toEqual([[]])
-      // Reported, and NOT as a conflict: these ops lost no comparison.
+      // Not as a conflict: these ops lost no comparison.
       expect(result.discardedForDeletedProfile.map((o) => o.id).sort()).toEqual([
         'child-category',
         'child-create',
@@ -166,7 +134,6 @@ describe('pull() lets go of a remotely deleted profile’s queued ops (story 76.
     it('a later push sends none of them, so the failure count does not climb', async () => {
       await queue.add(op('child-create', { type: 'create', profileId: P }))
       fetchServerChanges.mockResolvedValueOnce([profileChange(P, { isDeleted: true })])
-      // Control: before the pull, a push DOES send the stranded op and it fails.
       await service.sync()
       expect(processOperation).toHaveBeenCalledTimes(1)
       const failuresAfterControl = (service as unknown as { consecutiveFailures: number })
@@ -183,9 +150,8 @@ describe('pull() lets go of a remotely deleted profile’s queued ops (story 76.
     })
 
     it('a queued edit of the deleted profile ITSELF is drained by the same pull (LWW: the tombstone is newer than its baseVersion)', async () => {
-      // The 76.1 deferral: an UPDATE of a profile deleted elsewhere is answered
-      // `update-delete` on every push. It needs no new code: last-writer-wins
-      // drops it, because the tombstone's `updatedAt` beats the op's base.
+      // An update of a profile deleted elsewhere needs no new code: the tombstone's `updatedAt`
+      // beats the op's base, so LWW drops it.
       await queue.add(
         op('rename-P', {
           entityType: 'userProfile',
@@ -199,7 +165,6 @@ describe('pull() lets go of a remotely deleted profile’s queued ops (story 76.
       const result = await service.pull()
 
       expect(queuedIds()).toEqual([])
-      // Dropped by LWW (a conflict), not by the stranded sweep.
       expect(service.getState().conflictOperations.map((o) => o.id)).toEqual(['rename-P'])
       expect(result.discardedForDeletedProfile).toEqual([])
     })
@@ -210,10 +175,8 @@ describe('pull() lets go of a remotely deleted profile’s queued ops (story 76.
       await queue.add(op('child-in-P', { profileId: P }))
       await queue.add(op('child-in-Q', { profileId: Q, entityId: X }))
       await queue.add(op('child-unstamped', { entityId: Y }))
-      // ⚠️ THE TRAP. `op.profileId` is the ACTIVE-profile stamp. Deleting the
-      // ACTIVE default queues the survivor's promotion before the stamp moves, so
-      // it carries the DELETED profile's id. So does a profile created while P
-      // was active.
+      // `op.profileId` is the active-profile stamp: deleting the active default queues the
+      // survivor's promotion carrying the deleted profile's id.
       await queue.add(
         op('promote-Y', {
           entityType: 'userProfile',
@@ -235,8 +198,7 @@ describe('pull() lets go of a remotely deleted profile’s queued ops (story 76.
     })
 
     it('drops nothing when the tombstone is SUPPRESSED by a winning local edit of that profile', async () => {
-      // A local edit of P with no baseVersion, newer than the tombstone: local
-      // wins, the tombstone is NOT applied, and P is still live on this device.
+      // No baseVersion and newer than the tombstone: local wins and P stays live here.
       await queue.add(
         op('rename-P', {
           entityType: 'userProfile',
@@ -251,7 +213,6 @@ describe('pull() lets go of a remotely deleted profile’s queued ops (story 76.
 
       const result = await service.pull()
 
-      // Positive anchor: the tombstone was delivered and lost LWW.
       expect(result.conflicts.map((c) => c.entityId)).toEqual([P])
       expect(result.applied).toEqual([])
       expect(queuedIds()).toEqual(['rename-P', 'child-in-P'])
@@ -305,19 +266,16 @@ describe('pull() lets go of a remotely deleted profile’s queued ops (story 76.
 
       const result = await service.pull()
 
-      // RED at 145cb27: the promotion stays queued, so the default moves on push.
       expect(queuedIds()).toEqual([])
       expect(result.droppedDependents.map((o) => o.id)).toEqual(['promote-Y'])
-      // The delete lost a comparison and is a conflict, as before. The promotion
-      // lost nothing: it is reported as a dependent, not as a conflict.
+      // The promotion lost nothing: it is reported as a dependent, not a conflict.
       expect(service.getState().conflictOperations.map((o) => o.id)).toEqual(['delete-X'])
       expect(queueSeenByPulledCallback).toEqual([[]])
     })
 
     it('a delete dropped by LWW against a TOMBSTONE keeps its promotion: the deletion HAPPENED', async () => {
-      // Another device deleted X first (or this device's own push landed and its
-      // response was lost). The queued delete is dropped because the server is
-      // newer, but the target state holds, so the promotion still makes sense.
+      // Another device deleted X first: the queued delete is dropped, but the target state holds,
+      // so the promotion still makes sense.
       await queue.add(deleteX())
       await queue.add(promoteY(true))
       fetchServerChanges.mockResolvedValueOnce([profileChange(X, { isDeleted: true })])
@@ -351,8 +309,7 @@ describe('pull() lets go of a remotely deleted profile’s queued ops (story 76.
     })
 
     it('a dependent is dropped only when the op it names was dropped, not a different op on that row', async () => {
-      // An UPDATE of X (not its delete) loses LWW. The promotion names X's
-      // DELETE, which was never queued, so it stays.
+      // The promotion names X's delete, which was never queued, so it stays.
       await queue.add(
         op('rename-X', { entityType: 'userProfile', entityId: X, data: {}, baseVersion: 1_000 })
       )

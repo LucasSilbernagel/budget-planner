@@ -1,23 +1,6 @@
 // @vitest-environment node
-/**
- * What the app's own server SENDS for a page: status, head metadata and the
- * first-paint body (story 84.4, FR137).
- *
- * Replaces `e2e/page-metadata.spec.ts` (head), `not-found.spec.ts`,
- * `docs-not-found.spec.ts` and the server-bytes half of
- * `loading-state.spec.ts` + `hydration.spec.ts` › "the pending markup".
- * Each claim is about the served document, so it needs the real server
- * (`src/test/served-app.ts`), not a browser.
- *
- * Named losses (story 84.4 D2): the HYDRATED `document.title` after the
- * client's `<HeadContent />` runs (the served head is pinned instead; that is
- * what a crawler reads), and the "Go home" click (its `href` is pinned here
- * and in `components/__tests__/NotFoundPage.test.tsx`).
- *
- * ⚠️ `toContain` on a whole document also matches the `<head>`: the landing
- * subtitle opens the meta description. Body claims read `bodyOf()`, and copy
- * claims match closing-tag markup.
- */
+// `toContain` on a whole document also matches the head (the landing subtitle opens the meta
+// description): body claims read `bodyOf()`, copy claims match closing-tag markup.
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { FENCED_EMPTY_COPY, type GatedPath } from '../test/fenced-copy'
@@ -60,7 +43,6 @@ function titlesOf(html: string): string[] {
   return [...headOf(html).matchAll(/<title>([\s\S]*?)<\/title>/g)].map(([, t]) => decode(t ?? ''))
 }
 
-/** Every `<meta name="description">` in the head; exactly one is the claim. */
 function descriptionsOf(html: string): string[] {
   return [...headOf(html).matchAll(/<meta name="description" content="([^"]*)"/g)].map(
     ([, content]) => decode(content ?? '')
@@ -73,8 +55,7 @@ async function servedHead(path: string, status = 200) {
   const titles = titlesOf(response.body)
   expect(titles, `${path} must serve exactly one <title>`).toHaveLength(1)
   const descriptions = descriptionsOf(response.body)
-  // ⚠️ Exactly one: reading the first would pass on a broken merge that served
-  // the root default AND the route's description.
+  // Exactly one: reading the first would pass on a broken merge serving both descriptions.
   expect(descriptions, `${path} must serve exactly one description`).toHaveLength(1)
   return { title: titles[0], description: descriptions[0], html: response.body }
 }
@@ -140,21 +121,15 @@ describe('the global not-found page (was e2e not-found, story 6-4)', () => {
   it('serves the branded 404 inside the app chrome', async () => {
     const body = bodyOf((await app.get('/this-route-does-not-exist')).body)
 
-    // The ONLY <h1> on the full shell is the subject heading.
     const h1s = body.match(/<h1[\s>][\s\S]*?<\/h1>/g) ?? []
     expect(h1s, 'exactly one <h1> on the served 404').toHaveLength(1)
     expect(h1s[0]).toMatch(/>\s*Page not found\s*<\/h1>$/)
-    // The decorative eyebrow, as its own text node.
     expect(body).toMatch(/>404<\/p>/)
     expect(body).toContain('>Longhand Budget</p>')
-    // The root layout's footer wraps it (not a bare fallback).
     expect(body).toMatch(/<footer[\s>]/)
     expect(body).toMatch(/<a [^>]*href="\/"[^>]*>Go home<\/a>/)
   })
 
-  // Story 95.2 D2: the old path is NOT redirected or aliased — pre-launch, no
-  // bookmarks to keep. Its presence twin is the 200 for `/financial-summary`
-  // in the metadata describe above.
   it('the pre-95.2 path /report is a plain branded 404, not a redirect', async () => {
     const response = await app.get('/report')
     expect(response.status).toBe(404)
@@ -171,10 +146,7 @@ describe('the docs not-found route (was e2e docs-not-found, story 39-1)', () => 
     expect((await app.get(UNKNOWN_DOC)).status).toBe(404)
   })
 
-  /**
-   * ⚠️ Every assertion is on something ONLY the docs 404 renders: the global
-   * fallback is also a 404 with the same `<h1>`, so neither distinguishes them.
-   */
+  // Only things the docs 404 renders: the global fallback is also a 404 with the same `<h1>`.
   it('serves the docs-specific card inside the docs chrome, not the global fallback', async () => {
     const body = decode(bodyOf((await app.get(UNKNOWN_DOC)).body))
     expect(body).toContain("couldn't find that documentation page")
@@ -184,15 +156,8 @@ describe('the docs not-found route (was e2e docs-not-found, story 39-1)', () => 
   })
 })
 
-/**
- * Store-derived content is skeletoned in the server response (story 38.2).
- *
- * ⚠️ The `absent` strings are the point: a skeleton alone would pass on a page
- * that ALSO still served the zero underneath it. They come from ONE table,
- * `src/test/fenced-copy.ts`, shared with their positive controls (each phrase
- * IS the app's resolved copy) in `components/__tests__/loading-state.dom.test.tsx`,
- * so a phrase cannot be fenced here without being proven there.
- */
+// The `absent` strings are the point: a skeleton alone would pass on a page that still
+// served the zero underneath it.
 const GATED_ROUTES = [
   {
     path: '/',
@@ -252,7 +217,6 @@ describe('loading state: the server response (was e2e loading-state, story 38.2)
     })
   }
 
-  /** The SEO fence: static, store-independent content survives in the response. */
   it('static chrome survives on / (closing-tag markup, so the head cannot match)', async () => {
     const html = (await app.get('/')).body
     for (const markup of [
@@ -267,14 +231,8 @@ describe('loading state: the server response (was e2e loading-state, story 38.2)
     }
   })
 
-  /**
-   * Story 95.1 (FR154, D2): a signed-in session (free included) is served NO
-   * "No account needed …" notice. The test above is the paired signed-out control.
-   *
-   * ⚠️ The dev-only seed seam reads `E2E_SESSION_SEED` per request, so it is set
-   * for this one request and restored in `finally`; a leak would turn every later
-   * test in this file into a signed-in render.
-   */
+  // The seed seam reads `E2E_SESSION_SEED` per request; a leak would make every later test
+  // in this file a signed-in render.
   it('a signed-in FREE session is served no account notice on / (story 95.1, D2)', async () => {
     process.env['E2E_SESSION_SEED'] = JSON.stringify({
       isAuthenticated: true,
@@ -295,20 +253,8 @@ describe('loading state: the server response (was e2e loading-state, story 38.2)
   })
 })
 
-/**
- * The Overview's served HTML carries NO chart library (was e2e
- * refresh-to-figures AC-10, story 38.3, NFR9; moved by story 84.5).
- *
- * ⚠️ This exists because story 38.3's mutation M9 refuted that story's own
- * prediction: hoisting a lazy chart boundary out of the `!hydrated` mount gate
- * made the SERVER render chart markup while the client's first render showed
- * the Suspense fallback, and `e2e/hydration.spec.ts` stayed GREEN (React treats
- * a Suspense boundary that resolves differently on each side as ordinary
- * Suspense, not a mismatch). `overview-critical-path.guard.test.ts` cannot see
- * it either: it walks STATIC imports, and the chart import is dynamic. So the
- * served bytes are asserted directly: the chart library must not reach the
- * response at all, which is both the hydration fence and the critical-path one.
- */
+// Server-rendered chart markup with a client Suspense fallback is not a hydration mismatch
+// to React, and the chart import is dynamic, so the served bytes are asserted directly.
 describe('the Overview response keeps the chart library off the critical path', () => {
   it('/ serves no "recharts" anywhere in the document (was e2e refresh-to-figures:595)', async () => {
     const response = await app.get('/')

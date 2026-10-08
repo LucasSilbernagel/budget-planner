@@ -1,31 +1,6 @@
 // @vitest-environment node
-/**
- * The forecasting page, end to end below the browser (story 83.1, FR136).
- *
- * The REAL `ForecastingPage` runs against the REAL route handlers
- * (`/api/auth/me`, `/api/profiles`, `/api/forecasts`) on a real PostgreSQL
- * (PGlite, the migration chain): global `fetch` is routed to the handlers, the
- * way `lib/sync/__tests__/permanent-rejection-chain.db.test.ts` routes sync. Only
- * the session resolver is mocked.
- *
- * ## Why this file exists
- *
- * The page tests (`forecasting-*.test.tsx`) mock the transport module, and the
- * route tests call the handlers directly. Neither can catch the page and the
- * routes disagreeing about a URL, a method, a body field or a status (the
- * "mocked-core tests miss client→server contract bugs" lesson). Here a save is
- * followed into the database row it wrote.
- *
- * It also takes the NO-SEED path on purpose: there is no `SessionSeedProvider`,
- * so `usePremiumAccess` asks `/api/auth/me` itself (FR136 AC-2), which on
- * `31e74bf` imported `server/api/data/forecasting` in the browser instead.
- *
- * ⚠️ Node environment + a hand-built JSDOM, like the other `*.db.test.tsx`: the
- * persisted stores are rebound to the JSDOM storage (see
- * `components/sync/__tests__/refused-edit-notice.db.test.tsx`). Queries go
- * through the RENDER RESULT, not `screen`: RTL binds `screen` to the document
- * that existed when it was first imported (by `vitest.setup.ts`), i.e. none.
- */
+// Queries go through the render result, not `screen`: RTL binds `screen` to the document
+// that existed when it was first imported, i.e. none.
 
 import type { PGlite } from '@electric-sql/pglite'
 import { drizzle } from 'drizzle-orm/pglite'
@@ -75,7 +50,6 @@ let ForecastingPage: () => React.ReactElement
 
 const sessionMock = getCurrentUserSession as unknown as ReturnType<typeof vi.fn>
 
-/** Every request the page made, as `METHOD path?query → status`. */
 const served: string[] = []
 
 async function routeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -83,7 +57,7 @@ async function routeFetch(input: RequestInfo | URL, init?: RequestInit): Promise
   const method = (init?.method ?? 'GET').toUpperCase()
   const headers = new Headers(init?.headers)
   if (typeof init?.body === 'string') {
-    // undici sets no content-length on a constructed Request (story 79.3).
+    // undici sets no content-length on a constructed Request.
     headers.set('content-length', String(new TextEncoder().encode(init.body).byteLength))
   }
   const request = new Request(url, { ...init, method, headers })
@@ -133,7 +107,6 @@ async function storedForecasts() {
     .from(forecastingProfiles)
 }
 
-/** Every stored forecast, oldest id first, with the columns story 97.1 pins. */
 async function storedRows() {
   return db
     .select({
@@ -150,7 +123,6 @@ async function storedRows() {
 
 type View = ReturnType<typeof import('@/test/utils').renderWithRouter>
 
-/** Wait for Save to be enabled and press it. */
 async function pressSave(view: View) {
   const save = await view.findByRole('button', { name: 'Save Forecast' }, { timeout: 5000 })
   await rtl.waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(false), {
@@ -159,17 +131,8 @@ async function pressSave(view: View) {
   rtl.fireEvent.click(save)
 }
 
-/**
- * Type into a text field so React's `onChange` sees it.
- *
- * ⚠️ A bare `fireEvent.change` is IGNORED here (MEASURED, story 97.1: the DOM
- * value changed, the builder's state did not). `react-dom` is first loaded by
- * `vitest.setup.ts` BEFORE this file stubs `window`, so its `canUseDOM` is false
- * and its ChangeEventPlugin takes the old-IE "input event polyfill" path for text
- * inputs: it tracks the focused element via `focusin` + `attachEvent` and reads
- * the value on `keyup`. So: give the node a no-op `attachEvent`/`detachEvent`,
- * focus it, set the value, and release a key.
- */
+// react-dom loaded before `window` was stubbed, so it reads text input values on keyup via the
+// old-IE polyfill (focusin + attachEvent); a bare fireEvent.change is ignored.
 function typeInto(field: HTMLElement, value: string) {
   const node = field as HTMLElement & { attachEvent?: () => void; detachEvent?: () => void }
   node.attachEvent ??= () => {}
@@ -180,7 +143,6 @@ function typeInto(field: HTMLElement, value: string) {
   rtl.fireEvent.focusOut(node)
 }
 
-/** Type an income growth rate (percent) and let the 500 ms debounced recompute run. */
 async function setIncomeGrowth(view: View, percent: string) {
   const field = await view.findByLabelText('Income Growth Rate')
   typeInto(field, percent)
@@ -197,7 +159,6 @@ const OPENING = [
 ]
 const LIST = `GET /api/forecasts?profileId=${PROFILE} → 200`
 
-/** Render, save the default forecast once, and Load it back into the builder. */
 async function saveThenLoad() {
   const view = renderWithRouter(<ForecastingPage />)
   await pressSave(view)
@@ -273,8 +234,7 @@ beforeAll(async () => {
     import('@/stores/categoryStore').then((m) => m.useCategoryStore),
     import('@/stores/currencyStore').then((m) => m.useCurrencyStore),
     import('@/stores/profileStore').then((m) => m.useProfileStore),
-    // `vitest.setup.ts` writes these two before every test once `document`
-    // exists; unbound, their persist write hits `undefined.setItem`.
+    // vitest.setup.ts writes these before every test; unbound, their persist write hits undefined.setItem.
     import('@/stores/tableSortStore').then((m) => m.useTableSortStore),
     import('@/stores/retirementPlannerStore').then((m) => m.useRetirementPlannerStore),
   ])
@@ -309,17 +269,8 @@ beforeAll(async () => {
 }, 60_000)
 
 afterAll(async () => {
-  // Let React's queued Scheduler work run while `window` still exists. A commit
-  // made while RTL's `findBy`/`waitFor` had the act environment switched off
-  // queues its passive-effect flush on the real Scheduler (a `setImmediate`),
-  // and that callback's first statement reads `window.event`
-  // (`react-dom-client.development.js:17920`). Unstubbed first, it threw
-  // `ReferenceError: window is not defined` after every test had passed and
-  // vitest exited 1: 4 of 20 isolated runs (story 82.1, deferred-work F7).
-  // One immediate is not enough in general: the Scheduler re-queues itself with a
-  // NEW immediate when a slice runs past 5 ms, and a passive flush can schedule
-  // another commit, so drain several turns, each an immediate (runs after the
-  // ones already queued) and a timer (runs after an immediate queued from one).
+  // Drain React's queued Scheduler work while `window` still exists: a late passive flush reads
+  // window.event. The Scheduler re-queues itself, so drain several immediate + timer turns.
   for (let turn = 0; turn < 5; turn++) {
     await new Promise((resolve) => setImmediate(resolve))
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -352,15 +303,12 @@ describe('the forecasting page against the real routes (story 83.1)', () => {
 
     expect(await view.findByTestId('save-success', {}, { timeout: 5000 })).toBeTruthy()
 
-    // The row really exists, under the profile the page resolved, owned by the
-    // session user, holding what the builder built.
     const [row, ...rest] = await storedForecasts()
     expect(rest).toEqual([])
     expect(row).toMatchObject({ userId: USER, profileId: PROFILE, name: 'My Financial Forecast' })
     const saved = JSON.parse(String(row?.scenarioData)) as Record<string, unknown>
     expect(Object.keys(saved).sort()).toEqual(['inputs', 'result', 'scenario'])
 
-    // "My Forecasts" lists it (the success switched tabs), from a real GET.
     const deleteButton = await view.findByRole('button', {
       name: 'Delete My Financial Forecast',
     })
@@ -430,7 +378,6 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
     await setIncomeGrowth(view, '5')
     await pressSave(view)
 
-    // The second save's request, first: on `ae1b5ce` it was `POST /api/forecasts → 409`.
     await rtl.waitFor(() => expect(served.length).toBeGreaterThanOrEqual(6), { timeout: 5000 })
     expect(served[5]).toBe(`PUT /api/forecasts?id=${first?.id} → 200`)
     const success = await view.findByTestId('save-success', {}, { timeout: 5000 })
@@ -449,7 +396,6 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
     expect(after.scenario.incomeGrowthRate).toBeCloseTo(0.05, 12)
     expect(after.result.summary.endingNetWorth).not.toBe(before.result.summary.endingNetWorth)
 
-    // "My Forecasts" lists ONE entry, now showing the new values.
     const loads = await view.findAllByRole('button', { name: 'Edit My Financial Forecast' })
     expect(loads).toHaveLength(1)
     await rtl.waitFor(() => expect(loads[0]?.closest('tr')?.textContent).not.toBe(listRowBefore))
@@ -581,9 +527,6 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
   }, 20_000)
 
   it('a BULK delete that includes the loaded forecast drops it as the target too (AC-6)', async () => {
-    // Code review of 97.1: AC-6 says "single or bulk", and bulk goes through
-    // `forecast-list.tsx`'s per-id `onDelete` loop, a different path from the
-    // single-row button above.
     const { view, first } = await saveThenLoad()
     rtl.fireEvent.click(view.getByRole('tab', { name: /My Forecasts/ }))
     rtl.fireEvent.click(await view.findByRole('checkbox', { name: 'Select all' }))
@@ -616,20 +559,14 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
 
   it('a PUT that answers 404 (deleted on another device) says so, and the next Save creates it (AC-6, D3)', async () => {
     const { view, first } = await saveThenLoad()
-    // Deleted behind the page's back.
     await db.delete(forecastingProfiles)
     await pressSave(view)
 
     const outcome = await view.findByTestId('save-outcome', {}, { timeout: 5000 })
     expect(outcome.textContent).toBe(GONE)
     expect(await storedRows()).toEqual([])
-    // The list is refetched (code review of 97.1): the gone forecast leaves My
-    // Forecasts, so it cannot be Loaded again only to 404 a second time.
-    // (The list is only rendered on its own tab, so look there.)
     rtl.fireEvent.click(view.getByRole('tab', { name: /My Forecasts/ }))
-    // Positive control (108.1): the list's empty state IS on screen, so the null
-    // below is the row gone and not a stale button name matching nothing (the
-    // action was renamed Load → Edit; `name` is a full-string match).
+    // Positive control: `name` is a full-string match, so a renamed button would also be absent.
     expect(
       await view.findByRole('heading', { name: 'No Saved Forecasts' }, { timeout: 5000 })
     ).toBeTruthy()
@@ -719,7 +656,7 @@ describe('savings rows round-trip through the real routes (story 100.1, AC-11)',
       { name: 'Emergency fund', balance: 100_000, monthlyContribution: 20_000 },
       { name: 'House fund', balance: 250_001, monthlyContribution: 5 },
     ])
-    // Kept for an older cached client that reads only the total (D4).
+    // Kept for an older cached client that reads only the total.
     expect(inputs.savings).toBe(350_001)
 
     rtl.fireEvent.click(
@@ -734,7 +671,6 @@ describe('savings rows round-trip through the real routes (story 100.1, AC-11)',
     expect(value('Balance for House fund')).toBe('2,500.01')
     expect(value('Monthly Contribution for House fund')).toBe('0.05')
 
-    // Save over it (PUT): same version.
     await setIncomeGrowth(view, '1')
     await pressSave(view)
     await rtl.waitFor(() => expect(served.some((line) => line.startsWith('PUT '))).toBe(true), {
@@ -762,7 +698,6 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
   it('POST stores the current version with the rows, their rates, the debt flag and label, and the investment sum; Load brings every field back; PUT keeps a changed rate and flag', async () => {
     const { useBalanceStore } = await import('@/stores/balanceStore')
     const { useExpenseStore } = await import('@/stores/expenseStore')
-    // Story 102.1 (FR169): the Car loan's 300.00 payment is its linked expense.
     useExpenseStore.setState({
       expenses: [
         {
@@ -821,7 +756,6 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
       ] as never,
     })
     const view = renderWithRouter(<ForecastingPage />)
-    // Story 100.3: rates of 0 and a non-integer 5.5% before the first save.
     typeInto(await view.findByLabelText('Annual return for Pension'), '0')
     typeInto(view.getByLabelText('Annual return for ISA'), '5.5')
     await new Promise((resolve) => setTimeout(resolve, 800))
@@ -851,9 +785,7 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
         contributionRecordedAsExpense: true,
         annualReturn: 0,
       },
-      // The stored negative debt seeds as its magnitude (D6). No rate on a debt.
-      // Story 102.2 (version 5): its flag starts off and it names the Expenses
-      // row its payment came from.
+      // The stored negative debt seeds as its magnitude. No rate on a debt.
       {
         name: 'Car loan',
         type: 'debt',
@@ -873,7 +805,7 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
         annualReturn: 0.055,
       },
     ])
-    // Kept for an older cached client: the INVESTMENT rows' sum, debts excluded.
+    // Kept for an older cached client: the investment rows' sum, debts excluded.
     expect(inputs.investments).toBe(1_200_001)
 
     // Change the live store so a reload that read it would show different rows.
@@ -907,13 +839,9 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
     expect(value('Annual return for Pension')).toBe('0.00%')
     expect(value('Annual return for ISA')).toBe('5.50%')
     expect(view.queryByLabelText('Annual return for Car loan')).toBeNull()
-    // Story 102.2: the debt's label came back from the database, and a labelled
-    // debt row offers no flag (code review: its payment is the row's own). (A v5
-    // TRUE flag surviving the mapper is pinned in forecasting-saved-balance-rows.)
     expect(rtl.within(section).getByText('from Expenses: Car payment')).toBeInTheDocument()
     expect(view.queryByLabelText('Payment already in Expenses, for Car loan')).toBeNull()
 
-    // Save over it (PUT) with a NEGATIVE rate: same row, same version, rate kept.
     typeInto(view.getByLabelText('Annual return for ISA'), '-2.5')
     await new Promise((resolve) => setTimeout(resolve, 800))
     await pressSave(view)
@@ -938,9 +866,7 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
     expect(after[1]?.contributionRecordedAsExpense).toBe(false)
     expect(after[1]?.paidByExpenseName).toBe('Car payment')
 
-    // Load it again (code review 100.3): the NEGATIVE rate comes back through the
-    // real handlers too. The builder remounts on Load, so the typed draft `-2.5`
-    // is replaced by the formatted `-2.50%` only if the stored rate was read.
+    // The builder remounts on Load, so `-2.50%` shows only if the stored rate was read.
     rtl.fireEvent.click(
       await view.findByRole('button', { name: 'Edit My Financial Forecast' }, { timeout: 5000 })
     )
@@ -996,7 +922,6 @@ describe('asset rows round-trip through the real routes (story 114.1, AC-9, AC-1
       { name: 'House', balance: 30_000_001 },
       { name: 'Car', balance: 1_250_099 },
     ])
-    // The stored result counted them.
     expect(saved.result.summary.startingNetWorth).toBe(31_250_100)
 
     // Change the live store so a reload that read it would show different rows.

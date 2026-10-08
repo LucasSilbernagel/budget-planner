@@ -1,43 +1,8 @@
-/**
- * M1 — the Overview's critical-path payload (story 38.3, AC-1).
- *
- * Prints the exact set of client assets the browser must fetch AND evaluate
- * before the Overview route module can execute, with raw and gzip bytes each.
- *
- * ## Why this metric exists, and why it carries the improvement claim
- *
- * NFR9 demands a MEASURED before/after. A wall-clock millisecond figure is not
- * reproducible by a second person — it is a property of the machine that took it.
- * This number is a property of the BUILD: same commit in, same bytes out, on any
- * host. So M1 carries the improvement claim and M2 (`perf/refresh-to-figures.spec.ts`,
- * manual, `playwright.perf.config.ts`; `e2e/` until story 84.5) carries only the
- * user-facing one.
- *
- * ## Why these assets and not others
- *
- * `@tanstack/react-start`'s `hydrateStart.js:28` AWAITS `router.loadRouteChunk`
- * for every match before hydration begins. So the route chunk and its whole
- * STATIC import graph are on the critical path to the figures appearing — which
- * is precisely what the SSR manifest's `preloads` array enumerates. The root's
- * preloads and module script are on it too (they run first), as is the single
- * stylesheet `routes/__root.tsx` links.
- *
- * Dynamic `import()` targets are deliberately NOT here. That is the whole point:
- * moving an asset out of `preloads` and behind a dynamic import is the
- * improvement this script measures.
- *
- * ## Usage
- *
- *   pnpm --filter web build          # dist/ MUST be fresh — see the guard below
- *   node scripts/measure-critical-path.mjs
- *   node scripts/measure-critical-path.mjs --json   # machine-readable
- *
- * ⚠️ The staleness guard is load-bearing. When story 38.3 was written, the `dist/`
- * on disk was timestamped 18:04 while the two commits it supposedly reflected were
- * 19:15 and 22:53 — a build from BEFORE the epic, quoted by two separate research
- * passes as if it were current. This script refuses to print a number from a build
- * older than the newest source file it depends on.
- */
+// Prints the client assets that must be fetched and evaluated before the Overview route
+// runs: the start runtime awaits each route chunk's static graph before hydrating.
+
+// Dynamic import() targets are deliberately excluded: moving an asset behind one is the
+// improvement this measures. Byte counts are reproducible; timings aren't.
 
 import { execSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
@@ -54,19 +19,10 @@ function die(message) {
   process.exit(1)
 }
 
-/**
- * Refuse to measure a build older than the source it came from.
- *
- * Compares the newest mtime under `src/` against the oldest mtime in
- * `dist/client/assets/`. A source file newer than the build means the numbers
- * below describe code that is no longer on disk.
- */
+/** Refuses to measure a build older than any input it was built from. */
 function assertBuildIsFresh() {
-  // ⚠️ EVERY build input, not just `src/`. Code review measured the gap: a
-  // `packages/core` edit, a `vite.config.ts` change or a dependency bump all alter
-  // the emitted bytes without touching `apps/web/src`, so the original guard would
-  // stamp "fresh" on numbers describing a build of different code — resurrecting the
-  // exact incident this function was written to prevent, through a different door.
+  // Every build input, not just src/: a core edit, config change or dependency bump
+  // all change the emitted bytes.
   const REPO_ROOT = join(WEB_ROOT, '..', '..')
   const inputs = [
     join(WEB_ROOT, 'src'),
@@ -87,8 +43,7 @@ function assertBuildIsFresh() {
     die(`No build output at ${clientAssets}.\n  Run: pnpm --filter web build`)
   }
   const assetFiles = readdirSync(clientAssets)
-  // An empty assets directory left `oldestAsset` at Infinity, so freshness passed
-  // vacuously against a build that emitted nothing.
+  // An empty assets dir would leave oldestAsset at Infinity and pass vacuously.
   if (assetFiles.length === 0) {
     die(`${clientAssets} is empty — there is no build to measure.\n  Run: pnpm --filter web build`)
   }
@@ -100,8 +55,7 @@ function assertBuildIsFresh() {
   for (const f of assetFiles) {
     oldestAsset = Math.min(oldestAsset, statSync(join(clientAssets, f)).mtimeMs)
   }
-  // The manifest is read from dist/server; a client-only rebuild would otherwise
-  // enumerate preloads from a stale server manifest with the guard green.
+  // The manifest is read from dist/server, so a client-only rebuild must not pass.
   for (const f of readdirSync(SERVER_ASSETS)) {
     oldestAsset = Math.min(oldestAsset, statSync(join(SERVER_ASSETS, f)).mtimeMs)
   }
@@ -114,7 +68,6 @@ function assertBuildIsFresh() {
   }
 }
 
-/** Newest mtime under `target`, which may be a directory OR a single file. */
 function newestMtime(target) {
   const st = statSync(target)
   if (!st.isDirectory()) {
@@ -134,7 +87,6 @@ async function loadManifest() {
   return mod.tsrStartManifest()
 }
 
-/** The one stylesheet `routes/__root.tsx` links, found by extension not by hash. */
 function stylesheets() {
   return readdirSync(join(CLIENT, 'assets'))
     .filter((f) => f.endsWith('.css'))
@@ -148,22 +100,8 @@ function measure(urlPath) {
     asset: basename(urlPath),
     raw: buf.length,
     gz: gzipSync(buf, { level: 9 }).length,
-    // Recorded because Recharts is the single largest lever the story names.
-    //
-    // ⚠️ This is an OCCURRENCE COUNT, not a boolean, and the distinction matters.
-    //
-    // ⚠️ It once said the route chunk's hits were "once or twice — CSS class names
-    // the app writes". That was WRONG and the story's own measurement disproved it:
-    // at the baseline the Overview route chunk carried **19** hits and real library
-    // code (`Pie`, `PolarAngleAxis`, `PolarRadiusAxis` were inlined into it), and no
-    // app source writes a `recharts-*` class at all — only e2e locators do. The
-    // stale claim descended from a `grep -c` LINE count over minified output, taken
-    // against a pre-story build. Corrected here because a comment asserting the
-    // opposite of the measurement is how the next reader inherits the error.
-    //
-    // A count still beats a boolean: a chunk that merely names the library differs
-    // from one that bundles it, and flattening the two would inflate the reported
-    // share — precisely the unearned number NFR9 exists to prevent.
+    // An occurrence count, not a boolean: a chunk that merely names the library differs
+    // from one that bundles it.
     rechartsHits: (buf.toString('latin1').match(/recharts/g) ?? []).length,
   }
 }
@@ -177,8 +115,6 @@ async function main() {
   const overview = manifest.routes['/']
   if (!overview) die('Route "/" is absent from the SSR manifest.')
 
-  // Order matters for readability, not for the total: the root's module script
-  // and preloads are fetched first, then the route's own preload set.
   const scriptSrcs = (root.scripts ?? []).map((s) => s.attrs?.src).filter(Boolean)
   const urls = [
     ...new Set([
@@ -194,8 +130,7 @@ async function main() {
     raw: 0,
     gz: 0,
   })
-  // A chunk that BUNDLES the library, not one that merely names a CSS class.
-  // Measured at HEAD: the vendor chunk has 78 hits, the route chunk 1.
+  // A chunk that bundles the library, not one that merely names a CSS class.
   const VENDOR_HIT_FLOOR = 10
   const recharts = rows.filter((r) => r.rechartsHits >= VENDOR_HIT_FLOOR)
 

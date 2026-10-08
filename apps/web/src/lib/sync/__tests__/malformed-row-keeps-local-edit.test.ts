@@ -1,20 +1,5 @@
 // @vitest-environment jsdom
-// jsdom supplies `localStorage`, which core's sync queue persists to. The
-// default `node` environment has none, on every Node (`src/test/webstorage.ts`).
-/**
- * A malformed server row cannot cost the user a local edit (story 75.4, FR123),
- * driven through the web chain exactly as `hooks/useSync.ts` wires it.
- *
- * Before this story core dropped the queued local op when the server row won
- * last-writer-wins, and only THEN handed the row to `applyServerChangesToStores`,
- * which refused it. The store kept the local value, the op that would have
- * pushed it was gone, and the two devices disagreed for good. MEASURED red at
- * `6331ba5` with a copy of this file stripped of the story's NEW API (the
- * `onServerChangesRefused` wiring and the `result.refused` assertion), because
- * this file as written throws a TypeError on `6331ba5` before reaching the
- * mechanism: `expected [] to deeply equal [ 'update' ]`, meaning the queue was
- * empty. The control passed on `6331ba5` too.
- */
+// jsdom supplies `localStorage` for core's sync queue; the node environment has none.
 
 import { createSynchronizationService } from '@budget-planner/core/sync'
 import type { ServerChange, SynchronizationService } from '@budget-planner/core/sync'
@@ -77,10 +62,8 @@ describe('story 75.4: a malformed server row does not discard the local edit (we
       processOperation: async () => ({ success: true }),
       fetchServerChanges,
     })
-    // Exactly the wiring `hooks/useSync.ts` performs.
     service.onChangesPulled((changes) => applyServerChangesToStores(changes, USER_ID))
     service.onServerChangesRefused(reportRefusedServerChanges)
-    // The recorded repro's local edit: an update at t=1000, no baseVersion.
     vi.setSystemTime(1_000)
     await service.queueUpdate(
       'incomeSource',
@@ -108,7 +91,6 @@ describe('story 75.4: a malformed server row does not discard the local edit (we
 
     const result = await service.pull()
 
-    // Positive anchors: the pull ran and moved past the refused row.
     expect(fetchServerChanges).toHaveBeenCalledTimes(1)
     expect(result.lastPullTimestamp).toBe(2_000)
     expect(result.refused.map((r) => r.entityId)).toEqual([INCOME_X])
@@ -117,7 +99,6 @@ describe('story 75.4: a malformed server row does not discard the local edit (we
     expect(useIncomeStore.getState().incomeSources).toEqual([LOCAL_ROW])
     expect(service.getState().conflictOperations).toEqual([])
 
-    // Reported once, through the one reporter, without the value.
     expect(warn).toHaveBeenCalledTimes(1)
     const [message, context] = warn.mock.calls[0] ?? []
     expect(String(message)).toContain('refused a malformed server row')

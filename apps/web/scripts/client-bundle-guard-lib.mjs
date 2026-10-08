@@ -1,29 +1,12 @@
-// The client-bundle guard (story 83.1, FR136). PURE LIBRARY: importing this
-// module reads nothing and exits nothing. The CLI is `check-client-bundle.mjs`.
-// The split follows `icons-lib.mjs`, so the unit suite can drive the logic on
-// fixture directories without running a check against the real build.
-//
-// Why a BUNDLE check and not a source rule: some client imports of `server/`
-// are legitimate (`import type`, the `createServerFn` session seed, the
-// constant-only `csp-nonce-key.ts`), and whether a module drags `pg` into the
-// browser is decided by the bundler, not by the import line. Story 80.1
-// MEASURED the failure: `routes/forecasting.tsx` loaded `server/functions/*`
-// with a client-side `import()`, Vite put `pg` and the DB config into
-// `dist/client/assets/paddle-*.js`, and Chromium failed to import it with
-// `ReferenceError: Buffer is not defined`. Every test was green.
+// A bundle check, not a source rule: whether a module drags `pg` into the browser is
+// decided by the bundler, and some client imports of server/ are legitimate.
 
 import { lstatSync, readFileSync, readdirSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
 /**
- * Strings only server code carries. Each was MEASURED at `31e74bf` in the
- * server-only chunk the client build wrongly contained, and in no other client
- * file: the DB and session config names, and two strings from `pg`'s own
- * protocol code (its SCRAM auth and its startup message).
- *
- * ⚠️ Each must also be present in `dist/server` (the positive control below). A
- * marker the server build stops containing would make a clean client
- * meaningless, so it fails the check instead of passing it.
+ * Each must also appear in dist/server (positive control): a marker the server build
+ * stops containing would make a clean client meaningless.
  */
 export const SERVER_ONLY_MARKERS = Object.freeze([
   'DATABASE_URL',
@@ -33,13 +16,8 @@ export const SERVER_ONLY_MARKERS = Object.freeze([
 ])
 
 /**
- * Every regular file under `dir`, recursively.
- *
- * ⚠️ Nothing is skipped silently (story 83.1 code review): a directory that cannot
- * be read, a symlink (never followed: a loop would recurse without end, and a
- * dangling one would throw) and anything that is neither a file nor a directory
- * are each reported in `problems`. A missing TOP directory is left to the
- * positive controls, which say so in their own words.
+ * Nothing is skipped silently: unreadable dirs, symlinks (never followed) and special
+ * files are each reported in `problems`.
  */
 function listFiles(dir, problems, isTop = true) {
   let entries
@@ -70,13 +48,6 @@ function listFiles(dir, problems, isTop = true) {
   return files
 }
 
-/**
- * Check a build output directory (`<distRoot>/client` and `<distRoot>/server`).
- *
- * @returns `{ ok, problems }`, where each problem is one human-readable line. `ok`
- *   is true only when every positive control holds AND no client file carries a
- *   marker.
- */
 export function checkClientBundle(distRoot, markers = SERVER_ONLY_MARKERS) {
   const problems = []
   const clientDir = join(distRoot, 'client')
@@ -84,8 +55,7 @@ export function checkClientBundle(distRoot, markers = SERVER_ONLY_MARKERS) {
   const clientFiles = listFiles(clientDir, problems)
   const serverFiles = listFiles(serverDir, problems)
 
-  // Positive control 1: the client build is really here. A scan of an empty or
-  // wrong directory finds nothing, which looks exactly like a pass.
+  // Positive control: a scan of an empty or wrong directory looks exactly like a pass.
   if (
     !clientFiles.some((file) => file.startsWith(join(clientDir, 'assets')) && file.endsWith('.js'))
   ) {
@@ -94,7 +64,6 @@ export function checkClientBundle(distRoot, markers = SERVER_ONLY_MARKERS) {
     )
   }
 
-  // Positive control 2: every marker is a string the SERVER build contains.
   const serverBytes = serverFiles.map((file) => readFileSync(file))
   for (const marker of markers) {
     if (!serverBytes.some((bytes) => bytes.includes(marker))) {
@@ -102,7 +71,6 @@ export function checkClientBundle(distRoot, markers = SERVER_ONLY_MARKERS) {
     }
   }
 
-  // The check: no client file (any type, not only .js) carries a marker.
   for (const file of clientFiles) {
     const bytes = readFileSync(file)
     for (const marker of markers) {
@@ -116,27 +84,14 @@ export function checkClientBundle(distRoot, markers = SERVER_ONLY_MARKERS) {
 }
 
 /**
- * Dev-only test seams that a production build must not contain AT ALL, server
- * included (story 87.1, AC 4; the session seed joined in story 92.1). Each is gated on the build-time
- * `import.meta.env.DEV` literal, so a production build deletes the branch and
- * the variable name with it; finding the name in `dist/` means the gate was
- * weakened. `source` (relative to the app root) is the positive control: the
- * marker must still be in the source, or its absence from the build proves
- * nothing.
+ * Gated on the build-time `import.meta.env.DEV` literal, so a production build drops the
+ * name; `source` is the positive control that the marker still exists in source.
  */
 export const DEV_ONLY_SEAMS = Object.freeze([
   Object.freeze({ marker: 'E2E_MAIL_OUTBOX', source: 'src/server/email/mailer.ts' }),
-  // Story 58.1's fabricated-session seed (story 92.1). CI grepped `dist/` for it
-  // inline since 58.1; it lives here now so `pnpm gates` checks it too.
   Object.freeze({ marker: 'E2E_SESSION_SEED', source: 'src/server/api/auth/session-seed.ts' }),
 ])
 
-/**
- * Check that no file in `<distRoot>/client` or `<distRoot>/server` carries a
- * dev-only seam's marker.
- *
- * @returns `{ ok, problems }`, as `checkClientBundle`.
- */
 export function checkDevSeamsAbsent(distRoot, appRoot, seams = DEV_ONLY_SEAMS) {
   const problems = []
   for (const { marker, source } of seams) {

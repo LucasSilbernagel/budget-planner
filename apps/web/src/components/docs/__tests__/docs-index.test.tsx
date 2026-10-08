@@ -3,12 +3,6 @@ import { render, screen } from '@/test/utils'
 import { describe, expect, it } from 'vitest'
 import { DocsIndex } from '../docs-index'
 
-/**
- * DocsIndex tests (story 4-10, AC-1).
- *
- * Confirms the index lists a navigable entry, with description, for every
- * documentation page.
- */
 describe('DocsIndex', () => {
   it('renders a link with description for every documentation page', () => {
     render(<DocsIndex />)
@@ -20,16 +14,6 @@ describe('DocsIndex', () => {
   })
 })
 
-/**
- * Theming guards (story 31-1, AC-1/AC-8).
- *
- * Class-TOKEN membership, never substring matching. Note the deliberate
- * light-mode delta this story accepts: the tile hover moves gray-100 → gray-200
- * because `.surface-interactive` bakes its hover in (`global.css:92-99`, where
- * 30-1's review rejected the one-shade step as imperceptible). Writing
- * `hover:surface-inset` at the call site instead would compile and lint cleanly
- * and be a silent no-op, so the negative below pins the raw hover away too.
- */
 describe('DocsIndex theming', () => {
   it('uses the surface + text tokens on the card and its heading', () => {
     const { container } = render(<DocsIndex />)
@@ -37,7 +21,6 @@ describe('DocsIndex theming', () => {
     if (!section) throw new Error('missing section')
     expect([...section.classList]).toContain('surface')
     expect([...section.classList]).not.toContain('bg-white')
-    // Colour-only tokens compose with the layout utilities — they must survive.
     expect([...section.classList]).toContain('rounded-lg')
     expect([...section.classList]).toContain('shadow-md')
 
@@ -57,7 +40,7 @@ describe('DocsIndex theming', () => {
       expect(tokens).toContain('surface-interactive')
       expect(tokens).not.toContain('bg-gray-50')
       expect(tokens).not.toContain('hover:bg-gray-100')
-      // The two background tokens collide by source order — never both.
+      // The two background tokens collide by source order, so never both.
       expect(tokens).not.toContain('surface-inset')
 
       const title = tile.querySelector('h3')

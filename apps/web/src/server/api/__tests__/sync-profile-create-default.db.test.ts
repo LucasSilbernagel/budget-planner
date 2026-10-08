@@ -1,22 +1,5 @@
 // @vitest-environment node
-/**
- * A sync `userProfile` CREATE runs under the per-user writer lock, and one that
- * asks for the default seat while the seat is taken is created NON-default
- * (story 80.2, FR130(2), decision D1 (a)).
- *
- * Before 80.2 such a create went through the autocommit `createEntity`, hit
- * `userProfiles_one_default_per_user` (23505, non-permanent) and stayed queued
- * for ever. Its sources are stale snapshots (Fact T in the story: a second
- * device re-uploading an erased account's old default, or a local-only profile
- * promoted while the push bridge was unwired), never an explicit promotion, so
- * the seat's current holder keeps it.
- *
- * ⚠️ PGlite is one connection: the LOCK is guarded by statement order here, its
- * blocking behaviour is REASONED (see `sync-profile-concurrency.db.test.ts`).
- *
- * Harness (PGlite + full migration chain + statement log) copied from
- * `sync-profile-concurrency.db.test.ts`.
- */
+/** PGlite is one connection: the writer lock is checked via statement order, not real blocking. */
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -65,7 +48,6 @@ let pg: PGlite
 let db: ReturnType<typeof drizzle>
 let opCounter = 0
 
-/** Every statement with its parameters; `BEGIN`/`END` mark top-level transactions. */
 const statements: { sql: string; params: unknown[] }[] = []
 
 function withTransactionMarks(target: ReturnType<typeof drizzle>) {
@@ -125,7 +107,6 @@ async function liveDefaults() {
     .sort()
 }
 
-/** The first statement of each top-level transaction, in order, with its parameters. */
 function firstStatementOfEachTransaction() {
   const firsts: { sql: string; params: unknown[] }[] = []
   statements.forEach((statement, index) => {
@@ -188,20 +169,14 @@ describe('a profile create asking for a TAKEN default seat (AC-2, D1)', () => {
   it('is created as a non-default profile; the current default keeps the seat', async () => {
     const result = await push([createProfile(true)])
 
-    // MECHANISM FIRST: is Q on the server at all? On `main` the INSERT hit
-    // `userProfiles_one_default_per_user` (23505) and nothing was written.
     const q = (await profiles()).find((row) => row.id === Q)
     expect(q, 'the create was applied').toBeDefined()
     expect(q).toMatchObject({ isDeleted: false, isDefault: false })
     expect(await liveDefaults()).toEqual([P])
 
-    // Acknowledged, so the device drops it from its queue. On `main`:
-    // `failedCount: 1` with NO rejection, i.e. kept queued and replayed for ever.
-    // `rejections: []` too, so the old failure is not merely relabelled.
     expect(result).toMatchObject({ processedCount: 1, failedCount: 0, conflictCount: 0 })
     expect(result.rejections).toEqual([])
 
-    // The demotion is logged, ids only (code review 80.2).
     expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('default seat taken'), {
       entityType: 'userProfile',
       entityId: Q,
@@ -217,10 +192,8 @@ describe('a profile create asking for a TAKEN default seat (AC-2, D1)', () => {
     const inside = statements.slice(begin + 1, end).map((statement) => statement.sql)
     expect(begin, 'a transaction opened').toBeGreaterThanOrEqual(0)
     expect(inside[0]).toBe(WRITER.sql)
-    // The seat query's OWN shape: it selects only `id` and filters on the flag.
-    // ⚠️ Not "any userProfiles SELECT mentioning isDefault": the duplicate check
-    // (`getEntity`, a bare `select()`) lists every column, `"isDefault"` included,
-    // so that matcher was satisfied without any seat read (code review 80.2).
+    // Match the seat query's own shape: the duplicate check's bare select()
+    // also lists isDefault, so a looser matcher passes without any seat read.
     const seatRead = inside.findIndex(
       (sql) =>
         sql.startsWith('select "id" from "userProfiles"') &&
@@ -237,7 +210,6 @@ describe('a profile create asking for a TAKEN default seat (AC-2, D1)', () => {
 
     const replay = await push([createProfile(true)])
 
-    // `checkConflict`'s create-create acknowledgement, unchanged by 80.2.
     expect(replay).toMatchObject({ processedCount: 1, failedCount: 0, conflictCount: 0 })
     expect(statements.some((statement) => statement.sql.startsWith('insert into'))).toBe(false)
     expect(await liveDefaults()).toEqual([P])
@@ -245,7 +217,6 @@ describe('a profile create asking for a TAKEN default seat (AC-2, D1)', () => {
 
   it('CONTROL: a create with isDefault: false is created non-default, as before', async () => {
     expect(await push([createProfile(false)])).toMatchObject({ processedCount: 1, failedCount: 0 })
-    // Nothing was demoted, so nothing is logged as a demotion.
     expect(logger.info).not.toHaveBeenCalledWith(
       expect.stringContaining('default seat taken'),
       expect.anything()
@@ -256,11 +227,8 @@ describe('a profile create asking for a TAKEN default seat (AC-2, D1)', () => {
 })
 
 describe('a profile create asking for a FREE default seat (AC-2 control)', () => {
-  // ⚠️ Each seed has an OLDER live non-default profile, and each test asserts no
-  // UPDATE of `userProfiles` ran. Otherwise the post-batch repair masks a wrong
-  // seat check: with Q the only live profile, a Q wrongly inserted non-default is
-  // promoted by the repair and the end state is the same (MEASURED: a seat check
-  // that counted tombstones stayed green before this).
+  // Each seed has an older live non-default profile so the post-batch repair
+  // cannot mask a wrong seat check by promoting Q.
   const R = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
   const olderLiveNonDefault = {
     id: R,
@@ -306,7 +274,6 @@ describe('every profile create takes the writer lock first (AC-3)', () => {
 
   it('[create, repair] both open with the writer lock', async () => {
     expect(await push([createProfile(false)])).toMatchObject({ processedCount: 1, failedCount: 0 })
-    // On `main` this is `[WRITER]`: the repair's alone, the create was autocommit.
     expect(firstStatementOfEachTransaction(), '[profile create, repair]').toEqual([WRITER, WRITER])
   })
 
@@ -322,7 +289,6 @@ describe('every profile create takes the writer lock first (AC-3)', () => {
     expect(begin, 'a transaction opened').toBeGreaterThanOrEqual(0)
     expect(insert).toBeGreaterThan(begin)
     expect(insert).toBeLessThan(end)
-    // The duplicate check: a SELECT of the profile by id, inside the same span.
     const duplicateCheck = statements.findIndex(
       (statement, index) =>
         index > begin &&
@@ -341,9 +307,8 @@ describe('a profile create that fails INSIDE its transaction stays retryable (co
   const OTHER_USER = '22222222-2222-4222-8222-222222222222'
 
   it('a 23505 on the primary key (an id another user owns) is a kept-queued failure, not a rejection', async () => {
-    // The only userProfile 23505 left on the sync create path: both existence
-    // checks filter by `userId`, so another user's row is invisible to them and
-    // the INSERT hits the primary key. It goes through `RollbackWith`.
+    // Existence checks filter by userId, so another user's row with this id
+    // is invisible to them and the INSERT hits the primary key.
     await db
       .insert(users)
       .values({
@@ -361,7 +326,6 @@ describe('a profile create that fails INSIDE its transaction stays retryable (co
 
     expect(result).toMatchObject({ processedCount: 0, failedCount: 1, conflictCount: 0 })
     expect(result.rejections).toEqual([])
-    // Rolled back: the other user's row is untouched and nothing was written for USER.
     const [theirs] = await db.select().from(userProfiles).where(eq(userProfiles.id, Q))
     expect(theirs).toMatchObject({ userId: OTHER_USER, name: 'Theirs' })
   })

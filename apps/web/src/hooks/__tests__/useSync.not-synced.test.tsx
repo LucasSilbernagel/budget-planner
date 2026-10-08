@@ -1,13 +1,3 @@
-/**
- * useSync — an edit that keeps failing reaches the user, and clears itself
- * (story 79.2, FR128).
- *
- * The transport is mocked so each attempt's outcome can be chosen. The failure
- * used is the UNCLASSIFIED one (`retryable: false`, no status code): what the
- * client returns for a per-op server fault, and the class no timer retries, so
- * each attempt here is one explicit `forceSync()`.
- */
-
 import { renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -33,10 +23,8 @@ const send = sendSyncOperation as unknown as ReturnType<typeof vi.fn>
 
 const UNCLASSIFIED = { success: false, retryable: false, error: 'Operation failed on server' }
 /**
- * `retryDelay: 0` sets the escalation TIME FLOOR (`maxRetries × retryDelay`,
- * code review 79.2) to zero, so four back-to-back attempts are enough here. The
- * floor itself is pinned in core's `escalate-stuck-op.test.ts`. Module-level, so
- * the hook's effect does not re-run on every render.
+ * Zeroes the escalation time floor (maxRetries × retryDelay). Module-level so the effect does not
+ * re-run on every render.
  */
 const NO_TIME_FLOOR = { retryDelay: 0 }
 
@@ -74,7 +62,6 @@ describe('useSync not-synced notice (story 79.2)', () => {
     for (let i = 0; i < 3; i++) {
       await result.current.forceSync()
     }
-    // Positive anchor: three attempts really went out and really failed.
     expect(send).toHaveBeenCalledTimes(3)
     expect(getRefusalNotices()).toEqual([])
 
@@ -137,12 +124,6 @@ describe('useSync not-synced notice (story 79.2)', () => {
     expect(getRefusalNotices()).toEqual([])
   })
 
-  // ⚠️ Measured in code review 79.2 (mutation M10): this stays GREEN with the
-  // teardown reverted to `dismissAllRefusalNotices`. A new service's first status
-  // carries an EMPTY escalated view, and the reconcile forgets every dismissal
-  // whose row is not in it, so the dismissal is gone before the edit re-escalates.
-  // `resetRefusalNotices` is defence in depth; its own clearing is pinned at store
-  // level (`notSyncedNotices.test.ts`). This test pins the OUTCOME only.
   it('a dismissal does not survive into the next session: the still-stuck edit is named again', async () => {
     const first = await mountWithStuckEdit()
     for (let i = 0; i < 4; i++) {
@@ -156,7 +137,6 @@ describe('useSync not-synced notice (story 79.2)', () => {
 
     first.unmount()
 
-    // A new session over the same persisted queue: the edit is still stuck.
     const second = renderHook(() =>
       useSync({ userId: USER, autoSync: false, autoPull: false, syncConfig: NO_TIME_FLOOR })
     )
@@ -181,8 +161,6 @@ describe('useSync not-synced notice (story 79.2)', () => {
 
     const inFlight = result.current.forceSync()
     await waitFor(() => expect(send).toHaveBeenCalledTimes(1))
-    // The push has emitted its IN_PROGRESS status by now. Before the fix that
-    // notification wrote `isSyncing: false` while the request was still open.
     await waitFor(() => expect(result.current.isSyncing).toBe(true))
 
     release(undefined)

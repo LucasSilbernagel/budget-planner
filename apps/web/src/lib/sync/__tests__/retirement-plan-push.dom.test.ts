@@ -1,21 +1,4 @@
-/**
- * The retirement plan's client push (story 99.3, FR161), driven through the REAL
- * retirement store, push module, sync bridge, pull applier and refusal handler,
- * with fake timers and a recording bridge handle.
- *
- * Story 99.2 shipped this file as a DORMANCY test (no client path queued a plan
- * op). 99.3 inverts its setter half, as 99.2 directed: the intent setters push.
- * `resetPlan`, the claim, the applier's ordinary apply, `setDesiredIncomeForLocale`
- * (the planner's effects) and `seedOnce` still queue nothing.
- *
- * ⚠️ POSITIVE ANCHORS: every "queues nothing" test either shows a pushing control
- * on the same bridge, or the seed's income row, so "zero plan ops" cannot pass
- * because the bridge recorded nothing at all.
- *
- * ⚠️ The queue add is ASYNC (the bridge hands back its promise), so every timer
- * advance here is `advanceTimersByTimeAsync`, which also runs the microtasks
- * that settle it.
- */
+/** The queue add is async, so timers advance with `advanceTimersByTimeAsync` to settle it. */
 
 import type { ServerChange, SyncOperation } from '@budget-planner/core/sync'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -53,7 +36,6 @@ function makeHandle() {
 
 let handle: ReturnType<typeof makeHandle>
 
-/** Every op the bridge was asked to queue, as `<type> <entityType>`. */
 function queued(): string[] {
   return [
     ...handle.queueCreate.mock.calls.map((call) => `create ${call[0]}`),
@@ -62,7 +44,6 @@ function queued(): string[] {
   ]
 }
 
-/** The plan update calls, as what reached the bridge. */
 function planUpdates(): { entityId: string; plan: RetirementPlan; baseVersion?: number }[] {
   return handle.queueUpdate.mock.calls
     .filter((call) => call[0] === 'retirementPlan')
@@ -146,7 +127,6 @@ describe('AC-2: only the user-intent setters push', () => {
       expect(queued()).toEqual(['update retirementPlan'])
       const [update] = planUpdates()
       expect(update?.entityId).toBe(USER)
-      // The plan on the wire is the plan on screen, which really moved.
       expect(update?.plan).toEqual(store().plan)
       expect(store().plan).not.toEqual(RETIREMENT_PLAN_DEFAULTS)
     }
@@ -157,7 +137,6 @@ describe('AC-2: only the user-intent setters push', () => {
     await quiet()
     expect(store().plan.desiredIncomeInput).toBe('55.000,00')
     expect(queued()).toEqual([])
-    // Positive control on the same bridge.
     store().setModel('perpetual')
     await quiet()
     expect(queued()).toEqual(['update retirementPlan'])
@@ -176,7 +155,6 @@ describe('AC-2: only the user-intent setters push', () => {
       USER
     )
     await quiet()
-    // The applier really ran.
     expect(store().plan.model).toBe('perpetual')
     expect(queued()).toEqual([])
   })
@@ -191,9 +169,7 @@ describe('AC-2: only the user-intent setters push', () => {
   })
 
   it('an owner change DROPS a pending edit (AC-8): the plan it brings back is never pushed by it', async () => {
-    // A pending edit, then the session's account changes and the claim brings
-    // back that account's PARKED plan. Without the drop the old timer would push
-    // the parked plan as an "edit".
+    // Without the drop, the old timer would push the parked plan as an edit.
     localStorage.setItem(
       `${RETIREMENT_PLANNER_STORAGE_KEY}:${OTHER}`,
       JSON.stringify({ ...RETIREMENT_PLAN_DEFAULTS, currentAgeInput: '58' })
@@ -205,7 +181,6 @@ describe('AC-2: only the user-intent setters push', () => {
     expect(store().plan.currentAgeInput).toBe('58')
     await quiet()
     expect(queued()).toEqual([])
-    // CONTROL: the new session's own next edit does push.
     store().setModel('perpetual')
     await quiet()
     expect(queued()).toEqual(['update retirementPlan'])
@@ -237,7 +212,6 @@ describe('AC-2: only the user-intent setters push', () => {
 
     await seedOnce(USER)
 
-    // Positive anchor: the seed ran against this live bridge.
     expect(queued()).toEqual(['create incomeSource'])
   })
 })
@@ -259,11 +233,9 @@ describe('AC-4: keystrokes coalesce', () => {
       [pulledPlan({ ...RETIREMENT_PLAN_DEFAULTS, desiredIncomeInput: '55,000.00' }, 2_000)],
       USER
     )
-    // `reEcho` calls the setter with an updater that returns the same string.
     store().setDesiredIncomeInput((previous) => previous)
     await quiet()
     expect(queued()).toEqual([])
-    // CONTROL: a real change after it does push.
     store().setDesiredIncomeInput('56,000.00')
     await quiet()
     expect(queued()).toEqual(['update retirementPlan'])
@@ -314,7 +286,6 @@ describe('AC-4: keystrokes coalesce', () => {
     store().setModel('perpetual')
     leave()
     expect(queued()).toEqual(['update retirementPlan'])
-    // Nothing is sent twice when the timer would have fired.
     await quiet()
     expect(queued()).toEqual(['update retirementPlan'])
     expect(hasPendingPlanEdit()).toBe(false)
@@ -339,7 +310,6 @@ describe('AC-5: a pull never overwrites un-pushed typing', () => {
     expect(first?.baseVersion).toBe(1_000)
 
     store().setCurrentAgeInput('41')
-    // The server applied the first push at t=5000 and a pull delivers it.
     applyServerChangesToStores([pulledPlan(first?.plan as RetirementPlan, 5_000)], USER)
     expect(store().plan.currentAgeInput).toBe('41')
 
@@ -360,7 +330,6 @@ describe('AC-5: a pull never overwrites un-pushed typing', () => {
     )
     store().setCurrentAgeInput('44')
     await quiet()
-    // Flushed, but the queue's add has not settled: still pending.
     expect(hasPendingPlanEdit()).toBe(true)
     applyServerChangesToStores(
       [pulledPlan({ ...RETIREMENT_PLAN_DEFAULTS, currentAgeInput: '30' }, 5_000)],
@@ -489,7 +458,6 @@ describe('AC-7 / AC-12: after the initial pull', () => {
     const [, entityId, data] = handle.queueCreate.mock.calls[0] ?? []
     expect(entityId).toBe(USER)
     expect((data as { plan: RetirementPlan }).plan.currentAgeInput).toBe('44')
-    // The seeded plan counts as synced: an edit back to it sends nothing.
     store().setModel('perpetual')
     store().setModel('deplete')
     await quiet()
@@ -508,7 +476,6 @@ describe('AC-7 / AC-12: after the initial pull', () => {
       serverUpdatedAt: new Date(2_000).toISOString(),
       localPlanDiverged: true,
     })
-    // The initial pull skipped the server copy.
     applyServerChangesToStores([pulledPlan({ ...RETIREMENT_PLAN_DEFAULTS }, 3_000)], USER)
     expect(store().plan.currentAgeInput).toBe('52')
     await expect(reconcilePlanAfterInitialPull()).resolves.toBe('pushed')
@@ -569,7 +536,6 @@ describe('AC-12: a refused plan edit stays on this device until a plan update is
     ])
     applyServerChangesToStores([pulledPlan({ ...RETIREMENT_PLAN_DEFAULTS }, 4_000)], USER)
     expect(store().plan).toEqual(local)
-    // The skipped version is recorded, so the healing push is based on it.
     expect(store().serverUpdatedAt).toBe(new Date(4_000).toISOString())
   })
 

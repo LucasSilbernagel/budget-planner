@@ -4,14 +4,6 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { APP_VERSION, compareVersions, getVersion, isValidVersion, parseVersion } from '../version'
 
-/**
- * Version utility tests (story 4-8, AC-1).
- *
- * Asserts the version exposed to the UI is the real one from package.json
- * (so it "updates when a new version is deployed"), and that the semver
- * parse/compare/validate helpers behave correctly.
- */
-
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const { version: pkgVersion } = JSON.parse(
   readFileSync(resolve(__dirname, '../../../package.json'), 'utf-8')

@@ -1,11 +1,4 @@
-/**
- * The shared active-profile scoping predicate (story 54.4, FR79).
- *
- * ⚠️ `null`/absent means UNSCOPED and is visible under EVERY profile — it is
- * never compared for equality. Legacy persisted rows and free-tier rows written
- * before 54.4 carry no `profileId` at all, and hiding them would look like data
- * loss (the same reasoning `useCategoriesForActiveProfile` records).
- */
+/** A null or absent `profileId` is unscoped and visible under every profile. */
 
 import { describe, expect, it } from 'vitest'
 import { isInActiveProfile, scopeToActiveProfile } from '../profile-scope'

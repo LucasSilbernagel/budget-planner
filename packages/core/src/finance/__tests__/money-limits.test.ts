@@ -1,11 +1,3 @@
-/**
- * Story 106.1 (FR174): one money limit, shared by every gate.
- *
- * Before this story the client validators bounded money at `MAX_SAFE_INTEGER /
- * 100` (or not at all) while the sync gate bounds it at int32. A value between
- * the two was stored on the device and then refused at enqueue: a silent split.
- * These tests pin that every gate now reads the SAME constant, at both edges.
- */
 import { describe, expect, it } from 'vitest'
 import { validateBalanceTracking } from '../../services/balanceTracking'
 import { validateSavingsGoal } from '../../services/savingsGoals'

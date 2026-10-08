@@ -1,18 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { type BalancesBarColors, buildBalancesBarData } from '../balances-bar-data'
 
-/**
- * Overview "Balances" series tests (story 43.4).
- *
- * ⚠️ These exist because the Assets bar was, briefly, guarded by NOTHING. Every
- * test that looked like it covered the Overview's balance chart actually read the
- * Net Worth TILE — which is fed by the shared `useNetWorth()` hook, not by this
- * series. Deleting the Assets bar outright left the entire suite green, on the
- * site story 43.4 itself calls the highest-risk in the codebase.
- *
- * Every amount below is HAND-COMPUTED and mutually DISTINCT, so no assertion can
- * pass by coincidence or by a bucket being read from the wrong total.
- */
+/** Amounts are hand-computed and mutually distinct so no assertion passes by coincidence. */
 
 const COLORS: BalancesBarColors = {
   savings: '#SAV',
@@ -42,9 +31,6 @@ describe('buildBalancesBarData', () => {
     const data = buildBalancesBarData(TOTALS, COLORS)
     const byCategory = Object.fromEntries(data.map((d) => [d.category, d.amount]))
 
-    // ⚠️ Both halves matter. Folding assets into the Investments bar would give
-    // Investments 45,000,000 and no Assets bar — and any assertion that only
-    // checked a total would not tell the two apart.
     expect(byCategory['Assets']).toBe(40_000_000)
     expect(byCategory['Investments']).toBe(5_000_000)
   })
@@ -55,8 +41,7 @@ describe('buildBalancesBarData', () => {
 
     expect(byCategory['Debts']).toBe(-30_000_000)
     expect(byCategory['Savings']).toBe(300_000)
-    // The four bars sum to the net-worth definition: 300,000 + 5,000,000
-    // + 40,000,000 − 30,000,000 = 15,300,000.
+    // 300,000 + 5,000,000 + 40,000,000 − 30,000,000 = 15,300,000.
     expect(data.reduce((sum, d) => sum + d.amount, 0)).toBe(15_300_000)
   })
 
@@ -74,8 +59,6 @@ describe('buildBalancesBarData', () => {
   })
 
   it('emits an Assets bar for an asset-only user', () => {
-    // The zero-drop makes "no Assets bar" ambiguous between "no assets" and
-    // "assets were never wired in". This is the case that disambiguates it.
     const assetOnly = buildBalancesBarData(
       { savingsCents: 0, investmentsCents: 0, assetsCents: 40_000_000, debtsCents: 0 },
       COLORS

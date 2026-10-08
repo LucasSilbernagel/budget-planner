@@ -12,21 +12,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { type SessionSeed, SessionSeedProvider } from '@/context/session-seed'
 import { GlobalNav } from '../GlobalNav'
 
-/**
- * GlobalNav as the SERVER sends it (story 84.3, FR137).
- *
- * With JavaScript off, the nav is exactly this HTML, and the only way into the
- * More panel is the native `<details>` toggle. These tests replace the e2e
- * JS-off reachability tests (`nav-more-disclosure{,.paid}.spec.ts`): what they
- * pin is that every destination is a real `<a href>` in the server HTML, inside
- * a `<details>` the server renders CLOSED, or (at `lg`) a row anchor. The
- * native toggle opening that `<details>` is the browser's (84.3 D4).
- *
- * `renderToString` runs no effects, so it sees exactly the first paint.
- * ⚠️ `router.load()` first: without it the router emits an unresolved Suspense
- * boundary and every assertion here would pass on empty HTML
- * (`auth-indicator.test.tsx` › `serverRenderAt`).
- */
+// `router.load()` first: without it the router emits an unresolved Suspense boundary and
+// every assertion passes on empty HTML.
 
 const SIGNED_OUT: SessionSeed = {
   isAuthenticated: false,
@@ -68,7 +55,6 @@ async function makeRouter(seed: SessionSeed | null, path: string, withMismatch =
   return router
 }
 
-/** The server HTML, parsed into a detached container for querying. */
 async function serverNav(seed: SessionSeed | null, path = '/') {
   const router = await makeRouter(seed, path)
   const html = renderToString(<RouterProvider router={router} />)
@@ -99,10 +85,7 @@ describe('GlobalNav — the server HTML (JavaScript off, story 59.2 AC-4)', () =
 
   it('puts every free More destination in the server HTML as a real link inside the disclosure', async () => {
     const { nav } = await serverNav(SIGNED_OUT)
-    // + `/settings`, last: the phone-only Settings row (was
-    // ['/balance', '/retirement'] until story 96.3).
     expect(panelHrefs(nav)).toEqual(['/balance', '/retirement', '/settings'])
-    // Not a React-only control: plain anchors, no button anywhere in the nav.
     expect(nav.querySelectorAll('button')).toHaveLength(0)
   })
 
@@ -110,7 +93,6 @@ describe('GlobalNav — the server HTML (JavaScript off, story 59.2 AC-4)', () =
     const { nav } = await serverNav(SIGNED_OUT)
     const rows = [...nav.querySelectorAll(':scope > ul > li[data-nav-promoted] > a')]
     expect(rows.map((a) => a.getAttribute('href'))).toEqual(['/balance', '/retirement'])
-    // And no row copy lives inside the disclosure.
     expect(nav.querySelector('details li[data-nav-promoted]')).toBeNull()
   })
 
@@ -123,21 +105,11 @@ describe('GlobalNav — the server HTML (JavaScript off, story 59.2 AC-4)', () =
       '/profiles',
       '/financial-summary',
       '/categories',
-      // The phone-only Settings row, last (story 96.3).
       '/settings',
     ])
     expect(nav.querySelector('details')).not.toHaveAttribute('open')
   })
 
-  /**
-   * Story 96.3 (FR163, AC 4): with JavaScript off on a phone, every visitor
-   * reaches `/settings` through the native More `<details>`. The nav does not
-   * read the session for this row, so it is the same for a signed-out, an
-   * entitled and an UNVERIFIED (`null` seed) visitor; the last one is the state
-   * in which the account cluster renders neither "Sign in" nor a gear.
-   * The native toggle and the click are the browser's: the one-off JS-off
-   * probe is recorded in the story's Debug Log.
-   */
   it.each([
     ['a signed-out', SIGNED_OUT],
     ['an entitled', ENTITLED],
@@ -155,10 +127,8 @@ describe('GlobalNav — the server HTML (JavaScript off, story 59.2 AC-4)', () =
       expect(link, 'the last row is not a link').not.toBeNull()
       expect(link).toHaveAttribute('href', '/settings')
       expect(link?.textContent).toBe('Settings')
-      // Phones only, as a token (jsdom applies no stylesheet).
       expect([...last.classList]).toContain('sm:hidden')
       expect([...last.classList]).not.toContain('max-sm:hidden')
-      // The only /settings link in the server nav.
       expect(nav.querySelectorAll('a[href="/settings"]')).toHaveLength(1)
     }
   )
@@ -171,14 +141,7 @@ describe('GlobalNav — a panel opened BEFORE hydration (story 59.2 AC-5)', () =
     cleanup = undefined
   })
 
-  /**
-   * The server sends the `<details>` closed and the native toggle works before
-   * React runs. A user who opens More in that window leaves the DOM `open` while
-   * React hydrates `isMoreOpen` as false, and the native `toggle` event has
-   * already fired with no handler attached. Only the mount effect's read of the
-   * DOM arms Escape and the outside-press listeners. The macrotask wait below is
-   * what lets that `toggle` fire BEFORE hydration, as it does in a browser.
-   */
+  // The macrotask wait lets the native `toggle` fire before hydration, as in a browser.
   it('is still dismissible with Escape once hydrated', async () => {
     const serverRouter = await makeRouter(SIGNED_OUT, '/')
     const container = document.createElement('div')
@@ -209,8 +172,7 @@ describe('GlobalNav — a panel opened BEFORE hydration (story 59.2 AC-5)', () =
       ),
       'React never hydrated the <details>'
     ).toBe(true)
-    // The adopted `open` is the one attribute mismatch React is told to ignore
-    // (`suppressHydrationWarning` on the <details>); nothing else may differ.
+    // The adopted `open` is the one mismatch React is told to ignore; nothing else may differ.
     expect(recoverable, `hydration errors: ${recoverable.join(' | ')}`).toEqual([])
     const hydrated = container.querySelector('nav details') as HTMLDetailsElement
     expect(hydrated.open, 'hydration closed a panel the user had opened').toBe(true)
@@ -222,14 +184,8 @@ describe('GlobalNav — a panel opened BEFORE hydration (story 59.2 AC-5)', () =
   })
 })
 
-/**
- * The nav hydrates cleanly for every tier (84.3 code review). The server reads
- * the seed through a `useState` initializer, so the first client render must
- * produce the same anchors; a client-only read of the tier would regenerate the
- * whole nav on every load. Hydrated here directly, with a designed-RED control
- * proving the harness reports a mismatch (React 19 tolerates extra nodes
- * directly under the hydration root, MEASURED, so a control is required).
- */
+// React 19 tolerates extra nodes directly under the hydration root, so the designed-RED
+// control proves the harness can report a mismatch.
 describe('GlobalNav — hydration', () => {
   async function hydrate(seed: SessionSeed | null, withMismatch: boolean) {
     renderingOnClient = false
@@ -254,8 +210,6 @@ describe('GlobalNav — hydration', () => {
     return { recoverable, anchors }
   }
 
-  // 9 / 13 anchors: was 8 / 12 until story 96.3 added the phone-only Settings
-  // sheet row, which is session-independent (so the null seed has it too).
   it.each([
     ['a signed-out', SIGNED_OUT, 9],
     ['an entitled', ENTITLED, 13],

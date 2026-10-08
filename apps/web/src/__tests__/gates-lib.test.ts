@@ -1,14 +1,6 @@
 // @vitest-environment node
-/**
- * The gate runner's logic (story 82.1, FR133).
- *
- * The rule under test: a gate is green only when it exited 0 AND printed its own
- * summary AND that summary counted something AND nothing failed. Every FORMAT
- * below is taken from a REAL run of that tool in this repo (story 82.1 Debug
- * Log), because a parser tested against a made-up format passes while the real
- * one is never matched. Where a case needs a failure the real runs did not have
- * (a failed or flaky count), the values are edited in the real shape, and say so.
- */
+// Every format below is copied from a real run of that tool: a parser tested against a
+// made-up format passes while the real one is never matched.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -57,11 +49,9 @@ describe('typeCheckPrograms', () => {
 })
 
 describe('parsers', () => {
-  /** The shape of a real db-suite report (vitest 1.6.1), trimmed to 2 files. */
   const vitestReport = (files: { status: string; tests: string[] }[]) =>
     JSON.stringify({
-      // The REAL top-level fields of that run, which disagree with the console:
-      // it printed `295 passed | 7 skipped`, 12 files.
+      // The real top-level fields of that run, which disagree with the console summary.
       numTotalTestSuites: 51,
       numTotalTests: 302,
       numPassedTests: 302,
@@ -129,10 +119,8 @@ describe('parsers', () => {
     })
   })
 
-  // Story 82.3 review P1: Playwright errors only when the TOTAL is zero, so a
-  // requested project that selects nothing (every paid test tagged @layout, a
-  // broadened tag pattern) left the gate green. Shape: `suites[].specs[].tests[]`
-  // with `projectName`, nested describes under `suites[].suites[]` (real report).
+  // Playwright errors only when the TOTAL is zero, so a requested project that selects nothing
+  // must fail the gate here.
   const report = (projects: string[]) =>
     JSON.stringify({
       suites: [
@@ -211,15 +199,12 @@ describe('parsers', () => {
   })
 
   it('tsc --diagnostics: the Files line, and nothing at all is NO summary', () => {
-    // Real `tsc --noEmit --diagnostics` in packages/config (story 82.1).
     expect(
       parseTscDiagnostics(
         'Files:             168\nLines:          104596\nIdentifiers:     89023\n'
       )
     ).toMatchObject({ files: 168 })
-    // `tsc --noEmit` without --diagnostics: silent on success.
     expect(parseTscDiagnostics('')).toBeNull()
-    // The dead `pnpm tsc:web` script: exits without running a compiler.
     expect(
       parseTscDiagnostics(
         'ERR_PNPM_RECURSIVE_RUN_NO_SCRIPT  None of the selected packages has a "tsc" script'
@@ -293,7 +278,6 @@ describe('verdict', () => {
     expect(
       verdict({ exitCode: 0, summary: { passed: 0, failed: 0, skipped: 302, total: 302 } }).reasons
     ).toEqual(['nothing ran'])
-    // A count-only summary (files checked) still only needs total > 0.
     expect(verdict({ exitCode: 0, summary: { files: 683, total: 683, failed: 0 } }).green).toBe(
       true
     )
@@ -469,7 +453,6 @@ describe('buildGates', () => {
   })
 
   it('e2e claims every Playwright server port so the runner can refuse a stray server', () => {
-    // :5176 is the `chromium-db` dev server and :55432 its PGlite socket (story 87.1).
     expect(byId['e2e']?.ports).toEqual([5173, 5174, 5175, 5176, 55432])
   })
 
@@ -489,9 +472,7 @@ describe('buildGates', () => {
     expect(byId['e2e']?.env?.['PLAYWRIGHT_BASE_URL']).toBe('')
   })
 
-  // The selection is by project NAME, so a renamed project must fail this file
-  // rather than silently drop out of the gate. Story 84.2 (FR137) removed the
-  // `@layout` projects and `--layout`: the local e2e gate is the flow projects.
+  // Selection is by project NAME, so a renamed project must fail here, not drop out of the gate.
   const projectsOf = (gate: (typeof gates)[number] | undefined) =>
     (gate?.args ?? []).filter((a) => a.startsWith('--project=')).map((a) => a.slice(10))
 
@@ -511,8 +492,7 @@ describe('buildGates', () => {
     expect(pkg.scripts['test:e2e']).toBe('playwright test')
   })
 
-  // Story 84.1 review: the screenshot baselines are rendered by screenshots.yml
-  // and compared by ci.yml's e2e job, so both must run on the SAME image.
+  // Baselines are rendered by screenshots.yml and compared by ci.yml, so both need the SAME image.
   it('ci.yml e2e-tests and screenshots.yml run on the same pinned runner image (story 84.1)', () => {
     const workflows = join(__dirname, '../../../../.github/workflows')
     const runsOn = (file: string, job: string) => {
@@ -530,22 +510,13 @@ describe('buildGates', () => {
     expect(ci).not.toMatch(/PLAYWRIGHT_BASE_URL/)
   })
 
-  // Story 84.2 (FR137, D5): the `@layout` split is gone and nothing selects
-  // e2e tests by tag any more, so a `tag:` in a spec is a leftover or a new
-  // selection mechanism that no project knows about. Either way, name the file.
   it('no e2e spec carries a Playwright tag (story 84.2, D5)', () => {
     const dir = join(__dirname, '../../e2e')
-    // Recursive, and every extension Playwright's default testMatch picks up
-    // (84.2 review): `e2e/flows/x.spec.ts` or `e2e/x.test.ts` runs in CI too.
-    // Files only: the screenshot baseline DIRECTORIES are named after their
-    // specs (`__screenshots__/pages.screenshot.spec.ts/`).
+    // Recursive, every extension Playwright's testMatch picks up; files only (baseline
+    // directories are named after their specs).
     const specs = readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter(
       (f) => /\.(spec|test)\.[cm]?[jt]sx?$/.test(f) && statSync(join(dir, f)).isFile()
     )
-    // Non-vacuity: the walk found the suite. Since story 84.5 e2e is the closed
-    // D4 flow list (13 files at 84.5: 11 flow specs + 2 screenshot specs); the
-    // floor of 10 leaves room for a flow file to merge, and the smoke spec must
-    // exist wherever it lives under `e2e/`.
     expect(specs.length).toBeGreaterThanOrEqual(10)
     expect(specs.some((file) => /(^|\/)smoke\.spec\.ts$/.test(file))).toBe(true)
     // A string/array literal or a CONSTANT_CASE identifier (`tag: LAYOUT`), not
@@ -556,16 +527,13 @@ describe('buildGates', () => {
     expect(tagged, 'spec(s) still carry a Playwright tag').toEqual([])
   })
 
-  // Story 84.1 (D3): the screenshot projects are declared but run ONLY in CI,
-  // because their baselines are rendered there (CI's DejaVu Sans vs a dev box's
-  // Noto Sans). So every declared project is either in the local e2e run or a
-  // screenshot project, never both, and a new project must pick a side here.
+  // Screenshot projects run only in CI (baselines depend on its fonts), so every project is
+  // either in the local run or a screenshot project, never both.
   it('the local e2e run names every Playwright project except the CI-only screenshot ones', () => {
     const config = readFileSync(join(__dirname, '../../playwright.config.ts'), 'utf8')
     const declared = [...config.matchAll(/^\s*name: '([^']+)',$/gm)].map((m) => m[1]).sort()
     expect(declared).toHaveLength(6)
-    // No project partitions the suite by title/tag any more (84.2 review): a
-    // re-added `grep:` plus an `@word` in a title would split it again silently.
+    // A re-added `grep:` plus an `@word` in a title would silently split the suite.
     expect(config).not.toMatch(/\bgrep(Invert)?:/)
     expect(E2E_SCREENSHOT_PROJECTS).toEqual(['screenshots', 'screenshots-paid'])
     expect([...projectsOf(byId['e2e']), ...E2E_SCREENSHOT_PROJECTS].sort()).toEqual(declared)
@@ -683,8 +651,6 @@ describe('screenshotNotice (story 84.1, D3; 84.2, D4)', () => {
     expect(screenshotNotice({ e2e: true })).toEqual([CI_ONLY])
   })
 
-  // Story 84.2 (D4): the warning `layoutNotice` gave (82.3 review P4) survives,
-  // pointed at the only layout-dedicated projects left: the CI screenshots.
   it('warns when the tree changes a .tsx/.css file, since only CI checks layout now', () => {
     expect(
       screenshotNotice({

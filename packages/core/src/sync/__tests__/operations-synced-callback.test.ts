@@ -1,17 +1,3 @@
-/**
- * `onOperationsSynced` — the operations the server ACCEPTED in one sync (story
- * 86.3).
- *
- * Before 86.3 nothing outside the service learned which ops landed: they were
- * removed from the queue silently, so the web layer could not mark a pushed row
- * as the session's until a later pull replaced it. The web layer now stamps the
- * session's id on each accepted create/update (`stampSyncedOwner` in
- * `apps/web/src/lib/sync/applyServerChanges.ts`).
- *
- * Real services on the production storage key (the per-test `localStorage`
- * mock), so the queue, its removal and the teardown are the real ones.
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SynchronizationService } from '../synchronization'
 import type { ProcessOperationFn, ProcessOperationResult, SyncOperation } from '../types'
@@ -126,14 +112,12 @@ describe('onOperationsSynced (story 86.3)', () => {
 
     await service.sync()
 
-    // Positive anchor: every op really went out.
     expect(send).toHaveBeenCalledTimes(6)
     expect(synced).toHaveBeenCalledTimes(1)
     expect(synced.mock.calls[0]?.[0].map((o: SyncOperation) => o.id)).toEqual([
       'ok-create',
       'ok-update',
     ])
-    // ...and they had left the queue when it fired; the kept ones had not.
     expect(persistedIds()).toEqual(['kept', 'conflict', 'retryable'])
   })
 
@@ -157,7 +141,6 @@ describe('onOperationsSynced (story 86.3)', () => {
     service.onOperationsSynced(synced)
 
     const inFlight = service.sync()
-    // Positive anchor: X really went out before the teardown.
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1))
     service.destroy()
     held.resolve(ACCEPTED)
@@ -178,7 +161,6 @@ describe('onOperationsSynced (story 86.3)', () => {
     await service.sync()
 
     expect(synced.mock.calls.map(([ops]) => ops.map((o: SyncOperation) => o.id))).toEqual([['X']])
-    // Positive anchor: the removal really failed, so X is still queued.
     expect(persistedIds()).toEqual(['X'])
   })
 

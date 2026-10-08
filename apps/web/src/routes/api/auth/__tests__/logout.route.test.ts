@@ -1,11 +1,3 @@
-/**
- * Logout route tests (Story 5.8 review patch)
- *
- * The session cookie must be cleared UNCONDITIONALLY — even when server-side
- * revocation (the DB write in logoutUser) fails — so a transient DB error can
- * never leave the user logged in on both the client and server.
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/server/api/auth/paddle', () => ({

@@ -24,7 +24,6 @@ import {
   users,
 } from './schema'
 
-// Test 1: Schema compilation - Verify all tables are exported
 describe('Schema Compilation', () => {
   it('should export all tables', () => {
     expect(users).toBeDefined()
@@ -53,13 +52,9 @@ describe('Schema Compilation', () => {
   })
 })
 
-// Test 2: Type generation - Verify TypeScript types are correctly inferred
 describe('Type Generation', () => {
   it('should have User type with correct properties', () => {
-    // This test verifies that the User type has the expected structure.
-    // The actual type checking happens at compile time, in the package's
-    // `type-check` (tsconfig.test.json, story 78.4). Until then no gate compiled
-    // this file, and the literal had fallen ten columns behind `users`.
+    // Checked at compile time by the package's type-check.
     const userExample: User = {
       id: '550e8400-e29b-41d4-a716-446655440000',
       email: 'test@example.com',
@@ -87,7 +82,6 @@ describe('Type Generation', () => {
     expect(userExample.currency).toBeDefined()
     expect(userExample.createdAt).toBeDefined()
     expect(userExample.updatedAt).toBeDefined()
-    // Verify email max length is 254 (RFC 5321)
     expect(userExample.email.length).toBeLessThanOrEqual(254)
   })
 
@@ -118,46 +112,32 @@ describe('Type Generation', () => {
     expect(statuses).toContain('active')
     expect(statuses).toContain('past_due')
     expect(statuses).toContain('canceled')
-    expect(statuses).not.toContain('cancelled') // Verify we use 'canceled' not 'cancelled'
-    expect(statuses).not.toContain('unpaid') // Verify 'unpaid' was removed
+    expect(statuses).not.toContain('cancelled')
+    expect(statuses).not.toContain('unpaid')
   })
 })
 
-// Test 3: Users table structure validation
-// Note: Drizzle ORM table objects don't expose the table name as a property
-// The name is internal to Drizzle and verified at migration time
 describe('Users Table Schema', () => {
   it('should have users table defined', () => {
-    // Verify the users table exists and is a valid Drizzle table
-    // This is a compile-time check - if it compiles, the table is valid
     expect(users).toBeDefined()
     expect(typeof users).toBe('object')
   })
 
   it('should have uuid id column', () => {
-    // The users table should have an id column of type uuid
-    // This is verified by the fact that the schema compiles and TypeScript accepts uuid values
-    // We can verify the table structure by checking the inferred type
     expect(users).toBeDefined()
-    // Compile-time check: if this passes TypeScript, id is uuid
     const testId: string = '550e8400-e29b-41d4-a716-446655440000'
     expect(testId).toBeTruthy()
   })
 
   it('should have unique and not null paddleId', () => {
-    // Verify paddleId is configured as unique and not null
-    // The schema definition enforces this at the database level
     expect(users).toBeDefined()
-    // Compile-time check: paddleId is required
     const testPaddleId: string = 'paddle_123'
     expect(testPaddleId).toBeTruthy()
   })
 })
 
-// Test 4: Foreign key relations validation
 describe('Foreign Key Relations', () => {
   it('should have userId in all financial tables', () => {
-    // Verify all financial tables have userId field
     expect(incomeSources).toBeDefined()
     expect(expenses).toBeDefined()
     expect(savingsGoals).toBeDefined()
@@ -166,16 +146,12 @@ describe('Foreign Key Relations', () => {
   })
 
   it('should reference users table', () => {
-    // The foreign keys should reference the users table
-    // This is verified by the schema compilation and type safety
     expect(incomeSources).toBeDefined()
     expect(expenses).toBeDefined()
     expect(users).toBeDefined()
   })
 
   it('should have profileId in all financial tables for profile scoping', () => {
-    // Verify all financial tables have profileId field for profile-level data isolation
-    // This enables multiple profiles per user with isolated financial data
     expect(incomeSources).toBeDefined()
     expect(expenses).toBeDefined()
     expect(savingsGoals).toBeDefined()
@@ -184,13 +160,11 @@ describe('Foreign Key Relations', () => {
   })
 
   it('should have profileId reference userProfiles table', () => {
-    // profileId should reference userProfiles.id for proper foreign key relationship
     expect(userProfiles).toBeDefined()
     expect(incomeSources).toBeDefined()
   })
 })
 
-// Test 5: Enum values validation
 describe('Enum Values', () => {
   it('subscriptionStatusEnum should have correct values', () => {
     const enumValues = subscriptionStatusEnum.enumValues
@@ -215,7 +189,6 @@ describe('Enum Values', () => {
     expect(enumValues).toContain('CNY')
     expect(enumValues).toContain('SEK')
     expect(enumValues).toContain('NZD')
-    // Additional currencies added for global support
     expect(enumValues).toContain('INR')
     expect(enumValues).toContain('BRL')
     expect(enumValues).toContain('MXN')
@@ -229,10 +202,6 @@ describe('Enum Values', () => {
   })
 })
 
-// Test 6: Soft-delete tombstone columns (Story 4-18)
-// Cross-device delete propagation requires a tombstone flag on every syncable
-// entity table (mirroring the users precedent) so a delta-by-updatedAt pull can
-// surface deletions instead of losing them to a hard DELETE.
 describe('Soft-delete (isDeleted) columns', () => {
   it('users already has an isDeleted column', () => {
     expect(users.isDeleted).toBeDefined()
@@ -247,9 +216,6 @@ describe('Soft-delete (isDeleted) columns', () => {
   })
 
   it('isDeleted defaults to false and is not null', () => {
-    // Drizzle exposes column metadata on the column object. The migration
-    // (0002_*) emits `DEFAULT false NOT NULL`; verify the schema agrees so the
-    // tombstone can never be null and reads can filter on `isDeleted = false`.
     expect(incomeSources.isDeleted.notNull).toBe(true)
     expect(incomeSources.isDeleted.default).toBe(false)
     expect(userProfiles.isDeleted.notNull).toBe(true)
@@ -257,10 +223,6 @@ describe('Soft-delete (isDeleted) columns', () => {
   })
 })
 
-// Test 7: Client-generatable uuid primary keys (Story 5-14, AC-1)
-// Every syncable entity must use a uuid PK with a DB default so a record created
-// on one device carries the SAME id everywhere (eliminating pull-side duplicate
-// rows) and the client MAY supply the id on insert.
 describe('Entity primary keys are client-generatable uuids', () => {
   it('all four syncable entity tables expose a uuid id column', () => {
     expect(incomeSources.id.getSQLType()).toBe('uuid')
@@ -271,16 +233,10 @@ describe('Entity primary keys are client-generatable uuids', () => {
 
   it('userProfiles (already uuid) and these entity ids are the same kind', () => {
     expect(userProfiles.id.getSQLType()).toBe('uuid')
-    // A uuid PK surfaces as a string in TypeScript, not a number — this is what
-    // lets the client supply crypto.randomUUID() and the sync layer reconcile by
-    // a shared string id (AC-4).
     expect(incomeSources.id.dataType).toBe('string')
   })
 
   it('entity ids carry a DB default so server-originated inserts need no client id', () => {
-    // defaultRandom() => the column is marked hasDefault; gen_random_uuid() fills
-    // any insert that omits the id (server-side rows), while the client may still
-    // supply its own uuid for offline-created rows.
     expect(incomeSources.id.hasDefault).toBe(true)
     expect(expenses.id.hasDefault).toBe(true)
     expect(savingsGoals.id.hasDefault).toBe(true)
@@ -288,10 +244,6 @@ describe('Entity primary keys are client-generatable uuids', () => {
   })
 })
 
-// Test 8: User-defined categories (Story 30.4a, FR54)
-// A first-class entity rather than a denormalized string, because the feature
-// requires rename and delete: renaming must update every referencing row with no
-// per-row edit, which a copied string cannot do.
 describe('Categories table (Story 30.4a)', () => {
   it('is exported and registered in allTables', () => {
     expect(categories).toBeDefined()
@@ -317,45 +269,30 @@ describe('Categories table (Story 30.4a)', () => {
   it('carries a required kind separating the income and expense namespaces', () => {
     expect(categories.kind.notNull).toBe(true)
     expect(categoryKindEnum.enumValues).toEqual(['income', 'expense'])
-    // The exported union must track the enum, so a widened enum cannot silently
-    // leave the TypeScript type behind.
     const incomeKind: CategoryKind = 'income'
     const expenseKind: CategoryKind = 'expense'
     expect([incomeKind, expenseKind]).toEqual(categoryKindEnum.enumValues)
   })
 
   it('financeType carries all three balance categories, and FinanceType tracks it', () => {
-    // ⚠️ Story 43.4. Before this test NOTHING in the entire suite pinned an enum
-    // VALUE — `schema.test.ts` asserted only `expect(financeTypeEnum).toBeDefined()`.
-    // Widening the enum and forgetting a downstream gate left every suite green
-    // while asset rows silently failed to sync, so this is the anchor the rest of
-    // the value-level gates are checked against.
     expect(financeTypeEnum.enumValues).toEqual(['investment', 'debt', 'asset'])
 
-    // The exported union must track the enum, so a widened enum cannot silently
-    // leave the TypeScript type behind.
     const investment: FinanceType = 'investment'
     const debt: FinanceType = 'debt'
     const asset: FinanceType = 'asset'
     expect([investment, debt, asset]).toEqual(financeTypeEnum.enumValues)
 
-    // ALL_FINANCE_TYPES is derived, not restated — this pins that it stays so.
     expect(ALL_FINANCE_TYPES).toEqual(financeTypeEnum.enumValues)
   })
 
   it('balanceTracking.type is NOT NULL and carries no default', () => {
-    // No default is why widening the enum cannot silently re-type an existing
-    // row: every row's type was written explicitly by the app.
+    // No default, so widening the enum can't silently re-type an existing row.
     expect(balanceTracking.type.notNull).toBe(true)
     expect(balanceTracking.type.hasDefault).toBe(false)
   })
 
   it('balanceTracking.contributionRecordedAsExpense is NOT NULL and defaults false (Story 45.1)', () => {
-    // FR72. The default is the whole safety property: `false` reproduces today's
-    // arithmetic exactly, so every existing row keeps its current pool behaviour
-    // and only a row the user explicitly ticks stops being deducted.
-    // ⚠️ If this ever gained `.default(true)`, every different-money user's
-    // distributable pool would silently rise. That is epic AC-3's failure.
+    // `false` keeps every existing row's pool arithmetic; only an explicitly ticked row changes.
     expect(balanceTracking.contributionRecordedAsExpense).toBeDefined()
     expect(balanceTracking.contributionRecordedAsExpense.getSQLType()).toBe('boolean')
     expect(balanceTracking.contributionRecordedAsExpense.notNull).toBe(true)
@@ -364,18 +301,7 @@ describe('Categories table (Story 30.4a)', () => {
   })
 
   it('expenses.endsBeforeRetirement is NOT NULL and defaults false (Story 65.2)', () => {
-    // FR101. The default is the whole migration-safety property: `false`
-    // reproduces today's behaviour exactly, so every pre-existing expense row
-    // stays counted in the retirement target and only a row the user explicitly
-    // ticks is offered for exclusion.
-    // ⚠️ CORRECTED in the second review round. This used to say `.default(true)`
-    // would make "every user's suggested retirement income silently drop to zero".
-    // That overstated it twice: a column default applies only to INSERTs that OMIT
-    // the column (and the bridge always sends an explicit boolean), and the
-    // suggestion is computed client-side from local rows, where the remainder
-    // reaches zero only if EVERY row is marked. The narrower real property is
-    // still worth pinning: `false` is what makes a row created outside the app's
-    // push path default to COUNTED rather than excluded.
+    // `false` makes a row created outside the app's push path default to counted.
     expect(expenses.endsBeforeRetirement).toBeDefined()
     expect(expenses.endsBeforeRetirement.getSQLType()).toBe('boolean')
     expect(expenses.endsBeforeRetirement.notNull).toBe(true)
@@ -384,33 +310,20 @@ describe('Categories table (Story 30.4a)', () => {
   })
 
   it('⚠️ endsBeforeRetirement is on expenses ONLY, never on incomeSources (Story 65.2)', () => {
-    // `updateEntity` spreads `operation.data` straight into `.set()` with no
-    // column whitelist, so the payload arms are split by entity. This pins the
-    // asymmetry the split defends: if `incomeSources` ever gains a same-named
-    // column, the split in `syncBridge.ts` is no longer merely tidy and its
-    // comment needs revisiting.
+    // `updateEntity` spreads `operation.data` into `.set()` with no column whitelist, so payload
+    // arms are split by entity.
     expect('endsBeforeRetirement' in incomeSources).toBe(false)
   })
 
   it('categoryId is NULLABLE on both cashflow tables so uncategorized stays valid', () => {
-    // This is the whole reason every pre-existing row survives the migration and
-    // no form gains a required field. If either of these ever becomes notNull,
-    // the free-tier CRUD contract breaks.
+    // Nullable, so existing rows survive the migration and no form gains a required field.
     expect(incomeSources.categoryId.getSQLType()).toBe('uuid')
     expect(incomeSources.categoryId.notNull).toBe(false)
     expect(expenses.categoryId.getSQLType()).toBe('uuid')
     expect(expenses.categoryId.notNull).toBe(false)
   })
 
-  /**
-   * ⚠️ CODE REVIEW 30.4a — the assertions above check SHAPES, not RELATIONSHIPS.
-   * Deleting `.references(() => categories.id)` from both columns left the whole
-   * db suite green: the type is still `uuid` and still nullable, so nothing
-   * noticed that `categoryId` had silently degraded to an unenforced loose
-   * reference. Every downstream rationale in this story — the seed ordering, the
-   * account-deletion order, the "real foreign key" comments — rests on these FKs
-   * actually existing, so they are asserted here directly.
-   */
+  /** Shape assertions stayed green with these FKs deleted, so assert the FKs directly. */
   it('categoryId is a REAL foreign key to categories on both cashflow tables', () => {
     const incomeFks = getTableConfig(incomeSources).foreignKeys.map((fk) => fk.reference())
     const expenseFks = getTableConfig(expenses).foreignKeys.map((fk) => fk.reference())
@@ -424,7 +337,6 @@ describe('Categories table (Story 30.4a)', () => {
           ref.foreignColumns.some((column) => getTableName(column.table) === 'categories')
       )
 
-    // MUTATION KILLED: drop `.references(() => categories.id)` from either column.
     expect(referencesCategories(incomeFks), 'incomeSources.categoryId has no FK').toBe(true)
     expect(referencesCategories(expenseFks), 'expenses.categoryId has no FK').toBe(true)
   })
@@ -433,8 +345,7 @@ describe('Categories table (Story 30.4a)', () => {
     const refs = getTableConfig(categories).foreignKeys.map((fk) => fk.reference())
     const targets = refs.map((ref) => getTableName(ref.foreignColumns[0].table)).sort()
 
-    // Both parents must be enforced: an orphaned category is unreachable data
-    // that account deletion and profile deletion would both miss.
+    // An orphaned category is unreachable data that account and profile deletion would miss.
     expect(targets).toEqual(['userProfiles', 'users'])
   })
 
@@ -447,21 +358,11 @@ describe('Categories table (Story 30.4a)', () => {
     expect(liveNameIndex, 'the live-name unique index is missing').toBeDefined()
     expect(liveNameIndex?.config.unique).toBe(true)
 
-    // MUTATION KILLED: drop the `.where(isDeleted = false)` predicate. Without it
-    // the index becomes a plain unique constraint, and re-creating a category the
-    // user previously deleted collides with its own tombstone — a 23505 the
-    // client never sees, which is exactly the silent divergence the schema
-    // comment claims this predicate prevents.
+    // Without the predicate, re-creating a deleted category collides with its own tombstone.
     expect(liveNameIndex?.config.where).toBeDefined()
 
-    // MUTATION KILLED: revert `lower(name)` to a bare `table.name` column
-    // (migration 0012). A case-SENSITIVE index disagrees with the client's
-    // `normalizeName`, which compares `trim().toLocaleLowerCase()`.
-    //
-    // The indexed "columns" are a mix of Column objects and SQL expressions;
-    // the lower() one is an SQL node whose chunks carry the literal text. The
-    // drizzle objects are circular, so collect the string chunks by walking
-    // rather than serializing.
+    // Must be case-insensitive to agree with the client's `normalizeName`. Drizzle objects are
+    // circular, so walk the string chunks rather than serializing.
     const stringChunks = (node: unknown, out: string[] = []): string[] => {
       if (typeof node === 'string') {
         out.push(node)
@@ -470,8 +371,7 @@ describe('Categories table (Story 30.4a)', () => {
       if (!node || typeof node !== 'object') {
         return out
       }
-      // A `StringChunk` holds its literal text in a `value` string array —
-      // that is where `lower(` and `)` actually live.
+      // A `StringChunk` keeps its literal text in a `value` array.
       const value = (node as { value?: unknown }).value
       if (Array.isArray(value)) {
         out.push(...value.filter((entry): entry is string => typeof entry === 'string'))
@@ -492,13 +392,6 @@ describe('Categories table (Story 30.4a)', () => {
   })
 })
 
-/**
- * Story 34.1a (FR60) — the explicit display-order column.
- *
- * These are SHAPE assertions in the spirit of the 30.4a review note above: they
- * pin the three properties every downstream layer actually depends on (integer,
- * NOT NULL, DEFAULT 0) plus the two constraints that must deliberately NOT exist.
- */
 describe('sortOrder — explicit display order (Story 34.1a, FR60)', () => {
   const ORDERED_TABLES = [
     ['incomeSources', incomeSources],
@@ -510,25 +403,14 @@ describe('sortOrder — explicit display order (Story 34.1a, FR60)', () => {
   it.each(ORDERED_TABLES)('%s.sortOrder is an integer, NOT NULL, DEFAULT 0', (_name, table) => {
     // Integer, not a float/numeric: positions are counted, never interpolated.
     expect(table.sortOrder.getSQLType()).toBe('integer')
-    // NOT NULL + a default is what makes the migration safe on a populated table
-    // without a nullable -> SET NOT NULL dance (see 0013's header).
+    // NOT NULL + a default makes the migration safe on a populated table.
     expect(table.sortOrder.notNull).toBe(true)
     expect(table.sortOrder.hasDefault).toBe(true)
     expect(table.sortOrder.default).toBe(0)
   })
 
-  /**
-   * ⚠️ Decision 4 pinned as a test, not just a comment. Duplicate sortOrder values
-   * are EXPECTED under two-device last-write-wins, and a unique index would make the
-   * losing insert fail at the database (the deferred-work.md:13 failure class that
-   * got `onConflictDoNothing` rejected for categories). Convergence comes from the
-   * read-time tiebreaker instead. Story 30-4a proved drizzle-kit 0.23.2 DOES emit
-   * partial unique indexes, so "it wouldn't have been emitted anyway" is not a
-   * defence here — this has to be asserted.
-   *
-   * MUTATION KILLED: add `.unique()` to sortOrder, or add a uniqueIndex over
-   * (userId, profileId, sortOrder) to any of the four tables.
-   */
+  // Duplicate sortOrder is expected under two-device LWW; a unique index would fail the losing
+  // insert at the database. Reads converge through a tiebreaker instead.
   it.each(ORDERED_TABLES)('%s has NO uniqueness constraint touching sortOrder', (_name, table) => {
     const config = getTableConfig(table)
 
@@ -548,33 +430,8 @@ describe('sortOrder — explicit display order (Story 34.1a, FR60)', () => {
   })
 })
 
-/**
- * `balanceTracking` after story 49.1 (FR75) — the contribution limit is gone.
- *
- * ⚠️ WHY THIS BLOCK EXISTS: dropping the column and its CHECK constraint reddened
- * NOTHING in this file. Verified during 49.1 — the suite asserts individually
- * NAMED columns (`id`, `type`, `isDeleted`, `sortOrder`,
- * `contributionRecordedAsExpense`) and reads `.foreignKeys`, `.indexes` and
- * `.uniqueConstraints`, but it never enumerates a table's full column list and
- * never touches `.checks`. So every CHECK constraint in this schema, and every
- * column not individually named above, was unguarded HERE.
- *
- * ⚠️ Since story 66.5 they are guarded ELSEWHERE, and the distinction matters for
- * anyone deciding what this file still owes: `migration-replay.test.ts` compares
- * every table's CHECK constraints (name and normalised predicate) against these
- * declarations, and `check-constraints.test.ts` proves each one refuses what it
- * says it refuses. The block below remains the only place that pins THIS table's
- * exact column set.
- *
- * Both assertions below are POSITIVE (exact sets), not bare absence checks: an
- * absence check on a column that is already gone can never fail again, which is
- * the vacuity trap stories 48.1 and 48.2 both hit. The exact-set form still
- * reddens if `maxContributionLimit` comes back AND if a real column is lost.
- *
- * MUTATIONS KILLED: re-add `maxContributionLimit: integer(...)` to the table
- * (M7-adjacent); re-add the `balanceTracking_maxContributionLimit_valid` check
- * block (M6); delete the surviving `monthlyContribution` check.
- */
+// The only place pinning this table's exact column set. Exact sets, not absence checks: an
+// absence check on an already-gone column can never fail.
 describe('balanceTracking — the contribution limit is removed (story 49.1, FR75)', () => {
   it('has exactly the expected columns, and maxContributionLimit is not among them', () => {
     const columns = getTableConfig(balanceTracking)
@@ -591,7 +448,6 @@ describe('balanceTracking — the contribution limit is removed (story 49.1, FR7
         'isDeleted',
         'monthlyContribution',
         'name',
-        // Story 102.1 (FR169): the debt's linked expense. See the block below.
         'paymentExpenseId',
         'profileId',
         'sortOrder',
@@ -603,14 +459,7 @@ describe('balanceTracking — the contribution limit is removed (story 49.1, FR7
   })
 
   it('declares exactly one CHECK constraint, the monthlyContribution bound', () => {
-    // ⚠️ This asserts the DECLARATION in `schema.ts`. That it also reaches the
-    // database is asserted by `migration-replay.test.ts`, and that it behaves is
-    // asserted by `check-constraints.test.ts` — three different claims, kept in
-    // three places on purpose.
-    // ⚠️ The declarations were doc-only until story 66.5 / migration 0020, which
-    // is precisely why 49.1's migration carries no DROP CONSTRAINT: there was
-    // nothing in SQL to drop. See `migrations/0016_neat_metal_master.sql`, which
-    // is left unedited as the historical record it is.
+    // Declaration only; the replay and check-constraint tests cover the database and behaviour.
     const checkNames = getTableConfig(balanceTracking)
       .checks.map((check) => check.name)
       .sort()
@@ -619,19 +468,8 @@ describe('balanceTracking — the contribution limit is removed (story 49.1, FR7
   })
 })
 
-/**
- * `balanceTracking.paymentExpenseId` (Story 102.1, FR169): the expense that pays a
- * debt.
- *
- * ⚠️⚠️ The NO-FOREIGN-KEY assertion is the point of this block. A real FK turns a
- * dangling link (an expense deleted, or not yet pulled by this device: a NORMAL
- * state) into a 23503 on push, which this product keeps queued and replays until
- * the circuit breaker stops ALL of the account's sync. `expenses.categoryId` is
- * the live example: its sync is pinned to null for exactly that reason.
- *
- * Asserted as the exact FK set of the table (positive form, not a bare absence
- * check), so adding `.references(() => expenses.id)` reddens it.
- */
+// No foreign key on purpose: a dangling link is normal, and an FK would turn it into a 23503
+// on push that replays until the circuit breaker stops all sync.
 describe('balanceTracking.paymentExpenseId (story 102.1, FR169)', () => {
   it('is a nullable uuid with no default', () => {
     const column = balanceTracking.paymentExpenseId

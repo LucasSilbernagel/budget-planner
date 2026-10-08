@@ -1,37 +1,6 @@
-/**
- * `icon` sync-contract gates (Story 54.2, FR78, AC-2).
- *
- * A new FIELD on an EXISTING entity (`userProfile`) has to be declared at four
- * independent places, and the client-side ones fail SILENTLY if missed:
- *
- *   1. `syncOperationDataSchema` (packages/core/src/sync/types.ts) — STRIPS
- *      undeclared keys, so a forgotten line drops `icon` before the op is ever
- *      queued. No error, no rejection, a "successful" sync that discards the
- *      user's choice.
- *   2. `toServerPayload`'s `userProfile` case (syncBridge.ts) — an explicit
- *      whitelist returning `Record<string, unknown>`, so a forgotten key is not a
- *      type error and the field simply never leaves the browser.
- *   3. `userProfileSchema` (packages/core) and 4. its hand-maintained duplicate in
- *      server/api/sync.ts — these VALIDATE, they do not strip (see below).
- *
- * The pull direction needs no gate of its own: `getSyncChanges` selects whole rows
- * (`db.select()`), `updateEntity`/`createEntity` spread their input, and
- * `applyOne` spreads `change.data`. Those are asserted structurally in
- * `applyServerChanges.test.ts` rather than here.
- *
- * ⚠️ NOTHING HERE CLAIMS A LIVE ROUND-TRIP SUCCEEDS. These are contract tests.
- *
- * ⚠️ Inherited from `sort-order-gates.test.ts` and RE-VERIFIED here rather than
- * assumed: the server's per-entity `.parse()` runs inside `syncOperationSchema`'s
- * `superRefine`, and zod DISCARDS a superRefine callback's return value — only
- * raised issues survive. The operation's `data` is `z.record(z.unknown())` at the
- * top level, so it passes through UNSTRIPPED. The server gate therefore provides
- * VALIDATION, not stripping, and the tests below assert exactly that.
- */
+/** The server gate validates but doesn't strip: superRefine discards its parse result and `data` is a z.record. */
 
-// Deep import: `syncOperationDataSchema` is deliberately not re-exported from
-// core's `sync` barrel, so the barrel path resolves to `undefined` and every
-// assertion below would fail with "Cannot read properties of undefined".
+// Deep import: core's `sync` barrel doesn't re-export syncOperationDataSchema.
 import { syncOperationDataSchema } from '@budget-planner/core/sync/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { syncOperationSchema } from '../../../server/api/sync'
@@ -75,19 +44,12 @@ const profile = (extra: Record<string, unknown> = {}) => ({
   ...extra,
 })
 
-/**
- * GATE 1 — `toServerPayload` (syncBridge.ts).
- *
- * MUTATION KILLED (M5): delete `icon` from the `userProfile` branch.
- */
 describe('Gate 1 — the push payload carries icon', () => {
   it('update forwards a chosen icon', () => {
     syncEntityUpdate('userProfile', profile({ icon: '✈️' }))
     expect(handle.queueUpdate).toHaveBeenCalledTimes(1)
     const payload = handle.queueUpdate.mock.calls[0][2]
     expect(payload['icon']).toBe('✈️')
-    // The rest of the profile still rides along — a new field must not displace
-    // the existing ones.
     expect(payload['name']).toBe('Business')
     expect(payload['currency']).toBe('EUR')
   })
@@ -98,13 +60,7 @@ describe('Gate 1 — the push payload carries icon', () => {
     expect(handle.queueCreate.mock.calls[0][2]).toMatchObject({ icon: '🎯' })
   })
 
-  /**
-   * ⚠️ Unlike `sortOrder`, `icon` is OMITTED rather than sent as null when unset.
-   * `updateEntity` does a partial `.set()`, so omitting the key leaves the server
-   * value untouched — which is what we want for a profile that has never had an
-   * icon chosen. Story 54.2 ships no "clear my icon" affordance, so there is no
-   * case that needs to transmit an explicit null.
-   */
+  /** Omitted when unset (unlike sortOrder): a partial .set() leaves the server value alone. */
   it.each([
     ['null', null],
     ['undefined', undefined],
@@ -115,13 +71,6 @@ describe('Gate 1 — the push payload carries icon', () => {
   })
 })
 
-/**
- * GATE 2 — `syncOperationDataSchema` (packages/core/src/sync/types.ts).
- *
- * The most dangerous of the four: this gate STRIPS undeclared keys.
- *
- * MUTATION KILLED (M2): delete `icon` from syncOperationDataSchema.
- */
 describe('Gate 2 — the client zod gate does not strip icon', () => {
   it('preserves icon through a parse', () => {
     const parsed = syncOperationDataSchema.parse({
@@ -139,10 +88,6 @@ describe('Gate 2 — the client zod gate does not strip icon', () => {
     expect(parsed.icon).toBeNull()
   })
 
-  /**
-   * Proves the assertion above is discriminating: this gate really does strip, so
-   * "the key survived" is evidence the declaration exists, not a tautology.
-   */
   it('DOES strip a genuinely undeclared key (so the check above is meaningful)', () => {
     const parsed = syncOperationDataSchema.parse({
       name: 'Business',
@@ -158,16 +103,7 @@ describe('Gate 2 — the client zod gate does not strip icon', () => {
   })
 })
 
-/**
- * GATE 3 — `userProfileSchema` in server/api/sync.ts (a hand-maintained duplicate
- * of core's).
- *
- * Validates, does not strip — see the header. Without the declaration an
- * over-long value would sail through to the INSERT and fail against
- * `varchar(16)` there instead of at the boundary.
- *
- * MUTATION KILLED (M7): delete `icon` from the server's userProfileSchema.
- */
+/** Without the declaration an over-long value would fail at the varchar(16) INSERT instead of the boundary. */
 describe('Gate 3 — the server gate validates icon and keeps it in data', () => {
   const op = (data: Record<string, unknown>) => ({
     id: 'op-1',
@@ -182,12 +118,7 @@ describe('Gate 3 — the server gate validates icon and keeps it in data', () =>
 
   const base = { name: 'Business', isDefault: false, currency: 'EUR' }
 
-  /**
-   * ⚠️ NOT DISCRIMINATING ON ITS OWN, and measured as such: with `icon` removed
-   * from the server schema (arm M7) this test still PASSES, because the gate does
-   * not strip. It documents the retain-through behaviour the pull path relies on;
-   * the assertion that actually pins the declaration is the rejection below.
-   */
+  /** Not discriminating alone (the gate doesn't strip); the rejection below pins the declaration. */
   it('accepts a valid icon and RETAINS it in data (not stripped)', () => {
     const parsed = syncOperationSchema.parse(op({ ...base, icon: '✈️' }))
     expect((parsed.data as Record<string, unknown>)['icon']).toBe('✈️')

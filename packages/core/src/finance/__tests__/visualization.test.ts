@@ -1,14 +1,3 @@
-/**
- * Financial Visualization Utilities Tests
- *
- * Comprehensive test coverage for visualization data transformation functions.
- * Tests all functions in packages/core/src/finance/visualization.ts
- *
- * Story: 3-3 - Enhance income vs. expense visualization
- * NFR3: All financial calculations must pass validation
- * NFR4: Maintain 100% TypeScript type safety
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   CATEGORY_COLORS,
@@ -16,37 +5,26 @@ import {
   DEFAULT_COLORS,
   type DrillDownState,
   type FinancialDataPoint,
-  // Category Aggregation
   aggregateByCategory,
   aggregateByCategoryAndType,
-  // Drill-Down Functionality
   createDrillDownState,
   drillDownToCategory,
   drillToRoot,
   drillUp,
   generateColorMap,
-  // Color Utilities
   getColorForCategory,
   getDataForDrillDownLevel,
-  // Data Formatting Utilities
   getPercentageOfTotal,
   getTopCategories,
   groupSmallCategories,
   isDrillDownActive,
   sanitizeFinancialData,
   toBarChartData,
-  // Recharts Data Transformation
   toPieChartData,
   toStackedBarChartData,
-  // Validation Utilities
   validateFinancialData,
 } from '../visualization.js'
 
-// ============================================================================
-// Timer Mocks for Consistent Date-Based Tests
-// ============================================================================
-
-// Use fixed timestamp for all date-based tests to ensure consistent results
 const FIXED_TEST_TIMESTAMP = '2026-06-18T12:00:00Z'
 
 beforeEach(() => {
@@ -58,15 +36,11 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-// ============================================================================
-// Test Data
-// ============================================================================
-
 const mockFinancialData: FinancialDataPoint[] = [
   {
     id: 'inc-1',
     name: 'Salary',
-    amount: 500000, // $5000/month
+    amount: 500000,
     frequency: 'monthly',
     category: 'Salary',
     type: 'income',
@@ -75,7 +49,7 @@ const mockFinancialData: FinancialDataPoint[] = [
   {
     id: 'inc-2',
     name: 'Freelance',
-    amount: 200000, // $2000/month
+    amount: 200000,
     frequency: 'monthly',
     category: 'Freelance',
     type: 'income',
@@ -84,7 +58,7 @@ const mockFinancialData: FinancialDataPoint[] = [
   {
     id: 'exp-1',
     name: 'Rent',
-    amount: -150000, // -$1500/month
+    amount: -150000,
     frequency: 'monthly',
     category: 'Housing',
     type: 'expense',
@@ -93,7 +67,7 @@ const mockFinancialData: FinancialDataPoint[] = [
   {
     id: 'exp-2',
     name: 'Groceries',
-    amount: -60000, // -$600/month
+    amount: -60000,
     frequency: 'monthly',
     category: 'Food',
     type: 'expense',
@@ -102,7 +76,7 @@ const mockFinancialData: FinancialDataPoint[] = [
   {
     id: 'exp-3',
     name: 'Utilities',
-    amount: -20000, // -$200/month
+    amount: -20000,
     frequency: 'monthly',
     category: 'Housing',
     type: 'expense',
@@ -111,17 +85,13 @@ const mockFinancialData: FinancialDataPoint[] = [
   {
     id: 'inc-3',
     name: 'Bonus',
-    amount: 100000, // $1000 (one-time)
+    amount: 100000,
     frequency: 'annually',
     category: 'Bonus',
     type: 'income',
     date: new Date('2026-01-01'),
   },
 ]
-
-// ============================================================================
-// Constants Tests
-// ============================================================================
 
 describe('CATEGORY_COLORS', () => {
   it('should have at least 10 color options', () => {
@@ -150,17 +120,12 @@ describe('DEFAULT_COLORS', () => {
   })
 })
 
-// ============================================================================
-// Category Aggregation Tests
-// ============================================================================
-
 describe('aggregateByCategory', () => {
   it('should aggregate data by category', () => {
     const result = aggregateByCategory(mockFinancialData)
 
     expect(result.length).toBeGreaterThanOrEqual(4)
 
-    // Check that Salary category exists with correct amount
     const salaryAggregate = result.find((a) => a.category === 'Salary')
     expect(salaryAggregate).toBeDefined()
     expect(salaryAggregate?.amount).toBe(500000)
@@ -171,7 +136,7 @@ describe('aggregateByCategory', () => {
   it('should group multiple items with same category', () => {
     const result = aggregateByCategory(mockFinancialData)
 
-    // Housing should have Rent + Utilities = -150000 + -20000 = -170000
+    // Rent + Utilities = -150000 + -20000 = -170000
     const housingAggregate = result.find((a) => a.category === 'Housing')
     expect(housingAggregate).toBeDefined()
     expect(housingAggregate?.amount).toBe(-170000)
@@ -212,12 +177,10 @@ describe('aggregateByCategoryAndType', () => {
     // biome-ignore lint/style/noNonNullAssertion: presence asserted by expect(result.has('expense')) above.
     const expenseAggregates = result.get('expense')!
 
-    // Check income categories
     expect(incomeAggregates.some((a) => a.category === 'Salary')).toBe(true)
     expect(incomeAggregates.some((a) => a.category === 'Freelance')).toBe(true)
     expect(incomeAggregates.some((a) => a.category === 'Bonus')).toBe(true)
 
-    // Check expense categories
     expect(expenseAggregates.some((a) => a.category === 'Housing')).toBe(true)
     expect(expenseAggregates.some((a) => a.category === 'Food')).toBe(true)
   })
@@ -301,11 +264,7 @@ describe('groupSmallCategories', () => {
   })
 
   it('should group small categories when they exceed threshold', () => {
-    // Create 10 categories: 1 large (9000) and 9 small (100 each)
-    // With topLimit=1, we keep 1 top and group 9 small
-    // Total = 9000 + 900 = 9900
-    // Small categories total = 900
-    // Percentage = 900/9900 = ~9.09% > 5% threshold
+    // 9000 + 9 × 100: the small ones are 900 / 9900 ≈ 9% > 5% threshold.
     const aggregates: CategoryAggregate[] = Array.from({ length: 10 }, (_, i) => ({
       category: `Category ${i}`,
       amount: i === 0 ? 9000 : 100,
@@ -313,33 +272,26 @@ describe('groupSmallCategories', () => {
       count: 1,
     }))
 
-    const result = groupSmallCategories(aggregates, 1, 0.05) // topLimit=1 to get 9 other items
+    const result = groupSmallCategories(aggregates, 1, 0.05)
 
-    expect(result.length).toBe(2) // 1 top + 1 Other
+    expect(result.length).toBe(2)
     expect(result.some((a) => a.category === 'Other')).toBe(true)
   })
 
   it('should not group small categories when below threshold', () => {
     const aggregates: CategoryAggregate[] = Array.from({ length: 10 }, (_, i) => ({
       category: `Category ${i}`,
-      amount: i === 0 ? 9900 : 10, // One large (99%), nine tiny (0.1% each)
+      amount: i === 0 ? 9900 : 10,
       type: 'income' as const,
       count: 1,
     }))
 
-    // Total = 9900 + (9 * 10) = 9990
-    // Small categories total = 90
-    // Percentage = 90/9990 = ~0.9% < 5% threshold
+    // 9 × 10 = 90 of 9990 ≈ 0.9% < 5% threshold.
     const result = groupSmallCategories(aggregates, 8, 0.05)
 
-    // Should not create Other group since small items are below threshold
     expect(result.some((a) => a.category === 'Other')).toBe(false)
   })
 })
-
-// ============================================================================
-// Recharts Data Transformation Tests
-// ============================================================================
 
 describe('toPieChartData', () => {
   it('should transform category aggregates to pie chart data', () => {
@@ -352,7 +304,7 @@ describe('toPieChartData', () => {
 
     expect(result.length).toBe(2)
     expect(result[0].name).toBe('Salary')
-    expect(result[0].value).toBe(500000) // Absolute value for charting
+    expect(result[0].value).toBe(500000)
     expect(result[0].type).toBe('income')
     expect(result[0].category).toBe('Salary')
     expect(result[0].fill).toBeDefined()
@@ -360,7 +312,7 @@ describe('toPieChartData', () => {
     expect(result[0].count).toBe(1)
 
     expect(result[1].name).toBe('Rent')
-    expect(result[1].value).toBe(150000) // Absolute value for charting
+    expect(result[1].value).toBe(150000)
     expect(result[1].type).toBe('expense')
   })
 
@@ -425,7 +377,7 @@ describe('toBarChartData', () => {
 
     expect(result.length).toBe(2)
     expect(result[0].name).toBe('Category A')
-    expect(result[0].value).toBe(3000) // 1000 + 2000
+    expect(result[0].value).toBe(3000)
     expect(result[1].name).toBe('Category B')
     expect(result[1].value).toBe(3000)
   })
@@ -505,8 +457,8 @@ describe('toStackedBarChartData', () => {
     const result = toStackedBarChartData(data)
 
     expect(result.categories).toEqual(['Work', 'Personal'])
-    expect(result.incomeData).toEqual([6000, 0]) // Work: 5000+1000, Personal: 0
-    expect(result.expenseData).toEqual([2000, 500]) // Work: 2000, Personal: 500
+    expect(result.incomeData).toEqual([6000, 0])
+    expect(result.expenseData).toEqual([2000, 500])
   })
 
   it('should handle empty data', () => {
@@ -516,10 +468,6 @@ describe('toStackedBarChartData', () => {
     expect(result.expenseData).toEqual([])
   })
 })
-
-// ============================================================================
-// Drill-Down Functionality Tests
-// ============================================================================
 
 describe('createDrillDownState', () => {
   it('should create initial drill-down state', () => {
@@ -588,7 +536,6 @@ describe('drillUp', () => {
 
 describe('drillToRoot', () => {
   it('should reset to root level', () => {
-    // `drillToRoot` takes no state: the root is a constant, whatever the depth.
     const newState = drillToRoot()
 
     expect(newState.level).toBe(0)
@@ -614,7 +561,6 @@ describe('getDataForDrillDownLevel', () => {
 
     const result = getDataForDrillDownLevel(mockFinancialData, state)
 
-    // Should only include Salary income
     expect(result.length).toBe(1)
     expect(result[0].id).toBe('inc-1')
     expect(result[0].category).toBe('Salary')
@@ -629,7 +575,6 @@ describe('getDataForDrillDownLevel', () => {
 
     const result = getDataForDrillDownLevel(mockFinancialData, state)
 
-    // Should include both Rent and Utilities (both are Housing expenses)
     expect(result.length).toBe(2)
     expect(result.every((item) => item.type === 'expense')).toBe(true)
     expect(result.every((item) => item.category === 'Housing')).toBe(true)
@@ -651,13 +596,6 @@ describe('isDrillDownActive', () => {
   })
 })
 
-// ============================================================================
-// Data Formatting Utilities Tests
-// ============================================================================
-
-// Note: formatChartAmount was removed as it violated the project's Currency Control System
-// Currency formatting should use useFormattedAmount() hook instead
-
 describe('getPercentageOfTotal', () => {
   it('should calculate percentage correctly', () => {
     expect(getPercentageOfTotal(500, 1000)).toBe(50)
@@ -673,10 +611,6 @@ describe('getPercentageOfTotal', () => {
     expect(getPercentageOfTotal(500, 0)).toBe(0)
   })
 })
-
-// ============================================================================
-// Color Utilities Tests
-// ============================================================================
 
 describe('getColorForCategory', () => {
   it('should return income color for income type', () => {
@@ -698,7 +632,6 @@ describe('generateColorMap', () => {
     expect(Object.keys(colorMap)).toEqual(categories)
     expect(colorMap.A).toBe(CATEGORY_COLORS[0])
     expect(colorMap.B).toBe(CATEGORY_COLORS[1])
-    // 11th category (index 10) maps to 10th color in the 16-color palette
     expect(colorMap.K).toBe(CATEGORY_COLORS[10])
   })
 
@@ -707,10 +640,6 @@ describe('generateColorMap', () => {
     expect(Object.keys(colorMap)).toEqual([])
   })
 })
-
-// ============================================================================
-// Validation Utilities Tests
-// ============================================================================
 
 describe('validateFinancialData', () => {
   it('should return true for valid data', () => {

@@ -1,29 +1,6 @@
 #!/usr/bin/env bash
-# Prove a built production image works in BOTH of its modes before it can be a
-# deploy candidate (story ops-1, AC-4 + AC-5). Used by deploy.yml `build-image`
-# and container-image.yml (the PR job), so the two can never check different
-# things.
-#
-#   verify-image.sh <image-ref> <path to packages/db/migrations/meta/_journal.json>
-#
-# SERVE (AC-4), no database: /api/health 200, SSR / 200, SSR / and a hashed
-# /assets/*.js both come back `content-encoding: br` when asked (on-the-fly and
-# precompressed paths of apps/web/src/server/node-adapter.mjs — the edge does NOT
-# compress, so this is the only place compression is proven before production),
-# NODE_ENV=production and the unprivileged `node` user inside the container.
-#
-# MIGRATE (AC-5): (a) with no credentials the migrate entrypoint idles and
-# answers /healthz; (b) against a throwaway postgres on a private docker network
-# it runs preflight -> drizzle-kit migrate from the image's own
-# packages/db/node_modules/.bin, emits `VERDICT run=<id> state=succeeded`,
-# reports `succeeded` on /migrate-status, and leaves exactly as many rows in
-# drizzle.__drizzle_migrations as the journal has entries. This is the ONLY
-# proof that the migrate payload survived the slim image: production
-# migrations are rare, and the serving container is unaffected when it breaks.
-#
-# No secrets anywhere: NODE_ENV=test is the relaxed DB env
-# (packages/db/src/client.ts isRelaxedDbEnv), so the throwaway host needs no TLS
-# and no EU-host allow-listing. Every value below is minted here and discarded.
+# Proves a built image both serves (health, SSR, br compression, non-root) and migrates
+# (idle without credentials; a real run against a throwaway postgres) before any push.
 set -euo pipefail
 
 IMAGE="${1:?usage: verify-image.sh <image-ref> <journal.json>}"
@@ -52,7 +29,6 @@ fail() {
   exit 1
 }
 
-# wait_http <url> <seconds> — succeeds on the first 2xx.
 wait_http() {
   local url="$1" limit="$2" i
   for i in $(seq 1 "$limit"); do
@@ -65,7 +41,6 @@ wait_http() {
   return 1
 }
 
-# encoding <url> — the content-encoding the server chose when offered br.
 encoding() {
   curl -fsS -D - -o /dev/null -H 'Accept-Encoding: br' "$1" \
     | tr -d '\r' | awk -F': ' 'tolower($1)=="content-encoding"{print $2}'
@@ -90,8 +65,8 @@ enc=$(encoding http://127.0.0.1:8080/)
 [ "$enc" = br ] || fail "SSR / with Accept-Encoding: br came back '${enc:-identity}' (on-the-fly compression lost)"
 echo "  SSR / content-encoding: ${enc}"
 
-# Positive control first: a precompressed sibling must EXIST in the image, or a
-# "served br" result could be the on-the-fly path covering for missing files.
+# Positive control: a precompressed sibling must exist, or the on-the-fly path
+# could be covering for missing .br files.
 sibling=$(docker exec bp-verify sh -c 'ls apps/web/dist/client/assets/*.js.br 2>/dev/null | head -n 1')
 [ -n "$sibling" ] || fail "no precompressed apps/web/dist/client/assets/*.js.br in the image"
 asset=$(basename "${sibling%.br}")
@@ -123,7 +98,6 @@ pg_password=$(openssl rand -hex 16)
 docker run -d --name bp-pg --network "$NET" -e POSTGRES_PASSWORD="$pg_password" "$PG_IMAGE" >/dev/null
 ready=""
 for i in $(seq 1 60); do
-  # -h forces TCP: the image's init phase answers on the unix socket only.
   if docker exec bp-pg pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1; then ready=1; break; fi
   sleep 1
 done

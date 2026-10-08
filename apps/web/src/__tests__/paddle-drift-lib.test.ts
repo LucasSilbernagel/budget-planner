@@ -1,11 +1,5 @@
-/**
- * The weekly Paddle.js drift check (story sec-4, D2 (b)): `scripts/paddle-drift-lib.mjs`.
- *
- * The real input is the live, unversioned paddle.js, which no unit test may fetch, so
- * these run on synthetic sources written in the MINIFIED shapes measured on the build
- * `last-modified: Thu, 24 Sep 2026 14:05:20 GMT` (each check must find them, and must go
- * red when they change).
- */
+// The real input is the live, unversioned paddle.js, which no unit test may fetch, so these use
+// synthetic sources in the measured MINIFIED shapes.
 
 import { describe, expect, it } from 'vitest'
 import { checkPaddleJs, cspSha256 } from '../../scripts/paddle-drift-lib.mjs'
@@ -20,7 +14,6 @@ const PINNED = {
   checkoutFrameOrigins: PADDLE_CHECKOUT_FRAME_ORIGIN,
 }
 
-/** A paddle.js stand-in with each relied-on internal in its minified shape. */
 function paddleJs(
   overrides: { loader?: string[]; guard?: string; allow?: string; origins?: string[] } = {}
 ) {
@@ -73,8 +66,7 @@ describe('checkPaddleJs (sec-4 D2)', () => {
     expect(problems[0]).toContain(`found ${count}`)
   })
 
-  // sec-4 review: a JS string literal may use escapes JSON does not have. That is drift to
-  // report, not a crash.
+  // A JS string literal may use escapes JSON lacks: that is drift to report, not a crash.
   it('reports, rather than throws on, a spinner literal with a JavaScript-only escape', () => {
     const source = paddleJs().replace(
       `t.innerHTML=${JSON.stringify(PADDLE_LOADER_STYLE_TEXT)}`,
@@ -86,7 +78,6 @@ describe('checkPaddleJs (sec-4 D2)', () => {
     expect(problems[0]).toContain('JavaScript-only string escape')
   })
 
-  // sec-4 review: the same optional chain as other minifiers emit it, with `$` identifiers.
   it.each([
     ['unminified', 'window.profitwell?.isLoaded'],
     ['TypeScript ===null variant', '(e$=window.profitwell)===null||e$===void 0?void 0:e$.isLoaded'],

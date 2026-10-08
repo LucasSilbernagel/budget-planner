@@ -1,24 +1,7 @@
 // @vitest-environment node
 /**
- * Saving a forecast can never leave it under a profile another device just
- * deleted (story 80.1, FR131).
- *
- * ## ⚠️⚠️ WHAT THIS FILE CAN AND CANNOT PROVE
- *
- * The same limits as `server/api/__tests__/sync-profile-concurrency.db.test.ts`
- * (story 76.3), whose harness this copies. PGlite is ONE connection: the seams
- * below interleave two request HANDLERS at statement granularity wherever they
- * are outside a transaction, which is the defect class (the ownership check ran
- * in autocommit before an unguarded INSERT). They cannot show the per-user
- * LOCK blocking: PGlite runs a transaction exclusively, so the race test goes
- * green once the re-check moves inside the transaction, with or without the
- * lock. The lock is guarded by the statement-order test at the bottom, and its
- * blocking is REASONED (see `lockUserProfileSet`'s docblock), not measured.
- *
- * These tests call `createForecastingProfile` directly. Since story 83.1 it is
- * the user-scoped core behind `POST /api/forecasts` (the route authenticates
- * and passes `userId`); before that the page imported it in the browser and the
- * import failed on `Buffer` (story 80.1 Fact R), so no save reached it.
+ * PGlite is one connection: seams interleave handlers outside transactions, but lock
+ * blocking can't be shown, so the lock is guarded by the statement-order test.
  */
 
 import { readFileSync } from 'node:fs'
@@ -65,27 +48,15 @@ let pg: PGlite
 let db: ReturnType<typeof drizzle>
 let opCounter = 0
 
-/**
- * Hooks the proxy below runs before a TOP-LEVEL `db.transaction` or a top-level
- * `db.insert(...).values(...)` is executed. A `tx.*` call never reaches them.
- */
+/** Run before a top-level `db.transaction` or `db.insert().values()`; `tx.*` calls never reach them. */
 const seams = {
   beforeTransaction: null as null | (() => Promise<void>),
   beforeInsert: null as null | (() => Promise<void>),
 }
 
-/** Statement log for the lock-order guard; `BEGIN`/`END` mark top-level transactions. */
 const statements: { sql: string; params: unknown[] }[] = []
 
-/**
- * Wrap a query builder so that awaiting it (directly, or after `.returning()`)
- * first runs `seams.beforeInsert`.
- *
- * ⚠️ Unlike the 76.3 harness, this keeps the builder's methods: the forecast
- * create chains `.returning()` after `.values()`, and a bare `{ then }` thenable
- * would fail it with `returning is not a function`, a harness error that looks
- * like a RED.
- */
+/** Keeps the builder's methods: the create chains `.returning()`, which a bare thenable lacks. */
 function awaitingSeam<T extends object>(query: T): T {
   return new Proxy(query, {
     get(target, key, receiver) {
@@ -234,26 +205,15 @@ afterEach(() => {
 
 describe('a forecast save interleaves with the cascade of its profile (AC-1)', () => {
   it('a cascade that commits at the save\u2019s first write step leaves no forecast under the tombstone', async () => {
-    // Fire the cascade of P at the save's first top-level WRITE step: its
-    // transaction opening or its INSERT, whichever comes first.
-    //
-    // ⚠️ What this can and cannot show (code review 80.1). On `9144e0a` the save
-    // checked ownership in AUTOCOMMIT and then INSERTed with no transaction, so
-    // the hook fired at the INSERT, after the check: the window, and the RED
-    // (a forecast left under the tombstone). Since 80.1 there is no check outside
-    // the transaction, so the hook fires as the transaction opens, BEFORE the one
-    // (in-transaction) check, and this re-proves that that check sees a committed
-    // cascade. The window INSIDE the transaction (between the lock and the check)
-    // cannot be opened on PGlite; the lock is guarded by the statement-order
-    // test below. `firedAt` records which seam fired, so a refactor that moves the
-    // write off both seams fails here as a harness change, not as the fix.
+    // Fire the cascade at the save's first top-level write (transaction open or INSERT);
+    // `firedAt` makes a refactor that moves the write off both seams fail here.
     const fired: string[] = []
     let cascade: Awaited<ReturnType<typeof push>> | undefined
     const runCascade = (seam: string) => async () => {
       fired.push(seam)
       seams.beforeInsert = null
       seams.beforeTransaction = null
-      // ⚠️ No `expect` in here: a throw would become the save's failure result.
+      // No `expect` in here: a throw would become the save's failure result.
       cascade = await push([deleteProfile(P)])
     }
     seams.beforeInsert = runCascade('insert')
@@ -261,8 +221,6 @@ describe('a forecast save interleaves with the cascade of its profile (AC-1)', (
 
     const result = await save()
 
-    // Positive anchors: the cascade ran once, at the transaction opening (on
-    // `9144e0a`: at the INSERT), and succeeded.
     expect(fired).toEqual(['transaction'])
     expect(cascade).toMatchObject({ processedCount: 1, failedCount: 0 })
     const [profile] = await db
@@ -271,10 +229,8 @@ describe('a forecast save interleaves with the cascade of its profile (AC-1)', (
       .where(eq(userProfiles.id, P))
     expect(profile?.isDeleted).toBe(true)
 
-    // MECHANISM FIRST: is there a forecast under the tombstoned profile?
     expect(await forecastsUnder(P), 'forecast under tombstoned profile').toEqual([])
 
-    // The caller gets the existing refusal.
     expect(result).toEqual({ success: false, error: REFUSAL, reason: 'not-found' })
   })
 
@@ -321,9 +277,6 @@ describe('a save under a live profile behaves as before (positive controls)', ()
 })
 
 describe('a refused save writes nothing (the transaction is atomic)', () => {
-  // ⚠️ RED on `9144e0a`, found while writing this story: the default reset
-  // committed on its own, BEFORE the INSERT, so a default save refused by the
-  // unique name index left the profile with NO default forecast.
   it('a duplicate default save rolls its demotion back', async () => {
     expect(await save({ isDefault: true })).toMatchObject({ success: true })
     // Same name: the INSERT fails AFTER the demotion ran in the same transaction.
@@ -352,7 +305,6 @@ describe('a malformed scenario is refused before anything is written (Task 2, co
       error: 'scenarioData must be a JSON object or a valid JSON string',
       reason: 'invalid-input',
     })
-    // On `9144e0a` the old default was demoted BEFORE the scenario was validated.
     expect(statements, 'no statement for a malformed scenario').toEqual([])
     const rows = await forecastsUnder(P)
     expect(rows.map((row) => [row.name, row.isDefault])).toEqual([['Old', true]])
@@ -368,10 +320,7 @@ describe('a malformed scenario is refused before anything is written (Task 2, co
   })
 })
 
-/**
- * The ONLY automated protection of the per-user lock on this path: the race
- * test above stays green with the lock deleted (see this file's docblock).
- */
+/** The only automated protection of the per-user lock: the race test passes without it. */
 describe('the forecast save locks the user first (AC-2)', () => {
   const LOCK = { sql: 'select "id" from "users" where "users"."id" = $1 for share', params: [USER] }
 
@@ -387,11 +336,8 @@ describe('the forecast save locks the user first (AC-2)', () => {
   })
 
   it('every statement of a default save runs inside that one transaction, after the lock', async () => {
-    // Code review 80.1: pinning only the FIRST statement let a partial revert
-    // pass (the lock kept, the check or the INSERT moved back to autocommit).
-    // The session is mocked, so the save issues NO other statement: the whole
-    // log is one transaction, lock first, and the check, the demotion and the
-    // INSERT all sit inside it.
+    // Pin the whole log, not just the first statement, so moving the check or the
+    // INSERT back to autocommit fails.
     expect(await save({ isDefault: true })).toMatchObject({ success: true })
     const sqls = statements.map((statement) => statement.sql)
 

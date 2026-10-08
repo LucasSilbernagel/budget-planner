@@ -1,13 +1,3 @@
-/**
- * Create Profile Dialog Component
- *
- * Modal dialog for creating a new user profile.
- * Includes form validation and handles profile creation.
- *
- * Architecture: React with Tailwind CSS
- * State Management: Zustand via useProfileManager hook
- */
-
 import { useProfileManager, useProfiles } from '@/hooks/useActiveProfile'
 import { DEFAULT_PROFILE_ICON, isProfileIcon } from '@/lib/profile-appearance'
 import { useEffect, useState } from 'react'
@@ -15,17 +5,8 @@ import { Modal } from '../ui/Modal'
 import { EMPTY_PROFILE_FORM, type ProfileFormState, validateProfileForm } from './profile-form'
 import { ProfileIconPicker } from './profile-icon-picker'
 
-// ⚠️ No currency field (story 54.1, Lucas 2026-09-16). The picker this dialog
-// carried since story 8-2 was removed: a profile's currency is displayed nowhere
-// but the card row story 54.5 deletes, so choosing one had no effect. New profiles
-// are created with `'NONE'`, which was the picker's default.
-
-/**
- * The form this dialog opens on (story 98.1, FR159): empty name/description, 🏠
- * pre-selected in the picker. Used by BOTH the `useState` initialiser and the
- * mount-reset effect below; resetting to `EMPTY_PROFILE_FORM` (icon `''`) in
- * either place would silently drop the pre-selection.
- */
+// Shared by the useState initialiser and the mount-reset effect; resetting to
+// EMPTY_PROFILE_FORM (icon '') would drop the 🏠 pre-selection.
 const INITIAL_CREATE_FORM: ProfileFormState = { ...EMPTY_PROFILE_FORM, icon: DEFAULT_PROFILE_ICON }
 
 interface CreateProfileDialogProps {
@@ -41,13 +22,8 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
   const { createProfile } = useProfileManager()
   const profiles = useProfiles()
 
-  // Auto-focus the name field on mount
-  useEffect(() => {
-    // This would auto-focus in a real implementation
-    // For now, we just ensure the dialog is visible
-  }, [])
+  useEffect(() => {}, [])
 
-  // Reset form when dialog opens (mount)
   useEffect(() => {
     setForm(INITIAL_CREATE_FORM)
     setErrors({})
@@ -55,15 +31,13 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
     setIsSubmitting(false)
   }, [])
 
-  // Form validation. `null`: a new profile has no id, so every existing name
-  // counts — including the active profile's (story 54.1).
+  // `null`: a new profile has no id, so every existing name counts.
   const validate = (): boolean => {
     const newErrors = validateProfileForm(form, profiles, null)
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
 
-  // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -72,39 +46,19 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
     setIsSubmitting(true)
 
     try {
-      // Create the profile
-      // For now, we use a temporary userId - in production this would come from auth
       const userId = localStorage.getItem('userId') || 'temp-user'
 
       createProfile({
         ...form,
-        // ⚠️ GUARDED, never the raw form value (story 98.1; 54.2 code-review HIGH).
-        // Before 98.1 this dialog had no picker, `form.icon` was always `''`, and
-        // spreading it stored `icon: ''` on the profile AND shipped it to the
-        // server (`toServerPayload`'s guard is `!= null`, and `'' != null`), so it
-        // was stripped. Now the picker always holds one of the eight icons, and
-        // this guard makes `''` (or any non-member) unrepresentable here even if a
-        // future refactor resets the form wrongly: it falls back to 🏠, the
-        // pre-selected default.
+        // Guarded so '' (or any non-member) can never be stored or synced; falls back to 🏠.
         icon: isProfileIcon(form.icon) ? form.icon : DEFAULT_PROFILE_ICON,
-        // No currency field any more (story 54.1): new profiles carry the
-        // currency-less sentinel, the former picker's default.
         currency: 'NONE',
         userId,
-        // ⚠️ Required by `ClientProfile`, and it was never supplied — so every
-        // profile created through this form persisted `isDefault: undefined`.
-        // Harmless in practice (every consumer treats it as falsy, and the sync
-        // schema defaults it to `false` at `server/api/sync.ts:237`), but the
-        // record was malformed. A profile created here is never the default.
         isDefault: false,
       })
 
-      // Mark as default if it's the first profile
-      // In production, this would be handled server-side for paid tier
-
       setSuccess(true)
 
-      // Close after a brief delay to show success message
       setTimeout(() => {
         onClose()
       }, 1500)
@@ -115,11 +69,9 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
     }
   }
 
-  // Handle input change
   const handleChange = (field: keyof ProfileFormState, value: string) => {
     setForm({ ...form, [field]: value })
 
-    // Clear error for this field
     if (errors[field]) {
       setErrors({ ...errors, [field]: '' })
     }
@@ -132,7 +84,6 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
       labelledBy="create-profile-title"
       className="bg-white dark:bg-gray-800 dark:text-gray-100 rounded-xl shadow-xl w-full max-w-md"
     >
-      {/* Header */}
       <div className="flex items-center justify-between p-6 border-b border-default">
         <div>
           <h2 id="create-profile-title" className="text-xl font-bold text-heading">
@@ -163,7 +114,6 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
         </button>
       </div>
 
-      {/* Form */}
       <form onSubmit={handleSubmit} className="p-6 space-y-4">
         {success ? (
           <div className="text-center py-8">
@@ -188,14 +138,12 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
           </div>
         ) : (
           <>
-            {/* Icon picker (story 98.1, FR159): the SAME component as edit */}
             <ProfileIconPicker
               idPrefix="create-profile"
               value={form.icon}
               onChange={(icon) => handleChange('icon', icon)}
             />
 
-            {/* Name field */}
             <div>
               <label htmlFor="profile-name" className="block text-sm font-medium text-label mb-1">
                 Profile Name <span className="text-red-500">*</span>
@@ -216,7 +164,6 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
               )}
             </div>
 
-            {/* Description field */}
             <div>
               <label
                 htmlFor="profile-description"
@@ -245,7 +192,6 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
               )}
             </div>
 
-            {/* Info message */}
             <div className="p-3 bg-blue-50 dark:bg-blue-950/40 rounded-lg">
               <p className="text-sm text-blue-700 dark:text-blue-300">
                 💡 <strong>Note:</strong> This profile will initially contain no financial data. You
@@ -253,14 +199,12 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
               </p>
             </div>
 
-            {/* Form error */}
             {errors['form'] && (
               <div className="p-3 bg-red-50 dark:bg-red-950/30 rounded-lg">
                 <p className="text-sm text-red-700 dark:text-red-300">{errors['form']}</p>
               </div>
             )}
 
-            {/* Actions */}
             <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 type="button"

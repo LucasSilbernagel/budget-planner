@@ -2,19 +2,13 @@ import { existsSync, readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildMigrationCredentials } from './migrate-credentials'
 
-// Story 5.17 — AC-4. `drizzle-kit migrate` connects through drizzle.config.ts,
-// which historically passed `{ url }` alone: no CA, no sovereignty check. The
-// preflight validated the target and the migration that followed did not. These
-// cases pin the parity.
-
 const CA = 'CA-PEM'
 const PROD = 'postgresql://bp_migrator:s3cret@budget-planner-prod-rw:5432/pgdb'
 
 describe('buildMigrationCredentials', () => {
   it('decomposes the URL so an ssl option can be carried at all', () => {
-    // drizzle-kit's postgres config accepts EITHER { url } OR the decomposed
-    // form with `ssl` — never both. Passing a bare url is what silently dropped
-    // TLS verification, so the decomposed shape is the fix, not a style choice.
+    // drizzle-kit accepts `{ url }` OR the decomposed form with `ssl`, never both; a bare url
+    // drops TLS verification.
     expect(buildMigrationCredentials('production', PROD, CA)).toEqual({
       host: 'budget-planner-prod-rw',
       port: 5432,
@@ -30,7 +24,6 @@ describe('buildMigrationCredentials', () => {
     expect(() => buildMigrationCredentials('production', us, CA)).toThrow(
       /danubedata|sovereign|EU/i
     )
-    // Unset and unknown NODE_ENV are production-grade, not development.
     expect(() => buildMigrationCredentials(undefined, us, CA)).toThrow()
     expect(() => buildMigrationCredentials('staging', us, CA)).toThrow()
   })
@@ -67,11 +60,8 @@ describe('buildMigrationCredentials', () => {
 })
 
 describe('sslmode in the URL cannot reach the driver (2026-09-08 production failure)', () => {
-  // A real deploy failed with "self-signed certificate in certificate chain"
-  // while DATABASE_CA_CERT was set correctly: the preflight passed the raw URL
-  // as `connectionString`, and pg-connection-string maps `sslmode=require` to
-  // verify-full, which overrode the explicit ssl object and dropped the CA.
-  // Decomposition is the fix — these assert the query parameter is discarded.
+  // pg-connection-string maps `sslmode=require` to verify-full, overriding the explicit ssl and
+  // dropping the CA, so the query parameter must be discarded.
   const CA = '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n'
 
   it.each(['require', 'verify-full', 'disable', 'no-verify'])(
@@ -90,9 +80,7 @@ describe('sslmode in the URL cannot reach the driver (2026-09-08 production fail
   )
 })
 
-// Story 5.18, AC-1/AC-4. The public endpoint is still an EU DanubeData host, so
-// the sovereignty rule alone does NOT catch it — these are the cases that prove
-// the retired DNS window cannot come back by accident.
+// The public endpoint is EU DanubeData, so the sovereignty rule alone does not catch it.
 describe('the public endpoint is refused for migrations', () => {
   const CA = 'CA-PEM'
 
@@ -123,9 +111,6 @@ describe('the public endpoint is refused for migrations', () => {
   })
 })
 
-// The waiver is gone, not merely unused: a migrating connection can no longer be
-// talked into skipping the hostname check by ANY input. If this ever fails, the
-// 5.17 downgrade has come back.
 describe('no TLS downgrade is reachable (Story 5.18, AC-4)', () => {
   const CA = 'CA-PEM'
   const IN_CLUSTER = 'postgresql://bp_migrator:s@budget-planner-prod-rw:5432/pgdb'
@@ -137,21 +122,11 @@ describe('no TLS downgrade is reachable (Story 5.18, AC-4)', () => {
     expect(ssl).not.toHaveProperty('checkServerIdentity')
   })
 
-  // `vi.stubEnv`/`unstubAllEnvs` rather than assigning `process.env` by hand:
-  // restoring an absent variable means REMOVING it, and `process.env[k] = undefined`
-  // stores the literal string "undefined" instead — which would leave the retired
-  // flag set for every later test in this file.
+  // `process.env[k] = undefined` stores the string "undefined"; stubEnv removes it properly.
   afterEach(() => {
     vi.unstubAllEnvs()
   })
 
-  // ⚠️ Read the claim precisely. This pins that `buildMigrationCredentials` takes
-  // its whole TLS posture from its ARGUMENTS and consults no environment at all.
-  // Code review 2026-09-15 was right that it is NOT a regression test for the
-  // waiver returning: this function never read the env even before 5.18, so
-  // stubbing the flag here exercises no removed code path. The waiver's real
-  // consumer was `drizzle.config.ts`, which is covered by the source-level
-  // assertions below.
   it('takes its TLS posture only from its arguments, consulting no environment', () => {
     vi.stubEnv('DATABASE_TLS_ALLOW_HOSTNAME_MISMATCH', 'true')
 
@@ -162,12 +137,7 @@ describe('no TLS downgrade is reachable (Story 5.18, AC-4)', () => {
   })
 })
 
-// The waiver's ACTUAL consumers were `drizzle.config.ts` and the preflight CLI:
-// each read `hostnameMismatchAllowedFromEnv(process.env)` and passed the result as
-// a 4th argument. Those call sites are where a reintroduced downgrade would land,
-// and neither is reachable from a unit test (one is a drizzle-kit config executed
-// by the binary, the other a process entrypoint) — so they are asserted at the
-// source level. Code review 2026-09-15.
+// Those call sites aren't reachable from a unit test, so assert at the source level.
 describe('the retired waiver has no surviving call site (Story 5.18, AC-4)', () => {
   const read = (file: string) => readFileSync(new URL(file, import.meta.url), 'utf8')
 

@@ -1,18 +1,3 @@
-/**
- * Story 114.1 (FR182): assets in the forecast.
- *
- * An asset is a CONSTANT (D7): no growth, no contribution. `assets` (cents, the
- * total of the builder's asset rows) lifts every year's `netWorth` and the
- * starting net worth by the same amount, and changes nothing else. Absent, the
- * output is exactly what it was before the story (AC-2).
- *
- * Every figure here is hand-derived. The fixture: 6,000.00/mo income, 3,000.00/mo
- * expenses, 10,000.00 savings, no investments, and an EMPTY row list (the
- * builder's path, so investments stay at 0 rather than compounding at the
- * row-less 7%). Net income is 36,000.00 a year, so savings close year n at
- * 10,000.00 + n × 36,000.00.
- */
-
 import { describe, expect, it } from 'vitest'
 import {
   ASSETS_NEGATIVE,
@@ -52,7 +37,7 @@ describe('assets count in net worth (story 114.1, AC-1)', () => {
     const without = calculateFinancialForecast(data(), FLAT, 3)
     const withAssets = calculateFinancialForecast(data(HOUSE), FLAT, 3)
 
-    // Hand-derived: savings close year n at 1,000,000 + n × 3,600,000.
+    // Savings close year n at 1,000,000 + n × 3,600,000.
     expect(withAssets.projection.map((row) => row.netWorth)).toEqual([
       4_600_000 + HOUSE,
       8_200_000 + HOUSE,
@@ -67,9 +52,7 @@ describe('assets count in net worth (story 114.1, AC-1)', () => {
       withAssets[series].forEach((row, i) => {
         const plain = without[series][i]
         expect(row.netWorth - (plain?.netWorth ?? 0)).toBe(HOUSE)
-        // A constant: the same value every year (D7), nothing grows.
         expect(row.assets).toBe(HOUSE)
-        // Nothing else moves.
         expect(row.savings).toBe(plain?.savings)
         expect(row.investments).toBe(plain?.investments)
         expect(row.income).toBe(plain?.income)
@@ -149,7 +132,6 @@ describe('the baseline uses its OWN assets (story 114.1, AC-1, with story 107.1)
       expect(row.assets).toBe(HOUSE)
       expect(row.netWorth).toBe((plain.projection[i]?.netWorth ?? 0) + HOUSE)
     })
-    // The summary is always the projection's.
     expect(result.summary.startingNetWorth).toBe(1_000_000 + HOUSE)
   })
 

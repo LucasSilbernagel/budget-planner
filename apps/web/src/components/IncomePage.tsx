@@ -44,7 +44,6 @@ import { SortableColumnHeader, useSortHeaderAnnouncements } from './ui/SortableC
 import { TableScrollRegion } from './ui/TableScrollRegion'
 import { TableSortControl } from './ui/TableSortControl'
 
-// Frequency options for the select dropdown
 const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
   { value: 'weekly', label: 'Weekly' },
   { value: 'biweekly', label: 'Bi-weekly' },
@@ -52,12 +51,6 @@ const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
   { value: 'annually', label: 'Annually' },
 ]
 
-/**
- * Column labels for the sortable header cells and for the mobile sort control's
- * options, so the two can never drift apart (story 34.2; the mobile consumer
- * became `TableSortControl` in story 48.1).
- * Module scope, like every other component and constant in this layer.
- */
 const SORT_COLUMN_LABELS: Record<FlowSortKey, string> = {
   name: 'Name',
   amount: 'Amount',
@@ -67,76 +60,21 @@ const SORT_COLUMN_LABELS: Record<FlowSortKey, string> = {
 
 export function IncomePage() {
   const incomeSources = useIncomeSources()
-  // Amounts are stored in cents; the formatter respects the user's currency
-  // display preference (currency-less vs explicit symbols) from the store.
   const formatAmount = useFormattedAmount()
-  // Rows store a category uuid, never a name (story 30.4b). Resolving here
-  // means a rename is reflected in this table with no per-row edit.
-  //
-  // ⚠️ Called UNCONDITIONALLY, deliberately. Gating this behind the tier check
-  // would be a conditional hook call. It is a pure `useCategoryStore` read plus
-  // a `useMemo` — no network — so the cost on the free path is a wasted empty
-  // Map, not a request.
+  // Called unconditionally: gating it on tier would be a conditional hook call.
   const categoryNames = useCategoryNameMap()
-  // The Category column is Premium-only (story 33.3, FR57). Before this story it
-  // always rendered, showing an em-dash for every free-tier row — advertising a
-  // feature as a permanently empty column instead of a locked, discoverable one.
-  //
-  // ⚠️ `status.hasAccess` ALONE is the whole gate; do NOT write
-  // `!status.isLoading && status.hasAccess`.
-  //
-  // On the INITIAL unresolved state — the only unresolved state either page can
-  // reach, since neither calls `refresh()` — `hasAccess` is already `false`, as
-  // are the errored, free, past_due, canceled and signed-out states. So the
-  // `!isLoading` term buys nothing here.
-  //
-  // It would also be actively worse. `checkAccess()` sets `isLoading: true`
-  // while PRESERVING the previous `hasAccess` (`usePremiumAccess.ts:119`), so
-  // for an already-entitled user a re-check makes the state
-  // `{isLoading: true, hasAccess: true}` — which the `!isLoading &&` form would
-  // render as NO column, ripping it out mid-session. That state is unreachable
-  // from these two pages today; the point is that `hasAccess` alone stays
-  // correct if `refresh()` is ever wired in, and the two-term form does not.
-  //
-  // Consequence, stated rather than hidden: within a mount this gate is
-  // MONOTONE — the column can appear once (when a no-seed check resolves
-  // entitled) but can never disappear. On the seeded path production actually
-  // serves it never changes at all. See `deferred-work.md` for the measured
-  // no-seed late-appearance.
-  //
-  // ⚠️ This must stay CONDITIONAL JSX, never a CSS `hidden` class. `max-sm:` is
-  // a WIDTH query evaluated against the PAPER width when printing (Letter/A4
-  // both land above the 640px `sm` breakpoint), so a class-based hide would leak
-  // the column onto printed output. DOM absence carries through to print for
-  // free.
+  // `hasAccess` alone, not `!isLoading && hasAccess`: a re-check keeps hasAccess while loading.
+  // Conditional JSX, not a CSS class: `max-sm:` evaluates against paper width when printing.
   const { status: premiumStatus } = usePremiumAccess()
   const showCategoryColumn = premiumStatus.hasAccess
 
-  // Column sorting (story 34.2, FR61). A VIEW-level projection: it never writes
-  // `sortOrder` and never enqueues a sync operation, so clearing it returns the
-  // table to the default order untouched.
-  //
-  // ⚠️ The extractors are memoised on `categoryNames` because the Category key
-  // resolves a uuid through that map: renaming a category must re-sort this
-  // table even though no row changed. A projection memoised only on the rows
-  // would keep the stale order with no error anywhere.
+  // Memoised on `categoryNames`: a category rename must re-sort with no row change.
   const sortExtractors = useMemo(
     () => createFlowSortExtractors(categoryNames, showCategoryColumn),
     [categoryNames, showCategoryColumn]
   )
 
-  /**
-   * The sortable columns offered by the mobile control (story 48.1), in header
-   * order.
-   *
-   * ⚠️⚠️ GATED ON `showCategoryColumn` — THE SAME EXPRESSION THE `<th>` USES,
-   * and not on `Object.entries(SORT_COLUMN_LABELS)`, which always contains
-   * `category`. `createFlowSortExtractors` OMITS the Category extractor for an
-   * unentitled user, so a Category option offered to a free user would write
-   * `{ key: 'category' }` to storage and `useTableSort`'s `effectiveState`
-   * would immediately degrade it back to manual order: a control that visibly
-   * does nothing, with no error anywhere to say why.
-   */
+  /** Gated like the `<th>`: the extractors omit Category for free users, so the option would silently do nothing. */
   const sortColumns = useMemo<readonly { key: FlowSortKey; label: string }[]>(
     () => [
       { key: 'name', label: SORT_COLUMN_LABELS.name },
@@ -150,24 +88,13 @@ export function IncomePage() {
   )
   const sort = useTableSort('income', incomeSources, sortExtractors)
   const sortedRows = sort.rows
-  // Story 120.1 (FR188): the headers' "Sortable column, ..." description and the
-  // live region that announces a header click. The EFFECTIVE `sort.state`, so an
-  // orphaned Category sort reads as unsorted.
   const sortA11y = useSortHeaderAnnouncements(
     sort.state
       ? { label: SORT_COLUMN_LABELS[sort.state.key], direction: sort.state.direction }
       : null
   )
-  // Currency preferences drive the input's symbol affordance and locale-aware
-  // grouping/parsing (story 14-3). In currency-less mode no symbol is shown and
-  // grouping uses the neutral en-US locale (per the store).
   const { mode, currency, locale } = useCurrencyPreferences()
 
-  // Monthly-normalized cents (story 32.1) — `PeriodTotal` denormalizes it to the
-  // selected period. `summarizeReadableRows` supplies the disclosure inputs from
-  // READABLE rows only: a raw total that never quotes excluded money, and a
-  // `conversionApplied` flag that asks whether conversion happened rather than
-  // inferring it from two totals being unequal (code review 32.1).
   const totalIncome = useTotalIncome()
   const {
     rawTotalCents: rawTotalIncome,
@@ -176,20 +103,14 @@ export function IncomePage() {
   } = summarizeReadableRows(incomeSources)
   const { addIncomeSource, updateIncomeSource, deleteIncomeSource } = useIncomeStore()
 
-  // State for the add/edit modal
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
   const [frequency, setFrequency] = useState<Frequency>('monthly')
-  // `null` is a first-class, always-valid value here (AC-1): leaving a row
-  // uncategorized must stay possible, so this field is never `required`.
+  // `null` (uncategorized) is always valid, so this field is never `required`.
   const [categoryId, setCategoryId] = useState<string | null>(null)
 
-  // Inline field-validation error state (replaces browser alert() popups).
-  // Mirrors the app's canonical inline-validation pattern: an errors map plus
-  // hasFieldError/getFieldError helpers and re-validate-on-change after the
-  // first submit attempt.
   type FieldName = 'name' | 'amount'
   const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({})
   const [submitAttempted, setSubmitAttempted] = useState(false)
@@ -197,8 +118,6 @@ export function IncomePage() {
   const hasFieldError = (field: FieldName): boolean => Boolean(errors[field])
   const getFieldError = (field: FieldName): string | undefined => errors[field]
 
-  // Compute inline validation errors from the current field values, preserving
-  // the exact conditions and messages that previously drove the alert() popups.
   const computeErrors = useCallback((): Partial<Record<FieldName, string>> => {
     const next: Partial<Record<FieldName, string>> = {}
     if (!name.trim()) {
@@ -208,8 +127,7 @@ export function IncomePage() {
     if (amountInCents <= 0) {
       next.amount = 'Please enter a valid positive amount'
     } else if (exceedsMoneyLimit(amountInCents)) {
-      // Story 106.1 (FR174): above the int32 sync limit the row would be saved
-      // here and silently refused at enqueue, so refuse it before saving.
+      // Above the int32 sync limit the row would save, then be silently refused at enqueue.
       next.amount = moneyLimitMessage({ mode, currency, locale })
     }
     return next
@@ -220,64 +138,47 @@ export function IncomePage() {
     setSubmitAttempted(false)
   }
 
-  // Reset form state when modal opens or editingId changes
   useEffect(() => {
     if (isModalOpen) {
       if (editingId === null) {
-        // Adding new: reset all fields
         setName('')
         setAmount('')
         setFrequency('monthly')
         setCategoryId(null)
       }
-      // Editing: fields are set by openEditModal
     }
   }, [isModalOpen, editingId])
 
-  // After the first submit attempt, re-validate as the user edits so errors
-  // clear on correction (AC-3).
   useEffect(() => {
     if (submitAttempted) {
       setErrors(computeErrors())
     }
   }, [submitAttempted, computeErrors])
 
-  // Open modal for adding new income source
   const openAddModal = () => {
     setEditingId(null)
     clearErrors()
     setIsModalOpen(true)
   }
 
-  // Open modal for editing existing income source
   const openEditModal = (source: {
     id: string
     name: string
     amount: number
     frequency: Frequency
-    // Widened for the new field only — `id` is deliberately untouched (AC-10).
     categoryId?: string | null
   }) => {
     setEditingId(source.id)
     setName(source.name)
-    // Seed the field the same way the blur re-echo does, so an edit opens on a
-    // grouped, locale-aware value the locale-aware parser reads back identically.
-    // A bare `.toString()` emits ungrouped en-US-shaped text (and can produce
-    // scientific notation or long float tails) that a comma-decimal locale misreads.
+    // Seed like the blur re-echo: a bare `.toString()` is misread in comma-decimal locales.
     setAmount(formatForInputDisplay(source.amount, locale))
     setFrequency(source.frequency)
-    // ⚠️ LOAD-BEARING (story 30.4b review; the same warning ExpensesPage carries).
-    // Seeding from the row is what makes an edit round-trip the category rather
-    // than destroy it. Since story 33.3 a non-entitled user cannot SEE this
-    // value, so dropping it here would silently wipe a lapsed premium user's
-    // assignment with nothing on screen to reveal it. Pinned by the
-    // "preserves a lapsed user's category" tests in category-assignment.test.tsx.
+    // Seeding from the row preserves a category a lapsed premium user can no longer see.
     setCategoryId(source.categoryId ?? null)
     clearErrors()
     setIsModalOpen(true)
   }
 
-  // Close modal
   const closeModal = () => {
     setIsModalOpen(false)
     setEditingId(null)
@@ -288,24 +189,18 @@ export function IncomePage() {
     clearErrors()
   }
 
-  // Loading state to prevent duplicate submissions
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Delete confirmation state. Holds the id pending deletion (themed dialog
-  // replaces the old browser confirm()). The "Add" button is a stable focus
-  // target after a confirmed delete removes the triggering row (AC-5).
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const addButtonRef = useRef<HTMLButtonElement>(null)
   const pendingDeleteName = incomeSources.find((s) => s.id === pendingDeleteId)?.name ?? ''
 
-  // Handle form submission (add or update)
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setSubmitAttempted(true)
     setIsSubmitting(true)
 
     try {
-      // Validate all fields inline; block submission if any errors exist.
       const validationErrors = computeErrors()
       setErrors(validationErrors)
       if (Object.keys(validationErrors).length > 0) {
@@ -331,12 +226,10 @@ export function IncomePage() {
     }
   }
 
-  // Open the themed delete confirmation for an income source
   const handleDelete = (id: string) => {
     setPendingDeleteId(id)
   }
 
-  // Confirm and execute the pending delete
   const confirmDelete = () => {
     if (pendingDeleteId !== null) {
       deleteIncomeSource(pendingDeleteId)
@@ -344,25 +237,14 @@ export function IncomePage() {
     }
   }
 
-  // Story 38.2 (UX-DR43): three states — pending, resolved-with-data,
-  // resolved-empty. See `hooks/useStoresHydrated` for why this is a mount gate
-  // and NOT `persist.hasHydrated()`.
   const storesHydrated = useStoresHydrated()
-  // Story 53.1 (AC-4): a paid session's first-EVER cross-device pull on this
-  // device can still be in flight after stores hydrate. `useIsInitialSyncPending`
-  // combines a device-level "has this device ever synced" flag with this
-  // page's own emptiness check — either one being false means an established
-  // user sees no different behavior (AC-6).
   const isInitialSyncPending = useIsInitialSyncPending(incomeSources.length === 0)
   const hydrated = storesHydrated && !isInitialSyncPending
 
   return (
     <div className="min-h-screen surface-sunken p-4 sm:p-8">
       <div className="max-w-4xl mx-auto">
-        {/* Story 38.2, AC-8: ONE announced region per page. Every skeleton on
-            this page is `aria-hidden`, so without this a screen reader gets a
-            heading followed by nothing; one region per skeleton would announce
-            several times instead. */}
+        {/* One announced region: every skeleton on this page is `aria-hidden`. */}
         {!hydrated && <LoadingStatus />}
         <header className="mb-8">
           <div>
@@ -372,13 +254,8 @@ export function IncomePage() {
         </header>
 
         <main className="space-y-6">
-          {/* Stats Card */}
           <section className="surface rounded-lg shadow-md p-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              {/* Story 32.1 (FR58): this figure used to be a raw sum of amounts
-                  across mixed frequencies, so it disagreed with the Overview on
-                  the same data. It is now the store's monthly-normalized total,
-                  re-expressed at the shared app-wide duration. */}
               <PeriodTotal
                 label="Total Income"
                 monthlyTotalCents={totalIncome}
@@ -400,15 +277,9 @@ export function IncomePage() {
             </div>
           </section>
 
-          {/* Income Sources List */}
           <section className="surface rounded-lg shadow-md p-6">
             <h2 className="text-xl font-semibold text-subheading mb-6">Your Income Sources</h2>
 
-            {/* Story 38.2 (UX-DR43): pending is a THIRD state. Before this gate
-                the server sent a returning user "No income sources yet" — the store has not
-                rehydrated, so the list is empty and the page said so with
-                confidence. The skeleton mirrors this card's exact box model, so
-                a user who genuinely has nothing sees no shift when it resolves. */}
             {!hydrated ? (
               <EmptyStateSkeleton testId="income-list-skeleton" />
             ) : incomeSources.length === 0 ? (
@@ -418,31 +289,12 @@ export function IncomePage() {
               </div>
             ) : (
               <>
-                {/* The mobile sort control (story 48.1, UX-DR53).
-
-                    ⚠️ This REPLACES `TableSortNotice`, and it renders
-                    UNCONDITIONALLY where the notice rendered only while a sort
-                    was active. Story 34.2's ratified decision 1 scoped sorting
-                    to >= 640px because the `<thead>` is `display: none` below
-                    `sm`, so the notice could only ever EXPLAIN and ESCAPE a sort
-                    a desktop interaction had already started. This control is
-                    the first affordance that can START one on a phone, and
-                    manual order is precisely the state it has to be reachable
-                    in. `deferred-work.md`'s "Sorting cannot be STARTED below
-                    640px" is closed by this story.
-
-                    It drives `sort.select`, the same store slice the headers
-                    drive through `sort.toggle` — one source of truth, so a sort
-                    chosen on a phone and one chosen on a desktop cannot
-                    disagree, and it persists exactly as a header click does. */}
                 <TableSortControl
                   label="Sort income sources"
                   columns={sortColumns}
                   state={sort.state}
                   onSelect={sort.select}
                 />
-                {/* The table's scroll region: a named landmark, and a Tab stop only
-                    while it scrolls (story 93.1; see `TableScrollRegion`). */}
                 <TableScrollRegion
                   label="Income sources table"
                   className={`${RESPONSIVE_WRAPPER_CLASS} ${RESPONSIVE_SCROLL_SHADOW_CLASS}`}
@@ -450,11 +302,6 @@ export function IncomePage() {
                   <table className={RESPONSIVE_TABLE_CLASS}>
                     <thead className={RESPONSIVE_THEAD_CLASS}>
                       <tr>
-                        {/* Sortable headers (story 34.2). Each `<th>`'s text
-                          content stays EXACTLY the column label — the direction
-                          indicator is an aria-hidden <svg> — because
-                          `category-assignment.test.tsx` pins these as an exact
-                          array on both pages. */}
                         <SortableColumnHeader
                           label={SORT_COLUMN_LABELS.name}
                           ariaSort={sort.ariaSort('name')}
@@ -476,11 +323,7 @@ export function IncomePage() {
                           onActivate={sortA11y.markActivated}
                           onToggle={() => sort.toggle('frequency')}
                         />
-                        {/* Premium-only (story 33.3). Gated on the SAME expression
-                          as the matching <td> below — if the two ever disagree
-                          every column shifts at >= 640px. Story 34.2 reuses that
-                          one identifier for the sort target too, so a column a
-                          free user cannot see is not offered as a sort key. */}
+                        {/* Same expression as the matching <td>, or every column shifts. */}
                         {showCategoryColumn && (
                           <SortableColumnHeader
                             label={SORT_COLUMN_LABELS.category}
@@ -490,8 +333,7 @@ export function IncomePage() {
                             onToggle={() => sort.toggle('category')}
                           />
                         )}
-                        {/* Not sortable: no button, and no `aria-sort` at all
-                          (`none` would advertise a sortable column). */}
+                        {/* No `aria-sort`: `none` would advertise a sortable column. */}
                         <th className={RESPONSIVE_HEADER_CELL_RIGHT_CLASS}>Actions</th>
                       </tr>
                     </thead>
@@ -504,9 +346,6 @@ export function IncomePage() {
                           </td>
                           <td className={RESPONSIVE_CELL_CLASS}>
                             <FieldLabel>Amount</FieldLabel>
-                            {/* Story 91.1: wraps only between digit groups below `sm`
-                              (RESPONSIVE_AMOUNT_CLASS). Inside the page's `hydrated`
-                              branch, as `GroupedAmount` requires. */}
                             <div className={`text-sm text-muted ${RESPONSIVE_AMOUNT_CLASS}`}>
                               <GroupedAmount text={formatAmount(source.amount)} />
                             </div>
@@ -517,9 +356,6 @@ export function IncomePage() {
                               {source.frequency}
                             </span>
                           </td>
-                          {/* Removing this <td> removes the desktop cell AND the
-                            mobile card field in one edit — below `sm` the same
-                            cell becomes the labelled row via <FieldLabel>. */}
                           {showCategoryColumn && (
                             <td className={RESPONSIVE_CELL_CLASS}>
                               <FieldLabel>Category</FieldLabel>
@@ -532,8 +368,6 @@ export function IncomePage() {
                           )}
                           <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
                             <FieldLabel>Actions</FieldLabel>
-                            {/* `p-1` is the DESKTOP tap target — see RESPONSIVE_ACTION_BUTTON_CLASS,
-                                which owns the full rationale (story 50.1). */}
                             <div className={RESPONSIVE_ACTIONS_GROUP_CLASS}>
                               <button
                                 type="button"
@@ -558,15 +392,12 @@ export function IncomePage() {
                     </tbody>
                   </table>
                 </TableScrollRegion>
-                {/* Story 120.1: the header descriptions + sort live region. LAST
-                    children and outside the table (`useSortHeaderAnnouncements`). */}
                 {sortA11y.nodes}
               </>
             )}
           </section>
         </main>
 
-        {/* Add/Edit Modal */}
         <Modal isOpen={isModalOpen} onClose={closeModal} labelledBy="income-modal-title">
           <div className="flex justify-between items-center mb-6">
             <h3 id="income-modal-title" className="text-lg font-medium text-heading">
@@ -655,23 +486,14 @@ export function IncomePage() {
                   }`}
                   aria-invalid={hasFieldError('amount')}
                   aria-required
-                  // The hint is described UNCONDITIONALLY and the error id is
-                  // appended, never substituted. `aria-describedby` is an id
-                  // LIST; replacing it when an error appears would silently drop
-                  // the error announcement while the page still looked correct.
+                  // Append the error id, never replace the hint: `aria-describedby` is an id list.
                   aria-describedby={`income-amount-hint${
                     hasFieldError('amount') ? ' income-amount-error' : ''
                   }`}
                   data-testid="income-amount-input"
                 />
               </div>
-              {/*
-               * Story 46.1 (UX-DR52): the form never said whether to enter pay
-               * before or after tax. Deliberately avoids the word "net" —
-               * `calculateNetIncomeResult` already uses "net income" for income
-               * MINUS EXPENSES, a meaning that is user-visible on the pricing
-               * page and in the PDF summary report.
-               */}
+              {/* Avoids "net": it already means income minus expenses elsewhere in the app. */}
               <p
                 id="income-amount-hint"
                 className="mt-1 text-sm text-muted"
@@ -741,7 +563,6 @@ export function IncomePage() {
           </form>
         </Modal>
 
-        {/* Delete confirmation */}
         <ConfirmDialog
           isOpen={pendingDeleteId !== null}
           onConfirm={confirmDelete}

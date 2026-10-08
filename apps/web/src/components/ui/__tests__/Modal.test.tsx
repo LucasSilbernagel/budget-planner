@@ -3,22 +3,9 @@ import { useRef, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { MODAL_CARD_CONSTRAINT, Modal } from '../Modal'
 
-/**
- * Class TOKEN membership, never `toContain` on the raw className string.
- *
- * `-` and `:` are substring boundaries, so `toContain('overflow-y-auto')`
- * false-matches `md:overflow-y-auto` and `toContain('max-h-full')`
- * false-matches `sm:max-h-full`. Same rule as `src/test/responsive-table-tokens.ts`.
- */
+/** Class token membership: `toContain('max-h-full')` would false-match `sm:max-h-full`. */
 const tokens = (value: string) => value.split(/\s+/).filter(Boolean)
 
-/**
- * Modal primitive tests (story 6-2).
- *
- * Cover the shared dismissal + focus + semantics behavior that every modal in
- * the app inherits: AC-1 (outside-click), AC-2 (Escape), AC-3 (focus
- * trap/restore + dialog semantics), AC-4 (consistency via the primitive).
- */
 describe('Modal', () => {
   function Body() {
     return (
@@ -48,7 +35,6 @@ describe('Modal', () => {
     const dialog = screen.getByRole('dialog')
     expect(dialog).toHaveAttribute('aria-modal', 'true')
     expect(dialog).toHaveAttribute('aria-labelledby', 'modal-title')
-    // Resolved accessible name comes from the referenced heading.
     expect(screen.getByRole('dialog', { name: 'Test Modal' })).toBeInTheDocument()
   })
 
@@ -81,7 +67,6 @@ describe('Modal', () => {
         <Body />
       </Modal>
     )
-    // The overlay is the dialog's parent element.
     const overlay = screen.getByRole('dialog').parentElement as HTMLElement
     await user.click(overlay)
     expect(onClose).toHaveBeenCalledTimes(1)
@@ -150,11 +135,9 @@ describe('Modal', () => {
     const first = screen.getByRole('button', { name: 'First' })
     const last = screen.getByRole('button', { name: 'Last' })
 
-    // Focus starts on the container; Shift+Tab wraps to the last focusable.
     expect(dialog).toHaveFocus()
     await user.tab({ shift: true })
     expect(last).toHaveFocus()
-    // Tab from the last focusable wraps back to the first.
     await user.tab()
     expect(first).toHaveFocus()
   })
@@ -187,17 +170,7 @@ describe('Modal', () => {
   })
 })
 
-/**
- * Story 31.3 (UX-DR37) — the card fits the viewport and scrolls internally.
- *
- * jsdom loads NO CSS: Tailwind never runs, so `max-h-full` / `overflow-y-auto`
- * are inert strings on `class`, `getComputedStyle().overflow` reads `visible`,
- * and every rect / `scrollHeight` / `clientHeight` is 0. These tests therefore
- * prove CLASS TOKENS, DOM STRUCTURE and INLINE STYLES only — the geometry
- * (does it actually fit, does it actually scroll) was proven in Playwright at
- * 320x480 in `e2e/responsive-320.spec.ts`, which stories 84.2/84.5 (FR137)
- * deleted; no test measures it now.
- */
+// jsdom loads no CSS: these prove class tokens, structure and inline styles only.
 describe('Modal viewport fit (story 31.3)', () => {
   function Body() {
     return (
@@ -209,11 +182,6 @@ describe('Modal viewport fit (story 31.3)', () => {
   }
 
   it('pins the constraint string exactly (AC-2)', () => {
-    // `vh` resolves to the LARGE viewport on mobile Safari, so `max-h-[90vh]`
-    // can still exceed the visible area while the URL bar is showing — the
-    // exact bug UX-DR37 exists to kill. `max-h-full` resolves against the
-    // overlay's content box (`fixed inset-0 ... p-4`), so it stays in sync
-    // with the gutter by construction.
     expect(MODAL_CARD_CONSTRAINT).toBe('max-h-full overflow-y-auto overscroll-contain')
   })
 
@@ -230,11 +198,6 @@ describe('Modal viewport fit (story 31.3)', () => {
   })
 
   it('keeps the constraint when a caller overrides className (AC-1)', () => {
-    // `className` is a default PARAMETER assigned verbatim — no clsx, no
-    // tailwind-merge anywhere in apps/web — so a caller-supplied string
-    // REPLACES the default. The constraint must be concatenated on top, or the
-    // four callers that pass `className` (ConfirmDialog, BalancePage,
-    // create-profile, premium-prompt) silently opt out of the fix.
     renderWithProviders(
       <Modal isOpen onClose={() => {}} ariaLabel="Test" className="custom-thing">
         <Body />
@@ -272,15 +235,12 @@ describe('Modal viewport fit (story 31.3)', () => {
     // A sizing wrapper between overlay and card would break the two
     // outside-click tests above, which resolve the overlay as `.parentElement`.
     expect(tokens(overlay.className)).toContain('fixed')
-    // No portal: the dialog stays inside the render container.
     expect(container.contains(dialog)).toBe(true)
   })
 
   it('locks body scroll while open and restores the previous value on close (AC-8)', () => {
     document.body.style.overflow = 'scroll'
-    // `finally`, not a trailing statement: an assertion failure would otherwise
-    // leave `overflow: scroll` on the shared jsdom body for every later test in
-    // this worker.
+    // `finally`: a failure would otherwise leave `overflow: scroll` on the shared jsdom body.
     try {
       const { rerender } = renderWithProviders(
         <Modal isOpen onClose={() => {}} ariaLabel="Test">
@@ -301,26 +261,6 @@ describe('Modal viewport fit (story 31.3)', () => {
   })
 })
 
-/**
- * Two simultaneously open modals (story 41.1 code review, 2026-08-27).
- *
- * ⚠️ NOT a hypothetical. `Modal` documented "assumes a single modal is open at a
- * time" as an accepted limitation for two years. It was reachable and measured
- * false in a real browser on the Overview, whose Premium section carries five
- * gates, each owning its own `PremiumPrompt`: focus can leave an open dialog (the
- * Tab trap wraps WITHIN the dialog, but a browser-chrome round trip returns focus
- * to the page) and activate a second trigger behind the overlay. The probe found
- * 2 dialogs open, ONE Escape closing BOTH, and `body.style.overflow` left
- * `'hidden'` with nothing on screen — the page scroll-locked until reload.
- *
- * Both halves are asserted here because they had INDEPENDENT causes: a
- * document-level listener per instance (`stopPropagation` does not stop siblings
- * on the same node), and a per-instance overflow save/restore whose outcome was
- * decided by cleanup order.
- *
- * These are unit tests, not e2e, deliberately: the whole mechanism is listener
- * registration and `document.body.style` — no layout, nothing jsdom cannot see.
- */
 describe('Modal stacking safety (41.1 review)', () => {
   function Body() {
     return <h2>Stacked</h2>
@@ -348,7 +288,6 @@ describe('Modal stacking safety (41.1 review)', () => {
 
       fireEvent.keyDown(document, { key: 'Escape' })
 
-      // The second-mounted modal is the top of the stack.
       expect(onCloseB).toHaveBeenCalledTimes(1)
       expect(
         onCloseA,
@@ -365,7 +304,6 @@ describe('Modal stacking safety (41.1 review)', () => {
       const { rerender } = renderWithProviders(twoModals(vi.fn(), vi.fn()))
       expect(document.body.style.overflow).toBe('hidden')
 
-      // Close the top one. The lock must survive — a dialog is still open.
       rerender(
         <>
           <Modal isOpen onClose={vi.fn()} ariaLabel="First">
@@ -380,9 +318,7 @@ describe('Modal stacking safety (41.1 review)', () => {
         'hidden'
       )
 
-      // Close the last one. Now it restores what was there BEFORE any modal —
-      // not the `'hidden'` the second modal observed when it opened, which is
-      // exactly the value that used to wedge the page.
+      // Restores the value from before ANY modal, not the `'hidden'` the second modal observed.
       rerender(
         <>
           <Modal isOpen={false} onClose={vi.fn()} ariaLabel="First">
@@ -451,24 +387,8 @@ describe('Modal stacking safety (41.1 review)', () => {
   })
 })
 
-/**
- * Story 31.3 (AC-7) — the drag-dismissal regression this story introduces.
- *
- * Putting a scrollbar flush against the card edge turns a press-drag-release
- * into a routine way to lose an unsaved 6-field form: press the scrollbar
- * thumb inside the card, drag, release over the backdrop, and `click` fires on
- * the nearest common inclusive ancestor — the OVERLAY. The card's
- * `stopPropagation` never runs because the card is not in that event's path,
- * and a bare `event.target === overlay` check does not help: the target
- * genuinely IS the overlay.
- *
- * Events are dispatched explicitly rather than through user-event so the
- * sequence matches what a browser actually emits for a cross-element drag
- * (down on A, up on B, click on their common ancestor). This is also why the
- * proof lives here and not in Playwright: this Chromium uses OVERLAY
- * scrollbars (`offsetWidth === clientWidth`), so no scrollbar-drag behaviour is
- * observable in e2e at all.
- */
+// Events are dispatched explicitly so the sequence matches a real cross-element drag
+// (down on A, up on B, click on their common ancestor).
 describe('Modal drag dismissal (story 31.3, AC-7)', () => {
   function setup() {
     const onClose = vi.fn()
@@ -509,10 +429,7 @@ describe('Modal drag dismissal (story 31.3, AC-7)', () => {
   })
 
   it('does not let a completed gesture dismiss a SECOND, pointer-less click', () => {
-    // The ref outlives close/reopen — `isOpen` gates the render, not the mount
-    // — so a consumed `true` must not survive into a later click that had no
-    // pointer sequence of its own (programmatic `.click()`, a synthesized
-    // activation).
+    // The ref outlives close/reopen, so a consumed verdict must not leak into a later programmatic click.
     const { onClose, overlay } = setup()
     fireEvent.pointerDown(overlay)
     fireEvent.pointerUp(overlay)

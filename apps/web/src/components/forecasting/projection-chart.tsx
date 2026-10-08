@@ -1,13 +1,3 @@
-/**
- * Projection Chart Component
- *
- * Visualizes financial forecasting data using Recharts.
- * Shows baseline vs. scenario projections for comparison.
- *
- * Architecture: React Component with Recharts
- * Data Sovereignty: Client-side visualization of client-calculated data
- */
-
 import type { ForecastingResult } from '@budget-planner/core'
 import {
   type CurrencyCode,
@@ -34,13 +24,6 @@ import { useCurrencyPreferences, useFormattedAmount } from '../../stores/currenc
 import { ErrorBoundary } from '../ErrorBoundary'
 import { GroupedAmount } from '../ui/GroupedAmount'
 
-// ============================================================================
-// Type Definitions
-// ============================================================================
-
-/**
- * Chart data point
- */
 interface ChartDataPoint {
   year: number
   baselineNetWorth: number
@@ -49,9 +32,6 @@ interface ChartDataPoint {
   scenarioIncome: number
 }
 
-/**
- * Chart configuration
- */
 interface ChartConfig {
   showGrid: boolean
   showLegend: boolean
@@ -59,19 +39,8 @@ interface ChartConfig {
   animate: boolean
 }
 
-// ============================================================================
-// Constants
-// ============================================================================
-
-/**
- * The Grid / Legend / Tooltips toggles' keyboard focus indicator (story 120.2,
- * Lucas scope addition 2026-10-08). The repo's focus-ring convention, as on the
- * forecasting tabs and `SavingsPage`'s breakdown toggle: a blue ring, and
- * `forced-colors:focus:outline` because Tailwind's ring is a `box-shadow`, which
- * Windows High Contrast discards (WCAG 2.4.7; `HomePage.tsx` records the same).
- * No ring offset: its default colour is white and would band the dark card.
- * `focus:` only paints while focused, so the unfocused rendering is unchanged.
- */
+// Tailwind's ring is a box-shadow, which forced-colors mode discards, hence the outline.
+// No ring offset: its white default would band the dark card.
 const CHART_TOGGLE_FOCUS_CLASS =
   'focus:outline-none focus:ring-2 focus:ring-blue-500 forced-colors:focus:outline forced-colors:focus:outline-2'
 
@@ -83,46 +52,21 @@ const DEFAULT_CONFIG: ChartConfig = {
 }
 
 const CHART_COLORS = {
-  baseline: '#3b82f6', // Blue
-  scenario: '#8b5cf6', // Purple
-  income: '#10b981', // Green
-  expense: '#ef4444', // Red
+  baseline: '#3b82f6',
+  scenario: '#8b5cf6',
+  income: '#10b981',
+  expense: '#ef4444',
 }
 
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Legend/tooltip name for a scenario whose name is blank (story 97.2, D1). Only
- * an emptied Scenario Name field reaches it: an unsaved builder carries
- * "My Financial Forecast", and the server rejects a blank name on save.
- */
 export const SCENARIO_FALLBACK_NAME = 'Scenario'
 
-/**
- * The scenario series' name: the scenario's own name, trimmed (story 97.2,
- * FR158). Read from the RESULT, which the builder fills from its Scenario Name
- * field and a loaded forecast carries, so the chart follows both paths without
- * a prop. Defensive because a saved result is parsed JSON whose
- * `scenario.name` type nothing validates. A scenario literally named
- * "Baseline" is left alone (two "Baseline" entries is the user's choice).
- */
+// Defensive: a saved result is parsed JSON whose scenario.name nothing validates.
 export function projectionSeriesName(result: ForecastingResult | null): string {
   const name: unknown = result?.scenario?.name
   const trimmed = typeof name === 'string' ? name.trim() : ''
   return trimmed ? trimmed : SCENARIO_FALLBACK_NAME
 }
 
-/**
- * Recharts chrome that CSS cannot drive, switched at the narrow breakpoint
- * (the `get<X>Chrome` pattern of `RetirementTimelineChart.tsx`, story 24.1).
- * The Y axis used to have Recharts' default 60 px gutter for full amounts with
- * cents ("$310,101,483.69", ~100 px), so every tick was clipped by the SVG
- * edge at every width (story 97.2). The ticks are compact now and the gutter
- * holds the widest one; `projection-chart.helpers.test.ts` pins it against
- * label widths MEASURED under the CI font.
- */
 export interface ProjectionChartChrome {
   yAxisWidth: number
   tickFontSize: number
@@ -130,23 +74,12 @@ export interface ProjectionChartChrome {
   marginRight: number
 }
 
-/**
- * Upper bounds on one tick character's width (digits, ".", "M", currency
- * symbols) at the narrow and wide tick sizes, from widths MEASURED under the
- * CI font (DejaVu): the widest per-character ratio was "CHF350.0M", 57.5 px / 9
- * at 10 px and 69.0 px / 9 at 12 px.
- */
+// Upper bounds on one tick character's width, measured under the CI font (DejaVu).
 const TICK_CHAR_PX = { narrow: 6.5, wide: 7.8 }
-/** Recharts draws a tick label after a 6 px tick line and a 2 px gap. */
+// Recharts draws a tick label after a 6 px tick line and a 2 px gap.
 const TICK_LINE_AND_GAP = 8
 
-/**
- * `widestLabelChars` is the longest formatted tick label. A "$" axis keeps the
- * measured 58 / 72 px gutters (a label of width w fits iff yAxisWidth +
- * marginLeft - 8 >= w; narrow 58 holds "$1000.0M", 50.0 px); a longer currency
- * symbol ("CHF350.0M", "R$350.0M") widens it, or its ticks clip again (story
- * 97.2 review: MEASURED 7/7 CHF ticks clipped at 320 px with a fixed 58).
- */
+// A label of width w fits iff yAxisWidth + marginLeft - 8 >= w; longer currency symbols widen the gutter.
 export function getProjectionChartChrome(
   isNarrow: boolean,
   widestLabelChars = 0
@@ -161,21 +94,11 @@ export function getProjectionChartChrome(
   return { ...base, yAxisWidth: Math.max(base.yAxisWidth, needed) }
 }
 
-/** Padding around the plotted values, in cents ($1,000): the old domain's. */
 const Y_DOMAIN_PADDING = 100_000
-/**
- * A flat or slow-growing net worth must not get an axis so fine that its
- * labels need many decimals: the tick range spans at least this share of the
- * largest value.
- */
+// The tick range spans at least this share of the largest value, so a flat series needs few decimals.
 const Y_MIN_SPAN_RATIO = 0.05
 
-/**
- * The value axis' ticks and domain (story 97.2), from EVERY plotted value
- * (both series), in cents. Round "nice" ticks via the shared `niceAxisTicks`;
- * the domain is exactly the tick range, so every tick is drawn and every value
- * is inside it.
- */
+// The domain is exactly the tick range, so every tick is drawn and every value is inside it.
 export function projectionYAxis(values: number[]): {
   ticks: number[]
   domain: [number, number]
@@ -204,14 +127,7 @@ function decimalsFor(stepUnits: number, unit: number, min: number): number {
   return Math.min(3, Math.max(min, needed))
 }
 
-/**
- * Compact value-axis label for a tick in CENTS, `stepCents` from its
- * neighbours (story 97.2). Same K/M style and currency handling as the shared
- * `formatCompactAxisTick` the other charts use, with one difference: it prints
- * as many decimals as the step needs, because a fixed one decimal turns ticks
- * $10,000 apart around $1.2M into "$1.2M" three times. Local on purpose: three
- * other charts read the shared helper.
- */
+// Prints as many decimals as the step needs: one fixed decimal shows $10K steps near $1.2M as "$1.2M" thrice.
 export function formatProjectionAxisTick(
   cents: number,
   stepCents: number,
@@ -238,16 +154,10 @@ export function formatProjectionAxisTick(
     : compact
 }
 
-/**
- * Format year for X-axis
- */
 function formatYear(year: number): string {
   return `Year ${year}`
 }
 
-/**
- * Convert forecast result to chart data
- */
 function convertToChartData(result: ForecastingResult | null): ChartDataPoint[] {
   if (!result) return []
 
@@ -271,10 +181,6 @@ function convertToChartData(result: ForecastingResult | null): ChartDataPoint[] 
   return data
 }
 
-// ============================================================================
-// Custom Tooltip Component
-// ============================================================================
-
 interface CustomTooltipProps {
   active?: boolean
   payload?: Array<{
@@ -286,19 +192,14 @@ interface CustomTooltipProps {
   label?: string
 }
 
-/**
- * Exported for a direct render test (story 97.2). The row name is the
- * `<Line name>`, i.e. the FULL scenario name: the box has a max width and the
- * row wraps, so a long name never widens the tooltip past the chart.
- */
+// The box has a max width and rows wrap, so a long scenario name never widens the tooltip.
 export function CustomTooltip({
   active,
   payload,
   label,
 }: CustomTooltipProps): React.ReactElement | null {
   const formatCurrency = useFormattedAmount()
-  // Theme-aware fallback so a series without an explicit color stays legible on
-  // the dark tooltip surface (gray-700 default would be near-invisible there).
+  // The default gray-700 would be near-invisible on the dark tooltip surface.
   const chartColors = useChartColors()
   if (!active || !payload || !payload.length) return null
 
@@ -324,30 +225,11 @@ export function CustomTooltip({
   )
 }
 
-// ============================================================================
-// Main Component
-// ============================================================================
-
-/**
- * Props for ProjectionChart component
- */
 export interface ProjectionChartProps {
-  /**
-   * The forecast to visualize, lifted from the Scenario Builder. When null (no
-   * scenario has produced a result yet), a neutral empty state is shown instead
-   * of fabricated sample data (story bug-3).
-   */
   result: ForecastingResult | null
 }
 
-/**
- * Projection Chart Component
- *
- * Visualizes the user's forecasting result with baseline vs. scenario comparison.
- * Supports interactive exploration of projection data.
- */
 export function ProjectionChart({ result }: ProjectionChartProps): React.ReactElement {
-  // Display amounts respect the user's currency mode (currency-less vs symbols).
   const formatCurrency = useFormattedAmount()
   const { mode, currency } = useCurrencyPreferences()
   const chartColors = useChartColors()
@@ -366,10 +248,8 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
     Math.max(0, ...yAxis.ticks.map((tick) => formatYTick(tick).length))
   )
 
-  // Calculate chart dimensions
   const chartHeight = 400
 
-  // Toggle chart options
   const toggleOption = (option: keyof ChartConfig) => {
     setConfig((prev) => ({ ...prev, [option]: !prev[option] }))
   }
@@ -377,20 +257,14 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
   return (
     <ErrorBoundary fallback={<div className="p-4 text-red-600">Chart error occurred</div>}>
       <div className="space-y-6">
-        {/* Header */}
         <div className="mb-4">
           <h2 className="text-2xl font-bold text-subheading">Forecast Projections</h2>
-          {/* Names the measure (the Y axis has no title since story 97.2: a
-              rotated "Net Worth" sat across the tick labels) and carries the
-              full, wrapping scenario name. */}
+          {/* No Y-axis title (a rotated one overlapped the ticks); this subtitle names the measure. */}
           <p className="text-muted mt-1 break-words">
             Net worth by year: Baseline vs. {scenarioName}
           </p>
         </div>
 
-        {/* Chart Controls. Each is a toggle button: `aria-pressed` tells a screen
-            reader whether that layer shows, which the colour alone never did
-            (story 120.2, FR188). */}
         <div className="flex flex-wrap gap-2 mb-4">
           <button
             type="button"
@@ -430,7 +304,6 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
           </button>
         </div>
 
-        {/* Chart Container */}
         <div className="surface rounded-xl shadow-lg border border-default p-4">
           {chartData.length === 0 ? (
             <div className="flex items-center justify-center h-[400px] text-muted text-center px-4">
@@ -464,9 +337,6 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
                   stroke={chartColors.axis}
                 />
 
-                {/* Compact labels sized to the gutter (story 97.2); the
-                    tooltip keeps the precise amount. No axis title: the
-                    subtitle above names the measure. */}
                 <YAxis
                   tickFormatter={formatYTick}
                   ticks={yAxis.ticks}
@@ -479,11 +349,8 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
                 {config.showTooltip && <Tooltip content={<CustomTooltip />} />}
 
                 {config.showLegend && (
-                  // No fixed `height` (story 97.2): Recharts offsets the plot by
-                  // the wrapper's MEASURED height, so a fixed 36 px let a
-                  // two-row legend paint over the top tick at 320 px. A long
-                  // scenario name truncates (full name in `title`, in the text
-                  // node for screen readers, and in the tooltip).
+                  // No fixed height: Recharts offsets the plot by the measured legend height, so a fixed one let
+                  // a two-row legend cover the top tick.
                   <Legend
                     verticalAlign="top"
                     wrapperStyle={{ paddingBottom: 20 }}
@@ -498,7 +365,6 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
                   />
                 )}
 
-                {/* Baseline Line */}
                 <Line
                   type="monotone"
                   dataKey="baselineNetWorth"
@@ -510,7 +376,6 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
                   isAnimationActive={config.animate}
                 />
 
-                {/* Scenario Line */}
                 <Line
                   type="monotone"
                   dataKey="scenarioNetWorth"
@@ -522,22 +387,11 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
                   isAnimationActive={config.animate}
                 />
 
-                {/* Reference line at the user's CURRENT net worth.
-                    ⚠️ Read from `summary.startingNetWorth`, never from the first
-                    row (story `forecast-2`). It used to be `chartData[0]
-                    ?.baselineNetWorth`, which was right only by accident: while
-                    rows reported an OPENING balance, row 1 happened to equal the
-                    starting figure. Once rows became CLOSING balances that line
-                    silently moved one year's flow up the axis — contradicting
-                    the "Starting Net Worth" card rendered just below it. */}
+                {/* From summary.startingNetWorth, never the first row: rows are closing balances. */}
                 <ReferenceLine
                   y={result?.summary.startingNetWorth}
-                  // Above the line, right-aligned (DN1, story 97.2 review): a
-                  // centred label was struck through by the X-axis stroke when
-                  // the starting amount is the axis floor. `insideBottomRight`,
-                  // not `insideTopRight`: a horizontal line's label viewBox has
-                  // zero height, so "inside top" is y + offset, i.e. BELOW the
-                  // line, in the X tick labels (MEASURED; recharts Label.js).
+                  // insideBottomRight sits above the line: a horizontal line's label box has zero height, so
+                  // insideTopRight would land below it, in the X tick labels.
                   label={{
                     value: 'Starting',
                     position: 'insideBottomRight',
@@ -552,8 +406,7 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
           )}
         </div>
 
-        {/* Summary Statistics — gated on chartData (not just `result`) so an
-            empty-arrays result can't show the cards alongside the empty state. */}
+        {/* Gated on chartData so an empty-arrays result can't show cards beside the empty state. */}
         {result && chartData.length > 0 && (
           <dl className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <SummaryCard
@@ -579,8 +432,6 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
               change={0}
               positive={result.summary.averageAnnualGrowth >= 0}
             />
-            {/* Story 107.1 (FR175, Q1): ending net worth against TODAY's data
-                projected flat (the Baseline line), signed. */}
             {vsToday !== null && (
               <SummaryCard
                 label="vs. today"
@@ -596,19 +447,7 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
   )
 }
 
-// ============================================================================
-// Subcomponents
-// ============================================================================
-
-/**
- * Summary Card Component
- *
- * `value` is a `formatCurrency` string and renders as a `GroupedAmount` (story
- * 88.4, FR142, D1): at 768 under CI's font these cards are 120 px wide inside
- * and the seed's `$310,100,483.69` needs 171 px, so it may break after a group
- * separator and nowhere else. The cards render only for a client-computed
- * `result`, never on the server.
- */
+// GroupedAmount: large amounts overflow these narrow cards, so they may break only after a group separator.
 interface SummaryCardProps {
   label: string
   value: string
@@ -622,10 +461,7 @@ function SummaryCard({ label, value, change }: SummaryCardProps): React.ReactEle
   const isPositive = change >= 0
 
   return (
-    // A `<dl>` group (story 116.1, FR184): it may hold only `<dt>` and `<dd>`, so
-    // the change line lives INSIDE the `<dd>` as a block span (it was a `<p>`
-    // sibling, which axe's `definition-list` rule rejects). Same classes plus
-    // `block`, so it paints where the `<p>` did.
+    // A <dl> group may hold only <dt> and <dd>, so the change line is a block span inside the <dd>.
     <div className="surface-inset rounded-lg p-4">
       <dt className="text-sm font-medium text-muted">{label}</dt>
       <dd className="mt-1 text-lg font-semibold text-subheading">

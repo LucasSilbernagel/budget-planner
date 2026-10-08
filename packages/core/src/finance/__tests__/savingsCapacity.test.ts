@@ -1,13 +1,4 @@
-/**
- * Savings Capacity Calculation Tests
- *
- * Mathematical validation tests for savings capacity calculations.
- * Zero tolerance for errors - NFR3 requirement
- *
- * Formula: savingsCapacityPercentage = (totalExpenses / grossIncome) × 100
- * This is derived from: (grossIncome - netPeriodIncome) / grossIncome × 100
- * Where netPeriodIncome = grossIncome - totalExpenses
- */
+// savingsCapacityPercentage = totalExpenses / grossIncome × 100.
 
 import { describe, expect, it } from 'vitest'
 import {
@@ -25,8 +16,6 @@ describe('Savings Capacity Calculation', () => {
       const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
 
       const result = calculateMaxAllocableSavings(incomeSources, expenses)
-      // grossIncome = 50000, totalExpenses = 20000
-      // netPeriodIncome = 50000 - 20000 = 30000
       expect(result).toBe(30000)
     })
 
@@ -35,8 +24,6 @@ describe('Savings Capacity Calculation', () => {
       const expenses = [{ amount: 50000, frequency: 'monthly' as const }]
 
       const result = calculateMaxAllocableSavings(incomeSources, expenses)
-      // grossIncome = 20000, totalExpenses = 50000
-      // netPeriodIncome = 20000 - 50000 = -30000
       expect(result).toBe(-30000)
     })
 
@@ -56,22 +43,15 @@ describe('Savings Capacity Calculation', () => {
     it('should return full income when no expenses', () => {
       const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
       const result = calculateMaxAllocableSavings(incomeSources, [])
-      // grossIncome = 50000, totalExpenses = 0
-      // netPeriodIncome = 50000 - 0 = 50000
       expect(result).toBe(50000)
     })
 
     it('should handle mixed frequencies', () => {
-      const incomeSources = [
-        { amount: 10000, frequency: 'weekly' as const }, // $100/week → $433.33
-      ]
-      const expenses = [
-        { amount: 10000, frequency: 'biweekly' as const }, // $100/biweekly → $216.67
-      ]
+      const incomeSources = [{ amount: 10000, frequency: 'weekly' as const }]
+      const expenses = [{ amount: 10000, frequency: 'biweekly' as const }]
 
       const result = calculateMaxAllocableSavings(incomeSources, expenses)
-      // grossIncome = 43333, totalExpenses = 21667
-      // netPeriodIncome = 43333 - 21667 = 21666
+      // grossIncome 43333 (weekly), totalExpenses 21667 (biweekly)
       expect(result).toBe(21666)
     })
   })
@@ -109,9 +89,6 @@ describe('Savings Capacity Calculation', () => {
     it('should return full income when no expenses', () => {
       const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
       const result = calculateMaxDynamicallyAllocableSavings(incomeSources, [])
-      // grossIncome = 50000, totalExpenses = 0
-      // netPeriodIncome = 50000 - 0 = 50000
-      // max(0, 50000) = 50000
       expect(result).toBe(50000)
     })
   })
@@ -122,9 +99,6 @@ describe('Savings Capacity Calculation', () => {
       const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
 
       const result = calculateSavingsCapacityPercentage(incomeSources, expenses)
-      // grossIncome = 50000, netPeriodIncome = 30000
-      // savingsCapacity = 50000 - 30000 = 20000
-      // percentage = (20000 / 50000) * 100 = 40%
       expect(result).toBe(40)
     })
 
@@ -133,9 +107,6 @@ describe('Savings Capacity Calculation', () => {
       const expenses: Array<{ amount: number; frequency: any }> = []
 
       const result = calculateSavingsCapacityPercentage(incomeSources, expenses)
-      // grossIncome = 50000, netPeriodIncome = 50000
-      // savingsCapacity = 50000 - 50000 = 0
-      // percentage = (0 / 50000) * 100 = 0%
       expect(result).toBe(0)
     })
 
@@ -152,55 +123,31 @@ describe('Savings Capacity Calculation', () => {
       const expenses = [{ amount: 50000, frequency: 'monthly' as const }]
 
       const result = calculateSavingsCapacityPercentage(incomeSources, expenses)
-      // grossIncome = 50000, netPeriodIncome = 0
-      // savingsCapacity = 50000 - 0 = 50000
-      // percentage = (50000 / 50000) * 100 = 100%
       expect(result).toBe(100)
     })
 
     it('should calculate correct percentage with mixed frequencies', () => {
-      const incomeSources = [
-        { amount: 10000, frequency: 'weekly' as const }, // $100/week → $433.33
-      ]
-      const expenses = [
-        { amount: 10000, frequency: 'monthly' as const }, // $100/month
-      ]
+      const incomeSources = [{ amount: 10000, frequency: 'weekly' as const }]
+      const expenses = [{ amount: 10000, frequency: 'monthly' as const }]
 
       const result = calculateSavingsCapacityPercentage(incomeSources, expenses)
-      // grossIncome = 43333, totalExpenses = 10000
-      // netPeriodIncome = 43333 - 10000 = 33333
-      // savingsCapacity = 43333 - 33333 = 10000
-      // percentage = (10000 / 43333) * 100 ≈ 23.08% → 23%
+      // (10000 / 43333) × 100 ≈ 23.08 → 23
       expect(result).toBe(23)
     })
 
     it('should return 50% when expenses are half of income', () => {
-      const incomeSources = [
-        { amount: 10000, frequency: 'monthly' as const }, // $100
-      ]
-      const expenses = [
-        { amount: 5000, frequency: 'monthly' as const }, // $50
-      ]
+      const incomeSources = [{ amount: 10000, frequency: 'monthly' as const }]
+      const expenses = [{ amount: 5000, frequency: 'monthly' as const }]
 
       const result = calculateSavingsCapacityPercentage(incomeSources, expenses)
-      // grossIncome = 10000, totalExpenses = 5000
-      // netPeriodIncome = 10000 - 5000 = 5000
-      // savingsCapacity = 10000 - 5000 = 5000
-      // percentage = (5000 / 10000) * 100 = 50%
       expect(result).toBe(50)
     })
 
     it('should return >100% when expenses exceed gross income (overspending)', () => {
-      const incomeSources = [
-        { amount: 50000, frequency: 'monthly' as const }, // $500
-      ]
-      const expenses = [
-        { amount: 75000, frequency: 'monthly' as const }, // $750
-      ]
+      const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
+      const expenses = [{ amount: 75000, frequency: 'monthly' as const }]
 
       const result = calculateSavingsCapacityPercentage(incomeSources, expenses)
-      // grossIncome = 50000, totalExpenses = 75000
-      // percentage = (75000 / 50000) * 100 = 150%
       expect(result).toBe(150)
     })
   })
@@ -226,8 +173,7 @@ describe('Savings Capacity Calculation', () => {
 
       const result = calculateSavingsCapacityResult(incomeSources, expenses)
 
-      // With deficit (expenses > income), savings capacity percentage exceeds 100%
-      // Formula: (expenses / grossIncome) * 100 = (50000 / 20000) * 100 = 250%
+      // Deficit: (50000 / 20000) × 100 = 250%.
       expect(result).toEqual<SavingsCapacityResult>({
         grossIncome: 20000,
         netPeriodIncome: -30000,
@@ -244,7 +190,7 @@ describe('Savings Capacity Calculation', () => {
       expect(result).toEqual<SavingsCapacityResult>({
         grossIncome: 50000,
         netPeriodIncome: -25000,
-        savingsCapacityPercentage: 150, // >100% for overspending
+        savingsCapacityPercentage: 150,
         maxAllocableSavings: -25000,
       })
     })
@@ -267,7 +213,6 @@ describe('Savings Capacity Calculation', () => {
       const expenses = [{ amount: 2500, frequency: 'monthly' as const }]
 
       const result = calculateSavingsCapacityPercentage(incomeSources, expenses)
-      // ($25 / $100) * 100 = 25%
       expect(result).toBe(25)
     })
 
@@ -312,9 +257,7 @@ describe('Savings Capacity Calculation', () => {
       const incomeSources = [{ amount: -10000, frequency: 'monthly' as const }]
       const expenses = [{ amount: -5000, frequency: 'monthly' as const }]
       const result = calculateSavingsCapacityPercentage(incomeSources, expenses)
-      // grossIncome = -10000, netPeriodIncome = -5000
-      // savingsCapacity = -10000 - (-5000) = -5000
-      // percentage = (-5000 / -10000) * 100 = 50%
+      // Both negative: (-10000 - -5000) / -10000 × 100 = 50%
       expect(result).toBe(50)
     })
 
@@ -366,7 +309,7 @@ describe('Savings Capacity Calculation', () => {
       const incomeSources = [{ amount: -0, frequency: 'monthly' as const }]
       const expenses = [{ amount: 0, frequency: 'monthly' as const }]
       const result = calculateSavingsCapacityPercentage(incomeSources, expenses)
-      // -0 / -0 is NaN, but we should return 0 to avoid NaN in UI
+      // -0 / -0 is NaN; return 0 so the UI never shows NaN.
       expect(result).toBe(0)
     })
 

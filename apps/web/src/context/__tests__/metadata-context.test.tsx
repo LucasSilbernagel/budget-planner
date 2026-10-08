@@ -1,16 +1,8 @@
-/**
- * MetadataProvider tests (story 4-12, AC-1 / FR14, UX-DR8).
- *
- * AC-1 demands: client metadata captured from URL params on load, exposed to
- * components, used for analytics only, with NO cookies or localStorage tracking.
- */
-
 import { render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MetadataProvider, useAnalytics, useMetadata } from '../metadata-context'
 
 function setUrl(search: string): void {
-  // jsdom reflects history changes into window.location.search.
   window.history.replaceState({}, '', `/${search}`)
 }
 
@@ -32,7 +24,6 @@ function AnalyticsProbe() {
 
 beforeEach(() => {
   localStorage.clear()
-  // Reset cookies between tests.
   for (const cookie of document.cookie.split(';')) {
     const name = cookie.split('=')[0]?.trim()
     if (name) {
@@ -63,7 +54,6 @@ describe('MetadataProvider', () => {
         <AnalyticsProbe />
       </MetadataProvider>
     )
-    // A page_view event is recorded carrying the captured source.
     await waitFor(() =>
       expect(screen.getByTestId('analytics')).toHaveTextContent('1:page_view:twitter')
     )
@@ -92,7 +82,6 @@ describe('MetadataProvider', () => {
   })
 
   it('throws when the hooks are used outside the provider', () => {
-    // Silence the expected React error boundary console noise.
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
     expect(() => render(<MetadataProbe />)).toThrow(/MetadataProvider/)
     spy.mockRestore()

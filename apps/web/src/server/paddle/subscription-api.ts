@@ -1,40 +1,16 @@
-/**
- * Paddle Billing REST API — subscription cancellation for account erasure.
- *
- * Paddle Billing identifies a subscription by its OWN id (`sub_...`), never by
- * customer id, and the app stores only the customer id (`users.paddleId`).
- * So cancelling on account deletion is a two-step best-effort: list the
- * customer's non-terminal subscriptions, then cancel each one immediately.
- *
- * SERVER-ONLY. Uses the server API key. Never called from the browser.
- * NFR8: MSW intercepts `*.paddle.com` in tests.
- */
+/** Paddle cancels by subscription id but the app stores only the customer id: list, then cancel each. */
 
 import { captureError } from '@/lib/error-tracking'
 import { logger } from '@/lib/logger'
 import { getPaddleConfig } from '@budget-planner/config'
 
-/**
- * Request timeout (ms). Node's `fetch` has NO default timeout — see
- * `customer-api.ts`'s identical rationale.
- */
+/** Node's fetch has no default timeout. */
 const REQUEST_TIMEOUT_MS = 3000
 
-/**
- * Subscriptions in these statuses are still billing and worth cancelling.
- * `canceled` is Paddle Billing's only terminal status — `paused` is NOT
- * terminal (a paused subscription resumes billing on its own schedule), so
- * omitting it here would let a paused-then-deleted account keep being
- * charged after erasure with no `users` row left for the webhook to act on.
- */
+/** `paused` is not terminal (it resumes billing), so it must be cancelled too. */
 const NON_TERMINAL_STATUSES = ['active', 'trialing', 'past_due', 'paused']
 
-/**
- * Hard cap on pages followed. Paddle Billing paginates list endpoints
- * (default 50/page); a customer with more open subscriptions than this is
- * not a real scenario this app expects, and the cap exists only to make an
- * unexpected `has_more: true` loop forever impossible.
- */
+/** Only exists to make an unexpected endless `has_more: true` loop impossible. */
 const MAX_PAGES = 20
 
 interface PaddleSubscriptionListResponse {
@@ -42,7 +18,6 @@ interface PaddleSubscriptionListResponse {
   meta?: { pagination?: { has_more?: boolean; next?: string } }
 }
 
-/** One page of the customer's non-terminal subscriptions. */
 async function fetchSubscriptionPage(
   url: string,
   apiKey: string
@@ -59,11 +34,7 @@ async function fetchSubscriptionPage(
   return (await res.json()) as PaddleSubscriptionListResponse
 }
 
-/**
- * Lists every non-terminal subscription id for a customer, following Paddle's
- * pagination (`meta.pagination.next`) up to {@link MAX_PAGES}. Never throws:
- * a failure on any page returns whatever ids were already collected.
- */
+/** Never throws: a failure on any page returns the ids already collected. */
 async function listActiveSubscriptionIds(customerId: string, apiKey: string, apiBaseUrl: string) {
   const ids: string[] = []
   let url =
@@ -94,11 +65,7 @@ async function listActiveSubscriptionIds(customerId: string, apiKey: string, api
   return ids
 }
 
-/**
- * Cancels every active/trialing/past_due/paused subscription for a Paddle
- * customer, effective immediately. Best-effort: never throws. Account erasure
- * must never block on billing, so every failure here is logged and swallowed.
- */
+/** Best-effort, never throws: account erasure must never block on billing. */
 export async function cancelActiveSubscriptionsForCustomer(customerId: string): Promise<void> {
   const config = getPaddleConfig()
   if (!config.apiKey) {
@@ -127,9 +94,8 @@ export async function cancelActiveSubscriptionsForCustomer(customerId: string): 
         }
       )
       if (!cancelRes.ok) {
-        // The account row is already gone by the time this can fail (called
-        // from account erasure) — there is no state left to retry from, so
-        // this is the only signal a deleted-but-still-billed customer gets.
+        // The account row is already gone, so this log is the only signal of a
+        // deleted-but-still-billed customer.
         logger.warn('Paddle subscription cancel failed', {
           customerId,
           subscriptionId,

@@ -54,7 +54,6 @@ describe('createAnalyticsService', () => {
     const event = service.track('page_view')
     expect(event.metadata).toEqual({ source: 'newsletter' })
 
-    // Updating metadata must not mutate already-recorded events.
     service.setMetadata({ source: 'twitter' })
     expect(service.getEvents()[0].metadata).toEqual({ source: 'newsletter' })
     expect(service.track('page_view').metadata).toEqual({ source: 'twitter' })

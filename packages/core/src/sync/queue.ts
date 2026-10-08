@@ -1,22 +1,7 @@
-/**
- * Sync Queue Module
- *
- * Manages the offline-first queue for synchronization operations.
- * Operations are queued when offline and processed when back online.
- */
-
 import type { SyncOperation, SyncQueueStorage } from './types'
 
-/**
- * Maximum number of operations allowed in the queue
- * Prevents unbounded growth and potential DoS via storage exhaustion
- * (NFR: Zero tolerance for data loss - this is a safety limit, not a data loss mechanism)
- */
 const MAX_QUEUE_SIZE = 10000
 
-/**
- * Thrown by every mutator of a CLOSED queue (story 79.1). See `SyncQueue.close()`.
- */
 export class SyncQueueClosedError extends Error {
   constructor() {
     super('SyncQueue is closed: its sync service was destroyed, so it no longer writes')
@@ -24,10 +9,6 @@ export class SyncQueueClosedError extends Error {
   }
 }
 
-/**
- * Default storage implementation using localStorage
- * This provides persistence across page refreshes
- */
 class LocalStorageSyncQueueStorage implements SyncQueueStorage {
   private readonly storageKeyPrefix = 'bp-sync-queue'
 
@@ -40,7 +21,6 @@ class LocalStorageSyncQueueStorage implements SyncQueueStorage {
       }
       return JSON.parse(data) as SyncOperation[]
     } catch {
-      // If localStorage fails (e.g., in SSR or private mode), return empty array
       return []
     }
   }
@@ -50,8 +30,7 @@ class LocalStorageSyncQueueStorage implements SyncQueueStorage {
     try {
       localStorage.setItem(key, JSON.stringify(queue))
     } catch (error) {
-      // DO NOT silently fail - this violates NFR: Zero tolerance for data loss
-      // Throw the error so the caller can handle it appropriately
+      // Throw, never swallow: a failed save must not silently lose queued operations.
       throw new Error(
         `Failed to save sync queue to localStorage for user ${userId}: ${
           error instanceof Error ? error.message : String(error)
@@ -65,72 +44,29 @@ class LocalStorageSyncQueueStorage implements SyncQueueStorage {
     try {
       localStorage.removeItem(key)
     } catch (error) {
-      // Log error but don't throw - clearing is less critical than saving
       console.error(`Failed to clear sync queue from localStorage for user ${userId}:`, error)
     }
   }
 }
 
-/**
- * SyncQueue class manages the offline-first queue for sync operations
- */
 export class SyncQueue {
   private queue: SyncOperation[] = []
   private readonly userId: string
   private readonly storage: SyncQueueStorage
 
-  /**
-   * Tail of the mutation chain. Every method that reads `this.queue`, awaits a
-   * storage write, and then reassigns `this.queue` must run through
-   * `serialize()`, because that await is a window in which another caller can
-   * read the pre-write queue and clobber the result.
-   *
-   * This is not theoretical: callers routinely do NOT await. `syncEntityUpdate`
-   * (apps/web) returns `void` and only attaches `.catch()`, so a story-34.1b row
-   * swap enqueues twice in one synchronous turn and `useCategoryManager` loops N
-   * un-awaited updates. Before serialization a burst of 10,000 un-awaited adds
-   * left ONE operation in the queue — the rest were silently lost.
-   *
-   * Serializing only `add` would not be enough: the flush path calls
-   * `removeBatch` while the user may be adding, so an add racing a remove loses
-   * data just as readily. All mutators therefore share this one chain.
-   */
+  // Every read → await storage → reassign of `this.queue` must go through `serialize()`:
+  // callers often don't await, and interleaved mutators clobber each other's writes.
   private mutations: Promise<unknown> = Promise.resolve()
 
-  /** Set by `close()`. Never reset: a closed queue stays closed. */
   private closed = false
 
-  /**
-   * Create a new SyncQueue instance
-   * @param userId - The user ID for this queue
-   * @param storage - Optional persistent storage for the queue
-   */
   constructor(userId: string, storage?: SyncQueueStorage) {
     this.userId = userId
     this.storage = storage ?? new LocalStorageSyncQueueStorage()
   }
 
-  /**
-   * Run `work` after every previously queued mutation has settled, so no two
-   * mutations interleave between reading and reassigning `this.queue`.
-   *
-   * A rejected mutation (e.g. the size-limit throw, or a storage failure) must
-   * NOT poison the chain for later callers, so the tail absorbs both outcomes.
-   * The rejection is still delivered to that call's own caller.
-   *
-   * ⚠️ TWO HAZARDS FOR WHOEVER EDITS THIS NEXT — neither is a defect today.
-   *  1. **A storage write that never settles blocks every later mutation.**
-   *     Before serialization a hung `saveQueue` cost one operation; now it parks
-   *     the whole chain for the lifetime of the instance. There is deliberately
-   *     no timeout here (silently abandoning a write would reintroduce exactly
-   *     the memory/storage divergence this class is careful to avoid), so a
-   *     storage implementation added later MUST settle.
-   *  2. **`serialize` is NOT re-entrant.** If a serialized method ever awaits
-   *     another serialized method on the same instance, it waits on a link that
-   *     cannot run until it returns — a silent self-deadlock. No current method
-   *     does this; keep it that way, or hoist the shared work into a private
-   *     unserialized helper that both call.
-   */
+  /** A rejection doesn't poison the chain. Not re-entrant (a nested serialized call deadlocks),
+   * and a storage write that never settles blocks every later mutation. */
   private serialize<T>(work: () => Promise<T>): Promise<T> {
     const result = this.mutations.then(work, work)
     this.mutations = result.then(
@@ -140,49 +76,24 @@ export class SyncQueue {
     return result
   }
 
-  /**
-   * Stop this queue from ever writing again (story 79.1, FR129).
-   *
-   * Called by `SynchronizationService.destroy()`. A NEW service for the same user
-   * writes to the SAME storage key, and every write here is a whole-queue write
-   * from memory, so a torn-down queue that kept writing would overwrite what the
-   * new instance has queued since. A closed queue also cannot remove a refused op
-   * that nobody is listening for any more: the op stays persisted, and the next
-   * session sends it, is refused again and names it.
-   *
-   * After it, every mutator rejects with `SyncQueueClosedError` and changes
-   * neither storage nor memory. The check runs when the mutation RUNS inside
-   * `serialize()`, so one already waiting in the chain is refused too. ⚠️ Limit:
-   * a mutation already inside `await storage.saveQueue(...)` completes. That is
-   * not observable with `LocalStorageSyncQueueStorage`, whose write is synchronous.
-   *
-   * A synchronous flag flip, deliberately NOT a serialized mutation: `serialize`
-   * is not re-entrant (see its docblock). Readers keep working on the frozen
-   * memory.
-   */
+  /** A new service for the same user writes the same storage key, so a torn-down queue must
+   * never write again. A plain flag flip, not serialized: `serialize` isn't re-entrant. */
   close(): void {
     this.closed = true
   }
 
-  /** Whether `close()` has run. */
   isClosed(): boolean {
     return this.closed
   }
 
-  /** First statement of every serialized mutator (story 79.1). */
   private assertOpen(): void {
     if (this.closed) {
       throw new SyncQueueClosedError()
     }
   }
 
-  /**
-   * Initialize the queue by loading from storage.
-   *
-   * A closed queue resolves WITHOUT loading (story 79.1): it only reads, and
-   * rejecting would make `useSync` log a failure for a remount that is working as
-   * intended.
-   */
+  /** A closed queue resolves without loading: rejecting would make `useSync` log a failure for
+   * a normal remount. */
   async initialize(): Promise<void> {
     return this.serialize(async () => {
       if (this.closed) {
@@ -192,87 +103,56 @@ export class SyncQueue {
     })
   }
 
-  /**
-   * Add an operation to the queue
-   * @param operation - The sync operation to add
-   */
   async add(operation: SyncOperation): Promise<void> {
     return this.serialize(async () => {
       this.assertOpen()
-      // SECURITY FIX: Check queue size limit to prevent DoS via storage exhaustion
-      // (serialized, so this now sees the true length rather than a stale one)
       if (this.queue.length >= MAX_QUEUE_SIZE) {
         throw new Error(
           `Queue size limit (${MAX_QUEUE_SIZE}) exceeded. Please sync existing operations before adding more.`
         )
       }
 
-      // Persist BEFORE mutating in-memory state so a storage failure does not
-      // leave the in-memory queue diverged from what is persisted (which would
-      // cause the operation to be lost or duplicated on the next reload).
+      // Persist before mutating memory so a storage failure can't leave the two diverged.
       const newQueue = [...this.queue, operation]
       await this.storage.saveQueue(this.userId, newQueue)
       this.queue = newQueue
     })
   }
 
-  /**
-   * Add multiple operations to the queue
-   * @param operations - Array of sync operations to add
-   */
   async addBatch(operations: SyncOperation[]): Promise<void> {
     return this.serialize(async () => {
       this.assertOpen()
-      // SECURITY FIX: Check queue size limit to prevent DoS via storage exhaustion
       if (this.queue.length + operations.length > MAX_QUEUE_SIZE) {
         throw new Error(
           `Queue size limit (${MAX_QUEUE_SIZE}) would be exceeded. Current: ${this.queue.length}, Adding: ${operations.length}. Please sync existing operations before adding more.`
         )
       }
 
-      // Persist BEFORE mutating in-memory state (see add() for rationale).
       const newQueue = [...this.queue, ...operations]
       await this.storage.saveQueue(this.userId, newQueue)
       this.queue = newQueue
     })
   }
 
-  /**
-   * Get all operations in the queue
-   */
   getAll(): SyncOperation[] {
     return [...this.queue]
   }
 
-  /**
-   * Get operations by entity type
-   * @param entityType - The entity type to filter by
-   */
   getByEntityType(entityType: string): SyncOperation[] {
     return this.queue.filter((op) => op.entityType === entityType)
   }
 
-  /**
-   * Get operations by entity ID
-   * @param entityId - The entity ID to filter by (accepts string or number, normalized to string)
-   */
   getByEntityId(entityId: string | number): SyncOperation[] {
     const normalizedEntityId = String(entityId)
     return this.queue.filter((op) => op.entityId === normalizedEntityId)
   }
 
-  /**
-   * Remove an operation from the queue by ID
-   * @param operationId - The ID of the operation to remove
-   */
   async remove(operationId: string): Promise<boolean> {
     return this.serialize(async () => {
       this.assertOpen()
       const filtered = this.queue.filter((op) => op.id !== operationId)
 
       if (filtered.length < this.queue.length) {
-        // Persist BEFORE mutating in-memory state so a save failure leaves the
-        // in-memory and persisted queues consistent (no divergence on reload).
         await this.storage.saveQueue(this.userId, filtered)
         this.queue = filtered
         return true
@@ -282,10 +162,6 @@ export class SyncQueue {
     })
   }
 
-  /**
-   * Remove multiple operations from the queue
-   * @param operationIds - Array of operation IDs to remove
-   */
   async removeBatch(operationIds: string[]): Promise<number> {
     return this.serialize(async () => {
       this.assertOpen()
@@ -295,7 +171,6 @@ export class SyncQueue {
       const removedCount = this.queue.length - filtered.length
 
       if (removedCount > 0) {
-        // Persist BEFORE mutating in-memory state (see remove() for rationale).
         await this.storage.saveQueue(this.userId, filtered)
         this.queue = filtered
       }
@@ -304,51 +179,8 @@ export class SyncQueue {
     })
   }
 
-  /**
-   * Remove operations that must NOT be sent again, even when the removal cannot
-   * be persisted (story 75.3).
-   *
-   * ⚠️ This is the ONE deliberate exception to the persist-first rule every other
-   * mutator follows. `removeBatch` leaves memory untouched when `saveQueue`
-   * throws, which is right for data we must keep. For an op the server has
-   * permanently refused, however, the same behaviour made it replay every cycle.
-   * The removal fails the same way each time (quota, private mode, blocked site
-   * data), so the loop never ends, and the user is never told. Here memory drops
-   * the ops regardless, so every reader of this queue (the ready set, pull's LWW
-   * index, `hasPendingOperations`, the refused-create sweeps) stops seeing them at
-   * once.
-   *
-   * Use it ONLY for ops that can never be accepted, so that one resurrected from
-   * storage is refused again rather than applied. Three callers qualify today:
-   *   - ops the server refused on their own data (the sync service);
-   *   - ops for a row whose CREATE the server refused (the web layer's sweep).
-   *     The server has no such row, so an update or delete for it cannot land.
-   *     If one resurrects together with its create, 75.1's D1 sweeps it again
-   *     with that create. If one resurrects alone (only the create's removal was
-   *     persisted), it meets `update-delete` / `Entity not found`, which is the
-   *     pre-existing kept-queued path, not a silent write.
-   *   - ops that LOST pull's last-writer-wins to a strictly newer server row
-   *     (code review 75.4). Sending one would overwrite the value the pull just
-   *     applied. One that resurrects after a reload meets a full pull (the cursor
-   *     restarts at `null`), and the same newer row drops it again.
-   * Do not use it for ops that still have to reach the server.
-   *
-   * LIMIT, stated plainly: it cannot outlive a NEW queue built from storage while
-   * storage itself is refusing writes. That means a page reload, and also
-   * re-creating the sync service in the same tab (sign-out/in; `useSync`
-   * rebuilds it). Storage still holds the ops, so they are sent, refused and
-   * announced once more. It converges only on a successful write. `add`,
-   * `addBatch` and `dequeue` always write the whole in-memory queue; the removers
-   * (this one included) write it only when something matches. So storage catches
-   * up at the next successful write of either kind, and never while storage keeps
-   * refusing.
-   *
-   * Never throws for a storage failure; `persisted` reports it instead, and the
-   * error is logged here so a real bug is not mistaken for a quota error. A
-   * CLOSED queue is not a storage failure: it rejects with `SyncQueueClosedError`
-   * like every other mutator (story 79.1).
-   * @param operationIds - Array of operation IDs to discard
-   */
+  /** The one exception to persist-first: memory drops the ops even if the save fails, so a
+   * permanently refused op stops replaying. Use only for ops that can never be accepted. */
   async discardBatch(operationIds: string[]): Promise<{ removed: number; persisted: boolean }> {
     return this.serialize(async () => {
       this.assertOpen()
@@ -376,11 +208,6 @@ export class SyncQueue {
     })
   }
 
-  /**
-   * Remove operations by entity type and ID
-   * @param entityType - The entity type
-   * @param entityId - The entity ID
-   */
   async removeByEntity(entityType: string, entityId: string | number): Promise<number> {
     return this.serialize(async () => {
       this.assertOpen()
@@ -392,7 +219,6 @@ export class SyncQueue {
       const removedCount = this.queue.length - filtered.length
 
       if (removedCount > 0) {
-        // Persist BEFORE mutating in-memory state (see remove() for rationale).
         await this.storage.saveQueue(this.userId, filtered)
         this.queue = filtered
       }
@@ -401,51 +227,28 @@ export class SyncQueue {
     })
   }
 
-  /**
-   * Clear all operations from the queue, in storage AND in this instance's memory.
-   *
-   * ⚠️ Clearing a FRESH instance for a user whose live service is running empties
-   * storage only: the live instance still holds the ops in memory and writes
-   * them back on its next mutation (story 86.1). Clear through the live service
-   * (`SynchronizationService.clearQueue()`) whenever one exists.
-   */
+  /** On a fresh instance while a live service runs, this empties storage only and the live
+   * queue writes its ops back. Clear through the live service when one exists. */
   async clear(): Promise<void> {
     return this.serialize(async () => {
       this.assertOpen()
-      // Persist BEFORE mutating in-memory state, matching every other mutator.
-      // The previous order emptied memory first, so a throwing `clearQueue` left
-      // memory saying "empty" while storage still held the operations — and they
-      // resurrected on the next reload, which is the exact divergence the
-      // persist-first rule exists to prevent.
       await this.storage.clearQueue(this.userId)
       this.queue = []
     })
   }
 
-  /**
-   * Get the count of operations in the queue
-   */
   getCount(): number {
     return this.queue.length
   }
 
-  /**
-   * Check if the queue is empty
-   */
   isEmpty(): boolean {
     return this.queue.length === 0
   }
 
-  /**
-   * Get the next operation in the queue (FIFO)
-   */
   peek(): SyncOperation | undefined {
     return this.queue[0]
   }
 
-  /**
-   * Remove and return the next operation in the queue (FIFO)
-   */
   async dequeue(): Promise<SyncOperation | undefined> {
     return this.serialize(async () => {
       this.assertOpen()
@@ -455,8 +258,6 @@ export class SyncQueue {
 
       const operation = this.queue[0]
       const remaining = this.queue.slice(1)
-      // Persist BEFORE mutating in-memory state so a save failure does not drop
-      // the dequeued operation from memory while leaving it persisted.
       await this.storage.saveQueue(this.userId, remaining)
       this.queue = remaining
 
@@ -464,24 +265,14 @@ export class SyncQueue {
     })
   }
 
-  /**
-   * Get operations that are ready to be processed (sorted by timestamp)
-   * @param limit - Maximum number of operations to return
-   */
   getReadyOperations(limit?: number): SyncOperation[] {
-    // Sort by timestamp (oldest first) — except that profile CREATES go first.
-    // Every profile-scoped op names a profileId the server requires to exist, and
-    // a profile that was created while sync was not wired is only enqueued LATER
-    // (when it is found missing server-side), so plain timestamp order would send
-    // its dependents first and have each rejected as "Profile not found". A
-    // profile create depends on nothing, so moving it ahead is always safe.
+    // Profile creates go first: dependents need the profile to exist server-side, and a
+    // profile can be enqueued after them.
     const rank = (op: SyncOperation) =>
       op.entityType === 'userProfile' && op.type === 'create' ? 0 : 1
     const sorted = [...this.queue].sort((a, b) => rank(a) - rank(b) || a.timestamp - b.timestamp)
 
-    // Only apply a limit when one is explicitly provided. `limit === 0` must
-    // return an empty batch, not the whole queue (the previous `if (limit)`
-    // check treated 0 as "no limit").
+    // `limit === 0` must return an empty batch, not the whole queue.
     if (limit !== undefined) {
       return sorted.slice(0, Math.max(0, limit))
     }
@@ -489,19 +280,10 @@ export class SyncQueue {
     return sorted
   }
 
-  /**
-   * Filter operations by user ID
-   * @param userId - The user ID to filter by
-   */
   getByUser(userId: string): SyncOperation[] {
     return this.queue.filter((op) => op.userId === userId)
   }
 
-  /**
-   * Check if an entity has pending operations
-   * @param entityType - The entity type
-   * @param entityId - The entity ID
-   */
   hasPendingOperations(entityType: string, entityId: string | number): boolean {
     const normalizedEntityId = String(entityId)
     return this.queue.some(
@@ -510,10 +292,6 @@ export class SyncQueue {
   }
 }
 
-/**
- * Create a sync queue with localStorage persistence
- * @param userId - The user ID for this queue
- */
 export function createSyncQueue(userId: string): SyncQueue {
   return new SyncQueue(userId, undefined)
 }

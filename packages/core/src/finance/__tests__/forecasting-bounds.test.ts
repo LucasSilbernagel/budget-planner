@@ -1,29 +1,5 @@
-/**
- * `calculateFinancialForecast` — input bounds (story 77.1, FR124).
- *
- * ⚠️⚠️ WHY THE `years` CASES RUN IN A CHILD PROCESS, NOT IN THIS ONE.
- *
- * The engine is synchronous. Before this story a `years` of `Infinity` (or
- * `Number.MAX_VALUE`, or just `1e9`) spun its baseline loop for ever — story
- * 67.1's reviewer had to kill the probe. A vitest `testTimeout` is a timer on the
- * SAME event loop as the test, so it can never fire while that loop spins: an
- * in-process call does not fail, it wedges the whole run. The bound therefore
- * has to live in ANOTHER process, which `spawnSync`'s `timeout` kills with
- * SIGTERM (a busy JS loop cannot block a signal).
- *
- * The child cannot import the TypeScript source directly: CI runs Node 20, which
- * has no type stripping, `tsx` is not installed, and `dist/` is gitignored and
- * NOT built by the CI unit job. So `beforeAll` transpiles the engine's own
- * module chain with this package's `typescript` devDependency into CommonJS in a
- * temp directory (no `package.json` there, so `.js` is CommonJS and
- * extensionless `require('./netIncome')` resolves).
- *
- * ⚠️ If `forecasting.ts` ever imports a module outside `ENGINE_MODULES`, the
- * child's `require` fails with "Cannot find module": the child exits non-zero
- * and writes to stderr, so the `status` and `stderr` assertions below fail
- * rather than pass. The positive-anchor test (`years = 3` → RETURNED) catches it
- * too.
- */
+// The years cases run in a child: a sync infinite loop would block vitest's timeout.
+// The child gets transpiled CJS since CI's Node has no TS stripping and dist isn't built.
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -41,14 +17,7 @@ import {
 } from '../forecasting'
 
 const SRC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
-/**
- * Every module `forecasting.ts` reaches, transitively, as paths under `src/`.
- * The directory layout is kept in the temp dir so relative `require`s resolve.
- * Story 100.2 added the `services/balanceTracking` chain (the contribution
- * chokepoint, `monthlyContributionCents`); its `@budget-planner/db` import is
- * type-only and is erased by the transpile. Story 106.1 added
- * `finance/money-limits` (`balanceTracking`'s money bound).
- */
+// Transitive imports of forecasting.ts; a missing one makes the child fail to load.
 const ENGINE_MODULES = [
   'finance/forecasting',
   'finance/money-limits',
@@ -58,7 +27,6 @@ const ENGINE_MODULES = [
   'utils/balanceCalculations',
   'utils/uuid',
 ] as const
-/** Generous for a 30-iteration loop; a non-terminating one never finishes. */
 const CHILD_TIMEOUT_MS = 5000
 const RANGE_MESSAGE = 'Projection period must be a whole number of years from 1 to 30'
 
@@ -81,10 +49,7 @@ afterAll(() => {
   if (engineDir) rmSync(engineDir, { recursive: true, force: true })
 })
 
-/**
- * Runs the engine in a child with `years` given as a JS EXPRESSION (so
- * `Infinity` survives — JSON cannot carry it) and reports how it ended.
- */
+// `years` is passed as a JS expression because JSON cannot carry Infinity.
 function runEngineInChild(yearsExpression: string) {
   const script = `
     const { calculateFinancialForecast } = require(${JSON.stringify(
@@ -112,9 +77,6 @@ describe('years that never terminate on an unguarded engine (bounded harness)', 
     it(`refuses years = ${expression} instead of looping`, () => {
       const result = runEngineInChild(expression)
 
-      // ⚠️ The MECHANISM assertion comes first, so a RED run names it: on an
-      // unguarded engine the child is killed by the timeout, and this line is
-      // what the failure prints.
       expect(
         result.error?.message ?? result.signal ?? 'terminated',
         `engine did not terminate within ${CHILD_TIMEOUT_MS} ms: the years guard is missing`
@@ -128,8 +90,7 @@ describe('years that never terminate on an unguarded engine (bounded harness)', 
 
 describe('the bounded harness itself (positive anchor)', () => {
   it('lets a valid years run to completion in the child', () => {
-    // Without this, every case above could pass for a reason unrelated to the
-    // guard — e.g. the child failing to load the transpiled engine at all.
+    // Without this, the cases above could pass because the child failed to load.
     const result = runEngineInChild('3')
     expect(result.error?.message ?? result.signal ?? 'terminated').toBe('terminated')
     expect(result.stderr, 'child stderr').toBe('')
@@ -147,10 +108,7 @@ const DATA = {
 const FLAT: ForecastingScenario = { name: 'bounds', incomeGrowthRate: 0, expenseGrowthRate: 0 }
 
 describe('years the engine refuses (in-process)', () => {
-  // ⚠️ These are safe to run IN-PROCESS only because none of them loops for ever
-  // on an unguarded engine: 0, -1, 2.5 and NaN run at most two iterations, '10'
-  // compares as a number for ten, and 31 terminates. `Infinity`, `MAX_VALUE` and
-  // `1e9` belong ONLY in the child-process harness above.
+  // Safe in-process only because none of these loops forever on an unguarded engine.
   const refused: [string, unknown][] = [
     ["0 (an emptied field: Number('') is 0)", 0],
     ['-1', -1],
@@ -232,9 +190,6 @@ describe('one-time event amounts are validated like every other money term', () 
   }
 
   it('does not let a NaN event silently erase a VALID event in the same year', () => {
-    // Before 77.1 the reduce ended in `|| 0`, so NaN + 700000 = NaN became 0 and
-    // the valid 7,000.00 event vanished from year 1 with no error at all
-    // (measured: year-1 netIncome equal to the no-event baseline).
     expect(
       () =>
         withEvents([
@@ -253,8 +208,6 @@ describe('one-time event amounts are validated like every other money term', () 
     it(`rounds an event amount of ${amount} to ${cents} whole cent(s)`, () => {
       const baseline = withEvents([])
       const r = withEvents([{ year: 1, amount }])
-      // Differential, like the one-time-event tests in forecasting.test.ts: the
-      // event's whole contribution is exactly the rounded amount.
       expect(r.projection[0].savings - baseline.projection[0].savings).toBe(cents)
       expect(Number.isInteger(r.projection[0].savings)).toBe(true)
       expect(Number.isInteger(r.summary.endingNetWorth)).toBe(true)
@@ -263,8 +216,7 @@ describe('one-time event amounts are validated like every other money term', () 
 })
 
 describe('a projection whose balance overflows is refused, never returned as Infinity/NaN', () => {
-  // Found by 77.1's code review (P2): each event amount is finite, so the
-  // per-event `validateAmount` passes, but their SUM is not.
+  // Each event amount is finite, but their sum is not.
   const HUGE = 1.7e308
 
   it('two finite events whose sum overflows to Infinity', () => {
@@ -286,9 +238,7 @@ describe('a projection whose balance overflows is refused, never returned as Inf
   })
 
   it('a running balance that overflows across years, though every YEAR sums finite', () => {
-    // One event per year, so no single year's sum overflows; only the running
-    // balance can see it: year 1 lands at ~1.7e308, year 2 pushes it past
-    // MAX_VALUE. (Unguarded, a later negative pair then made it NaN.)
+    // One event per year, so only the running balance overflows.
     expect(
       () =>
         calculateFinancialForecast(

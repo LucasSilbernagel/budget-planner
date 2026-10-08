@@ -1,26 +1,4 @@
 // @vitest-environment node
-/**
- * Profile icon + order round trip against real PostgreSQL (PGlite) (story 98.1,
- * FR159, AC 3-4).
- *
- * Harness COPIED from `cross-device-sync.db.test.tsx` (a NEW file on purpose, so
- * story 99.2 can extend that one without a merge conflict): the REAL client engine
- * (ActiveSync → useSync → core SynchronizationService → syncBridge → stores)
- * against the REAL `/api/sync/batch` and `/api/sync/changes` route handlers, over
- * PGlite with the full committed migration chain. Only the session lookup and the
- * rate limiter are stubbed.
- *
- * What it proves, end to end:
- * - a profile created through `useProfileManager().createProfile` (the call the
- *   create dialog makes) with an icon lands in `userProfiles.icon`, for a chosen
- *   icon AND for the untouched 🏠 default; a second, fresh device pulls both back;
- * - an icon CHANGED later (the edit dialog's update path) reaches the server and
- *   the other device too (the "other direction": there is no clear-icon
- *   affordance, and `toServerPayload` omits `null` by design);
- * - the second device reads profiles oldest → newest by the SERVER's `createdAt`,
- *   including after a pulled rename of the oldest moved it to the END of the store
- *   array (remove-then-append in `applyOne`).
- */
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -73,7 +51,6 @@ let resolveProfileIcon: typeof import('@/lib/profile-appearance').resolveProfile
 
 // vitest runs with cwd = apps/web.
 const MIGRATIONS = resolve(process.cwd(), '../../packages/db/migrations')
-/** Every op `/api/sync/batch` did not apply. */
 const batchFailures: string[] = []
 
 async function routeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -117,7 +94,6 @@ beforeAll(async () => {
   }
   const db = drizzle(pg)
   holder.db = db
-  // An account with no profile row yet: the first pull backfills its default.
   await db.insert(users).values({
     id: USER,
     email: 'p981@example.test',
@@ -127,7 +103,7 @@ beforeAll(async () => {
   vi.stubGlobal('fetch', routeFetch)
 
   const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://app.test/' })
-  // ⚠️ `localStorage` MUST come from the JSDOM window (see the source harness).
+  // `localStorage` must come from the JSDOM window; the node environment has none.
   for (const key of [
     'window',
     'document',
@@ -142,7 +118,7 @@ beforeAll(async () => {
       key === 'window' ? dom.window : (dom.window as unknown as Record<string, unknown>)[key]
     )
   }
-  // Rebind every persisted store to the JSDOM storage (see the source harness).
+  // Rebind every persisted store to the JSDOM storage.
   const { createJSONStorage } = await import('zustand/middleware')
   const persisted = await Promise.all([
     import('@/stores/incomeStore').then((m) => m.useIncomeStore),
@@ -178,7 +154,6 @@ afterAll(async () => {
   await pg?.close()
 })
 
-/** A page reload: React tree and in-memory engine gone, localStorage kept. */
 function reload(): void {
   rtl.cleanup()
   resetSyncStore()
@@ -211,7 +186,6 @@ async function serverRows(): Promise<IconRow[]> {
   return result.rows
 }
 
-/** What a consumer reads: the `useProfiles()` hook, not the raw store array. */
 function readNames(): string[] {
   const { result, unmount } = rtl.renderHook(() => useProfiles())
   const names = result.current.map((p) => p.name)
@@ -221,7 +195,6 @@ function readNames(): string[] {
 
 describe('profile icon + order round trip (story 98.1, real engine, real routes, real PostgreSQL)', () => {
   it('icons chosen on create (and changed later) reach the server and another device, which reads oldest → newest', async () => {
-    // Device A signs in on a fresh browser; the first pull backfills the default.
     freshDevice()
     rtl.render(<ActiveSync userId={USER} />)
     await rtl.waitFor(
@@ -233,7 +206,6 @@ describe('profile icon + order round trip (story 98.1, real engine, real routes,
     )
     await sleep(500)
 
-    // A creates "Work" with a CHOSEN icon, exactly as the create dialog calls it.
     const manager = rtl.renderHook(() => useProfileManager())
     const work = manager.result.current.createProfile({
       name: 'Work',
@@ -246,7 +218,6 @@ describe('profile icon + order round trip (story 98.1, real engine, real routes,
       async () => expect((await serverRows()).map((r) => r.name)).toContain('Work'),
       { timeout: 15_000 }
     )
-    // Then "Travel" with the untouched pre-selection (🏠), strictly later.
     const travel = manager.result.current.createProfile({
       name: 'Travel',
       icon: '🏠',
@@ -259,7 +230,6 @@ describe('profile icon + order round trip (story 98.1, real engine, real routes,
       { timeout: 15_000 }
     )
 
-    // AC 3: the INSERT wrote both icons; the backfilled default has none.
     const rows = await serverRows()
     const defaultRow = rows[0] as IconRow
     expect(rows.map((r) => [r.name, r.icon])).toEqual([
@@ -270,7 +240,6 @@ describe('profile icon + order round trip (story 98.1, real engine, real routes,
     expect(rows.map((r) => r.id)).toEqual([defaultRow.id, work.id, travel.id])
     expect(batchFailures).toEqual([])
 
-    // Device B: brand-new browser, same account, pulls.
     freshDevice()
     rtl.render(<ActiveSync userId={USER} />)
     await rtl.waitFor(
@@ -280,20 +249,14 @@ describe('profile icon + order round trip (story 98.1, real engine, real routes,
     const onB = (id: string) => useProfileStore.getState().profiles.find((p) => p.id === id)
     expect(onB(work.id)?.icon).toBe('💼')
     expect(onB(travel.id)?.icon).toBe('🏠')
-    // D1: the never-iconed server default renders 🏠 on B.
     expect(onB(defaultRow.id)?.icon ?? null).toBeNull()
     expect(resolveProfileIcon(onB(defaultRow.id) as NonNullable<ReturnType<typeof onB>>)).toBe('🏠')
-    // AC 4: B reads by the SERVER's createdAt.
     expect(readNames()).toEqual([defaultRow.name, 'Work', 'Travel'])
 
-    // Put device B aside (its storage AND its in-memory profile state; one test
-    // process hosts every "device").
     await sleep(500)
     const bStorage = Object.entries({ ...localStorage }) as [string, string][]
     const { profiles: bProfiles, activeProfileId: bActive } = useProfileStore.getState()
 
-    // Another device (fresh) renames the OLDEST profile and changes Work's icon
-    // through the edit path.
     freshDevice()
     rtl.render(<ActiveSync userId={USER} />)
     await rtl.waitFor(
@@ -317,15 +280,12 @@ describe('profile icon + order round trip (story 98.1, real engine, real routes,
     )
     expect(batchFailures).toEqual([])
 
-    // Device B again: a reload with its own storage and state restored, so the
-    // pulled changes MERGE into its existing rows (`applyOne` remove-then-append).
     reload()
     localStorage.clear()
     for (const [key, value] of bStorage) {
       localStorage.setItem(key, value)
     }
     useProfileStore.setState({ profiles: bProfiles, activeProfileId: bActive })
-    // Precondition: B starts this pull in oldest-first ARRAY order.
     expect(useProfileStore.getState().profiles.map((p) => p.id)).toEqual([
       defaultRow.id,
       work.id,
@@ -339,8 +299,6 @@ describe('profile icon + order round trip (story 98.1, real engine, real routes,
       },
       { timeout: 15_000 }
     )
-    // Control: the pulled rename really moved the oldest away from the front of
-    // the store ARRAY, so the order assertion below is not vacuous.
     expect(useProfileStore.getState().profiles[0]?.id).not.toBe(defaultRow.id)
     expect(readNames()).toEqual(['Household', 'Work', 'Travel'])
   }, 90_000)

@@ -2,28 +2,7 @@ import { Link } from '@tanstack/react-router'
 import type React from 'react'
 import { useSetShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
 
-/**
- * The `/retirement` off-state (story 35.2, FR55, AC-5).
- *
- * Rendered in place of the planner when the user has hidden it in Settings.
- * This is the in-place gate pattern the app already uses for premium-locked
- * routes (`routes/forecasting.tsx` renders `<PremiumPrompt>` instead of its
- * content rather than redirecting) — chosen deliberately over a route guard:
- * there is no `beforeLoad`/`redirect()` anywhere in this app, a redirect would
- * bounce the user with no explanation, and it would turn the in-app doc link at
- * `content/docs/getting-started.md` into a dead end.
- *
- * ⚠️ The copy states plainly that nothing was deleted, because the control that
- * leads here sits next to "Clear local data" on the same Settings page and the
- * two must not be confused. It is also true in the strongest sense: the
- * planner's own saved plan (`retirementPlannerStore`, since story 44.1) and the
- * income/expense/balance stores it reads are never written by this feature, and
- * since story 71.1 (FR113) the expense form omits `endsBeforeRetirement` while
- * the question is hidden, so a marked expense keeps its mark.
- *
- * ⚠️ CORRECTED by story 71.1: this used to say "the planner holds no persisted
- * inputs at all". That stopped being true at story 44.1.
- */
+// The copy states nothing was deleted: the control that leads here sits next to 'Clear local data'.
 export function RetirementDisabledNotice(): React.ReactElement {
   const setShowRetirementPlanner = useSetShowRetirementPlanner()
 

@@ -10,15 +10,6 @@ import { act, renderWithProviders, screen, userEvent } from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EditProfileDialog } from '../edit-profile'
 
-/**
- * EditProfileDialog (story 54.1, FR77).
- *
- * Edits a profile's name and description through `useProfileManager().modifyProfile`.
- * Currency is deliberately NOT editable (Lucas, 2026-09-16): a profile's currency is
- * read for display nowhere but the card row story 54.5 removes, so the dialog never
- * renders it and never sends it — an existing profile keeps whatever it has.
- */
-
 const SESSION_USER_ID = '550e8400-e29b-41d4-a716-446655440000'
 
 const MAIN: ClientProfile = {
@@ -97,9 +88,7 @@ describe('EditProfileDialog (story 54.1)', () => {
       createdAt: BUSINESS.createdAt,
     })
     expect(saved?.updatedAt).not.toBe(BUSINESS.updatedAt)
-    // Editing never switches profiles (54.4 scopes every page by this id).
     expect(useProfileStore.getState().activeProfileId).toBe('main')
-    // The other profile is untouched.
     expect(storeProfile('main')).toEqual(MAIN)
     expect(onClose).toHaveBeenCalledTimes(1)
   })
@@ -242,9 +231,7 @@ describe('EditProfileDialog (story 54.1)', () => {
     ]
     expect(entityType).toBe('userProfile')
     expect(entityId).toBe('biz')
-    // ⚠️ `toServerPayload` omits a null/undefined description, and the server only
-    // SETs fields present — so an `undefined` here would leave the OLD description
-    // on the server and a pull would restore it on every device.
+    // undefined would be omitted from the payload, leaving the old description on the server.
     expect(payload).toHaveProperty('description', '')
     expect(payload).toMatchObject({ name: 'Business', currency: 'EUR', isDefault: false })
   })
@@ -255,7 +242,6 @@ describe('EditProfileDialog (story 54.1)', () => {
       const onClose = vi.fn()
       renderWithProviders(<EditProfileDialog profileId="biz" onClose={onClose} />)
 
-      // A pull replaces the profile under the open dialog.
       const renamed = {
         ...BUSINESS,
         name: 'Biz (renamed elsewhere)',
@@ -266,7 +252,6 @@ describe('EditProfileDialog (story 54.1)', () => {
       })
       const before = useProfileStore.getState().profiles
 
-      // The user never typed: Save must be a no-op, not a write of the stale name.
       await user.click(screen.getByRole('button', { name: 'Save Changes' }))
 
       expect(onClose).toHaveBeenCalledTimes(1)
@@ -275,7 +260,6 @@ describe('EditProfileDialog (story 54.1)', () => {
     })
 
     it('an unchanged Save closes even when the stored name already collides with another profile', async () => {
-      // Two devices can merge duplicate names (no server uniqueness constraint).
       useProfileStore.setState({
         profiles: [MAIN, { ...BUSINESS, name: 'Main Profile' }],
         activeProfileId: 'main',
@@ -291,9 +275,8 @@ describe('EditProfileDialog (story 54.1)', () => {
     })
 
     it('refuses to edit the un-synced placeholder profile while sync is active', async () => {
-      // A paid session before its first pull still holds the module-seeded
-      // default (`userId: ''`), which the server has never seen: an update for it
-      // is rejected and the next pull drops the placeholder, losing the rename.
+      // The bootstrap profile (userId '') is unknown to the server: an update is rejected
+      // and the next pull drops it, losing the rename.
       const placeholder: ClientProfile = { ...MAIN, id: 'placeholder', userId: '' }
       useProfileStore.setState({ profiles: [placeholder], activeProfileId: 'placeholder' })
       const handle = {
@@ -335,14 +318,6 @@ describe('EditProfileDialog (story 54.1)', () => {
     })
   })
 
-  /**
-   * Story 54.2 (FR78): the icon picker.
-   *
-   * `BUSINESS` has no stored icon, so its picker opens on the HASH-derived
-   * fallback — the emoji the card already shows. `profileIcon('biz')` is the
-   * honest way to name that here; hard-coding the emoji would pin the hash twice
-   * and `profile-appearance.test.ts` already owns that job.
-   */
   describe('icon picker (story 54.2)', () => {
     const hashIconFor = (id: string) => profileIcon(id)
 
@@ -375,11 +350,6 @@ describe('EditProfileDialog (story 54.1)', () => {
       expect(checked[0]).toHaveTextContent('✈️')
     })
 
-    /**
-     * ⚠️ THE STORY'S NAMED TRAP (AC-7). The dialog skips the write when nothing
-     * changed, and that check knew only about name and description. An icon-only
-     * edit would close silently, saving nothing, with every other test still green.
-     */
     it('saves when ONLY the icon changed', async () => {
       const user = userEvent.setup()
       const onClose = vi.fn()
@@ -394,22 +364,8 @@ describe('EditProfileDialog (story 54.1)', () => {
       expect(onClose).toHaveBeenCalledTimes(1)
     })
 
-    /**
-     * ⚠️ Decision 3. The picker opens pre-selected on the hash fallback, so if the
-     * updates object always carried `icon`, renaming a profile would silently
-     * freeze its hash avatar into the database as a deliberate choice — a write
-     * the user never made, and one that would then survive any future change to
-     * the hash. Assert the KEY's absence, not its value.
-     */
-    /**
-     * The companion to the test below, added by code review 54.2. That one uses
-     * the `BUSINESS` fixture, which has NO stored icon — so on its own it proves
-     * nothing about a profile that HAS one. This pins the real (and less
-     * comfortable) behaviour: `updateProfile` syncs `{ ...previous, ...updates }`,
-     * so a stored icon rides along on every later edit even when the user only
-     * touched the name. Pre-existing last-write-wins, logged in deferred-work.md —
-     * recorded here so the pair together describe what actually happens.
-     */
+    // Assert the key's absence: always sending icon would freeze the hash avatar as a choice.
+    // updateProfile syncs { ...previous, ...updates }, so a stored icon rides along on every edit.
     it('DOES carry an already-stored icon on the wire when only the name changed', async () => {
       useProfileStore.setState({ profiles: [MAIN, { ...BUSINESS, icon: '✈️' }] })
       const handle = {
@@ -427,7 +383,6 @@ describe('EditProfileDialog (story 54.1)', () => {
       await user.type(name, 'Renamed')
       await user.click(screen.getByRole('button', { name: 'Save Changes' }))
 
-      // The local updates object carried no icon — the stored value is untouched…
       expect(storeProfile('biz')?.icon).toBe('✈️')
       // …but the PAYLOAD carries it, because the bridge merges `previous`.
       const payload = handle.queueUpdate.mock.calls[0]?.[2]
@@ -478,7 +433,6 @@ describe('EditProfileDialog (story 54.1)', () => {
       expect(entityType).toBe('userProfile')
       expect(entityId).toBe('biz')
       expect(payload['icon']).toBe('📈')
-      // The existing fields still ride along.
       expect(payload).toMatchObject({ name: 'Business', currency: 'EUR', isDefault: false })
     })
 
@@ -488,7 +442,6 @@ describe('EditProfileDialog (story 54.1)', () => {
       renderWithProviders(<EditProfileDialog profileId="biz" onClose={onClose} />)
 
       const before = useProfileStore.getState().profiles
-      // Re-select the icon that is ALREADY selected: still "unchanged".
       await user.click(
         screen
           .getAllByRole('radio')
@@ -500,16 +453,6 @@ describe('EditProfileDialog (story 54.1)', () => {
       expect(onClose).toHaveBeenCalledTimes(1)
     })
 
-    /**
-     * AC-9. The free tier has no sync bridge at all, so `syncEntityUpdate` returns
-     * immediately and the pick is a purely local write. (The profiles PAGE is
-     * premium-gated, so a free user cannot reach this dialog in the product — this
-     * pins that the code path is nonetheless correct.)
-     *
-     * ⚠️ The "no bridge is registered" half is now ASSERTED (`isSyncActive()`),
-     * not merely assumed. Code review 54.2: this docblock previously claimed the
-     * test proved "no network call" while asserting only the store write.
-     */
     it('stores an icon locally on the free tier, with no sync bridge registered', async () => {
       const placeholder: ClientProfile = { ...MAIN, id: 'placeholder', userId: '' }
       useProfileStore.setState({ profiles: [placeholder], activeProfileId: 'placeholder' })
@@ -524,11 +467,6 @@ describe('EditProfileDialog (story 54.1)', () => {
       expect(isSyncActive()).toBe(false)
     })
 
-    /**
-     * The radiogroup keyboard contract (code review 54.2). Choosing `role="radio"`
-     * makes assistive tech tell the user to arrow between options, so the arrows
-     * must actually work. Nothing exercised the keyboard before this.
-     */
     describe('keyboard (WAI-ARIA radiogroup contract)', () => {
       const checkedName = () =>
         screen
@@ -536,10 +474,7 @@ describe('EditProfileDialog (story 54.1)', () => {
           .find((r) => r.getAttribute('aria-checked') === 'true')
           ?.getAttribute('aria-label')
 
-      // MEASURED, not assumed: 'biz' hashes to index 3 = 🎯 'Target', whose
-      // successor is 📈 'Chart'. (A first draft of this test guessed 'Lock' and
-      // went red — the same mistake the hash-literal pin in
-      // `profile-appearance.test.ts` exists to catch.)
+      // 'biz' hashes to 🎯 'Target'; its successor is 📈 'Chart'.
       it('ArrowRight moves to the next icon and selects it', async () => {
         const user = userEvent.setup()
         renderWithProviders(<EditProfileDialog profileId="biz" onClose={() => {}} />)
@@ -582,11 +517,6 @@ describe('EditProfileDialog (story 54.1)', () => {
         expect(options.filter((o) => o.getAttribute('tabindex') === '-1')).toHaveLength(7)
       })
 
-      /**
-       * A key the group does not handle must keep its default behaviour — the
-       * handler calls `preventDefault` only after it has matched. Escape still
-       * closing the modal is the observable proof.
-       */
       it('does not swallow Escape', async () => {
         const user = userEvent.setup()
         const onClose = vi.fn()
@@ -599,11 +529,6 @@ describe('EditProfileDialog (story 54.1)', () => {
       })
     })
 
-    /**
-     * Task 6.1's "Cancel/Escape write nothing" for an ICON change specifically —
-     * the code review found the existing dismissal tests only ever change the
-     * name, so none of them covered the picker.
-     */
     it.each([
       [
         'Cancel',

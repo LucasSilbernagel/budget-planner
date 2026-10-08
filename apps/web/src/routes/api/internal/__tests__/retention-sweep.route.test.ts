@@ -1,11 +1,3 @@
-/**
- * POST /api/internal/retention-sweep (Story 73.2, AC-1).
- *
- * The route is the authenticated HTTP shell over `runRetentionSweep`; the
- * sweep's own behaviour is proven against real PostgreSQL in
- * `server/retention/__tests__/sweep.db.test.ts`.
- */
-
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { runRetentionSweep, getRetentionSweepToken } = vi.hoisted(() => ({

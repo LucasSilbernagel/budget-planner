@@ -47,7 +47,6 @@ import { SortableColumnHeader, useSortHeaderAnnouncements } from './ui/SortableC
 import { TableScrollRegion } from './ui/TableScrollRegion'
 import { TableSortControl } from './ui/TableSortControl'
 
-// Frequency options for the select dropdown
 const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
   { value: 'weekly', label: 'Weekly' },
   { value: 'biweekly', label: 'Bi-weekly' },
@@ -55,12 +54,6 @@ const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
   { value: 'annually', label: 'Annually' },
 ]
 
-/**
- * Column labels for the sortable header cells and for the mobile sort control's
- * options, so the two can never drift apart (story 34.2; the mobile consumer
- * became `TableSortControl` in story 48.1).
- * Module scope, like every other component and constant in this layer.
- */
 const SORT_COLUMN_LABELS: Record<FlowSortKey, string> = {
   name: 'Name',
   amount: 'Amount',
@@ -70,76 +63,20 @@ const SORT_COLUMN_LABELS: Record<FlowSortKey, string> = {
 
 export function ExpensesPage() {
   const expenses = useExpenses()
-  // Amounts are stored in cents; the formatter respects the user's currency
-  // display preference (currency-less vs explicit symbols) from the store.
   const formatAmount = useFormattedAmount()
-  // Rows store a category uuid, never a name (story 30.4b). Resolving here
-  // means a rename is reflected in this table with no per-row edit.
-  //
-  // ⚠️ Called UNCONDITIONALLY, deliberately. Gating this behind the tier check
-  // would be a conditional hook call. It is a pure `useCategoryStore` read plus
-  // a `useMemo` — no network — so the cost on the free path is a wasted empty
-  // Map, not a request.
   const categoryNames = useCategoryNameMap()
-  // The Category column is Premium-only (story 33.3, FR57). Before this story it
-  // always rendered, showing an em-dash for every free-tier row — advertising a
-  // feature as a permanently empty column instead of a locked, discoverable one.
-  //
-  // ⚠️ `status.hasAccess` ALONE is the whole gate; do NOT write
-  // `!status.isLoading && status.hasAccess`.
-  //
-  // On the INITIAL unresolved state — the only unresolved state either page can
-  // reach, since neither calls `refresh()` — `hasAccess` is already `false`, as
-  // are the errored, free, past_due, canceled and signed-out states. So the
-  // `!isLoading` term buys nothing here.
-  //
-  // It would also be actively worse. `checkAccess()` sets `isLoading: true`
-  // while PRESERVING the previous `hasAccess` (`usePremiumAccess.ts:119`), so
-  // for an already-entitled user a re-check makes the state
-  // `{isLoading: true, hasAccess: true}` — which the `!isLoading &&` form would
-  // render as NO column, ripping it out mid-session. That state is unreachable
-  // from these two pages today; the point is that `hasAccess` alone stays
-  // correct if `refresh()` is ever wired in, and the two-term form does not.
-  //
-  // Consequence, stated rather than hidden: within a mount this gate is
-  // MONOTONE — the column can appear once (when a no-seed check resolves
-  // entitled) but can never disappear. On the seeded path production actually
-  // serves it never changes at all. See `deferred-work.md` for the measured
-  // no-seed late-appearance.
-  //
-  // ⚠️ This must stay CONDITIONAL JSX, never a CSS `hidden` class. `max-sm:` is
-  // a WIDTH query evaluated against the PAPER width when printing (Letter/A4
-  // both land above the 640px `sm` breakpoint), so a class-based hide would leak
-  // the column onto printed output. DOM absence carries through to print for
-  // free.
+  // hasAccess alone is the gate: a re-check keeps hasAccess while loading, so !isLoading && would drop the column.
+  // Conditional JSX, not a CSS hide: max-sm: is evaluated against paper width when printing.
   const { status: premiumStatus } = usePremiumAccess()
   const showCategoryColumn = premiumStatus.hasAccess
 
-  // Column sorting (story 34.2, FR61). A VIEW-level projection: it never writes
-  // `sortOrder` and never enqueues a sync operation, so clearing it returns the
-  // table to the default order untouched.
-  //
-  // ⚠️ The extractors are memoised on `categoryNames` because the Category key
-  // resolves a uuid through that map: renaming a category must re-sort this
-  // table even though no row changed. A projection memoised only on the rows
-  // would keep the stale order with no error anywhere.
+  // Memoised on categoryNames so renaming a category re-sorts the table.
   const sortExtractors = useMemo(
     () => createFlowSortExtractors(categoryNames, showCategoryColumn),
     [categoryNames, showCategoryColumn]
   )
 
-  /**
-   * The sortable columns offered by the mobile control (story 48.1), in header
-   * order.
-   *
-   * ⚠️⚠️ GATED ON `showCategoryColumn` — THE SAME EXPRESSION THE `<th>` USES,
-   * and not on `Object.entries(SORT_COLUMN_LABELS)`, which always contains
-   * `category`. `createFlowSortExtractors` OMITS the Category extractor for an
-   * unentitled user, so a Category option offered to a free user would write
-   * `{ key: 'category' }` to storage and `useTableSort`'s `effectiveState`
-   * would immediately degrade it back to manual order: a control that visibly
-   * does nothing, with no error anywhere to say why.
-   */
+  // Gated on showCategoryColumn: free users get no category extractor, so the option would silently do nothing.
   const sortColumns = useMemo<readonly { key: FlowSortKey; label: string }[]>(
     () => [
       { key: 'name', label: SORT_COLUMN_LABELS.name },
@@ -153,24 +90,14 @@ export function ExpensesPage() {
   )
   const sort = useTableSort('expenses', expenses, sortExtractors)
   const sortedRows = sort.rows
-  // Story 120.1 (FR188): the headers' "Sortable column, ..." description and the
-  // live region that announces a header click. The EFFECTIVE `sort.state`, so an
-  // orphaned Category sort reads as unsorted.
+  // The effective sort state, so an orphaned Category sort reads as unsorted.
   const sortA11y = useSortHeaderAnnouncements(
     sort.state
       ? { label: SORT_COLUMN_LABELS[sort.state.key], direction: sort.state.direction }
       : null
   )
-  // Currency preferences drive the input's symbol affordance and locale-aware
-  // grouping/parsing (story 14-3). In currency-less mode no symbol is shown and
-  // grouping uses the neutral en-US locale (per the store).
   const { mode, currency, locale } = useCurrencyPreferences()
 
-  // Monthly-normalized cents (story 32.1) — `PeriodTotal` denormalizes it to the
-  // selected period. `summarizeReadableRows` supplies the disclosure inputs from
-  // READABLE rows only: a raw total that never quotes excluded money, and a
-  // `conversionApplied` flag that asks whether conversion happened rather than
-  // inferring it from two totals being unequal (code review 32.1).
   const totalExpenses = useTotalExpenses()
   const {
     rawTotalCents: rawTotalExpenses,
@@ -179,43 +106,16 @@ export function ExpensesPage() {
   } = summarizeReadableRows(expenses)
   const { addExpense, updateExpense, deleteExpense } = useExpenseStore()
 
-  // State for the add/edit modal
   const [isModalOpen, setIsModalOpen] = useState(false)
-  // ⚠️ `string`, not `number`. `ClientExpense.id` has been a client-generated uuid
-  // since story 5-14; this state and `openEditModal` below kept the pre-uuid
-  // `number` typing, so `updateExpense(editingId, …)` — whose store signature is
-  // `(id: string, …)` — was a type error that only `any`-adjacent slack hid.
-  // Runtime was always correct: JS passed the uuid straight through.
   const [editingId, setEditingId] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
   const [frequency, setFrequency] = useState<Frequency>('monthly')
-  // `null` is a first-class, always-valid value here (AC-1): leaving a row
-  // uncategorized must stay possible, so this field is never `required`.
   const [categoryId, setCategoryId] = useState<string | null>(null)
-  // Story 65.2 (FR101). Unticked is a permanently valid state, so this joins
-  // neither `computeErrors` nor the `FieldName` union below.
   const [endsBeforeRetirement, setEndsBeforeRetirement] = useState(false)
-  // Story 71.1 (FR113): with the retirement planner turned off in Settings, the
-  // form stops asking about retirement and the list stops badging rows for it.
-  // The stored marks are KEPT — see `handleSubmit` for how a hidden field
-  // leaves them untouched.
-  //
-  // ⚠️ No pre-paint rule is needed here, unlike the nav's `[data-hide-retirement]`.
-  // The rows render only once `hydrated` (below) is true, which trails
-  // `StoreHydration`. The modal opens only from a click handler, and although the
-  // "+ Add Expense" button itself is NOT behind `hydrated`, React attaches its
-  // `onClick` only when the route subtree hydrates — structurally after the
-  // root-pass rehydrate (see `hooks/useStoresHydrated`). So neither surface can
-  // show this store's pre-hydration default to a user who turned it off.
-  // (Corrected in code review 71.1: this used to credit the modal's safety to the
-  // `hydrated` gate, which the button does not sit behind.)
+  // No pre-paint rule needed: rows render only once hydrated, and the modal's handler attaches after rehydrate.
   const showRetirementPlanner = useShowRetirementPlanner()
 
-  // Inline field-validation error state (replaces browser alert() popups).
-  // Mirrors the app's canonical inline-validation pattern: an errors map plus
-  // hasFieldError/getFieldError helpers and re-validate-on-change after the
-  // first submit attempt.
   type FieldName = 'name' | 'amount'
   const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({})
   const [submitAttempted, setSubmitAttempted] = useState(false)
@@ -223,8 +123,6 @@ export function ExpensesPage() {
   const hasFieldError = (field: FieldName): boolean => Boolean(errors[field])
   const getFieldError = (field: FieldName): string | undefined => errors[field]
 
-  // Compute inline validation errors from the current field values, preserving
-  // the exact conditions and messages that previously drove the alert() popups.
   const computeErrors = useCallback((): Partial<Record<FieldName, string>> => {
     const next: Partial<Record<FieldName, string>> = {}
     if (!name.trim()) {
@@ -234,8 +132,7 @@ export function ExpensesPage() {
     if (amountInCents <= 0) {
       next.amount = 'Please enter a valid positive amount'
     } else if (exceedsMoneyLimit(amountInCents)) {
-      // Story 106.1 (FR174): above the int32 sync limit the row would be saved
-      // here and silently refused at enqueue, so refuse it before saving.
+      // Above the int32 sync limit the row would save locally but be refused at enqueue.
       next.amount = moneyLimitMessage({ mode, currency, locale })
     }
     return next
@@ -246,37 +143,30 @@ export function ExpensesPage() {
     setSubmitAttempted(false)
   }
 
-  // Reset form state when modal opens or editingId changes
   useEffect(() => {
     if (isModalOpen) {
       if (editingId === null) {
-        // Adding new: reset all fields
         setName('')
         setAmount('')
         setFrequency('monthly')
         setCategoryId(null)
         setEndsBeforeRetirement(false)
       }
-      // Editing: fields are set by openEditModal
     }
   }, [isModalOpen, editingId])
 
-  // After the first submit attempt, re-validate as the user edits so errors
-  // clear on correction (AC-3).
   useEffect(() => {
     if (submitAttempted) {
       setErrors(computeErrors())
     }
   }, [submitAttempted, computeErrors])
 
-  // Open modal for adding new expense
   const openAddModal = () => {
     setEditingId(null)
     clearErrors()
     setIsModalOpen(true)
   }
 
-  // Open modal for editing existing expense
   const openEditModal = (source: {
     id: string
     name: string
@@ -287,38 +177,18 @@ export function ExpensesPage() {
   }) => {
     setEditingId(source.id)
     setName(source.name)
-    // Seed the field the same way the blur re-echo does, so an edit opens on a
-    // grouped, locale-aware value the locale-aware parser reads back identically.
-    // A bare `.toString()` emits ungrouped en-US-shaped text (and can produce
-    // scientific notation or long float tails) that a comma-decimal locale misreads.
+    // Seeded like the blur re-echo: toString() can emit ungrouped or exponent text a comma-decimal locale misreads.
     setAmount(formatForInputDisplay(source.amount, locale))
     setFrequency(source.frequency)
-    // ⚠️ Load-bearing (code review 30.4b). `closeModal` always resets this to
-    // null, so without seeding it here the edit form opens on "Uncategorized"
-    // for a categorized row and `handleSubmit` — which sends `categoryId`
-    // unconditionally — writes null back. Editing an amount would silently
-    // destroy the row's category, with the picker showing no sign of it.
+    // Must be seeded: handleSubmit always sends categoryId, so an unseeded edit would wipe the category.
     setCategoryId(source.categoryId ?? null)
-    // ⚠️ Load-bearing for the SAME reason as `categoryId` directly above, and the
-    // higher-traffic case: while the control is SHOWN, `handleSubmit` sends this
-    // field on every save, so without seeding it here, editing only the AMOUNT of
-    // a marked expense would silently un-mark it. (While the planner is off,
-    // story 71.1 omits the field from the save, so this seed cannot reach the row
-    // — mutation M3 in that story left every test green. It is still load-bearing
-    // for the planner-on case, so do not gate it on visibility.) `=== true` rather than truthy: rows persisted before
-    // 65.2 have no key, and localStorage is user-editable.
-    //
-    // ⚠️ CORRECTED BY CODE REVIEW 65.2: an earlier version of this comment said
-    // "the only visible consequence is a number changing on a different page".
-    // That was false in the same commit that wrote it — the row badge below makes
-    // the loss visible HERE too. The warning stands; its stated blast radius did
-    // not, and understating a defect's visibility is how it gets deprioritised.
+    // Must be seeded too: while shown, every save sends this field, so an unseeded edit would un-mark the row.
+    // === true because older rows lack the key.
     setEndsBeforeRetirement(source.endsBeforeRetirement === true)
     clearErrors()
     setIsModalOpen(true)
   }
 
-  // Close modal
   const closeModal = () => {
     setIsModalOpen(false)
     setEditingId(null)
@@ -330,22 +200,14 @@ export function ExpensesPage() {
     clearErrors()
   }
 
-  // Loading state to prevent duplicate submissions
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Delete confirmation state (themed dialog replaces browser confirm()). The
-  // "Add" button is a stable focus target after a confirmed delete (AC-5).
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const addButtonRef = useRef<HTMLButtonElement>(null)
   const pendingExpense = expenses.find((e) => e.id === pendingDeleteId)
   const pendingDeleteName = pendingExpense?.name ?? ''
 
-  // Story 113.1 (FR181): the dialog names every debt that has this expense as
-  // its payment. ⚠️ ALL balance rows, not `useBalanceEntries()`: that hook is
-  // active-profile scoped, but deleting an unscoped expense unlinks a debt in
-  // any profile, so that debt must be named too (AC 4). "Linked" is the core
-  // resolver's rule (debt rows only), never a hand-rolled id match. Delete does
-  // not touch the debt (102.1 D8): this is information only.
+  // All balance rows, not the profile-scoped hook: deleting an expense unlinks a debt in any profile.
   const allBalanceEntries = useBalanceStore((state) => state.entries)
   const pendingDeleteDebtSentence = useMemo(() => {
     if (pendingExpense === undefined) return null
@@ -353,7 +215,6 @@ export function ExpensesPage() {
     let unnamedCount = 0
     for (const entry of allBalanceEntries) {
       if (resolveDebtPaymentExpense(entry, [pendingExpense]) === null) continue
-      // Untrusted store data (AC 6): a non-string or blank name is unnamed.
       const name = typeof entry.name === 'string' ? entry.name.trim() : ''
       if (name === '') unnamedCount += 1
       else names.push(name)
@@ -361,14 +222,12 @@ export function ExpensesPage() {
     return debtLinkSentence(names, unnamedCount)
   }, [allBalanceEntries, pendingExpense])
 
-  // Handle form submission (add or update)
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setSubmitAttempted(true)
     setIsSubmitting(true)
 
     try {
-      // Validate all fields inline; block submission if any errors exist.
       const validationErrors = computeErrors()
       setErrors(validationErrors)
       if (Object.keys(validationErrors).length > 0) {
@@ -380,24 +239,8 @@ export function ExpensesPage() {
         amount: parseFromInput(amount, locale),
         frequency,
         categoryId,
-        // Story 65.2 (FR101): sent on EVERY save while the control is shown, like
-        // every other field here. An `if (endsBeforeRetirement)` would make the
-        // untick unreachable —
-        // `updateExpense` merges `{...previous, ...updates}`, so an omitted key
-        // leaves the old `true` in place and the box would re-tick itself on the
-        // next open. Same partial-write hazard the sync payload documents.
-        //
-        // Story 71.1 (FR113): while the planner is off the control is hidden and
-        // the key is OMITTED, deliberately, so a hidden field writes nothing:
-        // `updateExpense` merges, so an edit keeps the stored mark exactly, and
-        // `toClientExpense` stamps `false` on an add. The sync push is unaffected:
-        // `syncEntityUpdate` is handed the MERGED row and `toServerPayload` emits
-        // the STORED boolean, so the wire still carries the kept mark. Sending the seeded state
-        // instead would also preserve the mark today, but only as a side effect of
-        // `openEditModal`'s seeding — and it would write a STALE value back if a
-        // sync pull changed the row while the modal was open. Do not gate the
-        // seeding or the resets on visibility; with the key omitted they cannot
-        // reach the row, and they must stay intact for when the planner is on.
+        // Sent on every save while shown: updateExpense merges, so an omitted key would keep the old true.
+        // Omitted while the planner is off, so a hidden field writes nothing.
         ...(showRetirementPlanner ? { endsBeforeRetirement } : {}),
       }
 
@@ -413,12 +256,10 @@ export function ExpensesPage() {
     }
   }
 
-  // Open the themed delete confirmation for an expense
   const handleDelete = (id: string) => {
     setPendingDeleteId(id)
   }
 
-  // Confirm and execute the pending delete
   const confirmDelete = () => {
     if (pendingDeleteId !== null) {
       deleteExpense(pendingDeleteId)
@@ -426,25 +267,14 @@ export function ExpensesPage() {
     }
   }
 
-  // Story 38.2 (UX-DR43): three states — pending, resolved-with-data,
-  // resolved-empty. See `hooks/useStoresHydrated` for why this is a mount gate
-  // and NOT `persist.hasHydrated()`.
   const storesHydrated = useStoresHydrated()
-  // Story 53.1 (AC-4): a paid session's first-EVER cross-device pull on this
-  // device can still be in flight after stores hydrate. `useIsInitialSyncPending`
-  // combines a device-level "has this device ever synced" flag with this
-  // page's own emptiness check — either one being false means an established
-  // user sees no different behavior (AC-6).
   const isInitialSyncPending = useIsInitialSyncPending(expenses.length === 0)
   const hydrated = storesHydrated && !isInitialSyncPending
 
   return (
     <div className="min-h-screen surface-sunken p-4 sm:p-8">
       <div className="max-w-4xl mx-auto">
-        {/* Story 38.2, AC-8: ONE announced region per page. Every skeleton on
-            this page is `aria-hidden`, so without this a screen reader gets a
-            heading followed by nothing; one region per skeleton would announce
-            several times instead. */}
+        {/* One announced region per page: every skeleton is aria-hidden. */}
         {!hydrated && <LoadingStatus />}
         <header className="mb-8">
           <div>
@@ -454,13 +284,8 @@ export function ExpensesPage() {
         </header>
 
         <main className="space-y-6">
-          {/* Stats Card */}
           <section className="surface rounded-lg shadow-md p-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              {/* Story 32.1 (FR58): this figure used to be a raw sum of amounts
-                  across mixed frequencies, so it disagreed with the Overview on
-                  the same data. It is now the store's monthly-normalized total,
-                  re-expressed at the shared app-wide duration. */}
               <PeriodTotal
                 label="Total Expenses"
                 monthlyTotalCents={totalExpenses}
@@ -482,15 +307,10 @@ export function ExpensesPage() {
             </div>
           </section>
 
-          {/* Expenses List */}
           <section className="surface rounded-lg shadow-md p-6">
             <h2 className="text-xl font-semibold text-subheading mb-6">Your Expenses</h2>
 
-            {/* Story 38.2 (UX-DR43): pending is a THIRD state. Before this gate
-                the server sent a returning user "No expenses recorded yet" — the store has not
-                rehydrated, so the list is empty and the page said so with
-                confidence. The skeleton mirrors this card's exact box model, so
-                a user who genuinely has nothing sees no shift when it resolves. */}
+            {/* The skeleton mirrors this card's box model, so resolving causes no layout shift. */}
             {!hydrated ? (
               <EmptyStateSkeleton testId="expenses-list-skeleton" />
             ) : expenses.length === 0 ? (
@@ -500,31 +320,12 @@ export function ExpensesPage() {
               </div>
             ) : (
               <>
-                {/* The mobile sort control (story 48.1, UX-DR53).
-
-                    ⚠️ This REPLACES `TableSortNotice`, and it renders
-                    UNCONDITIONALLY where the notice rendered only while a sort
-                    was active. Story 34.2's ratified decision 1 scoped sorting
-                    to >= 640px because the `<thead>` is `display: none` below
-                    `sm`, so the notice could only ever EXPLAIN and ESCAPE a sort
-                    a desktop interaction had already started. This control is
-                    the first affordance that can START one on a phone, and
-                    manual order is precisely the state it has to be reachable
-                    in. `deferred-work.md`'s "Sorting cannot be STARTED below
-                    640px" is closed by this story.
-
-                    It drives `sort.select`, the same store slice the headers
-                    drive through `sort.toggle` — one source of truth, so a sort
-                    chosen on a phone and one chosen on a desktop cannot
-                    disagree, and it persists exactly as a header click does. */}
                 <TableSortControl
                   label="Sort expenses"
                   columns={sortColumns}
                   state={sort.state}
                   onSelect={sort.select}
                 />
-                {/* The table's scroll region: a named landmark, and a Tab stop only
-                    while it scrolls (story 93.1; see `TableScrollRegion`). */}
                 <TableScrollRegion
                   label="Expenses table"
                   className={`${RESPONSIVE_WRAPPER_CLASS} ${RESPONSIVE_SCROLL_SHADOW_CLASS}`}
@@ -532,11 +333,7 @@ export function ExpensesPage() {
                   <table className={RESPONSIVE_TABLE_CLASS}>
                     <thead className={RESPONSIVE_THEAD_CLASS}>
                       <tr>
-                        {/* Sortable headers (story 34.2). Each `<th>`'s text
-                          content stays EXACTLY the column label — the direction
-                          indicator is an aria-hidden <svg> — because
-                          `category-assignment.test.tsx` pins these as an exact
-                          array on both pages. */}
+                        {/* Header text stays exactly the label (the indicator is aria-hidden); tests pin it. */}
                         <SortableColumnHeader
                           label={SORT_COLUMN_LABELS.name}
                           ariaSort={sort.ariaSort('name')}
@@ -558,11 +355,7 @@ export function ExpensesPage() {
                           onActivate={sortA11y.markActivated}
                           onToggle={() => sort.toggle('frequency')}
                         />
-                        {/* Premium-only (story 33.3). Gated on the SAME expression
-                          as the matching <td> below — if the two ever disagree
-                          every column shifts at >= 640px. Story 34.2 reuses that
-                          one identifier for the sort target too, so a column a
-                          free user cannot see is not offered as a sort key. */}
+                        {/* Same expression as the matching <td>, or every column shifts. */}
                         {showCategoryColumn && (
                           <SortableColumnHeader
                             label={SORT_COLUMN_LABELS.category}
@@ -572,8 +365,7 @@ export function ExpensesPage() {
                             onToggle={() => sort.toggle('category')}
                           />
                         )}
-                        {/* Not sortable: no button, and no `aria-sort` at all
-                          (`none` would advertise a sortable column). */}
+                        {/* No aria-sort at all: none would advertise a sortable column. */}
                         <th className={RESPONSIVE_HEADER_CELL_RIGHT_CLASS}>Actions</th>
                       </tr>
                     </thead>
@@ -582,38 +374,10 @@ export function ExpensesPage() {
                         <tr key={expense.id} className={RESPONSIVE_ROW_CLASS}>
                           <td className={RESPONSIVE_CELL_CLASS}>
                             <FieldLabel>Name</FieldLabel>
-                            {/* Story 96.1 (FR156): ONE wrapper around the name and
-                                its marker. Below `sm` the cell is a flex row
-                                (`RESPONSIVE_CELL_CLASS`, `ResponsiveTable.tsx`), so
-                                as separate children the marker sat BESIDE the name,
-                                both squeezed onto two lines. Wrapped, the pair is a
-                                single flex item and the inline marker drops below
-                                the block name. At >= 640px a block wrapper in a
-                                table cell lays out exactly as before. */}
+                            {/* One wrapper so the name and marker stay a single flex item below sm. */}
                             <div>
                               <div className="text-sm font-medium text-heading">{expense.name}</div>
-                              {/* Story 65.2 (FR101): marked rows are distinguishable
-                                  without opening the form.
-
-                                  ⚠️ INSIDE the Name cell, NOT a new column, and that
-                                  is a hard constraint rather than a preference:
-                                  `category-assignment.test.tsx:615,636` pins the
-                                  header array EXACTLY, inside a loop over both this
-                                  page and IncomePage x four entitlement states, each
-                                  followed by an `expectColumnParity` <th>/<td> count
-                                  check. A sixth column breaks eight tests on a page
-                                  this story does not otherwise touch — and the
-                                  Category column is already premium-gated, so the
-                                  count legitimately varies by tier.
-
-                                  ⚠️ Carries TEXT, not colour alone (WCAG 1.4.1), and
-                                  `=== true` rather than truthy because pre-65.2 rows
-                                  have no key and localStorage is user-editable.
-
-                                  Story 71.1 (FR113): hidden while the planner is off —
-                                  the badge names retirement just as the form's help
-                                  text does. The stored mark is untouched, so the badge
-                                  returns on the same rows when the planner does. */}
+                              {/* Inside the Name cell, not a new column: tests pin the header array exactly. Text, not colour alone. */}
                               {showRetirementPlanner && expense.endsBeforeRetirement === true && (
                                 <span
                                   className="mt-1 px-2 py-0.5 inline-flex text-xs leading-5 font-medium rounded-full bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
@@ -626,9 +390,6 @@ export function ExpensesPage() {
                           </td>
                           <td className={RESPONSIVE_CELL_CLASS}>
                             <FieldLabel>Amount</FieldLabel>
-                            {/* Story 91.1: wraps only between digit groups below `sm`
-                              (RESPONSIVE_AMOUNT_CLASS). Inside the page's `hydrated`
-                              branch, as `GroupedAmount` requires. */}
                             <div className={`text-sm text-muted ${RESPONSIVE_AMOUNT_CLASS}`}>
                               <GroupedAmount text={formatAmount(expense.amount)} />
                             </div>
@@ -639,9 +400,6 @@ export function ExpensesPage() {
                               {expense.frequency}
                             </span>
                           </td>
-                          {/* Removing this <td> removes the desktop cell AND the
-                            mobile card field in one edit — below `sm` the same
-                            cell becomes the labelled row via <FieldLabel>. */}
                           {showCategoryColumn && (
                             <td className={RESPONSIVE_CELL_CLASS}>
                               <FieldLabel>Category</FieldLabel>
@@ -654,8 +412,6 @@ export function ExpensesPage() {
                           )}
                           <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
                             <FieldLabel>Actions</FieldLabel>
-                            {/* `p-1` is the DESKTOP tap target — see RESPONSIVE_ACTION_BUTTON_CLASS,
-                                which owns the full rationale (story 50.1). */}
                             <div className={RESPONSIVE_ACTIONS_GROUP_CLASS}>
                               <button
                                 type="button"
@@ -680,15 +436,12 @@ export function ExpensesPage() {
                     </tbody>
                   </table>
                 </TableScrollRegion>
-                {/* Story 120.1: the header descriptions + sort live region. LAST
-                    children and outside the table (`useSortHeaderAnnouncements`). */}
                 {sortA11y.nodes}
               </>
             )}
           </section>
         </main>
 
-        {/* Add/Edit Modal */}
         <Modal isOpen={isModalOpen} onClose={closeModal} labelledBy="expense-modal-title">
           <div className="flex justify-between items-center mb-6">
             <h3 id="expense-modal-title" className="text-lg font-medium text-heading">
@@ -748,16 +501,7 @@ export function ExpensesPage() {
                   {getFieldError('name')}
                 </p>
               )}
-              {/* Story 36.3 (UX-DR40). A mortgage is the one entry that belongs
-                  in two places at once: the payment is an expense, the amount
-                  still owed is a Debt on the Balance Tracking page. Plain prose, not a
-                  `<Link>` — this page is rendered without a router in three test
-                  suites, and a hint is not worth rewiring them. Not wired via
-                  `aria-describedby` either: every such attribute in this app is
-                  a single id, and joining one here breaks an exact-match
-                  assertion. `text-muted` (not `text-faint`) because `text-faint`
-                  was then gray-400, 2.54:1 on the white modal card, below WCAG
-                  AA (story 115.2 has since made the two tokens equal). */}
+              {/* Plain prose, not a <Link>: this page renders without a router in several test suites. */}
               <p className="mt-1 text-xs text-muted" data-testid="expense-mortgage-hint">
                 Paying off a loan or mortgage? Enter the payment here, and the amount still owed on
                 the Balance Tracking page.
@@ -833,31 +577,7 @@ export function ExpensesPage() {
               idPrefix="expense"
             />
 
-            {/* Story 65.2 (FR101). Markup follows the sibling boolean flag at
-                `BalancePage.tsx:1131-1157` — `flex items-start gap-2`, `mt-0.5`
-                on the box, help wired through `aria-describedby`.
-
-                ⚠️ The STORED name is `endsBeforeRetirement`, naming the RULE and
-                not the case, and the label asks the same general question. The
-                UX evaluation (2026-09-22) moved this control here from the Debt
-                row precisely because the general form is the valuable one: a
-                commute that ends, daycare that ends, tuition that ends and a
-                mortgage that ends are one question, and a debt-shaped control
-                would answer only one of them while quietly implying the other
-                three do not count. See `BalancePage.tsx:1117-1129` for what it
-                costs to get this name wrong.
-
-                ⚠️ The copy deliberately avoids "must". "Must pay off before
-                retirement" was the original proposal and was rejected (§c of the
-                evaluation): *must* is a commitment, which invites "am I on track
-                to?" — a question needing amortization this app does not have
-                (`calculateDebtMetrics` is dormant, `useDebtEntries` has zero
-                callers). What the planner needs is a prediction, so the copy
-                states one.
-
-                Story 71.1 (FR113): the whole block — checkbox, label AND help —
-                is not rendered while the planner is off. The help ends "The
-                retirement planner uses it…", so it cannot be left behind. */}
+            {/* Copy avoids "must": the planner needs a prediction, not a commitment. */}
             {showRetirementPlanner && (
               <div>
                 <div className="flex items-start gap-2">
@@ -901,7 +621,6 @@ export function ExpensesPage() {
           </form>
         </Modal>
 
-        {/* Delete confirmation */}
         <ConfirmDialog
           isOpen={pendingDeleteId !== null}
           onConfirm={confirmDelete}

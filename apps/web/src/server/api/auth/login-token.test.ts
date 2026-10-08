@@ -1,21 +1,5 @@
-/**
- * Magic-link token service tests (Story 5-16, Task 1 — AC-1, AC-2)
- *
- * Security-critical invariants verified here:
- *  - tokens are CSPRNG, URL-safe, and high-entropy (no two collide);
- *  - only the SHA-256 HASH is ever persisted — the raw token never touches the DB;
- *  - consume is single-use + TTL-bounded: the UPDATE is gated on
- *    `consumedAt IS NULL AND expiresAt > now`, and a userId is returned ONLY when
- *    a row was actually updated (so expired/consumed/unknown all yield null).
- *
- * The Drizzle `db` is mocked so these run with no database (NFR8) while still
- * exercising the exact query shape the production code issues.
- */
-
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// `vi.mock` is hoisted above module-level consts, so the mock fns must be built
-// inside `vi.hoisted` to be available when the factory runs.
 const {
   insertValues,
   updateReturning,
@@ -110,17 +94,14 @@ describe('createLoginToken', () => {
     }
 
     expect(inserted.userId).toBe('user-abc')
-    // The raw token is returned to the caller (for the email link) but the stored
-    // value is its hash — a DB leak cannot be replayed as a login link.
+    // Only the hash is stored, so a DB leak cannot be replayed as a login link.
     expect(inserted.tokenHash).toBe(hashToken(raw))
     expect(inserted.tokenHash).not.toBe(raw)
     expect(inserted.consumedAt ?? null).toBeNull()
 
-    // TTL is short and in the future.
     const ttl = inserted.expiresAt.getTime()
     expect(ttl).toBeGreaterThanOrEqual(before + LOGIN_TOKEN_TTL_MS)
     expect(ttl).toBeLessThanOrEqual(after + LOGIN_TOKEN_TTL_MS)
-    // ≤15 minutes per AC-2.
     expect(LOGIN_TOKEN_TTL_MS).toBeLessThanOrEqual(15 * 60 * 1000)
   })
 })
@@ -131,8 +112,6 @@ describe('consumeLoginToken (atomic single-use)', () => {
     const userId = await consumeLoginToken('raw-token')
     expect(userId).toBe('user-xyz')
 
-    // The consume marks the row consumed (single-use) in the same UPDATE that
-    // gates on not-yet-consumed + not-expired.
     const setArg = updateSet.mock.calls[0][0]
     expect(setArg.consumedAt).toBeInstanceOf(Date)
     expect(updateWhere).toHaveBeenCalledTimes(1)
@@ -155,7 +134,6 @@ describe('peekLoginToken (read-only, no consume)', () => {
     selectLimit.mockResolvedValueOnce([{ userId: 'user-peek' }])
     const userId = await peekLoginToken('raw-token')
     expect(userId).toBe('user-peek')
-    // Peek must never mutate (no consume) — only a SELECT runs.
     expect(dbSelect).toHaveBeenCalledTimes(1)
     expect(dbUpdate).not.toHaveBeenCalled()
   })

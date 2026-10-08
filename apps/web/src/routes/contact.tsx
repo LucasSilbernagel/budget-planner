@@ -1,11 +1,3 @@
-/**
- * Public Contact page — `/contact` (story 9-1, FR27 / AC-1).
- *
- * Replaces the old GitHub "new issue" feedback link with a first-party in-app
- * form. Public + static: no auth, no premium gate, no DB, no server route — the
- * form posts client-side to Formspark (see {@link ContactForm}).
- */
-
 import { ContactForm } from '@/components/contact/contact-form'
 import { createFileRoute } from '@tanstack/react-router'
 

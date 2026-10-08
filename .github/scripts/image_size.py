@@ -1,36 +1,4 @@
 #!/usr/bin/env python3
-"""Measure a built image the way the DanubeData registry will count it (ops-1, AC-3/AC-7).
-
-    docker save <image> | python3 .github/scripts/image_size.py --base node:24-slim
-
-Reads a `docker save` archive on stdin and prints, per layer, the uncompressed
-tar size and the gzip size `docker push` would upload, marks which layers come
-from the base image, and totals them. Exits 1 when the total is over budget.
-
-WHY THIS NUMBER: the registry quota counts every tag at the sum of its
-COMPRESSED layer blobs, with no dedup across tags (story ops-1 Context §2 —
-inferred from run sizes, re-checked per run by the push job's tag table:
-`bytes_size`). Neither `docker image inspect .Size` (uncompressed) nor the
-zstd export in build-image is that number. `docker push` gzips each layer
-(Go's compress/gzip, default level); gzip -6 here is the same algorithm at the
-same level, so the total should agree to within a few per cent. It is an
-ESTIMATE until compared with the push job's `bytes_size` for the same SHA;
-keep the budget margin wider than the gap. (PR #28, 2026-10-03: base layers
-measured 79.57 MB here vs 80.82 MB from the Docker Hub manifest — a 1.5 % gap
-on the base alone.)
-A layer that is already compressed in the archive (containerd image store
-keeps pulled base layers as their registry blobs) is counted as-is.
-
-BUDGET: the 500 MB plan must hold, at steady state, K rollback tags + the live
-tag + P pinned tags, with a 50 MB margin:
-
-    (K + P + 1) x S <= 450 MB,  K = REGISTRY_KEEP_TAGS (default 2),
-                                P = 1 (the migrator's container pins an old tag)
-    =>  4 x S <= 450  =>  S <= 112 MB
-
-"MB" is taken as 10^6 bytes, the stricter reading: if the registry means MiB,
-the real headroom is ~5 % larger. WARN at 90 % of the budget, FAIL above it.
-"""
 
 from __future__ import annotations
 
@@ -44,9 +12,10 @@ import zlib
 
 REGISTRY_PLAN_MB = 500
 MARGIN_MB = 50
-KEEP_TAGS = 2  # REGISTRY_KEEP_TAGS default (deploy.yml "Prune old image tags")
+KEEP_TAGS = 2  # REGISTRY_KEEP_TAGS default
 PINNED_TAGS = 1  # the migrator container's tag, outside the keep window
-# (500 - 50) // (2 + 1 + 1) = 112 whole MB (112.5 rounded down).
+# The registry bills each tag at its compressed layer sum, no cross-tag dedup:
+# (keep + pinned + live) x S must fit the plan minus the margin.
 BUDGET_BYTES = (REGISTRY_PLAN_MB - MARGIN_MB) // (KEEP_TAGS + PINNED_TAGS + 1) * 1_000_000
 WARN_FRACTION = 0.90
 
@@ -55,7 +24,6 @@ ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 
 
 def gzip_size(stream: io.BufferedIOBase) -> int:
-    """Bytes of `gzip -6` output for the stream, without holding it in memory."""
     compressor = zlib.compressobj(6, zlib.DEFLATED, 31)  # 31 = gzip container
     total = 0
     while True:
@@ -87,8 +55,7 @@ def main() -> int:
     args = parser.parse_args()
 
     archive = tarfile.open(fileobj=sys.stdin.buffer, mode="r|")
-    # Stream mode: members arrive in archive order and cannot be revisited, so
-    # measure every regular file and decide afterwards which ones are layers.
+    # Stream mode cannot revisit members, so measure every file and pick layers afterwards.
     sizes: dict[str, tuple[int, int, str]] = {}
     manifest = None
     config_blobs: dict[str, bytes] = {}
@@ -157,8 +124,6 @@ def main() -> int:
 
 
 class _Prefixed(io.RawIOBase):
-    """A raw stream that replays a few already-read bytes, then the rest."""
-
     def __init__(self, prefix: bytes, rest: io.BufferedIOBase) -> None:
         self._prefix = prefix
         self._rest = rest

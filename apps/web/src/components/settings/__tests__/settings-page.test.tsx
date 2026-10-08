@@ -1,20 +1,3 @@
-/**
- * SettingsPage tests (story 11-6).
- *
- * The consolidated home for the display preferences that used to be scattered
- * across page headers (currency) and the footer (theme). These assert the surface
- * hosts the currency control and that its global scope is spelled out (AC-2).
- *
- * ⚠️ There used to be a dark-mode toggle here too, and a test pinning exactly one
- * instance of it (story 7-3 DECISION 2). Story 61.1 (FR93) deleted the control:
- * the theme follows the device's `prefers-color-scheme` and nothing in the app can
- * disagree with it. That test is now inverted — it asserts the ABSENCE, with a
- * positive control, rather than being deleted outright.
- *
- * The `usePremiumAccess` mock is retained only to keep any incidental consumer
- * deterministic; the currency control uses the real store.
- */
-
 import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type SessionSeed, SessionSeedProvider } from '../../../context/session-seed'
@@ -31,9 +14,6 @@ vi.mock('../../auth/premium-prompt', () => ({
   PremiumPrompt: () => <div data-testid="premium-prompt" />,
 }))
 
-// AccountSection is a separate unit (10-5) with its own session fetch + router
-// deps and its own test. Stub it here so this suite stays focused on the page's
-// composition and does not warn about `useRouter` outside a RouterProvider.
 vi.mock('../account-section', () => ({
   AccountSection: () => <div data-testid="account-section" />,
 }))
@@ -53,9 +33,6 @@ function mockStatus(overrides: Partial<PremiumAccessStatus>): void {
   })
 }
 
-// Both AccountSection (10-5) and LocalDataSection (17-2) resolve the session via
-// `fetch('/api/auth/me')` on mount. Stub it to a no-session response so the mounted
-// SettingsPage neither hits the MSW "unhandled request" path nor makes a real call.
 const originalFetch = global.fetch
 
 beforeEach(() => {
@@ -81,7 +58,6 @@ describe('SettingsPage', () => {
 
   it('names both locked premium rows by their visible title and description (story 116.2)', () => {
     const { container } = render(<SettingsPage />)
-    // Financial summary report + Custom categories (the free default above).
     expect(expectLockedRowsNamedByVisibleText(container)).toHaveLength(2)
   })
 
@@ -92,70 +68,40 @@ describe('SettingsPage', () => {
 
   it('consolidates the currency control here, with its global scope made explicit (AC-2)', () => {
     render(<SettingsPage />)
-    // The relocated currency toggle (its accessible group name).
     expect(screen.getByRole('group', { name: /currency display/i })).toBeInTheDocument()
-    // Scope is no longer ambiguous: copy states it applies app-wide.
     expect(screen.getByText(/applies everywhere amounts are shown/i)).toBeInTheDocument()
   })
 
   it('describes the Retirement switch as covering the expense-form question too (71.1, FR113)', () => {
     render(<SettingsPage />)
-    // Read through `aria-describedby`, so the pin covers what a screen-reader user
-    // hears with the switch, not just text that happens to sit nearby.
     const toggle = screen.getByRole('switch', { name: /show retirement planner/i })
     const description = document.getElementById(toggle.getAttribute('aria-describedby') ?? '')
     const text = (description?.textContent ?? '').replace(/\s+/g, ' ').trim()
-    // Anchored on the DISTINGUISHING clauses, not on "retirement" alone.
     expect(text).toContain('along with the retirement question on the expense form')
     expect(text).toContain('any expenses you marked are kept')
-    // ⚠️ The retracted navigation-only claim must not survive the rewrite: the
-    // old sentence ENDED at "navigation.", which is what made it false.
     expect(text).not.toMatch(/from your navigation\./)
   })
 
   it('hosts NO dark-mode toggle — the theme follows the device (61.1, FR93)', () => {
     render(<SettingsPage />)
 
-    // POSITIVE CONTROL. `getAllByRole` THROWS when nothing matches (it is built
-    // with `getMissingError`), so a surface that rendered no switches at all
-    // already fails loudly on the next line — this is not the case that needs
-    // guarding, and an earlier version of this comment wrongly claimed it was.
-    //
-    // ⚠️ WHAT THIS DOES NOT CATCH, stated precisely so the next reader does not
-    // over-trust it: a dark-mode control RENAMED to "Appearance" or "Theme" would
-    // still satisfy both the throw-on-empty above and the `/dark mode/i` filter
-    // below, and the absence would read as success. A rename is guarded only by
-    // the deletion of the component file itself. (The e2e case that used to sit
-    // beside this, `e2e/theme-dark-mode.spec.ts`, was moved here by story 84.5;
-    // it matched the same `/dark mode/i` and could not catch a rename either.)
+    // Does not catch a dark-mode control renamed to "Theme" or "Appearance".
     const switches = screen.getAllByRole('switch')
 
-    // Story 7-3 DECISION 2 pinned exactly ONE dark-mode switch here. Story 61.1
-    // reversed that decision: the toggle, its store, its provider and its <head>
-    // bootstrap are all deleted, so a re-introduced control would be a second
-    // source of truth for the theme.
     const darkModeSwitches = switches.filter((el) =>
       /dark mode/i.test(el.getAttribute('aria-label') ?? el.textContent ?? '')
     )
     expect(darkModeSwitches).toHaveLength(0)
-    // Nor as a button or a checkbox (was e2e theme-dark-mode:46): the control
-    // that was deleted is not allowed back in a different role either.
     expect(screen.queryByRole('button', { name: /dark mode/i })).toBeNull()
     expect(screen.queryByRole('checkbox', { name: /dark mode/i })).toBeNull()
   })
 
-  // Story 17-2: the "Clear local data" control is for EVERY user, unlike the
-  // auth-gated Premium "Delete account" control.
   it('surfaces the all-users "Clear local data" control, even for a free/unauthenticated user (17-2 AC-1)', () => {
     mockStatus({ hasAccess: false, subscriptionStatus: null, isAuthenticated: false })
     render(<SettingsPage />)
     expect(screen.getByRole('button', { name: /clear local data/i })).toBeInTheDocument()
   })
 
-  // Story 30-3: the financial summary report is reached from here. Unlike
-  // "Clear local data" it is Premium, so it is surfaced-but-locked for a free
-  // visitor rather than hidden — the gate's own suite covers every tier state;
-  // these two assert only that the section is composed into this page.
   it('hosts the Premium financial summary section, locked for a free user (30-3)', () => {
     mockStatus({ hasAccess: false, subscriptionStatus: null, isAuthenticated: false })
     render(<SettingsPage />)
@@ -177,9 +123,6 @@ describe('SettingsPage', () => {
     )
   })
 
-  // Story 30.4b: category management is reached from here too. Same shape as the
-  // report section above — the gate's own suite covers every tier state; these
-  // two assert only that the section is composed into this page.
   it('hosts the Premium categories section, locked for a free user (30.4b)', () => {
     mockStatus({ hasAccess: false, subscriptionStatus: null, isAuthenticated: false })
     render(<SettingsPage />)
@@ -188,8 +131,6 @@ describe('SettingsPage', () => {
     expect(
       screen.getByRole('button', { name: lockedName('Custom categories') })
     ).toBeInTheDocument()
-    // …and NOT a way through (was e2e categories-premium:235): a locked button
-    // beside a live link would let a free visitor straight into the manager.
     expect(screen.queryByRole('link', { name: /custom categories/i })).toBeNull()
   })
 
@@ -203,28 +144,7 @@ describe('SettingsPage', () => {
   })
 })
 
-/**
- * The two premium sections on /settings are tier-conditional (story 58.2, D2).
- *
- * Story 58.1 put Report and Categories into a paid user's nav, so their Settings
- * tiles became duplication by FR88's own argument. D2 (Lucas, 2026-09-20) hides
- * both sections for an entitled session. This is a DECLARED EXPANSION beyond
- * FR88, which names only the Overview grid.
- *
- * ⚠️ The gate lives at the CALL SITES in `settings-page.tsx`, never inside
- * `ReportSection` / `CategoriesSection`. Those components stay tier-blind, so
- * their own suites keep covering all three tier states unchanged — if
- * `report-section.test.tsx` or `categories-section.test.tsx` ever go red for
- * this story, the gate was put in the wrong place.
- *
- * ⚠️⚠️ TIER HERE IS THE SESSION SEED, NOT THE `usePremiumAccess` MOCK. The TWO
- * pre-existing tests above that drive `hasAccess: true` (the report link and the
- * categories link) render with no `SessionSeedProvider`, so the seed is `null`,
- * the gate fails OPEN and both sections render — which is why they still pass
- * unchanged. They exercise the GATE's entitled branch, not a paid user's Settings
- * page. This block is the only test of the latter.
- * (Count corrected from "four" in code review, 2026-09-21.)
- */
+// Tier here is the session seed, not the usePremiumAccess mock.
 describe('58.2: the premium Settings sections are tier-conditional (D2)', () => {
   function paidSeed(overrides: Partial<SessionSeed> = {}): SessionSeed {
     return {
@@ -244,11 +164,6 @@ describe('58.2: the premium Settings sections are tier-conditional (D2)', () => 
     )
   }
 
-  /**
-   * The positive anchor for every absence assertion below: proof the page
-   * rendered at all. An empty render, a crash and a correct trim are otherwise
-   * indistinguishable to `queryBy… === null`.
-   */
   function expectPageRendered(): void {
     expect(screen.getByRole('heading', { level: 1, name: /^settings$/i })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 2, name: /^display$/i })).toBeInTheDocument()
@@ -264,8 +179,6 @@ describe('58.2: the premium Settings sections are tier-conditional (D2)', () => 
 
       expectPageRendered()
 
-      // The whole <section> goes, heading and explanatory copy included — not
-      // just the gate box inside it.
       expect(screen.queryByRole('heading', { level: 2, name: /^financial summary$/i })).toBeNull()
       expect(screen.queryByRole('heading', { level: 2, name: /^categories$/i })).toBeNull()
       expect(screen.queryByRole('link', { name: /financial summary report/i })).toBeNull()
@@ -276,17 +189,8 @@ describe('58.2: the premium Settings sections are tier-conditional (D2)', () => 
   )
 
   it('takes the report privacy sentence with it — NOT re-homed to /financial-summary (AC-5)', () => {
-    // ⚠️⚠️ THE TRAP THIS TEST GUARDS. Removing this section takes away the line
-    // "The summary is assembled in your browser — nothing is sent anywhere to
-    // produce it" for a paid user, and the obvious fix is to move it onto the
-    // /financial-summary page — which is exactly what story 57.1 correctly did for
-    // /forecasting. It is WRONG here: story 56.1 / UX-DR62 removed that
-    // disclaimer from the report deliberately, and
-    // `reports/__tests__/FinancialSummaryReport.test.tsx` PINS ITS ABSENCE with
-    // `not.toMatch`. Re-adding it reverses a shipped decision AND turns that
-    // guard red. The claim survives for paid users in /docs (features.md).
-    //
-    // Generalisable: before relocating any copy, grep for a pinned ABSENCE of it.
+    // Don't move the privacy sentence onto /financial-summary: the report omits it
+    // deliberately and a test pins its absence.
     mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
     renderWithSeed(paidSeed())
 
@@ -294,9 +198,6 @@ describe('58.2: the premium Settings sections are tier-conditional (D2)', () => 
     expect(screen.queryByText(/nothing is sent anywhere to produce it/i)).toBeNull()
   })
 
-  // ⚠️ The SEED drives the new gate; `mockStatus` drives the gates inside each
-  // section and is set to the tier that seed would really resolve to, so the
-  // fixture is coherent (code review, 2026-09-21).
   it.each([
     ['a null seed (resolver could not verify)', null, { isAuthenticated: false }],
     [
@@ -322,16 +223,12 @@ describe('58.2: the premium Settings sections are tier-conditional (D2)', () => 
     expect(
       screen.getByRole('button', { name: lockedName('Custom categories') })
     ).toBeInTheDocument()
-    // The free tier keeps the privacy sentence exactly as today.
     expect(screen.getByText(/nothing is sent anywhere to produce it/i)).toBeInTheDocument()
   })
 
   it('⚠️ FAILS OPEN on a null seed — the OPPOSITE of the nav, deliberately', () => {
-    // Same asymmetry as the Overview gate: after story 58.2 the nav is the only
-    // paid route to /financial-summary and /categories (their Settings tiles were the last
-    // fallback), so failing CLOSED on an unverified seed would strand a paid
-    // user with no route at all. Showing them a section they do not need is
-    // merely redundant. Do not "harmonise" this with GlobalNav's direction.
+    // Fails open: failing closed on an unverified seed could strand a paid user with
+    // no route to these pages.
     mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
     renderWithSeed(null)
 
@@ -341,9 +238,6 @@ describe('58.2: the premium Settings sections are tier-conditional (D2)', () => 
       'a null seed must FAIL OPEN and still show the section'
     ).toBeInTheDocument()
 
-    // ⚠️ The assertion that actually tests the rationale: the user must retain a
-    // ROUTE, not just a heading. An earlier version stopped at the heading and
-    // would have passed against two inert sections (code review, 2026-09-21).
     expect(screen.getByRole('link', { name: /financial summary report/i })).toHaveAttribute(
       'href',
       '/financial-summary'

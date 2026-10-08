@@ -1,13 +1,3 @@
-// CLI for the client-bundle guard (story 83.1, FR136). Run it after a build:
-//
-//   pnpm --filter web build && node apps/web/scripts/check-client-bundle.mjs
-//
-// Exits 1 when any file in `dist/client` carries a server-only marker, when any
-// file in `dist/` (client OR server) carries a dev-only seam (`DEV_ONLY_SEAMS`:
-// the e2e mail outbox, story 87.1 AC 4; the e2e session seed, story 92.1), or when a positive control fails. The logic and its
-// rationale live in `client-bundle-guard-lib.mjs`. An optional argument names
-// another dist root.
-
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -24,7 +14,7 @@ const bundle = checkClientBundle(distRoot)
 const seams = checkDevSeamsAbsent(distRoot, appRoot)
 
 if (bundle.ok && seams.ok) {
-  // `gates-lib.mjs` `parseBundleCheck` matches this line: keep its shape.
+  // Parsed by the gates runner: keep this line's shape.
   console.log(
     `OK: no server-only marker (${SERVER_ONLY_MARKERS.join(', ')}) in ${join(
       distRoot,

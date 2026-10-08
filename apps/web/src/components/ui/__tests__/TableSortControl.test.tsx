@@ -7,26 +7,6 @@ import { renderWithProviders, screen, userEvent, within } from '@/test/utils'
 import { describe, expect, it, vi } from 'vitest'
 import { TableSortControl } from '../TableSortControl'
 
-/**
- * The mobile sort control (story 48.1, UX-DR53).
- *
- * ⚠️ THIS COMPONENT REPLACES `TableSortNotice`, and the replacement is a widening,
- * not a rename. The notice existed only to EXPLAIN and ESCAPE a sort that a
- * desktop interaction had already started (story 34.2, ratified decision 7); it
- * rendered nothing at all while a table was in manual order. This control is the
- * first affordance that can START a sort below `sm`, so it renders whenever the
- * table does — and the four page suites' "only while a sort is active"
- * assertions were rewritten against that, not deleted.
- *
- * ⚠️ Every assertion here is about MARKUP AND CLASS TOKENS. jsdom computes no
- * layout, so it cannot see the one thing most likely to break this control: a
- * `<select>`'s intrinsic width is set by its longest `<option>`, which on
- * `/savings` puts the unconstrained box at exactly the card interior under CI's
- * font. That was measured and pinned in `e2e/mobile-table-sort.spec.ts`, which
- * stories 84.2/84.5 (FR137) deleted; a green run of THIS file says nothing about
- * any width, and no screenshot shoots `/savings`.
- */
-
 type Key = 'name' | 'amount' | 'category'
 
 const COLUMNS: readonly { key: Key; label: string }[] = [
@@ -34,7 +14,6 @@ const COLUMNS: readonly { key: Key; label: string }[] = [
   { key: 'amount', label: 'Amount' },
 ]
 
-/** Every option's visible text, in DOM order. */
 function optionLabels(select: HTMLElement): string[] {
   return within(select)
     .getAllByRole('option')
@@ -62,9 +41,7 @@ describe('TableSortControl — the mobile sort affordance (story 48.1)', () => {
   })
 
   it('offers manual order plus both directions of every column, in header order (AC-5)', () => {
-    // ⚠️ An EXACT ARRAY, not a `toContain` sweep. "does not offer Category"
-    // passes against an options list that is empty for some unrelated reason,
-    // and this is the assertion AC-7's tier pins lean on.
+    // Exact array: a "does not offer Category" check would pass on an empty list.
     renderControl()
     expect(optionLabels(screen.getByRole('combobox', { name: 'Sort income sources' }))).toEqual([
       'Default order',
@@ -76,9 +53,7 @@ describe('TableSortControl — the mobile sort affordance (story 48.1)', () => {
   })
 
   it('offers nothing for a column it was not given (AC-7)', () => {
-    // The tier gate lives at the CALL SITE — this component renders exactly the
-    // columns it is handed. Pinned here so a page that forgets the gate fails in
-    // its own suite rather than silently offering a column nobody can see.
+    // The tier gate lives at the call site; this component renders exactly the columns it is handed.
     renderControl()
     expect(
       within(screen.getByRole('combobox', { name: 'Sort income sources' })).queryByRole('option', {
@@ -95,9 +70,7 @@ describe('TableSortControl — the mobile sort affordance (story 48.1)', () => {
   })
 
   it('reflects an ALREADY-ACTIVE sort on first render (AC-11)', () => {
-    // ⚠️ The persisted-arrival case, and the one a "click it and see" test
-    // cannot reach: story 42.1 persists the sort, so a phone can open a table
-    // sorted days ago on the same device. The control must open showing it.
+    // A persisted sort means a phone can open a table already sorted; the control must show it.
     renderControl({ state: { key: 'amount', direction: 'desc' } })
     const select = screen.getByRole('combobox', {
       name: 'Sort income sources',
@@ -118,9 +91,7 @@ describe('TableSortControl — the mobile sort affordance (story 48.1)', () => {
       'amount:desc'
     )
 
-    // ⚠️ DESCENDING FROM UNSORTED. A control wired to `toggle` would emit
-    // ascending here, and would pass an assertion that only ever picked
-    // ascending.
+    // Descending from unsorted: a control wired to `toggle` would emit ascending.
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(onSelect).toHaveBeenCalledWith({ key: 'amount', direction: 'desc' })
   })
@@ -146,9 +117,6 @@ describe('TableSortControl — the mobile sort affordance (story 48.1)', () => {
   })
 
   it('renders whenever it is mounted, sorted or not (AC-1)', () => {
-    // ⚠️ The behaviour that separates this from `TableSortNotice`. The notice
-    // rendered nothing in manual order, which is exactly the state a phone user
-    // needs the control in — it is how they START a sort.
     renderControl({ state: null })
     expect(screen.getByRole('combobox', { name: 'Sort income sources' })).toBeVisible()
   })
@@ -170,20 +138,12 @@ describe('TableSortControl — the mobile sort affordance (story 48.1)', () => {
   })
 
   it('introduces no retired surface or text tokens (AC-10)', () => {
-    // ⚠️ THIS PIN EXISTS BECAUSE NOTHING ELSE SWEEPS THIS CONTROL. The four page
-    // suites call `collectRetiredTokenViolations(container.querySelector('table'))`,
-    // and this control is a SIBLING of the table wrapper — outside that subtree
-    // at every width. `theme-page-coverage.spec.ts` asserts only the first match
-    // of each selector per page, so it does not reach it either.
+    // Nothing else sweeps this control: the page suites only sweep inside the `<table>`.
     const { container } = renderControl()
     expect(collectRetiredTokenViolations(container.firstElementChild as HTMLElement)).toEqual([])
   })
 
   it('renders no table markup (AC-12)', () => {
-    // It sits OUTSIDE the `<table>`, so it cannot disturb `<th>`/`<td>` parity
-    // or the mobile field-label pins. `category-assignment.test.tsx` reads every
-    // `<th>`'s text content and pins it as an EXACT ARRAY on both flow pages in
-    // both tiers — a stray cell here breaks four assertions across two pages.
     const { container } = renderControl()
     expect(container.querySelector('th')).toBeNull()
     expect(container.querySelector('td')).toBeNull()

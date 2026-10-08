@@ -1,11 +1,6 @@
 import { makeIncomeSource, renderWithProviders, screen } from '@/test/utils'
 import { describe, expect, it } from 'vitest'
 
-/**
- * Verifies the component-testing pipeline (AC-1): jsdom environment +
- * React Testing Library + @testing-library/jest-dom matchers + the shared
- * `renderWithProviders` helper and data factories.
- */
 function IncomeBadge({ name, amount }: { name: string; amount: number }) {
   return (
     <span data-testid="income-badge">

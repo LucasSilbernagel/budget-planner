@@ -1,35 +1,15 @@
 // @ts-check
-/**
- * Production SERVE entrypoint (Story 5-2, AC-1; split out of `server-entry.mjs`
- * by Story 5-18, AC-2).
- *
- * The `vite build` output (`dist/server/server.js`) is a web-standard `fetch`
- * handler with NO socket listener, and it does not serve the static
- * `dist/client/` assets. DanubeData Rapids (Knative) routes requests to a
- * container that MUST listen on `$PORT` (default 8080). This entry produces that
- * self-listening process: it binds `0.0.0.0:$PORT`, serves `dist/client/`
- * assets, and delegates SSR + `/api/*` to the built fetch handler.
- *
- * Approach (b) from AC-1: a thin entry over the exported `server.fetch` default,
- * served via a zero-dependency `node:http` ⇄ web-fetch adapter
- * (`src/server/node-adapter.mjs`). No extra runtime dependency, no transpile
- * step — `node server-entry.mjs` runs as-is.
- *
- * ⚠️ This module is reached ONLY through `server-entry.mjs`'s dispatch, and only
- * when the container is NOT in migrate mode. The import of the built application
- * server below is the reason that dispatch is a dynamic import: it must not be
- * pulled into the migrate process, which has no business owning a route table.
- *
- * Run locally:
- *   pnpm --filter web build && PORT=8080 pnpm --filter web start
- */
+// The built server is a fetch handler with no listener and no static serving; this binds
+// $PORT, serves dist/client and delegates the rest to it.
+
+// Reached only through server-entry's dynamic import, so the migrate process never
+// loads the app server.
 
 import { createServer } from 'node:http'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
-// Default export is the Start server object: `{ fetch(request) => Response }`.
 import server from './dist/server/server.js'
 import { createRequestListener } from './src/server/node-adapter.mjs'
 
@@ -39,12 +19,9 @@ const clientDir = join(here, 'dist', 'client')
 const DEFAULT_PORT = 8080
 const SHUTDOWN_TIMEOUT_MS = 10_000
 
+// Guards a non-numeric PORT (listen() throws at boot) and PORT=0 (a random port the
+// platform never probes).
 /**
- * Parse `$PORT` to a valid TCP port, falling back to 8080. Guards two failure
- * modes Knative would route straight into: a non-numeric/empty value (which makes
- * `listen()` throw `ERR_SOCKET_BAD_PORT` at boot) and `PORT=0` (which silently
- * binds a random ephemeral port the platform never probes).
- *
  * @param {string | undefined} raw
  * @returns {number}
  */
@@ -69,20 +46,15 @@ const listener = createRequestListener({
 
 const httpServer = createServer(listener)
 
-// Surface bind failures (EADDRINUSE / EACCES) as a controlled, logged exit
-// rather than an opaque unhandled 'error' event.
 httpServer.on('error', (err) => {
   console.error('[server-entry] HTTP server error:', err)
   process.exit(1)
 })
 
 httpServer.listen(port, host, () => {
-  // Plain console: the structured logger (5-5) wraps request/app logs; this is a
-  // one-time boot line for container/platform startup visibility.
   console.log(`[server-entry] budget-planner listening on http://${host}:${port}`)
 })
 
-// Graceful shutdown so Rapids scale-to-zero / rolling deploys drain cleanly.
 let shuttingDown = false
 for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
   process.on(signal, () => {
@@ -92,8 +64,7 @@ for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
     shuttingDown = true
     console.log(`[server-entry] ${signal} received; draining…`)
     httpServer.close(() => process.exit(0))
-    // Close idle keep-alive sockets so `close()`'s callback can actually fire,
-    // and hard-cap the drain so a stuck request can't outlast the grace window.
+    // Close idle keep-alive sockets so close()'s callback can fire; hard-cap the drain.
     httpServer.closeIdleConnections()
     setTimeout(() => {
       console.warn('[server-entry] drain timed out; forcing exit')

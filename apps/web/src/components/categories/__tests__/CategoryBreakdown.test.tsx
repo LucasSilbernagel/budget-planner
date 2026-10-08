@@ -1,34 +1,4 @@
-/**
- * CategoryBreakdown tests (story 30.5, FR54 part 2).
- *
- * ⚠️ Asserting the breakdown RENDERED is not asserting it GROUPED BY ID. Every
- * test below names the merged row AND the per-row labels that must have
- * disappeared, or pins a figure that a wrong denominator/cadence would change.
- *
- * ⚠️ Income and expenses are siblings on every surface here, and this repo has
- * now shipped the same "fixed one side, left the twin" defect twice (30.3, then
- * 30.4b's M34). So every BEHAVIOURAL assertion below is written TWICE — once
- * per side — even where that reads as duplication.
- *
- * ⚠️ What is deliberately asserted ONCE, and why (added at code review, which
- * found the docblock claiming a discipline the file did not follow): the
- * PRESENTATION assertions — column headers, long-name wrapping, semantic token
- * classes. Unlike 30.4b's two pies, which had SEPARATE resolve call sites and
- * so could diverge, both sides here render through one `BreakdownSide` with
- * `side` as the only differing prop, so a presentation regression cannot land
- * on one side alone. The risk that IS real is the call site in
- * `CategoryBreakdown` handing the wrong data to a side — and that is covered
- * per-side by the separate-wholes tests here and by the chart-wiring assertions
- * in `CategoryBreakdown.chart-wiring.test.tsx`.
- *
- * ⚠️ The jsdom currency baseline is currency-LESS (`vitest.setup.ts` pins
- * `{ mode: 'none', currency: 'NONE' }` before every jsdom test), so amounts
- * assert as bare grouped numbers ('4,000.00'), not '$4,000.00'.
- *
- * Premium gating is NOT exercised here: this component reads no tier state — the
- * gate lives in `CategoriesPage`, and `CategoriesPage.test.tsx` asserts the
- * breakdown's absence in all three non-entitled branches (AC-5).
- */
+// The jsdom currency baseline has no symbol, so amounts assert as bare numbers.
 
 import { act, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -79,14 +49,7 @@ function seed({
   useCategoryStore.setState({ categories })
 }
 
-/**
- * One side's rows as `[label, total, share]` triples.
- *
- * Scoped to the side's own table rather than queried page-wide: income and
- * expenses render identical markup, so an unscoped query would happily pass on
- * a figure that landed on the WRONG side — exactly the asymmetry defect this
- * suite exists to prevent.
- */
+// Scoped per side: both sides render identical markup, so a page-wide query passes on the wrong side.
 function rowsOf(side: 'income' | 'expense'): string[][] {
   const table = screen.getByTestId(`breakdown-${side}-table`)
   return within(table)
@@ -131,7 +94,6 @@ describe('CategoryBreakdown', () => {
       render(<CategoryBreakdown />)
 
       expect(labelsOf('expense')).toEqual(['Groceries'])
-      // The per-entry names must be GONE — that is the merge, not just a render.
       expect(screen.queryByText('Weekly shop')).not.toBeInTheDocument()
       expect(screen.queryByText('Corner store')).not.toBeInTheDocument()
       expect(rowsOf('expense')[0]?.[1]).toBe('500.00')
@@ -154,9 +116,7 @@ describe('CategoryBreakdown', () => {
     })
 
     it('folds two DIFFERENTLY-NAMED uncategorized EXPENSES into ONE Uncategorized row', () => {
-      // ⚠️ This is the whole point of the story. The overview pies keep these as
-      // two slices (Decision 10); here they must be one bucket, or nothing
-      // distinguishes this view from the pies.
+      // The overview pies keep these as two slices; here they must be one bucket.
       seed({
         expenses: [row('e1', 'Rent', 100000, null), row('e2', 'Petrol', 50000, null)],
       })
@@ -187,8 +147,7 @@ describe('CategoryBreakdown', () => {
       })
       render(<CategoryBreakdown />)
 
-      // Math.round(10000 * 52/12) = 43333 → '433.33'. A raw sum would show
-      // '100.00'.
+      // Math.round(10000 * 52/12) = 43333; a raw sum would show 100.00.
       expect(rowsOf('expense')[0]?.[1]).toBe('433.33')
     })
   })
@@ -205,8 +164,7 @@ describe('CategoryBreakdown', () => {
       })
       render(<CategoryBreakdown />)
 
-      // Expenses total 100000. Groceries = 75000 → 75.0%.
-      // A COMBINED denominator (1,000,000) would render 7.5% instead.
+      // A combined denominator (1,000,000) would render 7.5% instead.
       expect(rowsOf('expense')[0]).toEqual(['Groceries', '750.00', '75.0%'])
       expect(rowsOf('expense')[1]).toEqual(['Uncategorized', '250.00', '25.0%'])
       expect(totalOf('expense')).toBe('1,000.00')
@@ -258,7 +216,6 @@ describe('CategoryBreakdown', () => {
       })
       rerender(<CategoryBreakdown />)
 
-      // 100000 monthly → ×12 = 1200000 cents = '12,000.00'
       expect(rowsOf('expense')[0]?.[1]).toBe('12,000.00')
     })
 
@@ -314,9 +271,6 @@ describe('CategoryBreakdown', () => {
       expect(screen.getByTestId('breakdown-empty')).toBeInTheDocument()
       expect(screen.queryByTestId('breakdown-income-table')).not.toBeInTheDocument()
       expect(screen.queryByTestId('breakdown-expense-table')).not.toBeInTheDocument()
-      // ⚠️ The copy must not imply categorizing is a precondition — one
-      // uncategorized expense already produces a full breakdown, so telling the
-      // user to categorize first sends them off to do unnecessary work.
       expect(screen.getByTestId('breakdown-empty')).toHaveTextContent(
         /no need to categorize everything first/i
       )
@@ -470,8 +424,6 @@ describe('CategoryBreakdown', () => {
     })
 
     it('degrades a corrupt row rather than throwing during render', () => {
-      // A rehydrated or server-pulled blob is validated by no store, and the
-      // core helper THROWS on this input by design.
       seed({
         categories: [category({ id: 'cat-a', name: 'Groceries' })],
         expenses: [
@@ -488,7 +440,6 @@ describe('CategoryBreakdown', () => {
 
   describe('live updates', () => {
     it('follows an EXPENSE category rename rather than going stale', () => {
-      // `categoryNames` is in the memo dependency list precisely for this.
       seed({
         categories: [category({ id: 'cat-a', name: 'Groceries' })],
         expenses: [row('e1', 'Shop', 100000, 'cat-a')],
@@ -570,19 +521,11 @@ describe('CategoryBreakdown', () => {
       render(<CategoryBreakdown />)
 
       expect(screen.getByTestId('breakdown-expense-chart')).toBeInTheDocument()
-      // No empty axis for a side with no rows (AC-6).
       expect(screen.queryByTestId('breakdown-income-chart')).not.toBeInTheDocument()
     })
 
     it('barDomainTicks yields a different domain per amount set (helper precondition)', () => {
-      // ⚠️ THIS IS NOT THE AC-6 TEST — it was, and code review found it never
-      // touched the component: it calls the shared helper on two local arrays,
-      // so a regression pooling both sides into one chart would leave it green.
-      // It is kept only as the precondition the real test relies on (that these
-      // two amount sets DO produce different domains, so the wiring assertion
-      // can distinguish them). AC-6 is proven in
-      // `CategoryBreakdown.chart-wiring.test.tsx`, which asserts what each
-      // chart was actually handed.
+      // Precondition only: these amount sets produce different domains, so the wiring test can tell them apart.
       const incomeAmounts = [900000]
       const expenseAmounts = [10000, 5000]
 
@@ -593,16 +536,11 @@ describe('CategoryBreakdown', () => {
       expect(incomeTicks[incomeTicks.length - 1]).toBeGreaterThan(
         expenseTicks[expenseTicks.length - 1] ?? 0
       )
-      // Pooling both sides would move the expense domain — proving independence
-      // is what this assertion is for.
       expect(barDomainTicks([...incomeAmounts, ...expenseAmounts])).not.toEqual(expenseTicks)
     })
   })
 
   describe('the residual bucket is identified structurally, not by its label', () => {
-    // ⚠️ A user can create a real category named "Uncategorized", so the label
-    // alone cannot distinguish the residual fold from a real row. These pin the
-    // marker that can.
     it('marks the residual EXPENSE row and leaves real category rows unmarked', () => {
       seed({
         categories: [category({ id: 'cat-real', name: 'Uncategorized' })],
@@ -612,7 +550,6 @@ describe('CategoryBreakdown', () => {
 
       const table = screen.getByTestId('breakdown-expense-table')
       const rows = within(table).getAllByTestId('breakdown-expense-row')
-      // Both rows read "Uncategorized"; only the residual is marked.
       expect(labelsOf('expense')).toEqual(['Uncategorized', 'Uncategorized'])
       expect(rows[0]?.getAttribute('data-uncategorized')).toBeNull()
       expect(rows[1]?.getAttribute('data-uncategorized')).toBe('true')
@@ -636,10 +573,6 @@ describe('CategoryBreakdown', () => {
   })
 
   describe('shares are suppressed when a side mixes signs', () => {
-    // ⚠️ `|row| / |net|` stops meaning anything once both signs are present:
-    // an exact cancellation reads 0.0% on rows showing real money, and a 1-cent
-    // net reads 1,000,000.0%. Both are pinned in the core suite; these pin the
-    // display rule that keeps them off the screen.
     it('replaces EXPENSE shares with an em dash and explains why', () => {
       seed({
         categories: [
@@ -654,7 +587,6 @@ describe('CategoryBreakdown', () => {
       expect(screen.getByTestId('breakdown-expense-share-suppressed')).toHaveTextContent(
         /mixes positive and negative amounts/i
       )
-      // The figure that would otherwise have been rendered must not appear.
       expect(screen.getByTestId('category-breakdown').textContent).not.toContain('1000000.0%')
     })
 
@@ -670,7 +602,6 @@ describe('CategoryBreakdown', () => {
 
       expect(rowsOf('income').map((cells) => cells[2])).toEqual(['—', '—'])
       expect(screen.getByTestId('breakdown-income-share-suppressed')).toBeInTheDocument()
-      // The exact-cancellation case would otherwise read 0.0% on real money.
       expect(rowsOf('income').map((cells) => cells[2])).not.toContain('0.0%')
     })
 
@@ -704,16 +635,8 @@ describe('CategoryBreakdown', () => {
   })
 
   describe('the non-integral-cadence rounding note', () => {
-    // ⚠️ This breakdown rounds once per BUCKET so its rows sum to its own
-    // total; the dashboard rounds once over the whole set. Only a NON-INTEGRAL
-    // multiplier makes those disagree — monthly (×1) and annually (×12) are
-    // integral, weekly (×12/52) and biweekly (×12/26) are not.
-    //
-    // ⚠️ Story 32.1 made `biweekly` selectable for the first time. Until then the
-    // gate could read `duration === 'weekly'` and be correct; the moment a user
-    // could choose biweekly, that check silently omitted a note that IS
-    // warranted, with no type error and no failing test. These two tests are the
-    // partition that catches it.
+    // Rows round per bucket, the dashboard over the whole set; only non-integral multipliers
+    // (weekly, biweekly) make those disagree.
     it.each(['weekly', 'biweekly'] as const)('appears at a %s cadence', (duration) => {
       seed({
         categories: [category({ id: 'cat-a', name: 'Groceries' })],
@@ -766,7 +689,6 @@ describe('CategoryBreakdown', () => {
       render(<CategoryBreakdown />)
 
       const table = screen.getByTestId('breakdown-expense-table')
-      // Class-TOKEN membership, not substring.
       expect([...table.classList]).toContain('table-fixed')
       const header = within(table).getByRole('rowheader', { name: longName })
       expect([...header.classList]).toContain('break-words')

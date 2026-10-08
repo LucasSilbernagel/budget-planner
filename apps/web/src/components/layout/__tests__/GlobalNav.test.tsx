@@ -6,63 +6,10 @@ import { usePlannerVisibilityStore } from '../../../stores/plannerVisibilityStor
 import { DISCLOSURE_CHEVRON_CLASS } from '../../ui/ChevronDownIcon'
 import { GlobalNav } from '../GlobalNav'
 
-/**
- * GlobalNav component tests (story 11-1, rewritten for the CSS switch in 31.4).
- *
- * Covers the persistent primary navigation: it is a real `<nav>` landmark with
- * an accessible name, exposes every top-level section with the correct route,
- * marks the current route with `aria-current="page"` (with the Overview link
- * matching `/` exactly so it is not active everywhere), and — since 31.4 —
- * carries BOTH the desktop top-bar and the mobile bottom-bar layouts on one DOM
- * subtree.
- *
- * The active-route assertions rely on `renderWithRouter`'s `path` seed: TanStack
- * Router `<Link>` derives active state from the current location, which the
- * throwaway in-memory router exposes. (Since story 84.3 retired
- * `e2e/global-nav.spec.ts`, the row copies' active state (seeded path) and the
- * close on a pathname change (a navigable router) are in
- * `GlobalNav.behaviour.test.tsx`. A real one-click cross-section navigation is
- * not tested below the browser.)
- *
- * Nodes render asynchronously through RouterProvider, so every assertion awaits
- * `findBy*` first (mirrors the Footer suite).
- *
- * ⚠️ There is no longer a viewport hook to mock, and mocking one would select
- * nothing: `GlobalNav` has no JS layout branch. jsdom applies no media queries
- * and has no layout engine, so the mobile layout can only be asserted here as
- * `max-sm:` class TOKENS — the rendered geometry, the computed colours and the
- * first-paint position are measured for real in `e2e/nav-responsive-css.spec.ts`
- * and `e2e/chrome-320.spec.ts`.
- *
- * ⚠️ Token membership, never substring. `className.toContain('fixed')`
- * false-matches `max-sm:fixed`, and `-`/`:` are substring boundaries — that is
- * precisely the distinction this component now turns on.
- */
+// Token membership, never substring: `toContain('fixed')` false-matches `max-sm:fixed`.
 
-/**
- * Split into the two groups story 31.5 introduced — for READABILITY only.
- *
- * ⚠️⚠️ THE LINK COUNTS BELOW STAY 6 AND STAY GREEN. Do NOT "fix" them to 4.
- * They prove the destinations are RENDERED. They do not prove a user can REACH
- * them. Since story 59.2 the More destinations (two since story 69.2 moved
- * Settings to the account cluster) sit inside a native
- * `<details>` at EVERY width, and a closed `<details>` hides its content from a
- * real browser's accessibility tree. jsdom does not: its default stylesheet
- * (`jsdom/lib/jsdom/browser/default-stylesheet.js`) has no closed-details rule,
- * so `getAllByRole('link')` still resolves all six, and every `it.each` row
- * below still passes. Before 59.2 the same count had a different reason: jsdom
- * applies no media queries. (It was EIGHT until story 43.3 removed
- * `/net-worth-projection`, and SEVEN until story 69.2 removed `/settings`; the
- * count follows the nav, never the viewport.) Story 96.3 (FR163) added ONE
- * anchor that is not a destination of `SECTIONS`: the phone-only Settings
- * sheet row (`SETTINGS_ROW` below), so every DOM anchor count gains one.
- *
- * Where openness DOES matter, this file uses jest-dom's `toBeVisible()`, which
- * respects `details[open]`. That is the story 59.2 block at the bottom. What a
- * user can actually reach was a rendered fact, asserted in e2e specs that
- * stories 84.2/84.3 retired (FR137). What is pinned now: the server HTML
- * (`GlobalNav.ssr.dom.test.tsx`) and the 320/768/1280 screenshots.
- */
+// Link counts are DOM presence, not reachability: jsdom doesn't hide a closed <details>. Don't
+// "fix" them to the visible count; `toBeVisible()` is the matcher that respects `open`.
 const PRIMARY_TABS: readonly [label: RegExp, href: string][] = [
   [/^overview$/i, '/'],
   [/^income$/i, '/income'],
@@ -77,94 +24,33 @@ const MORE_DESTINATIONS: readonly [label: RegExp, href: string][] = [
 
 const SECTIONS: readonly [label: RegExp, href: string][] = [...PRIMARY_TABS, ...MORE_DESTINATIONS]
 
-/**
- * ⚠️⚠️ STORY 69.3 (FR110, decision D2): Balances and Retirement are in the DOM
- * TWICE. The sheet copy (inside More, `lg:hidden`) and a ROW copy (an outer
- * `<li data-nav-promoted>`, `hidden lg:block`). A real browser renders exactly
- * one of them at any width; jsdom applies no stylesheet, so it sees BOTH. So:
- *
- *  - a DOM anchor count is destinations + promoted copies (6 + 2 = 8 free),
- *  - a role query by name for those two MUST be scoped to the sheet or the row
- *    (`sheetOf` / `rowCopiesOf`), never resolved with `getAllBy…()[0]`, which
- *    picks a copy by DOM order and asserts nothing about which one.
- *
- * Which copy a user actually sees at which width is a RENDERED fact, pinned
- * only by the screenshots since stories 84.2/84.3 (FR137).
- */
+// Balances and Retirement have two DOM copies (sheet and `lg` row) and jsdom sees both, so
+// scope role queries with `sheetOf`/`rowCopiesOf`, never `[0]`.
 const PROMOTED_COPIES = MORE_DESTINATIONS.length
 
-/**
- * Story 96.3 (FR163): the phone-only Settings row, the LAST `<li>` of the More
- * sheet for EVERY session, `sm:hidden`. It is NOT one of `SECTIONS` (it is a
- * width-scoped row outside the nav's destination lists, see `GlobalNav.tsx`'s
- * `SETTINGS_SHEET_CELL_CLASS`), but it IS one more DOM anchor, which jsdom
- * (no stylesheet) sees at every width. Every count below that adds it says
- * "was N until story 96.3".
- */
 const SETTINGS_ROW = 1
 
-/** The More panel's list. Non-null asserted, so a scoped query cannot pass on nothing. */
 const sheetOf = (nav: HTMLElement): HTMLElement => {
   const sheet = nav.querySelector('details > ul')
   expect(sheet, 'the More panel list is missing').not.toBeNull()
   return sheet as HTMLElement
 }
 
-/** The promoted destinations' ROW copies' anchors, in order (story 69.3). */
 const rowCopiesOf = (nav: HTMLElement): HTMLAnchorElement[] => [
   ...nav.querySelectorAll<HTMLAnchorElement>(':scope > ul > li[data-nav-promoted] > a'),
 ]
 
-/**
- * Class-token membership helper (the canonical form used across the repo).
- *
- * ⚠️ Takes an ELEMENT, not a string. `HTMLElement.className` is a string but
- * `SVGElement.className` is an `SVGAnimatedString`, so the old
- * `tokens(el.className)` form threw `TypeError: value.split is not a function`
- * the moment story 31.5 put an inline `<svg>` in this subtree. `classList` is
- * the idiom every other subtree sweep in the repo already uses
- * (`docs-layout.test.tsx:22`, `legal-page-view.test.tsx:101`,
- * `pricing-page.test.tsx:178`, `CategoryBreakdown.test.tsx:777`,
- * `src/test/responsive-table-tokens.ts:116`) and it works for both.
- */
+/** Takes an element: an SVG's `className` is an SVGAnimatedString, not a string. */
 const tokens = (el: Element): string[] => [...el.classList]
 
-/**
- * Every nav ICON, i.e. every svg except the desktop disclosure chevron (story
- * 69.1). The icon tests require `sm:hidden`; the chevron must NOT have it.
- * ⚠️ Never make those tests pass by adding `sm:hidden` to the chevron: it hides
- * the chevron at every width it exists for, and jsdom (no stylesheet) cannot
- * tell. The 768/1280 screenshots are what show it now (story 84.2 dropped the
- * e2e visibility test).
- */
+/** Never satisfy the icon tests by giving the chevron `sm:hidden`: it would hide it at every width. */
 const ICON_SVG = 'svg:not([data-disclosure-chevron])'
 
-/**
- * Colour utilities, for the AC-5 guard below. Tailwind emits every `max-sm:`
- * rule AFTER the unprefixed utilities, so a `max-sm:` COLOUR would beat an
- * unprefixed colour of equal specificity below 640px. Layout/spacing/typography
- * may be `max-sm:`-scoped; colour may not.
- * ⚠️ Corrected by story 69.3: this used to say it would beat the unprefixed
- * `hover:` states. It would not (`:hover` is 0-2-0, a media-scoped class 0-1-0;
- * measured for `max-lg:` in `e2e/nav-lg-row{,.paid}.spec.ts`, since deleted).
- * The guard stays
- * for the non-hover case, the unprefixed active treatment included.
- *
- * ⚠️ Matched by PROPERTY FAMILY, not by palette name. An earlier version listed
- * nine palettes, which let `max-sm:bg-slate-100`, `max-sm:text-emerald-600` and
- * `max-sm:bg-[#fff]` through — i.e. it admitted precisely the defect it exists
- * to block. The colour-bearing families are enumerated instead, and the
- * non-colour members of ambiguous ones are excluded explicitly below.
- */
+/** Matched by property family, not palette name: a palette list lets other palettes through. */
 const COLOUR_FAMILY =
   /^(bg|text|border|ring|divide|placeholder|caret|accent|outline|decoration|shadow|fill|stroke|from|via|to)-/
 
-/**
- * Non-colour utilities that share a colour family's prefix. `text-` and
- * `border-` are the ambiguous ones, and this story deliberately scopes mobile
- * TYPOGRAPHY with `max-sm:` (`text-[11px]`, `text-center`), so a family match
- * alone would false-positive on exactly the tokens it is meant to allow.
- */
+/** `max-sm:` typography (`text-[11px]`, `text-center`) shares colour prefixes and must be allowed. */
 const NON_COLOUR: readonly RegExp[] = [
   /^text-(left|center|right|justify|start|end)$/,
   /^text-(xs|sm|base|lg|[2-9]?xl)$/,
@@ -193,8 +79,6 @@ describe('GlobalNav', () => {
   it.each(SECTIONS)('exposes the %s section link to %s', async (name, href) => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
-    // A promoted destination has two DOM copies since story 69.3; every other
-    // destination has one. Each copy must point at the route.
     const links = within(nav).getAllByRole('link', { name })
     const promoted = MORE_DESTINATIONS.some(([, h]) => h === href)
     expect(links).toHaveLength(promoted ? 2 : 1)
@@ -204,8 +88,6 @@ describe('GlobalNav', () => {
   it('exposes exactly the six top-level sections, as nine DOM anchors (no premium entry)', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
-    // Nine DOM anchors: six destinations + the two promoted row copies (69.3)
-    // + the phone-only Settings row (was eight until story 96.3).
     expect(within(nav).getAllByRole('link')).toHaveLength(
       SECTIONS.length + PROMOTED_COPIES + SETTINGS_ROW
     )
@@ -215,20 +97,12 @@ describe('GlobalNav', () => {
           .getAllByRole('link')
           .map((a) => a.getAttribute('href'))
       ).size
-      // Seven unique hrefs: the six destinations + /settings (was six until
-      // story 96.3; the row copies repeat hrefs, so they add none).
     ).toBe(SECTIONS.length + SETTINGS_ROW)
-    // Forecasting stays surfaced-but-locked on Home (story 7-2), not in the nav.
     expect(within(nav).queryByRole('link', { name: /forecast/i })).not.toBeInTheDocument()
   })
 
-  // ⚠️ REWRITTEN by story 96.3 (FR163). Story 69.2 (FR109) took Settings out of
-  // the nav for the account cluster, and this test was "carries no link to
-  // /settings, in any form". Below 640px it is back, as the LAST sheet row for
-  // every session, and the account cluster's routes are `max-sm:hidden` there.
-  // jsdom applies no stylesheet, so the per-width rule is pinned as TOKENS
-  // (`sm:hidden` here; the complement is in `nav-account-row.test.tsx`), by
-  // `classList` membership: `max-sm:hidden` contains `sm:hidden` as a substring.
+  // jsdom applies no stylesheet, so the per-width rule is pinned as tokens, via classList
+  // (`max-sm:hidden` contains `sm:hidden` as a substring).
   it('carries exactly one /settings link: the LAST sheet row, phones only', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
@@ -241,16 +115,12 @@ describe('GlobalNav', () => {
     expect(li.contains(link), 'Settings is not the LAST row of the sheet').toBe(true)
     expect(li.tagName).toBe('LI')
     expect(li.parentElement, 'Settings is not a direct row of the sheet').toBe(sheet)
-    // Phones only: `sm:hidden`, and NOT the desktop-only mirror or the lg hide.
     const liTokens = tokens(li)
     expect(liTokens, 'the Settings row reaches >= 640px').toContain('sm:hidden')
     expect(liTokens).not.toContain('max-sm:hidden')
     expect(liTokens).not.toContain('lg:hidden')
-    // Not a promoted destination: no row copy, and no `data-nav-promoted`.
     expect(li).not.toHaveAttribute('data-nav-promoted')
     expect(rowCopiesOf(nav).map((a) => a.getAttribute('href'))).not.toContain('/settings')
-    // Styled like the other sheet rows: the shared row class (a 44px target),
-    // the gear icon (mobile-only like every icon) and a wrapped label.
     expect(tokens(link)).toEqual(
       expect.arrayContaining(['max-sm:min-h-[44px]', 'max-sm:flex', 'max-sm:gap-3', 'sm:block'])
     )
@@ -260,7 +130,6 @@ describe('GlobalNav', () => {
     expect(icon, 'the Settings row has no gear icon').not.toBeNull()
     expect(tokens(icon as Element)).toContain('sm:hidden')
     expect(link.querySelector('[data-nav-label]')?.textContent).toBe('Settings')
-    // Not current away from /settings.
     expect(link).not.toHaveAttribute('aria-current')
     expect(tokens(link)).not.toContain('bg-green-50')
   })
@@ -272,8 +141,6 @@ describe('GlobalNav', () => {
       const nav = await screen.findByRole('navigation', { name: /primary/i })
       const link = within(sheetOf(nav)).getByRole('link', { name: 'Settings' })
       expect(link).toHaveAttribute('aria-current', 'page')
-      // The unprefixed active treatment, like every link here (the colour guard
-      // below forbids a `max-*` colour on a link).
       expect(tokens(link)).toContain('bg-green-50')
       const current = [...nav.querySelectorAll('[aria-current]')]
       expect(current, 'something else in the nav is current on /settings').toEqual([link])
@@ -299,40 +166,23 @@ describe('GlobalNav', () => {
     expect(overview).toHaveAttribute('aria-current', 'page')
   })
 
-  // Story 31.4. This replaces a test that mocked `useIsNarrowViewport` to render
-  // a second, mobile-only subtree and then re-counted the section links. With one
-  // CSS-switched DOM that claim is a byte-for-byte duplicate of "exposes exactly
-  // the six top-level sections" above and would stay green while proving
-  // nothing about mobile. The claim that survives is the one the merge is
-  // actually about: BOTH layouts live on the SAME elements at once.
   it('drives both layouts from ONE subtree — desktop and max-sm: utilities co-exist', async () => {
     renderWithRouter(<GlobalNav />)
     const navs = await screen.findAllByRole('navigation', { name: /primary/i })
-    // A dual-render (`hidden sm:block` + `sm:hidden`) would put two identically
-    // named landmarks in the DOM. Explicitly forbidden — see the GlobalNav
-    // docblock and `ui/ResponsiveTable.tsx:19-30`.
+    // A dual-render would put two identically named landmarks in the DOM.
     expect(navs, 'more than one Primary landmark is in the DOM').toHaveLength(1)
     const nav = navs[0]
     const list = nav.querySelector('ul')
     expect(list).not.toBeNull()
 
-    // Nine: was eight until story 96.3 added the phone-only Settings row.
     expect(within(nav).getAllByRole('link')).toHaveLength(
       SECTIONS.length + PROMOTED_COPIES + SETTINGS_ROW
     )
-    // The single <nav> carries the mobile bar's own positioning...
     expect(tokens(nav)).toContain('max-sm:fixed')
-    // ...while the same <ul> carries BOTH the desktop flex row and the mobile grid.
     const listTokens = tokens(list as HTMLElement)
     expect(listTokens).toEqual(expect.arrayContaining(['flex', 'flex-wrap', 'max-sm:grid']))
   })
 
-  // Story 31.5 supersedes 18-2's 4x2 grid. Eight destinations cannot fit one
-  // legible row at 320px (~40px cells), and stacking an icon over each label to
-  // make the bar recognisable would have taken the 4x2 grid to ~112px — WORSE
-  // than the 89px it replaced. Icons and eight items are arithmetically mutually
-  // exclusive at this width, so the bar carries FIVE cells (four destinations +
-  // the More trigger), giving 64px tracks and a 56.75px single-row bar.
   it('lays the mobile bottom bar out as a 5-column grid (story 31.5)', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
@@ -341,46 +191,16 @@ describe('GlobalNav', () => {
 
     expect(listTokens).toContain('max-sm:grid')
     expect(listTokens).toContain('max-sm:grid-cols-5')
-    // The three neutralisers. `grid-cols-5` is `repeat(5, minmax(0,1fr))`, so any
-    // surviving desktop `gap-1 pl-4 py-2` resizes every track and the labels
-    // re-overflow. Measured in `e2e/nav-responsive-css.spec.ts`.
+    // A surviving desktop `gap-1 pl-4 py-2` would resize every grid track.
     expect(listTokens).toContain('max-sm:gap-0')
     expect(listTokens).toContain('max-sm:px-0')
     expect(listTokens).toContain('max-sm:py-0')
-    // The desktop row is untouched (AC-3), including `flex-wrap`. Since story
-    // 59.2's review the nav is `sm:shrink-0`, so the token is inert at >= 640px
-    // and is kept deliberately (see the `GlobalNav.tsx` comment on the list).
-    // The row's measured headroom lives ONLY in `e2e/nav-responsive-css.spec.ts`.
-    //
-    // ⚠️ `pl-4`, not `px-4`, since story 69.1 (decision D1): the list's right
-    // padding pays for the More chevron, because the signed-out 640px row had
-    // almost no headroom (the figure lives in that record, not here).
-    // `max-sm:px-0` still zeroes BOTH sides below `sm`, so
-    // the mobile bar is untouched. Putting `px-4` back overflows the document at
-    // 640px signed out.
     expect(listTokens).toEqual(
       expect.arrayContaining(['flex', 'flex-wrap', 'gap-1', 'pl-4', 'py-2'])
     )
     expect(listTokens, 'the list regained its right padding').not.toContain('px-4')
   })
 
-  /**
-   * Story 31.5 — the structure that lets five cells and eight destinations
-   * coexist without duplicating a single label.
-   *
-   * The obvious implementation (leave eight `<li>` in the bar, hide four with
-   * `max-sm:hidden`, re-list them in a mobile-only sheet) is forbidden twice
-   * over: it puts four destination labels in the DOM TWICE, and it breaks
-   * jsdom multi-match and Playwright strict mode alike. The compliant shape is
-   * a NESTED `<ul>` inside the fifth `<li>`. Until story 59.2 that list was
-   * dissolved into the desktop row at >= 640px; since 59.2 it sits inside the
-   * cell's `<details>` as a disclosure panel.
-   *
-   * ⚠️ Story 69.3 (decision D2) DOES put two labels in the DOM twice, on
-   * purpose, for the `lg` row, and it corrected the docblock this comment used
-   * to cite: what `GlobalNav.tsx` rejects is two `<nav>` LANDMARKS. The mobile
-   * reasoning above stands; the `lg` copies are asserted below.
-   */
   it('nests the More destinations in ONE list, duplicated only as the lg row copies', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
@@ -390,9 +210,6 @@ describe('GlobalNav', () => {
     const [outer, sheet] = [...lists]
     expect(outer.contains(sheet), 'the sheet list is not nested inside the outer list').toBe(true)
 
-    // The bar's own cells are the outer list's direct anchors; the sheet's rows
-    // sit one level deeper. Since story 69.3 the outer list ALSO holds the two
-    // promoted row copies (`data-nav-promoted`, rendered only at `lg`).
     const barAnchors = [...outer.querySelectorAll(':scope > li:not([data-nav-promoted]) > a')]
     const sheetAnchors = [...sheet.querySelectorAll(':scope > li > a')]
     expect(barAnchors.map((a) => a.textContent?.trim())).toEqual([
@@ -401,7 +218,6 @@ describe('GlobalNav', () => {
       'Expenses',
       'Savings',
     ])
-    // + Settings, last, phones only (was two rows until story 96.3).
     expect(sheetAnchors.map((a) => a.textContent?.trim())).toEqual([
       'Balances',
       'Retirement',
@@ -409,10 +225,6 @@ describe('GlobalNav', () => {
     ])
     expect(rowCopiesOf(nav).map((a) => a.textContent?.trim())).toEqual(['Balances', 'Retirement'])
 
-    // ⚠️ REVERSED by story 69.3 (decision D2, Lucas 2026-09-25). Until then
-    // this asserted that NO href appears twice. The promoted destinations now
-    // appear exactly twice, and nothing else does: a third copy, or a copy of
-    // a tab or a premium row, is still the dual-render defect.
     const hrefs = [...nav.querySelectorAll('a')].map((a) => a.getAttribute('href'))
     const counts = new Map<string | null, number>()
     for (const h of hrefs) counts.set(h, (counts.get(h) ?? 0) + 1)
@@ -420,10 +232,6 @@ describe('GlobalNav', () => {
       const promoted = MORE_DESTINATIONS.some(([, href]) => href === h)
       expect(n, `${h} appears ${n} times in the nav DOM`).toBe(promoted ? 2 : 1)
     }
-    // Only ONE copy is ever rendered: the sheet copy is `lg:hidden`, the row
-    // copy `hidden lg:block`. Token-level only; e2e proves the render.
-    // The PROMOTED sheet rows specifically (the free sheet happens to be only
-    // those, but the assertion is about the set, not the tier).
     for (const [, href] of MORE_DESTINATIONS) {
       const li = sheet.querySelector(`:scope > li[data-nav-path="${href}"]`)
       expect(li, `no sheet row for ${href}`).not.toBeNull()
@@ -431,25 +239,14 @@ describe('GlobalNav', () => {
     }
     for (const a of rowCopiesOf(nav)) {
       expect(tokens(a.parentElement as HTMLElement)).toEqual(['hidden', 'lg:block'])
-      // A desktop-only element: no mobile glyph, no mobile tokens.
       expect(a.querySelector('svg'), 'a row copy carries an icon').toBeNull()
     }
 
-    // Story 59.2: the nested list is the panel of the fifth cell's `<details>`.
-    // Until 59.2 this asserted the OPPOSITE — two `sm:contents` tokens
-    // dissolving the list into the desktop row — and that dissolve is now the
-    // regression. Its absence is pinned in the story 59.2 block below.
     const details = sheet.parentElement as HTMLElement
     expect(details.tagName, 'the sheet list is not the panel of a <details>').toBe('DETAILS')
     expect((details.parentElement as HTMLElement).tagName).toBe('LI')
   })
 
-  /**
-   * Story 69.1 (FR108): the desktop disclosure chevron. TOKEN-LEVEL ONLY —
-   * jsdom applies no stylesheet, so nothing here can prove the chevron is
-   * visible or that it turns. The e2e proofs (incl. JavaScript off) were dropped
-   * by story 84.2 (FR137). This pins the tokens they relied on.
-   */
   it('carries one desktop-only chevron that turns on the `open` attribute', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
@@ -467,17 +264,13 @@ describe('GlobalNav', () => {
       expect.arrayContaining(['max-sm:hidden', 'group-open:rotate-180'])
     )
     expect(chevronTokens, 'the chevron is hidden at desktop').not.toContain('sm:hidden')
-    // AC-2: the SAME visual class as the account menu's chevron, not a copy.
     expect(chevronTokens).toEqual(expect.arrayContaining(DISCLOSURE_CHEVRON_CLASS.split(' ')))
     const details = nav.querySelector('details') as HTMLDetailsElement
     expect(details, 'the <details> lost `group`').toHaveClass('group')
     const summary = nav.querySelector('details > summary') as HTMLElement
     expect(summary).toHaveAccessibleName('More')
 
-    // Rotation is the attribute's job, never state's (decision D2). Asserted
-    // OPEN as well as closed: a state-driven `isMoreOpen ? ' rotate-180'`
-    // is absent while closed, so a closed-only check could not fail on it
-    // (code review 2026-09-25).
+    // Asserted open as well: a state-driven `rotate-180` is absent while closed too.
     expect(chevronTokens).not.toContain('rotate-180')
     fireEvent.click(summary)
     await waitFor(() => expect(details.open, 'the disclosure did not open').toBe(true))
@@ -487,16 +280,7 @@ describe('GlobalNav', () => {
     ).not.toContain('rotate-180')
   })
 
-  /**
-   * Story 31.5 — the More trigger. Every other sweep in this file misses it:
-   * the chrome test reads only `nav.className`, and the colour-scoping test
-   * iterates `getAllByRole('link')`, which skips the trigger entirely.
-   *
-   * ⚠️ Story 59.2 made it a `<summary>` that reaches the desktop row, reversing
-   * this test's old title, "never reaches the desktop row". A `<summary>` has no
-   * role in `@testing-library/dom` (see the story 59.2 block), so it is found by
-   * selector and asserted non-null before anything else.
-   */
+  /** Missed by the other sweeps: a <summary> has no testing-library role, so it is found by selector. */
   it('exposes a single More trigger, a <summary>, styled for both layouts', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
@@ -507,41 +291,21 @@ describe('GlobalNav', () => {
     const trigger = summaries[0] as HTMLElement
     expect(trigger).toHaveAccessibleName('More')
 
-    // A SHARED element now, so the composition rule for shared elements applies:
-    // desktop base + APPENDED `max-sm:` variants (`GlobalNav.tsx` docblock).
     const triggerTokens = tokens(trigger)
-    // Desktop: the same look as every desktop anchor.
     expect(triggerTokens).toEqual(
       expect.arrayContaining(['inline-block', 'rounded-md', 'px-3', 'py-2', 'text-sm'])
     )
-    // Mobile: the 64px bar cell it has always been, via `max-sm:` only.
     expect(triggerTokens).toContain('max-sm:flex-col')
     expect(triggerTokens).toContain('max-sm:min-h-[44px]')
     expect(triggerTokens).toContain('max-sm:text-[11px]')
     expect(triggerTokens).toContain('focus-visible:ring-2')
     expect(triggerTokens).toContain('max-sm:focus-visible:ring-inset')
-    // The inset ring is for the flush mobile tracks only; desktop rings are outset.
     expect(triggerTokens, '`ring-inset` leaked onto the desktop trigger').not.toContain(
       'focus-visible:ring-inset'
     )
   })
 
-  /**
-   * Story 59.2 — the closed state is the NATIVE `<details>` state, at every width.
-   *
-   * ⚠️ THIS TEST'S CONTRACT INVERTED IN 59.2. It used to guard that the closed
-   * state did NOT hide the destinations on desktop: it was a `max-sm:`-scoped
-   * class, never the `hidden` attribute, because `hidden={!isOpen}` would have
-   * deleted them from the flat desktop row. Hiding them at every width is now
-   * the DESIGN (decision, Lucas 2026-09-21), and the old assertion
-   * ("no `hidden` attribute") would have stayed green while being meaningless.
-   *
-   * What still must not happen is a SECOND hiding mechanism layered on the
-   * native one. A `hidden` attribute or a `max-sm:hidden` class would keep the
-   * panel shut after the native toggle opened it, so it would never open with
-   * JavaScript off. The fail-open property (every route reachable with zero
-   * JavaScript) rests on the native toggle being the ONLY thing that hides it.
-   */
+  /** The native toggle must be the only hiding mechanism, or the panel never opens without JS. */
   it('hides the closed panel natively at every width, and by nothing else', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
@@ -554,61 +318,33 @@ describe('GlobalNav', () => {
     expect(tokens(sheet)).not.toContain('hidden')
     // Closed means hidden, and jest-dom can see it: it respects `details[open]`.
     expect(within(sheet).getByRole('link', { name: /^balances$/i })).not.toBeVisible()
-    // Out of flow against the `max-sm:fixed` nav — NOT `max-sm:fixed` itself,
-    // which resolves `bottom: 100%` against the viewport and renders the sheet
-    // entirely off the top of the screen (measured at y=-279).
+    // `absolute` against the fixed nav: `fixed` resolves `bottom: 100%` against the viewport.
     expect(tokens(sheet)).toContain('max-sm:absolute')
     expect(tokens(sheet), 'the sheet is `fixed` — it will render off-screen').not.toContain(
       'max-sm:fixed'
     )
-    // Its own opaque background, for the same reason the bar has one.
     expect(tokens(sheet)).toContain('max-sm:bg-white')
     expect(tokens(sheet)).toContain('dark:max-sm:bg-gray-800')
   })
 
-  /**
-   * Story 31.5 — every icon is a mobile-only element.
-   *
-   * ⚠️⚠️ Measured: an icon rendered without `sm:hidden` grows the desktop nav
-   * 52px -> 76px at 1280px and 92px -> 140px at 640px, every anchor 36px ->
-   * 60px, for 212 computed diffs — and NOT ONE test in the pre-31.5 suite went
-   * red, including the one named "the desktop cascade is untouched", because
-   * nothing anywhere read a height.
-   */
+  /** Without `sm:hidden` an icon grows the desktop nav, and no geometry test notices. */
   it('scopes every icon to mobile with `sm:hidden`', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
 
-    // ICONS only: the desktop disclosure chevron (story 69.1) is the one svg
-    // that must NOT carry `sm:hidden`, and it has its own test below.
     const icons = [...nav.querySelectorAll(ICON_SVG)]
-    // Eight: one per bar tab (4), one for More, one per sheet row (3, Settings
-    // included). Was NINE until story 43.3 removed the Net Worth destination
-    // and its icon, EIGHT until story 69.2 removed Settings and its gear, and
-    // seven until story 96.3 put the gear back as the phone-only sheet row.
     expect(icons, 'expected one icon per destination plus the More trigger').toHaveLength(8)
     for (const icon of icons) {
       expect(
         tokens(icon),
         'an icon is missing `sm:hidden` — it will grow the desktop nav'
       ).toContain('sm:hidden')
-      // Decorative: the anchor's own label is the announced name.
       expect(icon).toHaveAttribute('aria-hidden', 'true')
     }
 
-    // Each label is wrapped so the e2e line-count probe can scope a Range to the
-    // TEXT — over the whole anchor it measures 3 rects on a correct cell.
-    // Ten labels: the eight above + the two promoted row copies (story 69.3),
-    // which carry a label and NO icon (was nine until story 96.3).
     expect(nav.querySelectorAll('[data-nav-label]')).toHaveLength(10)
   })
 
-  // Story 18-2 (review follow-ups), still true of the 31.5 single-row bar: the
-  // fixed bar pads by the iOS `safe-area-inset-bottom` so it clears the home
-  // indicator, and each anchor is `h-full` so it fills its stretched grid cell
-  // (the active background and centering hold when a cell grows under
-  // text-zoom/wrap). `flex-col` is what makes the cell an icon-over-label stack
-  // — the single token this whole redesign turns on.
   it('pads for the safe-area inset and stretches each mobile cell (story 18-2)', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
@@ -621,52 +357,38 @@ describe('GlobalNav', () => {
     expect(anchorTokens).toContain('max-sm:gap-0.5')
   })
 
-  // Story 31.4 — the two mobile-only INK tokens. Neither has any geometric
-  // consequence, so nothing else in the suite (here or in e2e's scrollWidth /
-  // height / line-count assertions) can see them go missing; a reference
-  // implementation shipping both regressions at once passed all 129 e2e tests.
+  // Ink-only tokens: no geometric consequence, so nothing else can see them go missing.
   it('keeps the mobile cells square and their focus ring inset', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
     const anchorTokens = tokens(within(nav).getByRole('link', { name: /^overview$/i }))
 
-    // `rounded-md` is unprefixed, so it reaches the mobile cells unless undone:
-    // 6px corners on tab cells that have never had them.
+    // `rounded-md` is unprefixed, so it reaches the mobile cells unless undone.
     expect(anchorTokens).toContain('rounded-md')
     expect(anchorTokens).toContain('max-sm:rounded-none')
 
-    // The grid tracks are 64px x 5 flush to x=0..320, so an OUTSET 2px ring
-    // paints at x=-2/x=322 — clipped off-screen on the 1st and 5th cells.
+    // The tracks are flush to the viewport edges, so an outset ring is clipped on the edge cells.
     expect(anchorTokens).toContain('focus-visible:ring-2')
     expect(anchorTokens).toContain('max-sm:focus-visible:ring-inset')
-    // Mobile-only: unprefixed would change the >= 640px rendering (AC-3).
     expect(anchorTokens, '`ring-inset` leaked onto the desktop nav').not.toContain(
       'focus-visible:ring-inset'
     )
   })
 
-  // Story 31.4 (AC-3) — the desktop cascade must be reachable at >= 640px. An
-  // unprefixed `fixed` on the <nav> would make the bar a fixed bottom tab bar at
-  // EVERY width while passing every mobile assertion in the suite.
+  // An unprefixed `fixed` would make it a bottom bar at every width while passing mobile assertions.
   it('never positions the nav out of flow at desktop widths', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
     const navTokens = tokens(nav)
 
-    // A denylist can only catch what it enumerates, so this one is checked two
-    // ways. First the specific tokens that would re-create the bottom bar at
-    // every width...
     for (const leaked of ['fixed', 'inset-x-0', 'bottom-0', 'z-40', 'border-t']) {
       expect(navTokens, `\`${leaked}\` is unprefixed — it reaches desktop too`).not.toContain(
         leaked
       )
     }
-    // ...then the general rule those tokens are only instances of: below `sm`
-    // this element is out of flow with its own chrome, and NONE of that may be
-    // unprefixed. `absolute`/`sticky`/`bg-white` are not in the list above and
-    // would each be a real desktop regression.
+    // Below `sm` it is out of flow with its own chrome; none of that may be unprefixed.
     for (const token of navTokens) {
-      if (token.includes(':')) continue // variant-scoped tokens are fine
+      if (token.includes(':')) continue
       expect(
         /^(fixed|absolute|sticky|inset-|bottom-|top-|left-|right-|z-|border|bg-|shadow)/.test(
           token
@@ -674,17 +396,12 @@ describe('GlobalNav', () => {
         `the nav carries an unprefixed positioning/chrome utility (${token}) — it reaches desktop too`
       ).toBe(false)
     }
-    // The old desktop-nav chrome that existed ONLY to style the pre-hydration
-    // flash. The real bottom bar carries `max-sm:border-t` instead.
     expect(navTokens, 'the flash-era `max-sm:border-b` chrome is still here').not.toContain(
       'max-sm:border-b'
     )
   })
 
-  // Story 31.4 (AC-5) — the composition trap. Tailwind emits `max-sm:` after
-  // every unprefixed utility, so a `max-sm:` colour on a link would beat an
-  // unprefixed colour of equal specificity below 640px (NOT the `hover:`
-  // states, as this once said: see `COLOUR_FAMILY`'s note).
+  // A `max-sm:` colour on a link beats an unprefixed colour of equal specificity (it is emitted later).
   it('scopes only layout with max-sm: on the links — never colour', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
@@ -694,10 +411,6 @@ describe('GlobalNav', () => {
       for (const token of tokens(anchor)) {
         const variants = token.split(':')
         const base = variants.pop() ?? token
-        // Every `max-*` media variant, not only `max-sm:` (story 69.3 code
-        // review): the rationale is the same for all of them, and 69.3 added
-        // the first `max-lg:` colour to this component (on the More trigger,
-        // which is not a link and is the one documented exception).
         const scope = variants.find((v) => v.startsWith('max-'))
         if (!scope) continue
         expect(
@@ -707,12 +420,7 @@ describe('GlobalNav', () => {
       }
     }
 
-    // Repo convention, asserted the same way in `ResponsiveTable.test.tsx:122`:
-    // `dark:` comes first. Both orders compile identically in Tailwind 3.4.19.
-    //
-    // ⚠️ This sweeps the WHOLE subtree, not just the links. The `<nav>` is the
-    // only element that actually carries `dark:max-sm:` tokens, so a links-only
-    // loop checked every element except the one that could break the rule.
+    // Sweeps the whole subtree: the <nav> is the only element carrying `dark:max-sm:` tokens.
     const subtree = [nav, ...nav.querySelectorAll('*')] as HTMLElement[]
     for (const el of subtree) {
       for (const token of tokens(el)) {
@@ -724,47 +432,27 @@ describe('GlobalNav', () => {
     }
   })
 
-  /**
-   * Story 31.5 (AC-8) — the More tab's active state.
-   *
-   * ⚠️⚠️ `<Link activeProps>` CANNOT make this claim and would not fail loudly:
-   * More is not a route, so it would simply mark nothing, and the mobile bar
-   * would show NO active tab on two of six destinations — worse orientation
-   * than the grid this story replaced. The state is derived from the router
-   * location instead, which is exactly as hydration-safe (`useRouterState` reads
-   * the same store `<Link>` does, seeded before the first React render).
-   */
   describe('the More tab is active on the routes it owns (two since story 69.2)', () => {
-    // ⚠️ Non-null FIRST. The `.not.toContain` cases below would pass against a
-    // missing node, and `getByRole('button')` no longer finds the trigger at all.
+    // Non-null first: the `.not.toContain` cases would pass on a missing node.
     const moreTrigger = (nav: HTMLElement): HTMLElement => {
       const summary = nav.querySelector('details > summary')
       expect(summary, 'the More <summary> is missing').not.toBeNull()
       return summary as HTMLElement
     }
 
-    // Story 69.3: these two are behind More only BELOW `lg`, so More's active
-    // treatment is `max-lg:`-scoped on their routes. The unprefixed token would
-    // light More at `lg` too, beside the row anchor that is the real "you are
-    // here" there (AC-8 mutation iii). e2e read the computed colour at both
-    // widths until stories 84.2/84.3 retired those specs.
     it.each(MORE_DESTINATIONS)('is active below lg only on %s (%s)', async (_label, href) => {
       renderWithRouter(<GlobalNav />, { path: href })
       const nav = await screen.findByRole('navigation', { name: /primary/i })
-      // The matching row inside the sheet is marked, by `<Link>`'s own active
-      // handling, and so is its row copy...
       const sheetRow = await within(sheetOf(nav)).findByRole('link', { name: _label })
       expect(sheetRow).toHaveAttribute('aria-current', 'page')
       const rowCopy = rowCopiesOf(nav).find((a) => a.getAttribute('href') === href)
       expect(rowCopy, `no row copy for ${href}`).toBeDefined()
       expect(rowCopy).toHaveAttribute('aria-current', 'page')
-      // ...and the TAB that discloses it carries the active treatment, below lg.
       const triggerTokens = tokens(moreTrigger(nav))
       expect(triggerTokens, `the More tab is not marked active on ${href}`).toEqual(
         expect.arrayContaining(['max-lg:bg-green-50', 'max-lg:text-green-700'])
       )
       expect(triggerTokens, `the More tab is active at lg on ${href}`).not.toContain('bg-green-50')
-      // The /settings cue is not this route's (story 96.3).
       expect(triggerTokens).not.toContain('max-sm:bg-green-50')
     })
 
@@ -782,11 +470,6 @@ describe('GlobalNav', () => {
       )
     })
 
-    // Story 96.3 (FR163, decision Q1): Settings is behind More below 640px only,
-    // so More's cue on /settings is `max-sm:`-scoped. NOT unprefixed (at >= 640px
-    // the account cluster is the route) and NOT the `max-lg:` promoted cue
-    // (640-1023px, Settings is not behind More). Token-only: the pale tint is
-    // below the screenshots' 0.2 threshold (84.2).
     it.each(['/settings', '/Settings'])('is active below sm only on %s', async (path) => {
       renderWithRouter(<GlobalNav />, { path })
       const nav = await screen.findByRole('navigation', { name: /primary/i })
@@ -806,9 +489,7 @@ describe('GlobalNav', () => {
       )
     })
 
-    // Anti-vacuity: `bg-green-50` must actually be the token the active
-    // treatment uses, or both halves above would pass on a component that never
-    // applies any active styling at all.
+    // Anti-vacuity: `bg-green-50` must really be the active treatment's token.
     it('uses the same active treatment the route tabs use', async () => {
       renderWithRouter(<GlobalNav />, { path: '/income' })
       const active = await screen.findByRole('link', { name: /^income$/i })
@@ -817,23 +498,8 @@ describe('GlobalNav', () => {
   })
 })
 
-/**
- * Story 35.2 (FR55) — the Retirement planner visibility preference.
- *
- * ⚠️ These counts are 6 and 7, and that does NOT contradict the "STAY 7"
- * warning at the top of this file. That warning is about jsdom not hiding what a
- * browser hides: the sheet anchors always resolve here, whether the panel is
- * open or not (story 59.2). This block asserts something different in kind — with
- * the preference off, the Retirement `<li>` is NEVER RENDERED, so it is absent
- * from the DOM at every width, in jsdom and in a real browser alike.
- *
- * The pre-paint half of the feature (the `<head>` script + the CSS rule that
- * suppress the entry BEFORE React runs) is deliberately NOT asserted here —
- * jsdom applies no stylesheet, so an assertion of it would be measuring a class
- * string, not a style. Since story 84.3 the chain (script in `<head>`, CSS rule,
- * selector matching the server-rendered entries) is pinned in
- * `src/__tests__/pre-paint-suppression.dom.test.tsx`; the paint is not.
- */
+// These counts drop because the Retirement <li> is not rendered at all, unlike the reachability
+// note above.
 describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
   const hidePlanner = () => usePlannerVisibilityStore.setState({ showRetirementPlanner: false })
 
@@ -851,10 +517,6 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
       [...nav.querySelectorAll('a')].map((a) => a.getAttribute('href')),
       'the Retirement href survived the filter'
     ).not.toContain('/retirement')
-    // Five destinations, not six: the node is not rendered, rather than hidden
-    // by CSS. Plus ONE promoted row copy (Balances): the Retirement row copy is
-    // filtered with its sheet row (story 69.3). Plus the Settings row, which no
-    // preference filters (story 96.3; was 6 until then). 5 + 1 + 1 = 7.
     expect(within(nav).getAllByRole('link')).toHaveLength(SECTIONS.length - 1 + 1 + SETTINGS_ROW)
     expect(rowCopiesOf(nav).map((a) => a.textContent?.trim())).toEqual(['Balances'])
   })
@@ -868,7 +530,6 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
     const sheet = [...lists][1]
     expect(
       [...sheet.querySelectorAll(':scope > li > a')].map((a) => a.textContent?.trim())
-      // Settings stays last with the planner hidden (story 96.3, AC 1).
     ).toEqual(['Balances', 'Settings'])
   })
 
@@ -877,11 +538,6 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
 
-    // Seven icons: four bar tabs, the More trigger, two sheet rows (Balances,
-    // Settings). (Eight until story 43.3 removed the Net Worth destination;
-    // seven until story 69.2 removed Settings; six until story 96.3 put the
-    // phone-only Settings row back.) Eight labels: those seven + the Balances
-    // row copy, which has a label and no icon (story 69.3).
     expect([...nav.querySelectorAll(ICON_SVG)]).toHaveLength(7)
     expect(nav.querySelectorAll('[data-nav-label]')).toHaveLength(8)
   })
@@ -900,16 +556,6 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
     expect(nav.querySelectorAll('details > summary')).toHaveLength(1)
   })
 
-  /**
-   * AC-3 — the More trigger cannot claim a destination the sheet does not hold.
-   *
-   * ⚠️ This is the state the story made unrepresentable rather than guarded:
-   * More's active state (`moreActiveClass`, `isMoreActive` until story 69.3) is
-   * derived from the SAME filtered list the rows render from.
-   * Computing it from the unfiltered constant would light the trigger here while
-   * the sheet it discloses holds no Retirement row — an orientation cue pointing
-   * at nothing.
-   */
   it('does not mark the More trigger active on /retirement while hidden', async () => {
     hidePlanner()
     renderWithRouter(<GlobalNav />, { path: '/retirement' })
@@ -928,11 +574,7 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
     hidePlanner()
     const { unmount } = renderWithRouter(<GlobalNav />)
     const hiddenNav = await screen.findByRole('navigation', { name: /primary/i })
-    // ⚠️ Assert the BEFORE state too. Checking only the restored render would
-    // pass identically on a component that never filters anything — the test
-    // could not tell the feature from its absence.
-    // 5 destinations + the Balances row copy (story 69.3) + the Settings row:
-    // seven, was six until story 96.3.
+    // Assert the before state too, or a component that never filters would pass.
     expect(within(hiddenNav).getAllByRole('link')).toHaveLength(
       SECTIONS.length - 1 + 1 + SETTINGS_ROW
     )
@@ -947,20 +589,12 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
       '/retirement'
     )
     expect(rowCopiesOf(nav).map((a) => a.getAttribute('href'))).toEqual(['/balance', '/retirement'])
-    // Nine: was eight until story 96.3 added the phone-only Settings row.
     expect(within(nav).getAllByRole('link')).toHaveLength(
       SECTIONS.length + PROMOTED_COPIES + SETTINGS_ROW
     )
   })
 
-  /**
-   * The CSS hook the pre-paint script targets.
-   *
-   * `[data-hide-retirement='1'] [data-nav-path='/retirement']` is what suppresses
-   * the entry on the first frame. jsdom cannot evaluate that rule, but it CAN
-   * prove the attribute the selector depends on exists on every destination —
-   * without which the rule silently matches nothing and the flash returns.
-   */
+  /** jsdom can't evaluate the pre-paint rule, but it can prove the attribute it selects on exists. */
   it('tags every destination <li> with its route for the pre-paint CSS hook', async () => {
     renderWithRouter(<GlobalNav />)
     const nav = await screen.findByRole('navigation', { name: /primary/i })
@@ -968,11 +602,7 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
     const tagged = [...nav.querySelectorAll('li[data-nav-path]')].map((li) =>
       li.getAttribute('data-nav-path')
     )
-    // DOM order: the four tabs, the two promoted ROW copies (story 69.3), then
-    // the sheet rows. The row copies MUST be tagged: the pre-paint rule hides
-    // `[data-nav-path='/retirement']`, and an untagged row copy would paint a
-    // hidden planner at lg on the first frame (AC-5). `/settings` last: the
-    // phone-only sheet row (story 96.3).
+    // The row copies must be tagged, or the pre-paint rule misses a hidden planner at `lg`.
     expect(tagged).toEqual([
       '/',
       '/income',
@@ -987,28 +617,6 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
   })
 })
 
-/**
- * Story 58.1 (FR87) — the nav is tier-aware.
- *
- * A paid session gets four extra sheet destinations; every other session gets
- * exactly the nav it got before this story. The tier comes from the SSR session
- * seed, read ONCE as a `useState` initializer (`session-seed.tsx:14-16`), so the
- * first painted frame is already correct — the same mechanism `usePremiumAccess`
- * uses, and the reason this could not be built on `usePremiumAccess` itself,
- * whose no-seed path fires a client round-trip and would flash 7 items then 11.
- *
- * ⚠️ These counts (11 / 7) do not contradict the "STAY 7" warning at the top of
- * this file. That warning is about REACHABILITY: jsdom does not hide a closed
- * `<details>` (story 59.2), so every anchor resolves whether or not a real
- * browser would let a user reach it. This block varies TIER, which changes what
- * is rendered at all, at every width.
- *
- * ⚠️ Geometry is NOT asserted here and cannot be: jsdom loads no Tailwind and
- * computes no layout. The desktop row and sheet were measured for real in
- * `e2e/nav-tier-aware.paid.spec.ts` until stories 84.2/84.3 (FR137); the
- * `paid-header-*` screenshots pin the row now. This file proves the nav
- * RENDERS the destinations, not that the CSS SURVIVES them.
- */
 describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
   const seedWith = (overrides: Partial<SessionSeed> = {}): SessionSeed => ({
     isAuthenticated: true,
@@ -1034,7 +642,6 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
     return [...sheet.querySelectorAll(':scope > li > a')].map((a) => a.textContent?.trim())
   }
 
-  /** The four destinations this story adds, with the labels D1 settled on. */
   const PREMIUM: readonly [label: string, href: string][] = [
     ['Forecasting', '/forecasting'],
     ['Profiles', '/profiles'],
@@ -1042,7 +649,6 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
     ['Categories', '/categories'],
   ]
 
-  // Story 96.3: Settings is the LAST row in both tiers (phones only, `sm:hidden`).
   const FREE_SHEET = ['Balances', 'Retirement', 'Settings']
   const PAID_SHEET = [
     'Balances',
@@ -1055,9 +661,6 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
   ]
 
   describe('an entitled session', () => {
-    // Thirteen DOM anchors: ten destinations + the two promoted row copies
-    // (story 69.3) + the phone-only Settings row (story 96.3; was twelve).
-    // The premium rows have no row copy: they stay behind More.
     it('renders ten destinations as thirteen anchors', async () => {
       renderWithSeed(seedWith())
       const navEl = await nav()
@@ -1068,16 +671,10 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
       ])
     })
 
-    // Story 58.1's D3 spliced these in BEFORE Settings so it stayed last. Story
-    // 69.2 took Settings out of the nav, so the premium block now simply follows
-    // the free rows. The ORDER is still the assertion, not the count. Story
-    // 96.3 put Settings back LAST, after the premium block, phones only.
     it('appends the four premium rows after the free rows, in order', async () => {
       renderWithSeed(seedWith())
       const navEl = await nav()
       expect(sheetLabels(navEl)).toEqual(PAID_SHEET)
-      // Story 69.3: an entitled session keeps its More at lg (the premium four
-      // are behind it at every width), so its cell is NOT `lg:hidden`.
       const cell = navEl.querySelector('details')?.parentElement as HTMLElement
       expect(tokens(cell)).not.toContain('lg:hidden')
     })
@@ -1090,7 +687,6 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
 
     it('treats a lifetime purchase as entitled too', async () => {
       renderWithSeed(seedWith({ subscriptionStatus: 'lifetime' }))
-      // Was 12 until story 96.3 (the Settings row).
       expect(within(await nav()).getAllByRole('link')).toHaveLength(13)
     })
 
@@ -1099,7 +695,6 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
       const tagged = [...(await nav()).querySelectorAll('li[data-nav-path]')].map((li) =>
         li.getAttribute('data-nav-path')
       )
-      // The tabs, the two promoted row copies (story 69.3), then the sheet.
       expect(tagged).toEqual([
         '/',
         '/income',
@@ -1113,7 +708,6 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
         '/profiles',
         '/financial-summary',
         '/categories',
-        // The phone-only Settings row, last (story 96.3).
         '/settings',
       ])
     })
@@ -1122,26 +716,17 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
       renderWithSeed(seedWith())
       const navEl = await nav()
       const icons = [...navEl.querySelectorAll(ICON_SVG)]
-      // 12 now: 4 bar tabs + More + 7 sheet rows. History: 12 until story 69.2
-      // took Settings out, then 11 until story 96.3 put it back for phones. Without
-      // `sm:hidden` each new icon grows the DESKTOP nav, and nothing else in the
-      // suite would catch it.
       expect(icons).toHaveLength(12)
       for (const icon of icons) {
         expect(tokens(icon), 'a premium icon is missing `sm:hidden`').toContain('sm:hidden')
         expect(icon).toHaveAttribute('aria-hidden', 'true')
       }
-      // Fourteen labels: the twelve above + the two promoted row copies, which
-      // have no icon (story 69.3; thirteen until story 96.3).
       expect(navEl.querySelectorAll('[data-nav-label]')).toHaveLength(14)
     })
 
     it.each(PREMIUM)('marks the More trigger active on %s', async (label, href) => {
       renderWithSeed(seedWith(), href)
       const navEl = await nav()
-      // Both halves: the row itself is current, AND the tab that discloses it
-      // shows it. `moreActiveClass` reading a different list from the rendered rows
-      // is the specific regression this catches.
       expect(within(navEl).getByRole('link', { name: label })).toHaveAttribute(
         'aria-current',
         'page'
@@ -1163,8 +748,7 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
         'a signed-out session',
         { isAuthenticated: false, userId: null, email: null, subscriptionStatus: null },
       ],
-      // The resolver-errored case. A null seed is UNVERIFIED, never entitled —
-      // fail closed, or a transient blip hands out the paid nav.
+      // A null seed is unverified, never entitled.
       ['no seed at all (resolver errored)', null],
       // Fail-closed by construction, not by luck of what the resolver emits: a
       // malformed seed claiming `active` while not authenticated must not pass.
@@ -1174,8 +758,6 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
       ],
     ]
 
-    // Six destinations, nine DOM anchors (the two promoted row copies, story
-    // 69.3, and the phone-only Settings row, story 96.3; eight until then).
     it.each(NOT_ENTITLED)(
       'gives %s the unchanged six-destination free nav',
       async (_name, seed) => {
@@ -1183,23 +765,12 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
         const navEl = await nav()
         expect(within(navEl).getAllByRole('link')).toHaveLength(9)
         expect(sheetLabels(navEl)).toEqual(FREE_SHEET)
-        // Story 69.3: with nothing left behind More at lg, a free session's More
-        // cell is `lg:hidden`. Token-level; e2e proves the render.
-        // ⚠️ Story 96.3's trap: the Settings sheet row must NOT un-hide this
-        // (a free desktop at lg would get a More over an EMPTY dropdown, its
-        // only extra row being `sm:hidden`). Pinned on its own in the next test.
+        // The Settings sheet row must not un-hide this: a free desktop would get More over an empty dropdown.
         const cell = navEl.querySelector('details')?.parentElement as HTMLElement
         expect(tokens(cell), 'a free session keeps a More trigger at lg').toContain('lg:hidden')
       }
     )
 
-    // Story 96.3 (Read-first #1), on its own so no count above can fail first:
-    // the phone-only Settings row is in the sheet, AND a free session still has
-    // NO More at lg. Mutation-proved: Settings appended to the derived
-    // `visibleMoreDestinations` instead of the extra `<li>` turns
-    // `moreNeededAtLg` true and this red. (As a `MORE_DESTINATIONS` entry it
-    // becomes a PROMOTED path instead, gains an lg row copy, and the anchor
-    // counts and sheet lists above go red.)
     it.each(NOT_ENTITLED)(
       'keeps %s free of a More trigger at lg despite the Settings row',
       async (_name, seed) => {
@@ -1231,16 +802,11 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
       usePlannerVisibilityStore.setState({ showRetirementPlanner: true })
     })
 
-    // The product case neither the tier tests nor the story 35.2 block covers:
-    // both conditions act on ONE list, so testing each alone leaves the
-    // combination untested.
     it('gives an entitled session with the planner hidden nine anchors and five rows', async () => {
       usePlannerVisibilityStore.setState({ showRetirementPlanner: false })
       renderWithSeed(seedWith())
       const navEl = await nav()
 
-      // Nine destinations + the Balances row copy (story 69.3) + the Settings
-      // row (story 96.3) = eleven anchors (ten until 96.3).
       expect(within(navEl).getAllByRole('link')).toHaveLength(11)
       expect(sheetLabels(navEl)).toEqual([
         'Balances',
@@ -1272,35 +838,8 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
   })
 })
 
-/**
- * Story 59.2 (FR90) — the More disclosure exists at EVERY width, as a native
- * `<details>`/`<summary>`.
- *
- * ⚠️ How the trigger is found, and why not by role. `@testing-library/dom`
- * resolves implicit roles through aria-query 5.3.0, which has NO entry for
- * `summary`, so `getByRole('button')` finds nothing and `getAllByRole('button')`
- * THROWS. (dom-accessibility-api does map `summary` to `button`, but `getByRole`
- * never consults it; `toHaveAccessibleName` does, which is why that matcher still
- * works on the element.) Everything here locates `details > summary`, and it
- * asserts the element is non-null FIRST, so a `.not.toContain` can never pass
- * against a missing node.
- *
- * ⚠️ jsdom does NOT hide the content of a closed `<details>` from `getByRole`
- * (its default stylesheet has no closed-details rule). jest-dom's `toBeVisible()`
- * DOES respect `details[open]`, so it is the one matcher here that can tell open
- * from closed.
- *
- * ⚠️ WHO toggles `open` in these tests: React, not jsdom. jsdom does implement
- * the native summary activation (a click on the first `<summary>` flips `open`
- * synchronously, and `toggle` fires as a later task). But the component's
- * `onClick` calls `preventDefault()`, which cancels that activation, and toggles
- * its own state instead, and the `open` flip comes from React's re-render. The
- * native path is exercised directly by "adopts an open it did not cause" below,
- * which sets `.open` from script.
- */
-// "At every width" since story 59.2 for an ENTITLED session; below `lg` only
-// for a free one since story 69.3 (which has no More at `lg`). jsdom applies no
-// media queries, so these tests see the disclosure regardless.
+// aria-query has no `summary` role, so `getByRole('button')` misses the trigger: locate
+// `details > summary`. The onClick cancels the native toggle; React flips `open`.
 describe('GlobalNav — the More disclosure at every width (story 59.2)', () => {
   const parts = async () => {
     const nav = await screen.findByRole('navigation', { name: /primary/i })
@@ -1323,9 +862,7 @@ describe('GlobalNav — the More disclosure at every width (story 59.2)', () => 
     const { nav, details, summary, panel } = await parts()
 
     const outer = nav.querySelector('ul') as HTMLElement
-    // The fifth cell of the RENDERED bar below lg. The promoted row copies
-    // (story 69.3) sit between Savings and More in the DOM but are `hidden`
-    // below lg, so they are excluded here, as a browser excludes them.
+    // The promoted row copies sit between Savings and More but are hidden below lg.
     const fifth = outer.querySelectorAll(':scope > li:not([data-nav-promoted])')[4]
     expect(fifth?.firstElementChild, 'the <details> is not the fifth cell').toBe(details)
     expect(details.firstElementChild, 'the <summary> must be the first child').toBe(summary)
@@ -1333,7 +870,6 @@ describe('GlobalNav — the More disclosure at every width (story 59.2)', () => 
     // Closed on the first render, so the server and client agree.
     expect(details.open).toBe(false)
     expect(details).not.toHaveAttribute('open')
-    // Closed MEANS hidden now, wherever the disclosure renders — by design.
     expect(within(panel).getByRole('link', { name: /^balances$/i })).not.toBeVisible()
   })
 
@@ -1345,7 +881,6 @@ describe('GlobalNav — the More disclosure at every width (story 59.2)', () => 
     }
     expect(panel).not.toHaveAttribute('role')
     expect(panel).not.toHaveAttribute('aria-modal')
-    // No `<button>` survives in the nav: the trigger IS the summary.
     expect(
       within(screen.getByRole('navigation', { name: /primary/i })).queryAllByRole('button')
     ).toHaveLength(0)
@@ -1375,18 +910,14 @@ describe('GlobalNav — the More disclosure at every width (story 59.2)', () => 
         'sm:overflow-y-auto',
       ])
     )
-    // Never positioned unprefixed: that would change the mobile sheet too.
     for (const leaked of ['absolute', 'fixed', 'top-full', 'bg-white']) {
       expect(tokens(panel), `\`${leaked}\` is unprefixed on the panel`).not.toContain(leaked)
     }
-    // WebKit's disclosure marker is hidden. `list-none` is inert today (the
-    // summary is never `display: list-item`) and is pinned as a guard for a
-    // future display change. See the MORE_TRIGGER_CLASS docblock.
+    // `list-none` is inert today; pinned for a future `display: list-item`.
     expect(tokens(summary)).toEqual(
       expect.arrayContaining(['list-none', '[&::-webkit-details-marker]:hidden'])
     )
-    // Story 59.2 code review: the nav keeps its content width on the desktop
-    // row, so a signed-in account cluster yields instead of wrapping the row.
+    // The nav keeps its content width, so a wide account cluster yields instead of wrapping the row.
     const nav = screen.getByRole('navigation', { name: /primary/i })
     expect(tokens(nav), 'the nav can shrink — a signed-in cluster will wrap it').toContain(
       'sm:shrink-0'
@@ -1432,9 +963,8 @@ describe('GlobalNav — the More disclosure at every width (story 59.2)', () => 
   })
 
   it('adopts an open it did not cause, so Escape still closes it', async () => {
-    // The native paths React does not drive: find-in-page, script, or a
-    // pre-hydration toggle whose event lands late. Only `onToggle` keeps state
-    // honest there. Without it the listeners stay unarmed and Escape is dead.
+    // Find-in-page, script, or a late pre-hydration toggle change `open` without React;
+    // only `onToggle` keeps state honest, or the listeners stay unarmed.
     renderWithRouter(<GlobalNav />)
     const { details } = await parts()
     details.open = true
@@ -1448,8 +978,7 @@ describe('GlobalNav — the More disclosure at every width (story 59.2)', () => 
   })
 
   it('closes when the CURRENT bar tab is clicked', async () => {
-    // Same-route click: no pathname change, and the press is inside the nav, so
-    // only the tab's own handler can close it (story 59.2 code review).
+    // Same-route click: no pathname change and the press is inside the nav, so only the tab closes it.
     renderWithRouter(<GlobalNav />, { path: '/income' })
     const { nav, details, summary } = await parts()
     fireEvent.click(summary)

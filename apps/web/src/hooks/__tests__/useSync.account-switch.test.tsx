@@ -1,23 +1,3 @@
-/**
- * Another account's profiles never reach this account (story 86.2, FR140).
- *
- * Account A synced on this browser and signed out; account B signs in. Nothing
- * resets the persisted profile store on sign-out, so B's sync starts with A's
- * profiles still in it, each carrying A's uuid as its `userId`.
- *
- * Before 86.2:
- *  - `uploadMissingProfiles` queued a create for every one of them under B
- *    (deferred-work, 80.2 dev MED), and
- *  - `reconcileActiveProfile` counted them as "real" profiles, so an active
- *    profile of A's was PRESERVED as a deliberate switch and B's new rows were
- *    stamped with A's `profileId`.
- *
- * Everything here is real except the network: the real `useSync` hook, the
- * real core service and queue on jsdom storage, the real stores. The
- * `ActiveSync` step that removes A's data before any of this runs (D2) is NOT
- * mounted, so these tests pin the two guards on their own.
- */
-
 import type { ServerChange } from '@budget-planner/core/sync'
 import { renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -38,7 +18,6 @@ const ACCOUNT_B = 'bbbbbbbb-0000-4000-8000-000000000862'
 const A_MAIN = 'aaaaaaaa-1111-4111-8111-111111111111'
 const A_SIDE = 'aaaaaaaa-2222-4222-8222-222222222222'
 const B_MAIN = 'bbbbbbbb-1111-4111-8111-111111111111'
-/** Created on the Profiles page before the bridge registered (`create-profile.tsx`). */
 const LOCAL = 'cccccccc-1111-4111-8111-111111111111'
 const A_ROW = 'aaaaaaaa-3333-4333-8333-333333333333'
 const B_ROW = 'bbbbbbbb-3333-4333-8333-333333333333'
@@ -51,7 +30,6 @@ function profile(id: string, userId: string, isDefault: boolean) {
   return { id, userId, name: `Profile ${id.slice(0, 4)}`, isDefault, currency: 'NONE' }
 }
 
-/** B's default profile as the server sends it (`userProfileSchema`). */
 const B_MAIN_CHANGE: ServerChange = {
   entityType: 'userProfile',
   entityId: B_MAIN,
@@ -60,7 +38,6 @@ const B_MAIN_CHANGE: ServerChange = {
   isDeleted: false,
 }
 
-/** The ops that really went out, as `type entityType id profileId`. */
 function sent(): string[] {
   return send.mock.calls.map(([op]) => {
     const { type, entityType, entityId, profileId } = op as Record<string, string>
@@ -98,7 +75,6 @@ describe("uploadMissingProfiles skips another account's profiles (story 86.2, AC
     await sync.result.current.pull()
     await sync.result.current.forceSync()
 
-    // Positive anchor: the upload really ran and a create really went out.
     expect(sent()).toEqual([`create userProfile ${LOCAL} ${B_MAIN}`])
     sync.unmount()
   })
@@ -106,7 +82,6 @@ describe("uploadMissingProfiles skips another account's profiles (story 86.2, AC
 
 describe("reconcileActiveProfile never keeps another account's profile active (story 86.2, AC 2)", () => {
   beforeEach(() => {
-    // A's profile was active when A signed out.
     useProfileStore.setState({
       profiles: [profile(A_MAIN, ACCOUNT_A, true), profile(A_SIDE, ACCOUNT_A, false)],
       activeProfileId: A_SIDE,
@@ -143,7 +118,6 @@ describe("reconcileActiveProfile never keeps another account's profile active (s
   it("a row B creates after the pull carries B's profile, not A's", async () => {
     const sync = mountSyncAsB()
     await sync.result.current.pull()
-    // The active-profile effect re-stamps the service's profile after the switch.
     await waitFor(() => expect(useProfileStore.getState().activeProfileId).toBe(B_MAIN))
 
     await sync.result.current.queueCreate('incomeSource', B_ROW, {
@@ -163,7 +137,6 @@ describe("reconcileActiveProfile never keeps another account's profile active (s
 
     await sync.result.current.pull()
 
-    // Positive anchor: the reconcile really ran.
     expect(useProfileStore.getState().activeProfileId).toBe(B_MAIN)
     const row = useIncomeStore.getState().incomeSources.find((r) => r.id === A_ROW)
     expect(row?.profileId).toBe(A_SIDE)
@@ -188,7 +161,6 @@ describe('the refused-edit path reconciles as the session user too (story 86.2)'
 
     await sync.result.current.forceSync()
 
-    // Positive anchor: the create really went out and was refused.
     expect(sent()).toEqual([`create userProfile ${LOCAL} ${LOCAL}`])
     await waitFor(() => expect(useProfileStore.getState().activeProfileId).toBe(B_MAIN))
     expect(useProfileStore.getState().profiles.map((p) => p.id)).toEqual([B_MAIN])

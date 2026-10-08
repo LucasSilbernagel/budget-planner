@@ -1,70 +1,21 @@
 /**
- * What this device does when the server PERMANENTLY refuses a sync edit
- * (story 75.2, FR119).
- *
- * Core removes a refused op from the queue (story 75.1) and reports it through
- * `onOperationsRejected`; `useSync` hands the ops here. Two things happen per
- * refused ROW:
- *
- *   1. The user is told, by name (`refusalNoticeStore`).
- *   2. The change is REVERTED on this device. DECISION (Lucas, 2026-09-28).
- *
- * Why revert, from the trace recorded in the story:
- *   - A refused CREATE's row exists only here. Left in place, its next edit
- *     queues an `update` that the server answers `update-delete` — a CONFLICT,
- *     which core never removes — so the account-wide deadlock 75.1 broke comes
- *     straight back. The row has to go.
- *   - A refused UPDATE leaves this device holding a value no other device has,
- *     and `toServerPayload` sends the FULL row on every later edit, so the bad
- *     field would be refused again with every rename. The pre-edit value is not
- *     on this device at all (the op carries only the new values); only the
- *     server has it, so the revert is a full re-pull.
- *   - A refused DELETE: the server still has the row live, so the same re-pull
- *     brings it back.
- *
- * ⚠️⚠️ The revert NEVER goes through a store action (`removeSavingsGoal`, …).
- * Store actions call the sync bridge, which would QUEUE A DELETE for a row the
- * server never had: `delete-update`, a conflict that is never removed, and the
- * deadlock returns. A created row is removed with a synthetic TOMBSTONE through
- * the pull applier, which writes the stores directly — the same path a pulled
- * delete takes, so a profile tombstone also cascades its rows and repoints the
- * active profile.
- *
- * ⚠️ A refused PROFILE create: its local child rows go with it (the tombstone
- * cascade), and so do their own queued ops (story 76.2), through core's
- * `discardOperationsForDeletedProfile` — the same strict predicate a pulled
- * profile tombstone uses. Left queued they would fail `Profile not found` for
- * ever, which is deliberately not permanent on the server (75.1): a refused
- * create is the positive proof the server cannot see.
+ * Refused edits are reverted: a created row via a synthetic tombstone, an update/delete via a full re-pull.
+ * Never through a store action, which would queue a delete for a row the server never had (a permanent conflict).
  */
 
 import type { ServerChange, SyncEntityType, SyncOperation } from '@budget-planner/core/sync'
 import type { RefusalNotice, RefusalOutcome } from './refusalNoticeStore'
 
-/** Everything the handler touches, injected so it can be tested on its own. */
 export interface RefusalHandlerDeps {
-  /** The live sync queue (core `SyncQueue`). */
   queue: {
     getAll: () => SyncOperation[]
     discardBatch: (ids: string[]) => Promise<{ removed: number; persisted: boolean }>
   }
-  /**
-   * Core's `discardOperationsForDeletedProfile` (story 76.2): drop the queued ops
-   * stamped with a profile whose create the server refused.
-   */
   discardOperationsForDeletedProfile: (profileId: string) => Promise<unknown>
-  /** `applyServerChangesToStores` — used to apply the synthetic tombstones. */
   applyChanges: (changes: ServerChange[]) => void
-  /** `findLocalRow` — reads a row's current local state, for its name and kind. */
   lookupLocalRow: (entityType: SyncEntityType, id: string) => Record<string, unknown> | undefined
-  /** Reset the pull cursor and pull a full snapshot (honouring an in-flight pull). */
   requestFullRepull: () => void
-  /** `addRefusalNotices`. */
   notify: (notices: RefusalNotice[]) => void
-  /**
-   * `notePlanOpRefused` (story 99.3, AC-12): mark the retirement plan as not on
-   * the server. Optional so callers that never see a plan op need not pass it.
-   */
   markPlanRefused?: (op: SyncOperation) => void
 }
 
@@ -75,33 +26,22 @@ const KIND: Record<SyncEntityType, { kind: string; fallback: string }> = {
   balanceTracking: { kind: 'balance', fallback: 'A balance entry' },
   userProfile: { kind: 'profile', fallback: 'A profile' },
   category: { kind: 'category', fallback: 'A category' },
-  // Story 99.2: a plan op carries no `name`, so the notice always uses the
-  // fallback. The plan is never reverted (D9): see `handleRejectedOperations`.
+  // A plan op carries no `name`, so the notice uses the fallback.
   retirementPlan: { kind: 'retirement plan', fallback: 'Your retirement plan' },
 }
 
-/** `balanceTracking` rows are an investment or a debt; say which when we know. */
 const BALANCE_KIND: Record<string, { kind: string; fallback: string }> = {
   investment: { kind: 'investment', fallback: 'An investment' },
   debt: { kind: 'debt', fallback: 'A debt' },
 }
 
 function nonBlankString(value: unknown): string | null {
-  // ⚠️ Whitespace-only counts as ABSENT — story 63.2's review deferred exactly
-  // this: a pulled whitespace name rendered `aria-label="Delete "`. Pulled names
-  // are not form-validated.
+  // Whitespace-only counts as absent: pulled names aren't form-validated.
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : null
 }
 
-/** Everything a notice says about WHICH row, whatever happened to it. */
 type RowIdentity = Pick<RefusalNotice, 'key' | 'entityType' | 'name' | 'kind' | 'fallback'>
 
-/**
- * Name and kind for one row, from its ops (newest non-blank `data.name` first)
- * and then the row as this device holds it. Shared by the refusal notice
- * (story 75.2) and the not-synced notice (story 79.2), so both name an entry the
- * same way.
- */
 function identifyRow(
   ops: readonly SyncOperation[],
   localRow: Record<string, unknown> | undefined
@@ -114,8 +54,7 @@ function identifyRow(
     name = nonBlankString(op.data?.['name'])
     if (name) break
   }
-  // A delete carries only `{ userId }`; fall back to the local row. For a
-  // refused delete the row is usually gone already, so this is often null too.
+  // A delete carries only `{ userId }`; fall back to the local row.
   name ??= nonBlankString(localRow?.['name'])
 
   let label = KIND[first.entityType] ?? { kind: 'entry', fallback: 'An entry' }
@@ -136,11 +75,6 @@ function identifyRow(
   }
 }
 
-/**
- * Name, kind and outcome for one refused row. `ops` are every refused op for
- * that row (a refused create arrives with its follow-ups, 75.1 D1); `localRow`
- * is the row as this device holds it BEFORE any revert.
- */
 export function describeRefusedRow(
   ops: readonly SyncOperation[],
   localRow: Record<string, unknown> | undefined
@@ -154,15 +88,7 @@ export function describeRefusedRow(
   return { ...identifyRow(ops, localRow), outcome }
 }
 
-/**
- * The not-synced notice for one row whose edit keeps failing (story 79.2).
- * `ops` are the row's ESCALATED ops. Nothing is reverted: the edit is kept and
- * still queued. `change` says what is pending, from the device's point of view:
- * a delete, else a create, else an update (code review 79.2). A delete wins over
- * a create because a created-then-deleted row is already gone from this device,
- * so "saved on this device" would be false. This is NOT the refusal precedence,
- * which answers a different question (what gets reverted).
- */
+/** A delete wins over a create: a created-then-deleted row is gone, so "saved on this device" would be false. */
 export function describeNotSyncedRow(
   ops: readonly SyncOperation[],
   localRow: Record<string, unknown> | undefined
@@ -176,11 +102,6 @@ export function describeNotSyncedRow(
   return { ...identifyRow(ops, localRow), outcome: 'not-synced', change }
 }
 
-/**
- * One not-synced notice per ROW for the core's escalated ops (story 79.2),
- * grouped the way `handleRejectedOperations` groups refusals. A row whose local
- * state cannot be read is named from its ops alone.
- */
 export function describeNotSyncedRows(
   ops: readonly SyncOperation[],
   lookupLocalRow: RefusalHandlerDeps['lookupLocalRow']
@@ -203,13 +124,7 @@ export function describeNotSyncedRows(
   })
 }
 
-/**
- * Tell the user about, and revert, every row in one sync's refused ops.
- *
- * Each row's naming and revert are isolated (code review 75.2): a row whose
- * name cannot be read gets a fallback notice, and one row's failed revert does
- * not stop the others, the re-pull or the notices.
- */
+/** One row's failed naming or revert must not stop the others, the re-pull or the notices. */
 export async function handleRejectedOperations(
   ops: readonly SyncOperation[],
   deps: RefusalHandlerDeps
@@ -222,8 +137,7 @@ export async function handleRejectedOperations(
     else byRow.set(key, [op])
   }
 
-  // Name every row BEFORE reverting anything: a tombstone removes the local row
-  // a name may have to be read from.
+  // Name every row before reverting: a tombstone removes the row a name is read from.
   const notices = [...byRow.values()].map((rowOps) => {
     const first = rowOps[0] as SyncOperation
     try {
@@ -238,15 +152,8 @@ export async function handleRejectedOperations(
   for (const notice of notices) {
     const rowOps = byRow.get(notice.key) as SyncOperation[]
     const first = rowOps[0] as SyncOperation
-    // Story 99.2 (D9): a refused retirement plan edit KEEPS the local plan. There
-    // is nothing to revert to on this device, and the re-pull would replace the
-    // user's whole plan with the server's older copy. (Its tombstone, for a
-    // refused create, is a no-op in the applier anyway.) The notice says so.
-    //
-    // Story 99.3 (AC-12): core has already DROPPED the refused op, so the queue no
-    // longer protects the plan, and the next FULL pull (another refusal's re-pull
-    // below, a profile switch, any new session) would replace it with the server
-    // copy. The marker makes the applier skip the plan until a push succeeds.
+    // A refused plan edit keeps the local plan (a re-pull would overwrite it with an older copy);
+    // the marker makes the applier skip the plan until a push succeeds.
     if (first.entityType === 'retirementPlan') {
       try {
         // The NEWEST refused op for the plan: an older one must not outrank an
@@ -259,24 +166,16 @@ export async function handleRejectedOperations(
       continue
     }
     if (notice.outcome !== 'removed') {
-      // One full re-pull covers every refused update and delete in this sync.
       needsRepull = true
       continue
     }
-    // A refused CREATE. First drop any op for the row that is STILL queued —
-    // one queued after 75.1's D1 swept the queue (an edit made while the push
-    // was in flight). Left queued, it gets `update-delete`: a conflict, never
-    // removed.
+    // Drop any op for the row still queued; left queued it gets `update-delete`, a conflict never removed.
     const leftover = deps.queue
       .getAll()
       .filter((op) => op.entityType === first.entityType && op.entityId === first.entityId)
       .map((op) => op.id)
     if (leftover.length > 0) {
-      // `discardBatch`, not `removeBatch` (story 75.3). If storage refuses the
-      // write, `removeBatch` keeps them queued, and they become that very
-      // never-removed conflict. `discardBatch` drops them from this session
-      // regardless. Storage keeps them until its next successful write, so a
-      // reload before then brings them back.
+      // discardBatch, not removeBatch: removeBatch keeps the ops queued if storage refuses the write.
       try {
         const { persisted } = await deps.queue.discardBatch(leftover)
         console.info(

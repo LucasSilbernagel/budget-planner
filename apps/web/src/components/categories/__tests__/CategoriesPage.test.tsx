@@ -1,15 +1,3 @@
-/**
- * CategoriesPage tests (story 30.4b, AC-4).
- *
- * The route-level gate, following `ReportPage.test.tsx` exactly. This is the
- * boundary that matters: the `/settings` entry point is presentation, but a user
- * can navigate straight to `/categories`, and this must refuse them
- * independently — the `/profiles` precedent (story 13-3).
- *
- * The manager body is stubbed so these assertions are about GATING only; its own
- * suite covers the behaviour.
- */
-
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../../hooks/usePremiumAccess'
@@ -30,10 +18,7 @@ vi.mock('../CategoryManager', () => ({
   CategoryManager: () => <div data-testid="category-manager" />,
 }))
 
-// ⚠️ Stubbed for the SAME reason as the manager, and it matters more here: the
-// real breakdown mounts Recharts plus four unstubbed zustand stores, and this
-// suite renders with bare RTL `render` (no providers) on purpose. Without the
-// stub this file would quietly stop being a gate test.
+// Stubbed because the real breakdown needs Recharts and stores this provider-less render lacks.
 vi.mock('../CategoryBreakdown', () => ({
   CategoryBreakdown: () => <div data-testid="category-breakdown" />,
 }))
@@ -84,9 +69,7 @@ describe('CategoriesPage', () => {
 
     expect(screen.getByTestId('premium-prompt')).toHaveTextContent('Custom Categories')
     expect(screen.queryByTestId('category-manager')).not.toBeInTheDocument()
-    // ⚠️ Inheriting a gate is not evidence the gate covers you. The breakdown
-    // is a NEW sibling of the manager, so it needs its own absence assertion in
-    // every non-entitled branch (story 30.5, AC-5).
+    // The breakdown is a separate sibling, so each locked branch asserts its absence too.
     expect(screen.queryByTestId('category-breakdown')).not.toBeInTheDocument()
   })
 
@@ -99,23 +82,16 @@ describe('CategoriesPage', () => {
   })
 
   it('never renders the manager while the tier is still unknown', () => {
-    // SSR + first client paint. A spinner here rather than content is what stops
-    // a not-yet-verified visitor from seeing paid output for a frame.
     mockStatus({ isLoading: true })
     render(<CategoriesPage />)
 
     expect(screen.getByRole('status', { name: 'Loading' })).toBeInTheDocument()
     expect(screen.queryByTestId('category-manager')).not.toBeInTheDocument()
-    // Fail-closed: a not-yet-verified tier must not leak paid output either.
     expect(screen.queryByTestId('category-breakdown')).not.toBeInTheDocument()
     expect(screen.queryByTestId('premium-prompt')).not.toBeInTheDocument()
   })
 })
 
-// Story 116.1 (FR184, A4): every state of the page is ONE `<main>` landmark. The
-// loading and locked states were never audited by Lighthouse (prod ran signed
-// out, local ran paid), so they are pinned here. The active state's `<main>` is
-// `CategoryManager`'s own (mocked above), so it is not counted in this file.
 describe('CategoriesPage landmarks (story 116.1)', () => {
   it.each([
     ['loading', { isLoading: true }],
@@ -127,13 +103,6 @@ describe('CategoriesPage landmarks (story 116.1)', () => {
   })
 })
 
-/**
- * Story 117.2 (FR185): when the tier resolves, the loading branch's DOM is
- * REPLACED, not reused. Reused, the spinner's 32 px <div> became the page's
- * container and Chrome counted it growing as a layout shift (CLS 0.1153 on
- * /categories, MEASURED). The branch keys force the replacement; jsdom can show
- * node identity, the CLS itself was measured by the story's probe.
- */
 describe('CategoriesPage loading → resolved (story 117.2)', () => {
   it.each([
     ['the locked prompt', { hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true }],

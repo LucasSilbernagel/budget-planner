@@ -1,13 +1,3 @@
-/**
- * Tests for the production Node server adapter (Story 5-2, AC-1).
- *
- * The adapter bridges Node's `http` server to the web-standard `fetch` handler
- * exported by the TanStack Start build, and serves the static `dist/client/`
- * assets that the SSR handler does not. These tests exercise the pure helpers
- * plus an end-to-end pass over a real loopback (127.0.0.1) server with a stub
- * fetch handler — no external network, no real build artifact required.
- */
-
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { connect } from 'node:net'
@@ -29,19 +19,11 @@ beforeAll(async () => {
   await mkdir(join(clientDir, 'assets'), { recursive: true })
   await writeFile(join(clientDir, 'assets', 'app-abc123.js'), 'console.log(1)')
   await writeFile(join(clientDir, 'favicon.svg'), '<svg></svg>')
-  // Binary favicon fallbacks added in story 6-5 — assert the adapter serves
-  // them with the correct image MIME type (contents are irrelevant here).
   await writeFile(join(clientDir, 'favicon-32.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
   await writeFile(join(clientDir, 'favicon.ico'), Buffer.from([0x00, 0x00, 0x01, 0x00]))
-  // PWA artifacts emitted by vite-plugin-pwa (story 7-1): the manifest must be
-  // served as application/manifest+json, and the service-worker scripts must not
-  // be long-cached (AC-1/AC-4).
   await writeFile(join(clientDir, 'manifest.webmanifest'), '{"name":"Budget Planner"}')
   await writeFile(join(clientDir, 'sw.js'), '/* service worker */')
   await writeFile(join(clientDir, 'workbox-abc123.js'), '/* workbox runtime */')
-  // Sitemap (story seo-1): e2e runs the Vite dev server, not this adapter, so
-  // this is the only test of the content type the production adapter assigns.
-  // (It cannot see anything a proxy in front of the container might rewrite.)
   await writeFile(
     join(clientDir, 'sitemap.xml'),
     '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"/>'
@@ -93,15 +75,12 @@ describe('resolveStaticAsset', () => {
     const asset = await resolveStaticAsset('/manifest.webmanifest', clientDir)
     expect(asset).not.toBeNull()
     expect(asset.contentType).toBe('application/manifest+json')
-    // A plain root file — short cache, not the SW no-cache treatment.
     expect(asset.cacheControl).toBe('public, max-age=3600')
   })
 
   it('serves the sitemap as application/xml, not a binary download (story seo-1, AC-5)', async () => {
     const asset = await resolveStaticAsset('/sitemap.xml', clientDir)
     expect(asset).not.toBeNull()
-    // Without a `.xml` entry this falls back to application/octet-stream, which
-    // is invisible to e2e (dev server) and wrong in production.
     expect(asset.contentType).toBe('application/xml; charset=utf-8')
     expect(asset.cacheControl).toBe('public, max-age=3600')
   })
@@ -120,17 +99,14 @@ describe('resolveStaticAsset', () => {
   })
 
   it('keeps hashed /assets/* immutable even for a .js like sw.js name', async () => {
-    // The no-cache rule is root-scoped: a hashed chunk under /assets stays
-    // immutable (never matched as a service worker).
     const asset = await resolveStaticAsset('/assets/app-abc123.js', clientDir)
     expect(asset).not.toBeNull()
     expect(asset.cacheControl).toBe('public, max-age=31536000, immutable')
   })
 
   it('classifies cache-control from the resolved file, not the raw pathname (encoded-slash)', async () => {
-    // `/assets/..%2fsw.js` decodes+normalizes to sw.js on disk. Cache-control must
-    // follow the resolved file (no-cache for the SW), not the raw `/assets/` prefix
-    // — otherwise the service worker could be served immutable and defeat AC-4.
+    // `/assets/..%2fsw.js` resolves to sw.js on disk; cache-control must follow the resolved file,
+    // not the `/assets/` prefix, or the service worker could be served immutable.
     const asset = await resolveStaticAsset('/assets/..%2fsw.js', clientDir)
     expect(asset).not.toBeNull()
     expect(asset.contentType).toBe('text/javascript; charset=utf-8')
@@ -191,8 +167,7 @@ describe('toWebRequest', () => {
   })
 
   it('streams a POST body through to the web Request', async () => {
-    // A real Readable stands in for the Node IncomingMessage so `Readable.toWeb`
-    // + `duplex: 'half'` are exercised (the most fragile conversion branch).
+    // A real Readable so `Readable.toWeb` + `duplex: 'half'` are exercised.
     const req = Readable.from([Buffer.from('{"a":1}')]) as unknown as {
       method: string
       url: string
@@ -237,8 +212,7 @@ describe('createRequestListener (loopback integration)', () => {
     baseUrl = `http://127.0.0.1:${port}`
   })
 
-  // The global MSW setup errors on any unhandled request; let real loopback
-  // calls to our test server through. Re-applied each test because the global
+  // The global MSW setup errors on unhandled requests; re-applied each test because the global
   // afterEach resets runtime handlers.
   beforeEach(() => {
     mswServer.use(http.all(/^http:\/\/127\.0\.0\.1:\d+\//, () => passthrough()))
@@ -265,7 +239,6 @@ describe('createRequestListener (loopback integration)', () => {
     expect(res.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
     expect(res.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
     expect(await res.text()).toBe('console.log(1)')
-    // The SSR handler must NOT have been consulted for a real asset.
     expect(lastDelegatedPath).toBeNull()
   })
 
@@ -281,16 +254,13 @@ describe('createRequestListener (loopback integration)', () => {
     expect(res.status).toBe(500)
     const body = await res.text()
     expect(body).toBe('Internal Server Error')
-    expect(body).not.toContain('kaboom') // the thrown error detail must not leak
+    expect(body).not.toContain('kaboom')
   })
 })
 
 /**
- * Send a request target verbatim over a raw socket. `fetch()` / `new URL()`
- * normalize `\` → `/` and collapse `//` on the CLIENT before anything is sent,
- * so they cannot exercise a target that reaches Node's http server as `/\…`.
- * A raw client (an attacker's socket, `curl --path-as-is`, or an edge proxy
- * that forwards the target unmodified) can. Returns the numeric status.
+ * `fetch()`/`new URL()` normalize `\` and `//` client-side, so only a raw socket can send a
+ * target that reaches the server as `/\…`.
  */
 function rawRequestStatus(host: string, port: number, target: string): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -315,11 +285,6 @@ function rawRequestStatus(host: string, port: number, target: string): Promise<n
 }
 
 describe('malformed request targets (production 500, 2026-09-09)', () => {
-  // A trailing slash on SITE_URL made the smoke check request `//`. The static
-  // matcher did `new URL('//', 'http://localhost')`, which parses `//` as a
-  // PROTOCOL-RELATIVE url — the segment after it becomes the AUTHORITY, and an
-  // empty one throws ERR_INVALID_URL. Every request to `https://site//` was a
-  // 500, reachable by anyone, and the trailing slash only revealed it.
   let baseUrl: string
   let host: string
   let port: number
@@ -345,8 +310,7 @@ describe('malformed request targets (production 500, 2026-09-09)', () => {
 
   beforeEach(() => {
     seenPaths = []
-    // Loopback requests must reach the real server; without this MSW answers
-    // them and the assertions measure the mock, not the adapter.
+    // Without this MSW answers loopback requests and the assertions measure the mock.
     mswServer.use(http.all(/^http:\/\/127\.0\.0\.1:\d+\//, () => passthrough()))
   })
 
@@ -354,15 +318,8 @@ describe('malformed request targets (production 500, 2026-09-09)', () => {
     expect(await rawRequestStatus(host, port, '//')).toBe(200)
   })
 
-  // WHATWG `URL` treats `\` as `/` for special schemes, so the first fix (a
-  // `startsWith('//')` guard that stripped only `/`) left `/\` and `//\…`
-  // reaching `new URL(target, base)` unchanged: `/\` threw ERR_INVALID_URL (the
-  // same anyone-reachable 500) and `/\host/x` resolved to pathname `/x`. Caught
-  // in the 2026-09-10 review; the guard is now an unconditional
-  // `replace(/^[/\\]+/, '/')`. `fetch()`/`new URL()` normalize these on the
-  // client, so this must go over a raw socket to reach the server. (A target
-  // that does not start with `/` — e.g. `\\x` — is rejected by Node's HTTP
-  // parser with a 400 before the listener runs, so it is not covered here.)
+  // WHATWG `URL` treats `\` as `/`, so an uncollapsed `/\host/x` would resolve to another host
+  // (or throw). Must go over a raw socket since fetch normalizes it client-side.
   it.each(['/\\', '/\\evil.example/x', '//\\evil.example/x', '/\\\\double'])(
     'does not 500 on a backslash-prefixed target (%j)',
     async (target) => {
@@ -371,33 +328,25 @@ describe('malformed request targets (production 500, 2026-09-09)', () => {
   )
 
   it('treats `//host/path` as a PATH, never as an authority', async () => {
-    // Without collapsing, `new URL('//evil.example/x', base)` yields host
-    // evil.example and pathname '/x' — the static matcher would then match on a
-    // path the client never asked for. The fetch-handler path is unaffected
-    // (its base already carries a host), so it still sees the raw target.
+    // Uncollapsed, `new URL('//evil.example/x', base)` yields host evil.example, so the static
+    // matcher would match a path the client never asked for.
     const slashRes = await fetch(`${baseUrl}//evil.example/x`)
     expect(slashRes.status).toBe(200)
     expect(seenPaths.at(-1)).toBe('//evil.example/x')
   })
 
   it('a `\\host/asset` target is not served as that static asset (no authority confusion)', async () => {
-    // Pre-fix: `new URL('/\\evil.example/favicon.svg', base)` → host
-    // evil.example, pathname `/favicon.svg` → the static matcher serves the real
-    // favicon for a request the client never made. Post-fix the leading `/\`
-    // collapses to `/`, so the pathname keeps `evil.example` as a segment, no
-    // file matches, and the request falls through to the SSR handler (the stub
-    // answers 200 with no cache-control — a served file would set it).
+    // The stub answers 200 with no cache-control; a served file would set it.
     seenPaths.length = 0
     expect(await rawRequestStatus(host, port, '/\\evil.example/favicon.svg')).toBe(200)
-    expect(seenPaths).toHaveLength(1) // reached the handler, not served from disk
+    expect(seenPaths).toHaveLength(1)
   })
 
   it('still serves an ordinary static asset from disk (not a handler fall-through)', async () => {
     seenPaths.length = 0
     const asset = await fetch(`${baseUrl}/assets/app-abc123.js`)
     expect(asset.status).toBe(200)
-    // Distinguishes a real static serve from the always-200 stub: only
-    // serveStaticFile sets immutable cache-control and the file's actual body.
+    // Only serveStaticFile sets immutable cache-control, distinguishing a real serve from the stub.
     expect(asset.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
     expect(await asset.text()).toBe('console.log(1)')
     expect(seenPaths).toHaveLength(0)

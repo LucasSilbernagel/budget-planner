@@ -1,12 +1,4 @@
-/**
- * Parity pins for the retirement plan's sync contract (story 99.2, AC-5a).
- *
- * ⚠️ Each pin IMPORTS both sides; no hand-written list. A field added to
- * `RetirementPlan` (and so to `RETIREMENT_PLAN_DEFAULTS`, which the type forces)
- * but not to core's `retirementPlanSyncSchema` would be STRIPPED from every
- * pushed plan by the nested `z.object`, silently: every other device would keep
- * its old value for ever. This file is what turns that into a red test.
- */
+/** A field missing from core's `retirementPlanSyncSchema` is silently stripped from every pushed plan. */
 
 import {
   RETIREMENT_ADOPTED_CENTS_MAX,
@@ -33,9 +25,7 @@ describe('AC-5a: the push schema and the plan agree key for key', () => {
   })
 
   it('a coerced plan of wrong-TYPED garbage passes the push gate, every key kept', () => {
-    // Wrong types and unknown enum values only. The coercion does NOT bound string
-    // LENGTH (the gate caps at RETIREMENT_PLAN_STRING_MAX): `toServerPayload`
-    // clamps that, pinned in `syncBridge.test.ts` (99.2 code review).
+    // The coercion does not bound string length; `toServerPayload` clamps that.
     const garbage = coerceRetirementPlan({
       currentAgeInput: 42,
       incomeBasis: 'weekly',

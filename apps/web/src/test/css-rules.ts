@@ -1,15 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-/**
- * A brace-aware reader for `styles/global.css`, shared by the CSS-rule pins
- * (story 84.3's `pre-paint-suppression.dom.test.tsx`; story 84.5's print and
- * theme pins).
- *
- * ⚠️ These pins assert RULES, never a computed style: jsdom applies no
- * stylesheet and has no cascade, so what a rule paints is out of reach below the
- * browser (the named D2 loss each pin states).
- */
+/** These pins assert rules, never computed style: jsdom applies no stylesheet. */
 
 export interface CssRule {
   selector: string
@@ -21,19 +13,8 @@ export interface CssRule {
 export const GLOBAL_CSS = readFileSync(resolve(__dirname, '..', 'styles', 'global.css'), 'utf-8')
 
 /**
- * Every style rule in `css`, with the at-rules that enclose it.
- *
- * A brace-aware walk, not a flat regex (84.3 code review, MEASURED): a flat
- * `selector { body }` match cannot see an enclosing `@media`, so a rule moved
- * into `@media print` or `@media (min-width: 640px)` parsed identically and
- * every assertion stayed green while the 320px first frame flashed.
- * Comments are removed first.
- *
- * ⚠️ FAILS LOUDLY on input it cannot read rather than misreading it (84.5 code
- * review, MEASURED: an unterminated `{` looped forever, a `}` inside a string
- * silently truncated the body, a nested rule was swallowed into its parent):
- * an unterminated rule, an unbalanced `}`, a nested rule and a brace inside a
- * quoted string each throw. `global.css` has none of them today.
+ * Brace-aware so an enclosing @media is visible to the pins. Throws on input it cannot read
+ * (unterminated or nested rules, braces in strings) rather than misreading it.
  */
 export function cssRules(css: string): CssRule[] {
   const text = css.replace(/\/\*[\s\S]*?\*\//g, '')

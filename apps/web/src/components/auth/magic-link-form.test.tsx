@@ -1,10 +1,3 @@
-/**
- * Magic-link login form tests (Story 5-16, Task 5 — AC-5)
- *
- * Accessible passwordless form: a labeled email field, a clear submit/confirm
- * flow, and a GENERIC confirmation that never reveals whether the account exists.
- */
-
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -48,7 +41,6 @@ describe('MagicLinkForm', () => {
     )
 
     const status = await screen.findByRole('status')
-    // Confirmation is conditional ("if an account exists") — no enumeration.
     expect(status).toHaveTextContent(/if an account exists/i)
   })
 
@@ -71,17 +63,7 @@ describe('MagicLinkForm', () => {
   })
 })
 
-/**
- * Theming guards (story 31-1, AC-5/AC-7).
- *
- * The variants mirror `components/contact/contact-form.tsx`, the already-dark
- * twin whose own docblock says it mirrors this form — so the two stay one idiom
- * rather than three. Class-TOKEN membership, never substring.
- *
- * The email input is the load-bearing case: before this story it carried NO
- * `bg-`/`text-` class at all, only `border-gray-300`, so a border-only fix would
- * have left a UA-white field holding dark text on a dark card.
- */
+/** Class-token membership, never substring. */
 describe('MagicLinkForm theming', () => {
   it('gives the email input a full dark bg/text/border/placeholder set', () => {
     render(<MagicLinkForm />)
@@ -91,11 +73,8 @@ describe('MagicLinkForm theming', () => {
     expect(tokens).toContain('dark:bg-gray-700')
     expect(tokens).toContain('dark:text-gray-100')
     expect(tokens).toContain('dark:border-gray-600')
-    // This input HAS a placeholder, unlike contact-form's mirrored name field —
-    // an un-themed placeholder is gray-400-on-gray-700 mush in dark mode.
     expect(input).toHaveAttribute('placeholder')
     expect(tokens).toContain('dark:placeholder-gray-400')
-    // The focus affordance must survive the swap (AC-7: no ring removed).
     expect(tokens).toContain('focus:ring-2')
     expect(tokens).toContain('focus:ring-blue-500')
   })
@@ -109,20 +88,14 @@ describe('MagicLinkForm theming', () => {
 
     const submit = screen.getByRole('button', { name: /sign-in link/i })
     const tokens = [...submit.classList]
-    // The blue-600 fill is held in BOTH themes on purpose: contact-form's twin
-    // drops to blue-500 on dark, which measures 3.68:1 against white text —
-    // below AA's 4.5:1 — where blue-600 measures 5.17:1 (story 31-1, AC-7).
+    // blue-500 on dark measures 3.68:1 against white (AA needs 4.5:1); blue-600 is 5.17:1.
     expect(tokens).toContain('bg-blue-600')
     expect(tokens).toContain('hover:bg-blue-700')
     expect(tokens).toContain('text-white')
-    // The INVARIANT, not one token: any dark background override reintroduces
-    // the AA failure. A code review found `not.toContain('dark:bg-blue-500')`
-    // still permitted `dark:bg-blue-400`, `dark:bg-sky-500` and friends.
+    // The invariant, not one token: any dark background override reintroduces the AA failure.
     expect(tokens.filter((token) => token.startsWith('dark:bg-'))).toEqual([])
     expect(tokens.filter((token) => token.startsWith('dark:hover:bg-'))).toEqual([])
-    // AC-7: Tailwind's `--tw-ring-offset-color` defaults to WHITE and nothing
-    // overrides it globally, so on the gray-800 `.surface` card this button sits
-    // on, a focused button would paint a white band without this.
+    // Tailwind's ring-offset colour defaults to white, which would band on the gray-800 card.
     expect(tokens).toContain('focus:ring-offset-2')
     expect(tokens).toContain('dark:focus:ring-offset-gray-800')
   })
@@ -132,10 +105,7 @@ describe('MagicLinkForm theming', () => {
     expect([...screen.getByRole('alert').classList]).toContain('dark:text-red-400')
   })
 
-  /**
-   * The success panel replaces the whole form, so it renders on no other test's
-   * path — without driving a real submit here its classes are never swept.
-   */
+  /** The success panel replaces the form, so only a real submit reaches its classes. */
   it('themes the post-submit success panel', async () => {
     ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       new Response(JSON.stringify({ success: true }), { status: 200 })
@@ -151,7 +121,6 @@ describe('MagicLinkForm theming', () => {
     expect(tokens).toContain('dark:border-green-800')
     expect(tokens).toContain('dark:bg-green-900/30')
     expect(tokens).toContain('dark:text-green-300')
-    // The light values stay put (AC-8).
     expect(tokens).toContain('bg-green-50')
     expect(tokens).toContain('text-green-800')
   })

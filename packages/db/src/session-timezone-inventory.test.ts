@@ -1,32 +1,5 @@
-/**
- * Story ops-2, AC-3: the inventory of database connections is closed and stays
- * closed. Every `new Pool(` / `new Client(` / `new pg.Pool(` / `new pg.Client(`
- * in non-test source must carry `options: DB_SESSION_OPTIONS` (TimeZone=UTC).
- *
- * Scanned: `packages/db/src/**` + `packages/db/*.ts`, `apps/web/src/**` +
- * `apps/web/*.mjs`, test files (`*.test.*`, `*.spec.*`, `__tests__/`) excluded.
- * Comments are stripped before matching, so this header's own prose cannot
- * satisfy or trip it.
- *
- * The expected sites are pinned by EXACT count per file (memory
- * allowlist-exact-count): a second construction in a pinned file, or a new one
- * anywhere else, turns this RED.
- *
- * Exempt, and why (not scanned, or not a pg connection):
- *   X1 (gone) `test-db-simple.mjs` (repo root), a manual connection check from
- *      6c17abb, was deleted by story 92.1.
- *   X2 `migrations-uuid.test.ts` `new Client`: a test, `TEST_DB_URL`-gated.
- *   X3 the PGlite Vitest harnesses (`new PGlite()`, `src/test/pglite-migrated.ts`):
- *      in-process, no pg connection. Pinned to UTC by the Vitest runs themselves
- *      (story 92.1): `TZ: 'UTC'` in `apps/web/vitest.config.ts` `test.env`, and
- *      `process.env.TZ = 'UTC'` at the top of `packages/db/vitest.config.ts`
- *      (Vitest 1.6 threads: `test.env` reached `process.env` but not the zone).
- * drizzle-kit's own pool (C4) is pinned through PGOPTIONS by `stepEnv`
- * (`migrate-lock.ts`), covered by `session-timezone.test.ts` AC-2(b)/(c); the
- * wiring (`runStep` passes `stepEnv`) and the manual `db:migrate` script are
- * pinned below.
- * The e2e PGlite server (C5) pins with `SET TimeZone` (AC-4).
- */
+// Every pg Pool/Client in non-test source must pass `options: DB_SESSION_OPTIONS`; sites are
+// pinned by exact count per file. Comments are stripped before matching.
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -35,11 +8,10 @@ import { DB_SESSION_OPTIONS } from './client'
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
 
-/** Repo-relative file -> number of pinned connection constructions. */
 const PINNED_SITES: Record<string, number> = {
-  'packages/db/src/client.ts': 1, // C1 app pool
-  'packages/db/src/migrate-preflight-cli.ts': 1, // C2 preflight
-  'packages/db/src/migrate-lock-cli.ts': 1, // C3 lock client
+  'packages/db/src/client.ts': 1,
+  'packages/db/src/migrate-preflight-cli.ts': 1,
+  'packages/db/src/migrate-lock-cli.ts': 1,
 }
 
 const CONSTRUCTION = /\bnew\s+(?:pg\s*\.\s*)?(?:Pool|Client)\s*\(/g
@@ -64,7 +36,7 @@ function walk(dir: string, exts: RegExp, recursive: boolean): string[] {
   return out
 }
 
-/** Strip block and line comments (string contents that look like comments are not a concern here). */
+/** Naive: string contents that look like comments are not a concern here. */
 function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\])\/\/.*$/gm, '$1')
 }

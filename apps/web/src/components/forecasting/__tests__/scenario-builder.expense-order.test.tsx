@@ -3,11 +3,6 @@ import { describe, expect, it, vi } from 'vitest'
 import type { SavedForecast } from '../../../routes/forecasting'
 import { ScenarioBuilder, rowsFromStores } from '../scenario-builder'
 
-/**
- * Expense rows load highest monthly equivalent first. Only on load: rows never
- * re-sort while being edited.
- */
-
 vi.mock('../../../stores/currencyStore', () => ({
   useFormattedAmount: () => (cents: number) => (cents / 100).toFixed(2),
   useCurrencyPreferences: () => ({ mode: 'none', currency: 'NONE', locale: 'en-US' }),
@@ -17,8 +12,6 @@ vi.mock('../../../stores/currencyStore', () => ({
 
 const NOW = '2026-10-07T00:00:00.000Z'
 
-// $50/mo, $2,400/yr (= $200/mo), $1,500/mo, $50/mo again: stable, so the two
-// $50 rows keep their stored order.
 const rows = [
   { name: 'Phone', amount: 5_000, frequency: 'monthly' as const },
   { name: 'Insurance', amount: 240_000, frequency: 'annually' as const },
@@ -47,7 +40,6 @@ describe('expense row order', () => {
 
     expect(seeded.expenseItems.map((item) => item.name)).toEqual(expected)
     expect(seeded.unfilteredExpenseItems.map((item) => item.name)).toEqual(expected)
-    // Ids stay unique after the reorder.
     expect(new Set(seeded.expenseItems.map((item) => item.id)).size).toBe(rows.length)
   })
 

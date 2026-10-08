@@ -1,25 +1,6 @@
 /**
- * incomeStore total tests (story 32.1, FR58).
- *
- * ⚠️ WHY THIS FILE EXISTS. Before 32.1 there was NO unit test anywhere asserting
- * on `getTotalIncome()`, which is why a frequency-blind `reduce` shipped and
- * survived: the Income page showed a raw sum while the Overview showed the
- * normalized one, from identical data.
- *
- * ⚠️ EVERY FIXTURE HERE IS MIXED-FREQUENCY, BY NECESSITY. At a single frequency
- * the raw sum and the normalized sum are EQUAL, so a single-frequency fixture
- * passes against both the broken and the fixed implementation and proves
- * nothing. Every existing income fixture in the repo (and the `makeIncomeSource`
- * factory's default) is `'monthly'` — that is precisely the blind spot.
- *
- * Expectations are HAND-COMPUTED literals, never re-derived by calling
- * `normalizeToMonthly`: a test that recomputes with the implementation's own
- * helper passes even if the multiplier is wrong (see build-financial-summary's
- * test header for the same rule).
- *
- * Runs in jsdom (`.dom.test.ts`) for a real `localStorage` — the store uses the
- * zustand persist middleware, and `setState` goes through the WRITE path even
- * with `skipHydration`.
+ * Fixtures are mixed-frequency: at a single frequency the raw and normalized sums are equal.
+ * Expectations are hand-computed literals, never re-derived with the implementation's helpers.
  */
 
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -33,15 +14,8 @@ const base = {
 }
 
 /**
- * The epic's own example: $200 weekly + $1,500 monthly + $600 annually.
- *
- *   raw sum (what the defect returned) = 20000 + 150000 + 60000       = 230000
- *   normalized monthly                                                = 241667
- *     weekly    round(20000 × 52/12) = round(86666.66…) = 86667
- *     monthly   150000 × 1                              = 150000
- *     annually  round(60000 × 1/12)                     = 5000
- *
- * The two differ by 11667c, so this fixture can actually detect the defect.
+ * weekly round(20000 × 52/12) = 86667, monthly 150000, annually 60000 / 12 = 5000 → 241667.
+ * Raw sum: 230000.
  */
 const MIXED_INCOME = [
   {
@@ -85,8 +59,7 @@ describe('incomeStore — getTotalIncome (story 32.1, FR58)', () => {
   it('does NOT return the raw sum (the defect this story fixes)', () => {
     useIncomeStore.setState({ incomeSources: MIXED_INCOME })
 
-    // Guards the assertion above from being satisfied by accident: if these two
-    // were ever equal, the test above could not distinguish broken from fixed.
+    // If these were equal the test above could not distinguish broken from fixed.
     expect(RAW_SUM).not.toBe(NORMALIZED_MONTHLY)
     expect(useIncomeStore.getState().getTotalIncome()).not.toBe(RAW_SUM)
   })
@@ -116,9 +89,7 @@ describe('incomeStore — getTotalIncome (story 32.1, FR58)', () => {
   })
 
   it('returns a number, never an object', () => {
-    // `useTotalIncome` calls this getter INSIDE the zustand selector. Returning
-    // a fresh object would fail v4's Object.is equality on every render and
-    // produce an infinite re-render loop.
+    // Called inside a zustand selector, so it must return a number.
     useIncomeStore.setState({ incomeSources: MIXED_INCOME })
 
     expect(typeof useIncomeStore.getState().getTotalIncome()).toBe('number')
@@ -126,14 +97,7 @@ describe('incomeStore — getTotalIncome (story 32.1, FR58)', () => {
 })
 
 describe('incomeStore — corrupt rows are excluded, not thrown on (story 32.1)', () => {
-  /**
-   * ⚠️ REGRESSION GUARD FOR THE FIX ITSELF. Before 32.1 the getter never read
-   * `frequency`, so it could not throw. Delegating to core exposes
-   * `validateFrequency`, which THROWS on anything outside the four-value set —
-   * and localStorage is user-editable while the sync applier writes rows without
-   * validating. An unguarded getter white-screens /income the same way a corrupt
-   * row already white-screens the dashboard (deferred-work.md:524).
-   */
+  /** core's validateFrequency throws outside the four values, and stored rows are user-editable. */
   it('does not throw on a corrupt persisted frequency', () => {
     useIncomeStore.setState({
       incomeSources: [
@@ -177,10 +141,7 @@ describe('incomeStore — corrupt rows are excluded, not thrown on (story 32.1)'
       ],
     })
 
-    // Only the readable monthly row contributes. Coercing the corrupt row to
-    // 'monthly' would report 160000 — a number the user never entered, shown as
-    // fact. Excluding + disclosing is the report's precedent and the right one
-    // for a headline total.
+    // Coercing the corrupt row to monthly would report 160000, a number the user never entered.
     expect(useIncomeStore.getState().getTotalIncome()).toBe(150000)
   })
 
@@ -230,12 +191,8 @@ describe('incomeStore — corrupt rows are excluded, not thrown on (story 32.1)'
     expect(useIncomeStore.getState().getUnreadableIncomeCount()).toBe(0)
   })
   /**
-   * ⚠️ Code review 32.1. A persisted array can carry a `null` or primitive
-   * element (truncated write, hand-edited storage, an older bug). The persist
-   * `migrate` filters those — but zustand only runs `migrate` on a version
-   * MISMATCH, so a blob already at the current version delivers the bad element
-   * straight into state. Reading `.frequency` off it throws on the render path
-   * and white-screens the page the guard exists to protect.
+   * migrate only runs on a version mismatch, so a current-version blob can deliver a bad element
+   * straight into state.
    */
   it.each([null, undefined, 42, 'nonsense'])(
     'does not throw when the persisted array contains %p',

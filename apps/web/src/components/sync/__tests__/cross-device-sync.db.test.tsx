@@ -1,13 +1,4 @@
 // @vitest-environment node
-/**
- * Two-device sync simulation against real PostgreSQL (PGlite).
- *
- * Runs the REAL client engine (ActiveSync → useSync → core SynchronizationService
- * → syncBridge → stores) against the REAL `/api/sync/batch` and
- * `/api/sync/changes` route handlers, with only the session lookup and rate
- * limiter stubbed. Device A enters data, device B (empty localStorage, fresh
- * stores) signs in to the same account and must see it.
- */
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -16,7 +7,6 @@ import { drizzle } from 'drizzle-orm/pglite'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 const holder = vi.hoisted(() => ({ db: null as unknown }))
-/** Who the session cookie names (story 86.3 switches accounts on one browser). */
 const session = vi.hoisted(() => ({ userId: '11111111-1111-4111-8111-111111111111' }))
 
 // The real package entry refuses to load under jsdom (it has a `window`), so
@@ -62,20 +52,15 @@ let useProfileManager: typeof import('@/hooks/useActiveProfile').useProfileManag
 let planStore: typeof import('@/stores/retirementPlannerStore')
 let boundary: typeof import('@/lib/sync/accountBoundary')
 let planPush: typeof import('@/lib/sync/retirementPlanPush')
-/** Every persisted store, for a simulated document load (story 99.3). */
 let persistedStores: { persist?: { rehydrate: () => Promise<void> | void } }[] = []
 
 // vitest runs with cwd = apps/web.
 const MIGRATIONS = resolve(process.cwd(), '../../packages/db/migrations')
 const requests: string[] = []
-/** Every op POSTed to `/api/sync/batch`, as `<type> <entityType> <entityId>` (story 99.3). */
 const pushedOps: string[] = []
-/** Every op `/api/sync/batch` did not apply, with how the server answered. */
 const batchFailures: string[] = []
-/** Every statement PostgreSQL refused, as `SQLSTATE message`. */
 const dbErrors: string[] = []
-// When true, /api/sync/batch behaves like production BEFORE the profileId fix:
-// every op comes back as a permanent (non-retryable) server failure.
+// When true, /api/sync/batch answers every op with a permanent server failure.
 let serverRejectsPushes = false
 
 async function routeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -123,9 +108,8 @@ async function routeFetch(input: RequestInfo | URL, init?: RequestInit): Promise
 let pg: PGlite
 
 beforeAll(async () => {
-  // PGlite cannot boot under jsdom (its browser loader needs a real fetch/Blob),
-  // so this file runs in the node environment and a DOM is installed only
-  // after the database is up.
+  // PGlite cannot boot under jsdom, so this file runs in the node environment and
+  // a DOM is installed only after the database is up.
   pg = new PGlite()
   const journal = JSON.parse(readFileSync(resolve(MIGRATIONS, 'meta/_journal.json'), 'utf8')) as {
     entries: { idx: number; tag: string }[]
@@ -138,8 +122,6 @@ beforeAll(async () => {
       }
     }
   }
-  // Record what the database refused (story 86.3: the 23505 a re-upload hits),
-  // inside a transaction as well as out of one.
   const recording = <Q extends (...args: never[]) => Promise<unknown>>(query: Q): Q =>
     (async (...args: Parameters<Q>) => {
       try {
@@ -159,7 +141,6 @@ beforeAll(async () => {
     })) as typeof pg.transaction
   const db = drizzle(pg)
   holder.db = db
-  // An account that predates story 5-3: no profile row yet.
   await db.insert(users).values({
     id: USER,
     email: 'a@example.test',
@@ -169,8 +150,7 @@ beforeAll(async () => {
   vi.stubGlobal('fetch', routeFetch)
 
   const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://app.test/' })
-  // ⚠️ `localStorage` MUST come from the JSDOM window. The node environment has
-  // none, on every Node (`src/test/webstorage.ts` removes newer Node's own).
+  // `localStorage` must come from the JSDOM window; the node environment has none.
   for (const key of [
     'window',
     'document',
@@ -185,11 +165,8 @@ beforeAll(async () => {
       key === 'window' ? dom.window : (dom.window as unknown as Record<string, unknown>)[key]
     )
   }
-  // Persisted stores bind their storage when their module is first evaluated,
-  // and `vitest.setup.ts` imports several of them before this hook installs the
-  // JSDOM `localStorage`. Under the node environment there was no storage to
-  // bind (`src/test/webstorage.ts`), so a store may have no `persist` API.
-  // Rebind whichever have one.
+  // Persisted stores bind storage at first import, before the JSDOM localStorage
+  // exists here. Rebind whichever have a persist API.
   const { createJSONStorage } = await import('zustand/middleware')
   const persisted = await Promise.all([
     import('@/stores/incomeStore').then((m) => m.useIncomeStore),
@@ -229,7 +206,6 @@ afterAll(async () => {
   await pg?.close()
 })
 
-/** A page reload: React tree and in-memory engine gone, localStorage kept. */
 function reload(): void {
   rtl.cleanup()
   resetSyncStore()
@@ -247,7 +223,6 @@ function freshDevice(): void {
     activeProfileId: placeholder,
   })
   useIncomeStore.setState({ incomeSources: [] })
-  // Story 99.3: a fresh browser has no plan, no claim and no pending push either.
   planStore.useRetirementPlannerStore.setState({
     plan: { ...planStore.RETIREMENT_PLAN_DEFAULTS },
     ownerUserId: '',
@@ -260,7 +235,6 @@ function freshDevice(): void {
 
 describe('cross-device sync (real engine, real routes, real PostgreSQL)', () => {
   it('data entered on device A appears on device B', async () => {
-    // Device A: data entered before sync mounts (free tier / pre-login), then sign in.
     freshDevice()
     useIncomeStore
       .getState()
@@ -276,7 +250,6 @@ describe('cross-device sync (real engine, real routes, real PostgreSQL)', () => 
       { timeout: 15_000 }
     )
 
-    // Device A adds a second row while signed in.
     useIncomeStore
       .getState()
       .addIncomeSource({ name: 'Bonus', amount: 100_000, frequency: 'annually' })
@@ -288,7 +261,6 @@ describe('cross-device sync (real engine, real routes, real PostgreSQL)', () => 
       { timeout: 15_000 }
     )
 
-    // Device B: brand-new browser, same account.
     freshDevice()
     rtl.render(<ActiveSync userId={USER} />)
     await rtl.waitFor(
@@ -316,7 +288,6 @@ describe('cross-device sync (real engine, real routes, real PostgreSQL)', () => 
     })
     await new Promise((r) => setTimeout(r, 500))
 
-    // Deploy the fix, reload the page.
     serverRejectsPushes = false
     requests.length = 0
     reload()
@@ -333,7 +304,6 @@ describe('cross-device sync (real engine, real routes, real PostgreSQL)', () => 
   it('local rows are uploaded even when the device carries the pre-fix "already seeded" marker and no queued ops', async () => {
     await pg.exec('delete from "incomeSources"')
     freshDevice()
-    // A reconciled device from before the fix: v1 seed marker set, queue gone.
     const serverProfile = await pg.query<{ id: string }>(
       `select id from "userProfiles" where "userId" = '${USER}' limit 1`
     )
@@ -362,8 +332,6 @@ describe('cross-device sync (real engine, real routes, real PostgreSQL)', () => 
   it('a profile created while sync was off is uploaded, so the data queued under it reaches the server and another device can switch to it', async () => {
     await pg.exec('delete from "incomeSources"')
     freshDevice()
-    // Device A, as observed in production: its ACTIVE profile carries the user's
-    // id but was never uploaded (created before the push bridge registered).
     const localOnlyProfile = crypto.randomUUID()
     useProfileStore.setState({
       profiles: [
@@ -396,7 +364,6 @@ describe('cross-device sync (real engine, real routes, real PostgreSQL)', () => 
     )
     expect(profiles.rows.map((r) => r.id)).toContain(localOnlyProfile)
 
-    // Device B: fresh, lands on the default profile, then switches to the uploaded one.
     freshDevice()
     rtl.render(<ActiveSync userId={USER} />)
     await rtl.waitFor(
@@ -415,15 +382,10 @@ describe('cross-device sync (real engine, real routes, real PostgreSQL)', () => 
   }, 90_000)
 })
 
-// ---------------------------------------------------------------------------
-// Story 86.3: two ACCOUNTS on one browser (not two devices of one account).
-// ---------------------------------------------------------------------------
-
 const ACCOUNT_A = '86386386-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const ACCOUNT_B = '86386386-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 const ACCOUNT_C = '86386386-cccc-4ccc-8ccc-cccccccccccc'
 
-/** The ops in `userId`'s persisted push queue, as `type entityType entityId`. */
 function queued(userId: string): string[] {
   const ops = JSON.parse(localStorage.getItem(`bp-sync-queue-${userId}`) ?? '[]') as {
     type: string
@@ -433,13 +395,11 @@ function queued(userId: string): string[] {
   return ops.map((op) => `${op.type} ${op.entityType} ${op.entityId}`)
 }
 
-/** Sign-out is a document load (`lib/account/sign-out.ts`): every store is KEPT. */
 function signOut(): void {
   rtl.cleanup()
   resetSyncStore()
 }
 
-/** The local income row called `name` (`addIncomeSource` returns nothing). */
 function incomeNamed(name: string): { id: string } {
   const row = useIncomeStore.getState().incomeSources.find((r) => r.name === name)
   if (!row) {
@@ -452,7 +412,6 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((r) => setTimeout(r, ms))
 }
 
-/** `userId`'s server default profile id (the first pull backfills it). */
 async function serverDefaultProfile(userId: string): Promise<string | undefined> {
   const rows = await pg.query<{ id: string }>(
     'select id from "userProfiles" where "userId" = $1 and "isDefault" = true and "isDeleted" = false',
@@ -491,7 +450,6 @@ describe('two accounts on one browser (story 86.3, real engine, real routes, rea
   })
 
   it('AC 2: what A pushed and never pulled back is A’s, so B neither lands on it nor re-uploads it', async () => {
-    // A signs in on a fresh browser and syncs.
     freshDevice()
     session.userId = ACCOUNT_A
     rtl.render(<ActiveSync userId={ACCOUNT_A} />)
@@ -504,11 +462,9 @@ describe('two accounts on one browser (story 86.3, real engine, real routes, rea
     )
     const aDefault = await serverDefaultProfile(ACCOUNT_A)
     expect(aDefault).toBeDefined()
-    // Let the reconcile re-pull and the profile upload settle before A's edits.
     await sleep(500)
     const pullsBeforeEdits = requests.filter((r) => r.startsWith('GET')).length
 
-    // A makes a profile on the Profiles page and adds an income row; both push.
     const manager = rtl.renderHook(() => useProfileManager())
     const side = manager.result.current.createProfile({
       name: 'Side',
@@ -532,9 +488,7 @@ describe('two accounts on one browser (story 86.3, real engine, real routes, rea
           [aIncome.id]
         )
         expect(income.rows).toEqual([{ userId: ACCOUNT_A }])
-        // The client processed the responses: nothing of A's is still queued,
         expect(queued(ACCOUNT_A)).toEqual([])
-        // and the accepted pushes marked both local rows as A's (86.3, AC 1).
         expect(useProfileStore.getState().profiles.find((p) => p.id === side.id)?.userId).toBe(
           ACCOUNT_A
         )
@@ -544,11 +498,9 @@ describe('two accounts on one browser (story 86.3, real engine, real routes, rea
       },
       { timeout: 15_000 }
     )
-    // Precondition: A signs out before any pull brought those rows back.
     expect(requests.filter((r) => r.startsWith('GET')).length).toBe(pullsBeforeEdits)
     signOut()
 
-    // B signs in on the same browser.
     session.userId = ACCOUNT_B
     batchFailures.length = 0
     dbErrors.length = 0
@@ -559,8 +511,7 @@ describe('two accounts on one browser (story 86.3, real engine, real routes, rea
     )
     const bDefault = await serverDefaultProfile(ACCOUNT_B)
     expect(bDefault).toBeDefined()
-    // Long enough for the profile upload's push (`syncSoon`, 2 s debounce) and
-    // the seed to go out and come back.
+    // Long enough for the debounced (2 s) profile upload push and the seed to round trip.
     await sleep(3500)
 
     const { profiles, activeProfileId } = useProfileStore.getState()
@@ -571,7 +522,6 @@ describe('two accounts on one browser (story 86.3, real engine, real routes, rea
     expect.soft(batchFailures).toEqual([])
     expect.soft(dbErrors).toEqual([])
 
-    // B's own edit lands in B's account, under B's profile.
     useIncomeStore
       .getState()
       .addIncomeSource({ name: 'B salary', amount: 200_000, frequency: 'monthly' })
@@ -587,7 +537,6 @@ describe('two accounts on one browser (story 86.3, real engine, real routes, rea
       .waitFor(async () => expect(await landed()).toHaveLength(1), { timeout: 6000 })
       .catch(() => undefined)
     expect.soft(await landed()).toEqual([{ userId: ACCOUNT_B, profileId: bDefault }])
-    // A's rows are untouched on the server.
     const aRows = await pg.query<{ userId: string }>(
       'select "userId" from "userProfiles" where id = $1 union all select "userId" from "incomeSources" where id = $2',
       [side.id, aIncome.id]
@@ -596,7 +545,6 @@ describe('two accounts on one browser (story 86.3, real engine, real routes, rea
   }, 60_000)
 
   it('AC 5: what A never pushed is still adopted by the next account, and marked as theirs once it lands', async () => {
-    // Made on the free tier (no push bridge): never pushed.
     freshDevice()
     const manager = rtl.renderHook(() => useProfileManager())
     const local = manager.result.current.createProfile({
@@ -613,7 +561,6 @@ describe('two accounts on one browser (story 86.3, real engine, real routes, rea
 
     session.userId = ACCOUNT_C
     rtl.render(<ActiveSync userId={ACCOUNT_C} />)
-    // Both creates SUCCEED under C (D4 adoption).
     await rtl.waitFor(
       async () => {
         const profile = await pg.query<{ userId: string }>(
@@ -630,7 +577,6 @@ describe('two accounts on one browser (story 86.3, real engine, real routes, rea
       },
       { timeout: 20_000 }
     )
-    // ...and the local rows now say so.
     await rtl.waitFor(() => {
       expect(useProfileStore.getState().profiles.find((p) => p.id === local.id)?.userId).toBe(
         ACCOUNT_C
@@ -641,11 +587,6 @@ describe('two accounts on one browser (story 86.3, real engine, real routes, rea
     })
   }, 60_000)
 })
-
-// ---------------------------------------------------------------------------
-// Story 99.3: the retirement plan follows the account (real push, real routes).
-// Every test uses its OWN account, so each runs alone (`-t`) or in any order.
-// ---------------------------------------------------------------------------
 
 const PLAN_ACCOUNTS = {
   aToB: '99399399-1111-4111-8111-111111111111',
@@ -662,7 +603,6 @@ const PLAN_ACCOUNTS = {
 
 type Plan = import('@/stores/retirementPlannerStore').RetirementPlan
 
-/** A plan in which no field equals its default. */
 const AUTHORED: Plan = {
   currentAgeInput: '42',
   lifeExpectancyInput: '88',
@@ -679,7 +619,6 @@ const AUTHORED: Plan = {
 
 const plan = () => planStore.useRetirementPlannerStore.getState()
 
-/** The account's server plan, or `undefined`. */
 async function serverPlan(userId: string): Promise<Plan | undefined> {
   const rows = await pg.query<{ plan: Plan }>('select plan from "retirementPlans" where id = $1', [
     userId,
@@ -687,7 +626,6 @@ async function serverPlan(userId: string): Promise<Plan | undefined> {
   return rows.rows[0]?.plan
 }
 
-/** Put a plan on the server directly (another device wrote it earlier). */
 async function putServerPlan(userId: string, value: Plan): Promise<void> {
   await pg.query(
     `insert into "retirementPlans" (id, "userId", plan, "updatedAt") values ($1, $1, $2, now())
@@ -696,12 +634,10 @@ async function putServerPlan(userId: string, value: Plan): Promise<void> {
   )
 }
 
-/** The plan ops POSTed for `userId`. */
 function planOpsFor(userId: string): string[] {
   return pushedOps.filter((op) => op.endsWith(` retirementPlan ${userId}`))
 }
 
-/** What `StoreHydration` does on a document load, then mount the sync engine. */
 function signIn(userId: string, extra?: ReactElement): void {
   session.userId = userId
   boundary.applyAccountBoundary(userId)
@@ -713,7 +649,6 @@ function signIn(userId: string, extra?: ReactElement): void {
   )
 }
 
-/** Wait until this device's sync engine is reconciled and its plan pull applied. */
 async function waitForInitialPull(userId: string): Promise<void> {
   await rtl.waitFor(
     () => {
@@ -722,11 +657,9 @@ async function waitForInitialPull(userId: string): Promise<void> {
     },
     { timeout: 15_000 }
   )
-  // The reconcile re-pull, the profile upload and the plan seed settle.
   await sleep(3000)
 }
 
-/** Every key this device holds, for swapping two "devices" in one process. */
 function snapshotDevice(): Record<string, string> {
   const snapshot: Record<string, string> = {}
   for (let i = 0; i < localStorage.length; i += 1) {
@@ -736,7 +669,6 @@ function snapshotDevice(): Record<string, string> {
   return snapshot
 }
 
-/** A document load of a device: its storage back, every store rehydrated from it. */
 async function loadDevice(snapshot: Record<string, string>): Promise<void> {
   rtl.cleanup()
   resetSyncStore()
@@ -774,10 +706,8 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
     freshDevice()
     signIn(id)
     await waitForInitialPull(id)
-    // The first device of an account with no plan seeds the defaults (AC-7).
     expect(planOpsFor(id)).toEqual([`create retirementPlan ${id}`])
 
-    // Device A authors every field through the intent setters, as the page does.
     const s = plan()
     s.setCurrentAgeInput(AUTHORED.currentAgeInput)
     s.setLifeExpectancyInput(AUTHORED.lifeExpectancyInput)
@@ -793,15 +723,12 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
     await rtl.waitFor(async () => expect(await serverPlan(id)).toEqual(authored), {
       timeout: 15_000,
     })
-    // Nine setter calls in one burst: ONE update (AC-4).
     expect(planOpsFor(id)).toEqual([`create retirementPlan ${id}`, `update retirementPlan ${id}`])
 
-    // Device B: brand-new browser, same account.
     freshDevice()
     signIn(id)
     await rtl.waitFor(() => expect(plan().plan).toEqual(authored), { timeout: 15_000 })
     await waitForInitialPull(id)
-    // B pushed nothing: the pull is not an edit, and the server had a plan.
     expect(planOpsFor(id)).toHaveLength(2)
     expect(plan().ownerUserId).toBe(id)
   }, 90_000)
@@ -810,7 +737,6 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
     const id = PLAN_ACCOUNTS.unclaimed
     await putServerPlan(id, AUTHORED)
     freshDevice()
-    // Authored signed out (owner ''), adopted by the 90.1 claim at sign-in.
     planStore.useRetirementPlannerStore.setState({
       plan: { ...planStore.RETIREMENT_PLAN_DEFAULTS, currentAgeInput: '29', model: 'perpetual' },
     })
@@ -824,7 +750,6 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
 
   it('AC-7: on a browser that synced BEFORE 99.3 (profile already reconciled at mount), the reconcile still waits for the initial pull, so the server plan wins', async () => {
     const id = PLAN_ACCOUNTS.reconciled
-    // A first visit backfills the account's server profile.
     freshDevice()
     signIn(id)
     await waitForInitialPull(id)
@@ -833,8 +758,8 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
     const opsBefore = planOpsFor(id).length
 
     freshDevice()
-    // The engine's profile gate is open from the first render here, so only the
-    // explicit wait for the initial pull keeps the reconcile after it (AC-7).
+    // The profile gate is open from the first render here, so only the explicit wait
+    // for the initial pull keeps the reconcile after it.
     useProfileStore.setState({
       profiles: [
         { id: profileId, userId: id, name: 'Main Profile', isDefault: true, currency: 'NONE' },
@@ -875,13 +800,11 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
     })
     await waitForInitialPull(id)
 
-    // Downgraded: the sync engine is gone, the plan stays this account's (90.1).
     rtl.cleanup()
     resetSyncStore()
     plan().setCurrentAgeInput('57')
     expect(plan().localPlanDiverged).toBe(true)
 
-    // Premium again: the pull must not put the older server plan back.
     await loadDevice(snapshotDevice())
     signIn(id)
     await rtl.waitFor(async () => expect((await serverPlan(id))?.currentAgeInput).toBe('57'), {
@@ -916,7 +839,6 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
               desiredIncomeLocale: '',
             }
 
-      // Device A (USD) authors the plan (and, for the seed, an income row) and syncs.
       freshDevice()
       useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
       if (kind === 'seeded') {
@@ -933,7 +855,6 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
       planPush.flushPendingPlanPush()
       let deviceA = snapshotDevice()
 
-      // Device B (EUR): a fresh browser on the same account.
       freshDevice()
       useCurrencyStore.setState({ mode: 'symbol', currency: 'EUR' })
       signIn(id, planner)
@@ -949,9 +870,8 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
       planPush.flushPendingPlanPush()
       let deviceB = snapshotDevice()
 
-      // The initial settle is over: from here on, NOTHING may push the plan.
       const settled = planOpsFor(id).length
-      expect(settled).toBe(1) // A's seed create only.
+      expect(settled).toBe(1)
       const magnitudes: number[] = []
       for (let cycle = 1; cycle <= 3; cycle += 1) {
         for (const device of ['A', 'B'] as const) {
@@ -959,7 +879,6 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
           signIn(id, planner)
           await waitForInitialPull(id)
           planPush.flushPendingPlanPush()
-          // Nothing pushed, nothing waiting in the durable queue either.
           expect(planOpsFor(id), `cycle ${cycle}, device ${device}`).toHaveLength(settled)
           expect(queued(id).filter((op) => op.includes('retirementPlan'))).toEqual([])
           const { desiredIncomeInput, desiredIncomeLocale, desiredIncomeTouched } = plan().plan
@@ -969,7 +888,6 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
             deviceA = snapshotDevice()
           } else {
             deviceB = snapshotDevice()
-            // The locales really differ, so the effect really ran on B.
             expect(desiredIncomeLocale).not.toBe('en-US')
           }
         }
@@ -995,15 +913,12 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
     await waitForInitialPull(id)
 
     await purgeLocalFinancialData(id)
-    // Without a reload, the full re-pull the purge triggers restores the plan.
     await rtl.waitFor(() => expect(plan().plan).toEqual(AUTHORED), { timeout: 15_000 })
     planPush.flushPendingPlanPush()
     await sleep(2500)
     expect(planOpsFor(id)).toEqual([`create retirementPlan ${id}`])
     expect(await serverPlan(id)).toEqual(AUTHORED)
 
-    // The next document load: a full pull brings the plan back, and the seed
-    // does not upload the purged defaults over it.
     await purgeLocalFinancialData(id)
     await loadDevice(snapshotDevice())
     expect(plan().plan).toEqual(planStore.RETIREMENT_PLAN_DEFAULTS)
@@ -1018,7 +933,6 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
     const other = PLAN_ACCOUNTS.parkedOther
     await putServerPlan(id, AUTHORED)
     freshDevice()
-    // `id` used this browser before; `other` is on it now (its plan on screen).
     localStorage.setItem(
       `${planStore.RETIREMENT_PLANNER_PARKED_KEY_PREFIX}${id}`,
       JSON.stringify({ ...planStore.RETIREMENT_PLAN_DEFAULTS, currentAgeInput: '30' })
@@ -1028,12 +942,10 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
       ownerUserId: other,
     })
     signIn(id)
-    // The claim parked `other`'s plan and brought `id`'s stale one back...
     expect(plan().plan.currentAgeInput).toBe('30')
     expect(
       localStorage.getItem(`${planStore.RETIREMENT_PLANNER_PARKED_KEY_PREFIX}${other}`)
     ).toContain('"61"')
-    // ...and the initial pull replaced it with the server copy.
     await rtl.waitFor(() => expect(plan().plan).toEqual(AUTHORED), { timeout: 15_000 })
     await waitForInitialPull(id)
     expect(planOpsFor(id)).toEqual([])

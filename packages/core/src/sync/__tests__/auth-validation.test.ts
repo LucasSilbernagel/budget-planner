@@ -1,9 +1,3 @@
-/**
- * Authentication Validation Tests for SynchronizationService
- *
- * Tests for the security fix that validates userId in queue operations
- */
-
 import { beforeEach, describe, expect, it } from 'vitest'
 import { SynchronizationService } from '../synchronization'
 
@@ -13,7 +7,6 @@ describe('SynchronizationService Authentication Validation', () => {
   const invalidUserId = 'user-456'
 
   beforeEach(() => {
-    // Create service with valid user
     service = new SynchronizationService(validUserId, { autoSync: false })
   })
 
@@ -84,8 +77,6 @@ describe('SynchronizationService Authentication Validation', () => {
 
   describe('Cross-user data tampering prevention', () => {
     it('should prevent user-456 from queuing operations for user-123', async () => {
-      // This simulates a security attack where a malicious user
-      // tries to queue operations for another user
       const maliciousService = new SynchronizationService(invalidUserId, { autoSync: false })
 
       await expect(
@@ -93,7 +84,7 @@ describe('SynchronizationService Authentication Validation', () => {
           'incomeSource',
           'inc-1',
           { name: 'Fake Income', amount: 10000 },
-          validUserId // Trying to create for user-123
+          validUserId
         )
       ).rejects.toThrow('Unauthorized: Operation userId mismatch')
     })

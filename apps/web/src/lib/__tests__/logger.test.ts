@@ -1,23 +1,15 @@
-/**
- * Structured logger redaction tests (story 5-5, AC-2)
- *
- * The redaction contract is the first-class deliverable: a log call that carries
- * a secret, email, session token, or financial value must NEVER emit it. These
- * tests prove that — they are the privacy guardrail, not a nicety.
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { logger, redact } from '../logger'
 
 describe('redact()', () => {
   it('redacts values of PII / secret / financial keys, keeps non-PII identifiers', () => {
     const out = redact({
-      userId: '4f1c0b2e-1111-2222-3333-444455556666', // non-PII UUID — keep
-      email: 'jane@example.com', // PII — redact
-      sessionToken: 'abc.def.ghi', // secret — redact
-      monthlyIncome: 5200, // financial — redact
-      balance: 9999.99, // financial — redact
-      status: 'active', // benign — keep
+      userId: '4f1c0b2e-1111-2222-3333-444455556666',
+      email: 'jane@example.com',
+      sessionToken: 'abc.def.ghi',
+      monthlyIncome: 5200,
+      balance: 9999.99,
+      status: 'active',
     }) as Record<string, unknown>
 
     expect(out.userId).toBe('4f1c0b2e-1111-2222-3333-444455556666')
@@ -33,7 +25,7 @@ describe('redact()', () => {
       ipAddress: '203.0.113.7',
       ip: '203.0.113.7',
       userAgent: 'Mozilla/5.0',
-      operationId: 'op-1', // benign — keep
+      operationId: 'op-1',
     }) as Record<string, unknown>
     expect(out.ipAddress).toBe('[REDACTED]')
     expect(out.ip).toBe('[REDACTED]')
@@ -50,12 +42,12 @@ describe('redact()', () => {
   it('recurses into nested objects and arrays', () => {
     const out = redact({
       user: { email: 'a@b.com', userId: 'u1' },
-      recipients: ['t1@x.com', 'plain'], // benign key → recurse + scrub strings
+      recipients: ['t1@x.com', 'plain'],
     }) as Record<string, unknown>
     const user = out.user as Record<string, unknown>
     expect(user.email).toBe('[REDACTED]')
     expect(user.userId).toBe('u1')
-    expect((out.recipients as string[])[0]).toBe('[REDACTED]') // email scrubbed in-string
+    expect((out.recipients as string[])[0]).toBe('[REDACTED]')
     expect((out.recipients as string[])[1]).toBe('plain')
   })
 
@@ -91,9 +83,9 @@ describe('redact()', () => {
   it('does NOT over-redact benign keys that merely contain a token substring', () => {
     const out = redact({
       recipient: 'team', // contains "ip" — must NOT match \bip\b
-      script: 'run', // contains "ip"
-      description: 'note', // contains "rip"? no — sanity benign
-      tooltip: 'help', // contains "ip"
+      script: 'run',
+      description: 'note',
+      tooltip: 'help',
     }) as Record<string, unknown>
     expect(out.recipient).toBe('team')
     expect(out.script).toBe('run')
@@ -108,7 +100,6 @@ describe('redact()', () => {
     expect(redact('visit https://app/verify?token=LIVE_SECRET now')).not.toContain('LIVE_SECRET')
     const jwt = 'eyJhbGciOi.eyJzdWIiOi.SflKxwRJ'
     expect(redact(`auth=${jwt}`)).not.toContain(jwt)
-    // base64 bearer with +/= tail fully scrubbed
     expect(redact('Bearer ab+cd/ef==')).not.toContain('ab+cd/ef==')
   })
 
@@ -160,7 +151,7 @@ describe('logger', () => {
     logger.info('i')
     logger.warn('w')
     logger.error('e')
-    expect(logSpy).toHaveBeenCalledTimes(1) // info → console.log
+    expect(logSpy).toHaveBeenCalledTimes(1)
     expect(warnSpy).toHaveBeenCalledTimes(1)
     expect(errorSpy).toHaveBeenCalledTimes(1)
   })

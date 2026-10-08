@@ -1,8 +1,4 @@
 // @vitest-environment node
-/**
- * `GET /api/profiles` on a real PostgreSQL (PGlite, the migration chain)
- * (story 83.1, FR136, AC-1). Only the session resolver is mocked.
- */
 
 import type { PGlite } from '@electric-sql/pglite'
 import { drizzle } from 'drizzle-orm/pglite'
@@ -143,7 +139,6 @@ describe('GET /api/profiles', () => {
     sessionMock.mockResolvedValue({ success: true, data: null })
     const res = await GET({ request: req() })
     expect(res.status).toBe(401)
-    // A refusal is user-specific too: not cacheable.
     expect(res.headers.get('cache-control')).toBe('no-store')
     expect(await res.json()).toEqual({ success: false, error: 'Authentication required' })
   })

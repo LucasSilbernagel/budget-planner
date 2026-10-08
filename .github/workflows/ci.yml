@@ -1,60 +1,22 @@
 name: CI
 
-# Quality-gate pipeline (Story 4-15).
-#
-# Runs the three required checks on every PR into `main`. Each gate is an independent job so it surfaces as its own required
-# status check in GitHub branch protection (see .github/BRANCH_PROTECTION.md):
-#   - lint        → pnpm biome check . (+ tsconfig validation)
-#   - unit-tests  → aggregator over `unit-shards` (Vitest, all workspaces; story 85.1)
-#   - e2e-tests   → pnpm test:e2e  (headless Playwright / Chromium)
-#
-# Story 85.1: the Vitest run is split across the `unit-shards` matrix job, and
-# `unit-tests` only reports their combined result under the required check name
-# `Unit tests (Vitest)`. Keep `if: always()` on it and keep its exact 'success'
-# test: GitHub counts a SKIPPED required check as passing, so an aggregator that
-# is skipped (or that accepts cancelled/skipped shards) lets a red PR merge.
-# scripts/validate-deploy-workflow.py pins all of this.
-#
-# `validate:tsconfig` (config-file sanity only) runs inside the lint job.
-#
-# The full `tsc` type-check is NOT run here — it is a *deploy* gate, owned by
-# `deploy.yml` (Story 5-4, AC-1). The original reason for excluding it (a tracked
-# backlog of pre-existing type errors) is dead: the strict-TS sweep closed
-# 2026-08-24 and every package now reports 0 errors. It sits on the deploy path
-# rather than here so this workflow's three job names stay exactly the three
-# required status checks documented in .github/BRANCH_PROTECTION.md.
-#
-# Deployment is intentionally out of scope here; it is owned by the Epic 5
-# production stories (5-4 configure CI/CD for production, 4-16/4-17 deploy).
+# Job names are the required status checks in branch protection; keep them stable.
 
 on:
   pull_request:
     branches: [main]
-  # NO `push: main` trigger, on purpose. Every push to `main` already runs these
-  # exact gates through `deploy.yml` (below), so a standalone push run duplicated
-  # ~8 minutes of runner time per push. Removed 2026-09-15. Required status
-  # checks are evaluated on the PR, which this trigger still covers, and a push
-  # that bypasses a PR still cannot deploy without passing the nested run.
-  #
-  # Story 5-4: lets `deploy.yml` invoke these exact gates as a `needs:`
-  # dependency, so the deploy job structurally cannot start unless lint, unit
-  # and e2e all pass. The job names are unchanged, so the required status checks
-  # in BRANCH_PROTECTION.md keep their names.
+  # No push trigger: deploy.yml runs these gates on every push to main.
   workflow_call:
 
-# Supersede in-flight runs for the same ref so pushes don't pile up CI minutes.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Least privilege: these jobs only read the checked-out code.
 permissions:
   contents: read
 
 env:
-  # Pin Node to match local dev: .nvmrc (Node 24, engines >=24.0.0).
-  # pnpm version is NOT pinned here - it comes from the `packageManager` field
-  # in package.json (pnpm@10.34.3), which pnpm/action-setup reads automatically.
+  # pnpm's version comes from package.json `packageManager`.
   NODE_VERSION: '24'
 
 jobs:
@@ -67,9 +29,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up pnpm
-        # Version is read from the `packageManager` field in package.json
-        # (single source of truth). Do NOT also pass `version:` here - pnpm
-        # action-setup errors on a conflict (ERR_PNPM_BAD_PM_VERSION).
+        # No `version:` here: it conflicts with package.json `packageManager`.
         uses: pnpm/action-setup@v4
 
       - name: Set up Node.js
@@ -87,61 +47,27 @@ jobs:
       - name: Validate tsconfig files
         run: pnpm validate:tsconfig
 
-      # 5-4 wrote these invariants; nothing ran them. A deploy-pipeline guard
-      # that only executes when someone remembers to type it is not a guard, and
-      # every property it protects (branch confinement, DEPLOY_ENABLED gating,
-      # least privilege, "no step echoes a secret") is one careless edit from
-      # gone. Wired into the lint gate by 4-16 so an edit to deploy.yml is
-      # checked on every PR.
+      - name: Comment rules
+        run: pnpm lint:comments
+
       - name: Validate deploy-workflow invariants
         run: python3 scripts/validate-deploy-workflow.py
 
-      # Story 58.1 (AC-9). `getSessionSeed` carries a dev-only override that
-      # fabricates an entitled session from E2E_SESSION_SEED so Playwright can
-      # measure the paid nav (87.1 added the e2e mail outbox, the same kind of
-      # seam). Each is gated on `import.meta.env.DEV`, which Vite replaces at
-      # build time, so a production build should not contain it at all.
-      #
-      # "Should" is the reason this step exists. The unit guards assert the
-      # SOURCE SHAPE and cannot see the bundle; a change to how the server bundle
-      # is produced could stop eliminating the branch while every test stays
-      # green. This builds the real thing and scans it.
-      #
-      # Story 92.1: the scan is `DEV_ONLY_SEAMS` in
-      # `apps/web/scripts/client-bundle-guard-lib.mjs` (run by the script below,
-      # and by `pnpm gates`), which replaced the inline grep that was here. Its
-      # positive controls: every marker must still be in its SOURCE file, and the
-      # scan fails when `dist/client` + `dist/server` hold no file at all (a scan
-      # of the wrong directory cannot pass).
+      # Dev-only seams are gated on import.meta.env.DEV; unit tests see only source,
+      # so scan the real build to prove they were eliminated.
       - name: Dev-only seams and server-only code are absent from the build
         run: |
           set -euo pipefail
           pnpm --filter web build
 
-          # Story 83.1 (FR136, AC-4). No server-only code in the CLIENT bundle.
-          # The forecasting page once `import()`ed `server/functions/*` in the
-          # browser: Vite put `pg` and the DB config into `dist/client`, the chunk
-          # failed there with `Buffer is not defined`, and no saved forecast ever
-          # reached the server while every test stayed green. The script scans
-          # every file in `dist/client` for server-only markers and carries its
-          # own positive controls (the markers must be present in `dist/server`).
           node apps/web/scripts/check-client-bundle.mjs
 
-      # Unused files, exports, types and dependencies (config: knip.json). A
-      # knip-flagged export that IS needed (e.g. reached only through a config
-      # alias or a CLI invoked by name) belongs in knip.json's `entry`, not in an
-      # ignore comment. Runs AFTER the build above: `apps/web/src/routeTree.gen.ts`
-      # is gitignored and only the TanStack Start vite plugin emits it, so on a
-      # clean checkout knip would report `./routeTree.gen` as unresolved.
+      # Runs after the build: routeTree.gen.ts is gitignored and only the build emits it.
       - name: Knip (unused code)
         run: pnpm knip
 
   unit-shards:
-    # Story 85.1 (FR138). The web Vitest run was the deploy's critical path
-    # (84.6: 4 of 4 runs), so it is split by FILE across two jobs. Core and db
-    # (~15 s together) run in shard 1 only. Branch protection does NOT see these
-    # names; it sees `unit-tests` below. The matrix length must equal the /N in
-    # --shard (the validator pins it): [1, 2] with /3 would drop a third of the files.
+    # The matrix length must equal the /N in --shard, or files are silently dropped.
     name: Unit tests (Vitest) shard ${{ matrix.shard }}/2
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -154,9 +80,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up pnpm
-        # Version is read from the `packageManager` field in package.json
-        # (single source of truth). Do NOT also pass `version:` here - pnpm
-        # action-setup errors on a conflict (ERR_PNPM_BAD_PM_VERSION).
+        # No `version:` here: it conflicts with package.json `packageManager`.
         uses: pnpm/action-setup@v4
 
       - name: Set up Node.js
@@ -168,19 +92,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # No package pre-build needed: vitest aliases @budget-planner/* to their
-      # TypeScript source (apps/web/vitest.config.ts), so tests run against src.
-      # External services (Paddle) are mocked via MSW; the db client
-      # connects lazily, so no real database is required (NFR8).
-      #
-      # The package-local binary, not `pnpm --filter web test:unit -- …`: the
-      # flag must reach Vitest itself, and a misparsed one would run 0 files (or
-      # all of them) while the job stays green.
+      # The package-local binary so --shard reaches Vitest itself; a misparsed flag
+      # would run 0 files (or all) while the job stays green.
       - name: Run web unit tests (shard ${{ matrix.shard }}/2)
         run: cd apps/web && ./node_modules/.bin/vitest run --config vitest.config.ts --shard=${{ matrix.shard }}/2
 
-      # `!cancelled()` so a web failure in shard 1 still reports core and db
-      # (85.1 review P9); the validator pins this exact `if:`.
+      # `!cancelled()` so a web failure in shard 1 still reports core and db.
       - name: Run core unit tests
         if: ${{ !cancelled() && matrix.shard == 1 }}
         run: pnpm --filter @budget-planner/core test:unit
@@ -190,10 +107,8 @@ jobs:
         run: pnpm --filter @budget-planner/db test:unit
 
   unit-tests:
-    # The REQUIRED status check (BRANCH_PROTECTION.md). It only reports the
-    # shards' combined result. `always()` so a failed shard makes it FAIL rather
-    # than be skipped (skipped = passing to branch protection); the exact
-    # 'success' test fails on failure, cancelled and skipped alike.
+    # The required check. `always()` because a skipped required check counts as
+    # passing; only an explicit "success" from the shards passes.
     name: Unit tests (Vitest)
     needs: unit-shards
     if: ${{ always() }}
@@ -209,11 +124,7 @@ jobs:
 
   e2e-tests:
     name: E2E tests (Playwright)
-    # Pinned, not `ubuntu-latest` (story 84.1): this job also runs the
-    # `screenshots` projects, whose baselines are rendered by
-    # `.github/workflows/screenshots.yml` on this SAME image. When `latest`
-    # moves, fonts and rasterisation move with it and every shot goes RED.
-    # Change both files together, then re-run screenshots.yml in update mode.
+    # Pinned to the image screenshots.yml renders baselines on; change both together.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -221,9 +132,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up pnpm
-        # Version is read from the `packageManager` field in package.json
-        # (single source of truth). Do NOT also pass `version:` here - pnpm
-        # action-setup errors on a conflict (ERR_PNPM_BAD_PM_VERSION).
+        # No `version:` here: it conflicts with package.json `packageManager`.
         uses: pnpm/action-setup@v4
 
       - name: Set up Node.js
@@ -235,9 +144,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Chromium binary + its OS deps are not part of `pnpm install`. The binary
-      # is cached per Playwright version; the OS packages live outside the cache
-      # directory, so they are installed on a hit too.
+      # OS packages live outside the browser cache, so they are installed on a hit too.
       - name: Resolve Playwright version
         id: playwright
         run: |
@@ -260,20 +167,8 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: pnpm --filter @budget-planner/web exec playwright install-deps chromium
 
-      # Playwright boots the app itself: three `pnpm dev` servers (free and paid
-      # seams, and since story 87.1 the `chromium-db` :5176 one backed by a
-      # PGlite database on :55432, also started by Playwright) and, since story 83.1, a PRODUCTION build served by
-      # `node server-entry.mjs` for the `chromium-prod` project (`*.prod.spec.ts`,
-      # no database). GitHub Actions sets CI=true automatically, which enables one
-      # retry + 4 workers and disables dev-server reuse (see
-      # apps/web/playwright.config.ts).
-      #
-      # ⚠️ This runs EVERY project, including `screenshots` / `screenshots-paid`
-      # (story 84.1), which `pnpm gates` never runs locally (their baselines are
-      # CI-rendered). Since story 84.2 deleted the `@layout` projects (FR137),
-      # those screenshots are the only layout-dedicated projects, so this step is
-      # where page layout is checked, and it blocks deploy (deploy.yml calls this workflow). Never
-      # add a `--project`/`--grep` here; `gates-lib.test.ts` pins that.
+      # Runs every project, including the CI-only screenshot projects: never add
+      # `--project`/`--grep` here.
       - name: Run Playwright tests
         run: pnpm test:e2e
 

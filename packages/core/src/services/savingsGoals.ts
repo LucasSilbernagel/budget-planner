@@ -1,162 +1,71 @@
-/**
- * Savings Goals Service
- *
- * Core service layer for savings goal operations.
- * Provides type definitions, validation, and business logic for savings goals.
- *
- * Architecture:
- * - Pure TypeScript functions, no side effects
- * - Works with both client-side (free tier) and server-side (paid tier) data
- * - Database types imported from @budget-planner/db
- */
-
 import { MAX_MONEY_CENTS } from '../finance/money-limits'
 import { calculateProgress as calculateSavingsGoalProgress } from '../utils/savingsGoalCalculations'
 import { generateUuid } from '../utils/uuid'
 
-// ============================================================================
-// Type Definitions
-// ============================================================================
-
-/**
- * Client-side Savings Goal interface for free tier
- * Uses number IDs (for localStorage/IndexedDB) and string timestamps
- * Omits userId for free tier (no authentication)
- */
 export interface ClientSavingsGoal {
-  // Client-generatable uuid PK (Story 5-14): the row carries the SAME id on every
-  // device, so a server pull reconciles by this id with no duplicates. Replaces
-  // the old negative-integer temp id.
   id: string
-  // Owning profile (Story 54.4, FR79). Stamped by the STORE on create with the
-  // active profile; a pulled row carries the server's value. Null/ABSENT means
-  // unscoped — rows persisted before 54.4 have no key at all — and is visible
-  // under every profile (see apps/web/src/lib/profile-scope.ts). Deliberately not
-  // on the `ClientNew*` input: an edit form must never re-home a row.
+  // Null/absent means unscoped (visible under every profile). Not on ClientNew*: an edit
+  // must never re-home a row.
   profileId?: string | null
   name: string
-  // null ⇒ savings account (no target); a positive integer ⇒ goal (Story 16-1).
-  // "No target" is an absent value, never a sentinel 0.
-  targetAmount: number | null // In cents (null = account)
-  currentBalance: number // In cents
-  createdAt: string // ISO string for localStorage serialization
-  updatedAt: string // ISO string for localStorage serialization
-  // Explicit display order (Story 34.1a, FR60). Zero-based integer assigned by the
-  // STORE as max+1 on insert; the server never computes or reshuffles it. NOT
-  // contiguous — deletes leave gaps on purpose, so this is an ORDER, not an index.
-  //
-  // ⚠️ OPTIONAL, and the reason is structural rather than a matter of taste:
-  // `toClientSavingsGoal` below is a pure function of its input and has no access
-  // to the list, so it cannot compute a position (see story 34.1a §2). The store
-  // stamps the value immediately after calling the factory. Declaring this field
-  // required would therefore make the factory itself a type error.
-  //
-  // Consequence worth stating plainly: a store that FORGOT to stamp `sortOrder` is
-  // NOT a compile error. That is why the store tests pin insert-at-bottom for all
-  // four lists individually rather than relying on tsc.
-  //
-  // A row without a value sorts LAST (never first) — see lib/ordering.ts.
+  // null ⇒ savings account (no target); never a sentinel 0.
+  targetAmount: number | null
+  currentBalance: number
+  createdAt: string
+  updatedAt: string
+  // An order, not an index: deletes leave gaps. Optional because `toClientSavingsGoal` can't
+  // see the list; the store stamps it right after.
   sortOrder?: number
-  // Per-account monthly allocation (Story 26.1). Optional so legacy persisted rows
-  // (pre-26.1) and existing fixtures stay valid; read sites default an absent mode
-  // to 'automatic' (see `resolveAllocationMode`). `monthlyAllocation` is the fixed
-  // amount for 'manual' accounts (cents, >= 0) and null/ignored for 'automatic'.
+  // Optional for legacy rows; absent means 'automatic' (see `resolveAllocationMode`).
   allocationMode?: AllocationMode
-  monthlyAllocation?: number | null // In cents (null = no manual amount)
-  // Optional UI display fields (progress is null for accounts)
-  progress?: number | null // Percentage (0-100), or null for accounts
+  monthlyAllocation?: number | null
+  progress?: number | null
   status?: SavingsGoalStatus
 }
 
-/**
- * Client-side new Savings Goal (without ID and timestamps)
- */
 export interface ClientNewSavingsGoal {
   name: string
-  targetAmount: number | null // In cents (null = account, no target)
-  currentBalance: number // In cents
-  // Allocation fields (Story 26.1); optional — absent ⇒ 'automatic' with no amount.
+  targetAmount: number | null
+  currentBalance: number
   allocationMode?: AllocationMode
-  monthlyAllocation?: number | null // In cents (null = no manual amount)
+  monthlyAllocation?: number | null
 }
 
-/**
- * Savings Goal Status for UI display
- * 'account' signals a goal-less savings account (no target, no progress).
- */
 export type SavingsGoalStatus = 'on-track' | 'behind' | 'complete' | 'not-started' | 'account'
 
-/**
- * Allocation mode for a savings account/goal (Story 26.1).
- * - 'manual': the account holds a fixed `monthlyAllocation` (cents, >= 0).
- * - 'automatic' (default): the account receives an even share of the leftover pool
- *   computed in Story 26.2; any stored `monthlyAllocation` is ignored.
- */
+/** 'automatic' takes an even share of the leftover pool; any stored `monthlyAllocation` is ignored. */
 export type AllocationMode = 'manual' | 'automatic'
 
-/** The allocation mode of a savings goal, defaulting an absent value to 'automatic'. */
 export function resolveAllocationMode(goal: { allocationMode?: AllocationMode }): AllocationMode {
   return goal.allocationMode ?? 'automatic'
 }
 
-/**
- * Savings Goal with progress calculation
- * Used for display purposes. `progress` is null for accounts (no target).
- */
 export interface SavingsGoalWithProgress extends ClientSavingsGoal {
-  progress: number | null // Percentage (0-100), or null for accounts
+  progress: number | null
   status: SavingsGoalStatus
 }
 
-/**
- * Type guard: an entry is a savings account (no target) when targetAmount is null.
- * Single source of truth for the goal-vs-account discriminator (Story 16-1).
- */
 export function isSavingsAccount(goal: {
   targetAmount: number | null
 }): boolean {
   return goal.targetAmount == null
 }
 
-/**
- * Filter options for querying savings goals
- */
 export interface SavingsGoalFilter {
   status?: SavingsGoalStatus
-  search?: string // Search by name
+  search?: string
 }
 
-// ============================================================================
-// Progress Calculation
-// ============================================================================
-
-/**
- * Calculate progress percentage for a savings goal
- * Re-exports from savingsGoalCalculations for convenience
- */
 export { calculateProgress } from '../utils/savingsGoalCalculations'
 
-/**
- * Determine status based on progress percentage
- *
- * @param progress - Progress percentage (0-100)
- * @returns Status enum value
- */
 export function getStatusFromProgress(progress: number): SavingsGoalStatus {
   if (progress >= 100) return 'complete'
   if (progress > 0) return 'on-track'
   return 'not-started'
 }
 
-/**
- * Calculate progress and status for a savings goal
- *
- * @param savingsGoal - Savings goal with targetAmount and currentBalance
- * @returns SavingsGoalWithProgress with calculated fields
- */
 export function withProgress(savingsGoal: ClientSavingsGoal): SavingsGoalWithProgress {
-  // Accounts (no target) have no meaningful progress — return it as absent
-  // (null), never 0, so the UI can distinguish "account" from "0% of a goal".
+  // null, never 0, so the UI can tell an account from 0% of a goal.
   if (isSavingsAccount(savingsGoal)) {
     return {
       ...savingsGoal,
@@ -176,40 +85,17 @@ export function withProgress(savingsGoal: ClientSavingsGoal): SavingsGoalWithPro
   }
 }
 
-// ============================================================================
-// Validation
-// ============================================================================
-
-/**
- * Validation errors for savings goal inputs
- */
 export interface ValidationError {
   field: string
   message: string
   value: unknown
 }
 
-/**
- * Validate savings goal input
- *
- * @param input - Savings goal input to validate
- * @returns Array of validation errors (empty if valid)
- *
- * Form Validation (from Dev Notes):
- * - name: Required, max 100 characters
- * - targetAmount: Optional. When provided (goal), must be a positive integer (in
- *   cents). When null/absent (account, Story 16-1), the target checks are skipped.
- * - currentBalance: Required, non-negative integer (in cents). Must be
- *   <= targetAmount only for goals (skipped for accounts).
- */
 export function validateSavingsGoal(input: Partial<ClientNewSavingsGoal>): ValidationError[] {
   const errors: ValidationError[] = []
 
-  // An entry is a goal only when a non-null target is provided; null/undefined
-  // means a savings account (no target) and the target checks are skipped.
   const isGoal = input.targetAmount !== undefined && input.targetAmount !== null
 
-  // Name validation
   if (input.name === undefined || input.name === null || input.name.trim() === '') {
     errors.push({
       field: 'name',
@@ -224,7 +110,6 @@ export function validateSavingsGoal(input: Partial<ClientNewSavingsGoal>): Valid
     })
   }
 
-  // Target amount validation — only for goals (a provided, non-null target).
   if (isGoal) {
     if (typeof input.targetAmount !== 'number' || !Number.isInteger(input.targetAmount)) {
       errors.push({
@@ -239,7 +124,6 @@ export function validateSavingsGoal(input: Partial<ClientNewSavingsGoal>): Valid
         value: input.targetAmount,
       })
     } else if (input.targetAmount > MAX_MONEY_CENTS) {
-      // Story 106.1 (FR174): the sync gate's int32 bound.
       errors.push({
         field: 'targetAmount',
         message: 'Target amount exceeds the largest amount that can sync',
@@ -248,7 +132,6 @@ export function validateSavingsGoal(input: Partial<ClientNewSavingsGoal>): Valid
     }
   }
 
-  // Current balance validation
   if (input.currentBalance === undefined || input.currentBalance === null) {
     errors.push({
       field: 'currentBalance',
@@ -268,7 +151,6 @@ export function validateSavingsGoal(input: Partial<ClientNewSavingsGoal>): Valid
       value: input.currentBalance,
     })
   } else if (input.currentBalance > MAX_MONEY_CENTS) {
-    // Story 106.1 (FR174): the sync gate's int32 bound.
     errors.push({
       field: 'currentBalance',
       message: 'Current balance exceeds the largest amount that can sync',
@@ -279,7 +161,6 @@ export function validateSavingsGoal(input: Partial<ClientNewSavingsGoal>): Valid
     typeof input.targetAmount === 'number' &&
     input.currentBalance > input.targetAmount
   ) {
-    // "Balance exceeds target" only applies to goals — an account has no target.
     errors.push({
       field: 'currentBalance',
       message: 'Current balance cannot exceed target amount',
@@ -287,10 +168,8 @@ export function validateSavingsGoal(input: Partial<ClientNewSavingsGoal>): Valid
     })
   }
 
-  // Allocation validation (Story 26.1). The mode, when provided, must be a known
-  // value. A manual amount is constrained only in 'manual' mode — an 'automatic'
-  // account ignores any stored amount (it receives an even share of the leftover
-  // pool computed in Story 26.2), so a stale value must not raise an error.
+  // A manual amount is checked only in 'manual' mode: an automatic account ignores any
+  // stored amount, so a stale one must not raise an error.
   if (input.allocationMode !== undefined) {
     if (input.allocationMode !== 'manual' && input.allocationMode !== 'automatic') {
       errors.push({
@@ -319,7 +198,6 @@ export function validateSavingsGoal(input: Partial<ClientNewSavingsGoal>): Valid
         value: input.monthlyAllocation,
       })
     } else if (input.monthlyAllocation > MAX_MONEY_CENTS) {
-      // Story 106.1 (FR174): the sync gate's int32 bound.
       errors.push({
         field: 'monthlyAllocation',
         message: 'Monthly allocation exceeds the largest amount that can sync',
@@ -331,43 +209,18 @@ export function validateSavingsGoal(input: Partial<ClientNewSavingsGoal>): Valid
   return errors
 }
 
-/**
- * Check if savings goal input is valid
- *
- * @param input - Savings goal input to validate
- * @returns true if valid, false otherwise
- */
 export function isValidSavingsGoal(input: Partial<ClientNewSavingsGoal>): boolean {
   return validateSavingsGoal(input).length === 0
 }
 
-// ============================================================================
-// Sorting and Filtering
-// ============================================================================
-
-/**
- * Sort savings goals by creation date (newest first)
- *
- * AC 2: When viewing the savings goals list, all goals are displayed sorted by creation date (newest first)
- *
- * @param goals - Array of savings goals to sort
- * @returns New array sorted by createdAt (descending)
- */
 export function sortByCreationDate(goals: ClientSavingsGoal[]): ClientSavingsGoal[] {
   return [...goals].sort((a, b) => {
     const dateA = new Date(a.createdAt).getTime()
     const dateB = new Date(b.createdAt).getTime()
-    return dateB - dateA // Newest first
+    return dateB - dateA
   })
 }
 
-/**
- * Filter savings goals by status
- *
- * @param goals - Array of savings goals with progress
- * @param filter - Filter options
- * @returns Filtered array of savings goals
- */
 export function filterSavingsGoals(
   goals: SavingsGoalWithProgress[],
   filter: SavingsGoalFilter
@@ -382,40 +235,14 @@ export function filterSavingsGoals(
   })
 }
 
-// ============================================================================
-// ID Generation for Client-side Storage
-// ============================================================================
-
-/**
- * Generate a client-generatable uuid for a savings goal (Story 5-14).
- *
- * Replaces the old negative-integer temp-id counter: the id is now a uuid the
- * client mints up front so a row created offline has the SAME id everywhere and a
- * server pull reconciles by id (no duplicates). Name kept for call-site stability.
- *
- * @returns A uuid string
- */
 export function generateSavingsGoalTempId(): string {
   return generateUuid()
 }
 
-/**
- * No-op retained for backward compatibility (Story 5-14).
- *
- * uuid generation is stateless, so there is no counter to reset. Kept so existing
- * test/setup call sites compile unchanged.
- */
 export function resetSavingsGoalTempId(): void {
-  // Intentionally empty — uuid ids are stateless (no counter to reset).
+  // Intentionally empty: uuid ids are stateless.
 }
 
-/**
- * Convert new savings goal input to client savings goal (add ID and timestamps)
- *
- * @param input - New savings goal input
- * @param userId - Optional user ID (0 for free tier)
- * @returns Client savings goal with ID and timestamps
- */
 export function toClientSavingsGoal(
   input: ClientNewSavingsGoal,
   _userId?: number
@@ -428,7 +255,3 @@ export function toClientSavingsGoal(
     updatedAt: now,
   }
 }
-
-// ============================================================================
-// Exports
-// ============================================================================

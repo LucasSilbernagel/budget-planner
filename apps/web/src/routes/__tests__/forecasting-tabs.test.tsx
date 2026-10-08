@@ -1,21 +1,4 @@
-/**
- * The `/forecasting` tab strip fits a 320 px screen (story 91.3, FR147).
- *
- * At 320 px the three tabs were 388 px wide in a 288 px content box, so the page
- * scrolled sideways by 80 px (MEASURED under DejaVu, `91-3-evidence/`). Below the
- * `sm` breakpoint the icons are hidden and the padding halves, and the buttons
- * share the strip's width so a label that runs short wraps between its words.
- *
- * jsdom has no layout and no Tailwind, so these pin the class TOKENS, never a
- * computed style. Whether the strip actually fits is guarded by the CI screenshot
- * `forecasting-320-light` (`e2e/nav.screenshot.paid.spec.ts`). Every phone token is
- * `max-sm:`, so ≥ 640 px renders as before (`forecasting-1280-light` unchanged).
- *
- * The buttons are found by role and name, which also pins that the names did not
- * change: the icons are `aria-hidden`, so hiding them cannot rename a tab.
- * Since story 120.2 (FR188) they are still `<button>` elements but carry
- * `role="tab"`, so the locators ask for `tab`; the class-token pins are unchanged.
- */
+// jsdom has no layout or Tailwind, so these pin class tokens, never computed styles.
 
 import { renderWithRouter, screen } from '@/test/utils'
 import userEvent from '@testing-library/user-event'
@@ -29,7 +12,6 @@ vi.mock('../../hooks/usePremiumAccess', () => ({
   usePremiumAccess: () => usePremiumAccess(),
 }))
 
-// Isolation only, as in `forecasting-intro.test.tsx`: keeps the mount effect off the network.
 vi.mock('../../lib/forecasting/forecast-api', () => ({
   fetchProfiles: vi.fn(async () => ({ success: true, data: [] })),
   fetchForecasts: vi.fn(async () => ({ success: true, data: [] })),
@@ -64,9 +46,7 @@ function tokens(el: Element): string[] {
 
 describe('forecasting tab strip below 640 px (story 91.3)', () => {
   it('gives an inactive tab AA-contrast text in both themes (story 115.2)', async () => {
-    // gray-500 on the strip's gray-100 was 4.39:1 and gray-400 on dark gray-700
-    // 4.06:1, below AA's 4.5:1; gray-600 / gray-300 are 6.87 / 7.00. Tokens,
-    // not paint (jsdom has no Tailwind): the Lighthouse re-run is the proof.
+    // gray-500/gray-400 fell below AA's 4.5:1 on the strip; gray-600/gray-300 pass.
     const inactive = (await renderTabs()).filter((button) => !tokens(button).includes('shadow-sm'))
     expect(inactive).toHaveLength(2)
     for (const button of inactive) {
@@ -83,8 +63,7 @@ describe('forecasting tab strip below 640 px (story 91.3)', () => {
     const strip = buttons[0]?.parentElement as HTMLElement
 
     expect(buttons).toHaveLength(3)
-    // Direct children of ONE strip: `forecasting-intro.test.tsx` finds the strip as
-    // a button's nearest ancestor div, so a wrapper per button would retarget it.
+    // Direct children of one strip: another test finds the strip as a button's nearest ancestor div.
     expect(Array.from(strip.children)).toEqual(buttons)
     for (const button of buttons) expect(button).toHaveAttribute('type', 'button')
   })
@@ -94,17 +73,13 @@ describe('forecasting tab strip below 640 px (story 91.3)', () => {
       expect(tokens(button)).toEqual(
         expect.arrayContaining(['max-sm:flex-1', 'max-sm:min-w-0', 'max-sm:px-1.5', 'px-4'])
       )
-      // Story 93.1 (D3 option B): px-1.5, not px-2. At px-2 "Projections" (76.5 px
-      // under DejaVu) did not fit its 74.7 px content box, so the label wrap below
-      // would split it at 100 % text size (MEASURED, `93-1-evidence/`).
+      // At px-2 "Projections" did not fit its content box at 320 px.
       expect(tokens(button)).not.toContain('max-sm:px-2')
     }
   })
 
   it('lets a label that is wider than its button break inside a word, on a phone only (93.1)', async () => {
-    // MEASURED (story 93.1, DejaVu, 320 px): at 125 % text size "Projections" overflowed
-    // its button by 4.5 px each side, at 150 % it crossed both neighbours by 10.1 px.
-    // Breaking the word ends the overlap; `max-sm:` keeps >= 640 px as it was.
+    // At larger text sizes "Projections" overflowed its button; breaking the word ends the overlap.
     for (const button of await renderTabs()) {
       const label = Array.from(button.querySelectorAll('span')).find((s) => s.children.length === 0)
       expect(tokens(label as Element)).toContain('max-sm:[overflow-wrap:anywhere]')
@@ -140,12 +115,6 @@ describe('forecasting tab strip below 640 px (story 91.3)', () => {
   })
 })
 
-/**
- * The views are APG tabs (story 120.2, FR188): a labelled tablist, one selected tab,
- * each tab controlling a panel that EXISTS (Projections and My Forecasts content is
- * still mounted only while active, but its panel wrapper is always rendered), a
- * roving tabIndex, and automatic activation on ←/→ (wrapping) and Home/End.
- */
 describe('tab semantics (story 120.2)', () => {
   function selected(): string[] {
     return screen
@@ -184,19 +153,16 @@ describe('tab semantics (story 120.2)', () => {
     expect(selected()).toEqual(['Projections'])
     expect(projections?.tabIndex).toBe(0)
     expect(builder?.tabIndex).toBe(-1)
-    // Automatic activation: the panel content switched too.
     expect(screen.getByRole('heading', { name: 'Forecast Projections' })).toBeInTheDocument()
 
     await user.keyboard('{ArrowRight}')
     expect(saved).toHaveFocus()
     expect(selected()).toEqual(['My Forecasts'])
 
-    // Wraps forward from the last tab ...
     await user.keyboard('{ArrowRight}')
     expect(builder).toHaveFocus()
     expect(selected()).toEqual(['Scenario Builder'])
 
-    // ... and backward from the first.
     await user.keyboard('{ArrowLeft}')
     expect(saved).toHaveFocus()
     expect(selected()).toEqual(['My Forecasts'])

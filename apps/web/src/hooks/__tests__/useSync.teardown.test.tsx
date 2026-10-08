@@ -1,17 +1,3 @@
-/**
- * useSync — a refusal that lands after the hook unmounted is not lost (story 79.1).
- *
- * The cleanup unsubscribes `onOperationsRejected` and destroys the service, but a
- * push already in flight used to run on: its refused CREATE left the persisted
- * queue with nobody listening, so the row was never reverted and never named,
- * and the next session had nothing left to learn it from.
- *
- * After 79.1 the dead service leaves the queue alone, so the NEXT session sends
- * the op again, is refused again, and this time names and reverts it.
- *
- * Transports are mocked so the push can be HELD across the unmount.
- */
-
 import { renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -86,7 +72,6 @@ describe('useSync teardown mid-sync (story 79.1)', () => {
     )
     send.mockResolvedValue(REFUSED)
 
-    // Session 1: queue the create and start the push.
     const first = renderHook(() => useSync({ userId: USER, autoSync: false, autoPull: false }))
     await first.result.current.queueCreate('incomeSource', ROW, {
       userId: USER,
@@ -95,20 +80,16 @@ describe('useSync teardown mid-sync (story 79.1)', () => {
       frequency: 'monthly',
     })
     const inFlight = first.result.current.forceSync()
-    // Positive anchor: the create really went out before the teardown.
     await waitFor(() => expect(send).toHaveBeenCalledTimes(1))
 
     first.unmount()
     release(REFUSED)
     await inFlight
 
-    // Nobody was listening, so nothing was named or reverted — and the op is
-    // still queued for the next session to learn the refusal again.
     expect(getRefusalNotices()).toEqual([])
     expect(useIncomeStore.getState().incomeSources.map((row) => row.id)).toEqual([ROW])
     expect(queuedIds()).toEqual([ROW])
 
-    // Session 2: same user. Push until the loaded queue goes out.
     const second = renderHook(() => useSync({ userId: USER, autoSync: false, autoPull: false }))
     await waitFor(async () => {
       await second.result.current.forceSync()
@@ -133,13 +114,11 @@ describe('useSync teardown mid-sync (story 79.1)', () => {
           release = resolve
         })
     )
-    // What the NEXT session's initial-sync check would read.
     setLastPullTimestamp(4242)
     const cursor = renderHook(() => useLastPullTimestamp())
 
     const first = renderHook(() => useSync({ userId: USER, autoSync: false, autoPull: false }))
     const inFlight = first.result.current.pull()
-    // Positive anchor: the pull really reached the transport before the teardown.
     await waitFor(() => expect(fetchMeta).toHaveBeenCalledTimes(1))
 
     first.unmount()

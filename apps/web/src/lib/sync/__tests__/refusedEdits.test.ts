@@ -1,13 +1,3 @@
-/**
- * Naming and reverting a permanently refused sync edit (story 75.2, FR119).
- *
- * The end-to-end proof is `components/sync/__tests__/refused-edit-notice.db.test.tsx`
- * (real server, real engine). This file pins the rules that are awkward to
- * reach through the chain: grouping per row, name resolution and its
- * fallbacks, an op queued AFTER 75.1's D1 swept the queue, and one re-pull per
- * sync.
- */
-
 import {
   type ServerChange,
   type SyncOperation,
@@ -146,7 +136,7 @@ describe('handleRejectedOperations — reverting', () => {
 
   it('a refused create: drops ops for the row still queued, then removes it with a TOMBSTONE', async () => {
     const d = deps()
-    // Queued after 75.1's D1 swept the queue — e.g. an edit made mid-push.
+    // Queued after the queue was swept, e.g. an edit made mid-push.
     d.queued.push(op({ id: 'late', entityId: 'row-1' }), op({ id: 'other', entityId: 'row-9' }))
 
     await handleRejectedOperations([op({ type: 'create' })], d)
@@ -171,12 +161,11 @@ describe('handleRejectedOperations — reverting', () => {
       d
     )
 
-    // Its rows went with the synthetic tombstone (66.3 cascade); their queued ops
-    // would otherwise fail `Profile not found` for ever.
+    // Their queued ops would otherwise fail `Profile not found` forever.
     expect(d.discardOperationsForDeletedProfile).toHaveBeenCalledTimes(1)
     expect(d.discardOperationsForDeletedProfile).toHaveBeenCalledWith('p-1')
     expect(d.applied).toHaveLength(1)
-    // AFTER the synthetic tombstone: the rows go first, then their queued ops.
+    // After the synthetic tombstone: the rows go first, then their queued ops.
     const tombstoneOrder = (d.applyChanges as ReturnType<typeof vi.fn>).mock
       .invocationCallOrder[0] as number
     const discardOrder = (d.discardOperationsForDeletedProfile as ReturnType<typeof vi.fn>).mock
@@ -268,10 +257,7 @@ describe('handleRejectedOperations — reverting', () => {
   })
 
   it('over a REAL queue whose storage refuses writes, the leftover still leaves this session', async () => {
-    // Code review P8: the doubles above implement only `discardBatch`, so a
-    // regression to `removeBatch` crashed them rather than exercising storage.
-    // A real `SyncQueue` has both, and its `removeBatch` keeps the op when the
-    // write fails, which is exactly the regression this must catch.
+    // The doubles only implement discardBatch; a real SyncQueue's removeBatch keeps the op when the write fails.
     let failWrites = false
     const saved = new Map<string, SyncOperation[]>()
     const storage: SyncQueueStorage = {
@@ -358,11 +344,6 @@ describe('refusalNoticeStore', () => {
   })
 })
 
-/**
- * Story 99.2 (G13, AC-7, D9): a refused retirement plan edit is NAMED and the
- * plan is NOT reverted: no tombstone, no re-pull (which would replace the user's
- * whole plan with the server's older copy).
- */
 describe('a refused retirement plan edit (story 99.2)', () => {
   const planOp = (type: SyncOperation['type']) =>
     op({ type, entityType: 'retirementPlan', entityId: 'u', data: { userId: 'u', plan: {} } })

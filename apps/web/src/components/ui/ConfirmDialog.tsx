@@ -2,47 +2,19 @@ import { type ReactNode, useId } from 'react'
 import { Modal } from './Modal'
 
 /**
- * Themed destructive-confirmation dialog (story 6-3).
- *
- * A thin wrapper over the shared {@link Modal} primitive that replaces browser
- * `confirm()`/`alert()` prompts for "Are you sure?" destructive actions. It owns
- * none of the dismissal/focus/scroll-lock mechanics — those live in `Modal` —
- * it only adds the `alertdialog` chrome (title, message, Confirm/Cancel buttons)
- * and the post-confirm focus handoff.
- *
- * Behavior inherited from `Modal`: clicking the backdrop or pressing Escape
- * triggers `onCancel` (never `onConfirm`), so dismissal aborts the destructive
- * action — reusing the story 6-2 dismissal guarantees. The destructive button is
- * intentionally NOT auto-focused (Modal focuses the dialog container), so an
- * immediate Enter/Space can't confirm a delete by accident.
- *
- * **AC-5 focus handoff:** after a destructive confirm the triggering control
- * (e.g. a row's Delete button) is usually removed from the DOM. Modal's default
- * focus-restore would then target a detached node and focus would fall to
- * `<body>`. Pass `finalFocusRef` (a stable element such as the list container or
- * the "Add" button) and it is forwarded to Modal, which focuses it on close
- * instead of the trigger. Routing this through Modal's close handler (rather
- * than focusing eagerly on confirm) makes it robust even when the action is
- * async and the trigger is still mounted at confirm time.
+ * The destructive button is NOT auto-focused, so an immediate Enter/Space can't confirm a delete.
+ * Pass `finalFocusRef` when confirming removes the trigger, or focus falls to `<body>`.
  */
 export interface ConfirmDialogProps {
-  /** Whether the dialog is rendered. */
   isOpen: boolean
-  /** Called when the user confirms the destructive action. */
   onConfirm: () => void
   /** Called on Cancel, backdrop click, or Escape. Must abort the action. */
   onCancel: () => void
-  /** The consequence statement shown to the user. */
   message: ReactNode
-  /** Heading text. Default "Confirm Delete". */
   title?: string
-  /** Label for the destructive button. Default "Delete". */
   confirmLabel?: string
-  /** Label for the dismiss button. Default "Cancel". */
   cancelLabel?: string
-  /** Disables both buttons while an async confirm is in flight. */
   isConfirming?: boolean
-  /** Stable element to focus after a confirm removes the triggering control (AC-5). */
   finalFocusRef?: React.RefObject<HTMLElement | null>
 }
 
@@ -73,21 +45,8 @@ export function ConfirmDialog({
       <h3 id={titleId} className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
         {title}
       </h3>
-      {/*
-        `break-words` is load-bearing at 320px, not cosmetic (story 31.3). The
-        message interpolates user-supplied names, and a long unbroken one ran
-        ~926px off screen — invisible to any document-level overflow check
-        because Modal locks body scroll while open.
-
-        ⚠️ It is load-bearing TOGETHER WITH `MODAL_CARD_CONSTRAINT`, not on its
-        own, and neither substitutes for the other. The card is a flex item of
-        the overlay, so its automatic minimum size is its min-content width —
-        the whole unbroken name — until `overflow` becomes non-`visible`, which
-        drops that floor to 0 (CSS Flexbox §4.5). So the constraint is what
-        keeps the card's BOX at 288px, and `break-words` is what stops the
-        content inside it from needing ~1214px of horizontal scroll. Remove
-        either and the 320px rendering breaks again, in different ways.
-      */}
+      {/* `break-words` and `MODAL_CARD_CONSTRAINT` are both needed at 320px: the constraint bounds
+        the card, this stops a long unbroken name overflowing inside it. */}
       <p id={descriptionId} className="text-gray-600 dark:text-gray-400 mb-6 break-words">
         {message}
       </p>

@@ -1,22 +1,14 @@
 #!/usr/bin/env node
 
-/**
- * Script to validate tsconfig.json files in the monorepo
- * Ensures all tsconfig files use compatible settings with TypeScript 5.3.3+
- */
-
 const fs = require('fs')
 const path = require('path')
 
 const projectRoot = path.resolve(__dirname, '..')
 
-// Valid moduleResolution options for TypeScript 5.0+
 const validModuleResolutions = ['node', 'classic', 'node12', 'nodenext', 'node16', 'bundler']
 
-// Minimum TypeScript version required
 const minTypeScriptVersion = '5.0.0'
 
-// Resolve the installed TypeScript version (best effort).
 function getInstalledTypeScriptVersion() {
   try {
     return require('typescript/package.json').version
@@ -25,7 +17,6 @@ function getInstalledTypeScriptVersion() {
   }
 }
 
-// Compare two semver-ish strings ("5.9.3" vs "5.0.0"). Returns true if a >= b.
 function isVersionAtLeast(a, b) {
   const pa = a.split('.').map((n) => Number.parseInt(n, 10) || 0)
   const pb = b.split('.').map((n) => Number.parseInt(n, 10) || 0)
@@ -49,7 +40,6 @@ function findTsConfigFiles(dir) {
     const stat = fs.statSync(fullPath)
 
     if (stat.isDirectory()) {
-      // Skip node_modules
       if (file === 'node_modules' || file === '.git' || file === 'dist') {
         continue
       }
@@ -70,7 +60,6 @@ function validateTsConfig(filePath) {
     const content = fs.readFileSync(filePath, 'utf8')
     const config = JSON.parse(content)
 
-    // Check for formatting issues
     if (content.includes('\r\n')) {
       errors.push('Contains CRLF line endings (should be LF)')
     }
@@ -83,16 +72,14 @@ function validateTsConfig(filePath) {
       warnings.push('Missing trailing newline')
     }
 
-    // Check for trailing whitespace on any line
     const lines = content.split('\n')
     for (let i = 0; i < lines.length; i++) {
       if (lines[i].trimEnd() !== lines[i] && lines[i].trim() !== '') {
         errors.push(`Trailing whitespace on line ${i + 1}`)
-        break // Report once to avoid spam
+        break
       }
     }
 
-    // Check moduleResolution
     const moduleResolution = config.compilerOptions?.moduleResolution
     if (moduleResolution && !validModuleResolutions.includes(moduleResolution)) {
       errors.push(
@@ -102,8 +89,6 @@ function validateTsConfig(filePath) {
       )
     }
 
-    // Check for bundler without TypeScript 5.0+. Only warn if the installed
-    // version is actually too old (or can't be resolved).
     if (moduleResolution === 'bundler') {
       if (!installedTypeScriptVersion) {
         warnings.push(
@@ -116,12 +101,10 @@ function validateTsConfig(filePath) {
       }
     }
 
-    // Check for required fields (skip for base configs that only extend)
     if (!config.compilerOptions && !config.extends) {
       warnings.push('Missing compilerOptions')
     }
 
-    // Check for extends that might cause issues
     if (config.extends) {
       const extendedPath = path.resolve(path.dirname(filePath), config.extends)
       if (!fs.existsSync(`${extendedPath}.json`) && !fs.existsSync(extendedPath)) {
@@ -129,21 +112,16 @@ function validateTsConfig(filePath) {
       }
     }
 
-    // Check include/exclude (skip for base configs that only extend)
     if (!config.include && !config.files && !config.extends) {
       warnings.push('No include pattern or files specified')
     }
 
-    // GUARDRAIL: a solution-style config (one with project `references`) must not
-    // directly `include` source files that live inside its referenced projects.
-    // Doing so makes this program "own" files that the composite referenced project
-    // also emits, producing TS6305 "Output file has not been built from source file"
-    // errors. A solution config should use `"files": []` and rely on `references`.
+    // A solution-style config (with `references`) must not `include` files its referenced projects
+    // own, or tsc reports TS6305. Use `"files": []`.
     if (Array.isArray(config.references) && config.references.length > 0) {
       const configDir = path.dirname(filePath)
       const includePatterns = config.include || []
 
-      // The literal directory prefix of a glob, before the first wildcard segment.
       const globBaseDir = (pattern) => {
         const segments = pattern.split('/')
         const literal = []
@@ -166,7 +144,6 @@ function validateTsConfig(filePath) {
 
         for (const pattern of includePatterns) {
           const baseDir = globBaseDir(pattern)
-          // Overlap if the include base contains (or equals) the referenced project dir.
           if (refDir === baseDir || refDir.startsWith(`${baseDir}${path.sep}`)) {
             errors.push(
               `include pattern "${pattern}" overlaps referenced project "${ref.path}". A config with \`references\` must not include its referenced projects’ sources directly (causes TS6305). Use \`"files": []\` and rely on \`references\`.`
@@ -176,7 +153,6 @@ function validateTsConfig(filePath) {
       }
     }
 
-    // Check for rootDir in configs with include/files
     if (config.compilerOptions) {
       const opts = config.compilerOptions
       if ((config.include || config.files) && !opts.rootDir) {
@@ -185,13 +161,11 @@ function validateTsConfig(filePath) {
             'Missing rootDir in compilerOptions (recommended for proper module resolution)'
           )
         } else {
-          // Check if parent provides rootDir
           warnings.push('compilerOptions has include but no explicit rootDir (may be inherited)')
         }
       }
     }
 
-    // Check for consistent test file excludes
     if (config.include && config.exclude) {
       const hasTestExcludes = config.exclude.some(
         (pattern) =>

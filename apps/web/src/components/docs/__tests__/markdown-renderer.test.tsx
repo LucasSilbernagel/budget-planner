@@ -2,13 +2,6 @@ import { render, screen } from '@/test/utils'
 import { describe, expect, it } from 'vitest'
 import { MarkdownRenderer } from '../markdown-renderer'
 
-/**
- * MarkdownRenderer tests (story 4-10, AC-2).
- *
- * Verifies that raw Markdown strings (as loaded from the static `.md` files)
- * are rendered to real HTML elements: headings, lists, and links — including
- * safe handling of external links.
- */
 describe('MarkdownRenderer', () => {
   it('renders Markdown headings as heading elements', () => {
     render(<MarkdownRenderer content={'## Section title'} />)
@@ -48,15 +41,6 @@ describe('MarkdownRenderer', () => {
     expect(screen.getByText('pnpm install')).toBeInTheDocument()
   })
 
-  /**
-   * Theming guard (story 31-1, AC-2).
-   *
-   * `prose` appears in exactly one place in the codebase — this component — and
-   * it governs every heading, paragraph, link, inline `code`, fenced `pre`,
-   * blockquote, `hr` and table border across `/docs/*`, `/terms`, `/privacy`,
-   * `/refund` and `/pricing`. All three importers are in this story's scope, so
-   * `dark:prose-invert` is unconditional rather than an opt-in prop.
-   */
   it('inverts the typography plugin in dark mode without dropping the light theme', () => {
     const { container } = render(<MarkdownRenderer content={'# Title'} />)
     const article = container.querySelector('article')

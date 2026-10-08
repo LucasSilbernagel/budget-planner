@@ -1,16 +1,3 @@
-/**
- * Net Period Income Calculation Tests
- *
- * Mathematical validation tests for net income calculations.
- * Zero tolerance for errors - NFR3 requirement
- *
- * Uses exact frequency multipliers:
- * - Weekly: 52/12
- * - Biweekly: 26/12
- * - Monthly: 1
- * - Annually: 1/12
- */
-
 import { describe, expect, it } from 'vitest'
 import {
   type NetIncomeResult,
@@ -38,13 +25,13 @@ describe('Net Period Income Calculation', () => {
 
     it('should calculate gross income from multiple sources with different frequencies', () => {
       const incomeSources = [
-        { amount: 10000, frequency: 'weekly' as const }, // $100/week → $433.33
-        { amount: 20000, frequency: 'biweekly' as const }, // $200/biweekly → $433.33
-        { amount: 50000, frequency: 'monthly' as const }, // $500/month → $500.00
+        { amount: 10000, frequency: 'weekly' as const },
+        { amount: 20000, frequency: 'biweekly' as const },
+        { amount: 50000, frequency: 'monthly' as const },
       ]
 
       const result = calculateGrossPeriodIncome(incomeSources)
-      // Total: 43333 + 43333 + 50000 = 136666 cents = $1366.66
+      // 43333 + 43333 + 50000 = 136666
       expect(result).toBe(136666)
     })
 
@@ -79,13 +66,13 @@ describe('Net Period Income Calculation', () => {
 
     it('should calculate total expenses from multiple expenses with different frequencies', () => {
       const expenses = [
-        { amount: 10000, frequency: 'weekly' as const }, // $100/week
-        { amount: 5000, frequency: 'biweekly' as const }, // $50/biweekly
+        { amount: 10000, frequency: 'weekly' as const },
+        { amount: 5000, frequency: 'biweekly' as const },
         { amount: 20000, frequency: 'monthly' as const },
       ]
 
       const result = calculateTotalPeriodExpenses(expenses)
-      // Total: 43333 + 10833 + 20000 = 74166 cents = $741.66
+      // 43333 + 10833 + 20000 = 74166
       expect(result).toBe(74166)
     })
 
@@ -128,15 +115,11 @@ describe('Net Period Income Calculation', () => {
     })
 
     it('should calculate net income with mixed frequencies', () => {
-      const incomeSources = [
-        { amount: 10000, frequency: 'weekly' as const }, // $100/week → $433.33
-      ]
-      const expenses = [
-        { amount: 10000, frequency: 'biweekly' as const }, // $100/biweekly → $216.67
-      ]
+      const incomeSources = [{ amount: 10000, frequency: 'weekly' as const }]
+      const expenses = [{ amount: 10000, frequency: 'biweekly' as const }]
 
       const result = calculateNetPeriodIncome(incomeSources, expenses)
-      // Net: $433.33 - $216.67 = $216.66 = 21666 cents
+      // 43333 - 21667 = 21666
       expect(result).toBe(21666)
     })
 
@@ -197,7 +180,7 @@ describe('Net Period Income Calculation', () => {
         grossIncome: 50000,
         totalExpenses: 50000,
         netIncome: 0,
-        isSurplus: false, // 0 is break-even, not surplus (user decision)
+        isSurplus: false, // 0 is break-even, not surplus
       })
     })
 
@@ -208,7 +191,7 @@ describe('Net Period Income Calculation', () => {
         grossIncome: 0,
         totalExpenses: 0,
         netIncome: 0,
-        isSurplus: false, // 0 is break-even, not surplus (user decision)
+        isSurplus: false, // 0 is break-even, not surplus
       })
     })
   })
@@ -219,25 +202,22 @@ describe('Net Period Income Calculation', () => {
       const expenses = [{ amount: 10000, frequency: 'monthly' as const }]
 
       const result = calculateNetPeriodIncome(incomeSources, expenses)
-      // $100/week → $433.33, $100/month → $100.00
-      // Net = $433.33 - $100.00 = $333.33 = 33333 cents
+      // 43333 - 10000 = 33333
       expect(result).toBe(33333)
     })
 
     it('should pass exact validation: complex scenario with multiple frequencies', () => {
       const incomeSources = [
-        { amount: 10000, frequency: 'weekly' as const }, // $100/week → $433.33
-        { amount: 5000, frequency: 'biweekly' as const }, // $50/biweekly → $108.33
+        { amount: 10000, frequency: 'weekly' as const },
+        { amount: 5000, frequency: 'biweekly' as const },
       ]
       const expenses = [
-        { amount: 20000, frequency: 'monthly' as const }, // $200/month → $200.00
-        { amount: 5000, frequency: 'weekly' as const }, // $50/week → $216.67
+        { amount: 20000, frequency: 'monthly' as const },
+        { amount: 5000, frequency: 'weekly' as const },
       ]
 
       const result = calculateNetPeriodIncome(incomeSources, expenses)
-      // Income: 43333 + 10833 = 54166 cents
-      // Expenses: 20000 + 21667 = 41667 cents
-      // Net: 54166 - 41667 = 12499 cents = $124.99
+      // Income 43333 + 10833 = 54166; expenses 20000 + 21667 = 41667; net 12499.
       expect(result).toBe(12499)
     })
   })
@@ -259,8 +239,7 @@ describe('Net Period Income Calculation', () => {
       const incomeSources = [{ amount: -10000, frequency: 'monthly' as const }]
       const expenses = [{ amount: -5000, frequency: 'monthly' as const }]
       const result = calculateNetPeriodIncome(incomeSources, expenses)
-      // grossIncome = -10000, totalExpenses = -5000
-      // netIncome = -10000 - (-5000) = -5000
+      // -10000 - (-5000) = -5000
       expect(result).toBe(-5000)
     })
 
@@ -299,7 +278,6 @@ describe('Net Period Income Calculation', () => {
     it('should throw error for arrays with null elements', () => {
       const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }, null as any]
       const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
-      // Validation should throw error for null elements
       expect(() => calculateNetPeriodIncome(incomeSources, expenses)).toThrow(
         'Amount must be a finite number'
       )
@@ -308,7 +286,6 @@ describe('Net Period Income Calculation', () => {
     it('should throw error for arrays with undefined elements', () => {
       const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }, undefined as any]
       const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
-      // Validation should throw error for undefined elements
       expect(() => calculateNetPeriodIncome(incomeSources, expenses)).toThrow(
         'Amount must be a finite number'
       )
@@ -317,7 +294,6 @@ describe('Net Period Income Calculation', () => {
     it('should throw error for NaN in income amounts', () => {
       const incomeSources = [{ amount: NaN, frequency: 'monthly' as const }]
       const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
-      // Validation should throw error for NaN
       expect(() => calculateNetPeriodIncome(incomeSources, expenses)).toThrow(
         'Amount must be a finite number'
       )
@@ -326,7 +302,6 @@ describe('Net Period Income Calculation', () => {
     it('should throw error for Infinity in income amounts', () => {
       const incomeSources = [{ amount: Infinity, frequency: 'monthly' as const }]
       const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
-      // Validation should throw error for Infinity
       expect(() => calculateNetPeriodIncome(incomeSources, expenses)).toThrow(
         'Amount must be a finite number'
       )
@@ -335,7 +310,6 @@ describe('Net Period Income Calculation', () => {
     it('should throw error for string numbers (type coercion)', () => {
       const incomeSources = [{ amount: '50000' as any, frequency: 'monthly' as const }]
       const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
-      // Validation should throw error for string amounts
       expect(() => calculateNetPeriodIncome(incomeSources, expenses)).toThrow(
         'Amount must be a finite number'
       )

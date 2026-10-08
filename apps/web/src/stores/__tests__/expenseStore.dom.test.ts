@@ -1,12 +1,6 @@
 /**
- * expenseStore total tests (story 32.1, FR58).
- *
- * Mirror of `incomeStore.dom.test.ts` — see that file's header for why every
- * fixture is mixed-frequency and every expectation is a hand-computed literal.
- *
- * ⚠️ This fixture deliberately normalizes DOWNWARD (215000 → 121667) while the
- * income fixture normalizes UPWARD (230000 → 241667). A sign or direction error
- * in the normalization cannot pass both suites.
+ * Normalizes downward while the income fixture normalizes upward, so a direction error cannot
+ * pass both suites.
  */
 
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -20,13 +14,8 @@ const base = {
 }
 
 /**
- * $50 weekly + $900 monthly + $1,200 annually.
- *
- *   raw sum (what the defect returned) = 5000 + 90000 + 120000        = 215000
- *   normalized monthly                                                = 121667
- *     weekly    round(5000 × 52/12) = round(21666.66…) = 21667
- *     monthly   90000 × 1                              = 90000
- *     annually  round(120000 × 1/12)                   = 10000
+ * weekly round(5000 × 52/12) = 21667, monthly 90000, annually 120000 / 12 = 10000 → 121667.
+ * Raw sum: 215000.
  */
 const MIXED_EXPENSES = [
   {
@@ -77,9 +66,7 @@ describe('expenseStore — getTotalExpenses (story 32.1, FR58)', () => {
   it('normalizes downward when annual rows dominate, not merely "differently"', () => {
     useExpenseStore.setState({ expenses: MIXED_EXPENSES })
 
-    // Pins the DIRECTION. A reciprocal-multiplier bug would still produce a
-    // number that differs from the raw sum, and would still pass an inequality
-    // assertion on its own.
+    // Pins the direction: a reciprocal-multiplier bug would still differ from the raw sum.
     expect(useExpenseStore.getState().getTotalExpenses()).toBeLessThan(RAW_SUM)
   })
 
@@ -189,12 +176,8 @@ describe('expenseStore — corrupt rows are excluded, not thrown on (story 32.1)
     expect(useExpenseStore.getState().getUnreadableExpenseCount()).toBe(0)
   })
   /**
-   * ⚠️ Code review 32.1. A persisted array can carry a `null` or primitive
-   * element (truncated write, hand-edited storage, an older bug). The persist
-   * `migrate` filters those — but zustand only runs `migrate` on a version
-   * MISMATCH, so a blob already at the current version delivers the bad element
-   * straight into state. Reading `.frequency` off it throws on the render path
-   * and white-screens the page the guard exists to protect.
+   * migrate only runs on a version mismatch, so a current-version blob can deliver a bad element
+   * straight into state.
    */
   it.each([null, undefined, 42, 'nonsense'])(
     'does not throw when the persisted array contains %p',

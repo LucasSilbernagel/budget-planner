@@ -4,17 +4,8 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { ProjectionChart } from '../projection-chart'
 
-/**
- * ProjectionChart tests (story bug-3, AC-3).
- *
- * The chart previously fabricated hard-coded sample data. It now renders the
- * result supplied by the page (the user's real scenario), and a neutral empty
- * state when there is none.
- */
-
 vi.mock('../../../stores/currencyStore', () => ({
   useFormattedAmount: () => (cents: number) => (cents / 100).toFixed(2),
-  // The summary cards' `GroupedAmount` (story 88.4) reads the separator from here.
   useCurrencyPreferences: () => ({ mode: 'none', currency: 'NONE', locale: 'en-US' }),
 }))
 
@@ -30,7 +21,6 @@ describe('ProjectionChart (bug-3 AC-3)', () => {
   it('shows a neutral empty state, not sample data, when there is no result', () => {
     render(<ProjectionChart result={null} />)
     expect(screen.getByText(/build a scenario/i)).toBeInTheDocument()
-    // No summary cards without a result.
     expect(screen.queryByText('Starting Net Worth')).toBeNull()
   })
 
@@ -69,16 +59,11 @@ describe('ProjectionChart (bug-3 AC-3)', () => {
     render(<ProjectionChart result={result} />)
 
     expect(screen.getByText('Starting Net Worth')).toBeInTheDocument()
-    // 1500000 cents → 15000.00 via the mock formatter (proves it uses the
-    // supplied result, not the old $5,000/mo sample).
     expect(screen.getByText('15000.00')).toBeInTheDocument()
     expect(screen.queryByText(/build a scenario/i)).toBeNull()
   })
 
   it('does not show summary cards alongside the empty state for an empty-arrays result', () => {
-    // Review fix: gate the summary on chartData, not just `result`. A result with
-    // empty baseline/projection (no chart data) must show ONLY the empty state,
-    // never the four cards with numbers.
     const result: ForecastingResult = {
       scenario: { name: 'Scenario', incomeGrowthRate: 0.03, expenseGrowthRate: 0.02 },
       baseline: [],
@@ -110,9 +95,7 @@ describe('chart layer toggles report on/off (story 120.2, FR188)', () => {
   it.each(['Grid', 'Legend', 'Tooltips'])(
     '%s shows a visible keyboard focus indicator, including in forced colours',
     (name) => {
-      // Lucas scope addition 2026-10-08. Class tokens, not paint: jsdom has no
-      // Tailwind. The ring is a box-shadow, which Windows High Contrast discards,
-      // so the forced-colours outline is what keeps WCAG 2.4.7 there.
+      // ring-* is a box-shadow, which Windows High Contrast discards; the forced-colors outline keeps focus visible.
       render(<ProjectionChart result={null} />)
       const toggle = screen.getByRole('button', { name })
       assertHasFocusRing(toggle, name)
@@ -124,8 +107,6 @@ describe('chart layer toggles report on/off (story 120.2, FR188)', () => {
           'forced-colors:focus:outline-2',
         ])
       )
-      // AC 8: NO ring offset at all. `assertHasFocusRing` accepts an offset that
-      // has a `dark:` counterpart, so it alone would not catch one (code review).
       expect(tokens.filter((token) => token.includes('ring-offset'))).toEqual([])
     }
   )

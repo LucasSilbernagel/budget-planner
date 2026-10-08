@@ -7,18 +7,6 @@ import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
 import { useProfileStore } from '../../stores/profileStore'
 import { Route } from '../forecasting'
 
-/**
- * The Projections chart names the user's scenario (story 97.2, FR158), on the
- * two paths a user reaches it by: (a) loading a saved forecast, (b) renaming
- * the scenario in the builder without saving. The name rides in the result the
- * builder hands the page (`result.scenario.name`), so no prop carries it.
- *
- * Real page, real builder, real engine, real Recharts; only the network
- * (profiles/forecasts) and `ResponsiveContainer` (0×0 in jsdom, so no SVG) are
- * replaced. A new file on purpose: story 97.1 edits the other forecasting
- * route tests concurrently.
- */
-
 vi.mock('recharts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('recharts')>()
   return {
@@ -115,7 +103,6 @@ describe('the Projections legend names the scenario', () => {
   it('(b) after renaming the scenario in the builder, unsaved', async () => {
     renderWithRouter(<ForecastingPage />)
     const nameField = await screen.findByLabelText('Scenario Name')
-    // Control: the unsaved default name, once the first recompute lands.
     await openProjections()
     await waitFor(() => expect(legendNames()).toEqual(['Baseline', 'My Financial Forecast']))
 

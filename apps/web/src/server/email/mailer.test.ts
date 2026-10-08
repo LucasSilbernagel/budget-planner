@@ -1,12 +1,3 @@
-/**
- * EU transactional mailer tests (Story 5-16, Task 4 — AC-4)
- *
- * Verifies the magic-link email is sent through the EU provider (Brevo, France)
- * with the right shape, that the API key is sent as a secret header, and that a
- * provider error surfaces as a thrown error (so the caller never reports success
- * on a silent failure). All sends are MSW-intercepted — no real email (NFR8).
- */
-
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -43,27 +34,17 @@ describe('sendMagicLinkEmail', () => {
       headers: Headers
       body: Record<string, unknown>
     }
-    // Secret travels in the provider's header, not the URL or body.
     expect(headers.get('api-key')).toBe('test-email-api-key')
     expect(body.to).toEqual([{ email: 'user@example.com' }])
     expect(body.sender).toEqual({ name: 'Longhand Budget', email: 'no-reply@budgetplanner.test' })
-    // The actual link must be present so the user can complete login.
     expect(JSON.stringify(body)).toContain(link)
 
-    // brand-1 AC-4: a recipient mid-cutover must not be shown a name they do
-    // not recognise, so the FORMAL "Longhand Budget" has to appear in the
-    // subject and on first mention in both bodies. Before brand-1 only the
-    // sender name was pinned, so the subject and bodies could have drifted or
-    // half-renamed with the suite still green.
+    // A recipient mid-cutover must see the formal name in the subject and both bodies.
     expect(body.subject).toContain('Longhand Budget')
     expect(body.htmlContent).toContain('<strong>Longhand Budget</strong>')
     expect(body.textContent).toMatch(/^Sign in to Longhand Budget/)
-    // The CTA anchor specifically (code review): for many recipients the button
-    // is the ONLY string they read, so it must carry the formal form and match
-    // the subject line. Previously unpinned, which is how it drifted to the
-    // short form unnoticed. Asserts the anchor text, not just "somewhere".
+    // The CTA is often the only string read, so it must carry the formal form.
     expect(body.htmlContent).toMatch(/<a href="[^"]+">Sign in to Longhand Budget<\/a>/)
-    // The retired brand must not survive anywhere in the payload.
     expect(JSON.stringify(body)).not.toContain('SoluBudget')
   })
 
@@ -84,7 +65,6 @@ describe('sendMagicLinkEmail', () => {
     )
     const link = 'https://app.test/api/auth/login/verify?token=tok'
     await sendMagicLinkEmail('secret@example.com', link)
-    // The link itself carries only the opaque token, never the email.
     expect(link).not.toContain('secret@example.com')
     expect(bodyStr).toContain(link)
   })
@@ -131,7 +111,6 @@ describe('the dev-only e2e mail outbox (story 87.1, D2)', () => {
     return dir
   }
 
-  /** No API key, development: the mailer's no-key branch. */
   function devWithoutKey(outbox: string) {
     vi.stubEnv('EMAIL_API_KEY', '')
     vi.stubEnv('NODE_ENV', 'development')
@@ -168,10 +147,8 @@ describe('the dev-only e2e mail outbox (story 87.1, D2)', () => {
   })
 
   it('writes nothing when E2E_MAIL_OUTBOX is unset (ordinary local development)', async () => {
-    // The real check is that the send RESOLVES: a gate that ignored the empty
-    // value would call `appendFile('')`, which rejects with ENOENT (87.1
-    // review: a readdir of a directory the mailer was never told about could
-    // not fail).
+    // The real check is that the send resolves: a gate ignoring the empty value
+    // would call appendFile(''), which rejects with ENOENT.
     devWithoutKey('')
     await expect(
       sendMagicLinkEmail('one@example.test', 'http://localhost:5173/x')

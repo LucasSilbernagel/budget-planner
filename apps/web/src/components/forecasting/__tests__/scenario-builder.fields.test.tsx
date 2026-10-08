@@ -6,31 +6,7 @@ import { useIncomeStore } from '../../../stores/incomeStore'
 import { useProfileStore } from '../../../stores/profileStore'
 import { ScenarioBuilder } from '../scenario-builder'
 
-/**
- * A bad scenario input is reported on THAT field (story 81.1, FR132).
- *
- * MEASURED on the builder before this story (`65ba8fc`, jsdom, engine wrapped):
- *   - emptying Income Growth Rate with an income row showed the banner
- *     "Amount must be a finite number" — naming an amount the user never touched;
- *   - emptying Expense Growth Rate with NO expense rows showed NOTHING, while the
- *     engine was called with NaN (so a Save WOULD persist `null` — TRACED from
- *     JSON having no NaN; no Save was run);
- *   - an income amount of `-5` was stored as 0 and the field snapped to "0";
- *   - an income amount of `1e308` reached the engine as Infinity (`1e308 * 100`).
- *
- * Story 109.1 made every money field `type="text"` (grouped, as on /income): text
- * that cannot be read (`1.2.3`) is "Enter a number." (it was the browser's
- * `badInput`), and an amount above the money limit is refused with the limit
- * message (it was "Enter a smaller amount." for a non-finite one). A typed `1e308`
- * cannot happen any more: the field drops the exponent as it is typed.
- *
- * ⚠️ THE ENGINE IS WRAPPED, as in `scenario-builder.years.test.tsx`: every call
- * is RECORDED and then run for real with the same inputs. Assertions about the
- * guard are on that record — the summary tiles mask NaN with `|| 0`, so "nothing
- * wrong on screen" would be green with no guard at all.
- *
- * The in-range rules are written out here independently of the code under test.
- */
+// Assert on the recorded engine calls, not the screen: the summary tiles mask NaN with `|| 0`.
 
 type EngineCall = {
   years: unknown
@@ -57,7 +33,6 @@ vi.mock('@budget-planner/core', async (importOriginal) => {
         incomeAmounts: data.income.map((i) => i.amount),
         eventAmounts: (scenario.oneTimeEvents ?? []).map((e) => e.amount),
       })
-      // Only a `years` the loop cannot finish is substituted (see the years file).
       const finishable = Number.isInteger(years) && years >= 1 && years <= 30
       return real.calculateFinancialForecast(data, scenario, finishable ? years : 1)
     },
@@ -77,13 +52,10 @@ const GROWTH_MESSAGE = 'Enter a growth rate from -100% to 100%.'
 const FIELDS_REASON = 'Fix the highlighted fields to save'
 const YEARS_REASON = 'Fix the projection period to save'
 const NEGATIVE_MESSAGE = 'Enter an amount of 0 or more.'
-/** `moneyLimitMessage` in currency-less mode (story 109.1, Q1). */
 const LIMIT_MESSAGE = 'Enter an amount up to 21,474,836.47'
-/** One cent over `MAX_MONEY_CENTS`. */
 const OVER_LIMIT = '21474836.48'
 const NOT_A_NUMBER_MESSAGE = 'Enter a number.'
 const SALARY_CENTS = 500_000
-/** Comfortably past the builder's 500 ms debounce. */
 const PAST_DEBOUNCE_MS = 700
 
 const rateInRange = (r: unknown) => typeof r === 'number' && Number.isFinite(r) && r >= -1 && r <= 1
@@ -105,14 +77,12 @@ async function renderBuilder(initialForecast?: SavedForecast): Promise<void> {
   await waitFor(() => expect(engineCalls.length).toBeGreaterThan(0), { timeout: 3000 })
 }
 
-/** The income row's amount input (the event rows' inputs carry an `event-amount-` id). */
 function incomeAmountInputs(): HTMLInputElement[] {
   return (screen.getAllByLabelText('Amount') as HTMLInputElement[]).filter(
     (el) => !el.id.startsWith('event-amount-')
   )
 }
 
-/** The field is marked invalid and described by exactly this message. */
 function expectFieldError(field: HTMLElement, message: string): void {
   expect(field, 'aria-invalid on the field').toHaveAttribute('aria-invalid', 'true')
   const describedBy = field.getAttribute('aria-describedby')
@@ -120,7 +90,6 @@ function expectFieldError(field: HTMLElement, message: string): void {
   expect(document.getElementById(describedBy as string)).toHaveTextContent(message)
 }
 
-/** A saved forecast with one monthly income of `cents` (story 109.1: an amount no field accepts). */
 function savedWithIncome(cents: number): SavedForecast {
   return {
     id: 'f-big',
@@ -171,8 +140,6 @@ beforeEach(() => {
       },
     ],
   })
-  // NO expense rows: the Expense Growth Rate cases are the "no rows of that kind"
-  // case (fact 2), where the pre-81.1 builder showed nothing at all.
   useExpenseStore.setState({ expenses: [] })
 })
 
@@ -187,12 +154,8 @@ describe('a growth rate outside -100%..+100%, or not a number, is reported on it
     ['non-numeric text', 'abc'],
     ['-150 (below -100%: the income sign would alternate)', '-150'],
     ['150 (above +100%)', '150'],
-    // A numeric PREFIX used to be read silently (`parseFloat`): 5%, 100%, 1%.
-    // Refused ON PURPOSE, even `1e2` (=100%, in range): only a plain decimal with an
-    // optional `%` is a rate, as on the Annual return field.
     ['trailing junk', '5abc'],
     ['an exponent', '1e2'],
-    // A single decimal comma is a rate since story 110.1 (D3); these stay ambiguous.
     ['two commas', '2,5,1'],
     ['a grouped number with a decimal comma', '1.000,5'],
     ['a grouped number with a decimal point', '1,000.5'],
@@ -214,12 +177,10 @@ describe('a growth rate outside -100%..+100%, or not a number, is reported on it
         fireEvent.change(field, { target: { value: typed } })
         await pastDebounce()
 
-        // The field says what is wrong — the assertion that was RED before 81.1.
         expect(
           within(field.parentElement as HTMLElement).getByText(GROWTH_MESSAGE)
         ).toBeInTheDocument()
         expectFieldError(field, GROWTH_MESSAGE)
-        // The field keeps what was typed, so the user can see and fix it.
         expect(field).toHaveValue(typed)
 
         expect(
@@ -242,12 +203,10 @@ describe('a growth rate outside -100%..+100%, or not a number, is reported on it
     ['-100', -1],
     ['100', 1],
     ['5', 0.05],
-    // The field's own display must round-trip, and a spaced `%` is still a rate.
     ['5.00%', 0.05],
     ['5 %', 0.05],
     ['-3.5', -0.035],
     ['.5', 0.005],
-    // Story 110.1 (D3): a single comma is the decimal point, in every locale.
     ['2,5', 0.025],
     ['2,5 %', 0.025],
     ['-2,5', -0.025],
@@ -267,12 +226,10 @@ describe('a growth rate outside -100%..+100%, or not a number, is reported on it
         const callsBefore = engineCalls.length
         fireEvent.change(field, { target: { value: typed } })
         await waitFor(() => expect(engineCalls.length).toBe(callsBefore + 1), { timeout: 3000 })
-        // Exactly ONE recompute for the fix (81.1 review, P7), not one per render.
         await pastDebounce()
         expect(engineCalls.length, 'one engine call for the corrected value').toBe(callsBefore + 1)
 
         expect(engineCalls.at(-1)?.[key]).toBeCloseTo(rate, 12)
-        // No reformat while editing (110.1 AC 6): `2,5` stays `2,5`.
         expect(field).toHaveValue(typed)
         expect(screen.queryByText(GROWTH_MESSAGE)).toBeNull()
         expectFieldClean(field)
@@ -286,7 +243,6 @@ describe('a growth rate outside -100%..+100%, or not a number, is reported on it
 describe('an income or expense amount is reported on its field, never silently zeroed (AC-2)', () => {
   const invalid: [string, string, string][] = [
     ['a negative', '-5', NEGATIVE_MESSAGE],
-    // Was `1e308` (finite, but Infinity once scaled to cents) until story 109.1.
     ['one cent over the money limit (109.1, Q1)', OVER_LIMIT, LIMIT_MESSAGE],
     ['malformed text (109.1: replaces the badInput case)', '1.2.3', NOT_A_NUMBER_MESSAGE],
   ]
@@ -303,7 +259,6 @@ describe('an income or expense amount is reported on its field, never silently z
       await pastDebounce()
 
       expectFieldError(amount, message)
-      // D5: the message must not cost the user what they typed.
       expect(amount.value, 'the typed text is still in the field').toBe(typed)
       expect(
         engineCalls.flatMap((c) => c.incomeAmounts).filter((a) => !amountOk(a)),
@@ -314,7 +269,6 @@ describe('an income or expense amount is reported on its field, never silently z
       expect(screen.queryByTestId('calculation-error')).toBeNull()
       expectSaveBlocked(FIELDS_REASON)
 
-      // A valid amount clears everything and reaches the engine in cents.
       fireEvent.change(amount, { target: { value: '12.34' } })
       await waitFor(() => expect(engineCalls.at(-1)?.incomeAmounts).toEqual([1234]), {
         timeout: 3000,
@@ -345,9 +299,6 @@ describe('an income or expense amount is reported on its field, never silently z
   })
 
   it('a value that cannot be read (1.2.3) says "Enter a number." (replaces bug-3 AC-2 / 81.1 badInput)', async () => {
-    // Until story 109.1 this was the browser's `validity.badInput` on a
-    // `type="number"` field, stubbed here because jsdom never reports it. The
-    // field is text now, so the unreadable text itself arrives.
     await renderBuilder()
     const callsBefore = engineCalls.length
     const [amount] = incomeAmountInputs()
@@ -358,7 +309,6 @@ describe('an income or expense amount is reported on its field, never silently z
 
     expectFieldError(amount, NOT_A_NUMBER_MESSAGE)
     expect(amount.value, 'the typed text stays').toBe('1.2.3')
-    // Blur keeps it too: a refused entry is never re-echoed as 0.00.
     fireEvent.blur(amount)
     expect(amount.value).toBe('1.2.3')
     expect(engineCalls.length, 'the last good amount is kept, no recompute').toBe(callsBefore)
@@ -391,7 +341,6 @@ describe('an income or expense amount is reported on its field, never silently z
     const removeButtons = screen.getAllByRole('button', { name: 'Remove' })
     fireEvent.click(removeButtons[1] as HTMLElement)
     expect(incomeAmountInputs()).toHaveLength(1)
-    // The mechanism first: a removed row must withdraw its report.
     await waitFor(() =>
       expect(
         screen.queryByTestId('save-blocked-reason'),
@@ -499,8 +448,7 @@ describe('a one-time event amount that overflows is reported on its field (AC-2,
   })
 
   it('on a NEW event (amount 0), a refused over-limit `-` entry still selects "Money out" (review P2)', async () => {
-    // At amount 0 the sign cannot carry the direction, so `pendingDirection` does:
-    // it must be set even though the entry itself is refused.
+    // At amount 0 the sign cannot carry the direction, so `pendingDirection` must be set even though the entry is refused.
     await renderBuilder()
     fireEvent.click(screen.getByRole('button', { name: /add event/i }))
     const amount = document.querySelector('input[id^="event-amount-"]') as HTMLInputElement
@@ -544,10 +492,6 @@ describe('a one-time event amount that overflows is reported on its field (AC-2,
 })
 
 describe('a stale calculation banner is cleared by ANY field turning invalid (81.1 review, P6)', () => {
-  // The banner comes from an input no field can refuse. Until story 109.1 that was
-  // a TYPED income of 1e306 (1e308 cents, finite, overflowing once annualized);
-  // the money limit now refuses it on the field, so it ARRIVES from a saved
-  // forecast instead, which the builder loads as-is.
   async function raiseBanner(): Promise<void> {
     await renderBuilder(savedWithIncome(1e308))
     expect(await screen.findByTestId('calculation-error', {}, { timeout: 3000 })).toHaveTextContent(
@@ -623,8 +567,6 @@ describe('saved growth rates on load (AC-4, D3)', () => {
     await pastDebounce()
     const field = screen.getByLabelText('Income Growth Rate')
     expect(field).toHaveValue('0.00%')
-    // The mechanism first: a null loaded as-is is an invalid rate under a field
-    // that DISPLAYS 0.00%, so it would be flagged and never computed.
     expect(field, 'a saved null must load as 0, not as an invalid rate').not.toHaveAttribute(
       'aria-invalid'
     )

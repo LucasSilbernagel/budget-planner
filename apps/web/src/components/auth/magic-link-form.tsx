@@ -1,31 +1,12 @@
-/**
- * Magic-Link Login Form (Story 5-16, Task 5, AC-5)
- *
- * Passwordless re-authentication: the user enters their email and we POST it to
- * the request endpoint, which emails a one-time sign-in link to EXISTING
- * accounts. The confirmation is deliberately GENERIC ("if an account exists…")
- * so the UI never reveals whether the address is registered — matching the
- * endpoint's no-enumeration contract.
- *
- * Accessibility: a single labeled email input, an aria-busy submit button, a
- * polite live region for the confirmation, and a role="alert" for errors.
- *
- * Theming (story 31-1): the `dark:` variants mirror `contact/contact-form.tsx`,
- * whose docblock says it mirrors THIS form — keeping the two on one idiom rather
- * than inventing a third. The one deliberate addition is
- * `dark:placeholder-gray-400` on the email field: this input has a placeholder
- * and contact-form's mirrored field does not, and it is the app-wide convention
- * for placeholder-bearing inputs (IncomePage, ExpensesPage, BalancePage, …).
- */
+// The confirmation is deliberately generic so the UI never reveals whether the address
+// is registered.
 
 import { useState } from 'react'
 
 type Status = 'idle' | 'submitting' | 'sent' | 'error'
 
 export interface MagicLinkFormProps {
-  /** Pre-populated generic error (e.g. from an expired-link redirect). */
   initialError?: string
-  /** Additional classes for the form container. */
   className?: string
 }
 
@@ -107,17 +88,8 @@ export function MagicLinkForm({ initialError, className = '' }: MagicLinkFormPro
         type="submit"
         disabled={status === 'submitting'}
         aria-busy={status === 'submitting'}
-        // The blue-600 fill is deliberately kept in BOTH themes — see the note on
-        // `pricing-page.tsx`'s primary CTA. contact-form's button drops to
-        // blue-500 on dark, which measures 3.68:1 against white (AA needs 4.5:1).
-        //
-        // `dark:focus:ring-offset-gray-800` is load-bearing, not decoration:
-        // Tailwind's `--tw-ring-offset-color` defaults to WHITE and nothing
-        // overrides it globally, so once this button moved onto a `.surface`
-        // (gray-800) card it would otherwise paint a white band between the
-        // button and its blue focus ring. gray-800 matches the CARD this sits on
-        // — `NotFoundPage.tsx:55` and `components/profiles/profiles-page.tsx:85` use gray-900
-        // because those buttons sit on the page canvas instead.
+        // blue-600 in both themes: blue-500 on dark fails AA against white. The ring offset
+        // matches the gray-800 card, or a white band shows around the focus ring.
         className="w-full rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {status === 'submitting' ? 'Sending…' : 'Email me a sign-in link'}

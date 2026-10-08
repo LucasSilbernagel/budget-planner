@@ -1,10 +1,3 @@
-/**
- * The refused-edit notice's accessibility and wording (story 75.2, AC-1/AC-5).
- *
- * ⚠️ This populates the notice store directly — it tests the COMPONENT. That a
- * real server refusal reaches it is proven by `refused-edit-notice.db.test.tsx`.
- */
-
 import {
   type RefusalNotice,
   addRefusalNotices,
@@ -78,7 +71,6 @@ describe('RefusedEditNotice', () => {
     )
     screen.getByRole('button', { name: 'Somewhere else' }).focus()
     act(() => addRefusalNotices([notice(), notice({ key: 'expense:row-2', name: 'Gym' })]))
-    // Arrival does not steal focus.
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Somewhere else' }))
 
     const dismiss = screen.getByRole('button', { name: 'Dismiss notice about “Rent” (expense)' })
@@ -180,7 +172,6 @@ describe('the not-synced notice (story 79.2, FR128)', () => {
   const stuck = (overrides: Partial<RefusalNotice> = {}): RefusalNotice =>
     notice({ outcome: 'not-synced', change: 'update', ...overrides })
 
-  /** Words that would tell the user their edit was undone or lost. It was not. */
   const REFUSAL_WORDS = /refused|changed back|restored|removed|couldn't be saved|not saved/i
 
   beforeEach(() => {
@@ -204,8 +195,6 @@ describe('the not-synced notice (story 79.2, FR128)', () => {
     'a pending %s says it has not reached the account, never that it was undone',
     (change, text) => {
       const message = refusalMessage(stuck({ change }))
-      // Absence FIRST (code review 79.2), so a copy mutation fails HERE rather than
-      // on the exact-text pin below, which would hide whether this check bites.
       expect(message).not.toMatch(REFUSAL_WORDS)
       expect(message).toContain("hasn't reached your account yet.")
       expect(message).toBe(text)
@@ -256,7 +245,6 @@ describe('the not-synced notice (story 79.2, FR128)', () => {
     expect(alert).toHaveTextContent(
       "Your change to “Rent” (expense) hasn't reached your account yet."
     )
-    // The exact set of controls: no discard (deferred), nothing else.
     expect(
       within(alert.parentElement as HTMLElement)
         .getAllByRole('button')
@@ -286,7 +274,6 @@ describe('the not-synced notice (story 79.2, FR128)', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent('Not saved to your account')
     expect(screen.queryByRole('button', { name: /try again/i })).toBeNull()
-    // Anchor: the notice's own control is there, so the query above looked in the right place.
     expect(
       screen.getByRole('button', { name: 'Dismiss notice about “Rent” (expense)' })
     ).toBeTruthy()
@@ -299,11 +286,9 @@ describe('the not-synced notice (story 79.2, FR128)', () => {
     const retry = screen.getByRole('button', { name: /^Try again/ })
     const sentence = screen.getByText(/hasn't reached your account yet/)
     const heading = screen.getByText('Not synced yet')
-    // Neither text node lives inside the button, and the button is not their ancestor.
     expect(retry.contains(sentence)).toBe(false)
     expect(retry.contains(heading)).toBe(false)
     expect(sentence.contains(retry)).toBe(false)
-    // They share a parent with the button: siblings, still in the accessibility tree.
     expect(retry.parentElement).toBe(sentence.parentElement)
   })
 

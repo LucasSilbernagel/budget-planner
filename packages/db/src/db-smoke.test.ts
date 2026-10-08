@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { assessSmokePreconditions } from './db-smoke'
 
-// Story 4.17 — AC-5. The live `SELECT 1` needs the provisioned instance, but the
-// decision of whether a smoke run is even permitted is pure, so it is tested here.
-// The point of these cases is that a smoke check must never report success after
-// connecting over an unverified or non-sovereign path.
-
 describe('assessSmokePreconditions', () => {
   const CA = 'CA-PEM'
   const PROD_URL = 'postgresql://u:p@budget-planner-prod-rw:5432/budget-planner'
@@ -29,7 +24,6 @@ describe('assessSmokePreconditions', () => {
   it('refuses a non-sovereign host under a production-grade NODE_ENV', () => {
     const us = 'postgresql://u:p@abc.supabase.co:5432/db'
     expect(assessSmokePreconditions('production', us, CA).ok).toBe(false)
-    // Unset NODE_ENV is production-grade, not development.
     expect(assessSmokePreconditions(undefined, us, CA).ok).toBe(false)
     expect(assessSmokePreconditions('staging', us, CA).ok).toBe(false)
   })

@@ -1,28 +1,3 @@
-/**
- * Hiding the Retirement planner deletes nothing (story 35.2, AC-7).
- *
- * ⚠️ READ THIS BEFORE "IMPROVING" THE TEST. The epic asked us to prove that
- * "hiding the planner never deletes retirement inputs". Until story 44.1 that was
- * VACUOUS: the planner persisted nothing of its own — all of its fields were
- * plain `useState` in `RetirementAccumulationPlanner` and reset on every remount
- * and reload anyway, so there was nothing a toggle could have destroyed.
- *
- * **Story 44.1 made it real.** The plan now lives in `stores/retirementPlannerStore`
- * under `budget-planner-retirement-planner-v1`, so "hiding the planner does not
- * delete the plan" is a claim with something behind it, and it is asserted below
- * alongside the shared stores. Note what would make it false: the toggle sits on
- * the same Settings page as "Clear local data", which since 44.1 DOES purge the
- * plan deliberately (`lib/account/purge-local-financial-data.ts`). Two controls,
- * one screen, opposite obligations — which is exactly why this is worth pinning.
- *
- * The other half is unchanged: the four shared stores the planner READS are owned
- * by other pages and consumed in many places, so they are a real regression
- * surface of their own.
- *
- * The cycle is driven through the REAL control, not `setState`, so an
- * implementation that purged something on the way past would be caught.
- */
-
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -33,7 +8,6 @@ import {
 } from '../../../stores/retirementPlannerStore'
 import { RetirementVisibilityToggle } from '../retirement-visibility-toggle'
 
-/** The four persisted keys `RetirementAccumulationPlanner` READS, owned elsewhere. */
 const SHARED_KEYS = {
   'budget-planner-income-v1': { state: { incomeSources: [{ id: 'i1', name: 'Salary' }] } },
   'budget-planner-expenses-v1': { state: { expenses: [{ id: 'e1', name: 'Rent' }] } },
@@ -41,12 +15,7 @@ const SHARED_KEYS = {
   'budget-planner-currency-prefs-v1': { state: { mode: 'symbol', currency: 'USD' } },
 } as const
 
-/**
- * Everything the toggle must leave alone: the four shared stores above plus the
- * planner's OWN saved plan (story 44.1). Values chosen to differ from the
- * defaults, so "unchanged" cannot be satisfied by a store that dropped the blob
- * and re-wrote a fresh one.
- */
+// Values differ from the defaults, so a store that rewrote a fresh blob cannot pass.
 const PRESERVED_KEYS = {
   ...SHARED_KEYS,
   [RETIREMENT_PLANNER_STORAGE_KEY]: {
@@ -64,8 +33,8 @@ const PRESERVED_KEYS = {
         model: 'perpetual',
       },
     },
-    // Imported, not a literal: a version bump would otherwise silently reroute
-    // this fixture through `migrate` with no compile-time or runtime signal.
+    // Imported, not a literal: a version bump would otherwise silently route this
+    // fixture through `migrate`.
     version: RETIREMENT_PLANNER_VERSION,
   },
 } as const

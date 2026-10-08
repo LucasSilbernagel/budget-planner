@@ -1,29 +1,5 @@
-/**
- * Migration-chain integrity (Story 4.17, AC-4; snapshots added by story 78.1).
- *
- * The production instance is migrated from a clean slate by replaying every
- * journal entry in order, so the chain being internally consistent is a
- * precondition for that replay — and unlike the live run, it can be proven here
- * without a database. `drizzle-kit migrate` reads `meta/_journal.json` and then
- * looks for `<tag>.sql`: a journal entry with no file, or a gap in the sequence,
- * fails mid-migration against production rather than in CI.
- *
- * Story 78.1 adds the third leg: journal ↔ `.sql` ↔ `meta/NNNN_snapshot.json`,
- * plus the snapshot `id → prevId` chain. The snapshots are not read by
- * `migrate`; they are read by `drizzle-kit generate`, which diffs `schema.ts`
- * against a baseline to write the NEXT migration. drizzle-kit 0.23.2 picks that
- * baseline as the lexically LAST file in `meta/` whose name does not start with
- * `_` (`prepareOutFolder` + `preparePrevSnapshot` in its `bin.cjs`), and takes
- * the next migration's number from the JOURNAL. So a deleted newest snapshot, a
- * renumbered one, or a stray VALID snapshot sorting last makes `generate` emit a
- * WRONG migration, silently, while every other suite stays green. drizzle-kit
- * itself refuses a `prevId` collision, a malformed or unparseable file and an
- * outdated snapshot version — loudly, but with exit code 0 — and checks nothing
- * about count, numbering or chain continuity.
- *
- * What this does NOT check: that a snapshot's CONTENT matches the schema its
- * migration produced (identity and order only). Deferred in the 78.1 review.
- */
+// drizzle-kit generate diffs against the lexically last snapshot in meta/ and numbers from the
+// journal, so a missing, renumbered or stray snapshot silently yields a wrong migration.
 
 import {
   cpSync,
@@ -58,8 +34,7 @@ const sqlFiles = readdirSync(migrationsDir)
 
 describe('migration chain', () => {
   it('is non-empty (guards against a wiped journal / migrations dir)', () => {
-    // Without this, every assertion below is `expect([]).toEqual([])` and a
-    // deleted _journal.json or migrations dir passes the whole suite green.
+    // Without this, a deleted journal or migrations dir passes every assertion vacuously.
     expect(journal.entries.length).toBeGreaterThan(0)
     expect(sqlFiles.length).toBeGreaterThan(0)
   })
@@ -95,9 +70,7 @@ describe('migration chain', () => {
   })
 
   it('contains no comment-only migration files (an unfilled `generate --custom`)', () => {
-    // `drizzle-kit generate --custom` writes a one-line comment placeholder, not
-    // an empty file, so the check above cannot see a custom migration nobody
-    // filled in: it would replay as a no-op and be recorded as applied.
+    // `generate --custom` writes a one-line comment placeholder, which would replay as a no-op.
     const commentOnly = sqlFiles.filter(
       (f) =>
         readFileSync(`${migrationsDir}${f}`, 'utf8')
@@ -109,10 +82,6 @@ describe('migration chain', () => {
     expect(commentOnly, 'a migration must contain at least one SQL statement').toEqual([])
   })
 })
-
-// ---------------------------------------------------------------------------
-// Snapshots (story 78.1)
-// ---------------------------------------------------------------------------
 
 const ROOT_SNAPSHOT_PREV_ID = '00000000-0000-0000-0000-000000000000'
 
@@ -133,23 +102,14 @@ function readJournal(dir: string): { entries: JournalEntry[] } {
   }
 }
 
-/**
- * Every way `migrations/meta/` can mislead `drizzle-kit generate`, as readable
- * problems; `[]` means healthy. It takes a DIRECTORY so the negative cases below
- * can run it over a damaged scratch copy — never over the real chain.
- */
+/** Takes a directory so the negative cases can run over a damaged scratch copy. */
 function snapshotProblems(dir: string): string[] {
   const problems: string[] = []
   const { entries } = readJournal(dir)
   const expected = entries.map((e) => snapshotName(e.idx))
 
-  // (a) Exactly one snapshot per journal entry and NOTHING else in meta/. The
-  // dangerous extra is a VALID snapshot that sorts last and chains onto the
-  // tail (a backup, a copy from another branch): drizzle-kit accepts it and
-  // silently diffs against it. Junk files (`{}`, `.DS_Store`) and prevId
-  // collisions drizzle-kit refuses itself — but it exits 0 while doing so, so
-  // refusing them here too costs nothing. `withFileTypes` so a directory named
-  // like a snapshot is refused as well.
+  // Exactly one snapshot per journal entry: a stray VALID snapshot sorting last is silently
+  // diffed against. drizzle-kit refuses junk files itself, but exits 0.
   const listing = readdirSync(join(dir, 'meta'), { withFileTypes: true }).filter(
     (d) => d.name !== '_journal.json'
   )
@@ -163,7 +123,6 @@ function snapshotProblems(dir: string): string[] {
     }
   }
 
-  // (b)-(d) Parse what exists and walk the chain in JOURNAL order.
   const seenIds = new Set<string>()
   let prev: Snapshot | undefined
   for (const [i, name] of expected.entries()) {
@@ -182,11 +141,9 @@ function snapshotProblems(dir: string): string[] {
     if (snap.dialect !== 'postgresql') {
       problems.push(`meta/${name} has dialect ${String(snap.dialect)}, expected postgresql`)
     }
-    // Belt and braces: a duplicate id almost always breaks the chain first.
     if (seenIds.has(snap.id)) problems.push(`duplicate snapshot id ${snap.id} in meta/${name}`)
     seenIds.add(snap.id)
     const expectedPrev = i === 0 ? ROOT_SNAPSHOT_PREV_ID : prev?.id
-    // A missing predecessor is already reported by (a); do not pile on.
     if (expectedPrev !== undefined && snap.prevId !== expectedPrev) {
       problems.push(
         `broken chain: meta/${name} has prevId ${
@@ -199,7 +156,6 @@ function snapshotProblems(dir: string): string[] {
   return problems
 }
 
-/** JSON with every object's keys sorted, so key ORDER cannot affect equality. */
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
   if (value !== null && typeof value === 'object') {
@@ -211,10 +167,7 @@ function canonical(value: unknown): string {
   return JSON.stringify(value)
 }
 
-/**
- * A snapshot's SCHEMA, canonicalised: minus its identity (`id`, `prevId`) and
- * minus `_meta` (rename bookkeeping, not schema), with keys sorted.
- */
+/** Schema only: drops `id`, `prevId` and `_meta` (rename bookkeeping), keys sorted. */
 function snapshotBody(snapshot: Snapshot): string {
   const { id: _id, prevId: _prevId, _meta: _ignored, ...body } = snapshot
   return canonical(body)
@@ -226,8 +179,6 @@ function readSnapshot(dir: string, idx: number): Snapshot {
 
 describe('migration snapshots', () => {
   it('has exactly one snapshot per journal entry, chained in journal order', () => {
-    // The non-empty guard in 'migration chain' above keeps this from comparing
-    // an empty journal to an empty meta/ and passing green.
     expect(
       snapshotProblems(migrationsDir),
       'meta/ must hold one snapshot per journal entry, chained id -> prevId, and nothing else'
@@ -235,21 +186,8 @@ describe('migration snapshots', () => {
   })
 
   it('pins the hand-authored (custom) migrations: their snapshot repeats the previous schema', () => {
-    // MEASURED at story 78.1: a hand-authored migration DOES carry a snapshot
-    // whose schema equals its predecessor's. `0020` got one by a hand copy of
-    // `0019` (its SQL header: "a copy of `0019`'s with a fresh id").
-    // `drizzle-kit generate --custom` produces the same SCHEMA but re-serialises
-    // it, so its keys come out in a different ORDER (measured in the 78.1
-    // review: byte-compare missed it, sorted-key compare caught it) — hence
-    // `canonical`. A GENERATED migration can never repeat its predecessor's
-    // schema: generate refuses with "No schema changes, nothing to migrate".
-    // So "schema equals the previous schema" is exactly "hand-authored", and
-    // this set is pinned EXACTLY: a new custom migration must be added here on
-    // purpose, and a snapshot copied by accident fails.
-    //
-    // Hand-AMENDED migrations (`0003`, `0014`, per migrations/README.md) were
-    // generated first and their SQL edited afterwards; their snapshots differ
-    // from their predecessors' and need no entry here.
+    // A generated migration can never repeat its predecessor's schema, so an equal schema means
+    // hand-authored. Pinned exactly: a new custom migration must be added here on purpose.
     const copies = journal.entries
       .filter((e) => e.idx > 0)
       .filter(

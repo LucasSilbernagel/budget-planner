@@ -3,12 +3,6 @@ import { render, screen, within } from '@/test/utils'
 import { describe, expect, it } from 'vitest'
 import { DocsSidebar } from '../sidebar'
 
-/**
- * DocsSidebar tests (story 4-10, AC-1).
- *
- * Verifies the documentation table of contents links to every page and marks
- * the active page accessibly via `aria-current`.
- */
 describe('DocsSidebar', () => {
   it('renders an accessible nav with a link for every documentation page', () => {
     render(<DocsSidebar />)
@@ -31,15 +25,6 @@ describe('DocsSidebar', () => {
   })
 })
 
-/**
- * Theming guards (story 31-1, AC-3/AC-8).
- *
- * BOTH branches of the active/inactive ternary are asserted — covering only the
- * active branch would leave the likelier regression (the branch every non-current
- * item renders) unguarded. No token exists for the blue-50 active pill or the
- * inactive hover, so those two keep hand-rolled `dark:` variants following the
- * shipped info-panel convention (`components/profiles/profiles-page.tsx:101`).
- */
 describe('DocsSidebar theming', () => {
   it('uses the muted token for the section label', () => {
     const { container } = render(<DocsSidebar />)
@@ -59,7 +44,6 @@ describe('DocsSidebar theming', () => {
     expect(tokens).toContain('dark:bg-blue-950/40')
     expect(tokens).toContain('font-medium')
     expect(tokens).not.toContain('text-blue-700')
-    // The wiring two shipped tests key off must not move.
     expect(active).toHaveAttribute('aria-current', 'page')
   })
 

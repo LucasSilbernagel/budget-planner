@@ -1,31 +1,5 @@
-/**
- * Premium checkout CTA (Story 5-3, Task 2a).
- *
- * Replaces the Premium plan card's former static `<a href="/login">` CTA with
- * a monthly/annual/lifetime toggle + a real Paddle Billing checkout entry
- * point. (Story 5-20 added monthly; annual remains the default selection, as
- * it is the anchor plan the pricing page recommends.)
- *
- * NOT auth-gated — an EARLIER version of this file required being signed in
- * before opening checkout, which is backwards: magic-link login only
- * re-authenticates an EXISTING account (`requestMagicLink` silently no-ops for
- * an unknown email — by design, so the endpoint never reveals whether an
- * account exists), and account creation happens ONLY at the Paddle webhook, on
- * a COMPLETED checkout. Gating checkout behind sign-in made it impossible for
- * a brand-new customer to ever reach checkout — the one thing that creates
- * their account in the first place. `useSessionSeed()` is used ONLY to
- * pre-fill the email field as a convenience when already signed in (e.g. an
- * existing customer buying Lifetime after Annual); it is never a requirement.
- *
- * Config (`clientToken`, all three price IDs) comes from `/api/paddle/checkout-config`
- * — never hardcoded, so sandbox and production behave identically here; only
- * the env vars behind that endpoint differ (AC-3). Once that config is
- * configured, Paddle.js is initialized and `Paddle.PricePreview()` fetches a
- * country-localized price breakdown (subtotal / tax / total) for the toggle
- * labels and the caption below them — no country is passed, so Paddle
- * auto-detects from the visitor's IP; the static "€5.99/€39/€99" fallback
- * labels are shown until that resolves (or if it fails).
- */
+// Not auth-gated: accounts are created only by the Paddle webhook on a completed checkout,
+// so requiring sign-in would lock out new customers. The session only pre-fills the email.
 
 import { useEffect, useRef, useState } from 'react'
 import { type SessionSeed, useSessionSeed } from '../../context/session-seed'
@@ -44,44 +18,20 @@ interface CheckoutConfig {
   isConfigured: boolean
   environment: 'sandbox' | 'production'
   clientToken: string | null
-  /**
-   * Story 5-20. `null` means the monthly plan is not purchasable in this build.
-   *
-   * ⚠️ It cannot be null in PRODUCTION — `assertPaddleProductionConfig()` throws
-   * without it (settled at code review: `pricing.md` states the €5.99 price on
-   * the legal pricing page, so it must be chargeable). Null is reachable in
-   * dev/sandbox, where the plan renders DISABLED — visible, labelled with its
-   * static price, and unselectable — rather than removed. Keeping the row lets
-   * a developer see at a glance that the plan exists but their env lacks the id,
-   * which a silently absent option would hide.
-   */
+  /** Null only outside production; the plan then renders disabled rather than removed. */
   monthlyPriceId: string | null
   annualPriceId: string | null
   lifetimePriceId: string | null
 }
 
-// Static fallback shown until Paddle.PricePreview() resolves (or if it never
-// does). Deliberately worded so it never collides with the card's own "€39" /
-// "€99 once" copy just above this toggle (`pricing-page.tsx`'s `PlanCard`) —
-// an overlapping substring there made an early draft's `getByText(/€99 once/)`
-// regression test ambiguous between the two.
 const FALLBACK_LABEL: Record<Plan, string> = {
   monthly: '€5.99/mo',
   annual: '€39/yr',
   lifetime: '€99',
 }
 
-/**
- * A signed-in account that already holds `active`, `past_due`, or `lifetime`
- * has an open Paddle subscription (or a permanent grant) and nothing to buy
- * here — offering checkout anyway risks a real duplicate charge (there is no
- * in-app cancel-or-swap flow yet), so the CTA is replaced with a status
- * message instead of rendering the toggle at all.
- *
- * `canceled` is deliberately NOT included: that subscription has actually
- * ended, so checkout is the correct, intended way for them to resubscribe —
- * blocking it would turn the guard into a regression for a real customer.
- */
+// These states have nothing to buy, and checkout risks a duplicate charge. `canceled` is
+// excluded: that subscription has ended, so checkout is how they resubscribe.
 function AlreadyPremiumNotice({ status }: { status: PaidAccessStatus }) {
   if (status === 'lifetime') {
     return (
@@ -101,20 +51,7 @@ function AlreadyPremiumNotice({ status }: { status: PaidAccessStatus }) {
   return <p className="mt-6 text-sm text-body">You already have an active Premium subscription.</p>
 }
 
-/**
- * Resolve the session client-side when the SSR seed is `null` (Story 5-19, AC-5).
- *
- * A `null` seed does NOT mean "signed out" — `getSessionSeed` returns an
- * authoritative signed-out seed for that, and `null` ONLY when it could not
- * verify the session at all. The previous guard read `seed?.subscriptionStatus`
- * directly, so an unverified seed belonging to an `active` or `lifetime`
- * subscriber fell straight through to a live "Get Premium" button — a guard
- * against a real duplicate charge that defaulted to offering the purchase.
- *
- * So instead of guessing in either direction, ask: `/api/auth/me` is the same
- * client check `AuthIndicator` uses. `undefined` = still resolving (offer
- * nothing yet), `null` = resolved and not entitled.
- */
+// A `null` seed means unverified, not signed out: ask `/api/auth/me` rather than guess.
 function useResolvedStatusWhenUnverified(seedIsNull: boolean) {
   const [status, setStatus] = useState<string | null | undefined>(seedIsNull ? undefined : null)
 
@@ -127,11 +64,7 @@ function useResolvedStatusWhenUnverified(seedIsNull: boolean) {
         const body = (await res.json()) as { user?: { subscriptionStatus?: string } | null }
         if (!cancelled) setStatus(body?.user?.subscriptionStatus ?? null)
       } catch {
-        // Still unverified. Resolve to "not entitled" so a brand-new customer
-        // is never permanently locked out of buying by a failed probe — the
-        // SERVER guard in `/api/paddle/checkout-config` is the authoritative
-        // one, and it refuses an entitled session regardless of what the
-        // client believes.
+        // Fail open: the checkout-config endpoint refuses an entitled session regardless.
         if (!cancelled) setStatus(null)
       }
     })()
@@ -149,7 +82,6 @@ export function PremiumCheckoutButton() {
 
   const status = seed ? seed.subscriptionStatus ?? null : resolvedStatus
 
-  // Unverified and still resolving — show nothing rather than a live checkout.
   if (status === undefined) {
     return <p className="mt-6 text-sm text-body">Checking your account…</p>
   }
@@ -161,11 +93,7 @@ export function PremiumCheckoutButton() {
   return <PremiumCheckoutForm seed={seed} />
 }
 
-/**
- * The actual toggle + checkout CTA, split out from {@link PremiumCheckoutButton}
- * so its hooks stay unconditional — the already-Premium short-circuit above
- * must not sit between hook calls (Rules of Hooks).
- */
+// Split out so its hooks stay unconditional after the parent's early return.
 function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
   const [plan, setPlan] = useState<Plan>('annual')
   const [config, setConfig] = useState<CheckoutConfig | null>(null)
@@ -178,14 +106,8 @@ function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
   })
   const [status, setStatus] = useState<Status>('idle')
 
-  // Fetched once on mount so an unconfigured environment (no live Paddle
-  // credentials yet) can be reflected in the CTA before the user ever clicks,
-  // rather than only failing after an attempted checkout.
-  //
-  // The body is drained even on a non-OK response: an unread body keeps the
-  // request open in the browser indefinitely (it never reaches "finished"),
-  // which in an unconfigured environment (the endpoint deliberately 500s)
-  // left `/pricing` never network-idle.
+  // Drain the body even on error: an unread body keeps the request open, so the page
+  // never reaches network-idle.
   useEffect(() => {
     let cancelled = false
     fetch('/api/paddle/checkout-config')
@@ -209,9 +131,6 @@ function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
     }
   }, [])
 
-  // Once config resolves to a configured Paddle Billing environment, fetch
-  // real localized totals so the toggle shows what checkout will actually
-  // charge — independent of sign-in state, since this is display-only.
   useEffect(() => {
     if (
       !config?.isConfigured ||
@@ -226,9 +145,7 @@ function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
       .then((paddle) => {
         if (!paddle || cancelled) return undefined
         return getLocalizedPlanPrices(paddle, {
-          // Only a CONFIGURED monthly id is previewed — `getLocalizedPlanPrices`
-          // would otherwise send Paddle an undefined line item and fail the whole
-          // call, taking annual's and lifetime's real totals down with it.
+          // Only a configured monthly id: an undefined line item fails the whole preview call.
           monthlyPriceId: config.monthlyPriceId ?? undefined,
           annualPriceId: config.annualPriceId as string,
           lifetimePriceId: config.lifetimePriceId as string,
@@ -243,18 +160,13 @@ function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
           })
         }
       })
-      .catch(() => {
-        // Silent: the static fallback label already covers this.
-      })
+      .catch(() => {})
     return () => {
       cancelled = true
     }
   }, [config])
 
   const handleCheckout = async () => {
-    // A lookup, not a nested ternary: a two-branch conditional cannot express
-    // three plans, and nesting one is how a fourth plan later gets silently
-    // mis-routed to the wrong price.
     const priceIdForPlan: Record<Plan, string | null | undefined> = {
       monthly: config?.monthlyPriceId,
       annual: config?.annualPriceId,
@@ -285,9 +197,6 @@ function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
     }
   }
 
-  // A plan whose price ID isn't configured (a partially-configured build) is
-  // disabled up front, not just at click-time — selecting it used to always
-  // render, then only surface the generic error AFTER a click.
   const planOptions: ReadonlyArray<{ id: Plan; label: string; disabled: boolean }> = [
     {
       id: 'monthly',
@@ -308,15 +217,8 @@ function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
   const enabledPlanIds = planOptions.filter((o) => !o.disabled).map((o) => o.id)
   const radioRefs = useRef<Partial<Record<Plan, HTMLButtonElement | null>>>({})
 
-  // If the SELECTED plan is disabled (its price ID isn't configured), roving
-  // tabIndex has nowhere to go — `plan` defaults to `'annual'`, so a build
-  // missing only `PADDLE_ANNUAL_PRICE_ID` would otherwise leave the entire
-  // `radiogroup` keyboard-unreachable (no radio ever carries `tabIndex={0}`).
-  // Move the selection to the first enabled option instead.
-  // `planOptions`/`enabledPlanIds` are plain arrays recomputed fresh every
-  // render from `config`/`localizedPrice` — depending on `config`/`plan`
-  // (the two things that can actually flip `disabled`) already covers every
-  // case that needs a correction.
+  // A disabled selected plan leaves no radio with tabIndex 0, so the group is keyboard-unreachable;
+  // move the selection to the first enabled option.
   // biome-ignore lint/correctness/useExhaustiveDependencies: see comment above; only config/plan can flip `disabled`
   useEffect(() => {
     const selected = planOptions.find((o) => o.id === plan)
@@ -325,12 +227,6 @@ function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
     }
   }, [config, plan])
 
-  /**
-   * Roving-tabIndex ARIA radiogroup: arrow keys move BOTH focus and selection
-   * between the enabled options (Home/End jump to the first/last), skipping
-   * any plan whose price ID isn't configured. Three options since story 5-20,
-   * and this has never assumed a fixed count — it walks `enabledPlanIds`.
-   */
   const handleRadioKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, currentId: Plan) => {
     if (enabledPlanIds.length === 0) return
     const currentIndex = enabledPlanIds.indexOf(currentId)
@@ -361,13 +257,7 @@ function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
     }
   }
 
-  // The SELECTED plan's breakdown — shown only once a real PricePreview total
-  // has resolved for it (the static fallback labels aren't final prices, so
-  // there's nothing to break down yet). Paddle's total can differ noticeably
-  // from the €39/€99 reference price (e.g. a 13%-HST Canadian province turns
-  // €39 into €44.07): spelling out subtotal + tax = total is what turns "why
-  // is this different" into a visible, self-explaining fact rather than a
-  // one-line reassurance to take on faith.
+  // Localized totals include tax and can differ from the reference price, so show the breakdown.
   const selectedBreakdown = localizedPrice[plan]
 
   return (
@@ -387,8 +277,6 @@ function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
             role="radio"
             aria-checked={plan === id}
             disabled={disabled}
-            // Roving tabIndex: only the selected option is Tab-reachable; arrow
-            // keys move both focus and selection between the enabled options.
             tabIndex={plan === id ? 0 : -1}
             onClick={() => setPlan(id)}
             onKeyDown={(event) => handleRadioKeyDown(event, id)}

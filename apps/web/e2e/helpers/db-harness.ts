@@ -1,44 +1,29 @@
-/**
- * The `chromium-db` project's fixed facts (story 87.1, F9; story 87.2, F10),
- * in ONE place: `playwright.config.ts` boots the database and the `:5176` dev
- * server from them, and the `*.db.spec.ts` flows read the outbox, sign in and
- * sign webhooks with them.
- */
 import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-/** The `chromium-db` dev server (decision D4). */
 export const DB_SERVER_PORT = 5176
 
-/**
- * The PGlite socket (decision D1). Fixed, so `pnpm gates` can refuse a stray
- * one before it starts (`gates-lib.mjs`), like the Playwright server ports.
- */
+/** Fixed, so `pnpm gates` can refuse a stray one before it starts. */
 export const E2E_DB_PORT = 55432
 
-/** What the `:5176` dev server connects to. PGlite accepts any credentials. */
+/** PGlite accepts any credentials. */
 export const E2E_DATABASE_URL = `postgresql://postgres:postgres@127.0.0.1:${E2E_DB_PORT}/postgres`
 
-/** The account F9 signs in as, seeded `active` (decision D3). */
 export const SEEDED_USER = {
   email: 'f9-sign-in@example.test',
   paddleId: 'ctm_e2e_f9_sign_in',
 } as const
 
 /**
- * The dev-only mail outbox (decision D2): the mailer's no-key development
- * branch appends `{ to, link }` here as one JSON line. Truncated by the
- * database server at start, so it holds only this run's links.
+ * The mailer's no-key dev branch appends `{ to, link }` here as JSON lines. Truncated
+ * at database start, so it holds only this run's links.
  */
 export const MAIL_OUTBOX = join(tmpdir(), 'budget-planner-e2e', 'mail-outbox.jsonl')
 
 /**
- * The `:5176` server's Paddle configuration (story 87.2, decision D3): every
- * value an OBVIOUS FAKE, so no real Paddle credential exists in the repo or
- * CI. `sandbox`, so `assertPaddleProductionConfig()` exempts the dev server
- * and `/api/paddle/checkout-config` serves it. The webhook secret is what the
- * F10 spec signs its `subscription.created` with.
+ * Obvious fakes, so no real Paddle credential is in the repo or CI. `sandbox` exempts
+ * the dev server from `assertPaddleProductionConfig()`.
  */
 export const FAKE_PADDLE = {
   environment: 'sandbox',
@@ -50,11 +35,7 @@ export const FAKE_PADDLE = {
   lifetimePriceId: 'pri_e2e_fake_lifetime',
 } as const
 
-/**
- * The `:5176` server's HTTP(S) proxy: port 9 (discard) on loopback, where
- * nothing listens, so every outbound request is refused locally (story 87.2,
- * AC 4: no request leaves for `*.paddle.com`). Not a port anything opens.
- */
+/** Port 9 on loopback, where nothing listens, so every outbound request is refused locally. */
 export const NO_OUTBOUND_PROXY = 'http://127.0.0.1:9'
 
 export interface OutboxEntry {
@@ -62,7 +43,6 @@ export interface OutboxEntry {
   link: string
 }
 
-/** Every outbox line, oldest first. A missing file reads as empty. */
 export function readOutbox(path: string = MAIL_OUTBOX): OutboxEntry[] {
   let text: string
   try {

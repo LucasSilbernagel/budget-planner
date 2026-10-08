@@ -1,23 +1,4 @@
-/**
- * Profile deletion: the default is deletable, and a survivor inherits `isDefault`
- * (story 63.2, FR97).
- *
- * ⚠️⚠️ THIS IS THE LAYER THAT MATTERS, and the story had to measure its way to
- * that. The epic specified this change as a SERVER change, but
- * `server/functions/profiles.ts:deleteProfile` had ZERO production callers — the
- * import grep over `functions/profiles'` returned only `getProfiles` and
- * `createDefaultProfileForUser` — and story 93.1 deleted it. A user's deletion travels
- * `profile-list.tsx` -> `useProfileManager().deleteProfile` -> THIS STORE ->
- * `syncEntityDelete` -> the sync push, whose handler enforces no guards at all.
- * So `removeProfile` is where the default guard actually lived and where it is
- * actually lifted.
- *
- * ⚠️ `removeProfile` is SYNCHRONOUS and returns `void`. `handleDelete` awaits it,
- * which is a no-op; nothing here or in the UI knows when the server finished.
- *
- * The bridge is driven with a fake handle (no network), matching
- * `store-sync-wiring.dom.test.ts`.
- */
+/** removeProfile is the real deletion path (the sync push enforces no guards). It is synchronous. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -91,8 +72,7 @@ describe('deleting the DEFAULT profile (story 63.2, AC-2/AC-3)', () => {
 
     const state = useProfileStore.getState()
     expect(state.profiles.map((p) => p.id)).toEqual(['biz', 'side'])
-    // The survivor that inherits `isDefault` is the one the user is LOOKING at,
-    // not the array's first element — 'side' was and remains active.
+    // The survivor is the active profile, not the array's first element.
     expect(state.profiles.find((p) => p.isDefault)?.id).toBe('side')
     expect(state.profiles.filter((p) => p.isDefault)).toHaveLength(1)
     expect(state.activeProfileId).toBe('side')
@@ -105,9 +85,8 @@ describe('deleting the DEFAULT profile (story 63.2, AC-2/AC-3)', () => {
     useProfileStore.getState().removeProfile('main')
 
     const state = useProfileStore.getState()
-    // `removeProfile` repoints an active deletion to the OLDEST survivor (no
-    // `createdAt` here, so the id breaks the tie), and the
-    // promotion follows that same choice rather than computing a second answer.
+    // Repointed to the oldest survivor (no createdAt, so the id breaks the tie); the promotion
+    // follows that same choice.
     expect(state.activeProfileId).toBe('biz')
     expect(state.profiles.find((p) => p.isDefault)?.id).toBe('biz')
     expect(state.profiles.filter((p) => p.isDefault)).toHaveLength(1)
@@ -118,17 +97,11 @@ describe('deleting the DEFAULT profile (story 63.2, AC-2/AC-3)', () => {
 
     useProfileStore.getState().removeProfile('main')
 
-    // ⚠️ THE HIGHEST-RISK ASSERTION IN THIS STORY. `willRemove` used to carry a
-    // `!target.isDefault` clause that gated this queueDelete. Leave it in and the
-    // default vanishes locally while NO tombstone is ever pushed — it returns on
-    // the next pull, on every device, and the local suite stays green because the
-    // local list looks right.
+    // A default deleted locally without a tombstone would return on the next pull.
     expect(handle.queueDelete).toHaveBeenCalledTimes(1)
     expect(handle.queueDelete).toHaveBeenCalledWith('userProfile', 'main', expect.anything())
 
-    // The promotion is local-only unless it is queued: a raw `set()` writes the
-    // flag in the store and tells the server nothing, leaving the account with
-    // ZERO defaults server-side.
+    // A raw set() would leave the server with zero defaults.
     expect(handle.queueUpdate).toHaveBeenCalledTimes(1)
     const [entityType, entityId, payload] = handle.queueUpdate.mock.calls[0] as [
       string,
@@ -138,21 +111,14 @@ describe('deleting the DEFAULT profile (story 63.2, AC-2/AC-3)', () => {
     expect(entityType).toBe('userProfile')
     expect(entityId).toBe('biz')
     expect(payload['isDefault']).toBe(true)
-    // The promotion names its tombstone (story 76.2, D1 = A): core holds it back
-    // on push until the tombstone lands, and drops it on pull if the tombstone
-    // loses to a live row.
+    // dependsOn: core holds the promotion until the tombstone lands, and drops it if the tombstone loses.
     expect(handle.queueUpdate.mock.calls[0]?.[5]).toEqual({
       entityType: 'userProfile',
       entityId: 'main',
       type: 'delete',
     })
 
-    // Tombstone, then promote. ⚠️ Since story 76.1 the order is no longer what
-    // keeps the server valid: a promotion demotes the current default in the
-    // same transaction (`server/api/sync.ts:promoteProfile`), so it takes the
-    // seat in either order. The order is kept so the promotion is the LAST
-    // word — the server's post-tombstone repair picks a default first, and the
-    // promotion then replaces that pick with the one this device chose.
+    // Tombstone, then promote, so the promotion is the last word over the server's repair pick.
     const deleteOrder = handle.queueDelete.mock.invocationCallOrder[0] as number
     const updateOrder = handle.queueUpdate.mock.invocationCallOrder[0] as number
     expect(deleteOrder).toBeLessThan(updateOrder)
@@ -164,19 +130,14 @@ describe('deleting the DEFAULT profile (story 63.2, AC-2/AC-3)', () => {
     useProfileStore.getState().removeProfile('biz')
 
     expect(handle.queueDelete).toHaveBeenCalledTimes(1)
-    // Positive control for the test above: the promotion is conditional, not
-    // something every deletion emits.
+    // Positive control: the promotion is conditional.
     expect(handle.queueUpdate).not.toHaveBeenCalled()
     expect(useProfileStore.getState().profiles.find((p) => p.isDefault)?.id).toBe('main')
   })
 })
 
 describe('deleting the ACTIVE profile lands on the OLDEST survivor (deferred from 98.1)', () => {
-  // ⚠️ Store order, id order and age order deliberately DISAGREE: `alpha` is the
-  // newest profile, first in the array AND first by id; `zeta` is the oldest and
-  // last on both. Only a `createdAt` comparison picks `zeta` — the same choice the
-  // server's post-tombstone repair makes (`ensureUserHasDefaultProfile`: createdAt
-  // ASC, then id), and the order `useProfiles` displays (story 98.1).
+  // Store, id and age order deliberately disagree; only a createdAt comparison picks `zeta`.
   const alpha = { ...biz, id: 'alpha', name: 'Newest', createdAt: '2026-09-03T00:00:00.000Z' }
   const doomed = { ...main, id: 'doomed', name: 'Doomed', createdAt: '2026-09-02T00:00:00.000Z' }
   const zeta = { ...side, id: 'zeta', name: 'Oldest', createdAt: '2026-09-01T00:00:00.000Z' }
@@ -195,7 +156,6 @@ describe('deleting the ACTIVE profile lands on the OLDEST survivor (deferred fro
 
     const state = useProfileStore.getState()
     expect(state.activeProfileId).toBe('zeta')
-    // Not the default: the default is unchanged and nothing is promoted.
     expect(state.profiles.find((p) => p.isDefault)?.id).toBe('zeta')
     expect(handle.queueUpdate).not.toHaveBeenCalled()
   })
@@ -211,8 +171,6 @@ describe('deleting the ACTIVE profile lands on the OLDEST survivor (deferred fro
     const state = useProfileStore.getState()
     expect(state.activeProfileId).toBe('zeta')
     expect(state.profiles.filter((p) => p.isDefault).map((p) => p.id)).toEqual(['zeta'])
-    // The queued promotion names the profile the server's repair also picks, so
-    // the device and the server agree on the default.
     expect(handle.queueUpdate).toHaveBeenCalledTimes(1)
     expect(handle.queueUpdate.mock.calls[0]?.[1]).toBe('zeta')
   })
@@ -239,7 +197,6 @@ describe('the last-profile guard is UNCHANGED (story 63.2, AC-4)', () => {
     const state = useProfileStore.getState()
     expect(state.profiles.map((p) => p.id)).toEqual(['main'])
     expect(state.error).toMatch(/last profile/i)
-    // Nothing reaches the server either — the refusal is not a local-only veto.
     expect(handle.queueDelete).not.toHaveBeenCalled()
     expect(handle.queueUpdate).not.toHaveBeenCalled()
   })
@@ -256,16 +213,8 @@ describe('the last-profile guard is UNCHANGED (story 63.2, AC-4)', () => {
 
 describe('free tier (no bridge registered)', () => {
   /**
-   * ⚠️ THE ASSERTIONS ON `handle` HERE WERE VACUOUS UNTIL THE POSITIVE CONTROL
-   * BELOW (code review). This describe deliberately never calls
-   * `registerSyncBridge`, so `expect(handle.queueDelete).not.toHaveBeenCalled()`
-   * is true for ANY implementation whatsoever — including one that queued to a
-   * different bridge or called `fetch` directly. An unregistered spy cannot
-   * report anything. Only the local-state assertions carried weight.
-   *
-   * The control registers the SAME handle and repeats the SAME deletion, proving
-   * the spy can record a call at all — so its silence above means "the free tier
-   * queued nothing", not "nothing was ever wired up".
+   * The handle is never registered here, so `not.toHaveBeenCalled` is vacuous without the
+   * positive control below.
    */
   it('deletes the default locally and makes zero queue calls', () => {
     useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'biz' })
@@ -277,7 +226,6 @@ describe('free tier (no bridge registered)', () => {
     expect(handle.queueDelete).not.toHaveBeenCalled()
     expect(handle.queueUpdate).not.toHaveBeenCalled()
 
-    // Positive control for this very handle.
     registerSyncBridge(handle)
     useProfileStore.setState({ profiles: [main, biz, side], activeProfileId: 'biz' })
     useProfileStore.getState().removeProfile('main')
@@ -286,26 +234,8 @@ describe('free tier (no bridge registered)', () => {
 })
 
 /**
- * The cascade (story 66.3, FR104, AC-1/AC-2).
- *
- * ⚠️⚠️ THIS DOCBLOCK ONCE DESCRIBED AN IMPORT CYCLE. THERE IS NONE, and the
- * correction is left visible because the stale version survived the whole
- * implementation pass and was caught by code review, not by its author.
- *
- * The first design had `lib/profile-cascade.ts` import all five domain stores,
- * which all import `profileStore`, which imported the cascade — a cycle. Thunks
- * stopped the TDZ `ReferenceError`, this file passed, and that was written up as
- * proof the cycle was harmless. It was not:
- * `components/sync/__tests__/cross-device-sync.db.test.tsx` imports every store in
- * one `Promise.all` and Vite's module runner DEADLOCKED — a 12.8s suite became a
- * 60s hook timeout with its tests silently SKIPPED. `profile-cascade.ts` now
- * imports NO store (each store registers itself), so there is no cycle and this
- * file is NOT a cycle tripwire.
- *
- * What it IS: the cascade exercised end-to-end THROUGH `profileStore.removeProfile`,
- * rather than called directly as `lib/__tests__/profile-cascade.test.ts` does. It
- * imports `useIncomeStore`/`useExpenseStore` itself, so it canNOT detect a MISSING
- * registration — the registry guard tests in that other file cover that.
+ * Exercises the cascade through removeProfile. Imports the stores itself, so it cannot detect a
+ * missing registration.
  */
 describe('the cascade destroys the deleted profile’s rows (story 66.3, AC-1)', () => {
   beforeEach(() => {
@@ -333,13 +263,8 @@ describe('the cascade destroys the deleted profile’s rows (story 66.3, AC-1)',
   })
 
   /**
-   * ⚠️⚠️ AC-2. The cascade queues NOTHING for the children: the ONLY delete on
-   * the wire is the profile's own. `SyncService.queueDelete` stamps
-   * `config.profileId` — the ACTIVE profile at queue time — so a child delete for
-   * a NON-active profile (the common case: you delete the one you are not on)
-   * would carry 'main' and resolve to "Entity not found" server-side, leaving the
-   * row live while the client showed it gone. The server cascade
-   * (`deleteProfileWithChildren`) is what removes them there.
+   * queueDelete stamps the ACTIVE profileId, so a child delete for a non-active profile would miss
+   * server-side; the server cascade removes the children.
    */
   it('queues ONE delete — the profile itself — and no child operations', () => {
     useProfileStore.getState().removeProfile('biz')
@@ -358,13 +283,7 @@ describe('the cascade destroys the deleted profile’s rows (story 66.3, AC-1)',
     expect(useExpenseStore.getState().expenses).toHaveLength(1)
   })
 
-  /**
-   * ⚠️ NOT VACUOUS, and the shape is deliberate (the lesson this file already
-   * carries at `free tier (no bridge registered)`). The handle IS registered by
-   * the `beforeEach` above and this test UNREGISTERS it, and the paid test two
-   * cases up proves this same spy records a call — so its silence here means
-   * "the free tier queued nothing", not "nothing was ever wired up".
-   */
+  /** Not vacuous: the beforeEach registers the handle and the paid test proves the spy records calls. */
   it('cascades on the FREE tier too, once the bridge is unregistered', () => {
     clearSyncBridge()
 
@@ -374,9 +293,8 @@ describe('the cascade destroys the deleted profile’s rows (story 66.3, AC-1)',
     expect(handle.queueDelete).not.toHaveBeenCalled()
   })
 
-  // The domain stores are NOT covered by the file-level reset (which only knows
-  // `profileStore`), so clear them or these rows leak into every later test in
-  // the same worker.
+  // The domain stores are not covered by the file-level reset; clear them or rows leak into later
+  // tests.
   afterEach(() => {
     useIncomeStore.setState({ incomeSources: [] } as never)
     useExpenseStore.setState({ expenses: [] } as never)

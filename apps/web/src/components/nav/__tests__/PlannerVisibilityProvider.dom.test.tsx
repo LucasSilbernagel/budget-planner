@@ -1,18 +1,4 @@
-/**
- * PlannerVisibilityProvider tests (story 35.2, review fix).
- *
- * ⚠️ WHY THIS EXISTS. The `<head>` bootstrap only ever SETS
- * `data-hide-retirement`. Shipped without a remover, this happened on a plain
- * reachable path: hide the planner → load a page (attribute stamped) →
- * re-enable in the same session → React re-renders the nav entry → the CSS rule
- * still matches → the entry stays invisible until a full reload. Two review
- * layers found it independently; the e2e that should have caught it asserted
- * `toHaveCount(1)`, which passes on a `display: none` element.
- *
- * These tests pin the two-way sync at the unit level. jsdom cannot evaluate the
- * CSS rule, but the ATTRIBUTE is a real DOM fact it can see — and the attribute
- * is what the rule keys on.
- */
+// jsdom can't evaluate the CSS rule, but the attribute it keys on is a real DOM fact.
 
 import { render } from '@testing-library/react'
 import { act } from 'react'
@@ -45,12 +31,7 @@ describe('PlannerVisibilityProvider', () => {
     expect(hideAttr()).toBeNull()
   })
 
-  /**
-   * THE REGRESSION THIS FIX EXISTS FOR: the `<head>` script has already stamped
-   * the attribute, and the user re-enables the planner in the same session.
-   */
   it('removes a stale mark left by the pre-paint script when the planner is re-enabled', () => {
-    // Simulate the <head> bootstrap having run on a hidden-preference load.
     document.documentElement.setAttribute('data-hide-retirement', '1')
     usePlannerVisibilityStore.setState({ showRetirementPlanner: false })
     render(<PlannerVisibilityProvider />)
@@ -77,21 +58,12 @@ describe('PlannerVisibilityProvider', () => {
     expect(hideAttr()).toBe('1')
   })
 
-  /**
-   * ⚠️ Ordering guard. A plain `[value]`-dependency effect would apply the
-   * DETERMINISTIC DEFAULT (visible) before rehydration and strip the attribute
-   * the `<head>` script just set — reintroducing the flash. The provider
-   * rehydrates FIRST and applies from the resolved value. (A deleted `ThemeProvider`
-   * was the original example; see the provider's own docblock, which now carries
-   * the ordering rationale directly.)
-   */
+  /** Ordering guard: applying before rehydration would strip the attribute the <head> script set. */
   it('applies the PERSISTED value, not the pre-rehydration default', () => {
     localStorage.setItem(
       'budget-planner-planner-visibility-v1',
       JSON.stringify({ state: { showRetirementPlanner: false }, version: 0 })
     )
-    // The store is still at its deterministic default here, as it is on a real
-    // first client render.
     expect(usePlannerVisibilityStore.getState().showRetirementPlanner).toBe(true)
 
     document.documentElement.setAttribute('data-hide-retirement', '1')

@@ -1,26 +1,5 @@
-/**
- * The locked migration sequence (Story 5.18, live finding 2026-09-16).
- *
- * Single entry point for applying production migrations. It holds a PostgreSQL
- * advisory lock across BOTH steps, so that however many migrate pods Knative
- * decides to start, exactly one is inside the critical section at a time:
- *
- *   acquire lock -> migrate-preflight-cli -> drizzle-kit migrate -> release
- *
- * Why the lock wraps the preflight too, not just the DDL: the preflight's whole
- * job is to classify the database's current shape. If another pod is midway
- * through applying migrations while this one is classifying, the classification
- * describes a state that is already gone. Reading and writing belong in the same
- * critical section.
- *
- * Both steps are SPAWNED rather than imported, so their behaviour is byte-for-byte
- * what it was when they ran as separate pipeline steps — this change moves where
- * they run, not what they do. The lock lives on this process's own connection, so
- * spawning children does not weaken it.
- *
- * Run by `apps/web/migrate-entry.mjs` inside the migrate container. Exits with the
- * first non-zero child status, or 1 if the lock cannot be taken.
- */
+// Holds an advisory lock across preflight AND migrate, so the classification can't describe a
+// state another pod is changing. Steps are spawned; the lock lives on this connection.
 
 import { spawn } from 'node:child_process'
 import path from 'node:path'
@@ -32,12 +11,7 @@ import { DB_SESSION_OPTIONS } from './client'
 import { buildMigrationCredentials } from './migrate-credentials'
 import { LOCK_WAIT_TIMEOUT_MS, acquireMigrationLock, stepEnv } from './migrate-lock'
 
-/**
- * Both run from the package root, where `drizzle.config.ts` and `migrations/` live.
- *
- * `import.meta.url`, not `__dirname`: this package is `"type": "module"`, so the
- * CommonJS globals do not exist here and referencing one is a boot-time crash.
- */
+/** `import.meta.url`, not `__dirname`: this package is ESM. */
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const BIN_DIR = path.join(PACKAGE_ROOT, 'node_modules', '.bin')
 
@@ -58,16 +32,14 @@ function runStep(step: Step): Promise<number> {
     const child = spawn(path.join(BIN_DIR, step.bin), step.args, {
       cwd: PACKAGE_ROOT,
       stdio: 'inherit',
-      // ops-2: PGOPTIONS pins drizzle-kit's own connection to TimeZone=UTC
-      // (drizzle-kit strips an `options` key from drizzle.config.ts).
+      // PGOPTIONS pins drizzle-kit's own connection to UTC (it strips an `options` key).
       env: stepEnv(process.env),
     })
     child.on('error', (error) => {
       console.error(`[migrate-lock] could not start ${step.name}: ${error.message}`)
       resolve(1)
     })
-    // A step killed by a signal reports a null code. Reading that as anything but
-    // a failure would call an OOM-killed migration a success.
+    // A signal-killed step reports a null code; treat it as a failure.
     child.on('close', (code) => resolve(code ?? 1))
   })
 }
@@ -79,14 +51,7 @@ async function main(): Promise<number> {
     return 1
   }
 
-  // Same credentials, same TLS posture, same in-cluster host rule as the
-  // migration itself — this connection reaches the same production database and
-  // has no business being held to a weaker standard.
-  //
-  // `buildMigrationCredentials` THROWS on a refused host (a public
-  // `*.danubedata.ro` endpoint, a non-EU host, an unparseable URL). Catching it
-  // here turns a refusal into a one-line reason instead of a stack trace; the
-  // exit status is 1 either way, but only one of those is readable at 2am.
+  // Catch the refusal so it prints a one-line reason instead of a stack trace.
   let client: Client
   try {
     client = new Client({
@@ -95,7 +60,6 @@ async function main(): Promise<number> {
         databaseUrl,
         normalizeCaCert(process.env['DATABASE_CA_CERT'])
       ),
-      // ops-2: session TimeZone=UTC, like every other connection.
       options: DB_SESSION_OPTIONS,
       connectionTimeoutMillis: 15_000,
     })
@@ -145,9 +109,7 @@ async function main(): Promise<number> {
     console.log('[migrate-lock] all steps completed.')
     return 0
   } finally {
-    // Ending the session releases the advisory lock; PostgreSQL would also
-    // release it on its own if this process died, which is the property that
-    // makes a session lock the right primitive for a killable container.
+    // Ending the session releases the lock; PostgreSQL also releases it if this process dies.
     await client.end().catch(() => undefined)
   }
 }

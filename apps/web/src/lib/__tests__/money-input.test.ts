@@ -1,6 +1,3 @@
-/**
- * Story 109.1 (FR177): the shared blur re-echo and the builder's draft parse.
- */
 import { describe, expect, it, vi } from 'vitest'
 import { AMOUNT_NOT_A_NUMBER_MESSAGE, parseMoneyDraft, reformatAmountOnBlur } from '../money-input'
 
@@ -11,8 +8,6 @@ describe('reformatAmountOnBlur', () => {
     ['1,234.5', 'en-US', '1,234.50'],
     ['42000', 'de-DE', '42.000,00'],
     ['42.000,5', 'de-DE', '42.000,50'],
-    // A malformed entry echoes as zero, as on the four pages (the builder shows
-    // its "Enter a number." message beside it).
     ['1.2.3', 'en-US', '0.00'],
   ])('%s (%s) → %s', (value, locale, expected) => {
     const setter = vi.fn()
@@ -37,7 +32,6 @@ describe('parseMoneyDraft', () => {
     ['42000.5', 'en-US', 4_200_050],
     ['42,000.00', 'en-US', 4_200_000],
     ['42.000,50', 'de-DE', 4_200_050],
-    // Truncates past two decimals, as `parseFromInput` does on the four pages (Q3).
     ['1.239', 'en-US', 123],
     ['-500', 'en-US', -50_000],
     ['0', 'en-US', 0],

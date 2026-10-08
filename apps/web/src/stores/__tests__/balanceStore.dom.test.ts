@@ -1,15 +1,3 @@
-/**
- * balanceStore persist-migration tests (Story 16-2, FR37).
- *
- * Pins the v1→v2 persist migration that backfills a default contribution
- * `frequency` of 'monthly' for legacy rows (pre-frequency entries were implicitly
- * monthly). This is required, not cosmetic: the normalization engine throws on an
- * undefined frequency, so an un-backfilled row would crash the timeline math.
- *
- * Runs in jsdom (`.dom.test.ts`) for a real `localStorage` + the zustand persist
- * middleware (the store uses `skipHydration`, so we drive `persist.rehydrate()`).
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   type SyncBridgeHandle,
@@ -27,7 +15,6 @@ beforeEach(() => {
 
 describe('balanceStore — v1→v2 frequency backfill (Story 16-2)', () => {
   it('backfills frequency=monthly for a legacy v1 row lacking one', async () => {
-    // A v1-shaped persisted payload: uuid ids already, but no `frequency`.
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
@@ -52,7 +39,6 @@ describe('balanceStore — v1→v2 frequency backfill (Story 16-2)', () => {
 
     const [entry] = useBalanceStore.getState().entries
     expect(entry.frequency).toBe('monthly')
-    // Existing values are preserved unchanged.
     expect(entry.name).toBe('Old Brokerage')
     expect(entry.monthlyContribution).toBe(500)
     expect(entry.id).toBe('legacy-uuid-1')
@@ -98,8 +84,7 @@ describe('balanceStore — partial update validation (Story 16-2 review E2)', ()
     expect(created).not.toBeNull()
     if (!created) return
 
-    // A partial update changing only the name (no frequency) must succeed —
-    // validation runs against the merged entry, not the raw partial.
+    // Validation runs against the merged entry, not the raw partial.
     const updated = useBalanceStore.getState().updateBalanceEntry(created.id, { name: 'Renamed' })
     expect(updated).not.toBeNull()
     expect(updated?.name).toBe('Renamed')
@@ -121,9 +106,7 @@ describe('balanceStore — the asset type persists and leaves existing rows alon
   })
 
   it('rehydrates an asset row unchanged, alongside investment and debt rows', async () => {
-    // ⚠️ The whole AC-5 argument is that `migrate` is TYPE-BLIND: it touches only
-    // `id`, `frequency` and `sortOrder`, and never reads or writes `type`. That is
-    // a claim about code, so it is pinned here rather than asserted in prose.
+    // migrate must be type-blind: it never reads or writes `type`.
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
@@ -142,18 +125,14 @@ describe('balanceStore — the asset type persists and leaves existing rows alon
     const entries = useBalanceStore.getState().entries
 
     expect(entries).toHaveLength(3)
-    // Every type survives EXACTLY as stored — nothing re-typed, nothing dropped.
     expect(entries.map((e) => e.type)).toEqual(['investment', 'debt', 'asset'])
     expect(entries.map((e) => e.id)).toEqual(['inv-1', 'debt-1', 'asset-1'])
-    // ⚠️ And `sortOrder` is untouched: a careless version bump would re-run
-    // `backfillSortOrder`, which re-densifies to 0..n-1 and destroys the gaps
-    // deletes leave on purpose.
+    // A re-run backfill would re-densify sortOrder and destroy the gaps deletes leave.
     expect(entries.map((e) => e.sortOrder)).toEqual([0, 1, 2])
   })
 
   it('does not re-type a row whose type this build does not recognise', async () => {
-    // The same type-blindness protects FORWARD compatibility: a row written by a
-    // newer build must not be silently coerced into an existing arm on rehydrate.
+    // Type-blindness also protects a row written by a newer build.
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
@@ -186,9 +165,7 @@ describe('balanceStore — the asset type persists and leaves existing rows alon
     const totalFor = (type: string) =>
       entries.filter((e) => e.type === type).reduce((sum, e) => sum + e.currentBalance, 0)
 
-    // ⚠️ Asserted as COMPONENTS, not via net worth: net worth is invariant under
-    // classifying an asset as an investment, so a net-only check cannot tell a
-    // correct implementation from that exact mistake.
+    // Asserted per component: net worth is invariant under classifying an asset as an investment.
     expect(totalFor('investment')).toBe(5_000_000)
     expect(totalFor('asset')).toBe(40_000_000)
     expect(totalFor('debt')).toBe(30_000_000)
@@ -207,11 +184,7 @@ describe('balanceStore — contributionRecordedAsExpense persists (Story 45.1, F
     ...overrides,
   })
 
-  // ⚠️ The store carries this field through `...input` in `toClientBalanceTracking`
-  // and `...data` in `updateBalanceEntry` — it needs no code of its own. That is
-  // exactly WHY it needs a test: a passthrough nobody asserts is a passthrough
-  // that a future refactor to an explicit field list silently drops, and the
-  // symptom is a pool that quietly starts double-deducting again.
+  // A passthrough with no code of its own; pinned against a refactor to an explicit field list.
   it('persists the flag through addBalanceEntry', () => {
     const created = useBalanceStore
       .getState()
@@ -231,8 +204,7 @@ describe('balanceStore — contributionRecordedAsExpense persists (Story 45.1, F
       .addBalanceEntry(investment({ contributionRecordedAsExpense: true }))
     const id = created?.id as string
 
-    // true → false is the direction that restores a real deduction. A merge that
-    // dropped a `false` (e.g. via a truthy check) would leave it ticked forever.
+    // true → false restores a deduction; a truthy-check merge would drop the `false`.
     useBalanceStore.getState().updateBalanceEntry(id, { contributionRecordedAsExpense: false })
     expect(useBalanceStore.getState().entries[0]?.contributionRecordedAsExpense).toBe(false)
 
@@ -245,8 +217,7 @@ describe('balanceStore — contributionRecordedAsExpense persists (Story 45.1, F
       investment({
         type: 'debt',
         name: 'Mortgage',
-        // Story 103.1: was -30_000_000. A negative balance is now refused on its
-        // own, which would make this rejection pass for the wrong reason.
+        // Positive: a negative balance is refused on its own, which would make this pass for the wrong reason.
         currentBalance: 30_000_000,
         monthlyContribution: 0,
         contributionRecordedAsExpense: true,
@@ -255,13 +226,11 @@ describe('balanceStore — contributionRecordedAsExpense persists (Story 45.1, F
     expect(created).toBeNull()
     expect(useBalanceStore.getState().entries).toHaveLength(0)
 
-    // Acceptance partner over the same shape, so the rejection cannot pass
-    // because the fixture was malformed for some unrelated reason.
+    // Acceptance partner over the same shape, so the rejection is not from a malformed fixture.
     const ok = useBalanceStore.getState().addBalanceEntry(
       investment({
         type: 'debt',
         name: 'Mortgage',
-        // Story 103.1: was -30_000_000 (now refused; see above).
         currentBalance: 30_000_000,
         monthlyContribution: 0,
       })
@@ -270,23 +239,6 @@ describe('balanceStore — contributionRecordedAsExpense persists (Story 45.1, F
   })
 })
 
-/**
- * Story 49.1 (FR75, D2) — the retired `maxContributionLimit` key is stripped on
- * rehydration, and the persist version moves 3 → 4 to make that run.
- *
- * ⚠️ WHY THIS EXISTS: `migrate` spreads `...entry`, so before the version bump a
- * persisted limit survived rehydration forever as an unknown key. It was inert —
- * nothing reads it, no zod gate in the repo uses `.strict()`, and `syncBridge` no
- * longer forwards it — but a key nothing writes reads as a live field to the next
- * person. Mutation arm M8 (drop the destructuring, keep the version bump) came
- * back GREEN against the rest of the suite, which is what proved this test was
- * missing rather than merely nice to have.
- *
- * ⚠️ The version bump alone is NOT enough and is asserted separately: `migrate`
- * only runs when the persisted version differs, so a v4 payload that somehow
- * carried the key would keep it. That is fine — v4 is only ever written by this
- * build, which never stores it — but the two halves are distinct claims.
- */
 describe('balanceStore — the retired contribution limit is stripped (story 49.1)', () => {
   it('drops maxContributionLimit from a legacy row on rehydration', async () => {
     localStorage.setItem(
@@ -316,9 +268,7 @@ describe('balanceStore — the retired contribution limit is stripped (story 49.
 
     const [entry] = useBalanceStore.getState().entries
     expect(entry).toBeDefined()
-    // The retired key is GONE from the rehydrated row...
     expect('maxContributionLimit' in (entry as object)).toBe(false)
-    // ...and nothing else about the row moved.
     expect(entry.name).toBe('Old TFSA')
     expect(entry.currentBalance).toBe(10000)
     expect(entry.monthlyContribution).toBe(500)
@@ -327,11 +277,7 @@ describe('balanceStore — the retired contribution limit is stripped (story 49.
   })
 })
 
-/**
- * Story 103.1 (FR171, AC-1): a negative balance is refused on the STORE write
- * path, before anything is queued for sync. This is the only refusal point for
- * the sign: past the queue, a refusal deadlocks sync (schema-as-gate trap 5).
- */
+/** Refused on the store write path: past the queue, a refusal deadlocks sync. */
 describe('balanceStore — a negative balance never reaches the sync queue (Story 103.1)', () => {
   function makeHandle() {
     return {
@@ -363,7 +309,6 @@ describe('balanceStore — a negative balance never reaches the sync queue (Stor
     expect(useBalanceStore.getState().addBalanceEntry(debt(-400_000))).toBeNull()
     expect(useBalanceStore.getState().entries).toHaveLength(0)
     expect(handle.queueCreate).not.toHaveBeenCalled()
-    // Positive control over the same bridge and shape.
     expect(useBalanceStore.getState().addBalanceEntry(debt(400_000))).not.toBeNull()
     expect(handle.queueCreate).toHaveBeenCalledTimes(1)
   })
@@ -376,8 +321,7 @@ describe('balanceStore — a negative balance never reaches the sync queue (Stor
     ).toBeNull()
     expect(useBalanceStore.getState().entries[0]?.currentBalance).toBe(400_000)
     expect(handle.queueUpdate).not.toHaveBeenCalled()
-    // Positive control (code review 103.1): a valid update over the same bridge
-    // IS queued, so the `not.toHaveBeenCalled` above is not vacuous.
+    // Positive control: a valid update IS queued, so the assertion above is not vacuous.
     expect(
       useBalanceStore.getState().updateBalanceEntry(created.id, { currentBalance: 1 })
     ).not.toBeNull()

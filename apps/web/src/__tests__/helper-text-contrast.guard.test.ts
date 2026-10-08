@@ -3,15 +3,7 @@ import { join, relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { GLOBAL_CSS, cssRules } from '../test/css-rules'
 
-/**
- * Helper text and row buttons pass WCAG AA (story 115.2, FR183; Lighthouse
- * audit 2026-10-07, A2).
- *
- * ⚠️ What this pins is SOURCE, not paint: jsdom applies no stylesheet. The
- * proof that the colours pass is the Lighthouse re-run recorded in the story.
- * The per-element token pins live beside each component's own tests; this file
- * holds the two rules that span many sites.
- */
+// Pins SOURCE, not paint: jsdom applies no stylesheet.
 
 const SRC = resolve(__dirname, '..')
 
@@ -38,8 +30,6 @@ describe('helper text and row buttons (story 115.2)', () => {
   })
 
   it('no red-tint button keeps red-600 text (3.95:1 on red-100)', () => {
-    // Line-level: every className here is one line today. The six Remove/Delete
-    // buttons read red-700 (5.30:1) with a red-800 hover (5.74:1 on red-200).
     const hits = appTsx(SRC).flatMap((path) =>
       readFileSync(path, 'utf-8')
         .split('\n')
@@ -53,8 +43,7 @@ describe('helper text and row buttons (story 115.2)', () => {
   })
 
   it('the six red-tint row buttons carry the AA pair at rest and on hover', () => {
-    // An EXACT count, so a seventh written with the old colours, or one that lost
-    // its hover, is visible.
+    // An EXACT count, so a seventh with the old colours, or one that lost its hover, is visible.
     const pairs = appTsx(SRC).flatMap((path) =>
       readFileSync(path, 'utf-8')
         .split('\n')
@@ -69,10 +58,8 @@ describe('helper text and row buttons (story 115.2)', () => {
   })
 
   it('a red-800 hover never reaches dark mode', () => {
-    // `.hover\:text-red-800:hover` (two classes' worth of specificity) outranks
-    // `.dark\:text-red-300` (one) inside the dark media query, so without a
-    // `dark:hover:` text colour a hovered button turns red-800 on dark red
-    // (review 2026-10-07; measured in the compiled CSS).
+    // `hover:text-red-800` outranks `dark:text-red-300` in the dark media query, so without a
+    // `dark:hover:` colour a hovered button turns red-800 on dark red.
     const bare = appTsx(SRC).flatMap((path) =>
       readFileSync(path, 'utf-8')
         .split('\n')

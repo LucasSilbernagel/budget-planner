@@ -1,17 +1,3 @@
-/**
- * Assets as what-if rows in the Scenario Builder (story 114.1, FR182).
- *
- * An asset is a constant (D7): a name and a value, no growth, no contribution.
- * The rows are seeded from the active profile's `/balance` assets, and their
- * total lifts the forecast's net worth, so the builder's Starting Net Worth is
- * the Overview's (AC-4, the epic's point).
- *
- * Integration tests: the real builder, the real stores, the real engine and the
- * real currency store. The one thing mocked is `useIsInitialSyncPending`: a
- * pass-through that records the `nothingToSeed` argument (AC-3) and can hold the
- * first-sync window open for the seed-race case.
- */
-
 import type { ForecastingResult } from '@budget-planner/core'
 import { fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import type React from 'react'
@@ -187,15 +173,11 @@ describe('the Assets section (AC-5)', () => {
     for (const control of within(section()).getAllByRole('textbox')) {
       expect(control).toHaveAttribute('autocomplete', 'off')
     }
-    // Name + Value on each of the two rows: pin the COUNT so the loop above
-    // cannot pass on an empty list.
     expect(within(section()).getAllByRole('textbox')).toHaveLength(4)
-    // No contribution, frequency, return or flag (D7).
     expect(within(section()).queryByLabelText(/Contribution/)).toBeNull()
     expect(within(section()).queryByLabelText(/Frequency/)).toBeNull()
     expect(within(section()).queryByLabelText(/Annual return/)).toBeNull()
     expect(within(section()).queryByRole('checkbox')).toBeNull()
-    // jsdom cannot lay out: pin the classes.
     const grid = values[0]?.closest('.surface')?.querySelector('.grid') as HTMLElement
     expect(grid.className).toContain('grid-cols-1')
     expect(grid.className).toMatch(/\bmd:grid-cols-\d\b/)
@@ -238,7 +220,6 @@ describe('the seed (AC-3)', () => {
     expect(gate.calls.length).toBeGreaterThan(0)
     expect(gate.calls.every((empty) => empty === false)).toBe(true)
     expect(assetNames()).toEqual(['House'])
-    // Control: an empty store IS nothing to seed.
     gate.calls.length = 0
     document.body.innerHTML = ''
     setEntries([])
@@ -263,13 +244,10 @@ describe('the seed (AC-3)', () => {
     gate.pending = false
     rerender(<ScenarioBuilder onSave={onSave} />)
 
-    // The seed landed (positive control: the untouched balance rows were seeded) ...
     expect(balanceNames()).toEqual(['Pension'])
-    // ... the user's row is the same node, focused, with the typed value ...
     expect(screen.getByLabelText('Value for New Asset')).toBe(field)
     expect(document.activeElement).toBe(field)
     expect(field).toHaveValue('250')
-    // ... and the store's House was not added beside it.
     expect(assetNames()).toEqual(['New Asset'])
   })
 
@@ -367,7 +345,6 @@ describe('Starting Net Worth is the Overview’s (AC-4)', () => {
     render(<ScenarioBuilder onSave={vi.fn()} />)
     await waitForResult()
     const overview = renderHook(() => useNetWorth()).result.current
-    // The fixture is not vacuous: the assets are in the Overview's figure.
     expect(overview).toBe(1_234_500 + 5_000_001 + 30_000_000 + 1_250_099 - 20_000_000)
     expect(card('Starting Net Worth')).toBe(formatter()(overview))
   })
@@ -382,7 +359,6 @@ describe('Starting Net Worth is the Overview’s (AC-4)', () => {
 })
 
 describe('baseline and "vs. today" with assets (AC-11)', () => {
-  /** The fields a baseline row and a projection row both report. */
   function comparable(rows: ForecastingResult['baseline']) {
     return rows.map(
       ({
@@ -426,7 +402,6 @@ describe('baseline and "vs. today" with assets (AC-11)', () => {
     await waitFor(() => expect(onResult).toHaveBeenCalled(), { timeout: 3000 })
     const result = lastResult()
     expect(comparable(result.baseline)).toEqual(comparable(result.projection))
-    // Not vacuous: both series carry the asset total.
     expect(result.baseline.at(-1)?.assets).toBe(31_000_000)
     expect(result.summary.startingNetWorth).toBe(100_000 + 31_000_000)
     expect(card('vs. today')).toBe(`+${formatter()(0)}`)
@@ -439,7 +414,6 @@ describe('baseline and "vs. today" with assets (AC-11)', () => {
     const before = lastResult()
     onResult.mockClear()
 
-    // 300,000.00 → 300,500.00: X = 50,000 cents.
     fireEvent.change(screen.getByLabelText('Value for House'), { target: { value: '300500' } })
     await waitFor(() => expect(onResult).toHaveBeenCalled(), { timeout: 3000 })
     const after = lastResult()

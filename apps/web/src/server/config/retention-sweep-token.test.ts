@@ -1,8 +1,3 @@
-/**
- * RETENTION_SWEEP_TOKEN (Story 73.2, AC-1): the endpoint FAILS CLOSED on an
- * unset, blank or short token, so the getter must return `undefined` for each.
- */
-
 import {
   SESSION_SECRET_MIN_DISTINCT_CHARS,
   SESSION_SECRET_MIN_LENGTH,

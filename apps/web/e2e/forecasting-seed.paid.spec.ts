@@ -1,36 +1,11 @@
 import { expect, test } from '@playwright/test'
 import { mockSignedIn } from './helpers/nav-more'
 
-/**
- * A fresh scenario opens on the user's own finances (story 62.1, FR94).
- *
- * ⚠️ `.paid.spec.ts` is load-bearing: only the `chromium-paid` project (:5174,
- * booted with an entitled `E2E_SESSION_SEED`) runs this file. `/forecasting` is
- * a premium route, so on the free server this spec would only ever see the
- * upgrade prompt. Rename it and it stops testing anything. See
- * `playwright.config.ts`.
- *
- * ⚠️ Since story 84.5 (FR137) this file holds ONE test, flow F5's seeded
- * builder. The visible-money-field, first-paint-hydration and empty-builder
- * claims moved below the browser
- * (`src/components/forecasting/__tests__/scenario-builder.seeding.dom.test.tsx`;
- * list in `_bmad-output/implementation-artifacts/84-5-evidence/inventory.md`).
- *
- * ## What only this layer can prove
- *
- * The unit suite covers the seeding rules, and
- * `scenario-builder.seeding.dom.test.tsx` reproduces a real React hydration with
- * `renderToString` + `hydrateRoot`. What neither can see is the REAL document:
- * the actual SSR response, the real `@tanstack/react-router` Suspense boundary
- * the root `<Outlet/>` sits behind, and the real `StoreHydration` effect
- * ordering that the whole AC-9 decision turns on. That ordering is the reason
- * the seed is an effect gated on `useStoresHydrated()` rather than a lazy
- * `useState` initializer, and this is the only layer that exercises it as
- * shipped.
- *
- * ⚠️ Every store uses `skipHydration: true`, which is why writing localStorage
- * in `addInitScript` before `goto` takes effect.
- */
+// Only chromium-paid runs `.paid.spec.ts`; /forecasting is premium, so the free
+// server would only show the upgrade prompt.
+
+// Every store uses `skipHydration`, which is why localStorage written in
+// addInitScript before goto takes effect.
 
 async function seedOwnFinances(page: import('@playwright/test').Page): Promise<void> {
   await page.addInitScript(() => {
@@ -103,14 +78,8 @@ async function seedOwnFinances(page: import('@playwright/test').Page): Promise<v
   })
 }
 
-/**
- * Every text/number input's LIVE value.
- *
- * ⚠️ Playwright has no `getByDisplayValue` (that is testing-library), and an
- * `input[value="..."]` CSS locator matches the ATTRIBUTE, which React does not
- * keep in step with a controlled input's property. Reading `.value` off the
- * elements is the only form that sees what the user actually sees.
- */
+// Reads live `.value`s: an `input[value]` locator matches the attribute, which
+// React doesn't keep in step for controlled inputs.
 async function inputValues(page: import('@playwright/test').Page): Promise<string[]> {
   return page.locator('input').evaluateAll((els) => els.map((el) => (el as HTMLInputElement).value))
 }
@@ -118,26 +87,16 @@ async function inputValues(page: import('@playwright/test').Page): Promise<strin
 test.describe('a fresh scenario seeds from the user own finances (62.1)', () => {
   test('shows the user rows and totals, and never the retired demo data', async ({ page }) => {
     await seedOwnFinances(page)
-    // The :5174 seam's SSR seed is entitled, but its real `/api/auth/me` answers
-    // signed-out (no real session). Since story 101.2 `usePremiumAccess` follows
-    // that definitive answer, as the nav has since 99.1, so without an AGREEING
-    // answer /forecasting swaps the builder for the upgrade prompt after
-    // hydration (MEASURED: RED "builder never seeded the user rows", snapshot
-    // showed "Go Premium", before this line was added).
+    // The paid seam's SSR seed is entitled but its real /api/auth/me answers
+    // signed-out, and usePremiumAccess follows that answer, so mock an agreeing one.
     await mockSignedIn(page, { subscriptionStatus: 'active' })
     await page.goto('/forecasting')
 
-    // Positive control FIRST: the builder actually rendered. Without it every
-    // absence assertion below would pass just as happily on an error page or an
-    // upgrade prompt.
+    // Positive control first: every absence check below would also pass on an error page.
     await expect(page.getByRole('heading', { name: 'Scenario Builder' })).toBeVisible()
 
-    // 15 s, not the default 5 s (story 85.2, MEASURED): the heading is server
-    // rendered, but the seed needs client hydration, which in this DEV build took
-    // up to 9.2 s after the heading while the web Vitest gate ran alongside (3.4 s
-    // idle). The initial-sync gate was ruled out (same timings with it disabled).
-    // With this poll back at 5 s, concurrent `pnpm gates` failed here 2 of 2.
-    // `85-2-evidence/causes.md`, Cause B.
+    // The heading is server rendered but the seed needs client hydration, which is
+    // slow in dev under concurrent gates.
     await expect
       .poll(() => inputValues(page), {
         message: 'builder never seeded the user rows',
@@ -147,12 +106,8 @@ test.describe('a fresh scenario seeds from the user own finances (62.1)', () => 
 
     const values = await inputValues(page)
     expect(values).toContain('Lucas Mortgage')
-    // Story 100.1: the savings row is seeded as its own what-if row.
     expect(values).toContain('Emergency fund')
-    // Story 100.2: the investment is seeded as its own what-if row.
     expect(values).toContain('Index fund')
-    // The retired demo rows are gone for good. `Rent/Mortgage` is the exact old
-    // string, and is distinct from the seeded 'Lucas Mortgage' above.
     expect(values).not.toContain('Salary')
     expect(values).not.toContain('Rent/Mortgage')
     expect(values).not.toContain('Utilities')

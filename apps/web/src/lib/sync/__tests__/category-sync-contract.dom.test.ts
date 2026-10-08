@@ -1,33 +1,9 @@
 /**
- * Category sync contract — POST-VALIDATION payload (Story 30.4a, AC-5)
- *
- * ⚠️ THIS FILE EXISTS BECAUSE NOTHING ELSE COVERS THIS GATE.
- *
- * `syncOperationDataSchema` (packages/core/src/sync/types.ts) is a flat zod
- * object of every field across every entity, and `validateOperationData` in
- * synchronization.ts does `schema.parse(data)` whose RESULT BECOMES the queued
- * payload. Zod strips unknown keys by default, so a field that
- * `toServerPayload` forwards but the schema does not declare is **silently
- * deleted at queue time — no error, no log**.
- *
- * The existing tests cannot see this:
- *  - syncBridge.test.ts mocks the queue handle, so validateOperationData never
- *    runs at all;
- *  - push-integration.dom.test.ts drives the real service but asserts with
- *    `toMatchObject` on the ENVELOPE (type/entityType/entityId/userId), never on
- *    `operations[0].data`.
- *
- * So these tests drive the REAL core service with only `fetch` stubbed and
- * assert the payload that actually goes on the wire, AFTER validation. Delete
- * `categoryId` or `kind` from syncOperationDataSchema and these go red while
- * every other suite stays green.
+ * Drives the real core service: the queue gate's zod parse silently strips undeclared keys,
+ * which mocked-queue tests can't see.
  */
 
-// ⚠️ Import from the BARREL, not the `/sync` subpath (code review 30.4a).
-// Story 30.4a rewrote two production imports off that subpath precisely because
-// it does not resolve for the type-checker; leaving this file on it would type
-// `service` as `any`, so the `queueCreate('category', …)` calls below — the
-// whole point of this contract test — would be checked against nothing.
+// Barrel, not the `/sync` subpath: the subpath doesn't resolve for tsc, so `service` would be `any`.
 import { createSynchronizationService } from '@budget-planner/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { sendSyncOperation } from '../../../features/api/client'
@@ -45,7 +21,6 @@ function ok(): Response {
 
 let service: ReturnType<typeof createSynchronizationService>
 
-/** The `data` payload of the single operation in the POSTed batch. */
 function sentData(fetchMock: ReturnType<typeof vi.fn>): Record<string, unknown> {
   const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined
   const body = JSON.parse((init?.body as string) ?? '{}')
@@ -86,16 +61,11 @@ describe('category sync contract — the payload AFTER syncOperationDataSchema',
     )
     await service.forceSync()
 
-    // The concrete id must survive — not merely "a categoryId key exists".
     expect(sentData(fetchMock).categoryId).toBe(CATEGORY_ID)
   })
 
   it('AC-5: an explicit null categoryId survives — un-categorizing must propagate', async () => {
-    // This is the case a `.optional()`-without-`.nullable()` schema would reject
-    // outright (ZodError at the queue gate), and that an omit-when-null bridge
-    // would silently turn into "leave the previous category" server-side, since
-    // updateEntity does a PARTIAL .set(). Both failure modes are invisible
-    // without this assertion.
+    // An omit-when-null bridge would leave the previous category server-side (partial .set()).
     const fetchMock = vi.fn(async () => ok())
     vi.stubGlobal('fetch', fetchMock)
 
@@ -126,15 +96,10 @@ describe('category sync contract — the payload AFTER syncOperationDataSchema',
 
     const data = sentData(fetchMock)
     expect(data.name).toBe('Groceries')
-    // `kind` is what separates the income and expense namespaces. Strip it and
-    // every synced category becomes unplaceable server-side.
     expect(data.kind).toBe('expense')
   })
 
   it('AC-5: the category entity type reaches the wire intact', async () => {
-    // `entityType` travels on the ENVELOPE, not in `data`, and is gated by a
-    // separate hard-coded z.enum server-side (syncOperationSchema). This asserts
-    // the client half; the server half is covered in sync-category-gates.test.ts.
     const fetchMock = vi.fn<typeof fetch>(async () => ok())
     vi.stubGlobal('fetch', fetchMock)
 
@@ -152,10 +117,7 @@ describe('category sync contract — the payload AFTER syncOperationDataSchema',
   })
 
   it('a genuinely unknown field is still stripped — the gate is narrowed, not disabled', async () => {
-    // GREEN NEGATIVE CONTROL. Widening syncOperationDataSchema must not turn it
-    // into a passthrough: if this ever fails, someone "fixed" a stripped field by
-    // loosening the schema (e.g. .passthrough()) rather than declaring the field,
-    // and the gate protects nothing any more.
+    // Negative control: fails if the schema is loosened to passthrough.
     const fetchMock = vi.fn(async () => ok())
     vi.stubGlobal('fetch', fetchMock)
 

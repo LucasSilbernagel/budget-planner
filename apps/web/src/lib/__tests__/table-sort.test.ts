@@ -8,15 +8,6 @@ import {
   sortRowsBy,
 } from '../table-sort'
 
-/**
- * The pure sort layer for story 34.2 (FR61).
- *
- * ⚠️ Every ordering expectation here is written out as a LITERAL sequence. A
- * guard that derives its expected order from the same helper it is guarding
- * cannot fail (33.2's lesson), and this module's whole job is to produce an
- * order.
- */
-
 interface Row {
   id: string
   value: number | null
@@ -36,8 +27,7 @@ describe('compareDefinedValues', () => {
   })
 
   it('never returns NaN for infinities', () => {
-    // Subtraction would give NaN here, and `ordering.ts` records what a NaN
-    // comparator does to an array: undefined behaviour, silently.
+    // Subtraction would give NaN here.
     expect(compareDefinedValues(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY)).toBe(0)
     expect(compareDefinedValues(Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY)).toBe(-1)
     expect(Number.isNaN(compareDefinedValues(Number.POSITIVE_INFINITY, 5))).toBe(false)
@@ -62,7 +52,6 @@ describe('compareRowsBy — absent values', () => {
     const absent = row('b', null)
     expect(compareRowsBy(present, absent, byValue, 'asc')).toBe(-1)
     expect(compareRowsBy(absent, present, byValue, 'asc')).toBe(1)
-    // The direction flip must NOT reach the absence branches.
     expect(compareRowsBy(present, absent, byValue, 'desc')).toBe(-1)
     expect(compareRowsBy(absent, present, byValue, 'desc')).toBe(1)
   })
@@ -81,20 +70,16 @@ describe('sortRowsBy', () => {
   })
 
   it('keeps absent values last in both directions, not merely reversed', () => {
-    // ⚠️ This is the assertion that distinguishes a negated comparator from a
-    // `.reverse()` of the ascending result. Under `.reverse()` the descending
-    // order would be ['x','a','c','b'] with the absence FIRST.
+    // Distinguishes a negated comparator from a `.reverse()` of the ascending result,
+    // which would give ['x','a','c','b'] with the absence first.
     const rows = [row('a', 3), row('x', null), row('b', 1), row('c', 2)]
     expect(ids(sortRowsBy(rows, byValue, 'asc'))).toEqual(['b', 'c', 'a', 'x'])
     expect(ids(sortRowsBy(rows, byValue, 'desc'))).toEqual(['a', 'c', 'b', 'x'])
   })
 
   it('leaves tied rows in their INPUT order, in both directions', () => {
-    // ⚠️ The tie fixture that can actually fail. `b` and `c` tie on the sort key
-    // but sit in a known input order, and `a`/`d` bracket them so a whole-array
-    // reversal is visible too. A fixture whose tied rows are also adjacent in
-    // the order the comparator would produce anyway proves nothing (34.1a M10,
-    // 34.1b M6 — third story running).
+    // `b` and `c` tie but sit in a known input order; `a`/`d` bracket them so a whole-array
+    // reversal is visible too.
     const rows = [row('a', 1), row('b', 5), row('c', 5), row('d', 9)]
     expect(ids(sortRowsBy(rows, byValue, 'asc'))).toEqual(['a', 'b', 'c', 'd'])
     expect(ids(sortRowsBy(rows, byValue, 'desc'))).toEqual(['d', 'b', 'c', 'a'])
@@ -119,8 +104,6 @@ describe('nextSortState — the three-state cycle', () => {
     expect(first).toEqual({ key: 'amount', direction: 'asc' })
     const second = nextSortState(first, 'amount')
     expect(second).toEqual({ key: 'amount', direction: 'desc' })
-    // The third activation is what returns the table to manual order — it is
-    // the whole reason there is no separate reset button at >= 640px.
     expect(nextSortState(second, 'amount')).toBeNull()
   })
 

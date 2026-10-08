@@ -1,5 +1,5 @@
 // @vitest-environment node
-// Pure helpers only: no DOM (the `components/**` glob would give it jsdom).
+// Pure helpers: opt out of the jsdom environment the components/** glob would assign.
 import type { ForecastingResult } from '@budget-planner/core'
 import { describe, expect, it } from 'vitest'
 import {
@@ -9,14 +9,6 @@ import {
   projectionSeriesName,
   projectionYAxis,
 } from '../projection-chart'
-
-/**
- * Story 97.2 (FR158): the Projections chart's series name and value axis.
- *
- * The chart is real Recharts, and jsdom measures no text, so whether a tick
- * FITS its axis is browser-only (`97-2-evidence/measure-after.jsonl`). What is
- * pinned here is the decision each helper makes, with concrete values.
- */
 
 function resultNamed(name: unknown): ForecastingResult {
   return {
@@ -46,7 +38,6 @@ describe('projectionSeriesName', () => {
       expect(projectionSeriesName(resultNamed(name)), String(name)).toBe('Scenario')
     }
     expect(projectionSeriesName(null)).toBe('Scenario')
-    // A parsed saved blob whose result has no `scenario` at all.
     expect(projectionSeriesName({ ...resultNamed('x'), scenario: undefined } as never)).toBe(
       'Scenario'
     )
@@ -54,13 +45,8 @@ describe('projectionSeriesName', () => {
 })
 
 describe('getProjectionChartChrome', () => {
-  // Label widths MEASURED under the CI font (DejaVu, getBBox, story 97.2
-  // review): at 10 px "$350.0M" 43.6, "$1000.0M" 50.0, "R$350.0M" 50.6,
-  // "CHF350.0M" 57.5; at 12 px "$350.0M" 52.3, "CHF350.0M" 69.0,
-  // "CHF1000.0M" 76.7. Recharts right-aligns a tick label 8 px (6 px tick line
-  // + 2 px gap) inside the gutter, so a label of width w stays inside the SVG
-  // iff yAxisWidth + marginLeft - 8 >= w (MEASURED in the browser: narrow
-  // "$350.0M" left edge 55.4 = svg 49 + 58 - 8 - 43.6).
+  // Recharts right-aligns a tick label 8px (6px tick + 2px gap) inside the gutter, so a label of width w
+  // stays inside the SVG iff yAxisWidth + marginLeft - 8 >= w.
   const room = (c: { yAxisWidth: number; marginLeft: number }) => c.yAxisWidth + c.marginLeft - 8
 
   it('wide: 12 px ticks; a "$" axis keeps the measured 72 px gutter', () => {
@@ -75,8 +61,6 @@ describe('getProjectionChartChrome', () => {
   })
 
   it('narrow: the gutter grows for a longer currency symbol (CHF, R$)', () => {
-    // At 58 px, MEASURED in the browser at 320 px: CHF ticks 7/7 and R$ ticks
-    // 6/7 clipped by the SVG edge.
     expect(room(getProjectionChartChrome(true, 'R$350.0M'.length))).toBeGreaterThanOrEqual(50.6)
     expect(room(getProjectionChartChrome(true, 'CHF350.0M'.length))).toBeGreaterThanOrEqual(57.5)
   })
@@ -97,7 +81,6 @@ describe('formatProjectionAxisTick (cents in, compact label out)', () => {
   })
 
   it('adds the decimals a fine step needs, so adjacent ticks differ', () => {
-    // A $10,000 step around $1.2M: one decimal would print "$1.2M" three times.
     const labels = [119_000_000, 120_000_000, 121_000_000].map((c) =>
       formatProjectionAxisTick(c, 1_000_000, 'symbol', 'USD')
     )
@@ -132,12 +115,9 @@ describe('projectionYAxis', () => {
   function expectWellFormed(values: number[]) {
     const { axis, text } = labels(values)
     expect(axis.ticks.length, 'at least two ticks').toBeGreaterThanOrEqual(2)
-    // The domain IS the nice tick range, so every tick is drawn.
     expect(axis.domain).toEqual([axis.ticks[0], axis.ticks.at(-1)])
-    // Every plotted value is inside the domain.
     expect(axis.domain[0]).toBeLessThanOrEqual(Math.min(...values))
     expect(axis.domain[1]).toBeGreaterThanOrEqual(Math.max(...values))
-    // Adjacent labels are distinct strings.
     for (let i = 1; i < text.length; i++) expect(text[i], text.join(' ')).not.toBe(text[i - 1])
     return text
   }

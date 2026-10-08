@@ -1,65 +1,6 @@
 /**
- * Paddle Billing Webhooks
- *
- * TanStack Start server route (file-route `server.handlers`)
- * Endpoint: POST /api/webhooks/paddle
- *
- * Handles Paddle Billing subscription, transaction and customer events. It
- * updates the DB-authoritative `users.subscriptionStatus`, and is the ONLY
- * account-creation path for the paid tier (ADR-003): a first-seen `customer_id`
- * is inserted here (and given a default profile); the magic-link login
- * (Story 5-16) only re-authenticates existing users. A `customer.*` event is
- * explicitly NOT an account-creation path.
- *
- * Data Sovereignty: processes webhooks and updates DanubeData PostgreSQL (Germany - EU).
- * Security: verifies the `Paddle-Signature` header (HMAC-SHA256 over `ts:rawBody`)
- * and enforces a timestamp-freshness window to reject replays.
- *
- * ─── Story 5-19: retry, refund and identity correctness ─────────────────────
- *
- * Every entitlement-changing path below runs inside ONE transaction that also
- * claims the delivery's event id (`server/paddle/webhook-events.ts`), so a
- * duplicate delivery is a no-op and a rolled-back failure releases its claim for
- * the retry. Each such path additionally requires the event's own `occurred_at`
- * to be strictly newer than the user's `entitlementUpdatedAt` watermark —
- * arrival order is not trustworthy, and a late retry must not flip entitlement
- * backwards.
- *
- * **Identity reconciliation (AC-3), the policy this handler implements.** A
- * first-seen `customer_id` whose resolved email already belongs to a DIFFERENT
- * `paddleId` used to violate `users_email_unique`, 500, and retry-storm forever.
- * The rule, decided by the product owner on 2026-09-16:
- *
- *   - the colliding row is soft-deleted, `free`, or `canceled` → RE-KEY it to
- *     the new `customer_id` and grant. This is the genuine re-subscribe (and
- *     sandbox→production cutover) case.
- *   - the colliding row is ENTITLED (`active`, `past_due`, `lifetime`) → refuse:
- *     log, `captureError`, and return a TERMINAL 200 so Paddle stops retrying.
- *     Reconciled by hand.
- *
- * The asymmetry is deliberate: Paddle verifies payment, not email ownership, so
- * auto-adopting an entitled account would let a €39 checkout using someone
- * else's address take that account over.
- *
- * ─── Story 68.1: the email Paddle knows is the email that logs you in ────────
- *
- * Login is by email and only by email (`magic-link.ts` matches `lower(email)`
- * with `isDeleted = false`), so a paying user who changes their billing email in
- * Paddle was locked out with no recovery path in the product.
- * `handleCustomerEmailChange` moves `users.email` on `customer.updated`.
- *
- * ⚠️ ITS COLLISION RULE IS THE OPPOSITE OF THE ONE ABOVE, and the difference is
- * STRUCTURAL rather than a matter of taste. `reconcileEmailCollision` re-keys an
- * unentitled colliding row because a first-seen `customer_id` is about to be
- * INSERTED — exactly one row survives either way. On an email change BOTH rows
- * already exist, so "freeing" the address would mean deleting or merging a
- * second user's ledger. It therefore REFUSES UNCONDITIONALLY, whatever the
- * other row's status (product owner, 2026-09-25), and reports via `captureError`
- * so the stalemate can be reconciled by hand.
- *
- * Ordering runs on its OWN watermark, `users.emailUpdatedAt` — never
- * `entitlementUpdatedAt`; see the handler for why sharing one would silently
- * cost a user their entitlement.
+ * The only account-creation path for the paid tier. An email collision with an entitled account
+ * is refused (Paddle verifies payment, not email ownership); unentitled rows are re-keyed.
  */
 
 import crypto from 'crypto'
@@ -93,37 +34,17 @@ import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'
 
-/** Body-size DoS guard (1 MiB; the sync push route uses 512 KiB since story 79.3). */
-const MAX_WEBHOOK_BODY_SIZE = 1024 * 1024 // 1MB
+const MAX_WEBHOOK_BODY_SIZE = 1024 * 1024
 
-/**
- * Outcome of a webhook DB write.
- *  - `ok: false` → nothing was persisted; the caller must return HTTP 500 so
- *    Paddle retries rather than silently losing a paid entitlement.
- *  - `createdUserId` → a NEW `users` row was inserted; the caller creates its
- *    default profile AFTER the transaction commits (a first-seen buyer would
- *    otherwise hit "Profile ID required" on every paid-tier read).
- */
+/** `ok: false` → nothing persisted; the caller returns 500 so Paddle retries. */
 interface WriteResult {
   ok: boolean
   createdUserId?: string
-  /**
-   * `true` → the event was HANDLED by deciding not to write (Story 5-19): an
-   * identity collision on a live entitled account, a stale out-of-order retry,
-   * or a refund that does not meet the revocation bar. Distinct from `ok:
-   * false`: there is nothing to retry, so the caller returns 200 and Paddle
-   * stops. Returning 500 for these would be a retry storm over a decision that
-   * will never change on its own.
-   */
+  /** Handled by deciding not to write: return 200, since a retry can never change the outcome. */
   terminal?: boolean
 }
 
-/**
- * Map a Paddle Billing subscription status to our enum.
- *
- * Billing statuses: `active`, `trialing`, `past_due`, `paused`, `canceled`.
- * Anything unrecognized (or a `paused` subscription) drops to `free` — no access.
- */
+/** Anything unrecognized, and `paused`, drops to `free`. */
 function mapWebhookSubscriptionStatus(status: string): SubscriptionStatus {
   switch (status?.toLowerCase()) {
     case 'active':
@@ -140,30 +61,14 @@ function mapWebhookSubscriptionStatus(status: string): SubscriptionStatus {
 }
 
 /**
- * Map Paddle's subscription `billing_cycle` to the plan cadence we store
- * (Story 70.1, AC-2). Three outcomes, and the call sites depend on telling them
- * apart:
- *
- *  - `'month'` / `'year'` — the two cadences this product sells, at frequency 1.
- *  - `null` — a cycle IS stated but is not one of those (`day`, `week`, a
- *    frequency other than 1, a malformed value, an explicit `null`, a
- *    non-lowercase interval). Recorded as "not known" so the
- *    label degrades to "Active" instead of keeping a plan name that is no longer
- *    true. Deliberately strict: `month × 12` is NOT read as annual — a cadence
- *    we do not sell must not be guessed into a plan name.
- *  - `undefined` — NO cycle in the payload at all. Means "not stated", so the
- *    update path leaves the stored value alone rather than erasing it.
- *
- * Reads the TOP-LEVEL `billing_cycle` only (required on Paddle's subscription
- * entity). Each `items[].price` also carries one, but items can include add-ons.
+ * `null` = a cycle is stated but not one we sell (never guessed into a plan name);
+ * `undefined` = none stated, so the update path keeps the stored value.
  */
 function mapBillingInterval(
   cycle: PaddleEventData['billing_cycle']
 ): BillingInterval | null | undefined {
   if (cycle === undefined) return undefined
-  // A STATED `null` is malformed, not absent: Paddle's subscription entity lists
-  // `billing_cycle` as required and non-nullable. No case-folding either — Paddle's
-  // enum is lowercase, and AC-2 accepts exactly the two shapes below.
+  // A stated `null` is malformed, not absent: Paddle's `billing_cycle` is required and non-nullable.
   const interval = cycle?.interval
   if (cycle?.frequency === 1 && (interval === 'month' || interval === 'year')) {
     return interval
@@ -176,18 +81,8 @@ function mapBillingInterval(
 }
 
 /**
- * Verify the Paddle Billing webhook signature.
- *
- * Header: `Paddle-Signature: ts=<unix>;h1=<hex>` — during a secret rotation
- * Paddle sends MULTIPLE `h1` values (`ts=…;h1=<old>;h1=<new>`), so we collect
- * every `h1` and accept if ANY of them matches.
- * Signed payload: `` `${ts}:${rawBody}` `` — the raw body MUST be unmodified
- * (no re-serialization / whitespace changes) or the HMAC won't match.
- * Algorithm: HMAC-SHA256 with the notification-destination secret.
- * Replay protection: reject when `ts` is older than `maxAgeSeconds` (or set in
- * the future beyond the same tolerance — clock skew both ways).
- *
- * [Source: https://developer.paddle.com/webhooks/signature-verification]
+ * During a secret rotation Paddle sends multiple `h1` values; accept if any matches.
+ * The raw body must be unmodified or the HMAC over `${ts}:${rawBody}` won't match.
  */
 function verifyWebhookSignature(
   rawBody: string,
@@ -200,7 +95,6 @@ function verifyWebhookSignature(
   }
 
   try {
-    // Parse `ts=...;h1=...;h1=...` (order-independent, tolerant of extra parts).
     let ts: string | undefined
     const h1s: string[] = []
     for (const part of signatureHeader.split(';')) {
@@ -215,10 +109,8 @@ function verifyWebhookSignature(
       return false
     }
 
-    // Freshness: reject a stale (replayed) or wildly future timestamp. Logged at
-    // DEBUG, not WARN — this check runs BEFORE the HMAC, so an unauthenticated
-    // flood of `ts=0` requests must not become a log/alert amplification vector
-    // (matches the posture in `server/rate-limit/client-ip.ts`).
+    // Logged at DEBUG: this runs before the HMAC, so an unauthenticated flood must not
+    // amplify into logs or alerts.
     const ageSeconds = Math.abs(Date.now() / 1000 - Number(ts))
     if (ageSeconds > maxAgeSeconds) {
       logger.debug('Webhook: signature timestamp outside freshness window', {
@@ -240,13 +132,7 @@ function verifyWebhookSignature(
   }
 }
 
-/**
- * Map a webhook-supplied currency to our enum, or undefined when none/invalid.
- *
- * Returning undefined (rather than defaulting to 'NONE') lets callers OMIT the
- * currency column on writes so an existing user's saved currency is preserved
- * when a payload carries no currency (transaction events often omit it).
- */
+/** undefined (not 'NONE') so writes can omit currency and preserve the user's saved one. */
 function mapProvidedCurrency(currency?: string): Currency | undefined {
   if (!currency) return undefined
   const currencyValues = currencyEnum.enumValues as readonly string[]
@@ -254,15 +140,7 @@ function mapProvidedCurrency(currency?: string): Currency | undefined {
   return currencyValues.includes(upper) ? (upper as Currency) : undefined
 }
 
-/**
- * Thrown to abort a webhook transaction when a handler reports failure by
- * RETURNING `{ok:false}` rather than throwing.
- *
- * It carries the original result so the caller can return it unchanged — the
- * throw is purely a transaction-control mechanism, not an error condition the
- * caller needs to interpret. See the rationale at the throw site in
- * `runGuarded`.
- */
+/** Thrown only to roll back the transaction when a handler RETURNS `{ok:false}`. */
 class WebhookDeliveryFailure extends Error {
   constructor(readonly result: WriteResult) {
     super('Webhook delivery failed; rolling back to release the event claim')
@@ -271,21 +149,8 @@ class WebhookDeliveryFailure extends Error {
 }
 
 /**
- * The ordering predicate for an UPDATE that advances `entitlementUpdatedAt`:
- * this customer's row, and only while its stored watermark is still older than
- * the event being applied (NULL = no billing event yet, always passes).
- *
- * ⚠️ Carried INTO the statement, not only checked beforehand (Story 70.1 review).
- * The handlers also pre-read the watermark with `isFresherThanWatermark` so they
- * can log and return early, but a pre-read alone is a check-then-act race: two
- * concurrent deliveries (t=10 and a delayed t=5) can both pass it on separate
- * connections, and whichever COMMITS last wins — leaving the row's status, and
- * its plan cadence, from the OLDER event. With the predicate in the WHERE, the
- * loser's UPDATE matches no row. Same shape as `emailWatermarkGuard` below and
- * the `setWhere` on the insert paths.
- *
- * Exported only so its SQL can be exercised against a real database; a
- * two-connection race is not reproducible in the single-connection PGlite suite.
+ * Carried into the UPDATE's WHERE, not just pre-checked: two concurrent deliveries can both
+ * pass a pre-read, and the loser must match no row. Exported for real-DB tests.
  */
 export function entitlementWatermarkGuard(customerId: string, occurredAt: number) {
   return and(
@@ -294,21 +159,12 @@ export function entitlementWatermarkGuard(customerId: string, occurredAt: number
   )
 }
 
-/** Extra columns a lifetime grant records alongside the status. */
 interface LifetimeGrantFields {
   lifetimeTransactionId?: string
   lifetimeGrantTotal?: number
 }
 
-/**
- * Apply the AC-3 identity rule to a first-seen `customer_id` whose resolved
- * email already belongs to a different `paddleId`. See the module docblock for
- * the policy and why it is asymmetric.
- *
- * Returns `none` when there is no collision (the caller inserts normally),
- * `rekeyed` when the existing row was adopted, and `refused` when the collision
- * hit a live, entitled account — which the caller reports as a TERMINAL 200.
- */
+/** Returns `refused` (terminal 200) when the collision hit a live entitled account. */
 async function reconcileEmailCollision(
   tx: WebhookTx,
   params: {
@@ -316,10 +172,7 @@ async function reconcileEmailCollision(
     normalizedEmail: string
     grantedStatus: SubscriptionStatus
     occurredAt: number
-    /**
-     * The NEW customer's plan cadence (Story 70.1). Required and never omitted
-     * from the write: the adopted row may carry the PREVIOUS customer's value.
-     */
+    /** Always written: the adopted row may carry the previous customer's value. */
     billingInterval: BillingInterval | null
     lifetime?: LifetimeGrantFields
   }
@@ -347,11 +200,8 @@ async function reconcileEmailCollision(
     return { kind: 'none' }
   }
 
-  // ⚠️ `isDeleted` does NOT make an entitled row adoptable. An earlier version
-  // read `!byEmail.isDeleted && ENTITLED…`, so a soft-deleted row was adoptable
-  // WHATEVER its status — and adoption clears `isDeleted`, which would
-  // resurrect an erased account and re-key it to whoever checked out with that
-  // address. Entitlement is the refusal test; the tombstone is not a licence.
+  // `isDeleted` doesn't make an entitled row adoptable: adoption clears it, which would
+  // resurrect an erased account for whoever checked out with that address.
   if (isEntitledStatus(byEmail.status)) {
     logger.error(
       'Webhook: email belongs to a live entitled account under a different Paddle customer — refusing to adopt it',
@@ -366,9 +216,7 @@ async function reconcileEmailCollision(
     return { kind: 'refused' }
   }
 
-  // Adoptable: soft-deleted, `free` or `canceled`. Clearing `isDeleted` is part
-  // of the adoption — they are paying again, and leaving the sync tombstone set
-  // would hide every row they own from their own device.
+  // Clearing `isDeleted` is part of adoption, or the sync tombstone would hide their own rows.
   const adopted = await tx
     .update(users)
     .set({
@@ -376,29 +224,16 @@ async function reconcileEmailCollision(
       subscriptionStatus: grantedStatus,
       isDeleted: false,
       entitlementUpdatedAt: occurredAt,
-      // Story 73.2: the retention clock moves in the same statement as the
-      // status. The adopted row is unentitled by construction, so a lapsed
-      // grant KEEPS its existing clock and an entitled one clears it.
       ...retentionColumnsFor(grantedStatus, occurredAt),
-      // ⚠️ Story 68.1 review: the row is being adopted by a DIFFERENT Paddle
-      // customer, so any `emailUpdatedAt` it carries belongs to the PREVIOUS
-      // customer's event stream. Leaving it would let a foreign watermark drop
-      // the new customer's early `customer.updated` as stale.
+      // Reset: any `emailUpdatedAt` belongs to the previous customer's event stream.
       emailUpdatedAt: null,
-      // ⚠️ Story 70.1, AC-3: ALWAYS written, never omitted — the same reasoning
-      // as `emailUpdatedAt` above. A re-keyed row can carry the previous
-      // customer's cadence (a lapsed annual subscriber re-subscribing monthly);
-      // leaving it would show them the wrong plan until some later event.
       billingInterval,
       ...(lifetime ?? {}),
     })
     .where(eq(users.id, byEmail.id))
     .returning({ id: users.id })
 
-  // Story 73.2 review: the row was read above WITHOUT a lock. If the retention
-  // purge (or an erasure) deleted it in between, this UPDATE matched nothing —
-  // and reporting `rekeyed` would 200 a grant that landed nowhere. The caller
-  // turns `vanished` into a 500, and Paddle's retry inserts a fresh row.
+  // Read without a lock: if a purge deleted the row since, report `vanished` so the retry inserts.
   if (adopted.length === 0) {
     logger.warn(
       'Webhook: re-key target vanished before the adoption UPDATE — returning 500 for retry',
@@ -418,22 +253,8 @@ async function reconcileEmailCollision(
 }
 
 /**
- * True when the row an UPDATE path read a moment ago is no longer there
- * (Story 73.2, AC-9).
- *
- * The update paths read `existing` WITHOUT a lock and then UPDATE. If the
- * retention purge (or an erasure) deletes the row in between, the UPDATE
- * matches nothing and, before this check, the handler reported success: a
- * paying customer's activation or lifetime grant was silently dropped. The
- * caller now returns `{ ok: false }`, the delivery 500s and its claim rolls
- * back, and Paddle's retry takes the first-seen INSERT path.
- *
- * Called ONLY after an UPDATE returned no row. A row that is still present
- * means a guard suppressed the write on purpose (a stale event, a lifetime
- * row) — unchanged behaviour.
- *
- * ⚠️ PGlite is a single connection, so no test can produce the interleaving;
- * the mocked suite drives this branch directly.
+ * Called only after an UPDATE returned no row: a missing row means a purge raced the
+ * unlocked read (retry); a present one means a guard suppressed the write on purpose.
  */
 async function rowVanished(tx: WebhookTx, customerId: string): Promise<boolean> {
   const rows = await tx
@@ -450,18 +271,7 @@ async function rowVanished(tx: WebhookTx, customerId: string): Promise<boolean> 
   return true
 }
 
-/**
- * Handle a subscription status update from a Paddle Billing `subscription.*`
- * event. Updates or creates the user keyed by `customer_id` (stored in
- * `users.paddleId`).
- *
- * NEVER downgrades a `'lifetime'` buyer (story 25-2): a subscription-lifecycle
- * event (e.g. cancelling a redundant annual sub after buying lifetime) must not
- * touch a permanent lifetime entitlement.
- *
- * Runs in the CALLER's transaction — the one that also claimed the event id, so
- * that a rollback releases the claim (Story 5-19; see `webhook-events.ts`).
- */
+/** Never downgrades a `'lifetime'` buyer. Runs in the caller's event-claiming transaction. */
 async function handleSubscriptionStatusUpdate(
   tx: WebhookTx,
   params: {
@@ -484,10 +294,7 @@ async function handleSubscriptionStatusUpdate(
 
   const mappedStatus = mapWebhookSubscriptionStatus(subscriptionStatus)
   const mappedCurrency = mapProvidedCurrency(currency)
-  // Story 70.1: on an EXISTING row an absent cycle leaves the stored cadence
-  // alone (absent ≠ changed). The interval rides in the same statement as the
-  // status, so the ordering guard below covers both — see the schema docblock
-  // for why it shares `entitlementUpdatedAt`.
+  // On an existing row an absent cycle leaves the stored cadence alone.
   const intervalUpdate = billingInterval === undefined ? {} : { billingInterval }
 
   const existing = await tx
@@ -507,8 +314,7 @@ async function handleSubscriptionStatusUpdate(
       return { ok: true }
     }
 
-    // Ordering guard (AC-2). A retry of an OLDER event arriving after a newer
-    // one must not flip entitlement backwards.
+    // A retry of an older event must not flip entitlement backwards.
     if (!isFresherThanWatermark(existing[0]?.entitlementUpdatedAt, occurredAt)) {
       logger.info('Webhook: ignoring out-of-order subscription event', {
         customerId,
@@ -518,24 +324,17 @@ async function handleSubscriptionStatusUpdate(
       return { ok: true }
     }
 
-    // `currency` is deliberately NOT written here (AC-8). Paddle's
-    // `currency_code` is the BILLING currency, IP-detected at checkout, while
-    // `users.currency` is a display preference that seeds new profiles — a
-    // renewal paid from another country must not silently flip the user's
-    // chosen currency. It is insert-only, below.
+    // `currency` deliberately not written: billing currency is IP-detected and must not
+    // overwrite the user's display preference. Insert-only.
     const updated = await tx
       .update(users)
       .set({
         subscriptionStatus: mappedStatus,
         entitlementUpdatedAt: occurredAt,
         ...intervalUpdate,
-        // Story 73.2: see `accessEndedAtFor` — start, keep or clear the clock.
         ...retentionColumnsFor(mappedStatus, occurredAt),
       })
-      // In-statement guards (Story 70.1 review): the watermark, and the
-      // no-downgrade rule the early return above checks — a lifetime grant
-      // that commits concurrently must not be overwritten either. This mirrors
-      // the insert path's `setWhere` exactly.
+      // In-statement guards mirroring the insert path's `setWhere`: watermark and no-downgrade.
       .where(
         and(
           entitlementWatermarkGuard(customerId, occurredAt),
@@ -543,10 +342,7 @@ async function handleSubscriptionStatusUpdate(
         )
       )
       .returning({ id: users.id })
-    // Only an ENTITLED write is worth a retry (Story 73.2 review). A lapsed
-    // event whose row was just purged or erased has nothing left to update,
-    // and retrying it would only reach the first-seen path below — which
-    // refuses a lapsed status anyway.
+    // Only an entitled write is worth a retry; a lapsed event for a purged row has nothing to update.
     if (
       updated.length === 0 &&
       isEntitledStatus(mappedStatus) &&
@@ -557,14 +353,8 @@ async function handleSubscriptionStatusUpdate(
     return { ok: true }
   }
 
-  // Story 73.2 review (decision, Lucas 2026-09-28): an UNKNOWN customer with a
-  // LAPSED status creates nothing. Such an event is, in practice, the tail of
-  // an account that no longer exists here: Paddle's `subscription.canceled`
-  // after a user's own erasure (74.1's resurrection defect) or any lapsed event
-  // after the retention purge. Inserting it would re-create the erased
-  // address with a fresh 12-month clock. Terminal: there is nothing to retry.
-  // A customer who pays again arrives with an ENTITLED status and is inserted
-  // below as before.
+  // An unknown customer with a lapsed status creates nothing: it is the tail of an erased or
+  // purged account, and inserting would resurrect it with a fresh clock.
   if (!isEntitledStatus(mappedStatus)) {
     logger.info('Webhook: lapsed-status event for an unknown customer — no account created', {
       customerId,
@@ -573,13 +363,8 @@ async function handleSubscriptionStatusUpdate(
     return { ok: true, terminal: true }
   }
 
-  // No existing user. Resolve the email ONLY now — every existing
-  // subscriber's status update (by far the common case) must not pay for
-  // a customer-API round trip whose result the update path never uses.
-  // Normalize BEFORE validating (email.ts contract) so a whitespace-padded
-  // or 255–256-char address that is valid once trimmed is not spuriously
-  // rejected. Create the user only if we have a VALID email to key on;
-  // otherwise nothing is written — report failure so the caller returns 500.
+  // Resolve email only now, so existing subscribers skip the API round trip. Normalize before
+  // validating; without a valid email nothing is written (500).
   const normalizedEmail = email ? normalizeEmail(email) : undefined
   if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
     logger.error(
@@ -589,11 +374,8 @@ async function handleSubscriptionStatusUpdate(
     return { ok: false }
   }
 
-  // AC-3: resolve an email collision BEFORE inserting, so the common case never
-  // raises `users_email_unique` at all. A genuine concurrent race can still
-  // raise it; that aborts the transaction, the caller returns 500, and the
-  // retry takes this branch with the row now committed — self-healing in one
-  // retry rather than the indefinite loop this replaces.
+  // Resolve collisions before inserting; a concurrent race still raising `users_email_unique`
+  // aborts to a 500 and self-heals on retry.
   const collision = await reconcileEmailCollision(tx, {
     customerId,
     normalizedEmail,
@@ -611,10 +393,8 @@ async function handleSubscriptionStatusUpdate(
     return { ok: true, createdUserId: collision.userId }
   }
 
-  // ON CONFLICT closes the race where a concurrent `transaction.completed`
-  // for the same new customer inserts the row between our SELECT and INSERT.
-  // The `setWhere` keeps a just-created 'lifetime' row from being downgraded,
-  // and enforces the ordering watermark on that same racing path.
+  // ON CONFLICT covers a concurrent insert for the same customer; `setWhere` blocks downgrading
+  // a lifetime row and enforces the watermark.
   const inserted = await tx
     .insert(users)
     .values({
@@ -640,23 +420,11 @@ async function handleSubscriptionStatusUpdate(
 
   const newId = inserted[0]?.id
   logger.info('Webhook: created/updated user from subscription', { customerId })
-  // `newId` is present when we INSERTED, and when the conflict-update actually
-  // fired. It is absent when `setWhere` suppressed the update (a lifetime row,
-  // or a staler event) — in which case the row already exists and already has
-  // its profile, so skipping is correct. `createDefaultProfileForUser` is
-  // idempotent, so calling it on the conflict case is harmless.
+  // `newId` is absent when `setWhere` suppressed the update; the row then already has its profile.
   return { ok: true, createdUserId: newId }
 }
 
-/**
- * Collect every purchased Paddle price ID from a transaction-event payload.
- *
- * Paddle Billing transaction payloads carry prices on line items as
- * `items[].price.id`; a direct `price_id` is also read defensively.
- * Returns ALL candidate ids so the caller can check whether ANY line item is
- * the lifetime price — a lifetime item is not necessarily first when a
- * transaction bundles other lines.
- */
+/** All candidate ids: the lifetime item isn't necessarily first in a bundled transaction. */
 function collectPurchasedPriceIds(payload?: {
   price_id?: string
   items?: Array<{ price_id?: string; price?: { id?: string } }>
@@ -672,18 +440,7 @@ function collectPurchasedPriceIds(payload?: {
   return ids
 }
 
-/**
- * Handle a one-time lifetime purchase (story 25-2).
- *
- * A lifetime license arrives as a `transaction.completed` event (not a
- * `subscription.*` event). We persist `subscriptionStatus = 'lifetime'` — a
- * first-class, permanent entitlement that all premium gates treat as
- * access-granting. Because it is a DISTINCT status, no subscription-lifecycle
- * event can ever downgrade a lifetime buyer.
- *
- * `ok: false` when nothing was written (unknown customer with no email, or a DB
- * error) so the caller returns HTTP 500 and Paddle retries.
- */
+/** `'lifetime'` is a distinct status, so no subscription-lifecycle event can downgrade it. */
 async function handleLifetimePurchase(
   tx: WebhookTx,
   params: {
@@ -716,9 +473,7 @@ async function handleLifetimePurchase(
     .limit(1)
 
   if (existing.length > 0) {
-    // Ordering guard (AC-2). Gating the GRANT matters now that AC-1 can revoke
-    // one: without it, a late retry of the original purchase event would
-    // silently re-grant lifetime to a buyer who has since been refunded.
+    // Without this, a late retry of the original purchase would re-grant a refunded buyer.
     if (!isFresherThanWatermark(existing[0]?.entitlementUpdatedAt, occurredAt)) {
       logger.info('Webhook: ignoring out-of-order lifetime transaction', {
         customerId,
@@ -728,22 +483,17 @@ async function handleLifetimePurchase(
       return { ok: true, terminal: true }
     }
 
-    // `currency` omitted deliberately — insert-only (AC-8), as above.
+    // `currency` omitted deliberately: insert-only.
     const updated = await tx
       .update(users)
       .set({
         subscriptionStatus: 'lifetime',
         entitlementUpdatedAt: occurredAt,
-        // Story 70.1: a lifetime grant has no recurring cadence. The label reads
-        // the status alone, so this is for the row's own consistency.
         billingInterval: null,
         ...lifetimeFields,
-        // Story 73.2: access regained — clears the clock and any notice.
         ...retentionColumnsFor('lifetime', occurredAt),
       })
-      // In-statement watermark guard (Story 70.1 review) — see
-      // `entitlementWatermarkGuard`. A lifetime grant upgrades any status, so
-      // the watermark is the only condition, as on the insert path's `setWhere`.
+      // A lifetime grant upgrades any status, so the watermark is the only in-statement condition.
       .where(entitlementWatermarkGuard(customerId, occurredAt))
       .returning({ id: users.id })
     if (updated.length === 0 && (await rowVanished(tx, customerId))) {
@@ -752,10 +502,7 @@ async function handleLifetimePurchase(
     return { ok: true }
   }
 
-  // No existing row to upgrade. Resolve the email ONLY now — an existing
-  // subscriber's grant (the UPDATE above) never needs it, so every
-  // renewal/upgrade must not pay for a customer-API round trip it
-  // discards. Validity is checked here too, right before the insert.
+  // Resolve email only now: an existing subscriber's grant never needs it.
   const normalizedEmail = email ? normalizeEmail(email) : undefined
   if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
     logger.error(
@@ -783,9 +530,7 @@ async function handleLifetimePurchase(
     return { ok: true, createdUserId: collision.userId }
   }
 
-  // ON CONFLICT: a concurrent subscription event may have inserted the row
-  // after our SELECT missed. A lifetime grant upgrades ANY prior status, so
-  // the only guard on this path is the ordering watermark.
+  // ON CONFLICT: a concurrent subscription event may have inserted the row; only the watermark guards.
   const inserted = await tx
     .insert(users)
     .values({
@@ -816,40 +561,14 @@ async function handleLifetimePurchase(
 }
 
 /**
- * Handle a Paddle `adjustment.*` event — refunds, credits and chargebacks
- * (Story 5-19, AC-1). Before this, every one of them fell through to
- * "unhandled event" + 200, so a buyer who charged back the €99 kept permanent
- * Premium and no code path could take it away.
- *
- * The revocation policy (product owner, 2026-09-16):
- *
- *   - `chargeback`            → revoke. Unambiguous: the money is gone.
- *   - `refund`, cumulative amount ≥ the recorded grant total → revoke.
- *   - `refund`, still short of the grant total → KEEP access. A goodwill
- *     partial refund must not destroy a €99 entitlement.
- *   - `chargeback_warning`    → alert only. A dispute that is later won then
- *     needs no restore path, which is the whole reason not to revoke here.
- *   - anything else (`credit`, reversals) → no entitlement change.
- *
- * A `refund` counts only once Paddle has APPROVED it (Story 94.1, decision D-A,
- * Lucas 2026-10-04). MEASURED on Paddle's own sandbox payloads: every refund
- * arrives first as `adjustment.created` with `status: "pending_approval"` and
- * later as `adjustment.updated` with `"approved"` (or `"rejected"`). Before
- * this, the ledger row was written and the grant revoked at REQUEST time, and a
- * refund Paddle then rejected still counted. Pending and rejected refunds record
- * nothing; each delivery has its own `event_id`, so the approved one is still
- * processed when it comes.
- *
- * This path deliberately PIERCES the `<> 'lifetime'` no-downgrade guard: that
- * guard exists to stop a subscription-lifecycle event from touching a lifetime
- * buyer, and it was the reason a refund could never be corrected.
+ * Revokes on a chargeback, or once approved refunds reach the grant total; partial refunds keep
+ * access. Deliberately bypasses the lifetime no-downgrade guard.
  */
 async function handleAdjustment(
   tx: WebhookTx,
   params: {
     customerId: string
     action: string
-    /** Paddle's adjustment id — the identity of the money movement. */
     adjustmentId?: string
     adjustmentTotal?: number
     transactionId?: string
@@ -861,10 +580,7 @@ async function handleAdjustment(
   const { customerId, action, adjustmentId, adjustmentTotal, transactionId, status, occurredAt } =
     params
 
-  // Decision D-A (Story 94.1): a refund moves nothing until Paddle approves it.
-  // Checked BEFORE the ledger insert, so a pending or rejected refund is never
-  // summed, and before the customer lookup, so a pending refund for a buyer we
-  // have not created yet is not retried pointlessly (the approved delivery is).
+  // A refund moves nothing until approved. Checked before the ledger insert and the customer lookup.
   if (action === 'refund' && status !== 'approved') {
     if (status === undefined) {
       // Paddle's schema makes `status` required; a refund without one is
@@ -886,10 +602,7 @@ async function handleAdjustment(
         status,
       })
     } else {
-      // Any other value (`reversed`, or one Paddle adds later) is not applied
-      // either, and the claim is terminal, so a redelivery cannot correct it:
-      // make it visible rather than letting an info line be the only trace
-      // (94.1 code review).
+      // Unknown statuses aren't applied and the claim is terminal, so make it visible.
       logger.error('Webhook: refund with an unexpected status — not applied', {
         customerId,
         adjustmentId,
@@ -919,20 +632,13 @@ async function handleAdjustment(
     .limit(1)
 
   if (!existing) {
-    // ⚠️ RETRYABLE, not terminal. An adjustment can legitimately arrive before
-    // the grant that creates the user row — Paddle reorders, and a grant whose
-    // delivery failed may still be in its retry backoff. Swallowing this with a
-    // 200 erased the refund permanently: the grant would then land, pass the
-    // watermark (no row ⇒ no watermark) and mint permanent Premium for a
-    // customer who has already been refunded.
+    // Retryable: an adjustment can arrive before its grant; a 200 here would erase the refund
+    // and let the late grant mint Premium for a refunded customer.
     logger.error('Webhook: adjustment for an unknown customer — retrying', { customerId, action })
     return { ok: false }
   }
 
-  // Record the adjustment BEFORE interpreting it. The ledger is keyed on the
-  // adjustment id, so `adjustment.created` and `adjustment.updated` for the
-  // SAME adjustment — two deliveries, two event ids, which delivery-level dedup
-  // does not collapse — contribute exactly once.
+  // Ledger keyed on adjustment id, so `.created` and `.updated` for one adjustment count once.
   if (adjustmentId && adjustmentTotal !== undefined) {
     await tx
       .insert(paddleAdjustments)
@@ -960,9 +666,7 @@ async function handleAdjustment(
   }
 
   if (action === 'chargeback_reverse' || action === 'credit_reverse') {
-    // A dispute we WON, or a reversed credit. Access is not restored
-    // automatically: restoring an entitlement is granting one, and AC-1 never
-    // specified that behaviour. Alert so it can be put right by hand.
+    // Access is not restored automatically; alert so it can be put right by hand.
     logger.warn('Webhook: adjustment reversal received — entitlement NOT restored automatically', {
       customerId,
       action,
@@ -981,12 +685,8 @@ async function handleAdjustment(
     return { ok: true, terminal: true }
   }
 
-  // Does this adjustment concern the purchase that granted the entitlement?
-  // ⚠️ Consulted by BOTH branches below. An earlier draft consulted it only for
-  // refunds, so a €1 chargeback on an unrelated old invoice revoked a €99
-  // lifetime grant (code review, product decision D2).
-  // Bound to a local so the null-check below NARROWS it for the query further
-  // down — reading the property again there would widen it back to `string|null`.
+  // Both branches require the adjustment to concern the granting purchase. A local so the null
+  // check narrows it for the query below.
   const grantTransactionId = existing.lifetimeTransactionId
   const appliesToGrant =
     !!grantTransactionId && !!transactionId && grantTransactionId === transactionId
@@ -1008,11 +708,7 @@ async function handleAdjustment(
   }
 
   if (existing.lifetimeGrantTotal === null || existing.lifetimeGrantTotal === undefined) {
-    // No recorded grant total, so full-vs-partial cannot be judged. This is the
-    // normal state for a SUBSCRIPTION (only the lifetime path records a total):
-    // an annual subscriber's access ends via `subscription.canceled`, which is
-    // the entitlement signal for that plan — see decision D4. Refusing to guess
-    // rather than revoking a €99 entitlement over what may be a €5 refund.
+    // No recorded grant total (normal for subscriptions): can't judge full vs partial, so don't revoke.
     logger.warn('Webhook: adjustment on a grant with no recorded total — no revocation', {
       customerId,
       action,
@@ -1026,10 +722,8 @@ async function handleAdjustment(
     return { ok: true, terminal: true }
   }
 
-  // DERIVE the refunded total by summing the ledger for the granting
-  // transaction. Never an in-place increment: a counter cannot be made
-  // idempotent against duplicate deliveries, and it survived across grants, so
-  // a re-purchase inherited the previous grant's refunds.
+  // Derive the refunded total from the ledger: an in-place counter can't be idempotent against
+  // duplicate deliveries.
   const [refunded] = await tx
     .select({ total: sql<number>`COALESCE(SUM(${paddleAdjustments.total}), 0)::bigint` })
     .from(paddleAdjustments)
@@ -1064,15 +758,13 @@ async function handleAdjustment(
     return { ok: true, terminal: true }
   }
 
-  // `billingInterval` is deliberately NOT touched (Story 70.1): the label for
-  // `canceled` ignores it, and it remains a true fact about what was bought.
+  // `billingInterval` untouched: it remains a true fact about what was bought.
   await tx
     .update(users)
     .set({
       subscriptionStatus: 'canceled',
       entitlementUpdatedAt: occurredAt,
-      // Story 73.2: a revoked lifetime (refund/chargeback) is a lapse too — the
-      // 12 months start here.
+      // A revoked lifetime is a lapse too: the retention clock starts here.
       ...retentionColumnsFor('canceled', occurredAt),
     })
     .where(eq(users.id, existing.id))
@@ -1086,14 +778,7 @@ async function handleAdjustment(
   return { ok: true }
 }
 
-/**
- * The ordering predicate for a write to `users.emailUpdatedAt`: this row, and
- * only while the stored watermark is still older than the event we are applying.
- *
- * It is carried INTO every UPDATE rather than only checked beforehand, so two
- * concurrent deliveries cannot both pass a pre-read check and let the loser
- * commit last.
- */
+/** Carried into every UPDATE, so the loser of a concurrent pair matches no row. */
 function emailWatermarkGuard(userId: string, occurredAt: number) {
   return and(
     eq(users.id, userId),
@@ -1114,58 +799,27 @@ async function stampEmailWatermark(
 }
 
 /**
- * Handle a `customer.updated` email change (Story 68.1, FR107).
- *
- * Login here is by email and ONLY by email — `requestMagicLink`
- * (`server/api/auth/magic-link.ts:70-74`) matches `lower(users.email)` with
- * `isDeleted = false`, and `paddleId` is never a login input. So without this
- * handler a paying user who updates their billing email in Paddle keeps the old
- * address on their account, the new one matches nothing, and they are locked out
- * with no recovery path in the product.
- *
- * ⚠️⚠️ A COLLISION REFUSES UNCONDITIONALLY (D1, product owner 2026-09-25) — it
- * does NOT follow `reconcileEmailCollision`'s asymmetric rule above, and the
- * difference is structural rather than a matter of taste. There, a first-seen
- * `customer_id` is about to be INSERTED, so re-keying an unentitled colliding
- * row leaves exactly one row either way. Here BOTH rows already exist, so
- * "freeing" the address would mean deleting or merging a second user's ledger —
- * on a webhook, for an account whose owner never asked. The accepted cost is
- * that a user colliding with an abandoned account stays on their old address
- * until it is reconciled by hand, which is why the `captureError` below is not
- * optional: it is the only thing that reports the situation.
- *
- * Runs in the CALLER's transaction — the one that also claimed the event id, so
- * a rollback releases the claim (Story 5-19; see `webhook-events.ts`).
+ * A collision refuses unconditionally: both rows already exist, so freeing the address would
+ * mean destroying a second user's ledger. `captureError` is the only report of it.
  */
 async function handleCustomerEmailChange(
   tx: WebhookTx,
   params: {
     customerId: string
-    /** `data.email` from the payload — `customer.*` always carries it inline. */
     email?: string
     occurredAt: number
   }
 ): Promise<WriteResult> {
   const { customerId, email, occurredAt } = params
 
-  // Normalize BEFORE validating (the `email.ts` contract, and the precedent at
-  // the subscription insert path): a whitespace-padded or 255-character address
-  // that is valid once trimmed must not be spuriously rejected.
+  // Normalize before validating, so a padded address that is valid once trimmed is accepted.
   const normalizedEmail = email ? normalizeEmail(email) : undefined
   if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
-    // TERMINAL, not `{ok:false}`. The address is in the payload, so retrying an
-    // identical delivery can never make it valid — this is the opposite of the
-    // subscription path, which returns 500 because the email may yet resolve via
-    // the customer API. Note `users.email` is varchar(254) while Paddle permits
-    // up to 1024, so an over-long address lands here rather than at the driver.
+    // Terminal: the address is in the payload, so a retry can never make it valid.
     logger.error('Webhook: customer event carries no usable email; nothing written', {
       customerId,
     })
-    // ⚠️ Story 68.1 review: this leaves the account on an address the user may
-    // no longer control — the SAME lockout a collision produces, and it is
-    // reconciled the same way (by hand). It therefore needs the same signal;
-    // a `logger.error` alone made the one outcome nobody can see the one
-    // nobody gets told about.
+    // Leaves the account on an address the user may not control, so it needs the same alert.
     captureError(new Error('Webhook: customer email unusable; account left on its old address'), {
       scope: 'paddle-webhook',
       customerId,
@@ -1184,26 +838,13 @@ async function handleCustomerEmailChange(
     .limit(1)
 
   if (!ours) {
-    // A `customer.*` event is NOT an account-creation path (ADR-003; see the
-    // module docblock). The subscription and transaction paths own that, and
-    // minting a user from a customer event would create accounts for people who
-    // have never paid.
-    // ⚠️ ACCEPTED LOSS, decided 2026-09-25. The claim is KEPT, so if this event
-    // is a correction that arrives BEFORE the account-creating event, and that
-    // creating event then carries an INLINE email (the legacy
-    // `customer_email` / `customer.email` shape `resolveBuyerEmail` prefers),
-    // the correction is lost. `handleAdjustment` returns `{ok:false}` for the
-    // same "row not there yet" condition, and that was REJECTED here: retrying
-    // would 500 in a loop for every `customer.*` event belonging to anyone who
-    // never completes a checkout — a retry storm over the common case. The loss
-    // self-heals whenever the email is resolved via the customer API instead,
-    // which is the default shape.
+    // Not an account-creation path. Accepted loss: a correction arriving before the account exists
+    // is dropped; retrying would storm for everyone who never checks out.
     logger.info('Webhook: customer event for a customer we do not know; ignoring', { customerId })
     return { ok: true }
   }
 
-  // Ordering. A replayed OLDER event must not put the stale address back and
-  // re-lock the account — arrival order is exactly what cannot be trusted.
+  // A replayed older event must not put a stale address back.
   if (!isFresherThanWatermark(ours.emailUpdatedAt, occurredAt)) {
     logger.info('Webhook: ignoring out-of-order customer event', {
       customerId,
@@ -1213,18 +854,8 @@ async function handleCustomerEmailChange(
     return { ok: true }
   }
 
-  // ⚠️⚠️ THE WATERMARK IS ADVANCED FOR EVERY FRESHER EVENT WE DECIDE ON — not
-  // only for the ones that change the address. Story 68.1's review found the
-  // HIGH this closes: `customer.updated` also fires for name, locale and
-  // marketing-consent changes, so a no-op event is the COMMON case. An earlier
-  // version returned here WITHOUT stamping, which left the watermark NULL, and
-  // a genuinely older event delivered afterwards was then judged "fresher than
-  // nothing" and wrote a stale address back — re-locking the account this story
-  // exists to unlock. Stored `A`; Paddle t=10→`B`, t=15→`A`, t=20 name-only;
-  // delivered 20, 15, 10 ⇒ the row ended on `B`, which Paddle had abandoned.
-  //
-  // `emailUpdatedAt` therefore means "the newest customer event we have made a
-  // DECISION about", not "the last time the address changed".
+  // Stamp the watermark for every fresher event decided on, including no-ops (the common case),
+  // or an older event delivered later is judged fresher than NULL.
   if (ours.email === normalizedEmail) {
     await stampEmailWatermark(tx, ours.id, occurredAt)
     return { ok: true }
@@ -1238,35 +869,13 @@ async function handleCustomerEmailChange(
       isDeleted: users.isDeleted,
     })
     .from(users)
-    // ⚠️ `lower(email)`, NOT `eq(email)` — decided 2026-09-25. This must be the
-    // SAME predicate the login path uses (`magic-link.ts:73`), or the write gate
-    // can miss a row the read would find: a mixed-case row stored before
-    // normalization existed is invisible to an exact match, the UPDATE then
-    // succeeds, and `requestMagicLink`'s `.limit(1)` with no ORDER BY would mint
-    // a token for an arbitrary one of two now-conflatable accounts.
-    // ⚠️ `reconcileEmailCollision` above still uses the exact-match shape. That
-    // is a KNOWN divergence inside this file, left alone because changing 5-19's
-    // shipped identity policy is outside this story's scope.
+    // `lower(email)`, matching the login predicate: an exact match misses legacy mixed-case rows
+    // and would leave two accounts login can't tell apart.
     .where(sql`lower(${users.email}) = ${normalizedEmail}`)
     .limit(1)
 
-  // ⚠️ `collision.id !== ours.id` IS LOAD-BEARING — and it became so only when
-  // the lookup above moved to `lower(email)` at review. Worth spelling out,
-  // because it was INERT before that and this comment used to say so:
-  //   - with the old exact `eq(email)`, the already-equal early return meant our
-  //     row's email always differed from `normalizedEmail` as a STRING, and
-  //     since `users.email` is unique the row found could never be ours. A
-  //     control confirmed it: a bare `if (collision)` reddened nothing.
-  //   - with `lower(email)`, a LEGACY MIXED-CASE row of our own (`Old@X`
-  //     against an incoming `old@x`) skips the early return — the strings
-  //     differ — and is then matched by the lookup. Dropping the conjunct would
-  //     refuse that account's own self-normalization as if it were someone
-  //     else's address.
-  // *Generalisable: widening a lookup's predicate can turn a dead guard live.*
-  //
-  // ⚠️ `isDeleted` is deliberately NOT consulted. The tombstone is not a
-  // licence (the same reasoning `reconcileEmailCollision` records), and under D1
-  // the refusal does not depend on the other row's status anyway.
+  // `collision.id !== ours.id` is load-bearing: our own legacy mixed-case row matches
+  // `lower(email)`. `isDeleted` is deliberately not consulted.
   if (collision && collision.id !== ours.id) {
     logger.error(
       'Webhook: refusing to move an account onto an email that belongs to another account',
@@ -1283,77 +892,34 @@ async function handleCustomerEmailChange(
       collidingPaddleId: collision.paddleId,
       collidingStatus: collision.status,
     })
-    // Stamp even though we refused: we HAVE decided on this event, and leaving
-    // the watermark behind would let an older intermediate address be applied
-    // afterwards (review finding). The delivery's own claim already prevents a
-    // replay of THIS event after a hand reconciliation, so the stamp costs
-    // nothing a genuinely newer event cannot overcome.
+    // Stamp even though refused, or an older intermediate address could be applied afterwards.
     await stampEmailWatermark(tx, ours.id, occurredAt)
     return { ok: true, terminal: true }
   }
 
-  // ⚠️⚠️ `entitlementUpdatedAt` IS DELIBERATELY NOT WRITTEN HERE. Advancing it
-  // would make a later LEGITIMATE `subscription.*` / `transaction.*` carrying an
-  // earlier `occurred_at` — which a retry easily does — look stale and be
-  // dropped, so changing an email would silently cost the user the entitlement
-  // they are paying for. The two event streams order independently. Likewise
-  // `sessionsRevokedAt` is untouched: `validateSessionToken` re-reads this row
-  // every request, so live sessions simply start reporting the new address, and
-  // a forced logout would protect nobody (in a compromise the attacker already
-  // holds the new login key).
-  //
-  // A genuine concurrent race can still raise `users_email_unique` between the
-  // SELECT above and this UPDATE; that aborts the transaction, the caller
-  // returns 500, and the retry takes the collision branch with the other row now
-  // committed — self-healing in one retry.
+  // Never write `entitlementUpdatedAt` here: the streams order independently, and advancing it
+  // would drop a legit older-stamped subscription retry. Sessions aren't revoked either.
   await tx
     .update(users)
     .set({ email: normalizedEmail, emailUpdatedAt: occurredAt })
-    // ⚠️ The watermark predicate is repeated IN THE UPDATE, not just checked
-    // above (review finding). Two concurrent deliveries on two connections both
-    // read `emailUpdatedAt` before either commits, so both pass the check; the
-    // one that commits LAST would otherwise win regardless of `occurred_at`,
-    // leaving the older address stored against the newer watermark. This is the
-    // same defence `handleSubscriptionStatusUpdate`'s `setWhere` applies on its
-    // racing path. Not reachable from a test here: PGlite is a single
-    // in-process connection.
+    // Watermark repeated in the UPDATE: concurrent deliveries can both pass the check above.
     .where(emailWatermarkGuard(ours.id, occurredAt))
 
-  // A magic link minted for the OLD address is keyed on `userId`, so it would
-  // still sign into this account after the move (decided 2026-09-25: close it).
-  // The link was sent to a mailbox the user may no longer control, and
-  // `loginTokens` are not sessions — D3's "do not revoke" covers sessions only.
-  // A legitimate user mid-login simply re-requests.
+  // Old-address login tokens are keyed on userId and would still sign in, so revoke them.
   await tx.delete(loginTokens).where(eq(loginTokens.userId, ours.id))
 
   logger.info('Webhook: account email updated from a Paddle customer event', { customerId })
   return { ok: true }
 }
 
-/** The `data` object of a Paddle Billing webhook event (the fields we read). */
 interface PaddleEventData {
-  /**
-   * The event subject's own id. Its MEANING is per event family: a transaction
-   * id on `transaction.*`, an adjustment id on `adjustment.*` — and on
-   * `customer.*` it is the CUSTOMER id (`ctm_…`), because those payloads carry
-   * no `customer_id` field at all. See the `eventId` note in `POST`.
-   */
+  /** Per event family: transaction, adjustment, or (on `customer.*`) the customer id. */
   id?: string
   /** Absent on every `customer.*` event — read `id` there instead. */
   customer_id?: string
-  /**
-   * Subscription status on `subscription.*`, transaction status on
-   * `transaction.*`, the approval status on `adjustment.*` (Story 94.1, D-A),
-   * and `active | archived` on `customer.*` — where it is a
-   * property of the CUSTOMER RECORD and must never be read as an entitlement
-   * change (archiving a customer in Paddle does not cancel anything).
-   */
+  /** On `customer.*` this is the customer record's status, never an entitlement change. */
   status?: string
   currency_code?: string
-  /**
-   * `subscription.*` only (Story 70.1): how often the subscription renews,
-   * required on Paddle's subscription entity. Read by `mapBillingInterval`.
-   */
   billing_cycle?: { interval?: string; frequency?: number } | null
   price_id?: string
   items?: Array<{ price_id?: string; price?: { id?: string } }>
@@ -1362,23 +928,15 @@ interface PaddleEventData {
   email?: string
   customer_email?: string
   customer?: { email?: string }
-  // --- transaction events (Story 5-19, AC-8) ---
-  // Paddle sends monetary amounts as STRINGS in the currency's lowest unit.
+  // Paddle sends monetary amounts as strings in the currency's lowest unit.
   details?: { totals?: { grand_total?: string; subtotal?: string; discount?: string } }
-  /**
-   * The discount applied to a transaction (Story 74.1). Required, together
-   * with `details.totals.discount` covering the whole `subtotal`, for a zero
-   * total to grant lifetime — see `isFullyDiscounted`.
-   */
   discount_id?: string | null
-  // --- adjustment events (Story 5-19, AC-1) ---
   /** `refund` | `credit` | `chargeback` | `chargeback_warning` | reversals. */
   action?: string
   transaction_id?: string
   totals?: { total?: string }
 }
 
-/** The webhook envelope around {@link PaddleEventData}. */
 interface PaddleEventEnvelope {
   event_id?: string
   event_type?: string
@@ -1386,31 +944,17 @@ interface PaddleEventEnvelope {
   data?: PaddleEventData
 }
 
-/**
- * Paddle sends money as a STRING in the currency's lowest unit ("9900"). Parse
- * to a number, rejecting anything non-finite — a NaN silently compared against
- * a grant total would make every comparison false and quietly disable AC-1's
- * revocation rather than failing visibly.
- */
+/** Rejects non-finite values: a NaN compared against a grant total would silently disable revocation. */
 function parseLowestUnit(value?: string): number | undefined {
   if (value === undefined || value === null || value === '') return undefined
   const n = Number(value)
   return Number.isFinite(n) ? n : undefined
 }
 
-/**
- * Transaction statuses that represent money actually collected. A lifetime
- * grant requires one of these (5-19 AC-8) AND a total that is either positive or
- * zero because a discount covered it (Story 74.1, product decision 2026-09-27).
- */
+/** Statuses meaning the money was actually collected. */
 const COLLECTED_TRANSACTION_STATUSES: readonly string[] = ['completed', 'paid']
 
-/**
- * True when a discount covered the ENTIRE subtotal (Story 74.1): a
- * `discount_id` is present and `totals.discount >= totals.subtotal > 0`. A zero
- * `grand_total` alone does not show that — it is computed after customer
- * credit, and a €0 price with any coupon attached is also zero.
- */
+/** `grand_total` alone can't show a full discount: it is computed after customer credit. */
 function isFullyDiscounted(data: PaddleEventData): boolean {
   const subtotal = parseLowestUnit(data.details?.totals?.subtotal)
   const discount = parseLowestUnit(data.details?.totals?.discount)
@@ -1423,7 +967,6 @@ function isFullyDiscounted(data: PaddleEventData): boolean {
   )
 }
 
-/** Prefer an email already in the payload; otherwise resolve it via the API. */
 async function resolveBuyerEmail(data: PaddleEventData): Promise<string | undefined> {
   const inline = data.email ?? data.customer_email ?? data.customer?.email
   if (inline && isValidEmail(normalizeEmail(inline))) {
@@ -1436,21 +979,8 @@ async function resolveBuyerEmail(data: PaddleEventData): Promise<string | undefi
 }
 
 /**
- * Resolve the buyer's email BEFORE any transaction is opened, and only when it
- * could actually be needed.
- *
- * ⚠️ The resolution is a Paddle HTTP round trip. Doing it inside the webhook
- * transaction pinned a pooled connection AND — since the event claim is now
- * taken first — an uncommitted row lock on `paddleWebhookEvents` for the whole
- * call, with concurrent duplicate deliveries blocking on that lock. A Paddle
- * API stall therefore became a database-connection outage. Now the transaction
- * contains only DB work.
- *
- * The pre-check keeps the laziness that matters: an existing subscriber's
- * status update (by far the common case) still never pays for the round trip.
- * It is advisory only — both handlers re-check inside the transaction, and the
- * insert path reports failure if it turns out to need an email it was not
- * given, which retries.
+ * Resolved before the transaction: the Paddle HTTP call inside it held a pooled connection and
+ * the claim's row lock. Advisory only; handlers re-check inside.
  */
 async function resolveEmailForFirstSeenBuyer(
   customerId: string,
@@ -1465,12 +995,7 @@ async function resolveEmailForFirstSeenBuyer(
   return resolveBuyerEmail(data)
 }
 
-/**
- * Create the default profile for a newly-inserted user, AFTER its transaction
- * has committed. Non-fatal: a paid user with no profile still authenticates,
- * they just can't use profile-scoped reads until one exists — logging the
- * failure lets it be reconciled without failing the webhook.
- */
+/** Non-fatal: logged so it can be reconciled without failing the webhook. */
 async function ensureDefaultProfile(userId: string | undefined): Promise<void> {
   if (!userId) return
   try {
@@ -1486,12 +1011,6 @@ async function ensureDefaultProfile(userId: string | undefined): Promise<void> {
   }
 }
 
-/**
- * POST /api/webhooks/paddle
- *
- * Exported standalone so it is unit-testable without a running server — the
- * Route below simply wires it in.
- */
 export const POST = async ({ request }: { request: Request }): Promise<Response> => {
   try {
     // Fail loudly in production if Billing isn't fully configured — a silent
@@ -1501,21 +1020,16 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
     const paddleConfig = getPaddleConfig()
 
     if (!paddleConfig.webhookSecret) {
-      // A permanently broken deployment retried forever with nothing raised
-      // beyond a log line deserves the same alerting the other 500 paths get.
       captureError(new Error('Webhook secret not configured'), { scope: 'paddle-webhook' })
       return json({ success: false, error: 'Webhook secret not configured' }, { status: 500 })
     }
 
-    // Body-size guard, BEFORE reading the body — the signature check is
-    // useless as a DoS guard if an arbitrarily large anonymous POST is
-    // buffered first. Mirrors `routes/api/sync/batch.ts`.
+    // Size guard before reading the body: the signature check can't stop a huge anonymous POST
+    // being buffered.
     const contentLength = request.headers.get('content-length')
     if (contentLength !== null) {
       const parsedLength = Number.parseInt(contentLength, 10)
-      // Fail closed on a malformed header too (`NaN > MAX_WEBHOOK_BODY_SIZE`
-      // is `false`, which would otherwise silently skip the guard) — the
-      // exact DoS vector this check exists to close.
+      // Fail closed on a malformed header: `NaN > MAX` is false and would skip the guard.
       if (Number.isNaN(parsedLength) || parsedLength > MAX_WEBHOOK_BODY_SIZE) {
         logger.warn('Webhook: rejected oversized or malformed content-length', { contentLength })
         return json({ success: false, error: 'Request too large' }, { status: 413 })
@@ -1554,34 +1068,8 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
       )
     }
 
-    // The delivery's identity and its ordering key (Story 5-19, AC-2).
-    // `event_id` is the envelope's own id; `data.id` is the fallback for
-    // payload shapes that omit it. With NEITHER, the delivery cannot be
-    // deduplicated — process it anyway and say so loudly: dropping a real paid
-    // event is a worse failure than processing one twice, and every handler
-    // below is still guarded by the ordering watermark.
-    // ⚠️ THE FALLBACK IS WITHHELD FOR `customer.*` (Story 68.1, AC-8).
-    //
-    // ⚠️ CORRECTED AT REVIEW — an earlier version of this comment claimed that
-    // "on every other family `data.id` is a per-EVENT id". THAT IS FALSE.
-    // Paddle's OpenAPI pins `data.id` to `^sub_[a-z\d]{26}$` on `subscription.*`
-    // and to the transaction id on `transaction.*`: both are ENTITY ids, stable
-    // across that entity's whole lifecycle. So this fallback is unsafe for those
-    // families too, and the only reason it is scoped to `customer.*` here is
-    // that widening it is beyond this story — not that the others are sound.
-    // In practice Paddle always sends `event_id`, so none of this is live.
-    //
-    // For a customer event `data.id` is the CUSTOMER id (`ctm_…`) — the same
-    // value on every customer event for that customer, for the life of the
-    // account. Since
-    // `paddleWebhookEvents.eventId` is the PRIMARY KEY, letting it fall through
-    // would claim `ctm_…` on the first such delivery and then dismiss every
-    // later customer event for that customer as a duplicate, permanently; it
-    // would also make `customer.created` and `customer.updated` collide with
-    // each other. With no `event_id` the delivery is processed WITHOUT dedup and
-    // says so loudly below — which is the right trade here, because the email
-    // path is separately guarded by its own `emailUpdatedAt` watermark, so a
-    // replay is a no-op anyway.
+    // No `data.id` fallback for `customer.*`: it is the constant customer id and would dedupe every
+    // later customer event away. Without an id, process undeduplicated (watermarks still guard).
     const eventId = event.event_id ?? (eventType.startsWith('customer.') ? undefined : data.id)
     const parsedOccurredAt = parseOccurredAt(event.occurred_at)
     if (parsedOccurredAt === undefined) {
@@ -1592,11 +1080,7 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
     }
     const occurredAt = parsedOccurredAt ?? Date.now()
 
-    /**
-     * Run one entitlement-changing handler inside a single transaction that
-     * ALSO claims the event id, so that a duplicate delivery does nothing and a
-     * failure releases the claim for the retry (see `webhook-events.ts`).
-     */
+    /** One transaction that also claims the event id, so duplicates no-op and failures release it. */
     const runGuarded = async (
       customerId: string | undefined,
       work: (tx: WebhookTx) => Promise<WriteResult>
@@ -1620,17 +1104,8 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
           }
           const result = await work(tx)
           if (!result.ok) {
-            // ⚠️ THE CLAIM MUST NOT SURVIVE A FAILED DELIVERY, AND ONLY A THROW
-            // ROLLS IT BACK. Every handled failure in this file reports by
-            // RETURNING `{ok:false}`, and a transaction callback that returns
-            // normally COMMITS — so an earlier version of this code committed
-            // the event claim, returned 500 for Paddle to retry, and then
-            // dismissed that retry as a duplicate. Measured against real
-            // PostgreSQL: claim rows 1, retry 200, users 0 — the buyer paid and
-            // never got an account. Throwing aborts the transaction, which
-            // releases the claim along with any partial write, so the retry is
-            // processed normally. `terminal: true` outcomes are decisions, not
-            // failures, and deliberately DO keep their claim.
+            // Only a throw rolls back: a returned `{ok:false}` would commit the claim and the retry would
+            // be dismissed as a duplicate. Terminal outcomes deliberately keep their claim.
             throw new WebhookDeliveryFailure(result)
           }
           return result
@@ -1644,7 +1119,6 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
       }
     }
 
-    // --- Subscription lifecycle -------------------------------------------------
     if (eventType.startsWith('subscription.')) {
       const customerId = data.customer_id
       const status = data.status
@@ -1659,10 +1133,7 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
         return json({ success: true })
       }
 
-      // Outside the transaction, by design — see `resolveEmailForFirstSeenBuyer`.
-      // Story 73.2 review: a LAPSED status never creates a user (see
-      // `handleSubscriptionStatusUpdate`), so it never needs the email — skip
-      // the customer-API round trip.
+      // Outside the transaction by design; a lapsed status never creates a user, so skip it.
       const buyerEmail = isEntitledStatus(mapWebhookSubscriptionStatus(status))
         ? await resolveEmailForFirstSeenBuyer(customerId, data)
         : undefined
@@ -1678,9 +1149,6 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
         })
       )
       if (!result.ok) {
-        // Nothing persisted (email unresolvable for a first-seen buyer, or a DB
-        // error). Return 500 so Paddle retries rather than silently dropping a
-        // paid subscriber / a lapse that should have removed access.
         logger.error('Webhook: subscription update failed to persist; returning 500 for retry', {
           customerId,
           eventType,
@@ -1699,7 +1167,6 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
       return json({ success: true })
     }
 
-    // --- One-time transaction (the €99 lifetime license, story 25-2) ----------
     if (eventType === 'transaction.completed' || eventType === 'transaction.paid') {
       const customerId = data.customer_id
       const currency = data.currency_code
@@ -1727,17 +1194,10 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
         return json({ success: true })
       }
 
-      // AC-8: the price id alone is not enough. Require a status that means the
-      // money was actually collected AND a usable grand total. Story 74.1
-      // narrowed the zero-total rule — see the refusal below.
+      // The price id alone isn't enough: require a collected status and a usable grand total.
       const grandTotal = parseLowestUnit(data.details?.totals?.grand_total)
       if (grandTotal === undefined) {
-        // ⚠️ REFUSE, do not grant. An earlier version only rejected `<= 0` and
-        // so skipped this check entirely when the total was absent or
-        // unparseable — granting lifetime with a NULL `lifetimeGrantTotal`,
-        // which every refund path then treats as unjudgeable. The result was a
-        // permanent, IRREVOCABLE entitlement: exactly what AC-1 exists to
-        // prevent. A grant we cannot later revoke must not be minted.
+        // Refuse, don't grant: a NULL grant total would make the entitlement irrevocable.
         logger.error(
           'Webhook: lifetime-priced transaction carries no usable grand_total; refusing to grant',
           { customerId, grandTotal: data.details?.totals?.grand_total }
@@ -1755,20 +1215,8 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
         })
         return json({ success: true })
       }
-      // ⚠️ Story 74.1 (decision, Lucas 2026-09-27): a 100%-COUPON lifetime
-      // checkout GRANTS. 5-19 refused every zero total, which silently left a
-      // coupon buyer with a completed Paddle checkout and NO account: no row,
-      // so every sign-in request was a silent no-op (the reported "no magic
-      // link after repurchase", traced to live txn_01m3cze0…, 2026-09-25).
-      // Refused still: a zero total the discount does not explain (no discount,
-      // a misconfigured €0 price, or a partial coupon topped up by customer
-      // credit — `grand_total` is AFTER credits), and any negative total.
-      //
-      // ⚠️ A coupon grant records `lifetimeGrantTotal: 0` and is, in practice,
-      // revocable only BY HAND: no money moved, so no refund or chargeback can
-      // arrive for it. The abuse control is the COUPON itself — capped uses,
-      // restricted to the lifetime price, in the Paddle dashboard (decision,
-      // Lucas 2026-09-27; runbook step 7).
+      // A 100%-coupon checkout grants (recorded total 0, revocable only by hand). A zero total the
+      // discount doesn't explain, or any negative total, is refused.
       if (grandTotal < 0 || (grandTotal === 0 && !isFullyDiscounted(data))) {
         logger.warn('Webhook: lifetime-priced transaction collected nothing; refusing to grant', {
           customerId,
@@ -1813,24 +1261,17 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
       return json({ success: true })
     }
 
-    // --- Refunds, credits and chargebacks (Story 5-19, AC-1) ------------------
     if (eventType === 'adjustment.created' || eventType === 'adjustment.updated') {
       const customerId = data.customer_id
       const action = data.action
 
-      // Absent means absent (`undefined`/`null`/`''`), not merely falsy: a `0` or
-      // `false` action is a WRONG-TYPED one and takes the flagged branch below
-      // (code review of the non-string guard).
+      // Absent means absent, not falsy: a `0`/`false` action is wrong-typed and takes the flagged branch.
       if (!customerId || action == null || action === '') {
         logger.error('Webhook: adjustment event missing customer_id or action', { eventType })
         return json({ success: true })
       }
 
-      // A non-string `action` must not throw: `action.toLowerCase()` below runs
-      // inside `runGuarded`'s transaction, so the TypeError became `{ok:false}`
-      // -> 500, and Paddle retried a delivery that can never succeed until its
-      // retries ran out. Not applied, flagged, terminal 200 — the same treatment
-      // as a non-string refund `status` (94.1 code review).
+      // A non-string `action` must not throw: it would 500 and retry forever. Flag it, terminal 200.
       if (typeof action !== 'string') {
         logger.error('Webhook: adjustment action is not a string — not applied', {
           customerId,
@@ -1851,10 +1292,7 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
         handleAdjustment(tx, {
           customerId,
           action: action.toLowerCase(),
-          // `data.id` here is the ADJUSTMENT id, which is the identity of the
-          // money movement — distinct from the delivery's `event_id`, because
-          // Paddle sends `adjustment.created` and `adjustment.updated` for one
-          // adjustment as two separately-identified deliveries.
+          // The adjustment id, not the event id: `.created` and `.updated` are separate deliveries.
           ...(data.id ? { adjustmentId: data.id } : {}),
           ...(adjustmentTotal === undefined ? {} : { adjustmentTotal }),
           ...(data.transaction_id ? { transactionId: data.transaction_id } : {}),
@@ -1881,8 +1319,6 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
       return json({ success: true })
     }
 
-    // --- Customer identity: the email Paddle knows is the email that logs you in
-    // (Story 68.1, FR107) --------------------------------------------------------
     if (eventType === 'customer.updated') {
       // ⚠️ `data.id`, NOT `data.customer_id` — a `customer.*` payload has no
       // `customer_id` field, so reading one here would be a silent no-op.
@@ -1916,9 +1352,7 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
       return json({ success: true })
     }
 
-    // `customer.created` stays UNHANDLED, deliberately: account creation belongs
-    // to the subscription and transaction paths (ADR-003), and a customer record
-    // exists in Paddle before any money has moved.
+    // `customer.created` stays unhandled: account creation belongs to the paid paths.
     logger.info('Webhook: unhandled event', { eventType })
     return json({ success: true })
   } catch (error) {

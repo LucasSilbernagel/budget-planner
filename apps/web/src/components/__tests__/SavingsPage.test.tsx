@@ -22,13 +22,6 @@ import { useIncomeStore } from '../../stores/incomeStore'
 import { SAVINGS_GOALS_STORAGE_KEY, useSavingsStore } from '../../stores/savingsStore'
 import { SavingsPage } from '../SavingsPage'
 
-/**
- * SavingsPage inline field-validation tests (story 6-8).
- *
- * Proves invalid add submissions surface themed, accessible inline field errors
- * (no browser alert()), block the store mutation and keep the modal open, and
- * that correcting the fields clears the errors and lets a valid submit proceed.
- */
 describe('SavingsPage inline validation', () => {
   beforeEach(() => {
     useSavingsStore.setState({ savingsGoals: [] })
@@ -52,7 +45,6 @@ describe('SavingsPage inline validation', () => {
     expect(screen.getByTestId('savings-target-amount-error')).toHaveTextContent(
       'Please enter a valid positive target amount'
     )
-    // Empty current balance defaults to 0 → valid, so no error is shown for it.
     expect(screen.queryByTestId('savings-current-balance-error')).not.toBeInTheDocument()
 
     const nameInput = screen.getByTestId('savings-name-input')
@@ -84,11 +76,6 @@ describe('SavingsPage inline validation', () => {
   })
 })
 
-/**
- * Story 16-1: goal-less savings accounts (null target). The account toggle hides
- * the target field, an account submits with targetAmount: null and no target
- * error, and an account row renders no progress bar (N/A) instead of "0%".
- */
 describe('SavingsPage — savings accounts (Story 16-1)', () => {
   beforeEach(() => {
     useSavingsStore.setState({ savingsGoals: [] })
@@ -145,16 +132,10 @@ describe('SavingsPage — savings accounts (Story 16-1)', () => {
 
     expect(screen.getByTestId('savings-progress-na-acc-1')).toHaveTextContent('N/A')
     expect(screen.getByTestId('savings-badge-acc-1')).toHaveTextContent('Account')
-    // No "%" progress readout is rendered for an account.
     expect(screen.queryByText('0%')).not.toBeInTheDocument()
   })
 })
 
-/**
- * Story 26.1: per-account monthly allocation + mode. Automatic (default) hides the
- * manual amount input and stores monthlyAllocation: null; manual reveals the input
- * and stores the parsed cents; switching back to automatic ignores a typed amount.
- */
 describe('SavingsPage — monthly allocation (Story 26.1)', () => {
   beforeEach(() => {
     useSavingsStore.setState({ savingsGoals: [] })
@@ -171,7 +152,6 @@ describe('SavingsPage — monthly allocation (Story 26.1)', () => {
     await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
     const dialog = screen.getByRole('dialog')
 
-    // Automatic is selected by default; the manual amount input is not rendered.
     expect(screen.getByTestId('savings-allocation-mode-select')).toHaveValue('automatic')
     expect(screen.queryByTestId('savings-monthly-allocation-input')).not.toBeInTheDocument()
 
@@ -197,11 +177,6 @@ describe('SavingsPage — monthly allocation (Story 26.1)', () => {
     const dialog = screen.getByRole('dialog')
 
     await user.type(screen.getByTestId('savings-name-input'), 'Rent Fund')
-    // A GOAL, with a real target. This case once ticked the account toggle purely
-    // to skip the target-amount validation — incidental convenience, never what the
-    // case is about. (Story 64.1 made that shortcut contradict the case by hiding
-    // the controls for accounts; 72.1 restored them, but a goal keeps the case
-    // about manual mode rather than about the tick.)
     await user.type(screen.getByTestId('savings-target-amount-input'), '5000')
     await user.selectOptions(screen.getByTestId('savings-allocation-mode-select'), 'manual')
 
@@ -228,13 +203,11 @@ describe('SavingsPage — monthly allocation (Story 26.1)', () => {
     const dialog = screen.getByRole('dialog')
 
     await user.type(screen.getByTestId('savings-name-input'), 'Flexible')
-    // A GOAL — see the note on the previous case.
     await user.type(screen.getByTestId('savings-target-amount-input'), '5000')
     await user.selectOptions(screen.getByTestId('savings-allocation-mode-select'), 'manual')
     await user.type(screen.getByTestId('savings-monthly-allocation-input'), '999')
     await user.selectOptions(screen.getByTestId('savings-allocation-mode-select'), 'automatic')
 
-    // The amount input is hidden again once automatic is re-selected.
     expect(screen.queryByTestId('savings-monthly-allocation-input')).not.toBeInTheDocument()
     await user.click(within(dialog).getByRole('button', { name: 'Add Savings Goal' }))
 
@@ -244,14 +217,6 @@ describe('SavingsPage — monthly allocation (Story 26.1)', () => {
   })
 })
 
-/**
- * Story 26.3: surface per-account allocations + the leftover split on the Savings
- * page. The page reads four stores (income, expenses, investment contributions,
- * savings accounts), runs the Story 26.2 `solveAutomaticAllocations` solver, and
- * renders each account's effective monthly allocation (the fixed amount for manual
- * accounts, the computed even-share for automatic ones), a leftover-split summary,
- * and a calm over-committed note. All amounts are integer cents.
- */
 describe('SavingsPage — leftover allocation split (Story 26.3)', () => {
   const ISO = '2026-01-01T00:00:00.000Z'
 
@@ -287,13 +252,6 @@ describe('SavingsPage — leftover allocation split (Story 26.3)', () => {
     createdAt: ISO,
     updatedAt: ISO,
   })
-  // `targetAmount` defaults to a NON-NULL target, i.e. every row built here is a
-  // GOAL. Story 64.1 changed it from `null` because 64.1 excluded target-less rows
-  // from the allocation, which would have zeroed every hand-computed figure here
-  // (850.00, the 0.34/0.33/0.33 largest-remainder case, 1,300.00). Story 72.1
-  // reversed that exclusion, so the target no longer affects any figure in this
-  // suite; the default stays a goal simply because these cases are about the split,
-  // not about the badge. Target-less rows are covered by the Story 72.1 describe.
   const GOAL_TARGET = 10_000_00
   const savingsRow = (over: {
     id: string
@@ -323,10 +281,8 @@ describe('SavingsPage — leftover allocation split (Story 26.3)', () => {
   afterEach(resetStores)
 
   it('shows the leftover summary and each account’s effective allocation (AC-1, AC-2)', () => {
-    // income 500000 − expenses 150000 = net 350000; − 50000 contribution
-    // − 130000 manual = pool 170000 across 2 automatic → 85000 each. The manual
-    // fixed amount (130000) and the automatic share (85000) are DISTINCT so a
-    // manual↔automatic value swap would fail an assertion, not slip through.
+    // net 350000 − 50000 contribution − 130000 manual = pool 170000 / 2 automatic = 85000 each.
+    // Fixed and automatic amounts differ, so a manual/automatic swap fails.
     useIncomeStore.setState({ incomeSources: [incomeRow(500000)] })
     useExpenseStore.setState({ expenses: [expenseRow(150000)] })
     useBalanceStore.setState({ entries: [investmentRow(50000)] })
@@ -339,25 +295,19 @@ describe('SavingsPage — leftover allocation split (Story 26.3)', () => {
     })
     renderWithProviders(<SavingsPage />)
 
-    // Summary: pool 170000 (“1,700.00”) split across 2 automatic entries.
     const summary = screen.getByTestId('savings-leftover-summary')
     expect(summary).toHaveTextContent(/1,700\.00/)
-    // Story 72.1 review decision: "entries", not "accounts" — the recipients are
-    // goals here, and a goal is not an account.
     expect(summary).toHaveTextContent(/split across 2 automatic entries/)
     expect(summary).not.toHaveTextContent(/automatic accounts?\b/)
 
-    // Manual account shows its fixed amount (130000 → “1,300.00”), tagged Fixed.
     const manual = screen.getByTestId('savings-allocation-manual-1')
     expect(manual).toHaveTextContent(/1,300\.00/)
     expect(screen.getByTestId('savings-allocation-mode-manual-1')).toHaveTextContent(/Fixed/i)
 
-    // Each automatic account shows the even share (85000 → “850.00”), tagged Auto.
     expect(screen.getByTestId('savings-allocation-auto-1')).toHaveTextContent(/850\.00/)
     expect(screen.getByTestId('savings-allocation-auto-2')).toHaveTextContent(/850\.00/)
     expect(screen.getByTestId('savings-allocation-mode-auto-1')).toHaveTextContent(/Auto/i)
 
-    // No over-committed note when there is a positive pool.
     expect(screen.queryByTestId('savings-overcommitted-note')).not.toBeInTheDocument()
   })
 
@@ -392,7 +342,6 @@ describe('SavingsPage — leftover allocation split (Story 26.3)', () => {
 
     expect(screen.getByTestId('savings-allocation-auto-1')).toHaveTextContent(/0\.00/)
     const note = screen.getByTestId('savings-overcommitted-note')
-    // Story 72.1 review decision: "entries", not "accounts".
     expect(note).toHaveTextContent(/automatic entries receive/)
     expect(note).not.toHaveTextContent(/automatic accounts/)
   })
@@ -407,15 +356,11 @@ describe('SavingsPage — leftover allocation split (Story 26.3)', () => {
     renderWithProviders(<SavingsPage />)
 
     const summary = screen.getByTestId('savings-leftover-summary')
-    // Story 72.1 (D3) reworded this: "entry", not "goal" or "account", because
-    // any row can now be set to Automatic and "Account" is a badge label that
-    // would read as "only accounts". Anchored on the distinguishing clause, not on
-    // "automatic" alone, which survives every rewrite of this sentence.
+    // Anchored on the distinguishing clause, not on "automatic", which survives every rewrite.
     expect(summary).toHaveTextContent(/nothing is set to receive it/i)
     expect(summary).toHaveTextContent(/Set an entry to .Automatic. to divide it up/i)
     expect(summary).not.toHaveTextContent(/with a target/i)
     expect(summary).not.toHaveTextContent(/split across 0/i)
-    // No over-committed note when there are no automatic accounts to receive a split.
     expect(screen.queryByTestId('savings-overcommitted-note')).not.toBeInTheDocument()
   })
 
@@ -426,10 +371,8 @@ describe('SavingsPage — leftover allocation split (Story 26.3)', () => {
     })
     renderWithProviders(<SavingsPage />)
 
-    // Pool 100000 → the single automatic account gets all of it.
     expect(screen.getByTestId('savings-allocation-auto-1')).toHaveTextContent(/1,000\.00/)
 
-    // Raise income to 300000; the share updates with no reload.
     act(() => {
       useIncomeStore.setState({ incomeSources: [incomeRow(300000)] })
     })
@@ -467,17 +410,6 @@ describe('SavingsPage — leftover allocation split (Story 26.3)', () => {
   })
 })
 
-/**
- * Story 72.1 (FR114): an entry marked "just an account balance" is asked for, and
- * given, a monthly allocation exactly like a goal. The checkbox now affects the
- * Target field only.
- *
- * ⚠️ This REVERSES story 64.1 / FR98. This describe once pinned the opposite rule
- * (`'an account balance is not asked for an allocation (Story 64.1)'`: controls
- * hidden, the save path neutralized, a dash in the table). Its cases were
- * rewritten in place rather than deleted, so a reversed decision cannot come back
- * unnoticed. Every figure is hand-derived in the comment beside it.
- */
 describe('SavingsPage — target-less entries are allocated like goals (Story 72.1, reverses FR98)', () => {
   const ISO = '2026-01-01T00:00:00.000Z'
   const accountRow = (over: {
@@ -524,8 +456,6 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
   beforeEach(resetStores)
   afterEach(resetStores)
 
-  // ---- AC-3: the form asks every entry for an allocation ----
-
   it('keeps the allocation mode select and the manual amount when the box is ticked', async () => {
     const user = userEvent.setup()
     renderWithProviders(<SavingsPage />)
@@ -537,14 +467,9 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
     await user.click(screen.getByTestId('savings-is-account-toggle'))
     expect(screen.getByTestId('savings-allocation-mode-select')).toBeInTheDocument()
     expect(screen.getByTestId('savings-monthly-allocation-input')).toBeInTheDocument()
-    // The tick still does what it always did to the TARGET field.
     expect(screen.queryByTestId('savings-target-amount-input')).not.toBeInTheDocument()
   })
 
-  // ⚠️ GREEN ON BOTH SIDES of 72.1 (hiding a control never cleared its state, and
-  // after 72.1 nothing is hidden). It pins that the tick is not a reset: a later
-  // "tidy-up" that clears the allocation on tick has to argue with it. It is not
-  // evidence of 72.1's change.
   it('ticking and unticking changes neither allocation value (green on both sides)', async () => {
     const user = userEvent.setup()
     renderWithProviders(<SavingsPage />)
@@ -556,14 +481,11 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
     await user.click(screen.getByTestId('savings-is-account-toggle'))
 
     expect(screen.getByTestId('savings-allocation-mode-select')).toHaveValue('manual')
-    // ⚠️ '250.00', not '250': clicking the checkbox blurs the amount input, so
-    // `reformatAmountOnBlur` normalizes it on the way out (measured in 64.1).
+    // '250.00', not '250': clicking the checkbox blurs the input, which reformats it.
     expect(screen.getByTestId('savings-monthly-allocation-input')).toHaveValue('250.00')
   })
 
   it('the mode helper speaks of an ENTRY, for accounts too (AC-12, D3)', async () => {
-    // RED against 88ecbb1 on both halves: the helper said "This goal…" and was
-    // not rendered at all once the box was ticked.
     const user = userEvent.setup()
     renderWithProviders(<SavingsPage />)
     await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
@@ -578,12 +500,7 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
     expect(dialog).not.toHaveTextContent(/This goal (receives|gets)/)
   })
 
-  // ---- AC-4: the save path persists what the user chose ----
-
   it('⚠️ persists manual / 25000 for an account (AC-4)', async () => {
-    // RED against 88ecbb1, where the save site forced { automatic, null }. The
-    // amount is typed BEFORE the tick so the failure there is the stored value,
-    // not a missing control.
     const user = userEvent.setup()
     renderWithProviders(<SavingsPage />)
     await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
@@ -607,11 +524,8 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
     })
   })
 
-  // ---- AC-2 / AC-7: the account takes part in the solve, and the row says so ----
-
   it('⚠️ reverses FR98: an automatic account takes an even share beside a goal', () => {
-    // 64.1 pinned the opposite: the goal kept all 500.00. Now the pool of 500.00
-    // is split over 2 automatic rows ⇒ 250.00 each, "2 automatic entries".
+    // The pool of 500.00 is split over 2 automatic rows ⇒ 250.00 each.
     useIncomeStore.setState({ incomeSources: [salary(500_00)] })
     useSavingsStore.setState({ savingsGoals: [goalRow('goal-1'), accountRow({ id: 'acct-1' })] })
     renderWithProviders(<SavingsPage />)
@@ -625,8 +539,6 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
   })
 
   it('⚠️ an account stored as manual 300.00 shows 300.00 and a Fixed pill (AC-7)', () => {
-    // RED against 88ecbb1, which rendered "—" with no pill. The Account BADGE and
-    // the "No target" cell describe the target, not the allocation, so they stay.
     useSavingsStore.setState({
       savingsGoals: [
         accountRow({ id: 'acct-1', allocationMode: 'manual', monthlyAllocation: 300_00 }),
@@ -640,9 +552,6 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
     expect(screen.getByTestId('savings-badge-acct-1')).toHaveTextContent('Account')
   })
 
-  // Green on both sides of 72.1: a goal always had its figure and pill. It pins
-  // that the two-state cell still works for a GOAL, so a change that broke the
-  // cell for every row cannot hide behind the account case above.
   it('a GOAL still shows its figure and pill — the negative control', () => {
     useSavingsStore.setState({ savingsGoals: [goalRow('goal-1')] })
     renderWithProviders(<SavingsPage />)
@@ -651,11 +560,8 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
     expect(screen.getByTestId('savings-allocation-mode-goal-1')).toHaveTextContent(/Auto/i)
   })
 
-  // ---- AC-12: the remedy copy (D3) ----
-
   it('an automatic account on its own RECEIVES the whole pool', () => {
-    // 64.1 told this user to "add a savings goal with a target". Sole automatic
-    // row ⇒ the whole 500.00, "split across 1 automatic entry" (singular).
+    // Sole automatic row ⇒ the whole 500.00, "split across 1 automatic entry" (singular).
     useIncomeStore.setState({ incomeSources: [salary(500_00)] })
     useSavingsStore.setState({ savingsGoals: [accountRow({ id: 'acct-1' })] })
     renderWithProviders(<SavingsPage />)
@@ -695,13 +601,8 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
     expect(summary).not.toHaveTextContent(/Set an entry/i)
   })
 
-  // ---- AC-5: validation covers the manual amount on every entry ----
-
   it('⚠️ refuses a NEGATIVE manual amount on an account with a visible error (AC-5)', async () => {
-    // RED against 88ecbb1: the control was hidden on tick and `computeErrors`
-    // skipped it for accounts, so the row saved as { automatic, null }. Now the
-    // control is visible, so its validation must run and be seen. A leading '-'
-    // is legal in `sanitizeMoneyInput`, so this is typeable.
+    // A leading '-' is legal in `sanitizeMoneyInput`, so this is typeable.
     const user = userEvent.setup()
     renderWithProviders(<SavingsPage />)
     await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
@@ -718,7 +619,6 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
   })
 
   it('still refuses a negative amount on a GOAL — the negative control', async () => {
-    // Green on both sides: goals were always validated.
     const user = userEvent.setup()
     renderWithProviders(<SavingsPage />)
     await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
@@ -734,12 +634,7 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
     expect(useSavingsStore.getState().savingsGoals).toHaveLength(0)
   })
 
-  // ---- AC-6: the edit form shows what the table shows ----
-
   it('⚠️ editing an account opens with its STORED manual / 300.00 (AC-6)', () => {
-    // RED against 88ecbb1, whose `openEditModal` reset an account to automatic /
-    // blank. That was right while the table showed "—"; now the table shows
-    // "300.00 Fixed", so the form must show the same thing.
     useSavingsStore.setState({
       savingsGoals: [
         accountRow({ id: 'acct-1', allocationMode: 'manual', monthlyAllocation: 300_00 }),
@@ -754,10 +649,7 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
   })
 
   it('⚠️ an UNTOUCHED Save of a manual account keeps manual / 30000 (the AC-6 trap)', async () => {
-    // THE discriminating input. "Prefill from storage" and "reset to automatic"
-    // both pass any test that re-selects manual before saving; they diverge only
-    // when the user changes nothing. RED against 88ecbb1, where one untouched Save
-    // silently converted the row to { automatic, null }.
+    // The discriminating input: prefill and reset-to-automatic diverge only when the user changes nothing.
     const user = userEvent.setup()
     useSavingsStore.setState({
       savingsGoals: [
@@ -778,12 +670,8 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
     })
   })
 
-  // ---- AC-10: the breakdown moves with the solver ----
-
   it('⚠️ the breakdown’s fixed-allocation line includes a manual ACCOUNT (AC-10)', () => {
-    // Fixture: goal-1 automatic, acct-1 manual 300.00, goal-fixed manual 100.00.
-    // Fixed line = 100.00 + 300.00 = 400.00 (derived by hand). RED against
-    // 88ecbb1, whose reducer skipped the account and showed 100.00.
+    // Fixed line = 100.00 + 300.00 = 400.00.
     useIncomeStore.setState({ incomeSources: [salary(500_00)] })
     useSavingsStore.setState({
       savingsGoals: [
@@ -793,7 +681,7 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
       ],
     })
     renderWithProviders(<SavingsPage />)
-    // The breakdown body is not in the DOM until opened (story 45.1).
+    // The breakdown body is not in the DOM until opened.
     fireEvent.click(screen.getByRole('button', { name: 'How is this worked out?' }))
 
     expect(screen.getByTestId('breakdown-manual')).toHaveTextContent('400.00')
@@ -801,16 +689,9 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
     expect(screen.getByTestId('savings-allocation-goal-1')).toHaveTextContent('100.00')
   })
 
-  // ---- AC-14 / D1: stored target-less rows are NOT rewritten ----
-
   it('⚠️ D1: stored target-less rows resume with their stored mode, no data change (AC-14)', async () => {
-    // One row of each shape that exists in the wild (story §2):
-    //   legacy  — pre-26.1, allocation keys ABSENT, backfilled by persist `migrate`
-    //   chosen  — saved 26.1→64.1 as manual / 300.00
-    //   forced  — saved since 64.1, forced to automatic / null
-    // Income 1,000.00 − 300.00 (chosen) = 700.00 over 2 automatic rows
-    // (legacy + forced) ⇒ 350.00 each. Every figure derived by hand. RED against
-    // 88ecbb1, where all three render "—" and receive nothing.
+    // One row per stored shape: legacy (keys absent, backfilled by migrate), chosen (manual 300.00),
+    // forced (automatic/null). 1,000.00 − 300.00 = 700.00 over 2 automatic ⇒ 350.00 each.
     localStorage.setItem(
       SAVINGS_GOALS_STORAGE_KEY,
       JSON.stringify({
@@ -851,8 +732,6 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
     )
     try {
       await useSavingsStore.persist.rehydrate()
-      // The migrate step ran and changed NOTHING about the allocation beyond its
-      // pre-existing v2 backfill of the absent keys (D1: no data change).
       expect(
         useSavingsStore
           .getState()
@@ -879,12 +758,6 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
   })
 })
 
-/**
- * Money-input sanitization (story 28-1, FR46).
- *
- * All three money fields on this page route through the shared core
- * `sanitizeMoneyInput` helper; these prove the wiring (AC-3).
- */
 describe('SavingsPage money inputs reject non-numeric characters', () => {
   beforeEach(() => {
     useSavingsStore.setState({ savingsGoals: [] })
@@ -906,8 +779,6 @@ describe('SavingsPage money inputs reject non-numeric characters', () => {
   })
 
   it('never lets a typed letter into the TARGET amount field (was e2e money-input-sanitization:130)', async () => {
-    // The e2e original typed into the target field; the test below covers the
-    // current balance only, and each field wires its own `onChange`.
     const user = userEvent.setup()
     renderWithProviders(<SavingsPage />)
 
@@ -942,15 +813,7 @@ describe('SavingsPage money inputs reject non-numeric characters', () => {
   })
 })
 
-/**
- * Visible focus indicator (story 28-1, AC-7).
- *
- * `focus:outline-none` with a ring COLOUR but no `focus:ring-2` WIDTH paints
- * nothing — keyboard users get no focus indicator. Third recurrence of this
- * defect class (Epics 15 and 24), so all four of this page's affected controls
- * carry a structural guard, asserted by class-TOKEN membership (a substring check
- * for "focus:ring-2" also matches "focus:ring-2xl").
- */
+// `focus:outline-none` with a ring colour but no `focus:ring-2` width paints nothing.
 describe('SavingsPage form controls have a visible focus ring', () => {
   beforeEach(() => {
     useSavingsStore.setState({ savingsGoals: [] })
@@ -965,7 +828,6 @@ describe('SavingsPage form controls have a visible focus ring', () => {
     renderWithProviders(<SavingsPage />)
 
     await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
-    // The allocation amount field only renders in manual mode (story 26.1).
     await user.selectOptions(screen.getByTestId('savings-allocation-mode-select'), 'manual')
 
     const controls = [
@@ -988,13 +850,6 @@ describe('SavingsPage form controls have a visible focus ring', () => {
   })
 })
 
-/**
- * Mobile card presentation (story 31.2, UX-DR36).
- *
- * See `IncomePage.test.tsx` for the full rationale. Savings is the one table
- * with a cell that must STACK rather than sit label-left/value-right: the
- * progress bar is full-width.
- */
 describe('SavingsPage mobile card presentation (story 31.2)', () => {
   const ISO_31_2 = '2026-01-01T00:00:00.000Z'
 
@@ -1125,16 +980,6 @@ describe('SavingsPage mobile card presentation (story 31.2)', () => {
     }
   })
 
-  /**
-   * Story 48.2 (AC-1, AC-15) — the actions cell offers EXACTLY Edit and Delete.
-   *
-   * ⚠️ AN EXACT ARRAY, NOT `queryByRole(/^Move /) -> toBeNull()`. Story 48.2
-   * DELETES `RowMoveControls`, and an absence assertion about a deleted component
-   * is vacuous by construction: it passes for the same reason whether the removal
-   * was done correctly or the render broke entirely. Enumerating what IS offered
-   * fails on a re-added arrow AND on a lost Edit/Delete button, so it is
-   * falsifiable in both directions (mutation arm M1).
-   */
   it('offers exactly Edit and Delete in a row action cell (48.2 AC-1, AC-15)', () => {
     renderWithProviders(<SavingsPage />)
     const cell = rowFor('Vacation').querySelector('td:last-child') as HTMLElement
@@ -1145,32 +990,13 @@ describe('SavingsPage mobile card presentation (story 31.2)', () => {
     ).toEqual(['Edit Vacation', 'Delete Vacation'])
   })
 
-  /**
-   * Story 50.1 (AC-1, AC-3, AC-9) — the row actions are ICONS now.
-   *
-   * ⚠️ THE TEST DIRECTLY ABOVE CANNOT TELL. It reads `aria-label`, which 50.1
-   * leaves byte-identical, so it stays green against a button that renders no
-   * child at all — despite being titled "offers exactly Edit and Delete". It is
-   * the right guard for the accessibility contract and the wrong one for what
-   * the row SHOWS. This is the assertion that goes red.
-   *
-   * See `assertIsIconOnlyAction` for why both halves ship together and why
-   * `aria-hidden` is pinned as an attribute rather than through the name.
-   */
   it('renders each row action as an aria-hidden icon with no visible label (50.1 AC-1, AC-3, AC-9)', () => {
     renderWithProviders(<SavingsPage />)
     const cell = rowFor('Vacation').querySelector('td:last-child') as HTMLElement
     const geometry = ['Edit Vacation', 'Delete Vacation'].map((label) =>
       assertIsIconOnlyAction(within(cell).getByRole('button', { name: label }), label)
     )
-    // ⚠️ EDIT AND DELETE MUST BE DIFFERENT GLYPHS, AND NOTHING ELSE CHECKS THAT.
-    // Both icons are `h-5 w-5` `aria-hidden` SVGs from the same module, so pasting
-    // `<TrashIcon>` into the Edit slot — the likeliest slip across four copy-pasted
-    // call sites — leaves the accessible names, the empty textContent, the icon
-    // count, the rendered box and every width baseline untouched. Copied from
-    // `SortableColumnHeader.test.tsx`, which pins asc vs desc the same way and says
-    // why: "the two states would be visually identical and only a screen reader
-    // could tell them apart".
+    // Edit and Delete must be different glyphs; nothing else would catch the wrong icon pasted in.
     expect(geometry[0], 'Edit and Delete render the same glyph').not.toBe(geometry[1])
   })
 
@@ -1181,32 +1007,9 @@ describe('SavingsPage mobile card presentation (story 31.2)', () => {
   })
 })
 
-/**
- * Column sorting (Story 34.2, FR61).
- *
- * ⚠️ Written per page rather than once over a table of four: four independent
- * page components, four hand-rolled `<thead>`s, four extractor sets. 30-4b, 33.3
- * and 34.1b each shipped (or nearly shipped) a HIGH by testing one surface and
- * assuming its siblings.
- *
- * ⚠️ NEITHER money column here is frequency-normalized, and that is the subject
- * of a test rather than an omission. A savings balance is a point-in-time STOCK,
- * not a per-period flow (story 32.1 / FR58), and `ClientSavingsGoal` carries no
- * `frequency` field to normalize by.
- */
 describe('SavingsPage — sort by column (34.2)', () => {
-  /**
-   * manual (insertion):  Zeta, Alpha, Mid, Beta
-   * by name:             Alpha, Beta, Mid, Zeta
-   * by current balance:  Zeta(300) Mid(300) Alpha(500) Beta(800)   <- Zeta/Mid TIE
-   * by target:           Beta(200) Mid(400) Zeta(900) Alpha(null)
-   * by progress:         Zeta(33) Mid(75) Beta(100) Alpha(null)
-   *
-   * Zeta and Mid tie on Current Balance while sitting in a known manual order,
-   * and the balance order differs from the manual order — so a comparator that
-   * silently degraded to "manual order" (which is what routing this column
-   * through the normalized path would produce) cannot pass.
-   */
+  // Zeta and Mid tie on Current Balance in a known manual order, so a comparator that
+  // degraded to manual order cannot pass.
   const SEED = [
     { name: 'Zeta', targetAmount: 900_00, currentBalance: 300_00 },
     { name: 'Alpha', targetAmount: null, currentBalance: 500_00 },
@@ -1217,9 +1020,7 @@ describe('SavingsPage — sort by column (34.2)', () => {
 
   function seedRows() {
     useSavingsStore.setState({ savingsGoals: [] })
-    // Distinct createdAt per row — rows added inside one millisecond tie on the
-    // secondary manual key, and a stable sort can then make an ordering
-    // assertion pass by accident (34.1a M10, 34.1b M6).
+    // Distinct createdAt per row: ties on the manual key could make an ordering assertion pass by accident.
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-03-01T00:00:00.000Z'))
     for (const goal of SEED) {
@@ -1229,8 +1030,7 @@ describe('SavingsPage — sort by column (34.2)', () => {
     vi.useRealTimers()
   }
 
-  /** Row names top to bottom. The name cell also carries a Goal/Account badge,
-   * so the seeded name is matched rather than the whole cell's text. */
+  /** The name cell also carries a Goal/Account badge, so match the seeded name. */
   function renderedOrder(): string[] {
     return screen
       .getAllByRole('row')
@@ -1346,17 +1146,6 @@ describe('SavingsPage — sort by column (34.2)', () => {
     expect(within(header('Name')).getByRole('button', { name: 'Name' })).toHaveFocus()
   })
 
-  /**
-   * The mobile sort control (story 48.1, UX-DR53).
-   *
-   * ⚠️ This block REPLACES the old "shows the mobile escape hatch only while a
-   * sort is active" test, and the replacement is the point. `TableSortNotice`
-   * rendered nothing while a table was in manual order, because a sort could
-   * only be STARTED at >= 640px (34.2, ratified decision 1). Manual order is
-   * exactly the state a phone user needs a control in — it is how they start
-   * one — so the control now renders unconditionally and the old assertion
-   * would be asserting the opposite of the requirement.
-   */
   function sortControl(): HTMLSelectElement {
     return screen.getByRole('combobox', {
       name: 'Sort savings goals and accounts',
@@ -1367,12 +1156,10 @@ describe('SavingsPage — sort by column (34.2)', () => {
     const user = userEvent.setup()
     renderWithProviders(<SavingsPage />)
 
-    // Present in MANUAL order — the state the old escape hatch rendered nothing in.
     expect(sortControl()).toBeInTheDocument()
     expect(sortControl().value).toBe('manual')
 
     await user.selectOptions(sortControl(), 'name:asc')
-    // And still present once a sort is active, now reporting it.
     expect(sortControl().value).toBe('name:asc')
   })
 
@@ -1380,15 +1167,11 @@ describe('SavingsPage — sort by column (34.2)', () => {
     const user = userEvent.setup()
     renderWithProviders(<SavingsPage />)
 
-    // ⚠️ DESCENDING, chosen directly. Ascending alone cannot tell a `select`
-    // from a `toggle`, and name-descending differs from BOTH the manual order
-    // and the ascending order for this seed — an order assertion that happened
-    // to match one of them could not fail.
+    // Descending: ascending alone can't tell `select` from `toggle`.
     await user.selectOptions(sortControl(), 'name:desc')
     expect(renderedOrder()).toEqual(['Zeta', 'Mid', 'Beta', 'Alpha'])
 
-    // ⚠️ THE SINGLE-SOURCE-OF-TRUTH CLAIM. A control wired to its own state
-    // would reorder the rows and leave this header reporting `none`.
+    // A control wired to its own state would reorder rows and leave this header reporting `none`.
     expect(header('Name')).toHaveAttribute('aria-sort', 'descending')
   })
 
@@ -1411,14 +1194,7 @@ describe('SavingsPage — sort by column (34.2)', () => {
   })
 
   it('enqueues NOTHING on a PAID session — sorting is read-only over the store (AC-8)', async () => {
-    // ⚠️ REGISTERED, not left unregistered. A spy handed to nobody can never be
-    // called, so `not.toHaveBeenCalled()` could not fail — the tautology story
-    // 34.1b's review caught in the sibling store suite. Registering proves these
-    // exact spies are reachable from the code under test.
-    //
-    // ⚠️ And PAID, not free: `deferred-work.md:822-832` records a mutation that
-    // passed 1525 green tests because every test in the suite ran under one tier.
-    // Sorting must be inert on the tier that actually has a sync path.
+    // Registered spies on the PAID tier (which has a sync path), so `not.toHaveBeenCalled()` can fail.
     const spies = {
       userId: '550e8400-e29b-41d4-a716-446655440000',
       queueCreate: vi.fn(async () => {}),
@@ -1439,7 +1215,6 @@ describe('SavingsPage — sort by column (34.2)', () => {
       expect(spies.queueUpdate).not.toHaveBeenCalled()
       expect(spies.queueCreate).not.toHaveBeenCalled()
       expect(spies.queueDelete).not.toHaveBeenCalled()
-      // And the persisted order itself is byte-identical — no `sortOrder` write.
       expect(useSavingsStore.getState().savingsGoals.map((row) => [row.id, row.sortOrder])).toEqual(
         before
       )
@@ -1465,7 +1240,6 @@ describe('SavingsPage — sort by column (34.2)', () => {
       .slice(1)
       .map((row) => names.find((n) => within(row).queryByText(n)) ?? '')
     expect(rendered).toEqual(['Alpha', 'Beta', 'Bravo', 'Mid', 'Zeta'])
-    // The MANUAL order still appends it at the bottom — sorting never writes.
     expect(useSavingsStore.getState().savingsGoals.map((g) => g.name)).toEqual([
       ...MANUAL_ORDER,
       'Bravo',
@@ -1473,8 +1247,7 @@ describe('SavingsPage — sort by column (34.2)', () => {
   })
 
   it('MOVES each row node rather than relabelling positions (rows keyed by id)', async () => {
-    // ⚠️ Replicated per page deliberately: this is the only assertion that fails
-    // under `key={index}`, and a regression on one page passes every other suite.
+    // The only assertion that fails under `key={index}`.
     const user = userEvent.setup()
     renderWithProviders(<SavingsPage />)
     const before = screen.getByRole('button', { name: 'Edit Zeta' })
@@ -1485,30 +1258,12 @@ describe('SavingsPage — sort by column (34.2)', () => {
 
   it('gives every sortable header the standard focus ring', () => {
     renderWithProviders(<SavingsPage />)
-    // ⚠️ ENUMERATED, not grepped — a control missing from this array is silently
-    // uncovered.
     for (const name of ['Name', 'Target', 'Current Balance', 'Monthly Allocation', 'Progress']) {
       assertHasFocusRing(within(header(name)).getByRole('button', { name }), name)
     }
   })
 })
 
-/**
- * Page structure after the Savings at a Glance chart was removed (story 51.1, FR76).
- *
- * ⚠️ This is the RE-HOMED half of the deleted `SavingsPage chart section` block. Its
- * predecessor asserted `main > section` had length 3 with the chart at index 1, and it was
- * the ONLY structural pin on this page anywhere in the repo — unit or e2e. Deleting the
- * chart block wholesale would have left AC-1 ("the page reads summary → leftover breakdown
- * → goals table") with nothing testing it at all, which is exactly what story 43.1's own
- * AC warned about: *a spec that silently stops covering anything is worse than one that
- * fails.* The weaker assertion that would have passed is "no chart testid is present" —
- * true of a page that renders nothing.
- *
- * ⚠️ So the absence pins below never ship alone: they are paired with a positive pin on the
- * exact COUNT and the IDENTITY of the two surviving sections. 48.1's lesson is that
- * deleting a component makes every absence assertion vacuous rather than red.
- */
 describe('SavingsPage — page structure (story 51.1)', () => {
   const NOW = '2026-01-01T00:00:00.000Z'
   const goal = (id: string, name: string, currentBalance: number, targetAmount: number | null) => ({
@@ -1533,19 +1288,12 @@ describe('SavingsPage — page structure (story 51.1)', () => {
     // Identified by content that belongs to each, never by index alone — an index-only
     // pin still passes if the two sections swap places.
     expect(sections[0]).toContainElement(screen.getByTestId('savings-leftover-summary'))
-    // Identity, not just "a table exists somewhere in it".
     expect(sections[1]).toContainElement(
       screen.getByRole('heading', { name: 'Your Savings Goals' })
     )
     expect(sections[1].querySelector('table')).not.toBeNull()
   })
 
-  // ⚠️ RE-HOMED from `SavingsChart.error-boundary.test.tsx`, which is deleted with the
-  // chart. That suite's subject was "the ErrorBoundary contains a chart crash", but the
-  // arm proving containment also asserted these three headings and the add-goal flow —
-  // and a repo-wide grep at deletion time found NO other test asserting any of them.
-  // The add-goal flow is covered ~12× elsewhere in this file; the headings were not
-  // covered anywhere at all, so they are pinned here rather than quietly lost (AC-18).
   it('still renders its three headings and an interactive add-goal control (AC-18)', async () => {
     const user = userEvent.setup()
     useSavingsStore.setState({ savingsGoals: [goal('a', 'Vacation', 300_00, 900_00)] })
@@ -1560,16 +1308,7 @@ describe('SavingsPage — page structure (story 51.1)', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
-  // ⚠️ RE-HOMED from `SavingsPage.chart-contract.test.tsx`, deleted with the chart.
-  // That suite's stated subject was what the PAGE HANDS THE CHART; the page's own
-  // headline total was by-catch in `it('plots balances that sum to the page total')`,
-  // and it was the ONLY assertion on that figure's value anywhere in the repo.
-  // The figure carries no `data-testid` (deliberately — see `SavingsPage.tsx:520-526`,
-  // whose own comment warns "a testid-shaped sweep would have shipped without it"), so
-  // no e2e can reach it either. Without this, `formatAmount(totalSavings)` could be
-  // changed to `formatAmount(0)` and the whole suite would stay green.
-  // ⚠️ No `$`: `vitest.setup.ts` forces `{mode:'none', currency:'NONE'}`, so the unit
-  // suite renders amounts currency-less. A unit assertion on a symbol proves nothing.
+  // No `$`: the unit suite renders amounts currency-less.
   it('renders the summed Total Savings headline figure (AC-18)', () => {
     useSavingsStore.setState({
       savingsGoals: [goal('a', 'Vacation', 300_00, 900_00), goal('b', 'Roof', 1_050_00, null)],
@@ -1584,11 +1323,7 @@ describe('SavingsPage — page structure (story 51.1)', () => {
     useSavingsStore.setState({ savingsGoals: [goal('a', 'Vacation', 300_00, 900_00)] })
     renderWithProviders(<SavingsPage />)
 
-    // ⚠️ POSITIVE ANCHOR FIRST. Five `queryBy* -> toBeNull()` assertions in a row all
-    // pass against a page that rendered nothing at all, and two of them
-    // (`savings-chart-skeleton`, `savings-chart-empty`) sit on branches this fixture
-    // cannot reach even if the chart came back — hydrated, with one goal. So the
-    // absences are anchored to a render this test proves actually happened.
+    // Positive anchor first: the absence assertions below would pass on an empty render.
     expect(screen.getByRole('heading', { name: 'Your Savings Goals' })).toBeInTheDocument()
     expect(screen.queryByTestId('savings-chart-section')).toBeNull()
     expect(screen.queryByTestId('savings-chart')).toBeNull()
@@ -1616,15 +1351,8 @@ describe('SavingsPage — an asset never feeds the distributable pool (Story 43.
   })
 
   it('excludes an asset row from investmentContributions, with or without a contribution', () => {
-    // ⚠️ This test exists because `SavingsPage.tsx` CLAIMED it existed before it
-    // did. The claim was found by review; the comment pointed at coverage that had
-    // never been written.
-    //
-    // The pool filter is `type === 'investment'`, so an asset is excluded either
-    // way. The anomalous case is the second one: a contribution on an asset is
-    // money being set aside that the pool never deducts. `validateBalanceTracking`
-    // now REJECTS that on every store write path — but `applyServerChanges` writes
-    // pulled rows in without validation, so it stays reachable from sync.
+    // `applyServerChanges` writes pulled rows unvalidated, so a contribution on an asset stays
+    // reachable from sync.
     useBalanceStore.setState({ entries: [assetRow(0)] })
     const zeroContribution = useBalanceStore
       .getState()
@@ -1639,7 +1367,6 @@ describe('SavingsPage — an asset never feeds the distributable pool (Story 43.
   })
 
   it('rejects an asset carrying a contribution at the store write path', () => {
-    // The layer that actually closes the hole for user- and API-driven writes.
     useBalanceStore.setState({ entries: [] })
     const created = useBalanceStore.getState().addBalanceEntry({
       type: 'asset',
@@ -1653,10 +1380,6 @@ describe('SavingsPage — an asset never feeds the distributable pool (Story 43.
   })
 })
 
-/**
- * Story 45.1 (FR72) — the leftover breakdown, its inline toggles, and the
- * detector's decorative highlight.
- */
 describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () => {
   const ISO = '2026-01-01T00:00:00.000Z'
 
@@ -1696,12 +1419,6 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
     createdAt: ISO,
     updatedAt: ISO,
   })
-  // A GOAL (non-null target), as the name implies. Story 64.1's review set this
-  // target because 64.1 excluded target-less rows from the allocation, which made
-  // the "a corrupt manual allocation does not render NaN" guard below vacuous.
-  // Story 72.1 reversed that exclusion, so the target no longer decides whether a
-  // row reaches the reducer's `Number.isFinite` check; it stays a goal to match
-  // its name.
   const autoGoal = (id: string) => ({
     id,
     name: id,
@@ -1720,7 +1437,6 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
     useSavingsStore.setState({ savingsGoals: [] })
   }
 
-  /** The FR72 reproduction: $3,000 income, a $500 TFSA expense AND a $500 TFSA row. */
   const seedReproduction = (recordedAsExpense?: boolean) => {
     useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
     useExpenseStore.setState({ expenses: [expenseRow(50_000, 'TFSA contribution')] })
@@ -1730,12 +1446,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
     useSavingsStore.setState({ savingsGoals: [autoGoal('auto-1')] })
   }
 
-  /**
-   * The breakdown is collapsed by default and its body is NOT in the DOM until
-   * opened — deliberately, so /savings does not publish every balance-entry name
-   * as hidden text (it broke nine responsive-320 e2e specs when it did). Every
-   * assertion about breakdown contents must therefore open it first.
-   */
+  /** The breakdown body is not in the DOM until opened, so assertions must open it first. */
   const openBreakdown = () => {
     fireEvent.click(screen.getByRole('button', { name: 'How is this worked out?' }))
   }
@@ -1746,8 +1457,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
   it('keeps the breakdown body OUT of the DOM until it is opened', () => {
     seedReproduction()
     renderWithProviders(<SavingsPage />)
-    // ⚠️ The regression guard for the e2e break: a collapsed <details> still
-    // renders its children, so this must assert ABSENCE, not invisibility.
+    // A collapsed <details> still renders its children, so assert ABSENCE, not invisibility.
     expect(screen.queryByTestId('breakdown-contribution-inv-1')).not.toBeInTheDocument()
     expect(screen.queryByText('TFSA')).not.toBeInTheDocument()
     openBreakdown()
@@ -1762,9 +1472,6 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
     expect(screen.getByTestId('savings-leftover-breakdown')).toBeInTheDocument()
     expect(screen.getByTestId('breakdown-contribution-inv-1')).toHaveTextContent(/TFSA/)
     expect(screen.getByTestId('breakdown-contribution-amount-inv-1')).toHaveTextContent(/500\.00/)
-    // Story 47.1 removed the per-line toggle. An UNFLAGGED row shows no excluded
-    // note. (The strike-through contrast is asserted in the multi-row test below,
-    // which has both a flagged and an unflagged row to compare.)
     expect(screen.queryByTestId('breakdown-toggle-inv-1')).not.toBeInTheDocument()
     expect(screen.getByTestId('breakdown-contribution-inv-1')).not.toHaveTextContent(
       /already accounted for/i
@@ -1776,8 +1483,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
     renderWithProviders(<SavingsPage />)
     openBreakdown()
 
-    // ⚠️ Asserted as a RELATION between rendered values, not against a constant:
-    // a hard-coded total passes when the breakdown and the pool are wrong together.
+    // A relation between rendered values: a hard-coded total passes when breakdown and pool are wrong together.
     const cents = (testId: string) => {
       const text = screen.getByTestId(testId).textContent ?? ''
       const digits = text.replace(/[^0-9.]/g, '')
@@ -1790,19 +1496,13 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
     const leftover = cents('breakdown-leftover')
 
     expect(income - expenses - contributions - manual).toBe(leftover)
-    // And the stated leftover is the SAME figure the summary sentence shows.
     expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,000\.00/)
     expect(leftover).toBe(200_000)
   })
 
   it('AC-8(c): the breakdown RECONCILES when the pool clamps to zero', () => {
-    // ⚠️ Found by the code-review Blind Hunter, from the diff alone. The four
-    // displayed lines are a plain subtraction; `distributablePool` floors at 0.
-    // Over-committed, the page showed "1,000.00 − 2,000.00" directly above a
-    // "Left over" of "0.00" — numbers that visibly do not add up, in the one
-    // affordance whose whole purpose is to make the figure auditable.
-    // ⚠️ The original AC-8(c) test used only a POSITIVE-pool fixture, so it
-    // could not fail in the clamp case. This is that missing arm.
+    // `distributablePool` floors at 0; over-committed, the plain subtraction would not add up to
+    // the displayed "Left over".
     useIncomeStore.setState({ incomeSources: [incomeRow(100_000)] })
     useExpenseStore.setState({ expenses: [expenseRow(200_000, 'Rent')] })
     useBalanceStore.setState({ entries: [] })
@@ -1816,10 +1516,8 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
       return Math.round(Number.parseFloat(digits) * 100)
     }
 
-    // The subtraction the four lines perform is shown explicitly...
     expect(cents('breakdown-income') - cents('breakdown-expenses')).toBe(-100_000)
     expect(cents('breakdown-raw')).toBe(100_000) // rendered as −$1,000.00
-    // ...and the floor is shown as its own line rather than happening invisibly.
     expect(screen.getByTestId('breakdown-clamp')).toHaveTextContent(/1,000\.00/)
     expect(cents('breakdown-leftover')).toBe(0)
     expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/0\.00/)
@@ -1836,9 +1534,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
   })
 
   it('AC-8(c): a corrupt manual allocation does not render NaN in the breakdown', () => {
-    // ⚠️ The solver guards with `Number.isFinite`; the breakdown used `?? 0`,
-    // which does NOT intercept NaN. The two then disagreed and the page printed
-    // a broken figure while "Left over" stayed correct.
+    // The solver guards with `Number.isFinite`; `?? 0` does not intercept NaN.
     useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
     useExpenseStore.setState({ expenses: [] })
     useBalanceStore.setState({ entries: [] })
@@ -1862,25 +1558,11 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
     expect(screen.queryByTestId('breakdown-raw')).not.toBeInTheDocument()
   })
 
-  // ⚠️ Story 47.1 (FR73) DELETED two tests that lived here:
-  //   - 'AC-1 via the UI: ticking the inline toggle stops the double deduction'
-  //   - 'AC-8(a): the breakdown toggle and the Balance form reach the SAME number'
-  // Both drove the flag through the breakdown's per-line checkbox, which 47.1
-  // removes. They are NOT silently dropped: the flagged-row → $2,500 assertion they
-  // uniquely held now lives in `contribution-flag-cross-page.test.tsx`, which drives
-  // the SAME property through the Balance form instead — a stronger arrow, because
-  // it crosses the two suites rather than staying inside this one.
-  // ⚠️ Note what did NOT need replacing: `'excludes only the flagged row when
-  // several contributions exist'` below is store-seeded and still asserts a flagged
-  // row is skipped ($2,200). FR72's positive guard never left this file.
-
   it('AC-2 via the UI: an unflagged row still deducts twice (the different-money user)', () => {
     seedReproduction(false)
     renderWithProviders(<SavingsPage />)
     openBreakdown()
-    // ⚠️ The regression fence. This "wrong-looking" $2,000 is CORRECT for a user
-    // whose expense and contribution are different money, and epic AC-3 forbids
-    // this story from moving it.
+    // This $2,000 is correct for a user whose expense and contribution are different money.
     expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,000\.00/)
   })
 
@@ -1894,13 +1576,8 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
   })
 
   it('AC-6/D2 (47.1 review): a flagged row whose expense line SURVIVES is warned, not reassured', () => {
-    // ⚠️⚠️ THE REGRESSION GUARD FOR A FIX THAT WAS DEAD CODE ON FIRST WRITE.
-    // `findContributionDuplicateCandidates` skips `recordedAsExpense === true` rows,
-    // so the excluded arm could never see a candidate and the first version of this
-    // cue never rendered — every test passed straight through it. The component now
-    // re-runs the detector with the flags cleared, purely for this cue.
-    // Shape C: the user is payroll-deducted AND still lists the contribution on
-    // Expenses, so ticking left them wrong by exactly the contribution.
+    // `findContributionDuplicateCandidates` skips flagged rows, so the component re-runs the detector
+    // with flags cleared just for this cue.
     seedReproduction(true)
     renderWithProviders(<SavingsPage />)
     openBreakdown()
@@ -1908,15 +1585,12 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
     const cue = screen.getByTestId('breakdown-still-duplicated-inv-1')
     expect(cue).toHaveTextContent(/your\s+expense\s+“TFSA contribution”\s+still\s+subtracts\s+it/i)
     expect(cue).toHaveTextContent(/remove\s+that\s+expense\s+line/i)
-    // It must NOT be the reassuring copy — that is the whole point of the branch.
     expect(screen.getByTestId('breakdown-contribution-inv-1')).not.toHaveTextContent(
       /you\s+marked\s+it\s+as\s+already\s+accounted\s+for/i
     )
   })
 
   it('AC-6/D3 (47.1 review): a flagged row with NO surviving expense gets the plain note and an undo pointer', () => {
-    // No matching expense line, so the shape-C warning must NOT fire — this is the
-    // negative fence that stops the cue rendering unconditionally.
     useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
     useExpenseStore.setState({ expenses: [expenseRow(12_345, 'Groceries')] })
     useBalanceStore.setState({ entries: [investmentRow(50_000, 'TFSA', 'inv-1', true)] })
@@ -1927,21 +1601,15 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
     expect(screen.queryByTestId('breakdown-still-duplicated-inv-1')).not.toBeInTheDocument()
     const row = screen.getByTestId('breakdown-contribution-inv-1')
     expect(row).toHaveTextContent(/you\s+marked\s+it\s+as\s+already\s+accounted\s+for/i)
-    // ⚠️ The undo pointer. Without it a user who ticked by mistake — the gross-income
-    // shape-D case — sees the exclusion with nowhere to go.
     expect(row).toHaveTextContent(/Change\s+this\s+on\s+its\s+Balance\s+Tracking\s+entry/i)
   })
 
   it('AC-7 (story 47.1): the duplicate hint points at the control’s real home', () => {
-    // The hint used to say "tick this", meaning the inline toggle. 47.1 deletes
-    // that toggle, so the sentence would otherwise point at nothing.
     seedReproduction()
     renderWithProviders(<SavingsPage />)
     openBreakdown()
     const hint = screen.getByTestId('breakdown-duplicate-hint-inv-1')
 
-    // ⚠️ Distinguishing: it must NAME the control, not just the page. "Go to the
-    // Balance Tracking page" leaves the user hunting for an unnamed checkbox.
     expect(hint.textContent).toMatch(
       /tick\s+“Not\s+taken\s+from\s+the\s+money\s+left\s+over”\s+on\s+its\s+Balance\s+Tracking\s+entry/i
     )
@@ -1949,9 +1617,6 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
   })
 
   it('AC-2 (story 47.1): /savings never says "net" — a page-wide ban is safe here', () => {
-    // ⚠️ Unlike BalancePage, which needs a `net worth` carve-out for eight
-    // legitimate hits, SavingsPage contains the word nowhere. Verified by grep at
-    // baseline `fe3e574`, so the bare-word form is the honest guard here.
     seedReproduction()
     const { container } = renderWithProviders(<SavingsPage />)
     openBreakdown()
@@ -1959,8 +1624,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
   })
 
   it('AC-12: a COINCIDENTAL same-amount match is not highlighted and moves no number', () => {
-    // ⚠️ $500 rent and a $500 TFSA contribution match on amount and are unrelated.
-    // Highlighting on amount alone would put weight on noise — story D7.
+    // $500 rent and a $500 contribution match on amount but are unrelated.
     useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
     useExpenseStore.setState({ expenses: [expenseRow(50_000, 'Rent')] })
     useBalanceStore.setState({ entries: [investmentRow(50_000, 'TFSA')] })
@@ -1969,7 +1633,6 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
     openBreakdown()
 
     expect(screen.queryByTestId('breakdown-duplicate-hint-inv-1')).not.toBeInTheDocument()
-    // ...and the pool is untouched by the detector either way.
     expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,000\.00/)
   })
 
@@ -1982,10 +1645,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
   })
 
   it('AC-8(c): an itemised line shows the NORMALIZED monthly value, not the raw amount', () => {
-    // ⚠️ A non-monthly cadence is mandatory here. Every other fixture in this
-    // describe is monthly, where raw === normalized, so a breakdown that printed
-    // `monthlyContribution` verbatim would pass all of them. 11538c/wk × 52/12
-    // = 49998.0 → 49998, which is visibly NOT 11538.
+    // Non-monthly cadence: 11538c/wk × 52/12 = 49998, visibly not 11538.
     useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
     useExpenseStore.setState({ expenses: [] })
     useBalanceStore.setState({
@@ -2004,7 +1664,6 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
     expect(screen.getByTestId('breakdown-contribution-amount-inv-1')).not.toHaveTextContent(
       /115\.38/
     )
-    // ...and the itemised line agrees with the "contributions counted" total.
     expect(screen.getByTestId('breakdown-contributions')).toHaveTextContent(/499\.98/)
     // 300000 − 49998 = 250002
     expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,500\.02/)
@@ -2025,24 +1684,15 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
 
     // net 250000; skip 50000; deduct 30000 → 220000
     expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,200\.00/)
-    // ⚠️ Code review: the deleted 'AC-1 via the UI' block uniquely asserted the
-    // BREAKDOWN'S OWN totals in the flagged state, and the cross-page replacement
-    // never opens the breakdown. Re-homed here so the panel's internal figures stay
-    // pinned under exclusion, not just the page summary.
     expect(screen.getByTestId('breakdown-contributions')).toHaveTextContent(/300\.00/)
     expect(screen.getByTestId('breakdown-leftover')).toHaveTextContent(/2,200\.00/)
-    // Story 47.1: the excluded row is marked by COPY and a strike-through, not a
-    // checkbox. ⚠️ inv-1 is flagged AND its $500 matches the "TFSA contribution"
-    // expense, so this is SHAPE C — the row still has a live duplicate and the
-    // review-added warning arm renders instead of the plain excluded note.
     expect(screen.getByTestId('breakdown-still-duplicated-inv-1')).toHaveTextContent(
       /still\s+subtracts\s+it/i
     )
     expect(screen.getByTestId('breakdown-contribution-inv-2')).not.toHaveTextContent(
       /already\s+accounted\s+for/i
     )
-    // AC-4: the strike-through is a class TOKEN, never a substring — a raw
-    // `toContain('line-through')` would false-match a hypothetical `sm:line-through`.
+    // Class token, not substring: `toContain` would false-match `sm:line-through`.
     expect(
       screen.getByTestId('breakdown-contribution-amount-inv-1').className.split(/\s+/)
     ).toContain('line-through')
@@ -2052,54 +1702,6 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
   })
 })
 
-/**
- * Story 51.2 (UX-DR57) — the leftover breakdown's disclosure AFFORDANCE.
- *
- * ⚠️⚠️ WHY EVERY ASSERTION HERE IS WRITTEN FROM SCRATCH. Before this story the
- * control's ONLY reference anywhere in the repo was `openBreakdown()` in the
- * block above, which locates it by accessible name and clicks it. Sixteen
- * tests route through that helper and not one of them reads a class, a child
- * or a style; no e2e spec mentioned the control at all. **A restyle that
- * changed nothing would have shipped green across all 2411 unit and 355 e2e
- * tests** — measured, not assumed (mutation arm M1). There was nothing to
- * strengthen here, only something to build.
- *
- * ⚠️ `aria-hidden` IS PINNED AS AN ATTRIBUTE BECAUSE NOTHING ELSE CAN SEE IT —
- * and an earlier draft of this comment got the reason wrong, so the corrected
- * version is recorded here rather than quietly replaced. The draft claimed an
- * exposed `<svg>` "would append to the accessible name and break
- * `openBreakdown()`". **Mutation arm M4 refutes that**: deleting `aria-hidden`
- * reddens the attribute pin below and NOTHING else — all sixteen
- * `openBreakdown()` tests stay green, because an `<svg>` with no `<title>` and
- * no text content contributes nothing to the accessible name whether it is
- * hidden or not. `assertIsIconOnlyAction`'s docblock states the same mechanism
- * from the other direction. The consequence is the opposite of reassuring: the
- * name assertion is NOT a second witness for `aria-hidden`, so the attribute
- * pin is the only guard there is. Do not "simplify" it away.
- *
- * ⚠️ jsdom COMPUTES NO LAYOUT, so the checks below are class-token DECLARATION
- * checks and nothing more. The rendered floor was measured in
- * `e2e/responsive-320.spec.ts` until stories 84.2/84.5 deleted it (FR137); no
- * test measures it now. ⚠️ **The story predicted a mutation green here
- * and red there, and no such mutation exists** — arms M8 and M8b both came back
- * green on BOTH halves, because every token these tests pin is also one the
- * rendered box depends on, and the arbitrary-value CSS is emitted from
- * `ResponsiveTable.tsx`'s literal regardless of how this call site spells it.
- * What the e2e assertion adds is narrower: it proves the declared floor PAINTS.
- *
- * ⚠️ A LATER REVISION CORRECTS THE NUMBER THIS DOCBLOCK ONCE CITED. It said the
- * control measures "28px without the floor". That measurement dropped the floor
- * AND `inline-flex` together. Isolated, at 320px: floor only = **44px**,
- * `inline-flex` only = **16px**, neither = 28px. So the floor alone makes the
- * box, and the honest un-floored figure is **16px**.
- *
- * ⚠️ The retired-token sweep in this file is scoped to
- * `container.querySelector('table')` and this control is NOT in a table, so it
- * cannot police these classes (arm M11 is expected green). Widening that sweep
- * is not the fix: `SavingsPage.tsx:552`, an ancestor of this panel, already
- * carries `border-gray-200 dark:border-gray-700` — both blocklisted, both
- * pre-existing and sanctioned. Hence the explicit token pins below.
- */
 describe('SavingsPage — leftover breakdown disclosure affordance (Story 51.2)', () => {
   const disclosure = () => screen.getByRole('button', { name: 'How is this worked out?' })
   const tokensOf = (el: Element) => [...el.classList]
@@ -2114,30 +1716,18 @@ describe('SavingsPage — leftover breakdown disclosure affordance (Story 51.2)'
   beforeEach(resetAll)
   afterEach(resetAll)
 
-  // No seeding anywhere in this block, deliberately: the control renders behind
-  // `hydrated` (`useStoresHydrated()`), which is data-independent, so the
-  // affordance is present with empty stores. Seeding would imply the styling
-  // depends on data, which it does not.
+  // No seeding: the control renders behind `hydrated`, which is data-independent.
 
   it('reads as a control when closed — accent colour and a PERSISTENT underline (AC-1)', () => {
     renderWithProviders(<SavingsPage />)
     const tokens = tokensOf(disclosure())
     expect(tokens).toContain('text-accent')
-    // PERSISTENT, not `hover:underline`: AC-1 requires the affordance without
-    // hovering, and hover does not exist on touch (`global.css:102-107`).
+    // Persistent, not `hover:underline`: hover doesn't exist on touch.
     expect(tokens).toContain('underline')
     expect(tokens).not.toContain('hover:underline')
-    // The caption colours this story exists to replace. ⚠️ `text-faint` was
-    // 2.54:1 on the white `.surface` card and FAILED AA in light (story 115.2
-    // retokened it to gray-500, the same values as `text-muted`). Neither is
-    // the accent this caption needs. (Mutation arm M3.)
     expect(tokens).not.toContain('text-muted')
     expect(tokens).not.toContain('text-faint')
-    // ⚠️ BOTH HOVER ARMS, because the pair is load-bearing in opposite themes
-    // and the source docblock publishes 8.72:1 / 10.33:1 as measured fact.
-    // Drop `dark:hover:text-blue-200` and dark hover falls through to
-    // blue-800 `#1e40af` on gray-800 `#1f2937` = 1.68:1 — unreadable, and a
-    // 1.4.3 failure that no other assertion in the repo would notice.
+    // Both hover arms: without `dark:hover:text-blue-200`, dark hover contrast is 1.68:1.
     expect(tokens).toContain('hover:text-blue-800')
     expect(tokens).toContain('dark:hover:text-blue-200')
   })
@@ -2146,21 +1736,12 @@ describe('SavingsPage — leftover breakdown disclosure affordance (Story 51.2)'
     renderWithProviders(<SavingsPage />)
     const tokens = tokensOf(disclosure())
     expect(tokens).toContain('text-xs')
-    // ⚠️ STRIP VARIANTS BEFORE MATCHING. A `^`-anchored test is blind to
-    // exactly the prefixed forms this codebase uses everywhere else in the
-    // same className — `hover:bg-blue-600`, `dark:bg-gray-700`,
-    // `max-sm:bg-accent`, `sm:font-bold` would all sail past `/^bg-/` and
-    // `/^font-/`. `responsive-table-tokens.ts:37-57` does the same stripping
-    // for the same reason.
+    // Strip variants before matching: a `^`-anchored test misses `hover:bg-…`, `dark:bg-…` and the like.
     const base = (t: string) => t.split(':').pop() ?? t
     const bases = tokens.map(base)
     expect(bases.filter((t) => /^bg-/.test(t))).toEqual([])
     expect(bases.filter((t) => /^shadow/.test(t))).toEqual([])
     expect(bases.filter((t) => /^font-(semibold|bold|extrabold|black)$/.test(t))).toEqual([])
-    // AC-2's "no `px-4 py-2`-style button padding" clause, which had no
-    // assertion at all. `p-1` is required by SC 2.5.8 at desktop widths (see
-    // the source comment) and is not button weight; anything on the
-    // px-4/py-2 scale is.
     expect(bases.filter((t) => /^p[xy]?-([2-9]|1[0-9])$/.test(t))).toEqual([])
   })
 
@@ -2171,10 +1752,6 @@ describe('SavingsPage — leftover breakdown disclosure affordance (Story 51.2)'
     expect(button).toHaveAttribute('type', 'button')
     expect(button).toHaveAttribute('aria-controls', 'savings-leftover-breakdown-body')
     expect(button).toHaveAttribute('aria-expanded', 'false')
-    // ⚠️ ABSENCE, not invisibility. The docblock above the control explains
-    // why it is a <button> and not <details>/<summary>: a collapsed <summary>
-    // still renders its children, and publishing every balance-entry name as
-    // hidden text broke nine responsive-320 specs once already.
     expect(document.getElementById('savings-leftover-breakdown-body')).toBeNull()
     fireEvent.click(button)
     expect(button).toHaveAttribute('aria-expanded', 'true')
@@ -2184,10 +1761,7 @@ describe('SavingsPage — leftover breakdown disclosure affordance (Story 51.2)'
   it('rotates its chevron to match breakdownOpen, asserted in BOTH states (AC-4)', () => {
     renderWithProviders(<SavingsPage />)
     const button = disclosure()
-    // ⚠️ `getAttribute`/`classList`, never `.className.split()`. On an
-    // SVGElement `className` is an SVGAnimatedString that stringifies to
-    // "[object SVGAnimatedString]" — the exact blindness that made the retired-
-    // token sweep unable to see any <svg> until story 50.1 exposed it.
+    // `getAttribute`/`classList`: on an SVGElement `className` is an SVGAnimatedString.
     const chevron = () => button.querySelector('svg') as SVGElement
     expect(tokensOf(chevron())).not.toContain('rotate-180')
     fireEvent.click(button)
@@ -2204,73 +1778,36 @@ describe('SavingsPage — leftover breakdown disclosure affordance (Story 51.2)'
     expect(icons.length).toBe(1)
     const icon = icons[0]
     expect(icon.getAttribute('aria-hidden')).toBe('true')
-    // `currentColor` is load-bearing twice over: it inherits `.text-accent`, so
-    // the glyph needs no colour of its own (which the table-scoped sweep could
-    // not have policed), and it keeps the glyph's contrast identical to the
-    // text's — 6.70:1 light, 8.14:1 dark, both clearing 1.4.11's 3:1.
+    // `currentColor` inherits `.text-accent`, keeping the glyph's contrast equal to the text's.
     expect(icon.getAttribute('stroke')).toBe('currentColor')
     expect(icon.querySelector('path')?.getAttribute('d')).toBeTruthy()
-    // ⚠️ AC-5 says "the button's ONLY non-text child", and `svg count === 1`
-    // does not say that — a wrapper <span> or a second <img> satisfies it.
-    // `assertIsIconOnlyAction`, the helper this block copies the presence half
-    // of, asserts exactly these two.
     expect(button.children.length).toBe(1)
     expect(button.firstElementChild).toBe(icon)
-    // ⚠️ SIZE. Neither the assertions above nor the e2e box check can see a
-    // zero-sized glyph: jsdom computes no layout, and the Playwright test
-    // measures the BUTTON, which is 44px from `min-h` no matter what the icon
-    // does. So `h-0 w-0` would ship the affordance invisible with every gate
-    // green. This is the hazard the (since deleted) `responsive-320.spec.ts`
-    // recorded for the row-action icons; the same pin belongs here.
+    // Neither jsdom nor a button-box check can see a zero-sized glyph, so pin the size.
     const iconTokens = [...icon.classList]
     expect(iconTokens).toContain('h-3')
     expect(iconTokens).toContain('w-3')
   })
 
-  /**
-   * ⚠️ THIS TEST REPLACES A TAUTOLOGY. The previous version asserted
-   * `expect(button).toHaveAccessibleName('How is this worked out?')` on an
-   * element obtained via `getByRole('button', { name: 'How is this worked
-   * out?' })` — a full-string name match that had already thrown if the name
-   * differed. It restated its own locator and could not fail, while its comment
-   * called it "the pairing that makes the `aria-hidden` pin matter" — the very
-   * claim arm M4 refuted.
-   *
-   * The real content of AC-6 is that the SIXTEEN pre-existing tests reaching
-   * this control through `openBreakdown()` still resolve after a chevron was
-   * added inside it. That is what this asserts, from outside the story's own
-   * describe: locate the button the way the 45.1 block does, and prove the
-   * added child did not change what that query returns.
-   */
   it('keeps the accessible name the 45.1 block locates it by, chevron and all (AC-6)', () => {
     renderWithProviders(<SavingsPage />)
     const byName = screen.getAllByRole('button', { name: 'How is this worked out?' })
     expect(byName).toHaveLength(1)
     expect(byName[0].querySelector('svg')).not.toBeNull()
-    // The name is the VISIBLE TEXT — there is no `aria-label` here — so the
-    // glyph must contribute nothing to it. Trailing/leading whitespace from the
-    // JSX child is normalised by the accessible-name computation.
+    // The name is the visible text (no `aria-label`), so the glyph must contribute nothing.
     expect(byName[0].textContent?.trim()).toBe('How is this worked out?')
   })
 
   it('declares a mobile-only 44px target and the flex box that makes it real (AC-8)', () => {
     renderWithProviders(<SavingsPage />)
     assertHasMobileTapTarget(disclosure(), 'the leftover breakdown disclosure')
-    // ⚠️ Without a flex display the min-height still applies but the text and
-    // the glyph do not centre in the box. The class-token helper above cannot
-    // see that and neither can jsdom (the e2e that could, `responsive-320.spec.ts`,
-    // was deleted by stories 84.2/84.5; no test measures it now, and there is
-    // no `/savings` screenshot).
+    // Without a flex display the text and glyph don't centre in the min-height box.
     expect(tokensOf(disclosure())).toContain('inline-flex')
   })
 
   it('restores a focus ring after killing the native outline (AC-9)', () => {
     renderWithProviders(<SavingsPage />)
-    // Before this story the button had NO focus style at all and relied on the
-    // UA default outline. Adding `focus:outline-none` without a ring would have
-    // removed its only indicator (WCAG 2.4.7) with every gate still green — the
-    // page's focus-ring completeness test at :507 enumerates four modal inputs
-    // by testid and is structurally blind to this control.
+    // `focus:outline-none` without a ring would remove the button's only focus indicator.
     assertHasFocusRing(disclosure(), 'the leftover breakdown disclosure')
   })
 })

@@ -1,37 +1,5 @@
-/**
- * Non-retryable sync failures: queue disposition and circuit/retry independence.
- *
- * Covers two defects that shipped together and were logged as HIGH in
- * `deferred-work.md` (triaged 2026-09-23):
- *
- * 1. EVERY non-retryable failure was left in the queue forever. A permanently
- *    rejected operation was therefore replayed on every sync, pinned the status
- *    at FAILED and re-opened the circuit breaker each cycle — which suppressed
- *    retries for every OTHER entity.
- * 2. `if (nonRetryable) openCircuit() else if (requeuable) scheduleRetry()` —
- *    the `else if` meant a batch containing BOTH kinds never scheduled its
- *    retry. At the time retryable ops were removed from the queue before that
- *    point, so they were stranded in memory and lost on reload. (Since story
- *    75.3 they stay queued; a skipped retry now only delays them, and the
- *    durability itself is pinned in `retryable-durability.test.ts`.)
- *
- * ⚠️ The first fix's ORIGINAL shape was itself a data-loss bug, found in code
- * review and corrected here. It removed an operation unless the status code was
- * 401/403 — i.e. it classified on the ABSENCE of a signal. The dominant failure
- * path carries no signal: the transport maps any 200 envelope with
- * `failedCount > 0` to `retryable: false` with NO status code, and the server
- * reaches that envelope for transient faults because `applyOperation` wraps its
- * body in a blanket `catch`. A single dropped connection therefore deleted a
- * queued edit permanently. Removal now requires POSITIVE proof of permanence.
- *
- * Disposition by class:
- *   - 401 auth-blocked  → keep queued (valid op, bad session); OPEN the circuit.
- *   - 403 tier-blocked  → keep queued (valid op, valid session, lapsed plan);
- *                         do NOT open the circuit — re-auth and waiting are both
- *                         powerless, so a cooldown only suppresses other entities.
- *   - permanent status  → drop from the queue, record in `rejectedOperations`.
- *   - anything else     → keep queued.
- */
+// Removal needs positive proof of permanence: 401, 403 and unclassified failures stay queued.
+// 403 must not open the circuit: a cooldown would only suppress other entities.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SynchronizationService } from '../synchronization'
@@ -39,9 +7,7 @@ import type { SyncOperation } from '../types'
 
 type AnyOp = { id: string; type: string; entityType: string; entityId?: string }
 
-// A complete operation. Each op gets its OWN `entityId` unless the test names
-// one: the service keys rows on `entityType:entityId`, so two ops that share an
-// id are the same row (the refused-create follow-up rule depends on that).
+// Each op gets its own entityId unless the test names one: ops sharing one are the same row.
 function op(id: string, overrides: Partial<SyncOperation> = {}): SyncOperation {
   return {
     id,
@@ -60,7 +26,6 @@ describe('Non-retryable sync failures', () => {
   let service: SynchronizationService
   let mockQueue: any
   let processOperation: any
-  // Per-operation-id result, so one batch can mix failure classes.
   let resultForOp: Map<string, any>
 
   beforeEach(() => {
@@ -69,7 +34,6 @@ describe('Non-retryable sync failures', () => {
       add: vi.fn(async (o: AnyOp) => {
         operations.push(o)
       }),
-      // `destroy()` closes the queue (story 79.1).
       close: vi.fn(),
       getAll: vi.fn(() => [...operations]),
       getReadyOperations: vi.fn(() => [...operations]),
@@ -80,7 +44,6 @@ describe('Non-retryable sync failures', () => {
           if (op && ids.includes(op.id)) operations.splice(i, 1)
         }
       }),
-      // Refused ops leave the queue through `discardBatch` (story 75.3).
       discardBatch: vi.fn(async (ids: string[]) => {
         const before = operations.length
         for (let i = operations.length - 1; i >= 0; i--) {
@@ -109,11 +72,6 @@ describe('Non-retryable sync failures', () => {
     vi.useRealTimers()
   })
 
-  // Story 75.1 code review, decision D1 (Lucas, 2026-09-28). A refused CREATE
-  // leaves the row existing locally but never on the server, so every later op for
-  // that row can only fail — the server answers `update-delete` / `Entity not found`
-  // (a conflict, never removed) — and the account-wide deadlock returns one op
-  // later. The row's other queued ops are therefore refused WITH the create.
   describe("a permanently refused CREATE takes its row's queued follow-ups with it", () => {
     const create = op('op-create', { type: 'create', entityType: 'savingsGoal', entityId: 'g-1' })
     const update = op('op-update', { type: 'update', entityType: 'savingsGoal', entityId: 'g-1' })
@@ -140,7 +98,6 @@ describe('Non-retryable sync failures', () => {
       expect(state.rejectedOperations.map((o: AnyOp) => o.id).sort()).toEqual(
         ['op-create', 'op-delete', 'op-update'].sort()
       )
-      // Not ALSO recorded as a conflict or a retryable failure.
       expect(state.conflictOperations.map((o: AnyOp) => o.id)).not.toContain('op-update')
       expect(state.failedOperations.map((o: AnyOp) => o.id)).not.toContain('op-delete')
     })
@@ -169,7 +126,6 @@ describe('Non-retryable sync failures', () => {
       await service.getQueue().add(otherRow)
       await service.getQueue().add(otherType)
       refuse('op-create')
-      // Both kept by the no-status-code rule, so they must still be queued.
       resultForOp.set('op-other', { success: false, retryable: false })
       resultForOp.set('op-type', { success: false, retryable: false })
 
@@ -218,10 +174,7 @@ describe('Non-retryable sync failures', () => {
 
       await service.sync()
 
-      // It must NOT still be queued — replaying it forever is the defect.
       expect(service.getQueue().getAll()).toHaveLength(0)
-      // `discardBatch`, not `removeBatch`, since story 75.3: a refused op leaves the
-      // queue even when storage refuses the write.
       expect(mockQueue.discardBatch).toHaveBeenCalledWith(['op-reject'])
       // @ts-expect-error - accessing private property for testing
       const rejected = service.state.rejectedOperations
@@ -242,9 +195,7 @@ describe('Non-retryable sync failures', () => {
 
     it('KEEPS a non-retryable failure that carries NO status code — the transient-fault shape', async () => {
       await service.getQueue().add(op('op-blip', { type: 'update', entityType: 'category' }))
-      // Exactly what `features/api/client.ts` returns for a 200 envelope with
-      // `failedCount > 0`, which the server emits when `applyOperation` catches a
-      // dropped connection or a statement timeout. Deleting this was data loss.
+      // What the transport returns for a 200 envelope with `failedCount > 0`, e.g. a caught blip.
       resultForOp.set('op-blip', {
         success: false,
         error: 'Operation failed on server',
@@ -289,8 +240,6 @@ describe('Non-retryable sync failures', () => {
 
       await service.sync()
 
-      // The operation is valid; only the session is not. It must survive to be
-      // synced after re-authentication.
       expect(
         service
           .getQueue()
@@ -314,8 +263,6 @@ describe('Non-retryable sync failures', () => {
 
       await service.sync()
 
-      // The op is valid and so is the session — the PLAN lapsed. Keep the data
-      // for a user who may resubscribe...
       expect(
         service
           .getQueue()
@@ -324,10 +271,7 @@ describe('Non-retryable sync failures', () => {
       ).toEqual(['op-tier'])
       // @ts-expect-error - accessing private property for testing
       expect(service.state.rejectedOperations).toHaveLength(0)
-      // ...but a cooldown buys nothing here, and opening the circuit every sync
-      // is the exact "suppresses retries for every OTHER entity" defect this
-      // split exists to remove. This is the assertion that fails if 403 is
-      // folded back in with 401.
+      // Fails if 403 is folded back in with 401.
       // @ts-expect-error - accessing private property for testing
       expect(service.circuitBroken).toBe(false)
       // @ts-expect-error - accessing private property for testing
@@ -356,22 +300,16 @@ describe('Non-retryable sync failures', () => {
 
       await service.sync()
 
-      // The circuit opened because of the auth failure...
       // @ts-expect-error - accessing private property for testing
       expect(service.circuitBroken).toBe(true)
-      // ...and the retryable op is recorded as failed. (Since story 75.3 it also
-      // stays queued; `failedOperations` is a view of queued ops, not a carrier.)
       // @ts-expect-error - accessing private property for testing
       expect(service.state.failedOperations.map((o: AnyOp) => o.id)).toEqual(['op-transient'])
 
-      // The defect: with `else if`, NO timer existed, so nothing would ever put
-      // `op-transient` back.
       // @ts-expect-error - accessing private property for testing
       expect(service.retryTimeout).toBeTruthy()
 
-      // ⚠️ A pending timer is not the behaviour under test — RECOVERY is. A timer
-      // that fires and does nothing would satisfy the assertion above, so drive
-      // it and observe the operation actually coming back.
+      // A timer that fires and does nothing would satisfy the assertion above, so drive it and
+      // observe the operation actually coming back.
       const callsBefore = processOperation.mock.calls.length
       resultForOp.set('op-transient', { success: true })
       resultForOp.set('op-auth', { success: true })
@@ -400,16 +338,11 @@ describe('Non-retryable sync failures', () => {
 
       // @ts-expect-error - accessing private property for testing
       expect(service.state.failedOperations.map((o: AnyOp) => o.id)).toEqual(['op-transient'])
-      // A deferred timer must exist. Returning early here used to strand the
-      // operation in memory, where only `runRetry` could recover it. Since story
-      // 75.3 it stays queued, but the timer is still the fast path.
       // @ts-expect-error - accessing private property for testing
       expect(service.retryTimeout).toBeTruthy()
 
-      // Let the cooldown elapse. ⚠️ Assert the OPERATION is recovered, not just
-      // that `circuitBroken` flipped — the handler assigns that two statements
-      // before calling `runRetry`, so it would still be false if `runRetry` threw
-      // or synced nothing.
+      // Assert the operation is recovered, not just `circuitBroken`: that flips before `runRetry`
+      // runs, so it would be false even if `runRetry` synced nothing.
       const callsBefore = processOperation.mock.calls.length
       resultForOp.set('op-transient', { success: true })
       await vi.advanceTimersByTimeAsync(70_000)
@@ -437,14 +370,13 @@ describe('Non-retryable sync failures', () => {
       // @ts-expect-error - accessing private property for testing
       expect(service.retryTimeout).toBeTruthy()
 
-      // A later failure extends the cooldown WITHOUT re-entering scheduleRetry(),
-      // so the armed timer is never cleared and still fires on the old schedule.
+      // A later failure extends the cooldown without re-entering scheduleRetry(), so the armed
+      // timer still fires on the old schedule.
       await vi.advanceTimersByTimeAsync(29_000)
       // @ts-expect-error - accessing private property for testing
       service.openCircuit()
 
-      // The original timer fires here. It must re-defer rather than force the
-      // circuit closed 29s into a freshly extended 30s cooldown.
+      // The original timer fires here and must re-defer, not close the freshly extended cooldown.
       await vi.advanceTimersByTimeAsync(10_000)
 
       // @ts-expect-error - accessing private property for testing

@@ -1,15 +1,3 @@
-/**
- * savingsStore selector tests (story 16-1, FR36).
- *
- * Pins the totals-vs-progress split introduced for goal-less savings accounts
- * (null target): balances of accounts count toward the savings TOTAL, but
- * accounts are excluded from goal-progress math. "No target" must surface as
- * ABSENT progress (null), never 0% (which reads as "0% toward a goal").
- *
- * Runs in jsdom (`.dom.test.ts`) for a real `localStorage` (the store uses the
- * zustand persist middleware).
- */
-
 import type { ClientSavingsGoal } from '@budget-planner/core/services/savingsGoals'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { SAVINGS_GOALS_STORAGE_KEY, useSavingsStore } from '../savingsStore'
@@ -22,16 +10,16 @@ const base = {
 const goal: ClientSavingsGoal = {
   id: 'goal-1',
   name: 'Vacation',
-  targetAmount: 100000, // $1000
-  currentBalance: 60000, // $600 → 60%
+  targetAmount: 100000,
+  currentBalance: 60000,
   ...base,
 }
 
 const account: ClientSavingsGoal = {
   id: 'acc-1',
   name: 'Checking Buffer',
-  targetAmount: null, // account: no target
-  currentBalance: 250000, // $2500
+  targetAmount: null,
+  currentBalance: 250000,
   ...base,
 }
 
@@ -49,7 +37,6 @@ describe('savingsStore — accounts vs goals (Story 16-1)', () => {
 
   it('getTotalTargetAmount excludes accounts (null target)', () => {
     useSavingsStore.setState({ savingsGoals: [goal, account] })
-    // Only the goal's target counts; the account contributes no target.
     expect(useSavingsStore.getState().getTotalTargetAmount()).toBe(100000)
   })
 
@@ -85,14 +72,8 @@ describe('savingsStore — accounts vs goals (Story 16-1)', () => {
   })
 })
 
-/**
- * Story 26.1: non-destructive v1→v2 persist migration. Existing saved rows (no
- * allocation data) must load as 'automatic' with no manual amount, so the free
- * tier matches the DB migration's server-side default.
- */
 describe('savingsStore — v1→v2 allocation backfill (Story 26.1)', () => {
   it("backfills allocationMode='automatic' and monthlyAllocation=null for a legacy v1 row", async () => {
-    // A v1-shaped persisted payload: uuid ids already, but no allocation fields.
     localStorage.setItem(
       SAVINGS_GOALS_STORAGE_KEY,
       JSON.stringify({
@@ -117,7 +98,6 @@ describe('savingsStore — v1→v2 allocation backfill (Story 26.1)', () => {
     const [goal] = useSavingsStore.getState().savingsGoals
     expect(goal.allocationMode).toBe('automatic')
     expect(goal.monthlyAllocation).toBeNull()
-    // Existing values are preserved unchanged.
     expect(goal.name).toBe('Old Vacation')
     expect(goal.targetAmount).toBe(100000)
     expect(goal.currentBalance).toBe(60000)

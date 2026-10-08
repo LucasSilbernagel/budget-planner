@@ -1,12 +1,3 @@
-/**
- * GET /api/auth/me (Story 70.1, AC-4).
- *
- * The Settings plan label ("Annual Plan") is rendered from this response, so
- * the route must pass `billingInterval` through. The session resolver is mocked
- * here; that it READS the column from the database is proven end to end in
- * `routes/api/webhooks/__tests__/paddle-webhook.db.test.ts` (Story 70.1 block).
- */
-
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/server/api/auth/paddle', () => ({
@@ -46,8 +37,7 @@ describe('GET /api/auth/me', () => {
         user: { billingInterval?: unknown }
       }
 
-      // `toHaveProperty` with the value, so a DROPPED key (undefined) fails for
-      // `null` too — a bare `toBe(null)` on `body.user.billingInterval` would not.
+      // `toHaveProperty` fails on a dropped key; `toBe(null)` would not.
       expect(body.user).toHaveProperty('billingInterval', billingInterval)
     }
   )

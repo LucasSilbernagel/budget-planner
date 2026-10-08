@@ -1,17 +1,5 @@
-/**
- * Story 105.1 (FR173): recurring amounts convert to monthly exactly.
- *
- * `normalizeToMonthly` used `Math.round(amount * (26 / 12))`. `26 / 12` is not
- * exact in float, so an exact half cent could land just below .5 and round DOWN
- * (27¢ biweekly → 58.49999999999999 → 58; exactly 58.5 → 59). The 104.1 review
- * MEASURED 120,989 such misses in 0..1,999,999 for biweekly, and 0 for weekly,
- * monthly and annually.
- *
- * Every oracle here is INTEGER arithmetic: `amount × periodsPerYear / 12`,
- * rounded half toward +Infinity (`Math.round`'s own rule). A float oracle would
- * prove nothing. The small sweeps stay below 2^53, so plain Number integer maths
- * is exact; the validator-bound cases use BigInt.
- */
+// 26 / 12 isn't exact in float, so a half cent can round down (27¢ biweekly → 58).
+// Oracles are exact integer arithmetic, half toward +Infinity.
 
 import { describe, expect, it } from 'vitest'
 import { type Frequency, normalizeToMonthly } from '../normalization'
@@ -19,14 +7,12 @@ import { type Frequency, normalizeToMonthly } from '../normalization'
 const PERIODS: Record<Frequency, number> = { weekly: 52, biweekly: 26, monthly: 12, annually: 1 }
 const FREQUENCIES = Object.keys(PERIODS) as Frequency[]
 
-/** Round `num / den` half toward +Infinity, exactly. Integers below 2^53, den > 0. */
 function exactRound(num: number, den: number): number {
   const q = Math.floor(num / den)
   const rem = num - q * den
   return rem * 2 >= den ? q + 1 : q
 }
 
-/** The same rule over BigInt, for numerators past 2^53. */
 function exactRoundBig(num: bigint, den: bigint): number {
   const q = num / den
   const r = num % den
@@ -73,9 +59,7 @@ describe('normalizeToMonthly — exact against an integer oracle (AC-3)', () => 
 })
 
 describe('normalizeToMonthly — exact at the validator bound (AC-4)', () => {
-  // `validateBalanceTracking` and friends cap money at MAX_SAFE_INTEGER / 100.
-  // The numerator `amount × 52` must stay below 2^53 there, or the integer
-  // product itself would lose precision.
+  // Money caps at MAX_SAFE_INTEGER / 100, so amount × 52 must stay below 2^53 there.
   const BOUND = Math.floor(Number.MAX_SAFE_INTEGER / 100)
 
   it('keeps the largest numerator below 2^53', () => {

@@ -11,19 +11,8 @@ import {
 } from '../../stores/retirementPlannerStore'
 import { RetirementAccumulationPlanner } from '../RetirementAccumulationPlanner'
 
-/**
- * The retirement plan survives (story 44.1, FR71).
- *
- * ⚠️ WHAT THIS FILE CANNOT PROVE. jsdom has no reload. Unmounting and remounting
- * shows that the plan outlives the COMPONENT — but a store that never wrote to
- * localStorage at all passes that perfectly, because the zustand store is a
- * module singleton holding the value in memory. The reload claim lives in
- * `e2e/retirement-plan-persistence.spec.ts` and nowhere else. The tests here
- * that go through `persist.rehydrate()` are the ones that touch storage.
- *
- * ⚠️ NO FIXTURE VALUE EQUALS ITS DEFAULT. A test that stores `'35'` and asserts
- * `'35'` cannot tell "restored" from "defaulted".
- */
+// jsdom has no reload: only tests that go through persist.rehydrate() touch storage.
+// No fixture value equals its default, so restored is distinguishable from defaulted.
 
 const ISO = '2026-08-06T00:00:00.000Z'
 
@@ -38,8 +27,6 @@ const incomeRow = (amount: number) => ({
   updatedAt: ISO,
 })
 
-// ⚠️ Story 47.2: `monthlyContribution` now IS the derived "Monthly Savings"
-// figure, so it is a real parameter rather than inert padding.
 const investmentRow = (currentBalance: number, monthlyContribution = 0) => ({
   id: 'inv-1',
   type: 'investment' as const,
@@ -51,16 +38,12 @@ const investmentRow = (currentBalance: number, monthlyContribution = 0) => ({
   updatedAt: ISO,
 })
 
-/** A saved plan in which no field equals its default. */
 const SAVED_PLAN = {
   currentAgeInput: '42',
   lifeExpectancyInput: '88',
   desiredIncomeInput: '55,000.00',
   desiredIncomeTouched: true,
   desiredIncomeLocale: 'en-US',
-  // ⚠️ 'monthly', not 'annual'. 'annual' IS the default, so the file's own
-  // "no fixture value equals its default" rule was violated here and a restored
-  // basis was indistinguishable from a defaulted one (code review).
   incomeBasis: 'monthly',
   annualReturnInput: '7.5',
   postRetirementReturnInput: '3.25',
@@ -72,7 +55,6 @@ function seedStoredPlan(plan: unknown, version: number = RETIREMENT_PLANNER_VERS
   localStorage.setItem(RETIREMENT_PLANNER_STORAGE_KEY, JSON.stringify({ state: { plan }, version }))
 }
 
-/** Load a stored plan the way `StoreHydration` does on a real page load. */
 async function rehydrate(): Promise<void> {
   await act(async () => {
     await useRetirementPlannerStore.persist.rehydrate()
@@ -116,9 +98,7 @@ describe('the plan outlives the component (AC-1)', () => {
     renderWithProviders(<RetirementAccumulationPlanner />)
 
     expect(screen.getByLabelText('Current Age')).toHaveValue(42)
-    // Grouped, not the raw '55000' that was typed: clicking the radio blurred
-    // the money field, and `reEcho` re-echoes it in locale form. What persisted
-    // is what the user was actually left looking at.
+    // Grouped: clicking the radio blurred the money field, which re-echoes it in locale form.
     expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('55,000.00')
     expect(screen.getByRole('radio', { name: /perpetual/i })).toBeChecked()
   })
@@ -139,7 +119,6 @@ describe('the plan outlives the component (AC-1)', () => {
 
   it('restores a comma rate as typed and solves it as the point rate (story 110.1)', async () => {
     useBalanceStore.setState({ entries: [investmentRow(1_000_000_00, 150_000)] })
-    // The point form first: its outcome is what the comma form must reproduce.
     seedStoredPlan({ ...SAVED_PLAN, annualReturnInput: '7.5', postRetirementReturnInput: '3.25' })
     await rehydrate()
     const first = renderWithProviders(<RetirementAccumulationPlanner />)
@@ -159,24 +138,19 @@ describe('the plan outlives the component (AC-1)', () => {
 
 describe('the income prefill must not clobber a restored plan (AC-1)', () => {
   it('leaves a restored desired income alone WITH income rows present', async () => {
-    // ⚠️ THE INCOME ROWS ARE THE POINT OF THIS TEST. `prefillDesiredIncomeCents`
-    // derives from the income store, which rehydrates in the same pass as the
-    // plan, so the seeding effect re-fires on every visit. Without income rows
-    // the prefill is null, the effect returns early, and this test passes against
-    // a build that has no guard at all.
+    // Without income rows the prefill is null and the seeding effect returns early,
+    // so this would pass with no guard at all.
     useIncomeStore.setState({ incomeSources: [incomeRow(200_000)] })
     seedStoredPlan(SAVED_PLAN)
     await rehydrate()
 
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // The prefill for this fixture is $2,000 x 12 x 0.5 = 12,000.00. If the guard
-    // is gone that is what appears here instead of the saved 55000.
+    // The prefill would be $2,000 x 12 x 0.5 = 12,000.00 if the guard were gone.
     expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('55,000.00')
   })
 
   it('still seeds the field for a user who has never authored it', () => {
-    // The courtesy the guard must not break: untouched means "seed me".
     useIncomeStore.setState({ incomeSources: [incomeRow(200_000)] })
     renderWithProviders(<RetirementAccumulationPlanner />)
     expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('12,000.00')
@@ -187,7 +161,6 @@ describe('the income prefill must not clobber a restored plan (AC-1)', () => {
     renderWithProviders(<RetirementAccumulationPlanner />)
 
     await user.type(screen.getByLabelText('Desired Retirement Income'), '999')
-    // Income arrives afterwards — a prefill recompute that must not overwrite.
     act(() => {
       useIncomeStore.setState({ incomeSources: [incomeRow(200_000)] })
     })
@@ -217,14 +190,10 @@ describe('a deliberately cleared field stays cleared (AC-4)', () => {
 
     expect(screen.getByLabelText('Current Age')).toHaveValue(null)
     expect(screen.getByLabelText('Life Expectancy')).toHaveValue(null)
-    // ...while a field the payload still carries keeps its SAVED value.
     expect(screen.getByLabelText('Expected Annual Return')).toHaveValue('7.5')
   })
 
   it('takes the default for a field genuinely ABSENT from the payload', async () => {
-    // ⚠️ The previous test's comment used to claim this, while asserting a field
-    // that was PRESENT in its fixture (7.5 is the saved value, not the default
-    // 6.0) — an assertion that taught a false default. Absent is its own case.
     const { annualReturnInput: _omitted, ...withoutRate } = SAVED_PLAN
     seedStoredPlan({ ...withoutRate, currentAgeInput: '' })
     await rehydrate()
@@ -255,7 +224,6 @@ describe('the mirror hint matches the restored plan (AC-3)', () => {
     renderWithProviders(<RetirementAccumulationPlanner />)
 
     expect(screen.getByText(MIRROR_HINT)).toBeInTheDocument()
-    // Mirroring means it shows the ACCUMULATION rate, not its own empty value.
     expect(screen.getByLabelText('Post-Retirement Annual Return')).toHaveValue('7.5')
   })
 
@@ -281,10 +249,7 @@ describe('the derived figures still derive (AC-8)', () => {
     })
 
     const parsed = JSON.parse(localStorage.getItem(RETIREMENT_PLANNER_STORAGE_KEY) as string)
-    // Story 65.2: `adoptedMonthlyCents` joins the persisted plan. This list is a
-    // TRIPWIRE, not bookkeeping — it fired when the field was added, which is the
-    // whole point: a new persisted key is a decision, and the derived figures
-    // below must stay OUT (they track other stores and would restore stale money).
+    // A new persisted key is a decision; derived figures must stay out (they would restore stale money).
     expect(Object.keys(parsed.state.plan).sort()).toEqual(
       [
         'adoptedMonthlyCents',
@@ -310,11 +275,6 @@ describe('the derived figures still derive (AC-8)', () => {
     renderWithProviders(<RetirementAccumulationPlanner />)
 
     expect(screen.getByTestId('derived-current-saved')).toHaveTextContent('7,777.00')
-    // ⚠️ The describe says "figureS". Before story 47.2 only ONE of them was
-    // checked here, so the monthly figure's derive-don't-persist property was
-    // unguarded in the suite that exists to prove it — and after 47.2 both
-    // figures read the same rows, which is exactly when a persisted-stale bug
-    // would hit both at once.
     expect(screen.getByTestId('derived-monthly-savings')).toHaveTextContent('333.00')
   })
 })
@@ -331,9 +291,7 @@ describe('corrupt payloads (AC-5)', () => {
   })
 
   it('never hands the parsers a non-string, which would throw before any guard', async () => {
-    // `parseAge` calls `.trim()` on its argument. A surviving number is a
-    // TypeError inside the parse memo, which the try/catch would report as an
-    // "invalid input" note rather than the defaults the user should see.
+    // `parseAge` calls `.trim()`; a surviving number would throw inside the parse memo.
     seedStoredPlan({ ...SAVED_PLAN, currentAgeInput: 42 }, RETIREMENT_PLANNER_VERSION)
     await rehydrate()
     renderWithProviders(<RetirementAccumulationPlanner />)
@@ -347,12 +305,6 @@ describe('corrupt payloads (AC-5)', () => {
 
 describe('the income basis and the seeded figure stay in step (code review)', () => {
   it('re-seeds an UNTOUCHED figure when the basis changes, so it round-trips', async () => {
-    // ⚠️ THE BUG THIS PINS. An income-seeded user saw 12,000.00 under Annual,
-    // switched to Monthly, and the field kept reading 12,000.00 — now solved as a
-    // MONTHLY income, i.e. 12x their plan. That trio persisted, and on the next
-    // load the seed effect re-fired and rewrote it to 1,000.00: the projection
-    // they left was not the projection they came back to. Before persistence the
-    // state evaporated at unmount.
     const user = userEvent.setup()
     useIncomeStore.setState({ incomeSources: [incomeRow(200_000)] })
     renderWithProviders(<RetirementAccumulationPlanner />)
@@ -360,15 +312,11 @@ describe('the income basis and the seeded figure stay in step (code review)', ()
     expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('12,000.00')
     await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
 
-    // What is on screen now is what a reload will produce, because the seed
-    // follows the basis while the value is unauthored.
     expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('1,000.00')
     expect(useRetirementPlannerStore.getState().plan.desiredIncomeInput).toBe('1,000.00')
   })
 
   it('leaves an AUTHORED figure alone when the basis changes', async () => {
-    // The other half: switching the basis must still change only the MEANING of
-    // a number the user typed, never the number itself.
     const user = userEvent.setup()
     useIncomeStore.setState({ incomeSources: [incomeRow(200_000)] })
     renderWithProviders(<RetirementAccumulationPlanner />)
@@ -378,21 +326,14 @@ describe('the income basis and the seeded figure stay in step (code review)', ()
     await user.type(field, '9999')
     await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
 
-    // Grouped because moving to the select blurred the money field and `reEcho`
-    // ran — the MAGNITUDE is what must be untouched, and 9999 -> 9,999.00 is the
-    // same number. A re-seed would have produced 1,000.00 instead.
+    // Grouped because blurring the money field re-echoes it; a re-seed would give 1,000.00.
     expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('9,999.00')
   })
 })
 
 describe('a persisted money string survives a currency change (code review, HIGH)', () => {
   it('re-expresses an authored figure instead of reinterpreting it', async () => {
-    // ⚠️ MEASURED AGAINST THE REAL PARSER: '55.000,00' authored on EUR/de-DE and
-    // reparsed under en-US yields 5500 cents — $55 where the user meant €55,000.
-    // '1234,56' yields $123,456. No throw, no invalid state: the field keeps
-    // showing the old string while the solver answers a different question.
-    // Currency is two clicks away in Settings, and this store is the only one
-    // that persists a display string rather than integer cents.
+    // '55.000,00' authored under de-DE and reparsed under en-US yields 5500 cents.
     seedStoredPlan({
       ...SAVED_PLAN,
       desiredIncomeInput: '55.000,00',
@@ -404,7 +345,6 @@ describe('a persisted money string survives a currency change (code review, HIGH
 
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // The MAGNITUDE is carried across, not the characters.
     expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('55,000.00')
     expect(useRetirementPlannerStore.getState().plan.desiredIncomeLocale).toBe('en-US')
   })
@@ -420,8 +360,7 @@ describe('a persisted money string survives a currency change (code review, HIGH
   })
 
   it('carries the magnitude of a grouped-vs-decimal ambiguity correctly', async () => {
-    // '1,2' is not a partial entry under de-DE — the comma is its DECIMAL
-    // separator, so this is 1.2 and must come across as 1.20, not as 12 or 1,200.
+    // Under de-DE the comma is the decimal separator: this is 1.2, not 12.
     seedStoredPlan({
       ...SAVED_PLAN,
       desiredIncomeInput: '1,2',
@@ -437,8 +376,6 @@ describe('a persisted money string survives a currency change (code review, HIGH
   })
 
   it('keeps a genuinely unparseable entry exactly as typed rather than mangling it', async () => {
-    // A digit-free partial has no magnitude to carry across; the characters are
-    // the only thing worth preserving, and the field must not become '0.00'.
     seedStoredPlan({
       ...SAVED_PLAN,
       desiredIncomeInput: '-',
@@ -457,9 +394,6 @@ describe('a persisted money string survives a currency change (code review, HIGH
 
 describe('the authored latch is not tripped by a rejected keystroke (code review)', () => {
   it('keeps seeding after a character the sanitizer throws away', async () => {
-    // One stray letter in a money field used to latch `desiredIncomeTouched`
-    // permanently — and persistently — without changing a single character on
-    // screen, silently ending income tracking for that user forever.
     const user = userEvent.setup()
     useIncomeStore.setState({ incomeSources: [incomeRow(200_000)] })
     renderWithProviders(<RetirementAccumulationPlanner />)
@@ -473,9 +407,7 @@ describe('the authored latch is not tripped by a rejected keystroke (code review
 
 describe('an UNTOUCHED seeded figure written under another locale (story 99.3: a plan pulled from another device)', () => {
   it('is re-expressed in this device’s locale even with no income to seed from', async () => {
-    // A seeded figure from a de-DE device, pulled into an en-US device that has
-    // no income rows (so the seed effect cannot rewrite it). Read raw under
-    // en-US, '66.000,00' is 6,600 cents: a 1000x error on the plan's central figure.
+    // Read raw under en-US, '66.000,00' is 6,600 cents: a 1000x error.
     seedStoredPlan({
       ...SAVED_PLAN,
       desiredIncomeInput: '66.000,00',

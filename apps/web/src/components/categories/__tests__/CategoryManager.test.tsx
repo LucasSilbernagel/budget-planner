@@ -1,15 +1,3 @@
-/**
- * CategoryManager tests (story 30.4b, AC-2, AC-6).
- *
- * Create / rename / delete against the REAL store and the real
- * `useCategoryManager` — the point of this surface is the cross-store cascade
- * and the store's own validation, so mocking either would test the mock.
- *
- * ⚠️ Asserting the confirm dialog OPENED is not asserting it showed the right
- * COUNT, and asserting an error rendered is not asserting the reason MATCHED.
- * Every assertion below names the specific value (30.4a review lesson).
- */
-
 import { expectSharedGreen } from '@/test/white-fill-tokens'
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -30,7 +18,6 @@ afterEach(() => {
   act(resetStores)
 })
 
-/** Create a category through the UI, the way a user does. */
 async function addCategory(
   user: ReturnType<typeof userEvent.setup>,
   kind: 'income' | 'expense',
@@ -57,7 +44,6 @@ describe('creating a category (AC-2)', () => {
     expect(created).toHaveLength(1)
     expect(created[0]?.name).toBe('Groceries')
     expect(created[0]?.kind).toBe('expense')
-    // It lands in the EXPENSE section, not merely somewhere on the page.
     const expenses = screen.getByTestId('category-section-expense')
     expect(within(expenses).getByText('Groceries')).toBeInTheDocument()
     expect(
@@ -92,8 +78,7 @@ describe('creating a category (AC-2)', () => {
     const user = userEvent.setup()
     render(<CategoryManager />)
 
-    // Reachable only because the input carries no `maxLength` — see the comment
-    // on that input. `paste` rather than `type` keeps the test fast.
+    // Reachable only because the input has no maxLength.
     await user.click(screen.getByTestId('category-new-input-expense'))
     await user.paste('x'.repeat(MAX_CATEGORY_NAME_LENGTH + 1))
     await user.click(screen.getByTestId('category-add-expense'))
@@ -170,7 +155,6 @@ describe('renaming a category (AC-2)', () => {
     await user.click(screen.getByTestId('category-rename-save-expense'))
 
     expect(useCategoryStore.getState().categories[0]?.name).toBe('Food')
-    // The row still points at the SAME id — a rename is not a re-assignment.
     expect(useExpenseStore.getState().expenses[0]?.categoryId).toBe(id)
     expect(screen.getByText('Food')).toBeInTheDocument()
     expect(screen.queryByText('Groceries')).not.toBeInTheDocument()
@@ -218,14 +202,11 @@ describe('renaming a category (AC-2)', () => {
     await user.clear(screen.getByTestId('category-rename-input-expense'))
     await user.type(screen.getByTestId('category-rename-input-expense'), 'Food')
 
-    // Deleted on another device / in another tab while this form was open.
     act(() => {
       useCategoryStore.getState().deleteCategory(id)
     })
     await user.click(screen.getByTestId('category-rename-save-expense'))
 
-    // The reason must be `not-found`, NOT `empty` — a two-valued union forced
-    // the wrong one and sent focus to a name input that was never the problem.
     expect(screen.getByTestId('category-error-not-found')).toHaveTextContent('Category not found')
     expect(screen.queryByTestId('category-error-empty')).not.toBeInTheDocument()
     expect(screen.queryByTestId('category-rename-input-expense')).not.toBeInTheDocument()
@@ -233,11 +214,7 @@ describe('renaming a category (AC-2)', () => {
 })
 
 describe('focus after the delete confirmation closes (code review 30.4b)', () => {
-  // ⚠️ `ConfirmDialog` forwards `finalFocusRef` to `Modal`, which calls
-  // `.focus()` on it unconditionally when the dialog closes. The ref points at
-  // the manager's <main>, and an element with no `tabIndex` is NOT focusable —
-  // so `.focus()` was a silent no-op and focus fell to <body>, making a keyboard
-  // user restart tabbing from the top of the page after every delete OR cancel.
+  // Modal focuses finalFocusRef on close; without tabIndex the <main> is unfocusable and focus falls to <body>.
   it.each([
     ['cancelling', 'delete-confirm-cancel'],
     ['confirming', 'delete-confirm-confirm'],
@@ -255,20 +232,7 @@ describe('focus after the delete confirmation closes (code review 30.4b)', () =>
 })
 
 describe('single-root invariant (story 30.5)', () => {
-  /**
-   * ⚠️ THE MANAGER MUST RENDER EXACTLY ONE ROOT ELEMENT.
-   *
-   * Story 30.5 hoisted the page shell into `CategoriesPage`, which now stacks
-   * `<CategoryManager />` and `<CategoryBreakdown />` in a `space-y-8`
-   * container. `Modal` renders IN NORMAL FLOW with no portal, and the
-   * `ConfirmDialog` is a SIBLING of <header>/<main> inside this component — so
-   * if the manager ever returned a fragment instead of a wrapper, `> * + *`
-   * would apply a top margin to the FIXED overlay and leave an undimmed strip
-   * across the top of the open dialog.
-   *
-   * That failure is invisible to every other assertion in this file (they all
-   * pass with the dialog present but mis-offset), so it is pinned here.
-   */
+  // Modal renders in flow, so a fragment root would let space-y offset the fixed dialog overlay.
   it('renders one root element, so a spaced parent cannot margin the fixed overlay', () => {
     const { container } = render(<CategoryManager />)
     expect(container.children).toHaveLength(1)
@@ -281,7 +245,6 @@ describe('single-root invariant (story 30.5)', () => {
     await user.click(screen.getByRole('button', { name: 'Delete Groceries' }))
 
     expect(screen.getByRole('alertdialog')).toBeInTheDocument()
-    // Still one root: the dialog is nested, not a spaced sibling of the manager.
     expect(container.children).toHaveLength(1)
     expect(container.firstElementChild?.contains(screen.getByRole('alertdialog'))).toBe(true)
   })
@@ -294,16 +257,10 @@ describe('per-row accessible names (code review 30.4b)', () => {
     await addCategory(user, 'expense', 'Groceries')
     await addCategory(user, 'expense', 'Rent')
 
-    // ⚠️ Before the review fix these buttons were all named just "Rename" /
-    // "Delete", so a screen-reader user could not tell which category a
-    // DESTRUCTIVE action targeted. The old tests passed only BECAUSE the names
-    // were not distinguishing — `getByRole` would have thrown on ambiguity had
-    // they been correct.
     expect(screen.getByRole('button', { name: 'Delete Groceries' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Delete Rent' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Rename Groceries' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Rename Rent' })).toBeInTheDocument()
-    // And the bare name must no longer match anything, in either direction.
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Rename' })).not.toBeInTheDocument()
   })
@@ -335,7 +292,6 @@ describe('deleting a category (AC-2)', () => {
             name: 'Refunds',
             amount: 500,
             frequency: 'monthly' as const,
-            // A DIFFERENT category's row must not be counted.
             categoryId: 'someone-else',
             createdAt: '2026-01-01T00:00:00.000Z',
             updatedAt: '2026-01-01T00:00:00.000Z',
@@ -354,7 +310,6 @@ describe('deleting a category (AC-2)', () => {
 
     const dialog = screen.getByRole('alertdialog')
     expect(dialog).toHaveTextContent('2 entries will be left uncategorized')
-    // Three rows exist in total; only two use this category.
     expect(dialog).not.toHaveTextContent('3 entries')
   })
 
@@ -364,8 +319,7 @@ describe('deleting a category (AC-2)', () => {
     await user.click(screen.getByRole('button', { name: 'Delete Groceries' }))
     expect(screen.getByRole('alertdialog')).toHaveTextContent('2 entries')
 
-    // A pull, another tab, or an edit behind the modal. A `countRowsUsing`
-    // snapshot would still say 2 here and the user would confirm against a lie.
+    // A countRowsUsing snapshot would still say 2 here.
     act(() => {
       useExpenseStore.getState().updateExpense('expense-2', { categoryId: null })
     })
@@ -394,7 +348,6 @@ describe('deleting a category (AC-2)', () => {
     const category = useCategoryStore.getState().categories.find((c) => c.id === id)
     expect(category?.isDeleted).toBe(true)
     expect(useExpenseStore.getState().expenses.every((row) => row.categoryId === null)).toBe(true)
-    // The unrelated income row keeps its own reference.
     expect(useIncomeStore.getState().incomeSources[0]?.categoryId).toBe('someone-else')
     expect(screen.queryByText('Groceries')).not.toBeInTheDocument()
   })

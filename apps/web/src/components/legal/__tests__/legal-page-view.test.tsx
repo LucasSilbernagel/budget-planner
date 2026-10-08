@@ -3,14 +3,6 @@ import { describe, expect, it } from 'vitest'
 import { PRICING_PAGE, PRIVACY_PAGE, REFUND_PAGE, TERMS_PAGE } from '../../../content/legal'
 import { LegalPageView } from '../legal-page-view'
 
-/**
- * LegalPageView tests (story 5-13, AC-1/AC-2/AC-4/AC-5).
- *
- * The four routes are thin wrappers over this view, so rendering the view with
- * each page object exercises what those routes render: a single `<h1>` from the
- * page title, a `<main>` landmark, and the Markdown body via the shared
- * `MarkdownRenderer`.
- */
 describe('LegalPageView', () => {
   it('renders the page title as the single h1', () => {
     renderWithProviders(<LegalPageView page={TERMS_PAGE} />)
@@ -26,9 +18,6 @@ describe('LegalPageView', () => {
 
   it('renders the markdown body content', () => {
     renderWithProviders(<LegalPageView page={REFUND_PAGE} />)
-    // The page <h1> (title) is owned by the layout; the body contributes its
-    // own h2 sections — assert one of those renders (and is not a repeat of the
-    // title, which the registry test enforces separately).
     expect(
       screen.getByRole('heading', { level: 2, name: /cancelling your subscription/i })
     ).toBeInTheDocument()
@@ -40,20 +29,6 @@ describe('LegalPageView', () => {
   })
 })
 
-/**
- * Theming guards (story 31-1, AC-4/AC-7/AC-8).
- *
- * `LegalPageLayout` is the single funnel for `/privacy`, `/terms` and `/refund`
- * — none of those route files carries a className — so asserting the view here
- * covers all three. Class-TOKEN membership, never substring.
- */
-
-/**
- * The retired light-only set, kept IDENTICAL across every subtree sweep in this
- * story. A code review found this list had silently omitted `text-gray-700` and
- * `border-gray-200` that the docs sweep carried, so a legal page could reacquire
- * either and stay green. Any addition here must be made in all four sweeps.
- */
 const RETIRED_LIGHT_ONLY_TOKENS = [
   'bg-white',
   'bg-gray-50',
@@ -105,7 +80,6 @@ describe('LegalPageView theming', () => {
     for (const retired of RETIRED_LIGHT_ONLY_TOKENS) {
       expect(classes, `retired light-only token "${retired}" survived`).not.toContain(retired)
     }
-    // The prose body inverts with the page rather than staying light on a dark card.
     expect(classes).toContain('dark:prose-invert')
   })
 })

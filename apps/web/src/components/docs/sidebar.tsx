@@ -1,16 +1,6 @@
 import { DOC_PAGES } from '../../content/docs'
 
-/**
- * Documentation table-of-contents sidebar (story 4-10, AC-1).
- *
- * Lists every documentation page in registry order and highlights the page the
- * reader is currently on. Plain anchors are used for navigation to match the
- * rest of the app (e.g. the home page nav), keeping the component router-free
- * and easy to test; the destinations are real TanStack Router routes.
- */
-
 export interface DocsSidebarProps {
-  /** Slug of the page currently being viewed; omitted on the docs index. */
   activeSlug?: string
 }
 
@@ -28,10 +18,7 @@ export function DocsSidebar({ activeSlug }: DocsSidebarProps) {
               <a
                 href={`/docs/${page.slug}`}
                 aria-current={isActive ? 'page' : undefined}
-                // No semantic token exists for the blue-50 active pill or the
-                // inactive hover, so those two keep hand-rolled `dark:` variants
-                // following the shipped info-panel convention
-                // (`components/profiles/profiles-page.tsx:101`). The text colours use the tokens.
+                // No semantic token exists for the active pill or inactive hover, hence the hand-rolled dark: variants.
                 className={`block rounded-md px-3 py-2 text-sm transition-colors ${
                   isActive
                     ? 'bg-blue-50 dark:bg-blue-950/40 font-medium text-accent'

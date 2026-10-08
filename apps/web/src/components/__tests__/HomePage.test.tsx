@@ -1,17 +1,3 @@
-/**
- * HomePage premium-discovery tests (story 7-2, FR24).
- *
- * FR24 requires premium features be discoverable-but-locked, not hidden. Before
- * this story `/forecasting` was linked from nowhere. These tests assert the
- * homepage now surfaces Advanced Forecasting:
- *   - free user → a locked control with a "Premium" badge (no working link).
- *   - paid user → a working link to /forecasting with no badge.
- *
- * `usePremiumAccess` is mocked to drive the tier. We assert the HYDRATED client
- * DOM (the resolved tier), not the SSR/loading skeleton — the unlock transition
- * is exactly what SSR-only smoke misses (project memory, 4-11).
- */
-
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { renderWithRouter } from '@/test/utils'
@@ -44,53 +30,22 @@ import { expectSharedGreen } from '@/test/white-fill-tokens'
 import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../../lib/premium/benefits'
 import { HomePage, OVERVIEW_BENEFITS } from '../HomePage'
 
-/**
- * How many benefit boxes are ROUTE-BACKED, i.e. carry an href and an "Open →"
- * once unlocked.
- *
- * ⚠️ Since story 41.1 this is NOT the number of gates. Every activatable benefit
- * renders a `PremiumFeatureGate` — sync included — so gate/skeleton counts are
- * {@link GATED_COUNT}, and only the "Open →" affordance tracks this number. The
- * two were the same figure until UX-DR45 split activatable from openable, which
- * is exactly the conflation that made a single boolean insufficient.
- *
- * Derived from the shipped map, never written as a literal. Story 33.2 had to hunt
- * down six separate hard-coded 3s and 2s across four files to expand the set from
- * three benefits to five; deriving means the next amendment cannot leave a stale
- * number behind in this file.
- */
 const ROUTED_COUNT = PREMIUM_BENEFIT_IDS.filter(
   (id: PremiumBenefitId) => OVERVIEW_BENEFITS[id].activation === 'route'
 ).length
 
-/** How many benefit boxes render as a `PremiumFeatureGate` in any tier state. */
 const GATED_COUNT = PREMIUM_BENEFIT_IDS.filter(
   (id: PremiumBenefitId) => OVERVIEW_BENEFITS[id].activation !== 'none'
 ).length
 
-/** Every routed benefit's accessible-name matcher paired with its route. */
 const OPENABLE_ROUTES = PREMIUM_BENEFIT_IDS.flatMap((id) => {
   const benefit = OVERVIEW_BENEFITS[id]
   if (benefit.activation !== 'route') return []
-  // Escaped: this helper's whole promise is that a new openable benefit needs no
-  // edit here, and an unescaped `featureName` containing a regex metacharacter
-  // ("Reports (beta)", "Sync + Backup") breaks on exactly the additions it claims
-  // to absorb — silently matching the wrong element or none.
+  // Escaped: a featureName may contain regex metacharacters.
   const name = new RegExp(benefit.featureName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
   return [[name, benefit.href] as const]
 })
 
-/**
- * The `PREMIUM_BOX_BASE` token list every benefit box must carry (story 30-1, FR51).
- *
- * ⚠️ Module-scoped so the LOCKED and ENTITLED tiers assert the SAME list. It used
- * to live inside the locked-tier chassis test, which iterated `[sync, ...tiles]`.
- * When story 41.1 made sync a gate, sync dropped out of that free-tier query and
- * only the background-token half of its coverage was re-homed — leaving the
- * entitled box's chassis asserted nowhere. Mutation that survived until this was
- * lifted: strip `PREMIUM_BOX_BASE` from the entitled branch and a paying user's
- * sync box loses its border, radius and padding with the whole suite green.
- */
 const CHASSIS = [
   'flex',
   'w-full',
@@ -125,12 +80,8 @@ describe('HomePage premium discovery', () => {
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
     render(<HomePage />)
 
-    // Scope the badge to the forecasting control: the Premium Features section
-    // now also carries a locked Custom Profiles entry (story 13-3), so there is
-    // more than one "Premium" badge on the page for a free user.
     const forecasting = screen.getByRole('button', { name: lockedName('Advanced Forecasting') })
     expect(within(forecasting).getByText('Premium')).toBeInTheDocument()
-    // Not a usable link for free users.
     expect(screen.queryByRole('link', { name: /advanced forecasting/i })).not.toBeInTheDocument()
   })
 
@@ -141,50 +92,13 @@ describe('HomePage premium discovery', () => {
     const link = screen.getByRole('link', { name: /advanced forecasting/i })
     expect(link).toHaveAttribute('href', '/forecasting')
     expect(screen.queryByText('Premium')).not.toBeInTheDocument()
-    // Absence of ANY locked row. The link above is the positive control; the
-    // matcher matches both the pre-116.2 `aria-label` name and today's
-    // content-derived one, so a rename cannot turn this silently green.
     expect(screen.queryByRole('button', { name: ANY_LOCKED_NAME })).not.toBeInTheDocument()
     expect(screen.queryByTestId('premium-gate-locked')).not.toBeInTheDocument()
   })
 
   it('57.1: pins the Advanced Forecasting subtitle to honest, situation-based copy', () => {
-    // The tile subtitle (shared by locked + unlocked states) must describe only
-    // what ships. This pin has existed since story 20-1, which wrote it when saved
-    // forecasts could NOT be reloaded and deliberately withheld the reload claim;
-    // story 30-2 added "reloadable" once bug-3 actually shipped reload. Story 57.1
-    // (FR86) replaces the mechanism description with the SITUATIONS the tool models,
-    // so a user can tell when they would open it — but the pin's job is unchanged:
-    // it exists to break on OVERPROMISING drift, not merely on any edit.
-    //
-    // ⚠️ Each situation named must be expressible by what the engine actually READS
-    // (`calculateFinancialForecast` in `core/finance/forecasting.ts`), which is LESS than `ForecastingScenario`
-    // declares:
-    //   - `incomeGrowthRate` / `expenseGrowthRate` — compound from year 1.
-    //   - `oneTimeEvents: {year, amount}` — the only DATED input. `amount` is SIGNED
-    //     and the engine sums it into that year's net income (`:278`). Since story
-    //     `forecast-1` the builder can enter money OUT as well as in.
-    //   - `newIncome`/`newExpenses` are NOT READ BY THE CALCULATION (`:114-115`) — they
-    //     are the SAVE FORMAT for the builder's rows. Do not cite them as
-    //     scenario-expressive, and do not delete them: reload depends on them.
-    // So: a raise ✅, rising bills ✅, a one-off windfall ✅, a one-off cost ✅.
-    //
-    // ⚠️ STILL NOT CLAIMABLE, and do not re-add: "a house purchase" and "an early
-    // retirement". Both need a RECURRING change dated to a chosen year (a mortgage
-    // from year 5; income stopping at retirement), and recurring items carry no
-    // start/end year. (A house DEPOSIT is fine — a single dated outflow. It is the
-    // mortgage that is not expressible.)
-    //
-    // History, stated accurately: "a house purchase" and "a big one-off cost"
-    // shipped in story 57.1's first draft and were caught in review — the precise
-    // overpromise this pin exists to prevent, which a green suite did not notice.
-    // "Early retirement" came from Epic 57's prose and was dropped BEFORE that
-    // draft, never shipped. The one-off cost became claimable later, in story
-    // `forecast-1`, which is why it is now in the copy above.
-    //
-    // ⚠️ This assertion is a full-string `getByText`, so it breaks on ANY edit to the
-    // copy, not selectively on overpromises. It is a tripwire, not a judge: what makes
-    // it an honesty guard is re-checking the list above whenever it goes red.
+    // Only claim situations the engine reads: growth rates and dated one-off events.
+    // Recurring items have no start year, so no house purchase or early retirement.
     mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
     render(<HomePage />)
 
@@ -198,8 +112,6 @@ describe('HomePage premium discovery', () => {
   it('116.2: every locked row is named by its visible title and description, then "Premium, locked"', () => {
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
     const { container } = render(<HomePage />)
-    // Every gated benefit, derived (not a hard-coded 5): the guard below must not
-    // pass on a page that rendered fewer rows.
     expect(expectLockedRowsNamedByVisibleText(container)).toHaveLength(GATED_COUNT)
   })
 
@@ -209,7 +121,6 @@ describe('HomePage premium discovery', () => {
 
     const profiles = screen.getByRole('button', { name: lockedName('Custom Profiles') })
     expect(within(profiles).getByText('Premium')).toBeInTheDocument()
-    // Not a usable link for free users.
     expect(screen.queryByRole('link', { name: /custom profiles/i })).not.toBeInTheDocument()
   })
 
@@ -219,69 +130,33 @@ describe('HomePage premium discovery', () => {
 
     const link = screen.getByRole('link', { name: /custom profiles/i })
     expect(link).toHaveAttribute('href', '/profiles')
-    // ⚠️ Absence probe, re-pointed by story 116.2: the old literal
-    // (`/custom profiles — premium, locked/i`) matches NO name since the gate
-    // dropped its `aria-label`, so it would have stayed green against a paid
-    // render that wrongly showed the locked row. The link above is the positive
-    // control; this matcher is the one the free-user test finds the row with.
     expect(
       screen.queryByRole('button', { name: lockedName('Custom Profiles') })
     ).not.toBeInTheDocument()
   })
 
   it('41.1: badges AND gates every benefit including sync, with no page affordance (UX-DR45)', () => {
-    // ⚠️ THIS ASSERTION HAS NOW BEEN REVERSED TWICE, and the history is the point.
-    // Story 20-2 withheld the lock badge from Multi-device sync on the grounds
-    // that a lock affordance implies an openable page, pinned here as
-    // `toHaveLength(2)`. UX-DR39 (33.1) amended that: sync IS premium, so it took
-    // the badge — but stayed a static <div>, and THIS TEST asserted it had no
-    // button, no gate and no dialog. UX-DR45 (41.1) reverses that half too: the
-    // box is activatable and opens the shared upgrade dialog.
-    //
-    // What has survived all three: there is still no /sync route, so sync gains no
-    // href, no <a> and no "Open →". That is the ONE claim below that has never
-    // moved, and the reason the others are rewritten rather than deleted — the
-    // behaviours stay pinned, in their new form.
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
     render(<HomePage />)
 
     const sync = screen.getByTestId('premium-benefit-sync')
-    // The benefit is surfaced as text…
     expect(within(sync).getByText('Multi-device sync')).toBeInTheDocument()
-    // …carries the lock badge (the half of 20-2 that UX-DR39 retired)…
     expect(within(sync).getByText('Premium')).toBeInTheDocument()
-    // …and is now an activatable control with the gate's accessible name (the
-    // half of 33.1 that UX-DR45 retires — this exact query asserted `not` before).
     const syncButton = screen.getByRole('button', { name: lockedName('Multi-device sync') })
     expect(sync).toContainElement(syncButton)
     expect(within(sync).getByTestId('premium-gate-locked')).toBe(syncButton)
 
-    // …but STILL never a page: no link, no href, no "Open →", in this or any state.
     expect(screen.queryByRole('link', { name: /multi-device sync/i })).not.toBeInTheDocument()
     expect(within(sync).queryByRole('link')).toBeNull()
     expect(within(sync).queryByText('Open →')).toBeNull()
     expect(syncButton).not.toHaveAttribute('href')
 
-    // EVERY box carries a badge — 2 before UX-DR39, 3 before story 33.2 expanded
-    // the canonical set to five (FR56) — and since UX-DR45 every box is a gate.
     expect(screen.getAllByText('Premium')).toHaveLength(PREMIUM_BENEFIT_IDS.length)
     expect(screen.getAllByTestId('premium-gate-locked')).toHaveLength(GATED_COUNT)
     expect(GATED_COUNT).toBe(PREMIUM_BENEFIT_IDS.length)
   })
 
   it('41.1: shows no badge on sync while the tier is unresolved, and no lock button', () => {
-    // AC-5 of story 33.1, re-homed. An errored SSR seed resolver yields
-    // `isLoading: true` (NOT signed out — `server/api/auth/session-seed.ts:44-50`
-    // returns null on error), so the loading branch is a real, reachable
-    // production state, not just first paint. Sync must not be the one box showing
-    // a lock while the tier is unknown.
-    //
-    // ⚠️ REWRITTEN, NOT DELETED. Until story 41.1 sync owned a bespoke pending
-    // placeholder (`premium-benefit-sync-badge-pending`) because it was not a gate.
-    // It is a gate now, so the guarantee is the SAME but it is `SkeletonBlock` that
-    // provides it: aria-hidden, no lock badge announced, no activatable control
-    // while the tier is unknown. What this test still owns is that the guarantee
-    // holds FOR SYNC specifically, which a gate-count assertion alone would not say.
     mockStatus({ hasAccess: false, isLoading: true, subscriptionStatus: null })
     render(<HomePage />)
 
@@ -292,17 +167,12 @@ describe('HomePage premium discovery', () => {
     const pending = within(sync).getByTestId('premium-gate-skeleton')
     expect(pending).toHaveAttribute('aria-hidden', 'true')
 
-    // Fail-closed while unknown: nothing to activate, and no badge claiming a tier
-    // the app has not resolved. The skeleton renders the tier-agnostic label only.
     expect(within(sync).queryByRole('button')).toBeNull()
     expect(within(sync).queryByText('Premium')).toBeNull()
     expect(within(sync).getByText('Multi-device sync')).toBeInTheDocument()
   })
 
   it('33.1: badges sync when the tier check errors — fail-closed (AC-5)', () => {
-    // No gate in this repo reads `status.error`; fail-closed works because an
-    // errored check resolves to `hasAccess: false` and falls through to the locked
-    // branch. Sync must inherit that contract rather than inventing an error path.
     mockStatus({
       hasAccess: false,
       isLoading: false,
@@ -315,22 +185,10 @@ describe('HomePage premium discovery', () => {
     const sync = screen.getByTestId('premium-benefit-sync')
     expect(within(sync).getByText('Premium')).toBeInTheDocument()
     expect(within(sync).queryByTestId('premium-gate-skeleton')).toBeNull()
-    // An errored check must present as LOCKED — and since story 41.1 that means
-    // activatable, so the user is told how to unlock rather than left at a
-    // dead end by a failure they cannot see.
     expect(within(sync).getByTestId('premium-gate-locked')).toBeInTheDocument()
   })
 
   it('41.1: an entitled user gets the sync box exactly as before — inert, unbadged (AC-5)', () => {
-    // The page-wide `queryByText('Premium')` assertion in the paid-tier test at
-    // the top of this describe block (`AC-3: … no badge for a paid user`) also
-    // fails if the sync badge is unconditional. This one names the box, so the
-    // failure message points at sync rather than at "somewhere on the page".
-    //
-    // ⚠️ THE ENTITLED STATE IS THE HALF STORY 41.1 DOES NOT CHANGE. Sync has no
-    // page, so an entitled user gains nothing to activate: no gate button, no
-    // dialog, no badge, no link — the same inert `surface-inset` box it has always
-    // been. Everything UX-DR45 adds lives in the locked and loading branches.
     mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
     render(<HomePage />)
 
@@ -343,18 +201,7 @@ describe('HomePage premium discovery', () => {
     expect(within(sync).queryByRole('link')).toBeNull()
     expect(within(sync).queryByText('Open →')).toBeNull()
 
-    // The chassis an entitled user sees is the inert one, NOT the interactive one
-    // the locked state uses. Both tokens set `background-color` in @layer
-    // components, so exactly one may be present (see PREMIUM_BOX_BASE's docblock).
-    //
-    // ⚠️ Anchored STRUCTURALLY — the wrapper's only child — never by
-    // `closest('div.surface-inset')`. Selecting the element by the class you then
-    // assert cannot fail: `toContain('surface-inset')` is guaranteed by the
-    // selector. Worse, `closest()` walks to the document root rather than stopping
-    // at the wrapper, so giving the real box `PREMIUM_BOX_INTERACTIVE` while any
-    // ANCESTOR carried `surface-inset` would pass all three assertions on the
-    // wrong element. The gate returns bare `{children}` when entitled, so the
-    // wrapper's first child IS the box.
+    // Anchored structurally (the wrapper's only child): selecting by the asserted class could not fail.
     const syncBox = sync.firstElementChild
     expect(syncBox, "the entitled sync box must be the wrapper's only child").not.toBeNull()
     expect(sync.children).toHaveLength(1)
@@ -363,17 +210,11 @@ describe('HomePage premium discovery', () => {
     expect(syncBoxTokens).not.toContain('surface-interactive')
     expect(syncBoxTokens).not.toContain('transition-colors')
 
-    // P1: the full chassis, not just the background token. The entitled box has to
-    // read as one set with the four routed boxes exactly as the locked one does.
     for (const token of CHASSIS) {
       expect(syncBoxTokens, `the entitled sync box is missing "${token}"`).toContain(token)
     }
     expect(syncBoxTokens.filter((t) => t.startsWith('dark:'))).toEqual([])
 
-    // AC-4's other half, asserted here rather than assumed: the routed boxes
-    // still link through and still carry their "Open →" for an entitled user.
-    // Iterates the shipped map, so a new routed benefit is covered the moment it
-    // is added rather than needing this list edited too.
     expect(OPENABLE_ROUTES).toHaveLength(ROUTED_COUNT)
     for (const [name, href] of OPENABLE_ROUTES) {
       const link = screen.getByRole('link', { name })
@@ -383,15 +224,6 @@ describe('HomePage premium discovery', () => {
   })
 
   it('33.2: pins the two new benefit sub-texts verbatim (FR56)', () => {
-    // The forecasting and profiles sub-texts have had verbatim pins since 20-2/30-2;
-    // the two added by 33.2 had none, and the parity test's honesty checks turned out
-    // to be satisfiable by the other surfaces — a mutation deleting ", and see what
-    // each category totals" from the Overview passed 79/79. Vague drift in either
-    // string now breaks here, on the surface that owns it.
-    //
-    // Both strings are bounded by what ships: the report is print-in-browser over
-    // budget/net worth/savings (no retirement, no charts, no app-generated PDF), and
-    // categories cover income and expenses only and never sync.
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
     render(<HomePage />)
 
@@ -406,19 +238,9 @@ describe('HomePage premium discovery', () => {
   })
 
   it('30-1: every premium benefit box shares one chassis (AC-1/AC-3)', () => {
-    // FR51: the section must read as ONE set. Every benefit box carries an
-    // identical base class string. Asserted by class-TOKEN membership (never
-    // substring), so `sm:p-6` can never be mistaken for `p-6` (batch-4 lesson,
-    // mirrored from the 19-4 test below).
-    //
-    // ⚠️ Since story 41.1 every box in the LOCKED state is a gate, sync included,
-    // so `premium-gate-locked` is the whole set here — there is no separate static
-    // box to add. The inert-chassis half of this assertion moved to the entitled
-    // test above, which is the only tier where sync still renders one.
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
     render(<HomePage />)
 
-    // Several locked tiles render for a free user, so getBy* would throw here.
     const tiles = screen.getAllByTestId('premium-gate-locked')
     expect(tiles).toHaveLength(GATED_COUNT)
 
@@ -427,40 +249,26 @@ describe('HomePage premium discovery', () => {
       for (const token of CHASSIS) {
         expect(tokens, `${box.dataset.testid ?? 'tile'} is missing "${token}"`).toContain(token)
       }
-      // AC-3: no hand-rolled colour + dark: pair survives on any box. Compared
-      // as EXACT tokens — `t.includes('blue-50')` would also match the legitimate
-      // `focus-visible:ring-blue-500`, which is the very substring trap this
-      // file's other class assertions exist to avoid.
       expect(tokens.filter((t) => t.startsWith('dark:'))).toEqual([])
       const RETIRED = ['bg-blue-50', 'border-blue-200', 'hover:bg-blue-100']
       expect(tokens.filter((t) => RETIRED.includes(t))).toEqual([])
     }
 
-    // AC-4 as amended by UX-DR45: every ACTIVATABLE box carries the interactive
-    // extras, which for a non-entitled user is all of them.
     for (const tile of tiles) {
       const tokens = tile.className.split(/\s+/)
       expect(tokens).toContain('surface-interactive')
       expect(tokens).toContain('focus-visible:ring-2')
       expect(tokens).toContain('focus-visible:ring-blue-500')
-      // Never both background tokens on one element — they collide by source
-      // order. Asserting only one side leaves the likelier mistake — editing
-      // PREMIUM_BOX_INTERACTIVE — green.
+      // Never both background tokens on one element: they collide by source order.
       expect(tokens).not.toContain('surface-inset')
     }
 
-    // …and sync is genuinely one of them, named rather than counted: a count of
-    // GATED_COUNT would also be satisfied by five gates none of which is sync.
     expect(screen.getByTestId('premium-benefit-sync')).toContainElement(
       screen.getByRole('button', { name: lockedName('Multi-device sync') })
     )
   })
 
   it('30-1: the unlocked (paid) tiles carry the chassis and the accent (AC-1/AC-4)', () => {
-    // The paid path renders a different element (`<a>`, not the gate's button),
-    // so nothing in the free-tier test above touches it. Without this, dropping
-    // PREMIUM_BOX_INTERACTIVE or `text-accent` from both links leaves the whole
-    // suite green — verified by mutation during review.
     mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
     render(<HomePage />)
 
@@ -476,23 +284,12 @@ describe('HomePage premium discovery', () => {
       expect(tokens).toContain('focus-visible:ring-blue-500')
       expect(tokens.filter((t) => t.startsWith('dark:'))).toEqual([])
 
-      // "Open →" is the paid tier's clickability signal — it must stay accented.
       const open = within(link).getByText('Open →')
       expect(open.className.split(/\s+/)).toContain('text-accent')
     }
   })
 
   it('41.1: every locked box carries a persistent chevron, sync included (AC-2)', () => {
-    // Hover does not exist on touch and the locked state has no "Open →", so
-    // the chevron is the only cue a free visitor on a phone gets that a box does
-    // something at all.
-    //
-    // ⚠️ REVERSED BY UX-DR45, and this is the assertion that carries the reversal.
-    // Story 33.1 pinned sync's chevron as `invisible` because sync did nothing;
-    // 41.1 makes it activatable, so hiding the one affordance a touch user has
-    // would ship the exact defect UX-DR45 was raised to fix. Decision ratified by
-    // Lucas, 2026-08-27. The ENTITLED state keeps the invisible chevron — asserted
-    // separately below, because that is the tier where sync still opens nothing.
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
     render(<HomePage />)
 
@@ -501,12 +298,9 @@ describe('HomePage premium discovery', () => {
     for (const tile of tiles) {
       const chevron = within(tile).getByText('›')
       expect(chevron.className.split(/\s+/)).toContain('text-accent')
-      // Decorative: the button already announces its title, description and
-      // "Premium, locked".
       expect(chevron).toHaveAttribute('aria-hidden', 'true')
     }
 
-    // Named, not just counted: sync's own chevron must be a painted one.
     const syncChevron = within(screen.getByTestId('premium-benefit-sync')).getByText('›')
     expect(syncChevron.className.split(/\s+/)).not.toContain('invisible')
     expect(syncChevron).toHaveAttribute('aria-hidden', 'true')
@@ -516,54 +310,27 @@ describe('HomePage premium discovery', () => {
   })
 
   it('41.1: activating the sync box opens the SHARED upgrade dialog (AC-1/AC-7)', async () => {
-    // ⚠️ THE WHOLE POINT OF UX-DR45, and it is asserted FROM THE SYNC BOX
-    // specifically rather than from any gate. A test that clicked
-    // `getAllByTestId('premium-gate-locked')[0]` would have passed before this
-    // story — the first gate was already Advanced Forecasting and already opened
-    // this dialog. Naming the box is what makes this test about sync.
-    //
-    // The REAL `PremiumPrompt` renders here, not a stub, so this proves the
-    // shared dialog opens rather than that the right props were passed to
-    // something. `renderWithRouter` is required because the dialog's CTA is a
-    // TanStack <Link>.
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
     renderWithRouter(<HomePage />)
 
-    // `renderWithRouter` mounts a RouterProvider, which resolves its route
-    // asynchronously — the first synchronous frame is empty, so the box has to be
-    // awaited rather than queried. (`render` elsewhere in this file is synchronous
-    // because it mounts HomePage directly.)
+    // RouterProvider resolves its route asynchronously, so the box must be awaited.
     const sync = await screen.findByTestId('premium-benefit-sync')
     expect(screen.queryByRole('dialog', { name: /go premium/i })).not.toBeInTheDocument()
 
     fireEvent.click(within(sync).getByRole('button', { name: lockedName('Multi-device sync') }))
 
     const dialog = await screen.findByRole('dialog', { name: /go premium/i })
-    // Same component the other gates open: same accessible name, same benefit
-    // list, same /pricing CTA. `PremiumFeatureGate` overrides PremiumPrompt's own
-    // `/login` default with `/pricing` (story 7-2, DECISION 2) — asserting the
-    // href is what distinguishes "the shared dialog" from "a dialog".
     expect(within(dialog).getByRole('link', { name: /upgrade to premium/i })).toHaveAttribute(
       'href',
       '/pricing'
     )
     expect(within(dialog).getAllByRole('listitem')).toHaveLength(PREMIUM_BENEFIT_IDS.length)
 
-    // …and the dialog is a SIBLING of the button inside sync's wrapper, which is
-    // what keeps the non-portalled overlay out of the space-y-3 stack's margin.
-    // The overlay's actual position is an e2e claim — jsdom computes no layout —
-    // so this asserts the STRUCTURE the e2e measurement depends on.
     expect(sync).toContainElement(dialog)
   })
 
   it("41.1: an ENTITLED user still gets sync's reserved, unpainted chevron (AC-2/AC-5)", () => {
-    // The half of story 33.1's chevron rule that survives. An entitled user's sync
-    // box opens nothing, so it must not advertise that it does — but it still has
-    // to RESERVE the glyph's box, or its row sits ~26px out of line with the
-    // "Open →" rows beside it. `invisible` (visibility:hidden) keeps the layout
-    // box; `hidden`/`display:none` would collapse it. The reserve mirrors the REAL
-    // glyph rather than a px literal because `›` is text and its width varies
-    // 5.06–7.20px by font.
+    // invisible keeps the glyph's layout box so the row lines up with the "Open →" rows.
     mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
     render(<HomePage />)
 
@@ -573,10 +340,6 @@ describe('HomePage premium discovery', () => {
   })
 
   it('20-2: explains Custom Profiles with a concrete example (CONTENT-H)', () => {
-    // The Custom Profiles subtitle (shared by locked + unlocked states) must name
-    // a concrete use case so a user grasps what a profile is for, kept consistent
-    // with the Features/Pricing wording ("personal vs. household"). Pin the exact
-    // string so vague drift breaks this test.
     mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
     render(<HomePage />)
 
@@ -588,20 +351,6 @@ describe('HomePage premium discovery', () => {
   })
 })
 
-/**
- * Subtitle parity across the two first-contact surfaces (story 36-1).
- *
- * `HomePage.tsx` and `routes/login.tsx` both render the wordmark plus this
- * subtitle, and the decision to ship it WITHOUT a trailing period exists only
- * so the two read identically. Until this test, that invariant was asserted in
- * two shipped comments and pinned by nothing: editing `login.tsx` would have
- * left every suite green while silently falsifying both comments.
- *
- * Asserted by reading source rather than rendering, because `login.tsx` is a
- * `Route.useSearch()` component that cannot be rendered via `renderWithRouter`
- * (project memory, epic 21). Reading the file is what makes the invariant
- * testable at all — and it is the string, not the render, that must match.
- */
 describe('subtitle parity: HomePage and login (story 36-1)', () => {
   const SUBTITLE = 'Track your finances with privacy and control'
   const read = (rel: string) => readFileSync(resolve(__dirname, rel), 'utf-8')
@@ -612,27 +361,11 @@ describe('subtitle parity: HomePage and login (story 36-1)', () => {
   })
 
   it('neither surface has re-grown a trailing period', () => {
-    // The whole point of the no-period decision. A period on either side makes
-    // the two surfaces differ, which is what this pair exists to prevent.
     expect(read('../HomePage.tsx')).not.toContain(`>${SUBTITLE}.</p>`)
     expect(read('../../routes/login.tsx')).not.toContain(`>${SUBTITLE}.</p>`)
   })
 })
 
-/**
- * Homepage subtitle (story 36-1, CONTENT-N — supersedes story 27-4 / FR44).
- *
- * The overview header leads with "Track your finances with privacy and control"
- * as the single subtitle beneath the app-name heading. This retires the 27-4
- * privacy-stance tagline, which in turn had superseded the 25-4 "never sees your
- * money" line and the 19-4 "bird's-eye" secondary subtitle. Tier-independent, so
- * a single free-user render is sufficient.
- *
- * The expected string carries NO trailing period. That is deliberate: it is
- * byte-identical to the line already shipped at `routes/login.tsx`, and
- * `getByText` with a plain string is an exact whole-text match, so a stray
- * period fails here rather than drifting the two surfaces apart silently.
- */
 describe('HomePage subtitle (story 36-1)', () => {
   beforeEach(() => {
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
@@ -641,33 +374,13 @@ describe('HomePage subtitle (story 36-1)', () => {
   it('surfaces the new subtitle while keeping the app name', () => {
     render(<HomePage />)
     expect(screen.getByText('Track your finances with privacy and control')).toBeInTheDocument()
-    // The app name still appears as the header heading.
     expect(screen.getByRole('heading', { name: 'Longhand Budget', level: 1 })).toBeInTheDocument()
-    // Guard: the retired SoluBudget wordmark must not return (story brand-1).
     expect(screen.queryByText(/solubudget/i)).toBeNull()
-    // Guards: BOTH superseded taglines must stay gone (batch-5 regression
-    // lesson). The 27-4 line is the one this story retires; the 25-4 line was
-    // retired before it, and dropping its guard would quietly widen the gap.
     expect(screen.queryByText(/minds its own business/i)).toBeNull()
     expect(screen.queryByText('The budget planner that never sees your money')).toBeNull()
   })
 })
 
-/**
- * Overview subtitle + mobile section padding (story 19-4, CONTENT-F / UX-DR32).
- *
- * Story 27-4 superseded the two-line header: the "bird's-eye" secondary subtitle
- * that 19-4 added is REMOVED, leaving a single line as the only subtitle — since
- * story 36-1 that line is "Track your finances with privacy and control". The
- * mobile-padding coverage from 19-4 is independent of the header copy and
- * remains in force — the empty-state onboarding and Premium Features
- * sections stay tightened with responsive utilities (p-4 sm:p-6 / p-6 sm:p-8) so
- * the ≥640px desktop spacing is unchanged.
- *
- * Padding is asserted by class-token membership (not substring regex) so a
- * Tailwind class like `sm:p-6` cannot be mistaken for `p-6` (project memory,
- * batch-4 lesson).
- */
 describe('HomePage overview subtitle + mobile padding (story 19-4)', () => {
   beforeEach(() => {
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
@@ -675,7 +388,6 @@ describe('HomePage overview subtitle + mobile padding (story 19-4)', () => {
 
   it("no longer renders the bird's-eye secondary subtitle (removed by story 27-4)", () => {
     render(<HomePage />)
-    // The 36-1 subtitle is the single subtitle; the 19-4 supporting line is gone.
     expect(screen.getByText('Track your finances with privacy and control')).toBeInTheDocument()
     expect(
       screen.queryByText("Get a bird's-eye view of your income, expenses, savings, and more!")
@@ -694,9 +406,6 @@ describe('HomePage overview subtitle + mobile padding (story 19-4)', () => {
   })
 
   it('AC-2: empty-state onboarding section is mobile-tight (p-4) and restores padding at sm (sm:p-6)', () => {
-    // The onboarding section renders only when there is NO financial data at all —
-    // since the ux-2 review fix, `hasData` counts savings/balances too, so all
-    // four stores must be empty for this state.
     useIncomeStore.setState({ incomeSources: [] })
     useExpenseStore.setState({ expenses: [] })
     useSavingsStore.setState({ savingsGoals: [] })
@@ -707,29 +416,10 @@ describe('HomePage overview subtitle + mobile padding (story 19-4)', () => {
     const tokens = (section as HTMLElement).className.split(/\s+/)
     expect(tokens).toContain('p-4')
     expect(tokens).toContain('sm:p-6')
-    // Story 115.1: the onboarding call to action is the shared AA green.
     expectSharedGreen(screen.getByRole('link', { name: '+ Add income' }))
   })
 })
 
-/**
- * Privacy positioning strip (story 27-5, FR45).
- *
- * Beneath the 27-4 tagline the header carries a compact strip that states the
- * three privacy pillars — usable with no account, an optional EU-hosted sync,
- * and no bank connection — under the "intentional budgeting without the bank
- * sync" framing. Every claim is true: the Free tier is client-only (no account,
- * data stays in the browser), EU-hosting is scoped to the OPTIONAL Premium sync
- * (so the copy never implies free-tier data touches a server), and there is no
- * bank/transaction-import integration. Tier-independent, so a single free-user
- * render suffices.
- *
- * The load-bearing assertion anchors on the distinguishing framing sentence:
- * generic words like "account"/"bank"/"EU" appear elsewhere on the page and in
- * the docs, so asserting them alone would pass by construction (batch-5/23
- * lesson). This strip is ADDITIVE — it must not disturb the 27-4 tagline or the
- * 19-4 mobile-padding coverage above.
- */
 describe('HomePage privacy positioning (story 27-5)', () => {
   beforeEach(() => {
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
@@ -740,18 +430,9 @@ describe('HomePage privacy positioning (story 27-5)', () => {
     expect(
       screen.getByText('Intentional budgeting without bank sync or AI integrations.')
     ).toBeInTheDocument()
-    // Guard: the pre-amendment wording must not return. Note it is NOT a prefix
-    // of the new copy ("the bank sync" vs "bank sync"), so this genuinely bites.
     expect(screen.queryByText('Intentional budgeting without the bank sync.')).toBeNull()
   })
 
-  /**
-   * brand-1 AC-6: the no-AI claim lands on the FRAMING line only.
-   *
-   * The positioning block holds two lines; stating "no AI" on both would repeat
-   * the claim inside a two-line block. This pins the split so a later edit
-   * cannot quietly duplicate it onto the three-pillar line.
-   */
   it('states the no-AI claim once, on the framing line and not the pillars line', () => {
     render(<HomePage />)
     const pillars = screen.getByText(
@@ -759,12 +440,6 @@ describe('HomePage privacy positioning (story 27-5)', () => {
     )
     expect(pillars).toBeInTheDocument()
 
-    // Scoped to the two lines directly, not a whole-page count (code review): a
-    // page-wide `queryAllByText(/\bAI\b/)` length of 1 would STILL read as 1 if
-    // the claim were MOVED onto the pillars line, so it never pinned the split
-    // its name promises. `artificial intelligence` is included because that is
-    // the phrasing a copy edit would most plausibly introduce, and `\bAI\b`
-    // alone is blind to it.
     const framing = screen.getByText('Intentional budgeting without bank sync or AI integrations.')
     expect(framing).toHaveTextContent(/\bAI\b/)
     expect(pillars).not.toHaveTextContent(/\bAI\b|artificial intelligence/i)
@@ -772,24 +447,12 @@ describe('HomePage privacy positioning (story 27-5)', () => {
 
   it('states the three privacy pillars with EU-hosting scoped to the optional sync (no over-claiming)', () => {
     render(<HomePage />)
-    // One line covering all three pillars; "Optional sync is EU-hosted" keeps the
-    // EU claim on the paid sync so free-tier (client-only) data is never implied
-    // to reach a server.
     expect(
       screen.getByText('No account needed · Optional sync is EU-hosted · No bank connection.')
     ).toBeInTheDocument()
   })
 })
 
-/**
- * Story 95.1 (FR154, D2): the "No account needed …" notice is for visitors. ANY
- * signed-in session (free included) skips it; signed-out and unverified (`null`
- * seed) sessions still see it. The served-app test in `served-pages.served.test.ts`
- * covers the SSR half; this covers the client render from the same seed.
- *
- * Every absence assertion leans on the subtitle as a positive anchor in the same
- * render, so a blank render cannot pass.
- */
 describe('95.1: the account notice is hidden for any signed-in session (D2)', () => {
   const PILLARS = 'No account needed · Optional sync is EU-hosted · No bank connection.'
   const SUBTITLE = 'Track your finances with privacy and control'
@@ -831,66 +494,30 @@ describe('95.1: the account notice is hidden for any signed-in session (D2)', ()
 
     expect(screen.getByText(SUBTITLE)).toBeInTheDocument()
     expect(screen.getByText(PILLARS)).toBeInTheDocument()
-    // Presence twin of the signed-in arms' second absence check, so that check
-    // cannot pass on a string the box no longer renders.
     expect(
       screen.getByText('Intentional budgeting without bank sync or AI integrations.')
     ).toBeInTheDocument()
   })
 })
 
-/**
- * Overview "Manage Your Finances" tiles removed on desktop (story 19-1, UX-DR26).
- *
- * The tile grid linked Income/Expenses/Savings/Balance/Projections — the exact
- * five destinations the desktop top-bar GlobalNav already links at ≥640px, so on
- * the overview it was a second copy of the primary menu. Story 18-3 had already
- * hidden the section below 640px (the fixed bottom nav covers those links there);
- * story 19-1 removes it on desktop too, so the section is gone at every width.
- * Nothing is orphaned — every destination stays reachable via the top bar
- * (≥640px) and the fixed bottom bar (<640px), both owned by GlobalNav (which is
- * not rendered in this component-level harness).
- *
- * These assertions replace the former story-11-3 (color-as-meaning), 18-1
- * (label-overflow) and 18-3 (hidden-below-640px) tile blocks, all of which
- * asserted the now-removed tiles' presence/styling and would be vacuous.
- */
 describe('HomePage "Manage Your Finances" tiles removed (story 19-1)', () => {
   beforeEach(() => {
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
-    // Force the empty-state branch so the assertions are independent of any
-    // persisted store data — the removed section rendered regardless of data.
     useIncomeStore.setState({ incomeSources: [] })
     useExpenseStore.setState({ expenses: [] })
   })
 
   it('AC-2: the "Manage Your Finances" section is not rendered', () => {
     render(<HomePage />)
-    // A DOM-presence check: the section was fully removed (not CSS-hidden), so
-    // its heading is absent from the render tree. jsdom has no layout engine, so
-    // this asserts non-rendering rather than any width-specific behavior — the
-    // "gone at every width" guarantee comes from the removal itself, since there
-    // is no longer a `hidden sm:block` branch that could reintroduce it.
     expect(screen.queryByRole('heading', { name: 'Manage Your Finances' })).toBeNull()
   })
 
   it('AC-2/AC-3: the tile-only "Projections" destination link is no longer on the overview', () => {
     render(<HomePage />)
-    // "Projections" was unique to the removed tile grid; the surviving overview
-    // surfaces (stat cards, empty-state CTAs, Premium section) never use that
-    // label. Its absence proves the tile grid is gone without coupling to the
-    // persistent nav (owned by GlobalNav, not rendered in this harness).
     expect(screen.queryByRole('link', { name: 'Projections' })).toBeNull()
   })
 })
 
-/**
- * Financial Overview copy (story 11-4, "Match between the system and the real
- * world"). The stat cards used to surface internal normalization vocabulary
- * ("(Monthly Normalized)", a bare "Raw: …" sub-line). These tests assert the
- * plain-language labels and that the monthly-conversion explanation is available
- * progressively via an info affordance rather than a jargon-y sub-line.
- */
 describe('HomePage financial overview copy (story 11-4)', () => {
   beforeEach(() => {
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
@@ -903,8 +530,6 @@ describe('HomePage financial overview copy (story 11-4)', () => {
 
   it('AC-1: stat cards read in plain language with no "Normalized"/"Raw" jargon', () => {
     render(<HomePage />)
-    // The duration suffix ("(per week/month/year)") is chosen by the story 12-2
-    // selector; the plain-language intent is duration-agnostic.
     expect(screen.getByText(/^Total Income \(per (week|2 weeks|month|year)\)$/)).toBeInTheDocument()
     expect(
       screen.getByText(/^Total Expenses \(per (week|2 weeks|month|year)\)$/)
@@ -914,8 +539,6 @@ describe('HomePage financial overview copy (story 11-4)', () => {
   })
 
   it('AC-2: a normalized non-monthly amount drops the "Raw:" line and reveals the conversion (with the raw total) progressively on focus', async () => {
-    // A weekly amount normalizes to ~4.33× its entry, so the monthly figure
-    // differs from what was entered and the info affordance renders.
     useIncomeStore.setState({
       incomeSources: [
         {
@@ -932,42 +555,26 @@ describe('HomePage financial overview copy (story 11-4)', () => {
     })
     render(<HomePage />)
 
-    // No bare engineering sub-line.
     expect(screen.queryByText(/^Raw:/)).not.toBeInTheDocument()
 
-    // Progressive disclosure: the explanation is not present until the trigger is
-    // focused/hovered — no tooltip and no association at rest.
     const trigger = screen.getByRole('button', {
       name: /more information about the income figure/i,
     })
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
     expect(trigger).not.toHaveAttribute('aria-describedby')
 
-    // On focus, the tooltip appears, is associated for assistive tech, explains the
-    // conversion, and surfaces the raw entered total.
     fireEvent.focus(trigger)
     const tooltip = await screen.findByRole('tooltip')
     expect(trigger).toHaveAttribute('aria-describedby')
     expect(tooltip).toHaveTextContent(
       /convert weekly, biweekly, monthly, and annual amounts to a common monthly basis so your totals are comparable/i
     )
-    // Story 23-1: the tooltip must disclose the averaging (~4.33 weeks/month) that
-    // makes the totals estimates, consistent with the FAQ + features copy. The
-    // wording is duration-neutral ("these totals are estimates"), not "the monthly
-    // figure", because the card can display per-week/per-year via the duration selector.
     expect(tooltip).toHaveTextContent(/about 4\.33 weeks a month/i)
     expect(tooltip).toHaveTextContent(/these totals are estimates/i)
     expect(tooltip).toHaveTextContent(/entered total before conversion/i)
   })
 })
 
-/**
- * Financial Overview no longer surfaces the opaque "Financial Health" score
- * (story 11-5, "Aesthetic-and-minimalist design" + Trust). The score was a
- * single uninterpretable percentage derived from arbitrary constants; it was
- * removed rather than explained. These tests assert the card is gone and the
- * overview grid reflows to the four remaining cards with no empty column.
- */
 describe('HomePage financial overview — no Financial Health score (story 11-5)', () => {
   beforeEach(() => {
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
@@ -981,7 +588,6 @@ describe('HomePage financial overview — no Financial Health score (story 11-5)
   it('AC-1/AC-2: the "Financial Health" card and its percentage are gone', () => {
     render(<HomePage />)
     expect(screen.queryByText('Financial Health')).not.toBeInTheDocument()
-    // No stray "NN%" score value remains in the overview.
     expect(screen.queryByText(/^\d+%$/)).not.toBeInTheDocument()
   })
 
@@ -1002,34 +608,16 @@ describe('HomePage financial overview — no Financial Health score (story 11-5)
   it('AC-2: the overview grid reflows to three columns (no 4-column gap on desktop)', () => {
     render(<HomePage />)
     const heading = screen.getByRole('heading', { name: 'Financial Overview' })
-    // The heading now shares a flex row with the duration selector (story 12-2),
-    // so locate the stat grid from the enclosing section rather than the heading's
-    // immediate parent.
     const grid = heading.closest('section')?.querySelector('div.grid')
     expect(grid).not.toBeNull()
     expect(grid?.className).toContain('md:grid-cols-3')
     expect(grid?.className).not.toContain('md:grid-cols-4')
-    // Exactly three stat cards under the overview grid.
     expect(grid?.children.length).toBe(3)
   })
 })
 
-/**
- * Global income/expense duration selector (story 12-2, FR31).
- *
- * A single control on the Financial Overview re-expresses Total Income and Total
- * Expenses Weekly / Monthly / Annually, defaulting to Annually. The choice lives
- * in a persisted store (single source of truth), so it survives remount — one
- * control drives both figures with no per-card duplication.
- *
- * Currency mode defaults to `none`, so formatted amounts are `(cents/100).toFixed(2)`:
- * a monthly-normalized 120000c income → 14400.00 annually, 1200.00 monthly,
- * 276.92 weekly (120000 ÷ 52/12, rounded).
- */
 describe('HomePage overview duration selector (story 12-2)', () => {
   function seedMonthly(): void {
-    // Monthly amounts normalize 1:1, so raw === normalized (no InfoTooltip) and
-    // the denormalized display values are exact and easy to reason about.
     useIncomeStore.setState({
       incomeSources: [
         {
@@ -1093,17 +681,12 @@ describe('HomePage overview duration selector (story 12-2)', () => {
     }) as HTMLSelectElement
     expect(select.value).toBe('annually')
 
-    // Exactly one duration selector (no per-card duplication).
     expect(screen.getAllByRole('combobox', { name: /show income and expenses per/i })).toHaveLength(
       1
     )
     expect(screen.getByText('Total Income (per year)')).toBeInTheDocument()
     expect(screen.getByText('Total Expenses (per year)')).toBeInTheDocument()
 
-    // Story 32.1 widened the control to the FOUR entry frequencies. Counting the
-    // options pins that the rendered list and the store's coercion set agree —
-    // a selectable option the store would reject on reload is the exact trap
-    // this story was written to close.
     expect(Array.from(select.options).map((option) => option.value)).toEqual([
       'weekly',
       'biweekly',
@@ -1116,12 +699,9 @@ describe('HomePage overview duration selector (story 12-2)', () => {
     seedMonthly()
     render(<HomePage />)
 
-    // Default: annual figures (monthly × 12). Currency-less mode groups
-    // thousands (story 14-2), so 4+ digit figures carry a comma separator.
     expect(within(incomeCard()).getByText('14,400.00')).toBeInTheDocument()
     expect(within(expenseCard()).getByText('7,200.00')).toBeInTheDocument()
 
-    // Switch to Monthly: labels and figures follow the one control.
     fireEvent.change(screen.getByRole('combobox', { name: /show income and expenses per/i }), {
       target: { value: 'monthly' },
     })
@@ -1129,7 +709,6 @@ describe('HomePage overview duration selector (story 12-2)', () => {
     expect(within(incomeCard()).getByText('1,200.00')).toBeInTheDocument()
     expect(within(expenseCard()).getByText('600.00')).toBeInTheDocument()
 
-    // Switch to Weekly: monthly ÷ (52/12), rounded to the cent.
     fireEvent.change(screen.getByRole('combobox', { name: /show income and expenses per/i }), {
       target: { value: 'weekly' },
     })
@@ -1137,9 +716,6 @@ describe('HomePage overview duration selector (story 12-2)', () => {
     expect(within(incomeCard()).getByText('276.92')).toBeInTheDocument()
     expect(within(expenseCard()).getByText('138.46')).toBeInTheDocument()
 
-    // Switch to Bi-weekly (story 32.1): monthly ÷ (26/12), rounded to the cent.
-    //   income   round(120000 × 12/26) = round(55384.61…) = 55385 -> 553.85
-    //   expenses round( 60000 × 12/26) = round(27692.30…) = 27692 -> 276.92
     fireEvent.change(screen.getByRole('combobox', { name: /show income and expenses per/i }), {
       target: { value: 'biweekly' },
     })
@@ -1148,21 +724,8 @@ describe('HomePage overview duration selector (story 12-2)', () => {
     expect(within(expenseCard()).getByText('276.92')).toBeInTheDocument()
   })
 
-  /**
-   * ⚠️ Story 32.1 code review. The conversion disclosure used to be gated on
-   * `totalNormalizedIncome !== totalIncomeRaw`. That equality is only a PROXY for
-   * "conversion happened", and it has a false negative:
-   *
-   *   $330 weekly  -> round(33000 × 52/12) = 143000c
-   *   $1,200 annually ->      round(120000/12) =  10000c
-   *   normalized total                        = 153000c
-   *   raw total       33000 + 120000          = 153000c   <- identical
-   *
-   * Both rows were genuinely converted, yet the old gate rendered no explanation.
-   * The gate now asks whether any row is non-monthly. Reverting it leaves every
-   * other test green, so this is the only assertion standing between that bug and
-   * a release.
-   */
+  // Weekly $330 + annual $1,200 normalizes to exactly the raw sum, so the disclosure
+  // must not be gated on normalized !== raw.
   it('AC-2: discloses the conversion even when it lands coincidentally on the raw sum', () => {
     useIncomeStore.setState({
       incomeSources: [
@@ -1216,7 +779,6 @@ describe('HomePage overview duration selector (story 12-2)', () => {
         .value
     ).toBe('monthly')
 
-    // Navigate away and back: a fresh mount reads the choice from the store.
     unmount()
     render(<HomePage />)
     const select = screen.getByRole('combobox', {
@@ -1227,39 +789,6 @@ describe('HomePage overview duration selector (story 12-2)', () => {
   })
 })
 
-/**
- * Income vs Expense Breakdown period control (story 12-3, UX-DR20; rebound to
- * the shared store by story 32.3).
- *
- * The six date-range presets are replaced with a period toggle defaulting to
- * Annually, and the chart re-aggregates through the core frequency engine
- * instead of summing raw amounts. Both of those guarantees are 12-3's and both
- * are still asserted below, unchanged.
- *
- * ⚠️ WHAT 32.3 CHANGED. This control used to hold its OWN component-local state,
- * independent of the overview duration selector (12-2), with no persistence.
- * That let the page show the same expenses twelve times apart on one screen —
- * the Total Expenses card on Monthly reading $2,441.67 while these pies, still on
- * their own Annually default, read $29,300.04. It now reads and writes the shared
- * `overviewDurationStore`, so there is exactly ONE period on the page and it
- * offers all FOUR durations. The two-option and independence claims below were
- * updated in place rather than deleted.
- *
- * ⚠️ `vitest.setup.ts` pins THIS SUITE to `{ mode: 'none', currency: 'NONE' }`,
- * so the breakdown figures print as locale-grouped decimals with no symbol
- * (story 14-2). That is the UNIT-test environment, NOT the product default —
- * new users get `$`/USD (FR38), which is what Playwright exercises. The older
- * wording here ("Currency mode defaults to `none`") read as an app-wide default
- * and is the exact ambiguity `e2e/breakdown-period.spec.ts` had to correct in
- * its own header; fixed in code review 32.3 so it is not copied onward.
- *
- * Seeding two income sources with EQUAL
- * raw amounts (10000c) but different frequencies proves normalization is
- * applied: a weekly entry and an annual entry must NOT render as equal slices.
- *   weekly  10000c → monthly round(10000 × 52/12) = 43333c → annually ×12 = 519996c → "5,199.96"
- *   annual  10000c → monthly round(10000 × 1/12) = 833c   → annually ×12 = 9996c   → "99.96"
- * Switching to Monthly divides each annual figure by 12: "433.33" and "8.33".
- */
 describe('HomePage income-vs-expense breakdown period control (story 12-3)', () => {
   function seedMixedFrequencyIncome(): void {
     useIncomeStore.setState({
@@ -1310,21 +839,13 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
     render(<HomePage />)
 
     const select = breakdownSelect()
-    // The select SHOWS the store's value; this file's setup puts 'annually'
-    // there, so this does not prove the store's DEFAULT. That is pinned by
-    // `overviewDurationStore.dom.test.ts` › "defaults to annually" (story 82.3
-    // mutation M11: default → 'monthly' left this assertion green).
     expect(select.value).toBe('annually')
 
-    // Four options since 32.3 — the same set the overview selector offers,
-    // because both now render from VALID_DURATIONS.
     const optionValues = Array.from(select.options).map((o) => o.value)
     expect(optionValues).toEqual(['weekly', 'biweekly', 'monthly', 'annually'])
     const optionLabels = Array.from(select.options).map((o) => o.textContent)
     expect(optionLabels).toEqual(['Weekly', 'Bi-weekly', 'Monthly', 'Annually'])
 
-    // 12-3's ORIGINAL guarantee, unchanged: the old six-preset control and its
-    // labels are gone. These must survive every later edit to this block.
     expect(screen.queryByText(/Last Month/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Last 3 Months/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Year to Date/i)).not.toBeInTheDocument()
@@ -1332,11 +853,6 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
   })
 
   it('AC-2: category figures are frequency-normalized and re-express when the period changes', () => {
-    // Story UX-3 replaced the LEFT pie's per-category income legend with an
-    // expense/income ratio, so this normalization behavior (shared code path
-    // for both types — `periodScaledData` / `aggregateByCategoryAndType`) is
-    // now proven via the RIGHT ("Expenses by category") pie instead. Mirrors
-    // seedMixedFrequencyIncome's shape/figures, on the expense store.
     useExpenseStore.setState({
       expenses: [
         {
@@ -1361,20 +877,6 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
         },
       ],
     })
-    // Code review found the income-side normalization path (`totalIncomeChart`,
-    // now the new feature's own denominator) had lost its direct unit-level
-    // proof when the LEFT pie stopped rendering income category figures.
-    // Restored here via a SEPARATE, equal-raw-amount income fixture (15000/
-    // 15000, distinct from the 10000/10000 expense fixture above) and an
-    // assertion on the expense-ratio headline, which is only correct if BOTH
-    // totals normalize correctly:
-    //   income:  weekly round(15000×52/12)=65000 + annual round(15000/12)=1250
-    //            = 66250c/mo -> annually ×12 = 795000c ($7,950.00)
-    //   expense: 44166c/mo (existing fixture) -> annually 529992c ($5,299.92)
-    //   ratio = round(529992 / 795000 × 100) = 67% — a non-degenerate value
-    //   (not 100%), and identical at Monthly by construction (both totals
-    //   scale by the same integral factor), so re-asserting it after the
-    //   switch below also proves the ratio recomputes rather than freezing.
     useIncomeStore.setState({
       incomeSources: [
         {
@@ -1401,53 +903,22 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
     })
     render(<HomePage />)
 
-    // Annually (default): equal raw amounts render as UNEQUAL, normalized slices.
-    // Currency-less mode groups thousands (story 14-2): 519996c → "5,199.96".
-    expect(screen.getByText('5,199.96')).toBeInTheDocument() // weekly 10000c/yr
-    expect(screen.getByText('99.96')).toBeInTheDocument() // annual 10000c/yr
-    // Not the raw sum — a raw-amount chart would show both as "100.00".
+    expect(screen.getByText('5,199.96')).toBeInTheDocument()
+    expect(screen.getByText('99.96')).toBeInTheDocument()
     expect(screen.queryByText('100.00')).not.toBeInTheDocument()
     expect(screen.getByTestId('breakdown-pie-total-expense-ratio')).toHaveTextContent('67%')
 
-    // Switch to Monthly: each figure becomes the Annually value ÷ 12.
     fireEvent.change(breakdownSelect(), { target: { value: 'monthly' } })
     expect(breakdownSelect().value).toBe('monthly')
-    expect(screen.getByText('433.33')).toBeInTheDocument() // 5,199.96 ÷ 12
-    expect(screen.getByText('8.33')).toBeInTheDocument() // 99.96 ÷ 12
-    // The annual figures are no longer shown.
+    expect(screen.getByText('433.33')).toBeInTheDocument()
+    expect(screen.getByText('8.33')).toBeInTheDocument()
     expect(screen.queryByText('5,199.96')).not.toBeInTheDocument()
     expect(screen.queryByText('99.96')).not.toBeInTheDocument()
     expect(screen.getByTestId('breakdown-pie-total-expense-ratio')).toHaveTextContent('67%')
   })
 
-  /**
-   * Story 32.3, AC-8/AC-10 — the ONE assertion that can fail if the breakdown
-   * pies and the Total cards ever drift back onto two independent controls.
-   *
-   * ⚠️ It drives BOTH selectors, because the two failure modes are different
-   * elements: reverting `periodScaledData` to a local `chartPeriod` breaks the
-   * overview-selector direction, while rebinding the breakdown `<select>` to
-   * local state breaks the breakdown-selector direction. Asserting only one
-   * direction leaves the other mutation green.
-   *
-   * Figures for the mixed fixture (monthly-normalized 43,333c + 833c = 44,166c):
-   *   annually  card 44,166 × 12 = 529,992c → "5,299.92"
-   *   monthly   card 44,166c                → "441.66"
-   * The pies scale per entry and, at these two INTEGRAL periods, sum to exactly
-   * the same figure — which is what makes a shared value provable here.
-   */
   it('AC-8: changing EITHER selector moves BOTH the overview card and the pies', () => {
     seedMixedFrequencyIncome()
-    // Story UX-3: the LEFT pie's legend now shows PERCENTAGES, not dollar
-    // amounts, so it can no longer witness a duration-driven dollar figure.
-    // Seed a weekly/annual shape onto expenses too, so the RIGHT ("Expenses
-    // by category") pie's dollar total — unaffected by UX-3 — can serve as
-    // that witness instead. DELIBERATELY a DIFFERENT amount than the income
-    // fixture (12000/6000 vs 10000/10000): a same-amount fixture would make
-    // this test's witness indistinguishable from what the income card would
-    // show, defeating its own point of proving BOTH surfaces re-aggregate.
-    //   monthly  round(12000×52/12) + round(6000/12) = 52000c + 500c = 52500c
-    //   annually 52500c × 12 = 630000c → "6,300.00"
     useExpenseStore.setState({
       expenses: [
         {
@@ -1477,8 +948,6 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
     const overviewSelect = () =>
       screen.getByRole('combobox', { name: /show income and expenses per/i }) as HTMLSelectElement
     const cardText = () => screen.getByTestId('overview-total-income').textContent
-    // The pie's own total figure, scoped to the breakdown section so the card's
-    // identical string cannot satisfy it.
     const breakdownSection = (): HTMLElement => {
       const section = screen
         .getByRole('heading', { name: 'Income vs Expense Breakdown' })
@@ -1487,19 +956,16 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
       return section
     }
 
-    // Both start at the shared default.
     expect(overviewSelect().value).toBe('annually')
     expect(breakdownSelect().value).toBe('annually')
     expect(cardText()).toContain('5,299.92')
     expect(within(breakdownSection()).getByText('6,300.00')).toBeInTheDocument()
 
-    // Direction 1: drive the BREAKDOWN selector — the card must follow.
     fireEvent.change(breakdownSelect(), { target: { value: 'monthly' } })
     expect(overviewSelect().value).toBe('monthly')
     expect(cardText()).toContain('441.66')
     expect(within(breakdownSection()).getByText('525.00')).toBeInTheDocument()
 
-    // Direction 2: drive the OVERVIEW selector — the pies must follow.
     fireEvent.change(overviewSelect(), { target: { value: 'annually' } })
     expect(breakdownSelect().value).toBe('annually')
     expect(cardText()).toContain('5,299.92')
@@ -1518,38 +984,23 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
     expect(screen.getByText('Expenses by category (per week)')).toBeInTheDocument()
   })
 
-  /**
-   * Story 32.3, AC-9 — the divergence this story CREATED must be disclosed.
-   *
-   * The pies scale each entry then sum; the Total cards sum monthly then scale
-   * once. At ×12/52 and ×12/26 those disagree by a cent or two; at ×1 and ×12
-   * they are exact. So the note must appear at exactly the two non-integral
-   * periods and at neither integral one — an unconditional note would be false
-   * half the time, and a `duration === 'weekly'` note would be the 32.1 rot again.
-   */
+  // Pies scale each entry then sum; cards sum then scale once. They differ only at
+  // the non-integral periods, so the note must appear at exactly those.
   it('AC-9: the pies disclose per-entry rounding at weekly and biweekly only', () => {
     seedMixedFrequencyIncome()
     render(<HomePage />)
 
-    // Annually (integral) — no note.
     expect(screen.queryByTestId('breakdown-pies-rounding-note')).not.toBeInTheDocument()
 
     fireEvent.change(breakdownSelect(), { target: { value: 'weekly' } })
     expect(screen.getByTestId('breakdown-pies-rounding-note')).toBeInTheDocument()
 
-    // ⚠️ THE WORD "ENTRY" IS THE ASSERTION, not decoration. This note first read
-    // "Each CATEGORY is rounded on its own" — which describes the /categories
-    // page's per-bucket model, not what these pies do (they round each ENTRY,
-    // then aggregate). Pinning only the note's PRESENCE let that wrong copy ship
-    // and survive a mutation. Code review 32.3.
     expect(screen.getByTestId('breakdown-pies-rounding-note')).toHaveTextContent(
       /Each entry is rounded on its own/
     )
     expect(screen.getByTestId('breakdown-pies-rounding-note')).not.toHaveTextContent(
       /Each category is rounded/
     )
-    // The magnitude is stated per entry, so it stays true as the list grows —
-    // an unqualified "a few cents" is false for a 30-entry list (~15c).
     expect(screen.getByTestId('breakdown-pies-rounding-note')).toHaveTextContent(
       /about half a cent per entry/
     )
@@ -1557,24 +1008,10 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
     fireEvent.change(breakdownSelect(), { target: { value: 'biweekly' } })
     expect(screen.getByTestId('breakdown-pies-rounding-note')).toBeInTheDocument()
 
-    // Monthly (integral) — no note.
     fireEvent.change(breakdownSelect(), { target: { value: 'monthly' } })
     expect(screen.queryByTestId('breakdown-pies-rounding-note')).not.toBeInTheDocument()
   })
 
-  /**
-   * Story 32.3 code review — the note must not contradict the screen it sits on.
-   *
-   * ⚠️ THE FIX FOR THIS SHIPPED UNTESTED AND THE MUTATION SURVIVED. Reverting the
-   * gate to `IS_NON_INTEGRAL_CADENCE[duration]` alone left the whole suite green,
-   * which is the FOURTH consecutive story where a patch was applied without being
-   * mutation-verified. These two cases are what make the gate real.
-   *
-   * The note claims figures "can differ from the totals above". That is only ever
-   * true when a side has MORE THAN ONE entry for per-entry rounding to accumulate
-   * across — with zero entries there are no figures at all, and with one the pie
-   * total and the card are the same expression, `round(m / k)`.
-   */
   it('AC-9: no rounding note when both pies are EMPTY (balances-only user)', () => {
     useBalanceStore.setState({
       entries: [
@@ -1593,22 +1030,16 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
     useOverviewDurationStore.setState({ duration: 'weekly' })
     render(<HomePage />)
 
-    // The dashboard renders (hasData is true via balances) with two empty pies…
     expect(screen.getByText('No income to compare against yet')).toBeInTheDocument()
     expect(screen.getByText('No expenses to break down yet')).toBeInTheDocument()
-    // …so a note about figures differing would be describing nothing.
     expect(screen.queryByTestId('breakdown-pies-rounding-note')).not.toBeInTheDocument()
 
     useBalanceStore.setState({ entries: [] })
   })
 
   it('AC-4: a user with income but no expenses yet sees a 0% ratio, not an empty/broken pie', () => {
-    // Code review found this state — the single most likely one for a brand
-    // new user, who enters income before expenses — was correct in the code
-    // but completely unpinned. `expenseRatioData` gates emptiness on
-    // `incomeData.length`, not on whether there are any expenses, so this
-    // renders ONE "Remaining income" slice at 100% of income, not the empty
-    // state (that only fires with zero income ROWS).
+    // expenseRatioData gates emptiness on income rows, so this renders one
+    // "Remaining income" slice rather than the empty state.
     useIncomeStore.setState({
       incomeSources: [
         {
@@ -1632,7 +1063,6 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
     expect(within(ratioPie).getByText('Remaining income')).toBeInTheDocument()
     expect(within(ratioPie).getByText(/100%/)).toBeInTheDocument()
 
-    // The sibling pie, with no expense rows at all, IS in its empty state.
     expect(screen.getByText('No expenses to break down yet')).toBeInTheDocument()
   })
 
@@ -1654,32 +1084,12 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
     useOverviewDurationStore.setState({ duration: 'biweekly' })
     render(<HomePage />)
 
-    // One entry: the pie total IS the card figure, by construction.
     expect(screen.queryByTestId('breakdown-pies-rounding-note')).not.toBeInTheDocument()
   })
 })
 
-/**
- * Asset & Liability breakdown pie removed (story 12-4, UX-DR21).
- *
- * The dashboard used to render an "Asset & Liability Breakdown" pie beside the
- * income-vs-expense pie, plotting Savings/Investments/Debts as three slices of
- * one whole. It was (a) redundant with the "Financial Category Summary" bar
- * chart directly below — the same three figures — and (b) conceptually muddled
- * (debts, a liability, shown as a proportional slice of an "asset" whole).
- * Product approved removing it; the bar chart is now the sole carrier of those
- * figures. These tests assert the asset pie is gone, the bar chart remains, and
- * the income/expense breakdown renders as two separate, distinctly-headed pies
- * (UX review #4 split it so each has its own correct 100% denominator).
- *
- * Assertions target the section/sub-headings, which render deterministically in
- * jsdom, rather than the Recharts SVG (which needs real layout to render).
- */
 describe('HomePage asset/liability breakdown removed (story 12-4)', () => {
   function seedIncomeAndSavings(): void {
-    // Income makes the visualization block render (hasData). A funded savings
-    // goal is exactly the kind of figure the removed pie plotted, so seeding it
-    // proves the pie is gone even when its data exists.
     useIncomeStore.setState({
       incomeSources: [
         {
@@ -1740,41 +1150,17 @@ describe('HomePage asset/liability breakdown removed (story 12-4)', () => {
   it('AC-2/UX-#4: income and expenses render as two separately-headed breakdown pies (asset & liability pie still gone)', () => {
     seedIncomeAndSavings()
     render(<HomePage />)
-    // The section keeps its "Income vs Expense Breakdown" heading...
     expect(
       screen.getByRole('heading', { name: /income vs expense breakdown/i })
     ).toBeInTheDocument()
-    // ...but income and expenses are now split into two sub-charts, each with
-    // its own correct 100% denominator and a distinct sub-heading (UX review
-    // #4). Story UX-3 replaced the LEFT sub-chart's content — an income
-    // category breakdown became an expense/income ratio — so "income by
-    // category"/"income by source" no longer appear here at all; the RIGHT
-    // sub-chart (expense category breakdown, retitled by story 30.4b to group
-    // by category rather than per income source) is unchanged.
     expect(screen.getByRole('heading', { name: /expenses as % of income/i })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /income by category/i })).toBeNull()
     expect(screen.queryByRole('heading', { name: /income by source/i })).toBeNull()
     expect(screen.getByRole('heading', { name: /expenses by category/i })).toBeInTheDocument()
-    // The removed asset & liability pie stays gone.
     expect(screen.queryByRole('heading', { name: /asset & liability breakdown/i })).toBeNull()
   })
 })
 
-/**
- * Flows and balances split into two sub-charts (story UX-2).
- *
- * The "Financial Category Summary" used to plot per-period FLOWS (Income /
- * Expenses) on the same value axis as point-in-time BALANCES (Savings /
- * Investments / Debts). At the "Annually" cadence a ~$93.6k income bar dwarfed a
- * ~$5k savings balance, crushing the balance bars to a sliver. UX-2 splits the
- * section into two sub-charts — "Income & expenses" and "Balances" — each on its
- * own axis, so neither can flatten the other.
- *
- * Assertions target the section + sub-headings (which render deterministically in
- * jsdom), not the Recharts SVG (which needs real layout). The parent "Financial
- * Category Summary" heading is preserved as the carrier the story-12-4 tests
- * assert.
- */
 describe('HomePage flows/balances split (story UX-2)', () => {
   const TS = '2026-07-14T00:00:00.000Z'
 
@@ -1875,12 +1261,9 @@ describe('HomePage flows/balances split (story UX-2)', () => {
     seedSavings(500000)
     seedBalances()
     render(<HomePage />)
-    // The parent section heading is preserved (story-12-4 carrier guarantee).
     expect(screen.getByRole('heading', { name: /financial category summary/i })).toBeInTheDocument()
-    // Flows and balances now have their own distinctly-headed sub-charts.
     expect(screen.getByRole('heading', { name: /^income & expenses/i })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /^balances$/i })).toBeInTheDocument()
-    // Both sections have data, so the empty fallback must not appear.
     expect(screen.queryByText(/no financial data to display/i)).not.toBeInTheDocument()
   })
 
@@ -1888,37 +1271,26 @@ describe('HomePage flows/balances split (story UX-2)', () => {
     seedIncome(500000)
     seedExpense(200000)
     render(<HomePage />)
-    // Default cadence (Annually) — the flows sub-heading reads "(per year)".
     expect(
       screen.getByRole('heading', { name: 'Income & expenses (per year)' })
     ).toBeInTheDocument()
 
-    // Switching the ONE overview selector re-expresses the flows heading in
-    // lockstep with the cards above (story 12-2 alignment).
     fireEvent.change(screen.getByRole('combobox', { name: /show income and expenses per/i }), {
       target: { value: 'monthly' },
     })
     expect(
       screen.getByRole('heading', { name: 'Income & expenses (per month)' })
     ).toBeInTheDocument()
-    // The stale annual heading must be GONE (not merely joined by the monthly one)
-    // — guards against a duplicate-render regression.
     expect(
       screen.queryByRole('heading', { name: 'Income & expenses (per year)' })
     ).not.toBeInTheDocument()
   })
 
   it('AC-5: a genuinely balances-only user (no income/expense rows) still reaches the Balances sub-chart', () => {
-    // The real balances-only path — NO income or expense rows at all. This works
-    // only because `hasData` counts savings/balances too (the ux-2 review fix);
-    // before that, this user hit the "Let's set up your budget" onboarding and
-    // never saw their balances. No zero-amount-income trick.
     seedSavings(250000)
     render(<HomePage />)
-    // The onboarding screen must NOT show — the dashboard renders for this user.
     expect(screen.queryByText(/let's set up your budget/i)).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /^balances$/i })).toBeInTheDocument()
-    // Flows are absent, so the flows sub-chart is hidden and no empty axis renders.
     expect(screen.queryByRole('heading', { name: /^income & expenses/i })).not.toBeInTheDocument()
     expect(screen.queryByText(/no financial data to display/i)).not.toBeInTheDocument()
   })
@@ -1933,8 +1305,6 @@ describe('HomePage flows/balances split (story UX-2)', () => {
   })
 
   it('AC-5: with neither flows nor balances present, the section shows the empty hint', () => {
-    // Income row exists (hasData → the summary section renders) but its amount is
-    // zero and there are no balances, so both datasets are empty.
     seedIncome(0)
     render(<HomePage />)
     expect(screen.getByText(/no financial data to display/i)).toBeInTheDocument()
@@ -1943,24 +1313,6 @@ describe('HomePage flows/balances split (story UX-2)', () => {
   })
 })
 
-/**
- * HomePage net-worth tests (Story 32.2, FR59).
- *
- * The Overview's "Net Worth" card now shows `investments + savings − debts`,
- * read through the one shared `useNetWorth()` hook, so it can no longer disagree
- * with the Balance page — or with the balances bar chart ten lines below it,
- * which has always plotted Savings + Investments − Debts.
- *
- * ⚠️ Expectations are HAND-COMPUTED from the story §3 fixture, in the suite-wide
- * currency-less mode:
- *
- *   2,000,000c investments + 300,000c savings − 15,000,000c debts = −12,700,000c
- *   the pre-32.2 formula gave −13,000,000c → "-130,000.00"
- *
- * The figure is located by `data-testid`, never by an accessible-name matcher:
- * story 32.1 measured that a heading/label containing an InfoTooltip button
- * resolves to a different accessible name under jsdom than under Chromium.
- */
 describe('HomePage net worth includes savings (Story 32.2)', () => {
   const NW_TS = '2026-08-15T00:00:00.000Z'
 
@@ -2045,9 +1397,6 @@ describe('HomePage net worth includes savings (Story 32.2)', () => {
     render(<HomePage />)
 
     expect(screen.getByTestId('overview-net-worth')).toHaveTextContent('-127,000.00')
-    // Story 115.2: a negative figure gets a lighter red in dark (red-600 on the
-    // dark inset card was 2.64:1; red-400 is 4.62:1), and so does Total Expenses.
-    // Tokens, not paint: jsdom has no Tailwind.
     expect([...screen.getByTestId('overview-net-worth').classList]).toEqual(
       expect.arrayContaining(['text-red-600', 'dark:text-red-400'])
     )
@@ -2072,18 +1421,12 @@ describe('HomePage net worth includes savings (Story 32.2)', () => {
     seedBalances()
     render(<HomePage />)
 
-    // Progressive disclosure: the bubble exists only while the trigger is
-    // focused/hovered, so focus it first (the story 11-4 pattern).
     const trigger = screen.getByRole('button', { name: /more information about net worth/i })
     fireEvent.focus(trigger)
     const tooltip = await screen.findByRole('tooltip')
 
-    // Distinguishing phrasing, not a generic word (Epic 23 lesson): the copy has
-    // to say savings count, and must no longer state the superseded definition
-    // ("your investments minus your debts") as fact.
     expect(tooltip).toHaveTextContent(/savings/i)
     expect(tooltip).not.toHaveTextContent(/your investments minus your debts/i)
-    // The Savings page is where that money is entered, so name it alongside Balance.
     expect(tooltip).toHaveTextContent(/balance/i)
   })
 
@@ -2092,7 +1435,6 @@ describe('HomePage net worth includes savings (Story 32.2)', () => {
     render(<HomePage />)
 
     expect(screen.getByTestId('overview-net-worth')).toHaveTextContent('3,000.00')
-    // Story 115.2: purple-600 on the dark inset card was 2.37:1; purple-400 is 4.83.
     expect([...screen.getByTestId('overview-net-worth').classList]).toEqual(
       expect.arrayContaining(['text-purple-600', 'dark:text-purple-400'])
     )
@@ -2102,8 +1444,6 @@ describe('HomePage net worth includes savings (Story 32.2)', () => {
     seedSavings()
     render(<HomePage />)
 
-    // The old gate keyed on balance rows alone, so this hint rendered beside a
-    // real, positive net worth — the card contradicting itself.
     expect(screen.queryByTestId('net-worth-empty-hint')).not.toBeInTheDocument()
   })
 
@@ -2152,39 +1492,10 @@ describe('HomePage net worth includes savings (Story 32.2)', () => {
   })
 })
 
-/**
- * The Overview's Premium Features section is tier-conditional (story 58.2, FR88).
- *
- * Once story 58.1 put Forecasting, Profiles, Report and Categories in a paid
- * user's nav, the section became a second copy of a menu they already have. D1
- * (Lucas, 2026-09-20) hides the WHOLE section — heading included — for an
- * entitled session, rather than filtering four of the five boxes out of it.
- *
- * ⚠️⚠️ THE TIER HERE IS THE SESSION SEED, NOT THE `usePremiumAccess` MOCK. Those
- * are two different signals and this file only ever drove the second one. Every
- * OTHER test in this file renders with no `SessionSeedProvider`, so the seed is
- * `null`, the gate reads "not entitled" and the section renders in full — which
- * is why they all still pass unchanged while asserting `hasAccess: true`. That
- * is a FIDELITY GAP, not coverage: those tests exercise the GATE's entitled
- * branch, not a paid user's page. This block is the only test of what a paying
- * user actually sees.
- *
- * ⚠️ Absence is most of what this block asserts, and absence assertions are the
- * easiest thing in this repo to satisfy by accident — an empty render, a crash
- * and a correct trim are indistinguishable to `queryBy… === null`. Every
- * assertion below is paired with a positive anchor in the SAME render.
- */
+// The section's visibility follows the session seed, not the usePremiumAccess mock;
+// other tests here have a null seed and always see the section.
 describe('58.2: the Premium Features section is tier-conditional (FR88, D1)', () => {
-  /**
-   * Every benefit's visible TITLE, derived from the shipped map, never literals.
-   *
-   * ⚠️ The inner `span`, not the outer one. Each label renders
-   * `<span class="flex flex-col"><span>Title</span><span>subtitle</span></span>`,
-   * so the outer element's `textContent` is title+subtitle concatenated — which
-   * is why `benefit-set-parity.test.tsx` matches it with `toContain` rather than
-   * equality. These assertions need the title alone so they can use exact text
-   * queries in both directions (present for free, absent for paid).
-   */
+  // The inner span: the outer one's textContent is title + subtitle.
   function benefitTitles(): ReadonlyArray<readonly [PremiumBenefitId, string]> {
     return PREMIUM_BENEFIT_IDS.map((id) => {
       const Label = OVERVIEW_BENEFITS[id].label
@@ -2192,11 +1503,6 @@ describe('58.2: the Premium Features section is tier-conditional (FR88, D1)', ()
       const spans = container.querySelectorAll('span')
       const title = spans[1]?.textContent ?? ''
       unmount()
-      // Two guards, because the index is structural: the label must have an
-      // inner title span at all, and the title must not be the SUBTITLE. A bare
-      // length check would not notice `[1]` drifting onto the sub-text, in which
-      // case every absence/presence assertion below would silently test the
-      // wrong string.
       expect(spans.length, `"${id}" label must wrap a title + subtitle`).toBeGreaterThanOrEqual(3)
       expect(title.length, `"${id}" must render a non-empty title`).toBeGreaterThan(0)
       expect(title, `"${id}" title looks like a subtitle`).not.toMatch(/\s\w+\s\w+\s\w+\s\w+\s/)
@@ -2204,15 +1510,7 @@ describe('58.2: the Premium Features section is tier-conditional (FR88, D1)', ()
     })
   }
 
-  /**
-   * Every benefit's visible title.
-   *
-   * ⚠️ Built inside `beforeAll`, not at describe-collection time. The first
-   * version ran `render`/`expect` while the describe body was being evaluated,
-   * which calls a component as a plain function (breaking the moment a label
-   * uses a hook) and aborts the whole FILE rather than one test on failure.
-   * (Code review, 2026-09-21.)
-   */
+  // Built in beforeAll: rendering during describe collection aborts the whole file on failure.
   let BENEFIT_TITLES: ReadonlyArray<readonly [PremiumBenefitId, string]> = []
   beforeAll(() => {
     BENEFIT_TITLES = benefitTitles()
@@ -2236,10 +1534,6 @@ describe('58.2: the Premium Features section is tier-conditional (FR88, D1)', ()
     )
   }
 
-  /**
-   * The positive anchor every absence assertion in this block leans on: proof
-   * the page rendered at all. Deliberately NOT part of the premium section.
-   */
   function expectPageRendered(): void {
     expect(screen.getByText('Track your finances with privacy and control')).toBeInTheDocument()
   }
@@ -2254,23 +1548,12 @@ describe('58.2: the Premium Features section is tier-conditional (FR88, D1)', ()
 
       expect(screen.queryByRole('heading', { name: 'Premium Features', level: 2 })).toBeNull()
 
-      // Per-benefit, not a count: a count-only assertion passes against the
-      // wrong subset surviving, which is the defect shape FR88 itself names.
-      //
-      // ⚠️ The TITLE is the load-bearing probe. Only `sync` carries a
-      // `premium-benefit-*` testid — the route-backed branch renders a bare
-      // `<div key={id}>` (see HomePage.tsx) — so asserting that testid absent
-      // for the other four is trivially true even on a FREE render and proves
-      // nothing. That vacuous loop shipped and was caught in code review
-      // (2026-09-21); the testid is now asserted only where it exists.
+      // Probe by title: only sync carries a premium-benefit-* testid.
       for (const [, title] of BENEFIT_TITLES) {
         expect(screen.queryByText(title), `"${title}" must not render`).toBeNull()
       }
       expect(screen.queryByTestId('premium-benefit-sync')).toBeNull()
 
-      // D1 hides the section outright, so none of the gate's three render
-      // states may appear either — not the locked button, not the skeleton,
-      // and not the unlocked links.
       expect(screen.queryAllByTestId('premium-gate-locked')).toHaveLength(0)
       expect(screen.queryAllByTestId('premium-gate-skeleton')).toHaveLength(0)
       for (const [name, href] of OPENABLE_ROUTES) {
@@ -2280,12 +1563,6 @@ describe('58.2: the Premium Features section is tier-conditional (FR88, D1)', ()
   )
 
   it('hides Multi-device sync too — the accepted cost of D1 (AC-3)', () => {
-    // ⚠️ NOT an oversight, and the reason this gets its own named test rather
-    // than riding along in the loop above. Sync has no route, so it cannot move
-    // to the nav; hiding the section removes the ONLY user-visible mention of
-    // multi-device sync anywhere in the app. Lucas chose this (D1, option b)
-    // with that cost stated. The named follow-up is a real sync status
-    // indicator, which has never existed — NOT reinstating this section.
     mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
     renderWithSeed(paidSeed())
 
@@ -2294,13 +1571,6 @@ describe('58.2: the Premium Features section is tier-conditional (FR88, D1)', ()
     expect(screen.queryByText('Multi-device sync')).toBeNull()
   })
 
-  // ⚠️ The SEED is what is under test here — it drives the new gate. The
-  // `mockStatus` on each row drives the GATES INSIDE the section, and is set to
-  // the tier that seed would really resolve to, so the fixture is coherent: an
-  // earlier version labelled a row "past_due" while mocking a free/signed-out
-  // status, which read as a contradiction (code review, 2026-09-21). A null or
-  // signed-out seed genuinely yields no access; `past_due`/`canceled` are
-  // authenticated but unentitled.
   it.each([
     ['a null seed (resolver could not verify)', null, { isAuthenticated: false }],
     [
@@ -2318,8 +1588,6 @@ describe('58.2: the Premium Features section is tier-conditional (FR88, D1)', ()
     expectPageRendered()
     expect(screen.getByRole('heading', { name: 'Premium Features', level: 2 })).toBeInTheDocument()
 
-    // The free-tier set is UNCHANGED — asserted per benefit and in canonical
-    // order, not merely "more than the paid count".
     for (const [, title] of BENEFIT_TITLES) {
       expect(screen.getByText(title)).toBeInTheDocument()
     }
@@ -2328,16 +1596,8 @@ describe('58.2: the Premium Features section is tier-conditional (FR88, D1)', ()
   })
 
   it('⚠️ FAILS OPEN on a null seed — the direction is the OPPOSITE of the nav, deliberately', () => {
-    // GlobalNav fails CLOSED: an unverified session gets the free nav. This gate
-    // fails OPEN: an unverified session is SHOWN the section. Both are
-    // fail-safe and they point opposite ways because the harm is asymmetric —
-    // fail-closed here would leave a paid user whose seed failed to resolve with
-    // no nav entries AND no boxes, i.e. no route to any of the four pages, which
-    // is the precise stranding FR88's sequencing exists to prevent. After story
-    // 58.2 the nav is the ONLY paid route to all four, so there is no fallback.
-    //
-    // Pinned as its own test because "harmonising the two directions" is a
-    // plausible future tidy-up that would ship exactly that bug.
+    // GlobalNav fails closed but this gate fails open: otherwise an unverified paid user
+    // would have no route to the premium pages.
     mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
     renderWithSeed(null)
 
@@ -2347,11 +1607,6 @@ describe('58.2: the Premium Features section is tier-conditional (FR88, D1)', ()
       'a null seed must FAIL OPEN and still show the section'
     ).toBeInTheDocument()
 
-    // ⚠️ THE ASSERTION THAT ACTUALLY TESTS THE RATIONALE. Showing the heading is
-    // not the point — the point is that the user retains a ROUTE. An earlier
-    // version stopped at the heading, so it would have passed against a section
-    // rendering five inert boxes (code review, 2026-09-21). With the tier
-    // resolved, every route-backed benefit must be a working link.
     for (const [name, href] of OPENABLE_ROUTES) {
       expect(screen.getByRole('link', { name }), `${href} must stay reachable`).toHaveAttribute(
         'href',
@@ -2361,30 +1616,11 @@ describe('58.2: the Premium Features section is tier-conditional (FR88, D1)', ()
   })
 
   it('leaves the canonical benefit set at five keys (AC-7)', () => {
-    // The canonical set still has all five entries and OVERVIEW_BENEFITS still
-    // has all five keys, so the `Record` compile-error guarantee and every
-    // cross-surface parity check are unaffected by this story.
-    //
-    // ⚠️ RENAMED: this was titled "the gate is section-level, not per-benefit",
-    // which it does NOT test — a per-benefit `.filter()` inside the JSX map
-    // would leave both constants untouched and pass (code review, 2026-09-21).
-    // What actually pins section-level-ness is the pair of assertions in the
-    // paid tests above: the HEADING must be absent and SYNC must be absent, and
-    // a per-benefit filter over the route-backed four satisfies neither. Mutation
-    // arm 5 implements that rejected design and turns them red.
     expect(PREMIUM_BENEFIT_IDS).toHaveLength(5)
     expect(Object.keys(OVERVIEW_BENEFITS).sort()).toEqual([...PREMIUM_BENEFIT_IDS].sort())
   })
 })
 
-/**
- * Overview behaviour that used to be e2e-only (story 84.5, FR137).
- *
- * `e2e/overview-duration.spec.ts:155`, `e2e/premium-locked.spec.ts`. What stays
- * in a browser only (named D2 losses): the overlay's painted box (y=0, full
- * height) and real page scrolling. What moves is the STRUCTURE the overlay's
- * position depends on and the state machine behind the scroll lock.
- */
 describe('Overview: was e2e (story 84.5)', () => {
   afterEach(() => {
     useIncomeStore.setState({ incomeSources: [] })
@@ -2404,18 +1640,13 @@ describe('Overview: was e2e (story 84.5)', () => {
 
     await renderAfterReload(<HomePage />)
 
-    // The default is Annually, so `monthly` can only have come out of storage.
     expect(select().value).toBe('monthly')
     expect(screen.getByText('Total Income (per month)')).toBeInTheDocument()
   })
 
   it("every gate's upgrade dialog stays inside the gate's OWN wrapper (was e2e premium-locked:27)", async () => {
-    // ⚠️ `Modal` renders in normal flow (no portal) and a locked
-    // `PremiumFeatureGate` returns a FRAGMENT of <button> + dialog. Placed
-    // straight into the `space-y-3` stack, the overlay becomes a spaced sibling,
-    // takes the stack's top margin and leaves an undimmed strip (HomePage.tsx's
-    // comment above the stack). The e2e original measured the overlay box; this
-    // pins the structure that box depends on, for EVERY gate, not just sync.
+    // Modal has no portal and a locked gate returns a fragment, so in the space-y-3
+    // stack the overlay would take a top margin and leave an undimmed strip.
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
     renderWithRouter(<HomePage />)
     const gates = await screen.findAllByTestId('premium-gate-locked')
@@ -2429,8 +1660,6 @@ describe('Overview: was e2e (story 84.5)', () => {
       const dialog = await screen.findByRole('dialog', { name: /go premium/i })
       const overlay = dialog.parentElement as HTMLElement
       const wrapper = overlay.parentElement as HTMLElement
-      // The overlay's parent is the gate's wrapper: not the stack itself, and
-      // holding THIS gate's button.
       expect(wrapper).not.toBe(stack)
       expect(wrapper.parentElement).toBe(stack)
       expect(wrapper).toContainElement(gate)
@@ -2440,12 +1669,7 @@ describe('Overview: was e2e (story 84.5)', () => {
   })
 
   it('two open gate dialogs close one at a time and release the scroll lock (was e2e premium-locked:101)', async () => {
-    // ⚠️ `Modal.test.tsx` proves the stack with two Modals mounted by hand; this
-    // proves the OVERVIEW can actually REACH a two-dialog state, which is the
-    // e2e original's whole point (story 41.1 review: before the fix one Escape
-    // closed both and left `overflow: hidden` behind). `.focus()` stands in for a
-    // browser-chrome round trip returning focus to the page, which the dialog's
-    // Tab trap does not intercept.
+    // .focus() stands in for focus returning from browser chrome, which the Tab trap does not intercept.
     const user = userEvent.setup()
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
     renderWithRouter(<HomePage />)

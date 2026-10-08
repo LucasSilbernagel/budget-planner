@@ -22,23 +22,8 @@ import {
   usePlannerVisibilityStore,
 } from '../../stores/plannerVisibilityStore'
 
-/**
- * Tier control for the Premium-only Category column (story 33.3, FR57).
- *
- * ⚠️ A plain object mutated in place, NOT a `vi.fn()`. This file does not call
- * `vi.clearAllMocks()` today, but `category-assignment.test.tsx` — which mocks
- * the same hook and is the template this pattern came from — does (`:66`), and
- * there `clearAllMocks` would strip a `mockReturnValue` and make the hook return
- * `undefined`, so the page throws on `status.hasAccess` and every test in the
- * file fails for a reason unrelated to its subject. A plain object cannot be
- * cleared, so the pattern is safe to copy into either kind of file. Keeping it
- * uniform is the point; do not "simplify" this to a `vi.fn()` here.
- *
- * ⚠️ The factory must export ONLY `usePremiumAccess`. If production code ever
- * reaches for another export of that module, this mock fails at COLLECT time
- * (every test in the file, no clean assertion failure) rather than pointing at
- * the change that caused it.
- */
+// A plain object, not vi.fn(): vi.clearAllMocks() would strip a mockReturnValue
+// and make the hook return undefined.
 const premiumTier = vi.hoisted(() => ({
   status: {
     hasAccess: false,
@@ -68,20 +53,10 @@ const premium = () =>
   setTier({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
 const free = () => setTier({})
 
-// Reset the tier before EVERY test in this file, so a premium test cannot leak
-// entitlement into an unrelated one that renders the same page.
 beforeEach(() => {
   free()
 })
 
-/**
- * The row's mobile field labels, in document order.
- *
- * Asserting this array (rather than looping over a hand-written list) is what
- * ties the "labels every field" claim to reality: it pins the COUNT and the
- * ORDER, so a column that silently disappears fails the test instead of just
- * shortening an unchecked loop.
- */
 function mobileLabelsIn(row: HTMLElement): string[] {
   return [...row.querySelectorAll('span.sm\\:hidden')].map((el) => el.textContent ?? '')
 }
@@ -90,13 +65,6 @@ import { expectSortHeaderAnnouncements } from '@/test/sort-announcements'
 import { expectSharedGreen } from '@/test/white-fill-tokens'
 import { ExpensesPage } from '../ExpensesPage'
 
-/**
- * ExpensesPage inline field-validation tests (story 6-8).
- *
- * Proves invalid add submissions surface themed, accessible inline field errors
- * (no browser alert()), block the store mutation and keep the modal open, and
- * that correcting the fields clears the errors and lets a valid submit proceed.
- */
 describe('ExpensesPage inline validation', () => {
   beforeEach(() => {
     useExpenseStore.setState({ expenses: [] })
@@ -149,13 +117,6 @@ describe('ExpensesPage inline validation', () => {
   })
 })
 
-/**
- * Danger-color reservation (story 11-3, AC-2).
- *
- * These are additive, non-destructive actions, so they must not wear the
- * danger-red fill that reads as "delete" (red stays reserved for the row Delete
- * control and its ConfirmDialog).
- */
 describe('ExpensesPage safe-action buttons are not danger-red', () => {
   beforeEach(() => {
     useExpenseStore.setState({ expenses: [] })
@@ -167,7 +128,6 @@ describe('ExpensesPage safe-action buttons are not danger-red', () => {
 
     const addButton = screen.getByRole('button', { name: '+ Add Expense' })
     expect(addButton.className).not.toMatch(/bg-red-(600|700)/)
-    // Story 115.1: both are the shared AA green (white on green-600 was 3.30:1).
     expectSharedGreen(addButton)
 
     await user.click(addButton)
@@ -177,13 +137,6 @@ describe('ExpensesPage safe-action buttons are not danger-red', () => {
   })
 })
 
-/**
- * Money-input sanitization (story 28-1, FR46).
- *
- * The amount field shares the core `sanitizeMoneyInput` helper with every other
- * money surface; this proves the wiring on this page (AC-3), not the helper's
- * own rule table (covered exhaustively in packages/core).
- */
 describe('ExpensesPage amount input rejects non-numeric characters', () => {
   beforeEach(() => {
     useExpenseStore.setState({ expenses: [] })
@@ -216,8 +169,6 @@ describe('ExpensesPage amount input rejects non-numeric characters', () => {
   })
 
   it('leaves the name field free to accept letters', async () => {
-    // The sanitizer is opt-in per field — a text input on the same form must not
-    // inherit it.
     const user = userEvent.setup()
     renderWithProviders(<ExpensesPage />)
 
@@ -229,15 +180,6 @@ describe('ExpensesPage amount input rejects non-numeric characters', () => {
   })
 })
 
-/**
- * Visible focus indicator (story 28-1, AC-7).
- *
- * See the IncomePage sibling suite for the rationale. This page additionally
- * pins the focused-valid vs focused-invalid hue split: before AC-7 the ring had
- * zero width, so both branches using red went unnoticed. Once the ring is
- * visible, a red ring on a valid field is indistinguishable from the error
- * state — and red is reserved for destructive actions (story 11-3, AC-2).
- */
 describe('ExpensesPage form controls have a visible focus ring', () => {
   beforeEach(() => {
     useExpenseStore.setState({ expenses: [] })
@@ -280,7 +222,6 @@ describe('ExpensesPage form controls have a visible focus ring', () => {
     const dialog = screen.getByRole('dialog')
     const amountInput = within(dialog).getByTestId('expense-amount-input')
 
-    // No submit attempted yet → no error → the ring must not read as "invalid".
     expect(amountInput.className.split(/\s+/)).toContain('focus:ring-blue-500')
     expect(amountInput.className.split(/\s+/)).not.toContain('focus:ring-red-500')
   })
@@ -301,12 +242,6 @@ describe('ExpensesPage form controls have a visible focus ring', () => {
   })
 })
 
-/**
- * Edit-modal prefill (story 28-1, Task 4).
- *
- * The sibling assertion to IncomePage's: both pages had a bare
- * `(amount / 100).toString()` prefill that emitted ungrouped, locale-unaware text.
- */
 describe('ExpensesPage edit modal prefills a grouped, locale-aware amount', () => {
   beforeEach(() => {
     useExpenseStore.setState({ expenses: [] })
@@ -324,19 +259,10 @@ describe('ExpensesPage edit modal prefills a grouped, locale-aware amount', () =
     await user.click(screen.getByRole('button', { name: 'Edit Rent' }))
     const dialog = screen.getByRole('dialog')
 
-    // Not "1234567.89" — re-saving without editing must not shift the stored cents.
     expect(within(dialog).getByTestId('expense-amount-input')).toHaveValue('1,234,567.89')
   })
 })
 
-/**
- * Mobile card presentation (story 31.2, UX-DR36).
- *
- * See `IncomePage.test.tsx` for the full rationale — one `<table>` in the DOM,
- * CSS-only switching, class-TOKEN assertions. jsdom computes no layout, and since
- * stories 84.2/84.5 deleted `e2e/responsive-320.spec.ts` no test measures this
- * page's 320px geometry (there is no `/expenses` screenshot).
- */
 describe('ExpensesPage mobile card presentation (story 31.2)', () => {
   beforeEach(() => {
     useExpenseStore.setState({ expenses: [] })
@@ -370,13 +296,10 @@ describe('ExpensesPage mobile card presentation (story 31.2)', () => {
     renderWithProviders(<ExpensesPage />)
     const row = rowFor('Rent')
 
-    // Everything the free tier IS entitled to still renders...
     expect(within(row).getByText('1,500.00')).toBeInTheDocument()
     expect(within(row).getByText('monthly')).toBeInTheDocument()
     expect(within(row).getByRole('button', { name: 'Edit Rent' })).toBeInTheDocument()
     expect(within(row).getByRole('button', { name: 'Delete Rent' })).toBeInTheDocument()
-    // ...and BOTH category renderings are gone. Asserting only the placeholder
-    // would still pass if the assigned-category pill leaked through.
     expect(within(row).queryByTestId('expense-row-uncategorized')).not.toBeInTheDocument()
     expect(within(row).queryByTestId('expense-row-category')).not.toBeInTheDocument()
   })
@@ -386,10 +309,6 @@ describe('ExpensesPage mobile card presentation (story 31.2)', () => {
     renderWithProviders(<ExpensesPage />)
     const row = rowFor('Rent')
 
-    // ⚠️ The array equality is the point. The previous version of this test
-    // looped over a hand-written list with no count assertion, so its name
-    // ("every field") was a claim its assertions did not make — dropping a
-    // column left it green. Pin count and order, not just membership.
     expect(mobileLabelsIn(row)).toEqual(['Name', 'Amount', 'Frequency', 'Category', 'Actions'])
     for (const label of ['Name', 'Amount', 'Frequency', 'Category', 'Actions']) {
       expect([...within(row).getByText(label).classList]).toContain('sm:hidden')
@@ -436,16 +355,6 @@ describe('ExpensesPage mobile card presentation (story 31.2)', () => {
     }
   })
 
-  /**
-   * Story 48.2 (AC-1, AC-15) — the actions cell offers EXACTLY Edit and Delete.
-   *
-   * ⚠️ AN EXACT ARRAY, NOT `queryByRole(/^Move /) -> toBeNull()`. Story 48.2
-   * DELETES `RowMoveControls`, and an absence assertion about a deleted component
-   * is vacuous by construction: it passes for the same reason whether the removal
-   * was done correctly or the render broke entirely. Enumerating what IS offered
-   * fails on a re-added arrow AND on a lost Edit/Delete button, so it is
-   * falsifiable in both directions (mutation arm M1).
-   */
   it('offers exactly Edit and Delete in a row action cell (48.2 AC-1, AC-15)', () => {
     renderWithProviders(<ExpensesPage />)
     const cell = rowFor('Rent').querySelector('td:last-child') as HTMLElement
@@ -456,32 +365,12 @@ describe('ExpensesPage mobile card presentation (story 31.2)', () => {
     ).toEqual(['Edit Rent', 'Delete Rent'])
   })
 
-  /**
-   * Story 50.1 (AC-1, AC-3, AC-9) — the row actions are ICONS now.
-   *
-   * ⚠️ THE TEST DIRECTLY ABOVE CANNOT TELL. It reads `aria-label`, which 50.1
-   * leaves byte-identical, so it stays green against a button that renders no
-   * child at all — despite being titled "offers exactly Edit and Delete". It is
-   * the right guard for the accessibility contract and the wrong one for what
-   * the row SHOWS. This is the assertion that goes red.
-   *
-   * See `assertIsIconOnlyAction` for why both halves ship together and why
-   * `aria-hidden` is pinned as an attribute rather than through the name.
-   */
   it('renders each row action as an aria-hidden icon with no visible label (50.1 AC-1, AC-3, AC-9)', () => {
     renderWithProviders(<ExpensesPage />)
     const cell = rowFor('Rent').querySelector('td:last-child') as HTMLElement
     const geometry = ['Edit Rent', 'Delete Rent'].map((label) =>
       assertIsIconOnlyAction(within(cell).getByRole('button', { name: label }), label)
     )
-    // ⚠️ EDIT AND DELETE MUST BE DIFFERENT GLYPHS, AND NOTHING ELSE CHECKS THAT.
-    // Both icons are `h-5 w-5` `aria-hidden` SVGs from the same module, so pasting
-    // `<TrashIcon>` into the Edit slot — the likeliest slip across four copy-pasted
-    // call sites — leaves the accessible names, the empty textContent, the icon
-    // count, the rendered box and every width baseline untouched. Copied from
-    // `SortableColumnHeader.test.tsx`, which pins asc vs desc the same way and says
-    // why: "the two states would be visually identical and only a screen reader
-    // could tell them apart".
     expect(geometry[0], 'Edit and Delete render the same glyph').not.toBe(geometry[1])
   })
 
@@ -492,29 +381,7 @@ describe('ExpensesPage mobile card presentation (story 31.2)', () => {
   })
 })
 
-/**
- * Column sorting (Story 34.2, FR61).
- *
- * ⚠️ Written per page rather than once over a table of four, for the same reason
- * the 34.1b reorder block is: four independent page components, four hand-rolled
- * `<thead>`s and four extractor sets. 30-4b, 33.3 and 34.1b each shipped (or
- * nearly shipped) a HIGH by testing one surface and assuming its siblings.
- */
 describe('ExpensesPage — sort by column (34.2)', () => {
-  /**
-   * The fixture is built so that NO two of the four orderings coincide.
-   *
-   * manual (insertion):   Zeta, Alpha, Mid, Beta
-   * by name:              Alpha, Beta, Mid, Zeta
-   * by amount NORMALIZED: Zeta(5000), Beta(43333), Alpha(50000), Mid(50000)
-   * by amount RAW:        Beta(100_00), Alpha(500_00), Mid(500_00), Zeta(600_00)
-   * by frequency:         Beta(w), Alpha(m), Mid(m), Zeta(a)
-   *
-   * Alpha and Mid TIE on both amount and frequency while sitting in a known
-   * manual order, so the tie fallback is exercised by construction — and the raw
-   * and normalized amount orders disagree completely, so an un-normalized
-   * comparator cannot pass.
-   */
   const SEED = [
     { name: 'Zeta', amount: 600_00, frequency: 'annually' as const },
     { name: 'Alpha', amount: 500_00, frequency: 'monthly' as const },
@@ -525,9 +392,8 @@ describe('ExpensesPage — sort by column (34.2)', () => {
 
   function seedRows() {
     useExpenseStore.setState({ expenses: [] })
-    // Distinct createdAt per row: rows added inside one millisecond tie on the
-    // secondary manual key, and a tie-preserving stable sort can then make an
-    // ordering assertion pass by accident (34.1a's M10, 34.1b's M6).
+    // Distinct createdAt: rows created in one millisecond tie on the manual key,
+    // so a stable sort could pass an ordering assertion by accident.
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-03-01T00:00:00.000Z'))
     for (const row of SEED) {
@@ -537,7 +403,6 @@ describe('ExpensesPage — sort by column (34.2)', () => {
     vi.useRealTimers()
   }
 
-  /** The rendered row names, top to bottom (first cell of each body row). */
   function renderedOrder(): string[] {
     return screen
       .getAllByRole('row')
@@ -579,8 +444,7 @@ describe('ExpensesPage — sort by column (34.2)', () => {
     }
     const actions = header('Actions')
     expect(within(actions).queryByRole('button')).toBeNull()
-    // Not `none` — no attribute at all. `aria-sort="none"` advertises a column
-    // as sortable, which this one is not.
+    // No attribute at all: aria-sort="none" advertises the column as sortable.
     expect(actions).not.toHaveAttribute('aria-sort')
   })
 
@@ -611,8 +475,6 @@ describe('ExpensesPage — sort by column (34.2)', () => {
     const user = userEvent.setup()
     renderWithProviders(<ExpensesPage />)
     await user.click(within(header('Amount')).getByRole('button', { name: 'Amount' }))
-    // Raw ascending would be ['Beta','Alpha','Mid','Zeta'] — a completely
-    // different sequence, so this assertion can actually fail.
     expect(renderedOrder()).toEqual(['Zeta', 'Beta', 'Alpha', 'Mid'])
   })
 
@@ -622,10 +484,8 @@ describe('ExpensesPage — sort by column (34.2)', () => {
     const button = () => within(header('Frequency')).getByRole('button', { name: 'Frequency' })
 
     await user.click(button())
-    // Alpha and Mid are both monthly; Alpha precedes Mid manually.
     expect(renderedOrder()).toEqual(['Beta', 'Alpha', 'Mid', 'Zeta'])
     await user.click(button())
-    // Descending flips the CADENCES but must not flip the tied pair.
     expect(renderedOrder()).toEqual(['Zeta', 'Alpha', 'Mid', 'Beta'])
   })
 
@@ -641,8 +501,6 @@ describe('ExpensesPage — sort by column (34.2)', () => {
 
   it('places an unreadable row LAST without blanking the page', async () => {
     const user = userEvent.setup()
-    // A corrupt cadence with a sortOrder that puts the row FIRST manually, so
-    // "last under the sort" cannot be an accident of its manual position.
     useExpenseStore.setState((state) => ({
       expenses: [
         {
@@ -664,8 +522,6 @@ describe('ExpensesPage — sort by column (34.2)', () => {
 
     await user.click(within(header('Amount')).getByRole('button', { name: 'Amount' }))
     expect(renderedOrder()).toEqual(['Zeta', 'Beta', 'Alpha', 'Mid', 'Corrupt'])
-    // Absent values stay last under DESCENDING too — they are not merely the
-    // ascending order reversed.
     await user.click(within(header('Amount')).getByRole('button', { name: 'Amount' }))
     expect(renderedOrder().at(-1)).toBe('Corrupt')
   })
@@ -691,24 +547,12 @@ describe('ExpensesPage — sort by column (34.2)', () => {
       })
     })
     expect(renderedOrder()).toEqual(['Alpha', 'Beta', 'Bravo', 'Mid', 'Zeta'])
-    // The MANUAL order still has it at the bottom — sorting never writes to it.
     expect(useExpenseStore.getState().expenses.map((r) => r.name)).toEqual([
       ...MANUAL_ORDER,
       'Bravo',
     ])
   })
 
-  /**
-   * The mobile sort control (story 48.1, UX-DR53).
-   *
-   * ⚠️ This block REPLACES the old "shows the mobile escape hatch only while a
-   * sort is active" test, and the replacement is the point. `TableSortNotice`
-   * rendered nothing while a table was in manual order, because a sort could
-   * only be STARTED at >= 640px (34.2, ratified decision 1). Manual order is
-   * exactly the state a phone user needs a control in — it is how they start
-   * one — so the control now renders unconditionally and the old assertion
-   * would be asserting the opposite of the requirement.
-   */
   function sortControl(): HTMLSelectElement {
     return screen.getByRole('combobox', { name: 'Sort expenses' }) as HTMLSelectElement
   }
@@ -717,12 +561,10 @@ describe('ExpensesPage — sort by column (34.2)', () => {
     const user = userEvent.setup()
     renderWithProviders(<ExpensesPage />)
 
-    // Present in MANUAL order — the state the old escape hatch rendered nothing in.
     expect(sortControl()).toBeInTheDocument()
     expect(sortControl().value).toBe('manual')
 
     await user.selectOptions(sortControl(), 'name:asc')
-    // And still present once a sort is active, now reporting it.
     expect(sortControl().value).toBe('name:asc')
   })
 
@@ -730,15 +572,9 @@ describe('ExpensesPage — sort by column (34.2)', () => {
     const user = userEvent.setup()
     renderWithProviders(<ExpensesPage />)
 
-    // ⚠️ DESCENDING, chosen directly. Ascending alone cannot tell a `select`
-    // from a `toggle`, and name-descending differs from BOTH the manual order
-    // and the ascending order for this seed — an order assertion that happened
-    // to match one of them could not fail.
     await user.selectOptions(sortControl(), 'name:desc')
     expect(renderedOrder()).toEqual(['Zeta', 'Mid', 'Beta', 'Alpha'])
 
-    // ⚠️ THE SINGLE-SOURCE-OF-TRUTH CLAIM. A control wired to its own state
-    // would reorder the rows and leave this header reporting `none`.
     expect(header('Name')).toHaveAttribute('aria-sort', 'descending')
   })
 
@@ -756,13 +592,6 @@ describe('ExpensesPage — sort by column (34.2)', () => {
 
   describe('Category is a sort target only for entitled users (AC-5)', () => {
     it('offers Category as a mobile sort option ONLY for an entitled user (48.1 AC-7)', async () => {
-      // ⚠️ EXACT ARRAYS on BOTH tiers. `queryByRole('option', { name: /Category/ })`
-      // returning null is satisfied by an options list that is empty for any
-      // reason at all, and the failure this guards is subtle: the Category
-      // extractor is OMITTED for an unentitled user
-      // (`createFlowSortExtractors`), so a Category option offered to a free
-      // user writes a sort that `effectiveState` immediately degrades — a
-      // control that visibly does nothing, with no error anywhere.
       free()
       const { unmount } = renderWithProviders(<ExpensesPage />)
       expect(
@@ -822,21 +651,12 @@ describe('ExpensesPage — sort by column (34.2)', () => {
 
   it('adds no retired colour tokens to the header row', () => {
     renderWithProviders(<ExpensesPage />)
-    // The sweep covers the whole <table>, `<thead>` included, so the new header
-    // buttons are enrolled with no test change.
     const table = screen.getAllByRole('table')[0] as HTMLElement
     expect(collectRetiredTokenViolations(table)).toEqual([])
   })
 
   it('enqueues NOTHING on a PAID session — sorting is read-only over the store (AC-8)', async () => {
-    // ⚠️ REGISTERED, not left unregistered. A spy handed to nobody can never be
-    // called, so `not.toHaveBeenCalled()` could not fail — the tautology story
-    // 34.1b's review caught in the sibling store suite. Registering proves these
-    // exact spies are reachable from the code under test.
-    //
-    // ⚠️ And PAID, not free: `deferred-work.md:822-832` records a mutation that
-    // passed 1525 green tests because every test in the suite ran under one tier.
-    // Sorting must be inert on the tier that actually has a sync path.
+    // Registered so not.toHaveBeenCalled() can fail, and paid because that tier has a sync path.
     const spies = {
       userId: '550e8400-e29b-41d4-a716-446655440000',
       queueCreate: vi.fn(async () => {}),
@@ -857,7 +677,6 @@ describe('ExpensesPage — sort by column (34.2)', () => {
       expect(spies.queueUpdate).not.toHaveBeenCalled()
       expect(spies.queueCreate).not.toHaveBeenCalled()
       expect(spies.queueDelete).not.toHaveBeenCalled()
-      // And the persisted order itself is byte-identical — no `sortOrder` write.
       expect(useExpenseStore.getState().expenses.map((row) => [row.id, row.sortOrder])).toEqual(
         before
       )
@@ -877,32 +696,13 @@ describe('ExpensesPage — sort by column (34.2)', () => {
 
   it('gives every sortable header the standard focus ring', () => {
     renderWithProviders(<ExpensesPage />)
-    // ⚠️ ENUMERATED, not grepped — `assertHasFocusRing` takes one element, so a
-    // control missing from this array is silently uncovered.
     for (const name of ['Name', 'Amount', 'Frequency']) {
       assertHasFocusRing(within(header(name)).getByRole('button', { name }), name)
     }
   })
 })
 
-/**
- * Story 36.3 (UX-DR40): mortgage guidance on the expense entry form.
- *
- * The hint is plain prose asserted by its text, not by `aria-describedby` —
- * every such attribute in this app is a single id, and joining a permanent hint
- * id into `:530` would break the exact-match assertion at `:118` of this file.
- */
 describe('ExpensesPage — mortgage guidance (36.3)', () => {
-  /**
-   * ⚠️ The RATIFIED string, pinned WHOLE.
-   *
-   * A distinguishing substring proves the hint is the right hint; it does not
-   * pin the copy. The story fixes this sentence verbatim (§Ratified decisions
-   * 2), and with substrings alone the unpinned spans — here, the whole opening
-   * question — could be reworded, truncated or dropped with every test green.
-   * Review 36.3 caught exactly that gap. `textContent` is whitespace-normalized
-   * because JSX joins the source lines with newlines.
-   */
   const EXPENSE_HINT =
     'Paying off a loan or mortgage? Enter the payment here, and the amount still owed on the Balance Tracking page.'
 
@@ -923,17 +723,10 @@ describe('ExpensesPage — mortgage guidance (36.3)', () => {
     await user.click(screen.getByRole('button', { name: '+ Add Expense' }))
     const dialog = screen.getByRole('dialog')
 
-    // ⚠️ Anchored on the DISTINGUISHING half of the sentence. "mortgage" alone
-    // would be true-by-construction the moment any other copy on this page
-    // mentions one; this phrase appears nowhere else in the repo.
     expect(hintText(within(dialog).getByTestId('expense-mortgage-hint'))).toBe(EXPENSE_HINT)
   })
 
   it('shows the same guidance when editing an existing expense', async () => {
-    // One modal serves both states (switched by `editingId`), so this pins that
-    // the hint is not accidentally gated to the add path.
-    // Seeded through the store's own action rather than a hand-built object, so
-    // the row cannot drift from the real shape (`displayOrder`, `categoryId`).
     const user = userEvent.setup()
     useExpenseStore
       .getState()
@@ -948,19 +741,6 @@ describe('ExpensesPage — mortgage guidance (36.3)', () => {
 })
 
 describe('ExpensesPage — "ends before I retire" (65.2, FR101)', () => {
-  /**
-   * The RATIFIED strings, pinned WHOLE, following the 36.3 precedent above.
-   *
-   * ⚠️ Anchored on the DISTINGUISHING clause, not on "retire" alone — Epic 23's
-   * lesson: a copy test that matches a generic word survives the rewrite it
-   * exists to catch. "ends before I retire" appears nowhere else in the repo.
-   *
-   * ⚠️ The word "must" is deliberately ABSENT, and that absence is load-bearing.
-   * The UX evaluation (2026-09-22, §c) rejected "must pay off before retirement"
-   * because *must* is a commitment that invites "am I on track to?", which needs
-   * amortization this app does not have — `calculateDebtMetrics` is dormant and
-   * `useDebtEntries` has zero callers. The copy states a prediction instead.
-   */
   const LABEL = 'This expense ends before I retire'
   const HELP =
     "Tick this for a cost that will have stopped by the time you retire — a mortgage you'll have paid off, tuition, daycare or a commute. The retirement planner uses it to suggest what your income needs to cover."
@@ -984,8 +764,6 @@ describe('ExpensesPage — "ends before I retire" (65.2, FR101)', () => {
 
     const box = within(dialog).getByRole('checkbox', { name: LABEL })
     expect(box).not.toBeChecked()
-    // The help is ASSOCIATED, not merely adjacent — `aria-describedby`, the same
-    // wiring `BalancePage`'s sibling flag uses.
     const describedBy = box.getAttribute('aria-describedby')
     expect(describedBy).toBeTruthy()
     const help = document.getElementById(describedBy as string)
@@ -994,14 +772,6 @@ describe('ExpensesPage — "ends before I retire" (65.2, FR101)', () => {
   })
 
   it('⚠️ the copy never says "must" — it states a prediction, not a commitment', async () => {
-    // A guard on the UX decision: "must pay off before retirement" was the
-    // original proposal and was rejected, because *must* advertises a payoff check
-    // this app cannot perform.
-    //
-    // ⚠️ Reads the RENDERED copy, not this file's own constants. The second review
-    // round noted the previous version asserted on the `LABEL`/`HELP` literals
-    // declared above — self-referential, meaningful only via the separate test
-    // that binds them to the DOM.
     const user = userEvent.setup()
     renderWithProviders(<ExpensesPage />)
     await user.click(screen.getByRole('button', { name: '+ Add Expense' }))
@@ -1010,7 +780,6 @@ describe('ExpensesPage — "ends before I retire" (65.2, FR101)', () => {
     const help = document.getElementById(box.getAttribute('aria-describedby') as string)
     const rendered = `${box.parentElement?.textContent ?? ''} ${help?.textContent ?? ''}`
     expect(rendered.toLowerCase()).not.toContain('must')
-    // Non-vacuity: the copy this reads really is present.
     expect(rendered.toLowerCase()).toContain('ends before i retire')
   })
 
@@ -1048,12 +817,6 @@ describe('ExpensesPage — "ends before I retire" (65.2, FR101)', () => {
   })
 
   it('⚠️ does NOT carry the previous entry’s tick into the next Add', async () => {
-    // ⚠️ This pins an OUTCOME across TWO reset paths, not one: `closeModal` clears
-    // the flag on submit and the `[isModalOpen, editingId]` effect clears it again
-    // when the modal re-opens to add. Deleting either alone leaves this green
-    // (second review round) — the redundancy is deliberate in the component, so
-    // the test asserts what the user sees rather than pretending to isolate one
-    // path. Same shape as `category-assignment`'s "found by mutation M32" test.
     const user = userEvent.setup()
     renderWithProviders(<ExpensesPage />)
 
@@ -1086,12 +849,6 @@ describe('ExpensesPage — "ends before I retire" (65.2, FR101)', () => {
   })
 
   it('⚠️⚠️ editing only the AMOUNT leaves the tick intact', async () => {
-    // THE regression this story is most likely to ship. `closeModal` resets every
-    // field and `handleSubmit` sends them all on every save (this flag only while
-    // the planner is shown — story 71.1 omits it when hidden), so a flag that
-    // `openEditModal` forgets to seed is silently written back as false when the
-    // user edits something else entirely. `categoryId` shipped exactly this
-    // defect once (code review 30.4b, annotated at ExpensesPage.tsx:265-270).
     const user = userEvent.setup()
     useExpenseStore.getState().addExpense({
       name: 'Mortgage',
@@ -1115,9 +872,6 @@ describe('ExpensesPage — "ends before I retire" (65.2, FR101)', () => {
   })
 
   it('⚠️ UNTICKING on edit actually clears the flag', async () => {
-    // The opposite direction, and the one a "seed it and forget it" bug leaves
-    // broken: if the submit path sent the seeded value rather than the current
-    // state, ticking would work and unticking would not.
     const user = userEvent.setup()
     useExpenseStore.getState().addExpense({
       name: 'Mortgage',
@@ -1151,20 +905,11 @@ describe('ExpensesPage — "ends before I retire" (65.2, FR101)', () => {
 
     const badges = container.querySelectorAll('[data-testid="expense-row-ends-before-retirement"]')
     expect(badges).toHaveLength(1)
-    // WCAG 1.4.1: the marker must not be colour alone.
     expect(norm(badges[0] as HTMLElement)).toBe('Ends before retirement')
-    // …and it sits with the row it describes.
     const row = (badges[0] as HTMLElement).closest('tr')
     expect(norm(row as HTMLElement)).toContain('Mortgage')
   })
 
-  // Story 96.1 (FR156): below 640px the Name cell is a flex ROW
-  // (`RESPONSIVE_CELL_CLASS`: FieldLabel | value), so a marker that is the
-  // cell's third child sat BESIDE the name, both squeezed onto two lines.
-  // Name + marker share ONE wrapper, so the pair is a single flex item and the
-  // inline marker drops below the block name. jsdom has no layout: this pins
-  // the STRUCTURE; the stacked boxes were measured in a real browser (story
-  // Debug Log, one-off probe at 320/375/640).
   it("the marker sits inside the name's own block, so a phone row stacks it below the name", async () => {
     useExpenseStore.getState().addExpense({
       name: 'Mortgage',
@@ -1187,12 +932,10 @@ describe('ExpensesPage — "ends before I retire" (65.2, FR101)', () => {
     expect(badge.parentElement, 'marker and name do not share one parent').toBe(wrapper)
     const cell = wrapper.parentElement as HTMLElement
     expect(cell.tagName).toBe('TD')
-    // The cell holds exactly the FieldLabel and the wrapper: two flex items.
     expect(cell.children).toHaveLength(2)
     expect(cell.children[1]).toBe(wrapper)
     expect(cell.children[0]).toHaveTextContent('Name')
 
-    // Unmarked rows: the same wrapper, holding the name only.
     const groceries = within(container).getByText('Groceries')
     const plainWrapper = groceries.parentElement as HTMLElement
     expect(plainWrapper.children).toHaveLength(1)
@@ -1212,16 +955,6 @@ describe('ExpensesPage — "ends before I retire" (65.2, FR101)', () => {
       ['Name', 'Amount', 'Frequency', 'Category', 'Actions'],
     ],
   ])('⚠️ adds NO column — the header array is unchanged for a %s user', (_label, tier, expected) => {
-    // `category-assignment.test.tsx:615,636` pins this array exactly, across BOTH
-    // the Income and Expenses pages and four entitlement states, each followed by
-    // an `expectColumnParity` <th>/<td> count check. A new column would break
-    // eight tests on a page this story does not otherwise touch, so the marker
-    // lives INSIDE the Name cell. Pinned here too so the constraint is visible
-    // from the story that has to respect it.
-    // ⚠️ BOTH tiers are rendered now. Code review 65.2 found this asserted "at
-    // both tiers" while rendering only the default (free) one — and the Category
-    // column is premium-gated, so the entitled tier is precisely the arm where a
-    // sixth column would collide.
     setTier(tier)
     useExpenseStore.getState().addExpense({
       name: 'Mortgage',
@@ -1235,7 +968,6 @@ describe('ExpensesPage — "ends before I retire" (65.2, FR101)', () => {
     expect(headers).toEqual(expected)
     const cells = container.querySelectorAll('tbody tr:first-child > td')
     expect(cells).toHaveLength(headers.length)
-    // The badge is present regardless of tier — it lives in the Name cell.
     expect(
       container.querySelector('[data-testid="expense-row-ends-before-retirement"]')
     ).not.toBeNull()
@@ -1243,23 +975,6 @@ describe('ExpensesPage — "ends before I retire" (65.2, FR101)', () => {
 })
 
 describe('ExpensesPage — the retirement question follows the planner toggle (71.1, FR113)', () => {
-  /**
-   * With the retirement planner turned off in Settings, the expense form stops
-   * asking about retirement and the list stops badging rows for it — but the
-   * stored marks are KEPT, so turning the planner back on restores every one.
-   *
-   * ⚠️ WHAT THESE TESTS CAN AND CANNOT PROVE AGAINST `31f098e`. The absence
-   * tests (checkbox, help, badge) were RED there, because both rendered
-   * unconditionally. The round trip was GREEN there, and that is not a flaw in
-   * it: before this story the hidden-field case did not exist, and the edit form
-   * seeded and re-sent the row's own value. Its discriminating power is shown by
-   * mutation instead — sending `false` for a hidden field turns it red (story
-   * 71.1, mutation M2).
-   *
-   * ⚠️ The planner flag lives in a persisted store, and a file's storage lasts
-   * for the whole file, so it is reset to its default (`true`) after EVERY test
-   * rather than left for the next test to inherit.
-   */
   const LABEL = 'This expense ends before I retire'
   const BADGE = '[data-testid="expense-row-ends-before-retirement"]'
   const HELP_ID = 'expense-ends-before-retirement-help'
@@ -1283,9 +998,8 @@ describe('ExpensesPage — the retirement question follows the planner toggle (7
   afterEach(() => {
     useExpenseStore.setState({ expenses: [] })
     showPlanner()
-    // `setState` goes through persist's WRITE path (`skipHydration` skips only the
-    // read), so restoring the value would still leave a blob in the file's
-    // storage. Restore the ABSENCE too — `vitest.setup.ts` precedent.
+    // setState goes through persist's write path (skipHydration skips only the read),
+    // so remove the stored blob too.
     localStorage.removeItem(PLANNER_VISIBILITY_STORAGE_KEY)
   })
 
@@ -1296,13 +1010,10 @@ describe('ExpensesPage — the retirement question follows the planner toggle (7
 
     await user.click(screen.getByRole('button', { name: '+ Add Expense' }))
     const dialog = screen.getByRole('dialog')
-    // Non-vacuity: this really is the expense form, fully rendered.
     expect(within(dialog).getByTestId('expense-amount-input')).toBeInTheDocument()
 
     expect(within(dialog).queryByRole('checkbox', { name: LABEL })).toBeNull()
     expect(within(dialog).queryByTestId('expense-ends-before-retirement')).toBeNull()
-    // The help paragraph goes too: it ends "The retirement planner uses it…",
-    // a reference to the feature the user just switched off.
     expect(document.getElementById(HELP_ID)).toBeNull()
     expect(within(dialog).queryByText(/retire/i)).toBeNull()
   })
@@ -1320,8 +1031,6 @@ describe('ExpensesPage — the retirement question follows the planner toggle (7
     expect(within(dialog).queryByRole('checkbox', { name: LABEL })).toBeNull()
     expect(within(dialog).queryByTestId('expense-ends-before-retirement')).toBeNull()
     expect(document.getElementById(HELP_ID)).toBeNull()
-    // The same whole-dialog sweep as the ADD test, so edit-only retirement copy
-    // (a "this expense is marked…" hint, say) cannot slip in unnoticed.
     expect(within(dialog).queryByText(/retire/i)).toBeNull()
   })
 
@@ -1329,15 +1038,12 @@ describe('ExpensesPage — the retirement question follows the planner toggle (7
     addMarkedMortgage()
     const { container } = renderWithProviders(<ExpensesPage />)
 
-    // ON: present (so an implementation that never renders the badge fails here).
     expect(container.querySelectorAll(BADGE)).toHaveLength(1)
 
-    // OFF: gone, while the row itself is still listed.
     act(() => hidePlanner())
     expect(container.querySelectorAll(BADGE)).toHaveLength(0)
     expect(screen.getByRole('button', { name: 'Edit Mortgage' })).toBeInTheDocument()
 
-    // ON again: back on the same row, from the untouched stored mark.
     act(() => showPlanner())
     const badges = container.querySelectorAll(BADGE)
     expect(badges).toHaveLength(1)
@@ -1345,9 +1051,6 @@ describe('ExpensesPage — the retirement question follows the planner toggle (7
   })
 
   it('⚠️⚠️ keeps the mark through an edit made while the planner is off', async () => {
-    // THE data-safety promise: the toggle "deletes nothing". The user edits an
-    // unrelated field with the question hidden, then turns the planner back on
-    // — the mark must be exactly where it was.
     addMarkedMortgage()
     hidePlanner()
     const user = userEvent.setup()
@@ -1360,11 +1063,9 @@ describe('ExpensesPage — the retirement question follows the planner toggle (7
     await user.type(amount, '1900')
     await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
 
-    // The edit really landed (non-vacuity) …
     await waitFor(() => {
       expect(useExpenseStore.getState().expenses[0].amount).toBe(190_000)
     })
-    // … and the mark survived it.
     expect(useExpenseStore.getState().expenses[0].endsBeforeRetirement).toBe(true)
 
     act(() => showPlanner())
@@ -1375,11 +1076,8 @@ describe('ExpensesPage — the retirement question follows the planner toggle (7
   })
 
   it('⚠️ writes NOTHING to the flag while hidden — a change made under the open modal survives', async () => {
-    // The test that tells OMITTING the key apart from re-sending the seeded value,
-    // which the round trip above cannot: there, both leave the stored `true` in
-    // place. Here the row changes UNDER the open modal (what a sync pull does), so
-    // the seeded state goes stale. Re-sending it writes the stale `true` back;
-    // omitting the key leaves the newer value alone. Found by code review 71.1.
+    // The row changes under the open modal, as a sync pull would: re-sending the
+    // seeded value writes stale data back, omitting the key does not.
     addMarkedMortgage()
     hidePlanner()
     const user = userEvent.setup()
@@ -1388,7 +1086,6 @@ describe('ExpensesPage — the retirement question follows the planner toggle (7
     await user.click(screen.getByRole('button', { name: 'Edit Mortgage' }))
     const dialog = screen.getByRole('dialog')
 
-    // Simulated pull: another device un-marked the row while this modal is open.
     const id = useExpenseStore.getState().expenses[0].id
     act(() => {
       useExpenseStore.setState((state) => ({
@@ -1423,7 +1120,6 @@ describe('ExpensesPage — the retirement question follows the planner toggle (7
     await waitFor(() => {
       expect(useExpenseStore.getState().expenses).toHaveLength(1)
     })
-    // A real `false`, stamped by `toClientExpense` — not an absent key.
     expect(useExpenseStore.getState().expenses[0].endsBeforeRetirement).toBe(false)
   })
 })

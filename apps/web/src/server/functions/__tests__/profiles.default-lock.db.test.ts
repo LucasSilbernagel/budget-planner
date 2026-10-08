@@ -1,21 +1,5 @@
 // @vitest-environment node
-/**
- * `createDefaultProfileForUser` writes the default profile under the per-user
- * writer lock, and only when a lock-free read finds no live profile (story 80.2,
- * FR130(2), decision D2).
- *
- * It runs on EVERY pull (`routes/api/sync/changes.ts`) and after the Paddle
- * webhook commits (`routes/api/webhooks/paddle.ts`). Before 80.2 its insert was
- * autocommit and unlocked, so it could race the post-batch repair, a promotion
- * or a sync profile create.
- *
- * ⚠️ PGlite is one connection and runs a transaction exclusively, so no test
- * here can show the lock BLOCKING. The lock is guarded by statement order; its
- * blocking is REASONED (`lockUserProfileSet`'s docblock), as in 76.3 and 80.1.
- * The `beforeTransaction` test below re-proves the SEQUENTIAL case only: a
- * profile committed between the lock-free read and the transaction is seen by
- * the re-check under the lock. It is not a race proof.
- */
+/** PGlite runs a transaction exclusively, so lock blocking can't be shown; statement order guards it. */
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -61,7 +45,6 @@ let db: ReturnType<typeof drizzle>
 /** Runs before a TOP-LEVEL `db.transaction` opens; never inside one. */
 const seams = { beforeTransaction: null as null | (() => Promise<void>) }
 
-/** Every statement with its parameters; `BEGIN`/`END` mark top-level transactions. */
 const statements: { sql: string; params: unknown[] }[] = []
 
 function withSeams(target: ReturnType<typeof drizzle>) {
@@ -158,7 +141,6 @@ describe('a user with NO live profile: the slow path runs under the writer lock 
     await createDefaultProfileForUser(USER)
 
     const begin = statements.findIndex((statement) => statement.sql === 'BEGIN')
-    // On `main` there is no transaction at all.
     expect(begin, 'a transaction opened').toBeGreaterThanOrEqual(0)
     expect(statements[begin + 1]).toEqual(WRITER)
   })
@@ -174,20 +156,16 @@ describe('a user with NO live profile: the slow path runs under the writer lock 
     expect(insert).toBeGreaterThan(begin + 1)
     expect(insert).toBeLessThan(end)
 
-    // Before BEGIN: exactly the fast-path read, a SELECT (it writes nothing).
     const before = statements.slice(0, begin)
     expect(before).toHaveLength(1)
     expect(before[0]?.sql).toMatch(/^select .* from "userProfiles"/)
-    // After END: nothing.
     expect(statements.slice(end + 1)).toEqual([])
     expect(statements.filter((statement) => statement.sql === 'BEGIN')).toHaveLength(1)
   })
 
   it('stamps updatedAt from the app AFTER the lock, not the transaction-start `now()` default', async () => {
-    // ⚠️ Asserted on what reaches the driver, not on the read-back value: in a
-    // transaction `now()` is the transaction START (before the lock wait), and a
-    // row of the user committed during the wait could move a device's pull cursor
-    // (`updatedAt > since`) past this profile (code review 80.2).
+    // Asserted on what reaches the driver: inside a transaction now() is the
+    // transaction start, before the lock wait.
     await createDefaultProfileForUser(USER)
 
     const insert = statements.find((statement) => isProfileInsert(statement.sql))
@@ -209,10 +187,8 @@ describe('a user with NO live profile: the slow path runs under the writer lock 
   })
 
   it('re-checks under the lock: a profile committed after the lock-free read is returned, not joined by a second one', async () => {
-    // SEQUENTIAL, not a race (see the file docblock): the seam commits a live
-    // NON-default profile after the fast path read zero and before the
-    // transaction opens. A non-default one, so the unique index cannot absorb
-    // a missing re-check: without it, "Main Profile" is inserted beside P.
+    // Sequential, not a race. The seam commits a NON-default profile so the unique
+    // index cannot absorb a missing re-check.
     let fired = 0
     seams.beforeTransaction = async () => {
       fired++
@@ -239,9 +215,7 @@ describe('a user WITH a live profile: the read-only fast path (AC-1 control, D2)
     const result = await createDefaultProfileForUser(USER)
 
     expect(result).toMatchObject({ success: true, data: { id: P } })
-    // Every pull calls this. A lock here would make each pull conflict with
-    // every child create's `FOR SHARE` of the user (story 79.3's reason for
-    // `accountLacksLiveDefault`).
+    // Every pull calls this; a lock here would conflict with every child create's FOR SHARE.
     expect(statements.map((statement) => statement.sql)).toHaveLength(1)
     expect(statements[0]?.sql).toMatch(/^select .* from "userProfiles"/)
   })

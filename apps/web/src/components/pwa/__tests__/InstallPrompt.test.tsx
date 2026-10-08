@@ -1,14 +1,3 @@
-/**
- * Tests for the PWA install affordance (story 17-1).
- *
- * The component is client-only and driven by the Chromium `beforeinstallprompt`
- * event. jsdom does not implement `matchMedia` (used for the standalone check)
- * so it is stubbed per-test. The captured event is faked with `prompt()` /
- * `userChoice` doubles. The component must render NOTHING until an installable
- * event fires, and must self-suppress when already installed or recently
- * dismissed.
- */
-
 import { expectSharedGreen } from '@/test/white-fill-tokens'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -18,7 +7,6 @@ import { InstallPrompt } from '../InstallPrompt'
 
 const DISMISSAL_STORAGE_KEY = 'bp-pwa-install-dismissed'
 
-/** Build a fake `beforeinstallprompt` event with spyable install hooks. */
 function createInstallEvent(outcome: 'accepted' | 'dismissed' = 'accepted') {
   const event = new Event('beforeinstallprompt')
   const prompt = vi.fn().mockResolvedValue(undefined)
@@ -30,14 +18,12 @@ function createInstallEvent(outcome: 'accepted' | 'dismissed' = 'accepted') {
   return { event, prompt, preventDefault }
 }
 
-/** Fire the (already-prevented) event after mount, inside act(). */
 function fireInstallEvent(event: Event) {
   act(() => {
     window.dispatchEvent(event)
   })
 }
 
-/** Stub `window.matchMedia` so the `(display-mode: standalone)` query is controllable. */
 function stubStandalone(matches: boolean) {
   vi.stubGlobal(
     'matchMedia',
@@ -72,19 +58,10 @@ describe('InstallPrompt', () => {
     expect(preventDefault).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('region', { name: /install longhand/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Install' })).toBeInTheDocument()
-    // Story 115.1: the shared AA green, with no dark-mode green-500 beside it.
     expectSharedGreen(screen.getByRole('button', { name: 'Install' }))
   })
 
-  /**
-   * Cross-surface coupling (story brand-1, AC-1/AC-3).
-   *
-   * `short_name` is what the OS prints under the home-screen icon. This prompt
-   * tells the user what they are about to install, so the two must name the same
-   * thing — otherwise the user is told to install one product and receives
-   * another. Derived from the manifest rather than hardcoded, so changing
-   * `short_name` alone fails here instead of silently diverging.
-   */
+  // Derived from the manifest so changing short_name alone fails here.
   it('names the app exactly as the PWA manifest short_name does (brand-1)', () => {
     render(<InstallPrompt />)
     fireInstallEvent(createInstallEvent().event)
@@ -111,7 +88,6 @@ describe('InstallPrompt', () => {
   })
 
   it('shows again once a past dismissal is older than the interval', () => {
-    // 31 days ago — past the 30-day window.
     const stale = Date.now() - 31 * 24 * 60 * 60 * 1000
     localStorage.setItem(DISMISSAL_STORAGE_KEY, stale.toString())
     render(<InstallPrompt />)
@@ -157,7 +133,6 @@ describe('InstallPrompt', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Install' }))
 
     await waitFor(() => expect(prompt).toHaveBeenCalledTimes(1))
-    // One-shot: the affordance hides after the prompt is triggered.
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: 'Install' })).not.toBeInTheDocument()
     )
@@ -189,7 +164,6 @@ describe('InstallPrompt', () => {
   it('ignores Escape when focus is outside the affordance', () => {
     render(<InstallPrompt />)
     fireInstallEvent(createInstallEvent().event)
-    // Focus stays on <body>; the Escape is meant for unrelated UI.
 
     act(() => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))

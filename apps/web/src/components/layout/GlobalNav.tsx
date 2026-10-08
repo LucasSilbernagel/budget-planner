@@ -8,259 +8,9 @@ import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
 import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon'
 import { SettingsIcon } from '../ui/SettingsIcon'
 
-/**
- * Persistent global navigation (story 11-1, Epic 11 UX review P0-a).
- *
- * Mounted once in `routes/__root.tsx` so every route carries the same primary
- * navigation — replacing the ad-hoc, inconsistent per-page "Back to Home / View
- * X" footer link blocks each page used to hand-roll.
- *
- * ## How many destinations — it depends on the TIER since story 58.1
- *
- * A free or signed-out session sees SIX top-level sections (eight until story
- * 43.3 (FR69) removed the free Net Worth projection page; seven until story 69.2
- * (FR109) moved Settings out of the nav into the account cluster). An ENTITLED
- * session sees TEN: the same six plus Forecasting, Profiles, Report and
- * Categories. Every "six" below describes the free nav unless it says otherwise;
- * a "seven" or "eleven" in a story's history note is the pre-69.2 count.
- *
- * ⚠️ AMENDED by story 96.3 (FR163, 2026-10-05): BELOW 640px Settings is back,
- * as the LAST row of the More sheet, for EVERY session (and the account
- * cluster's Settings routes hide there). It is a width-scoped row, not a
- * destination of either list: the destination counts above (six / ten) are
- * unchanged, and the sheet row is the one documented exception. See
- * `SETTINGS_SHEET_CELL_CLASS`.
- *
- * ⚠️ A destination COUNT is not an anchor count since story 69.3: Balances and
- * Retirement have two DOM copies (see "Balances and Retirement on the row from
- * `lg`" below), so the DOM holds eight anchors for a free session and twelve
- * for an entitled one. ~~eight / twelve~~ NINE / THIRTEEN since story 96.3:
- * the phone-only Settings sheet row is one more anchor in every session.
- *
- * ⚠️ This REVERSES a named scope decision, and the reversal is recorded rather
- * than the old text being quietly deleted. Until 2026-09-14 this docblock read:
- * "The premium *Forecasting* entry is intentionally NOT duplicated here: it stays
- * surfaced-but-locked on the Home dashboard via the Story 7-2
- * `PremiumFeatureGate`, so the primary nav needs no second premium gate to
- * maintain (scope decision, 2026-07-03)."
- *
- * That decision was correct about its cost and wrong about its benefit. A paying
- * user's ONLY route to four of the five premium features was a dashboard card
- * they had to remember, which is a discoverability failure that outweighs the
- * maintenance cost of one tier read (FR87, decision Lucas 2026-09-14). The
- * "second premium gate" it feared is deliberately not what shipped: this
- * component gates nothing. It reads the already-resolved SSR seed and chooses a
- * LIST. Every route keeps its own server-side gate, unchanged — a user who
- * reaches `/financial-summary` by typing the URL is authorised there, not here.
- *
- * `Multi-device sync` is the one premium benefit still absent: it has no route to
- * link to, so it stays Overview-only in both tiers.
- *
- * Active state is driven by TanStack Router `<Link>` `activeProps` (not a
- * hand-rolled `useLocation` comparison), which applies both the active styling
- * and `aria-current="page"` when the link matches the current route. The
- * Overview (`/`) link uses `activeOptions={{ exact: true }}` so it is not marked
- * active on every sub-route (every path is prefixed by `/`). The one exception
- * is the mobile "More" tab, which is not a route at all — see below.
- *
- * ## Responsive: ONE DOM subtree, switched by CSS alone (stories 31.4, 31.5)
- *
- * There is exactly one `<nav>`, one OUTER `<ul>`, one More `<details>` with its
- * `<summary>` (a `<button>` until story 59.2) and — since story 96.3 — nine
- * `<a>` for a free session or thirteen for an entitled one (six and ten from
- * story 69.2 until 69.3 added the two `lg` row copies; eight and twelve until
- * 96.3 added the `sm:hidden` Settings sheet row), in the DOM at every
- * viewport. The COUNT varies by tier; the STRUCTURE never does.
- * Desktop (>= 640px) is the unprefixed cascade —
- * an in-flow top bar; below `sm` the SAME elements become a fixed bottom tab
- * bar via `max-sm:` utilities. No JavaScript decides the layout, so the first
- * painted frame is already the final frame and there is no hydration race left
- * to lose.
- *
- * ⚠️ That last claim is engine-independent BY CONSTRUCTION, not by test
- * coverage: the automated gate is chromium-only (`playwright.config.ts:24-29`).
- * Gecko was checked once by hand (Firefox 153.0.3, 320px: `matchMedia` true,
- * `position: fixed`, geometry matching Chromium) but nothing re-checks it on
- * every run. Treat cross-engine parity as reasoned, not regression-tested.
- *
- * This replaced a `useIsNarrowViewport()` branch that returned two different
- * subtrees. That hook is `false` on the server AND on the first client render,
- * so a phone painted the desktop top bar, then hydration unmounted it and
- * mounted the bottom bar: a measured 133px vertical jump at 320px (the header
- * wrapper 165px -> 32px, the page `<h1>` from y=181 to y=48). That is the reflow
- * logged in `deferred-work.md:500` on day one, which prescribed exactly this
- * fix. The hook itself is KEPT and unchanged — three Recharts call sites take
- * numeric/enum props CSS cannot drive (it was four until story 51.1 deleted
- * `SavingsChart.tsx`) — this component simply stopped being one
- * of its consumers. It must not come back here: the sheet's open/closed state
- * below is USER-initiated, never viewport-derived, which is what keeps the
- * server render and the first client render in agreement.
- *
- * Two alternatives are rejected and must not be reintroduced (the same pair
- * `ui/ResponsiveTable.tsx:19-30` rejects for the finance tables): a DUAL-RENDER
- * (`hidden sm:block` top bar + `sm:hidden` bottom bar) would put two
- * `<nav aria-label="Primary">` landmarks in the DOM — an a11y regression, a
- * Playwright strict-mode violation, and a multi-match failure in jsdom, which
- * applies no media queries; and any viewport hook re-creates the flash. Only one
- * `<nav>` landmark is ever in the DOM.
- *
- * Composition rule (`ui/ResponsiveTable.tsx:31-39`): mobile-only styling on a
- * shared element is a `max-sm:` variant APPENDED to the unchanged desktop
- * string; a mobile-only ELEMENT gets base classes + `sm:hidden`. Never
- * neutralise a base class with an unprefixed override — that is what keeps
- * ">= 640px is unchanged" provable by reading the diff.
- *
- * ⚠️ On the LINKS, keep every colour unprefixed. Tailwind emits all `max-sm:`
- * rules AFTER the unprefixed utilities, so a `max-sm:` colour would beat the
- * links' unprefixed `hover:bg-gray-100` / `hover:text-gray-900` below 640px and
- * silently invert mobile hover behaviour; scope only layout/position/spacing/
- * typography there. That is also why the links keep raw `text-gray-600
- * dark:text-gray-300` instead of the `.text-body` semantic token — deliberate,
- * do not "fix" it. The `<nav>` itself is the deliberate exception — it has no
- * unprefixed colour state to lose, and its `max-sm:` background/border are
- * required precisely because the bar is out of flow below `sm` (see below).
- *
- * ⚠️ CORRECTED by story 69.3, and the rule above STANDS for a different reason.
- * The HOVER half of the reasoning is wrong: a `:hover` utility is 0-2-0 and a
- * media-scoped class 0-1-0, so hover wins whatever the emit order. MEASURED
- * for `max-lg:` at 800px (`e2e/nav-lg-row{,.paid}.spec.ts`, since deleted by
- * stories 84.2/84.3; the measurement stands: hovering the active
- * More gives the same `bg-gray-100` under the `max-lg:` and the unprefixed
- * treatment); `max-sm:` is the same mechanism, not separately measured. What a
- * variant-scoped colour CAN beat is an unprefixed NON-hover colour of equal
- * specificity, the unprefixed active treatment included, because it is emitted
- * later. That is reasoned from source order, not measured, and it is still a
- * good reason to keep link colours unprefixed. The More trigger's
- * `PROMOTED_ACTIVE_BELOW_LG_CLASS` is the one deliberate exception.
- *
- * ## The 5-tab bar and the "More" sheet (story 31.5, UX-DR35/38)
- *
- * The bottom bar used to be a 4x2 grid of all eight destinations (~89px tall).
- * It was not defective — measured at 320/360/390/412 it had true 44px targets,
- * no overflow and single-line labels — but it cost 89px of a 568px-tall screen,
- * and adding the icons that make a tab bar recognisable would have made it
- * WORSE, not better: stacked icon-over-label needs ~56px of height, so icons on
- * a 4x2 grid give a ~112px bar. Icons and eight items are arithmetically
- * mutually exclusive at 320px (side-by-side needs 78px of an 80px cell for
- * "Retirement" alone). Measured label widths in the app's real font stack
- * decided the count: 5 columns give 64px tracks (comfortable), 8 give 40px
- * (overflowing). So the bar shows FIVE cells — Overview, Income, Expenses,
- * Savings and a "More" trigger — and the remaining destinations live in a
- * sheet that More discloses: two for a free session, six for an entitled one
- * (three and seven from story 58.1 until story 69.2 took Settings out). Since
- * story 96.3 (FR163) the PHONE sheet holds one more, Settings, last: three rows
- * for a free session and seven for an entitled one below `sm` (the dropdown at
- * `sm` and up still holds two / six). The bar is now 56.75px, and the tier
- * cannot change that — 58.1 and 69.2 touched only the sheet list, and 96.3 only
- * the sheet (one row after the list), never `PRIMARY_TABS`.
- *
- * ⚠️ The structure that makes this legal is a NESTED `<ul>` inside the fifth
- * `<li>`. The obvious alternative — leaving every `<li>` in the bar and
- * re-listing the sheet's share in a mobile-only sheet — puts those destination
- * labels in the DOM TWICE. Until story 69.3 this paragraph called that "the
- * dual-render rejected above", and for the MOBILE bar it still is the wrong
- * shape. ⚠️ But story 69.3 (decision D2, Lucas 2026-09-25) DOES put two labels
- * in the DOM twice, deliberately, for the `lg` row: see "Balances and
- * Retirement on the row from `lg`" below. What was rejected above is two
- * `<nav>` LANDMARKS, and that still holds: there is one.
- *
- * ## The same disclosure at EVERY width (story 59.2, FR90)
- *
- * Until story 59.2 the nested list was DISSOLVED at >= 640px (`sm:contents` on
- * the wrapper `<li>` and on the `<ul>`, `sm:hidden` on the trigger), so every
- * destination was an item of one flat desktop row. That is what broke: story
- * 58.1 added four premium anchors, and a paid user's row wrapped to TWO rows at
- * every desktop width, which was measured and could not be closed by
- * shrinking. The dissolve is gone. From story 59.2 until 69.3 the row was
- * Overview · Income · Expenses · Savings · More at every width, in both tiers,
- * and the other destinations were a disclosure panel: a sheet above the bar
- * below `sm`, a dropdown under the trigger at `sm` and up. Accepted cost then
- * (decision, Lucas 2026-09-21): a free desktop user reached Balances and
- * Retirement in two clicks, not one. (Settings was the third until story 69.2
- * moved it to the account cluster.) Story 69.3 lifted that cost from `lg` up;
- * below `lg` it stands. The row's measured widths live in ONE place,
- * `e2e/nav-responsive-css.spec.ts`. Do not restate them here.
- *
- * ## Balances and Retirement on the row from `lg` (story 69.3, FR110)
- *
- * At `lg` (1024px) and up the row is Overview · Income · Expenses · Savings ·
- * Balances · Retirement, plus More for an entitled session (whose panel is then
- * the premium four). A FREE session has NO More at `lg`: nothing is left
- * behind it. Below `lg`, and on the mobile bar, nothing changed.
- *
- * - WHY `lg` AND NOT `sm` (decision D1, Lucas 2026-09-25): at `sm` the rows do
- *   not fit. Measured at the story's context pass, both the free and the paid
- *   row are too wide for a 640px window, and this nav is
- *   `sm:shrink-0`, so it would have overflowed the page rather than wrapped.
- *   The figures are in the one width record.
- * - WHY TWO DOM COPIES (decision D2): below `lg` the two destinations live in
- *   the More `<details>`, and a closed `<details>` hides its content, so CSS
- *   cannot lift them into the row. Each is rendered twice: a ROW copy
- *   (`PROMOTED_ROW_CELL_CLASS`, `hidden lg:block`) and the sheet copy
- *   (`lg:hidden`). Only one is ever rendered, so only one is in the
- *   accessibility tree and the Tab order. jsdom, which applies no stylesheet,
- *   sees both: the unit tests scope by `data-nav-promoted`.
- * - More's "you are here" for those two routes is `max-lg:`-scoped
- *   (`PROMOTED_ACTIVE_BELOW_LG_CLASS`), so at `lg` it does not light beside the
- *   row anchor that is the real cue there.
- *
- * ⚠️⚠️ It is a native `<details>`/`<summary>`, and that is the FAIL-OPEN
- * requirement, not a styling choice (decision, Lucas 2026-09-21). Since story
- * 58.2 this nav is a paying user's ONLY route to four pages, with no Overview
- * card, no `/settings` tile and no footer link. The dissolve used to keep the
- * desktop destinations reachable with JavaScript broken or not yet hydrated. A
- * React-only disclosure would have lost that. The native toggle works with
- * zero JavaScript, so it keeps it. Since story 84.3 that is pinned below the
- * browser: `GlobalNav.ssr.dom.test.tsx` checks every destination is a real
- * link in the server HTML, inside a `<details>` the server renders closed.
- *
- * ⚠️⚠️ EVERY ICON CARRIES `sm:hidden`. Icons are a mobile-only concern, and
- * the suite was provably blind to losing the token: measured, icons without
- * `sm:hidden` grow the desktop nav 52px -> 76px at 1280px (212 computed diffs)
- * and zero tests went red, including the one named "the desktop cascade is
- * untouched", because the merged-style partition never read `height`. It reads
- * `height` and `flex-direction` now, and `e2e/nav-responsive-css.spec.ts`
- * carries a full differential dump. Do not remove the token.
- *
- * ⚠️ ONE deliberate exception since story 69.1: the More trigger's disclosure
- * CHEVRON is a DESKTOP-only element, so it carries the mirror token,
- * `max-sm:hidden`, and must never gain `sm:hidden`. It is not an icon of a
- * destination; see `MORE_CHEVRON_CLASS`. The icon-enumerating unit tests
- * exclude it by its `data-disclosure-chevron` marker.
- *
- * ⚠️ The sheet is `max-sm:absolute`, NOT `max-sm:fixed`. `bottom: 100%` on a
- * `fixed` box resolves against the VIEWPORT, not the nav: measured, that renders
- * the sheet at `{x: 0, y: -279}` — entirely above the top edge of the screen —
- * and Playwright's `toBeVisible()` PASSES on it, because it only checks for a
- * non-empty box. `absolute` resolves against the `max-sm:fixed` nav, which is
- * its containing block, putting it flush on top of the bar at y=385.25.
- *
- * ⚠️ The bar is `max-sm:z-50`, not `z-40`. At z-40 the `InstallPrompt` banner
- * (z-50) painted OVER the open sheet: measured at 320x640,
- * `elementFromPoint(160, 476)` landed inside the banner and the "Retirement" row
- * was completely un-tappable while having a perfect rect and passing
- * `toBeVisible()` — occlusion is invisible to every geometry and visibility
- * assertion. The nav renders AFTER `<InstallPrompt/>` in `__root.tsx`, so an
- * equal z-index breaks the tie in the nav's favour; `Modal` renders later still,
- * so modals stay above the nav.
- *
- * The bar's height and the root layout's reserve are a THREE-way coupling, all
- * of which must move together: `pb-[calc(3.75rem_+_env(safe-area-inset-bottom))]`
- * at `__root.tsx`, `bottom-[calc(3.75rem_+_env(safe-area-inset-bottom))]` at
- * `InstallPrompt.tsx`, and the nav's own `max-sm:pb-[env(safe-area-inset-bottom)]`.
- * Both existing clearance guards are one-directional (they fail only if the
- * reserve is too SMALL), so an over-large reserve ships a dead gap above the
- * footer with every test greener than before — the guards are two-sided now.
- * `e2e/nav-responsive-css.spec.ts` and `e2e/chrome-320.spec.ts` guard all of it.
- */
+// One DOM subtree switched by CSS alone (`max-sm:` bottom bar), never a viewport hook: the
+// first painted frame must be final. More is a native <details> so it works without JS.
 
-/**
- * Registered route paths the nav links to — a subset of the app's route tree.
- *
- * ⚠️ Closed on purpose. Adding a destination without extending this union is a
- * `tsc` error, which is how exhaustiveness is proven here rather than by review
- * (the pattern stories 35.2 and 43.3 both record).
- */
 type NavPath =
   | '/'
   | '/income'
@@ -276,23 +26,10 @@ type NavPath =
 interface NavItem {
   label: string
   to: NavPath
-  /**
-   * Match this route exactly. Only `/` needs it: without `exact`, the Overview
-   * link would be considered active on every route (all paths start with `/`).
-   */
   exact?: boolean
-  /** Mobile-only glyph. Rendered with `sm:hidden` — see the docblock. */
   Icon: (props: { className: string }) => React.ReactElement
 }
 
-/**
- * The four destinations that keep a cell in the mobile bar.
- *
- * Chosen by the ratified UX evaluation as the highest-frequency surfaces; their
- * labels are also the ones that fit a 56px content box at 11px (Overview 47.98,
- * Income 38.95, Expenses 48.45, Savings 39.47 — "Retirement", the longest label
- * in the set at 57.6px, moved into the sheet and no longer constrains a cell).
- */
 const PRIMARY_TABS: readonly NavItem[] = [
   { label: 'Overview', to: '/', exact: true, Icon: HomeIcon },
   { label: 'Income', to: '/income', Icon: IncomeIcon },
@@ -300,102 +37,14 @@ const PRIMARY_TABS: readonly NavItem[] = [
   { label: 'Savings', to: '/savings', Icon: SavingsIcon },
 ]
 
-/**
- * The two destinations behind the "More" trigger for a FREE session.
- *
- * ⚠️ Since story 58.1 this is the free-tier BASE, not the whole sheet. An
- * entitled session renders `MORE_DESTINATIONS_ENTITLED` below, which splices four
- * premium destinations into this list. Keep this array literally unchanged when
- * adding a premium destination — that is what makes "the free nav did not move"
- * provable by reading the diff.
- *
- * From story 59.2 until 69.3 they sat behind More at EVERY width (until 59.2,
- * `sm:contents` dissolved them into the one desktop row). Since story 69.3
- * they sit behind More below `lg` only, and are ALSO rendered as row items
- * that show from `lg` (`PROMOTED_PATHS`).
- *
- * ⚠️ Was FOUR until story 43.3 removed `/net-worth-projection` (FR69), and
- * THREE until story 69.2 removed Settings (FR109). Every "eight anchors" figure
- * in this file dates from before 43.3 and every "seven" from before 69.2; the
- * ones describing the CURRENT nav say six, and the ones narrating the former
- * 4x2 grid are left as history.
- */
 const MORE_DESTINATIONS: readonly NavItem[] = [
-  // ⚠️ Story 59.1 (FR89): label shortened "Balance Tracking" -> "Balances",
-  // REVERSING story 43.2 / UX-DR48, which had lengthened it from "Balance" so
-  // the nav would match the page's own H1. That reversal is the decision, not an
-  // oversight (Lucas, 2026-09-21): this nav label now deliberately DIVERGES from
-  // `BalancePage.tsx`'s H1, which still reads "Balance Tracking" and stays that
-  // way, as does every "Balance Tracking page" prose reference and both docs
-  // pages. The grounds are story 58.1's decision D1 — a paid user's desktop row
-  // is width-critical, and a nav label tracks the DESTINATION, not the page
-  // title. Do NOT "restore consistency" by lengthening this again.
-  // The route (`to`) is unchanged, so active-state/aria-current is unaffected.
+  // Deliberately shorter than the page's H1: the desktop row is width-critical.
   { label: 'Balances', to: '/balance', Icon: BalanceIcon },
-  // Retirement Planner (story 15-1): promoted from a docs-only, nav-orphan route
-  // to a first-class destination. Story 43.3 (FR69) removed the free Net Worth
-  // projection page it used to sit beside, so this is now the only
-  // forward-looking planning surface in the nav. Stays FREE (Epic 15 is UX-only,
-  // no premium gate).
   { label: 'Retirement', to: '/retirement', Icon: RetirementIcon },
-  // ⚠️ Settings is NOT here, by decision (story 69.2, FR109, Lucas 2026-09-25).
-  // It was the third row from story 11-6 until 69.2 moved it to the account
-  // cluster (`auth/auth-indicator.tsx`): the account menu's Settings link for a
-  // signed-in user, and an icon-only gear link beside "Sign in" for a signed-out
-  // one, so no session is left without a route to `/settings`. This REVERSES
-  // FR90's "Settings STAYS in the nav" (amended in place in `epics.md`). Do not
-  // put it back here without taking the account-cluster route out.
-  //
-  // ⚠️ AMENDED by story 96.3 (FR163, decision Lucas 2026-10-05): below 640px
-  // Settings IS back in the nav, as the last row of the More sheet, and the
-  // account-cluster routes ARE taken out there (`max-sm:hidden`), so the
-  // condition above is honoured, per width. It is still NOT in this list: this
-  // list is also `PROMOTED_PATHS`, so an entry here would give Settings an `lg`
-  // ROW copy (a desktop nav anchor) and More's `max-lg:` cue. It is one extra
-  // `<li>` after the sheet's list instead; see `SETTINGS_SHEET_CELL_CLASS`.
+  // Settings is not here: this list is also PROMOTED_PATHS. Its phone-only row is rendered separately.
 ]
 
-/**
- * The four premium destinations an ENTITLED session additionally sees (story
- * 58.1, FR87).
- *
- * ⚠️ The labels are deliberately SHORTER than these features' names elsewhere in
- * the app (decision D1, 2026-09-20). `OVERVIEW_BENEFITS[*].featureName` calls
- * them "Custom Profiles", "Financial Summary Report" and "Custom Categories";
- * the nav calls them Profiles, Report and Categories. That is not drift:
- *
- *   - A nav label names the DESTINATION as briefly as it can be named, not the
- *     benefit pitch. This nav has always spoken that way (`Savings`, not
- *     "Savings Goals"; `Income`, not "Income Sources").
- *     ⚠️ This bullet used to cite story 43.2's "match the page's own H1" rule as
- *     its precedent. Story 59.1 (FR89) REVERSED that rule for the very label
- *     43.2 applied it to (`Balance Tracking` -> `Balances`), so the rule can no
- *     longer be cited here — the brevity principle above is the live one, and
- *     matching an H1 is not a constraint on this file.
- *   - The benefit names carry 67 characters against these 35. When D1 was
- *     decided these labels were items of the desktop row, so label text was row
- *     height for every paying user on every page. Since story 59.2 they are
- *     rows of the More panel, which is as wide as its longest label. Brevity
- *     still pays; it no longer decides the row count.
- *
- * ⚠️ AMENDED by story 95.2 (FR155, Lucas 2026-10-04): the report row is now
- * "Financial Summary" at `/financial-summary`, REVERSING D1's short "Report"
- * label for that one row — the nav, URL and page heading name the page what it
- * is. Profiles and Categories keep D1's short labels, and the benefit name stays
- * "Financial Summary Report" (95.1). The history above is kept as written; its
- * "these 35" characters are 46 since this row changed. The label is now a
- * prefix of the benefit name, so a substring query for it (Playwright's default)
- * also finds the "Financial Summary Report" links: query it with `exact: true`.
- *
- * Verified when this shipped: `benefit-set-parity.test.tsx` polices the canonical
- * benefit set across /pricing, the upgrade prompt, the Overview grid, the route
- * map, `features.md` and `pricing.md` — it does not reference this file, so the
- * two vocabularies cannot collide. Do not "fix" them into agreement.
- *
- * ⚠️ `Multi-device sync` is NOT here and cannot be: it has `activation: 'prompt'`
- * with no route to link to (`HomePage.tsx`), so it stays Overview-only in both
- * tiers.
- */
+// Labels are deliberately shorter than the benefit names elsewhere; don't align them.
 const PREMIUM_DESTINATIONS: readonly NavItem[] = [
   { label: 'Forecasting', to: '/forecasting', Icon: ForecastingIcon },
   { label: 'Profiles', to: '/profiles', Icon: ProfilesIcon },
@@ -403,321 +52,61 @@ const PREMIUM_DESTINATIONS: readonly NavItem[] = [
   { label: 'Categories', to: '/categories', Icon: CategoriesIcon },
 ]
 
-/**
- * The four premium ROUTES this nav carries for an entitled session — exported
- * for one test, deliberately (story 58.2, AC-1).
- *
- * ⚠️⚠️ WHY THIS EXPORT EXISTS. Story 58.2 removed the Overview cards and the
- * `/settings` tiles that used to link these same four pages, so **this nav is now
- * the ONLY route a paying user has to any of them.** The same four routes are
- * still written out twice in the codebase — here, and as `OVERVIEW_BENEFITS`'
- * `href` values in `HomePage.tsx` — with nothing tying the two lists together.
- * Rename a route on one side and a paid user loses the nav entry while the free
- * tier keeps advertising a page that no longer resolves; nothing else in the
- * suite can see that.
- *
- * `__tests__/premium-route-parity.test.ts` is what ties them. Re-deriving this
- * list inside that test instead would assert nothing, which is why the export is
- * the right call here rather than a smell.
- *
- * Exported as the routes alone, not the items: the LABELS deliberately diverge
- * from the Overview's `featureName` strings (decision D1 of story 58.1 — see
- * `PREMIUM_DESTINATIONS`' docblock), and a test that pinned those together would
- * fail on correct code.
- */
+// Exported for the route parity test: this nav is a paid user's only route to these pages.
 export const PREMIUM_NAV_ROUTES: readonly string[] = PREMIUM_DESTINATIONS.map((item) => item.to)
 
-/**
- * The sheet an entitled session gets: the free list, then the premium block.
- *
- * ⚠️ A plain concatenation since story 69.2. Until then the premium block was
- * spliced in BEFORE Settings (story 58.1, decision D3), so that Settings stayed
- * last for everyone, and a module-load `throw` guarded against Settings being
- * removed from `MORE_DESTINATIONS`. Story 69.2 removed it on purpose (Settings
- * lives in the account cluster now), so both the splice and its guard went with
- * it. There is no longer a fixed last row to protect.
- *
- * ⚠️ AMENDED by story 96.3 (FR163): below 640px there IS a fixed last row
- * again, Settings, for every session. It is rendered AFTER this list, not in
- * it, so the concatenation stays plain and nothing here needs guarding.
- */
 const MORE_DESTINATIONS_ENTITLED: readonly NavItem[] = [
   ...MORE_DESTINATIONS,
   ...PREMIUM_DESTINATIONS,
 ]
 
-/**
- * The desktop appearance of a nav anchor, shared by a bar tab, a sheet row and
- * (since story 59.2) the More trigger. The sheet row adds `sm:block` on top,
- * because at >= 640px it is a row of a vertical panel, not an item of the bar.
- *
- * ⚠️ The two mobile variants below are built as SEPARATE strings from this
- * shared base; they are NOT produced by appending overrides to each other.
- * Measured: appending `max-sm:flex-row` to a string already carrying
- * `max-sm:flex-col` computes to `column` — every appended override LOSES —
- * while `max-sm:text-sm` DOES beat `max-sm:text-[11px]`. Tailwind source order
- * decides, not className order, and `apps/web` has no clsx/tailwind-merge, so
- * "later in the string" means nothing.
- */
+// The mobile variants are separate strings, not appended overrides: Tailwind source order
+// decides conflicts, not className order.
 const NAV_LINK_BASE =
   'inline-block rounded-md px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100'
 
-/**
- * A bar tab: a centred icon-over-label stack filling its 64px grid cell.
- *
- * `max-sm:rounded-none` and `max-sm:focus-visible:ring-inset` are not cosmetic,
- * and both were measured. `rounded-md` is unprefixed, so without the first every
- * mobile tab cell picks up 6px corners it has never had. And the grid tracks are
- * 64px x 5 flush to x=0..320, so without the second the 2px focus ring paints
- * OUTSET at x=-2/x=322 — clipped off-screen on the 1st and 5th cells. Both are
- * ink: `border-radius` and `box-shadow` never move `scrollWidth`, height or line
- * count, so the geometry assertions elsewhere in the suite are structurally
- * blind to them.
- *
- * `max-sm:text-[11px]` is load-bearing twice over: at 12px the widest label's
- * slack falls from 3.8px to 1.55px per side inside the 56px content box that
- * `max-sm:px-1` leaves, AND the bar's 56.75px height depends on the 11px line
- * box (py-2 16 + icon 24 + gap-0.5 2 + leading-tight 13.75 + border-t 1).
- */
+// `max-sm:focus-visible:ring-inset`: an outset ring is clipped off-screen on the edge cells.
+// `max-sm:text-[11px]` sets the bar height and keeps the widest label fitting.
 const TAB_LINK_CLASS = `${NAV_LINK_BASE} max-sm:flex max-sm:h-full max-sm:min-h-[44px] max-sm:flex-col max-sm:items-center max-sm:justify-center max-sm:gap-0.5 max-sm:break-words max-sm:rounded-none max-sm:px-1 max-sm:text-center max-sm:text-[11px] max-sm:leading-tight max-sm:focus-visible:ring-inset`
 
-/**
- * A sheet row: a full-width, left-aligned icon-beside-label row.
- *
- * At >= 640px (story 59.2) it is a row of the dropdown panel: `sm:block` makes
- * it fill the panel's width so the hover and active backgrounds span the row,
- * and `sm:whitespace-nowrap` keeps a label on one line, so the panel sizes to
- * its longest label instead of wrapping it. Both are `min-width: 640px`
- * utilities, so neither applies to the mobile sheet at all.
- *
- * Deliberately omits `max-sm:flex-row` / `max-sm:justify-start` /
- * `max-sm:text-left` — a flex container defaults to `row`, `normal` and `start`
- * respectively, so those tokens would be no-ops with no observable consequence
- * to guard, which is the "token with no possible assertion" this suite treats as
- * a missing guard rather than as coverage.
- */
 const SHEET_ROW_CLASS = `${NAV_LINK_BASE} sm:block sm:whitespace-nowrap max-sm:flex max-sm:min-h-[44px] max-sm:items-center max-sm:gap-3 max-sm:rounded-none max-sm:px-4 max-sm:py-3 max-sm:text-sm max-sm:leading-tight max-sm:focus-visible:ring-inset`
 
-/**
- * The active treatment, applied by `<Link activeProps>` on every destination anchor and
- * by hand on the More trigger (which is not a route — see `moreActiveClass`).
- */
 const ACTIVE_CLASS = 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300'
 
-/**
- * The routes of `MORE_DESTINATIONS`: the two free destinations that sit behind
- * More below `lg` and on the row at `lg` and up (story 69.3). Premium routes are
- * not here: they are behind More at every width.
- */
 const PROMOTED_PATHS: ReadonlySet<string> = new Set(MORE_DESTINATIONS.map((item) => item.to))
 
-/**
- * A promoted destination's ROW copy (story 69.3, FR110, decisions D1/D2).
- *
- * `hidden lg:block` on the `<li>`: not rendered below `lg` at all, so the mobile
- * grid and the 640-1023px row never see it, and at `lg` it is an item of the
- * row like a tab. It is a DESKTOP-only element, so it carries no `max-sm:`
- * tokens and no icon (the icons are `sm:hidden` mobile glyphs and this copy is
- * never rendered below `lg`). Its anchor is `NAV_LINK_BASE` alone.
- */
 const PROMOTED_ROW_CELL_CLASS = 'hidden lg:block'
 
-/**
- * The same destination's SHEET copy is hidden at `lg`, where the row copy
- * takes over. Only one of the two is ever rendered.
- */
 const PROMOTED_SHEET_CELL_CLASS = 'max-sm:min-w-0 lg:hidden'
 
-/**
- * The More trigger's active treatment when the current route is a PROMOTED
- * destination: `ACTIVE_CLASS`, scoped `max-lg:` (story 69.3). Below `lg` the
- * destination is behind More, so More is "you are here"; at `lg` the row anchor
- * is, and More must not light as well. A premium route still gets the
- * unprefixed `ACTIVE_CLASS`, because it is behind More at every width.
- *
- * ⚠️ A variant-scoped COLOUR, which the link-colour rule in the component
- * docblock forbids for `max-sm:`. That rule is about hover: a `:hover` utility
- * is 0-2-0 and a media-scoped class is 0-1-0, so hover still wins here exactly
- * as it does over the unprefixed `ACTIVE_CLASS`. Measured in
- * `e2e/nav-lg-row.spec.ts` (hover on the active trigger at 800px; that test
- * was dropped by story 84.2, FR137).
- */
-/** The More cell. `sm:relative`: the desktop dropdown hangs from it. */
+// Scoped `max-lg:`: at `lg` the row anchor is the cue, so More must not light too.
 const MORE_CELL_CLASS = 'max-sm:min-w-0 sm:relative'
 
-/** Tailwind's `lg` screen (default config): where the promoted row copies show. */
 const LG_MEDIA_QUERY = '(min-width: 1024px)'
 
 const PROMOTED_ACTIVE_BELOW_LG_CLASS =
   'max-lg:bg-green-50 max-lg:text-green-700 dark:max-lg:bg-green-900/30 dark:max-lg:text-green-300'
 
-/** The route of the phone-only Settings sheet row (story 96.3). */
 const SETTINGS_PATH = '/settings'
 
-/**
- * The phone-only Settings sheet row's `<li>` (story 96.3, FR163).
- *
- * Below 640px Settings is the LAST row of the More sheet for EVERY session
- * (signed out, loading, free, paid), and the account cluster's Settings routes
- * (the gear, the `<noscript>` gear, the account menu's row and its separator)
- * are `max-sm:hidden` in `auth/auth-indicator.tsx`. At 640px and up this row
- * is not rendered (`sm:hidden`), so the dropdown, and a free session's
- * trigger-less `lg` row, are exactly as they were. A mobile-only ELEMENT, so
- * base classes + `sm:hidden` (the composition rule in the docblock).
- *
- * ⚠️⚠️ Deliberately NOT an entry of any destination list: the "ONE list, read
- * TWICE" invariant's one documented exception. It is a WIDTH-scoped row, not a
- * tier- or preference-scoped one. MEASURED by story 96.3's mutation arms:
- *  - in `visibleMoreDestinations` (not promoted), it makes `moreNeededAtLg`
- *    true for every free session, un-hiding an EMPTY More at `lg` (and
- *    disarming the lg-resize close effect), and it would light More with the
- *    unprefixed `ACTIVE_CLASS` on `/settings` at every width;
- *  - in `MORE_DESTINATIONS`, it becomes a PROMOTED path, so it gains an `lg`
- *    row copy, i.e. a desktop nav anchor beside the account cluster's route.
- * `GlobalNav.test.tsx` goes red on both.
- *
- * It does not depend on the session at all, so the server and first client
- * render agree (no tier, no viewport, no width read).
- */
+// Not in any destination list: that would make it a promoted path (a desktop row copy)
+// and light More at every width.
 const SETTINGS_SHEET_CELL_CLASS = 'max-sm:min-w-0 sm:hidden'
 
-/**
- * More's "you are here" on `/settings` (story 96.3, decision Q1 = yes):
- * `ACTIVE_CLASS`, scoped `max-sm:`, because Settings is behind More only below
- * 640px. At `sm` and up the account cluster is its route and More must not
- * light. The same deliberate exception as `PROMOTED_ACTIVE_BELOW_LG_CLASS`
- * (the More trigger is not a link). ⚠️ The pale tint is below the screenshots'
- * 0.2 threshold, so only the token pin in `GlobalNav.test.tsx` can see it.
- */
+// Scoped `max-sm:`: Settings is behind More only below 640px.
 const SETTINGS_ACTIVE_BELOW_SM_CLASS =
   'max-sm:bg-green-50 max-sm:text-green-700 dark:max-sm:bg-green-900/30 dark:max-sm:text-green-300'
 
-/**
- * The More trigger, a `<summary>`, at EVERY width since story 59.2.
- *
- * Until 59.2 it was a mobile-only ELEMENT (base classes + `sm:hidden`) and must
- * not reach the desktop row. It is a SHARED element now, so the composition rule
- * for shared elements applies: the desktop look is `NAV_LINK_BASE` unprefixed,
- * like every desktop anchor, except `sm:pr-2` (story 69.1: 8px, not 12px, on
- * the right, which with the list's dropped right padding pays for the
- * chevron; see `MORE_CHEVRON_CLASS`), and the mobile bar cell it has always been
- * is `max-sm:` variants APPENDED to it. That is `TAB_LINK_CLASS`'s mobile half
- * with two differences: it adds `max-sm:w-full` (the cell is a grid track, not a
- * link box) and omits `max-sm:break-words` ("More" is one short word). Its
- * computed style in the 320px bar was diffed before and after the change: 30
- * properties each of the cell, trigger, label and icon, plus every cell rect,
- * byte-identical. The table is in story 59.2's completion notes.
- *
- * The disclosure triangle a `<summary>` draws by default comes from
- * `display: list-item` in Chromium and Gecko, and from a
- * `::-webkit-details-marker` pseudo-element in WebKit. This summary is never
- * `list-item` (it is `inline-block` at >= 640px and `flex` below), so
- * `list-none` is INERT today. It is kept as a guard in case a future display
- * change makes it `list-item`. `[&::-webkit-details-marker]:hidden` is the one
- * doing work, in WebKit only, and nothing in this chromium-only suite can
- * observe it.
- *
- * ⚠️ No role, no `aria-expanded`, no `aria-controls`. Chromium already exposes a
- * `<summary>` as a named, expandable disclosure (`DisclosureTriangle "More"`,
- * `expanded`), measured through CDP, so hand-rolled ARIA would only
- * duplicate it. Tests find it by selector, because Playwright and
- * `@testing-library/dom` give `<summary>` NO role. See `e2e/helpers/nav-more.ts`.
- *
- * ⚠️ The desktop row's widths live in ONE place, `e2e/nav-responsive-css.spec.ts`.
- * This comment used to carry a copy ("the eight-item row already wants 778px")
- * that was stale twice over by story 43.3. Do not restate a width here.
- */
+// The webkit-details-marker token hides WebKit's triangle. No hand-rolled ARIA: browsers
+// already expose <summary> as an expandable disclosure.
 const MORE_TRIGGER_CLASS = `${NAV_LINK_BASE} cursor-pointer list-none sm:pr-2 [&::-webkit-details-marker]:hidden max-sm:flex max-sm:h-full max-sm:min-h-[44px] max-sm:w-full max-sm:flex-col max-sm:items-center max-sm:justify-center max-sm:gap-0.5 max-sm:rounded-none max-sm:px-1 max-sm:text-center max-sm:text-[11px] max-sm:leading-tight max-sm:focus-visible:ring-inset`
 
-/**
- * The More trigger's disclosure chevron: desktop only (story 69.1, FR108).
- *
- * Until 69.1 the desktop trigger was the bare word "More" (`MoreIcon` is
- * `sm:hidden`), so nothing told a desktop user it opens anything. The glyph and
- * its size/colour are SHARED with the account menu's trigger beside it
- * (`ui/ChevronDownIcon.tsx`), so the header row carries one disclosure cue, not
- * two.
- *
- * ⚠️⚠️ IT ROTATES ON THE `open` ATTRIBUTE, NEVER ON `isMoreOpen` (decision D2,
- * Lucas 2026-09-25, which rewrote the epic's AC-3). The panel `<ul>` below is
- * rendered unconditionally: what shows it is the native `open` attribute, and
- * `isMoreOpen` is only a MIRROR of that attribute. They disagree in exactly the
- * windows this component documents: with JavaScript off (React never runs, so
- * state says "closed" forever while the native toggle shows the panel), a click
- * before hydration, and find-in-page until `onToggle` lands. A state-driven
- * chevron would point down over an open panel in the FAIL-OPEN case this
- * `<details>` exists for. `e2e/nav-more-disclosure.spec.ts` proved the JS-off
- * case ("the chevron turns with the NATIVE toggle") until story 84.2 dropped
- * it (FR137); no test pins the rotation's render now.
- *
- * `max-sm:hidden`: a desktop-only ELEMENT (composition rule above), the mirror of
- * the icons' `sm:hidden`. Below `sm` the ellipsis `MoreIcon` is the cue and the
- * 64px bar cell has no room for a second glyph (decision D3). ⚠️⚠️ Do NOT give
- * it `sm:hidden` to satisfy a test that enumerates the nav's icons: that hides
- * it at every width this story exists for, and jsdom, which applies no
- * stylesheet, stays green. Those tests exclude `[data-disclosure-chevron]`.
- *
- * `inline-block align-middle`: the desktop trigger is `inline-block`, so the
- * SVG sits in the label's 20px line box. Baseline-aligned, a 16px glyph can
- * grow that box and the trigger with it; the e2e test pins the trigger at 36px.
- *
- * Stays GRAY when More is active (green label on `bg-green-50`): the chevron
- * says open-or-closed, not "you are here", and a green one would no longer
- * match the account chevron. Do not tint it.
- *
- * Its ~20px (glyph + `ml-1`) is paid for by the list's dropped right padding
- * (`pl-4`, not `px-4`) and the trigger's `sm:pr-2` (decision D1): the signed-out
- * 640px row had almost no headroom before this story. The measured figures live
- * ONLY in `e2e/nav-responsive-css.spec.ts`; do not restate them here.
- */
+// Rotates on the native `open` attribute, never `isMoreOpen`: they disagree before hydration
+// and with JS off. Desktop-only: `max-sm:hidden`, never `sm:hidden`.
 const MORE_CHEVRON_CLASS = `${DISCLOSURE_CHEVRON_CLASS} ml-1 inline-block align-middle max-sm:hidden group-open:rotate-180`
 
-/**
- * The sheet panel itself: an out-of-flow overlay at EVERY width since story 59.2.
- *
- * Two halves, deliberately separate strings of tokens. The `sm:` half is the
- * desktop dropdown, anchored under the trigger by the cell's `sm:relative`. The
- * `max-sm:` half is the mobile sheet, anchored to the top edge of the bar, and it
- * is BYTE-IDENTICAL to what it was before 59.2 (pinned token-for-token in
- * `GlobalNav.test.tsx`). So "the mobile sheet did not move" is provable by
- * reading the diff. Until 59.2 the desktop half was `sm:contents`, which
- * dissolved the panel into the row.
- *
- * Both halves need their own OPAQUE background in both themes for the same
- * reason the bar does: the panel is `absolute`, so page content passes
- * underneath it. A dropped background computes to `rgba(0, 0, 0, 0)` and the
- * destinations sit on whatever scrolls past.
- *
- * ⚠️ `sm:z-40` IS LOAD-BEARING, and it was measured. Without it the desktop
- * panel is a positioned box at `z-index: auto`, so positioned page content later
- * in the DOM paints OVER it. `elementFromPoint` on the open panel's rows landed
- * on `/pricing`'s plan cards and `/forecasting`'s page header, at 640px and at
- * 1280px, while those rows had perfect rects and passed `toBeVisible()`.
- * `e2e/nav-more-disclosure.paid.spec.ts` swept 13 routes for it at the top of
- * each page (not every scroll position or overlay state) until story 84.2
- * dropped the sweep (FR137). 40, not 50:
- * `Modal` (z-50, rendered later) must stay above it, and at >= 640px the
- * `InstallPrompt` banner sits at the bottom of the screen, nowhere near a
- * dropdown hanging off the top bar. Below `sm` the stacking comes from the
- * nav's own `max-sm:z-50` (see the component docblock).
- *
- * ⚠️ THE CAP AND THE SCROLL ARE NOT OPTIONAL, and code review caught their
- * absence. The panel's height is content-driven and it is anchored to the bar's
- * top edge, so with no cap it simply grows off the TOP of the screen — and
- * because it is out of flow, page scrolling cannot reach what it pushes away.
- * Measured at 568x320 with a 24px root font: the panel was 301px tall, its top
- * was at y=-57.75, and the "Balance" row sat at y=-51 — off-screen, un-tappable
- * and unscrollable. The cap is expressed against the small viewport unit so a
- * mobile URL bar cannot invalidate it, and leaves room for the bar itself.
- * The repo's other disclosed panel does the same (`Modal.tsx:113`). A third,
- * `profiles/switch-profile.tsx`, also did, until story 63.1 deleted it.
- *
- * ⚠️ `overflow-y-auto` computes `overflow-x` to `auto` as well, which makes this
- * panel a HORIZONTAL scroll container that would silently absorb an overflowing
- * row label (31.2's absorption trap). `e2e/nav-responsive-css.spec.ts` asserts
- * `panel.scrollWidth <= panel.clientWidth` element-level precisely so that
- * absorption cannot hide a regression.
- */
+// `sm:z-40` stops positioned page content painting over the dropdown. The max-height cap and
+// scroll stop the out-of-flow sheet growing off the top of the screen.
 const SHEET_PANEL_CLASS =
   'sm:absolute sm:left-0 sm:top-full sm:z-40 sm:mt-1 sm:min-w-[10rem] sm:max-h-[calc(100svh-6rem)] sm:overflow-y-auto sm:rounded-md sm:border sm:border-gray-200 sm:bg-white sm:py-1 sm:shadow-lg dark:sm:border-gray-700 dark:sm:bg-gray-800 max-sm:absolute max-sm:inset-x-0 max-sm:bottom-full max-sm:max-h-[calc(100svh-5rem)] max-sm:overflow-y-auto max-sm:overscroll-contain max-sm:border-t max-sm:border-gray-200 max-sm:bg-white max-sm:py-1 dark:max-sm:border-gray-700 dark:max-sm:bg-gray-800'
 
@@ -726,117 +115,17 @@ export function GlobalNav() {
   const navRef = useRef<HTMLElement>(null)
   const triggerRef = useRef<HTMLElement>(null)
   const detailsRef = useRef<HTMLDetailsElement>(null)
-  /**
-   * Whether the in-flight pointer gesture STARTED outside the nav.
-   *
-   * Mutable gesture state is the thing that actually goes stale across
-   * open/close cycles (`isMoreOpen` gates the render, not the mount, so refs
-   * persist) — 31.3 shipped exactly this bug. It is reset on every terminal
-   * path, including `pointercancel`: a touch that turns into a scroll fires
-   * `pointercancel` and never a `click`. The `triggerRef` above is NOT at risk
-   * for the same reason — the More `<summary>` is always mounted, at every width
-   * and in both states.
-   */
+  /** Reset on every terminal path, including `pointercancel` (a touch that becomes a scroll). */
   const outsidePressRef = useRef(false)
 
-  /**
-   * The More tab's active state CANNOT come from `<Link activeProps>`: More is
-   * not a route, so `activeProps` would silently mark nothing and the bar would
-   * show NO active tab on two of six destinations — worse orientation than
-   * the grid this replaced. Since story 59.2 the same is true on DESKTOP, where
-   * those destinations moved behind More too, so this cue carries "you are
-   * here" at every width for the premium routes, and below `lg` for Balances
-   * and Retirement, which are row anchors from `lg` (story 69.3; see
-   * `moreActiveClass`). `useRouterState` reads `router.stores.location`, the
-   * same store `<Link>`'s own active computation reads, through a `useStore`
-   * whose `getServerSnapshot` and `getSnapshot` are the same synchronous read.
-   * The store is seeded from `history.location` at router construction, BEFORE
-   * the first React render, so this derivation is exactly as hydration-safe as
-   * the `activeProps` this component already ships.
-   */
+  // More is not a route, so `activeProps` can't mark it. Router state is hydration-safe here.
   const pathname = useRouterState({ select: (state) => state.location.pathname })
 
-  /**
-   * The sheet's destinations after the Retirement visibility preference (story
-   * 35.2, FR55).
-   *
-   * ⚠️⚠️ ONE list, read TWICE — deliberately. The rendered rows and
-   * `moreActiveClass` below both derive from this, so the trigger cannot claim a
-   * destination the sheet no longer holds. Deriving the active state from
-   * `MORE_DESTINATIONS` instead would light the More tab on `/retirement` while
-   * the sheet it discloses is empty of it: an orientation cue pointing at
-   * nothing. Keeping the two in agreement by discipline is exactly the kind of
-   * invariant that rots, so they are not separately computable.
-   *
-   * ⚠️ AMENDED by story 96.3 (FR163): the phone-only Settings sheet row is the
-   * one documented exception. It is rendered AFTER this list, not from it, and
-   * More's `/settings` cue is computed apart (`isOnSettingsPage`). Why: see
-   * `SETTINGS_SHEET_CELL_CLASS`.
-   *
-   * This is the post-hydration half of the feature. The FIRST frame is handled
-   * before React runs, by the `<head>` script in
-   * `lib/nav/no-flash-planner-visibility-script` plus the `[data-hide-retirement]`
-   * rule in `styles/global.css` — because every persisted store here is
-   * `skipHydration: true`, so the server and the first client render must both
-   * paint the deterministic default (visible).
-   */
+  // One list read twice (rows and `moreActiveClass`), so More can't claim a destination the sheet lacks.
   const showRetirementPlanner = useShowRetirementPlanner()
 
-  /**
-   * Whether this session sees the four premium destinations (story 58.1, FR87).
-   *
-   * ⚠️ Read from the SSR seed as a `useState` INITIALIZER, never reactively —
-   * `session-seed.tsx` states that contract, and here it is what makes the first
-   * painted frame already correct. The seed is resolved server-side by the root
-   * loader, so SSR and the first client render agree and there is no flash.
-   *
-   * ⚠️⚠️ `usePremiumAccess()` is the obvious reuse and is WRONG here. Its no-seed
-   * path fires a client round-trip in an effect and its status is `setState`-
-   * driven, so the nav would paint 7 items and then flip to 11 — reintroducing
-   * exactly the hydration reflow story 31.4 removed, on the element whose whole
-   * design premise is "the first painted frame is the final frame". Mirror its
-   * PREDICATE, do not call the hook.
-   *
-   * The predicate itself now lives in `lib/premium/entitlement.ts` (story 58.2):
-   * story 58.2 needed the same rule on the Overview and on `/settings`, and four
-   * hand-written copies of a fail-closed check is how they drift apart. The
-   * behaviour here is unchanged — this is the same expression, imported.
-   *
-   * Fail-closed in all three directions: a `null` seed means the resolver could
-   * not verify the session (unverified, NOT entitled), an unauthenticated seed
-   * never qualifies however its status reads, and only `active`/`lifetime` count
-   * — `free`/`past_due`/`canceled` get the free nav. A paid user hitting a
-   * transient resolver error paints the free nav first and gains the premium
-   * destinations when the indicator's `/api/auth/me` answer lands (story 99.1,
-   * below), which is the right way round.
-   *
-   * ⚠️ The NAV fails closed; the Overview and Settings gates added by story 58.2
-   * fail OPEN with the same predicate, because hiding their sections from an
-   * unverified paid session would leave it no route to those pages at all. Both
-   * are fail-safe and they point opposite ways on purpose — see
-   * `entitlement.ts`. Do not "harmonise" the two directions.
-   *
-   * ⚠️ AMENDED by story 99.1 (FR160): the seed is the FIRST PAINT, not the last
-   * word. Until 99.1 this read was frozen for the life of the document (the
-   * root loader caches the seed with `staleTime: Infinity`), while
-   * `AuthIndicator` re-asks `/api/auth/me` on every navigation. Any document
-   * whose seed was signed-out or null under a premium session therefore showed
-   * "Premium" in the account row and the FREE nav until a reload. Triggers
-   * (99.1 Debug Log): the service worker's 3 s NetworkFirst fallback serving a
-   * cached SIGNED-OUT document to the first signed-in navigation (MEASURED on the
-   * prod build with the >3 s network FORCED; prod latency not measured), and a
-   * tab left open from before sign-in (shown in an integration test only).
-   *
-   * The contract now: the seed (still read ONCE, as an initializer) decides the
-   * first paint, so SSR and hydration agree and nothing flashes. After that the
-   * nav follows the indicator's last DEFINITIVE answer (`verifiedSession.ts`:
-   * a 200 with a parseable body only; a 503, a network error or a malformed
-   * body writes nothing, so the nav keeps what it had: the seed, or an EARLIER
-   * definitive answer). It changes only when that answer DISAGREES with the
-   * seed, in BOTH directions (decision D1): a signed-out/free answer over an
-   * entitled seed drops the premium destinations too. Still no fetch here and
-   * still not `usePremiumAccess()`: the answer is the indicator's own.
-   */
+  // Seeded once as an initializer, not `usePremiumAccess()` (it would flip after first paint).
+  // Fails closed; then follows the indicator's last definitive answer.
   const seed = useSessionSeed()
   const [seedEntitled] = useState(() => isEntitledSeed(seed))
   const verifiedSession = useVerifiedSession()
@@ -849,23 +138,11 @@ export function GlobalNav() {
       : destinations.filter((item) => item.to !== '/retirement')
   }, [isEntitled, showRetirementPlanner])
 
-  /**
-   * The promoted destinations still visible after the planner filter, rendered a
-   * SECOND time as row items at `lg` (story 69.3, D2). Derived from the same
-   * filtered list as the sheet, so the planner toggle removes both copies.
-   */
   const promotedRowDestinations = useMemo(
     () => visibleMoreDestinations.filter((item) => PROMOTED_PATHS.has(item.to)),
     [visibleMoreDestinations]
   )
 
-  /**
-   * Which of More's destinations is current, if any. Since story 69.3 the answer
-   * decides HOW More is active, not just whether: a promoted destination is
-   * behind More only below `lg`, so it gets the `max-lg:`-scoped treatment; a
-   * premium one is behind More at every width. Still derived from the SAME
-   * filtered list the rows render from (the invariant above).
-   */
   const activeMoreItem = visibleMoreDestinations.find((item) => item.to === pathname)
   const moreActiveClass =
     activeMoreItem === undefined
@@ -874,22 +151,10 @@ export function GlobalNav() {
         ? PROMOTED_ACTIVE_BELOW_LG_CLASS
         : ACTIVE_CLASS
 
-  /**
-   * Whether More discloses anything at `lg` (story 69.3). The promoted
-   * destinations are on the row there, so More is needed only if the SAME
-   * filtered list holds something else (today: the premium four). Derived from
-   * the list, not from the tier (code review of 69.3): a future free More
-   * destination would otherwise be unreachable at `lg` with nothing red.
-   */
+  // Derived from the list, not the tier, so a future free destination stays reachable at `lg`.
   const moreNeededAtLg = visibleMoreDestinations.some((item) => !PROMOTED_PATHS.has(item.to))
 
-  /**
-   * Whether this is the settings page, for the phone-only Settings row and
-   * More's `max-sm:` cue (story 96.3). LOWERCASED, like the account cluster's
-   * gear (`auth-indicator.tsx`): `/Settings` serves the page, but TanStack's
-   * active match is case-sensitive (measured in 69.2's review). Computed apart
-   * from `activeMoreItem` on purpose: see `SETTINGS_SHEET_CELL_CLASS`.
-   */
+  // Lowercased: `/Settings` serves the page, but TanStack's active match is case-sensitive.
   const isOnSettingsPage = pathname.toLowerCase() === SETTINGS_PATH
   const triggerActiveClass = [
     moreActiveClass,
@@ -898,89 +163,26 @@ export function GlobalNav() {
     .filter(Boolean)
     .join(' ')
 
-  /**
-   * Close the sheet.
-   *
-   * ⚠️ `restoreFocus` is NOT always true, and getting that wrong is a real
-   * defect that code review caught. Hiding a subtree containing
-   * `document.activeElement` drops focus to `<body>`, so restoring focus to the
-   * trigger is right for Escape and for choosing a destination. It is WRONG for
-   * a light-dismiss: the mouse order is `pointerdown -> mousedown (which focuses
-   * the pressed element) -> pointerup`, so restoring focus from the document
-   * `pointerup` handler YANKS focus off whatever the user just clicked.
-   * Measured: with the sheet open, pressing the "Sign in" link left
-   * `document.activeElement` on the More trigger rather than the link — a mouse
-   * user could not focus a form field in one click while the sheet was open.
-   * The outside-press path therefore restores focus only when focus is still
-   * inside the nav (i.e. nothing else claimed it), which keeps the
-   * no-orphaned-focus guarantee without stealing.
-   */
+  // Light-dismiss passes `false`: restoring from `pointerup` would steal focus from what was clicked.
   const closeMore = useCallback((restoreFocus = true) => {
     setIsMoreOpen(false)
     if (restoreFocus) triggerRef.current?.focus()
   }, [])
 
-  /**
-   * ⚠️ Close on ANY navigation. Code review caught this: the dismissal guard
-   * correctly does not fire for a press that starts and ends inside the nav —
-   * which is exactly what tapping a BAR tab is — and the bar tabs carry no
-   * `onClick`. Measured on the unfixed build: with the sheet open, tapping
-   * "Income" landed on `/income` with the sheet still `display: block`, covering
-   * 201px of the new page. Deriving this from the pathname rather than adding
-   * per-link handlers also covers browser back/forward, programmatic redirects,
-   * and keyboard activation of an outside link (Tab + Enter fires no pointer
-   * events at all, so the dismissal guard never runs).
-   *
-   * Done as a render-phase adjustment, not an effect, for two reasons: it closes
-   * BEFORE paint, so the new route never shows a frame with the stale sheet over
-   * it; and an effect would have to list `pathname` as a dependency it does not
-   * read, which is a lint violation for exactly the reason it looks wrong.
-   * This is React's documented "adjusting state when a prop changes" pattern.
-   *
-   * Focus is deliberately NOT restored here — the user has navigated, and the
-   * sheet-row path has already restored it by the time this runs.
-   */
+  // Close on any navigation, in render so it happens before paint: bar tabs have no onClick
+  // and the press never leaves the nav.
   const [lastPathname, setLastPathname] = useState(pathname)
   if (pathname !== lastPathname) {
     setLastPathname(pathname)
     setIsMoreOpen(false)
   }
 
-  /**
-   * Adopt a disclosure the user opened BEFORE hydration (story 59.2, AC-5).
-   *
-   * ⚠️ Measured at 59.2's context time, not reasoned. The server renders the
-   * `<details>` closed, and the native toggle works before React runs. That is
-   * the point of using `<details>`. A user who clicks More in that window leaves
-   * the DOM `open` while `useState(false)` hydrates as closed: React does not
-   * patch attribute mismatches, and the `toggle` event fired before any handler
-   * was attached. The panel is then visibly open with `isMoreOpen === false`, so
-   * the Escape and outside-press listeners above are never armed. (It self-heals
-   * on the next summary click, but only on that click.) Reading the DOM once on
-   * mount closes the gap. `GlobalNav.ssr.dom.test.tsx` opens the server HTML's
-   * `<details>` and lets its `toggle` fire BEFORE hydrating, to put the click
-   * in that window (story 84.3; the e2e original held every script back).
-   */
+  // Adopt a <details> opened before hydration, or the dismissal listeners are never armed.
   useEffect(() => {
     if (detailsRef.current?.open) setIsMoreOpen(true)
   }, [])
 
-  /**
-   * Close a More that has nothing to disclose at `lg` when the viewport crosses
-   * into `lg` (story 69.3 code review; decision, Lucas 2026-09-25). MEASURED by
-   * the review: opened at 1023px and widened past 1024px, the `<details>` went
-   * `display:none` with `open` still true, its document listeners stayed armed
-   * (an Escape anywhere "closed" an invisible panel), and narrowing again
-   * re-showed it open.
-   *
-   * ⚠️ This is NOT the viewport-derived state the component docblock forbids.
-   * That rule is about the FIRST render (server and first client render must
-   * agree), and the initial state here is still the deterministic `false`.
-   * This only CLOSES in response to a resize, after hydration.
-   *
-   * Focus is deliberately not restored: the trigger is `display:none` at `lg`,
-   * so focusing it would do nothing.
-   */
+  // Close a More with nothing to disclose when resized into `lg`: it goes display:none still open.
   useEffect(() => {
     if (moreNeededAtLg || typeof globalThis.matchMedia !== 'function') return
     const atLg = globalThis.matchMedia(LG_MEDIA_QUERY)
@@ -997,10 +199,7 @@ export function GlobalNav() {
     const isOutside = (target: EventTarget | null): boolean =>
       !(target instanceof Node) || !navRef.current?.contains(target)
 
-    // Whether a real focusable OUTSIDE the nav holds focus. `<body>`, `<html>`
-    // and null do not count: they are orphaned focus, which the trigger should
-    // reclaim. See the pointer handler below for why "is focus inside the
-    // nav?" is the wrong question.
+    // `<body>`, `<html>` and null are orphaned focus, which the trigger should reclaim.
     const focusClaimedOutside = (): boolean => {
       const active = document.activeElement
       return (
@@ -1011,17 +210,12 @@ export function GlobalNav() {
       )
     }
 
-    // ⚠️ Escape restores focus only if focus is in the nav or orphaned (story
-    // 59.2 code review). On desktop the panel is a small dropdown, so a keyboard
-    // user can Tab past it into the page with it still open. An unconditional
-    // restore then yanked focus from page content back to More whenever they
-    // pressed Escape, which was verified by probe on `/income`.
+    // Only if focus is in the nav or orphaned: a keyboard user may have tabbed past the open dropdown.
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') closeMore(!focusClaimedOutside())
     }
-    // Both halves are load-bearing: press-origin alone leaves an
-    // outside-press -> inside-release gesture closing the sheet, and
-    // release-origin alone lets a press that began on a sheet row close it.
+    // Both halves are needed: press-origin alone closes on outside-press/inside-release, and
+    // release-origin alone closes on a press that began on a sheet row.
     const handlePointerDown = (event: PointerEvent) => {
       outsidePressRef.current = isOutside(event.target)
     }
@@ -1029,14 +223,6 @@ export function GlobalNav() {
       const closedByGesture = outsidePressRef.current && isOutside(event.target)
       outsidePressRef.current = false
       if (closedByGesture) {
-        // Restore focus unless something OUTSIDE the nav genuinely claimed it.
-        //
-        // ⚠️ "Is focus still inside the nav?" is the obvious condition and it is
-        // WRONG — pressing non-focusable page content blurs the trigger to
-        // `<body>`, which is not inside the nav, so that condition would decline
-        // to restore and leave focus orphaned on `<body>`: precisely the defect
-        // the restoration exists to prevent. Only a real focusable target
-        // outside should win, so `<body>`/`<html>`/null all still restore.
         closeMore(!focusClaimedOutside())
       }
     }
@@ -1044,12 +230,6 @@ export function GlobalNav() {
       outsidePressRef.current = false
     }
 
-    // Gated on `isMoreOpen`. This is structurally the always-mounted document
-    // listener pattern, and it is acceptable here ONLY because it is gated. The
-    // repo's counter-example was `profiles/switch-profile.tsx`, whose Escape
-    // listener was attached unconditionally for the component's whole lifetime;
-    // story 63.1 deleted that component, so the warning is stated rather than
-    // pointed at.
     document.addEventListener('keydown', handleKeyDown)
     document.addEventListener('pointerdown', handlePointerDown)
     document.addEventListener('pointerup', handlePointerUp)
@@ -1067,93 +247,12 @@ export function GlobalNav() {
     <nav
       ref={navRef}
       aria-label="Primary"
-      // At >= 640px the nav carries NO chrome of its own: the border + background
-      // live on the `__root.tsx` wrapper so the nav and the account indicator
-      // read as ONE bar (story 19-3). Below `sm` the bar is `fixed` — out of
-      // flow, and therefore beyond the reach of that `sm:`-gated wrapper chrome
-      // — so it owns its border-top and background there. `max-sm:z-50` (not
-      // z-40) is what keeps the open sheet above the InstallPrompt banner; see
-      // the docblock.
-      //
-      // ⚠️⚠️ `sm:shrink-0` is what makes the row ONE row for a SIGNED-IN user
-      // (story 59.2 code review, measured). The nav shares the header row with
-      // `AuthIndicator`, and both are flex items. Without it, a signed-in
-      // cluster (avatar + email + Premium pill, 399px at 640px with a long
-      // email) out-weighed the nav's flex basis. The nav absorbed the
-      // shortfall by WRAPPING, to 3 rows at 640px and 2 up to ~849px, and the
-      // email's `truncate` never engaged. With the nav held at its content
-      // width, the cluster yielded instead (it was `sm:min-w-0`, in
-      // `auth-indicator.tsx`), so the email truncated. ⚠️ Story 69.2 removed
-      // the email and story 69.3 removed `sm:min-w-0` (decision D4): when the
-      // two no longer fit on one line, which happens only at an enlarged root
-      // font, the header row WRAPS the cluster to a line of its own
-      // (`__root.tsx`). This token still keeps the NAV from being the thing
-      // that gives way. The e2e suite has no real
-      // session, so it only ever measured the signed-out "Sign in" cluster and
-      // was blind to this. `e2e/nav-more-disclosure.paid.spec.ts` mocked
-      // `/api/auth/me` to render a signed-in cluster and pinned it, until story
-      // 84.2 dropped the width tests; `GlobalNav.test.tsx` pins the token.
+      // Below `sm` the bar is fixed (out of flow), so it owns its border and background.
+      // `sm:shrink-0` stops the nav wrapping when the account cluster is wide.
       className="sm:shrink-0 max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:z-50 max-sm:border-t max-sm:border-gray-200 max-sm:bg-white max-sm:pb-[env(safe-area-inset-bottom)] dark:max-sm:border-gray-700 dark:max-sm:bg-gray-800"
     >
-      {/* `flex-wrap` at >= 640px: INERT since story 59.2, and kept on purpose.
-          It arrived (commit d4f3ffb) to contain the eight items the nav then
-          had, and until 59.2 the desktop bar was two rows below a single-row
-          threshold. Since 59.2's code review the <nav> is `sm:shrink-0`, so the
-          list always gets its full content width and never wraps. Since story
-          69.3 (decision D4) what gives way when the nav and the account
-          cluster cannot share a line is the HEADER row (`__root.tsx`,
-          `sm:flex-wrap`): the cluster drops to a line of its own. That happens
-          only at an enlarged root font. At the default font every width from
-          640px is ONE header line, and the one-row sweeps and the no-overflow
-          assertions in `e2e/nav-responsive-css.spec.ts` (640/700/760px) are
-          what would catch a regression; a nav that outgrows the viewport ON
-          ITS OWN still overflows the document sideways. The measured headroom
-          lives there, in ONE place; do not restate it here.
-          `responsive-320.spec.ts` and `global-nav.spec.ts` swept 320px only;
-          stories 84.2/84.3 removed those sweeps and 84.5 deleted the last of
-          `responsive-320.spec.ts` (FR137); the 320px screenshots are what is left.
-
-          ⚠️ This comment carried its own copy of the "row wants 778px …
-          clearing only at 800px" figures until story 43.3. It was the THIRD copy
-          in the repo and, like the other two, stale: 43.2 measured 753 -> 815px
-          intrinsic and 857 -> 920px single-row under CI fonts, and 43.3 then
-          removed an item. The one live measurement is in
-          `e2e/nav-responsive-css.spec.ts`; do not copy it back here.
-
-          Below `sm` the list becomes the 5-column grid (story 31.5): four
-          destinations plus the More trigger, 64px tracks at 320px, each cell an
-          icon-over-label stack. `max-sm:gap-0 max-sm:px-0 max-sm:py-0`
-          neutralise the desktop `gap-1 pl-4 py-2`, which the mobile bar has
-          never carried: with them live the tracks shrink and the labels
-          re-overflow.
-
-          ⚠️ `pl-4`, not `px-4`, since story 69.1 (decision D1): the list has no
-          RIGHT padding at >= 640px. Those 16px (plus the trigger's `sm:pr-2`)
-          pay for the More chevron, because the signed-out 640px row had almost
-          no headroom (the figure lives in `e2e/nav-responsive-css.spec.ts`
-          only). The account cluster's own `px-4` still separates the two at
-          the default font size. Putting `px-4` back overflows the document at
-          640px.
-
-          ⚠️ Deferred from 69.1's code review, FIXED by story 69.3 (decision
-          D4): at an ENLARGED root font the signed-out cluster used to spill
-          LEFT over the nav and cover the More chevron (69.3's RED run, CI
-          fonts: 640-675px at an 18px root, 640-750px at 20px). The fix was NOT
-          padding here: the cluster lost `sm:min-w-0` and the header row
-          wraps it instead. `e2e/nav-enlarged-font{,.paid}.spec.ts` guard it
-          with `elementFromPoint`.
-
-          Coupling to watch when the item split changes: `grid-cols-5` fixes the
-          bar at exactly ONE row (~56.75px). Moving a destination out of the
-          sheet and into the bar means revisiting BOTH `max-sm:grid-cols-5` here
-          and the `pb-[calc(3.75rem_+_env(safe-area-inset-bottom))]` reserve in
-          `__root.tsx` AND the matching offset in `pwa/InstallPrompt.tsx` —
-          `e2e/chrome-320.spec.ts` guards that footer clearance in BOTH
-          directions (too small covers the footer; too large strands it above a
-          dead gap). The nav's `max-sm:pb-[env(safe-area-inset-bottom)]` lifts
-          the bar above the iOS home indicator (0 on non-notched devices, so the
-          56.75px is exact there); the root reserve adds the same inset to stay
-          in lockstep. */}
+      {/* `pl-4`, not `px-4`: the missing right padding pays for the More chevron at 640px. The bar's
+          height is coupled to the root layout's bottom reserve and InstallPrompt's offset. */}
       <ul className="flex flex-wrap gap-1 py-2 pl-4 max-sm:grid max-sm:grid-cols-5 max-sm:gap-0 max-sm:px-0 max-sm:py-0">
         {PRIMARY_TABS.map((item) => (
           <li key={item.to} className="max-sm:min-w-0" data-nav-path={item.to}>
@@ -1162,33 +261,16 @@ export function GlobalNav() {
               activeOptions={item.exact ? { exact: true } : undefined}
               className={TAB_LINK_CLASS}
               activeProps={{ 'aria-current': 'page', className: ACTIVE_CLASS }}
-              // Closes the panel even when the tab is the CURRENT route (story
-              // 59.2 code review). The pathname-change close below never fires
-              // for a same-route click, and the press starts and ends inside
-              // the nav, so the outside-press guard correctly declines. The
-              // result was an open dropdown that survived a click on "Income"
-              // while on /income. `false`: the clicked link keeps its focus.
+              // Same-route clicks never change the pathname, so close here. `false`: the link keeps focus.
               onClick={() => closeMore(false)}
             >
               <item.Icon className="h-6 w-6 sm:hidden" />
-              {/* The label is wrapped so the line-count probe in
-                  `e2e/chrome-320.spec.ts` can scope a Range to the TEXT. Ranged
-                  over the whole anchor it measures 3 rects on a correct cell
-                  (the icon box, the label, and the SVG's own line box), not the
-                  1 a "labels stay single-line" assertion means. */}
+              {/* Wrapped so a line-count probe can range over the label text alone. */}
               <span data-nav-label>{item.label}</span>
             </Link>
           </li>
         ))}
-        {/* The promoted destinations' ROW copies (story 69.3, FR110). Rendered
-            only at `lg` and up, where a free row of six anchors and a paid row
-            of six plus More fit; below `lg` they are not rendered and the SHEET
-            copy is the one a user reaches. See `PROMOTED_ROW_CELL_CLASS`.
-            `data-nav-path` is load-bearing: it is what the pre-paint
-            `[data-hide-retirement]` rule in `styles/global.css` matches, so a
-            hidden planner is hidden on the first frame here too.
-            `data-nav-promoted` marks the copy for the tests, which run in
-            jsdom and would otherwise see both copies. */}
+        {/* `data-nav-path` is matched by the pre-paint `[data-hide-retirement]` CSS rule. */}
         {promotedRowDestinations.map((item) => (
           <li
             key={`row-${item.to}`}
@@ -1200,71 +282,29 @@ export function GlobalNav() {
               to={item.to}
               className={NAV_LINK_BASE}
               activeProps={{ 'aria-current': 'page', className: ACTIVE_CLASS }}
-              // Same reason as the tabs: a same-route click must close a paid
-              // session's open panel. `false`: the clicked link keeps focus.
               onClick={() => closeMore(false)}
             >
               <span data-nav-label>{item.label}</span>
             </Link>
           </li>
         ))}
-        {/* The fifth cell: the More disclosure (story 59.2). At every width for
-            an entitled session; below `lg` only for a free one (story 69.3).
-            It is the fifth RENDERED cell: the promoted row copies above are
-            `hidden` below `lg`.
-            Below `sm` it is the bar's fifth grid cell, and it is deliberately NOT
-            positioned there. The sheet must keep resolving `max-sm:absolute`
-            against the `max-sm:fixed` <nav>, which is what makes it full-width
-            and flush on top of the bar. At `sm` and up, `sm:relative` makes this
-            cell the containing block the dropdown hangs from. */}
-        {/* `lg:hidden` for a session that is not entitled (story 69.3): at `lg`
-            both free destinations are on the row, so nothing is left behind
-            More and a free desktop row has no trigger at all. Keyed on
-            `moreNeededAtLg` (what the list holds), not on the tier. */}
+        {/* Not positioned below `sm`: the sheet must resolve `absolute` against the fixed <nav>. */}
         <li className={moreNeededAtLg ? MORE_CELL_CLASS : `${MORE_CELL_CLASS} lg:hidden`}>
           <details
             ref={detailsRef}
             open={isMoreOpen}
             onToggle={(event) => setIsMoreOpen(event.currentTarget.open)}
-            // `open` is controlled. Once hydrated, a click never toggles the DOM
-            // natively (the summary's `onClick` cancels it, below), so
-            // `onToggle` is NOT what keeps a click honest. Its job is every
-            // OTHER way the DOM `open` can change without React knowing: the
-            // browser opening a `<details>` for find-in-page, script setting
-            // `.open`, and a native toggle whose `toggle` task lands after
-            // hydration. React never writes `open` back unless the PROP
-            // changes, so without this such a change would leave the panel
-            // open with the dismissal listeners unarmed. Pinned by
-            // `GlobalNav.test.tsx` ("adopts an open it did not cause").
-            //
-            // `suppressHydrationWarning` is for ONE case: the pre-hydration
-            // click the mount effect above adopts. The server sent no `open`,
-            // the DOM has one, and React (dev only) reports the mismatch it
-            // will not patch. The suppression covers this element's own
-            // attributes, one level deep, so it cannot hide a mismatch
-            // anywhere else in the nav.
+            // `onToggle` adopts `open` changes React didn't cause (find-in-page, script). The
+            // suppression covers only the pre-hydration click adopted on mount.
             suppressHydrationWarning
-            // `group` is what the chevron's `group-open:rotate-180` reads (story
-            // 69.1). No ancestor of the nav carries `group`, which matters:
-            // `.group[open] .group-open\:…` matches ANY open `.group` ancestor.
+            // `group-open:` matches any open `.group` ancestor; none exists above the nav.
             className="group max-sm:h-full"
           >
-            {/* biome-ignore lint/a11y/useKeyWithClickEvents: a <summary> is natively keyboard-operable — Enter and Space dispatch this same click (platform behaviour; no test pins it since story 84.3 D4); a keydown handler would double-toggle */}
+            {/* biome-ignore lint/a11y/useKeyWithClickEvents: a <summary> is natively keyboard-operable; a keydown handler would double-toggle */}
             <summary
               ref={triggerRef}
-              // ⚠️ Once hydrated, React owns the toggle, and the native one is
-              // cancelled. Measured, and caught by e2e: left native, a click
-              // opens the DOM synchronously, but `isMoreOpen` (and with it the
-              // Escape and outside-press listeners it gates) arrives only after
-              // the async `toggle` event and a paint. A press in that window
-              // was ignored. Driving the state from the click gives the timing
-              // the old `<button>` had. `GlobalNav.behaviour.test.tsx` pins it
-              // ("an outside press in the SAME task…"; its e2e original failed
-              // 5/5 without this handler). Keyboard activation of a `<summary>`
-              // dispatches this same `click`, so Enter and Space still work.
-              // Before hydration, and with JavaScript off, no handler is
-              // attached and the native toggle does the work. That is the whole
-              // reason this is a `<details>`.
+              // Once hydrated, React owns the toggle: natively, the listeners arm only after the async
+              // `toggle` event, so an early outside press was ignored. Without JS the native toggle works.
               onClick={(event) => {
                 event.preventDefault()
                 setIsMoreOpen((open) => !open)
@@ -1277,9 +317,6 @@ export function GlobalNav() {
             >
               <MoreIcon className="h-6 w-6 sm:hidden" />
               <span data-nav-label>More</span>
-              {/* The desktop disclosure cue (story 69.1, FR108). See
-                  `MORE_CHEVRON_CLASS` for why it rotates on the `open`
-                  attribute and never on `isMoreOpen`. */}
               <ChevronDownIcon data-disclosure-chevron className={MORE_CHEVRON_CLASS} />
             </summary>
             <ul className={SHEET_PANEL_CLASS}>
@@ -1295,10 +332,7 @@ export function GlobalNav() {
                     to={item.to}
                     className={SHEET_ROW_CLASS}
                     activeProps={{ 'aria-current': 'page', className: ACTIVE_CLASS }}
-                    // Wrapped, NOT passed by reference: `closeMore` takes an
-                    // optional `restoreFocus` flag, and React would pass its
-                    // MouseEvent into it — a truthy object, so it would happen to
-                    // work today and break silently the moment the default flips.
+                    // Wrapped: passing `closeMore` directly would hand it the MouseEvent as `restoreFocus`.
                     onClick={() => closeMore()}
                   >
                     <item.Icon className="h-6 w-6 sm:hidden" />
@@ -1306,12 +340,7 @@ export function GlobalNav() {
                   </Link>
                 </li>
               ))}
-              {/* Settings, LAST, phones only (story 96.3, FR163). Outside every
-                  derived list on purpose: see `SETTINGS_SHEET_CELL_CLASS`. Marked
-                  from the lowercased read, so `activeProps={{}}` stops TanStack
-                  adding its own class (it still adds `aria-current` on an
-                  exact-case match, which agrees). `ACTIVE_CLASS` stays
-                  unprefixed, like every link colour here. */}
+              {/* `activeProps={{}}`: the active class comes from the lowercased read instead. */}
               <li
                 className={SETTINGS_SHEET_CELL_CLASS}
                 data-nav-path={SETTINGS_PATH}
@@ -1324,7 +353,6 @@ export function GlobalNav() {
                     isOnSettingsPage ? `${SHEET_ROW_CLASS} ${ACTIVE_CLASS}` : SHEET_ROW_CLASS
                   }
                   activeProps={{}}
-                  // Same-route click on /settings: see the sheet rows above.
                   onClick={() => closeMore()}
                 >
                   <SettingsIcon className="h-6 w-6 sm:hidden" />
@@ -1339,17 +367,7 @@ export function GlobalNav() {
   )
 }
 
-// Icon Components
-//
-// Co-located here rather than in a shared module: 13 components across the app
-// hand-roll their inline SVG the same way and there is no icons package to add
-// one to. House style is pinned by `src/components/premium/PremiumLockBadge.tsx`.
-//
-// ⚠️⚠️ EVERY ONE IS RENDERED WITH `sm:hidden` BY ITS CALLER. Icons are a
-// mobile-only element; without that token the desktop nav grows 52px -> 76px at
-// 1280px and every anchor 36px -> 60px, for 212 computed diffs and ZERO failing
-// tests in the pre-31.5 suite. (The desktop-only disclosure chevron, story 69.1,
-// is NOT one of these; it lives in `ui/ChevronDownIcon.tsx`.)
+// Every icon is rendered with `sm:hidden` by its caller; without it the desktop nav grows.
 
 function HomeIcon({ className }: { className: string }): React.ReactElement {
   return (
@@ -1490,10 +508,6 @@ function RetirementIcon({ className }: { className: string }): React.ReactElemen
     </svg>
   )
 }
-
-// The four premium destinations' glyphs (story 58.1). Same house style as every
-// icon above — decorative, stroked, 24x24 — and rendered with `sm:hidden` by the
-// same sheet-row call site, so they carry the identical desktop-growth risk.
 
 function ForecastingIcon({ className }: { className: string }): React.ReactElement {
   return (

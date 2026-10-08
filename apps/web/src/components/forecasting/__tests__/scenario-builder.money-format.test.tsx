@@ -5,19 +5,6 @@ import { useIncomeStore } from '../../../stores/incomeStore'
 import { useProfileStore } from '../../../stores/profileStore'
 import { ScenarioBuilder } from '../scenario-builder'
 
-/**
- * Story 109.1 (FR177): every money amount on the forecasting builder is a text
- * field that shows the user's grouping, as on /income.
- *
- * The four kinds of field: an income/expense row Amount, a one-time event Amount,
- * a savings row's Balance and Monthly Contribution, and an investment/debt row's
- * Balance and Contribution. Before this story each was `type="number"`, drafted
- * `String(cents / 100)`, so $42,000 showed as `42000`.
- *
- * What reaches the forecast is read from `onSave`'s payload: the cents a typed
- * entry was written as, which the on-screen text alone cannot show.
- */
-
 const mockCurrency = vi.hoisted(() => ({
   mode: 'symbol' as 'none' | 'symbol',
   currency: 'USD',
@@ -79,7 +66,6 @@ function addEvent(): { amount: HTMLInputElement; direction: HTMLSelectElement } 
   }
 }
 
-/** Waits for the forecast, clicks Save and returns what was saved. */
 async function save(onSave: ReturnType<typeof vi.fn>) {
   fireEvent.click(await screen.findByRole('button', { name: /save forecast/i }, { timeout: 3000 }))
   await waitFor(() => expect(onSave).toHaveBeenCalled())
@@ -123,10 +109,8 @@ describe('a money field opens formatted (AC 2)', () => {
       expect(field).toHaveAttribute('inputmode', 'decimal')
       expect(field).not.toHaveAttribute('min')
       expect(field).not.toHaveAttribute('step')
-      // The currency prefix is a sibling of the field, unchanged.
       expect(within(field.parentElement as HTMLElement).getByText('$')).toBeInTheDocument()
     }
-    // A NEW row opens at `0.00` (Q2), like the seeded rows.
     for (const field of fields.slice(1)) expect(field).toHaveValue('0.00')
   })
 })
@@ -220,7 +204,6 @@ describe('a refused entry (AC 4)', () => {
     const amount = salaryAmount()
     fireEvent.change(amount, { target: { value: '21474836.48' } })
     expect(within(incomeSection()).getByText('Enter an amount up to $21,474,836.47')).toBeTruthy()
-    // The limit itself is accepted.
     fireEvent.change(amount, { target: { value: '21474836.47' } })
     expect(amount).not.toHaveAttribute('aria-invalid')
   })

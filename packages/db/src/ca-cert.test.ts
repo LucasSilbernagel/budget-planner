@@ -1,12 +1,4 @@
-/**
- * Tests for `normalizeCaCert` — turning the single-line-safe encodings the
- * Rapids container UI forces on `DATABASE_CA_CERT` back into a real PEM block.
- *
- * The function only keys off the `-----BEGIN` marker, so these fixtures are
- * shaped like a PEM without being a valid certificate — the parsing that cares
- * about validity happens downstream (`buildDbSsl`, `assessCaExpiry`) and is
- * covered there.
- */
+// Fixtures only need the `-----BEGIN` marker, not a valid certificate.
 
 import { describe, expect, it } from 'vitest'
 import { normalizeCaCert } from './ca-cert'
@@ -68,9 +60,7 @@ describe('normalizeCaCert', () => {
   })
 
   it('reconstructs a PEM whose newlines the single-line field collapsed to spaces', () => {
-    // The most direct paste error: a raw PEM dropped into the Rapids one-line
-    // input. It still contains `-----BEGIN`, so the old fast-path returned it
-    // verbatim and every consumer failed with an opaque "PEM routines" error.
+    // A raw PEM pasted into the one-line input: still has `-----BEGIN`, but its newlines are gone.
     const collapsed = PEM.replace(/\n/g, ' ')
     expect(collapsed).not.toContain('\n')
     expect(normalizeCaCert(collapsed)).toBe(PEM)

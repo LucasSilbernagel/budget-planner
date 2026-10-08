@@ -1,14 +1,6 @@
 /**
- * Documentation content registry (story 4-10).
- *
- * Each page's body is authored as a real static Markdown file and imported here
- * as a raw string via Vite's `?raw` suffix (AC-2: "content is fetched from
- * static markdown files"). The array order is the canonical ordering used by
- * both the documentation index and the sidebar navigation.
- *
- * Titles live here (not in Markdown front matter) so they are strongly typed
- * and so each `.md` body can start at an `<h2>` — the single `<h1>` per page is
- * the route header, which keeps the heading outline accessible.
+ * Array order is the canonical order for the docs index and sidebar. Titles live here, not in front
+ * matter, so each `.md` body starts at `<h2>` (the route header is the page's `<h1>`).
  */
 
 import faq from './faq.md?raw'
@@ -18,13 +10,9 @@ import howTotalsAreCalculated from './how-totals-are-calculated.md?raw'
 import whereAMortgageBelongs from './where-a-mortgage-belongs.md?raw'
 
 export interface DocPage {
-  /** URL slug, used as the `$docId` route param (e.g. `getting-started`). */
   readonly slug: string
-  /** Human-readable title shown in the header, index, and sidebar. */
   readonly title: string
-  /** One-line summary shown on the documentation index. */
   readonly description: string
-  /** Raw Markdown body, loaded from the corresponding static `.md` file. */
   readonly content: string
 }
 
@@ -41,20 +29,12 @@ export const DOC_PAGES: readonly DocPage[] = [
     description: 'Everything Longhand Budget can do, free and premium.',
     content: features,
   },
-  // Reference material: after the tour, before the FAQ (story 32.3).
   {
     slug: 'how-totals-are-calculated',
     title: 'How totals are calculated',
     description: 'The exact conversion between weekly, biweekly, monthly and yearly amounts.',
     content: howTotalsAreCalculated,
   },
-  // Reference material: a mortgage is the one entry that belongs in two places
-  // at once, so it gets its own page rather than a bullet elsewhere (story 36.3).
-  // ⚠️ Story 43.5 (CONTENT-Q): the page is now a THREE-part model — payment,
-  // amount still owed, and the property itself as an `asset` entry (FR70). The
-  // description is rendered as the page subtitle (`docs-layout.tsx`) AND on the
-  // /docs index card, so a two-part description here silently under-describes
-  // the article while every gate stays green. It is pinned in docs-content.test.ts.
   {
     slug: 'where-a-mortgage-belongs',
     title: 'Where a mortgage belongs',
@@ -70,7 +50,6 @@ export const DOC_PAGES: readonly DocPage[] = [
   },
 ]
 
-/** Look up a documentation page by its slug, or `undefined` if none matches. */
 export function getDocPage(slug: string): DocPage | undefined {
   return DOC_PAGES.find((page) => page.slug === slug)
 }

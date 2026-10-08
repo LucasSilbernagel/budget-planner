@@ -1,19 +1,3 @@
-/**
- * useSync — the two timing rules of the refused-edit revert (story 75.2).
- *
- * Transports are mocked here so the TIMING can be controlled; the end-to-end
- * proof against the real server is `components/sync/__tests__/refused-edit-notice.db.test.tsx`.
- *
- *  1. A refusal handled while a pull is IN FLIGHT must still end in a full
- *     (`since === null`) re-pull. Calling `pull()` then is a silent no-op (its
- *     in-flight guard) and the in-flight pull writes a non-null cursor over the
- *     reset — so the revert has to go through `repullRequestedRef`, exactly as a
- *     profile switch does.
- *  2. A refused PROFILE create must not come back every poll. `uploadMissingProfiles`
- *     re-queues a create for every local profile the server lacks, on every
- *     pull; only reverting (removing the profile locally) breaks that loop.
- */
-
 import type { ServerChange } from '@budget-planner/core/sync'
 import { renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -72,11 +56,9 @@ describe('useSync refused-edit revert timing (story 75.2)', () => {
     fetchMeta.mockImplementation(async (since: number | null) => {
       sinces.push(since)
       if (sinces.length === 1) {
-        // First pull advances the cursor to 5000.
         return { changes: [incomeChange(5000)], profileIds: [PROFILE] }
       }
       if (sinces.length === 2) {
-        // Second pull is held in flight while the refusal is handled.
         await new Promise((r) => {
           releaseSecond = r
         })
@@ -102,13 +84,11 @@ describe('useSync refused-edit revert timing (story 75.2)', () => {
       frequency: 'monthly',
     })
     await result.current.forceSync()
-    // Positive anchor: the op really went out and really was refused.
     expect(send).toHaveBeenCalledTimes(1)
     await waitFor(() => expect(getRefusalNotices().map((n) => n.outcome)).toEqual(['changed-back']))
 
     releaseSecond(undefined)
     await inFlight
-    // THE CLAIM: a third pull ran, and it was a full snapshot.
     await waitFor(() => expect(sinces).toEqual([null, 5000, null]))
     unmount()
   })
@@ -122,7 +102,6 @@ describe('useSync refused-edit revert timing (story 75.2)', () => {
       ],
       activeProfileId: PROFILE,
     })
-    // The server knows only PROFILE, so every pull finds LOCAL_ONLY missing.
     fetchMeta.mockResolvedValue({ changes: [], profileIds: [PROFILE] })
     send.mockImplementation(async (op: { entityType: string; entityId: string }) =>
       op.entityType === 'userProfile' && op.entityId === LOCAL_ONLY ? REFUSED : { success: true }
@@ -137,7 +116,6 @@ describe('useSync refused-edit revert timing (story 75.2)', () => {
     )
     await waitFor(() => expect(result.current.pull).toBeDefined())
 
-    // Round 1: the pull queues the missing profile; the push is refused.
     await result.current.pull()
     await result.current.forceSync()
     expect(profileCreates()).toBe(1)
@@ -148,7 +126,6 @@ describe('useSync refused-edit revert timing (story 75.2)', () => {
       expect.objectContaining({ name: 'Side hustle', kind: 'profile', outcome: 'removed' }),
     ])
 
-    // Round 2: another poll. Without the revert this re-queues and re-sends it.
     await result.current.pull()
     await result.current.forceSync()
     expect(profileCreates()).toBe(1)

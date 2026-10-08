@@ -1,53 +1,5 @@
-/**
- * Clean-slate migration replay (Story 4.17, AC-4).
- *
- * AC-4 requires that the full chain applies cleanly onto a freshly provisioned,
- * empty database and that the result matches `schema.ts`. The production
- * instance is internal-DNS-only, so that run belongs to Story 5.17's in-network
- * Job — but the chain itself can be replayed here against a real PostgreSQL
- * engine, catching a broken migration on a laptop instead of in a deploy job.
- *
- * PGlite is genuine PostgreSQL compiled to WebAssembly, reporting the same
- * MAJOR version as the managed instance (18), so this exercises the actual
- * parser, planner and executor — not a shape-matching stub. It runs in-process
- * with no server, no Docker and no credentials, so it is NOT env-gated: unlike
- * the live-DB tests it can run everywhere, which is the point.
- *
- * Compared against `schema.ts`, all derived from the Drizzle metadata rather
- * than a hardcoded list: table names, column names, normalised column types,
- * nullability, primary keys, foreign keys, column DEFAULTS, unique constraints,
- * unique indexes (name, columns and partial predicate), CHECK constraints (name
- * and normalised predicate), and ordered enum labels.
- *
- * ⚠️ CHECK was on the "not compared" list until story 66.5, for a reason that has
- * now expired: drizzle-kit 0.23.2 emits no CHECK DDL, so the migrations contained
- * none and the assertion would have compared empty to empty and passed forever.
- * Migration `0020` adds all eight by hand, so the comparison bites. It is
- * hand-authored precisely because `drizzle-kit generate` will not reproduce it —
- * which makes this test the tripwire for a regeneration that silently drops them.
- *
- * Still NOT compared: non-unique indexes (performance-only, and pre-launch there
- * are no users).
- *
- * What this does NOT prove: the managed instance's minor version, its
- * extensions, its roles/grants, or TLS. Nor does it exercise `drizzle-kit`
- * itself — the journal bookkeeping and the migrator's own SSL/config path are
- * unexercised here, because this replays the SQL directly. Those are
- * AC-1/AC-3/AC-5 and stay live verifications.
- *
- * Complements `migration-chain.test.ts`, which proves journal↔file integrity
- * statically. That one asks whether the chain is well-formed; this one runs it.
- *
- * ⚠️ `@electric-sql/pglite` is a devDependency of the WORKSPACE ROOT, not of this
- * package, and must stay there. It is an optional peer of `drizzle-orm`, so
- * declaring it here changes drizzle-orm's peer-resolution hash for `packages/db`
- * alone: pnpm then links a SECOND physical copy of drizzle-orm, and `apps/web`
- * (which keeps the original) no longer shares its types. `SQL<unknown>` from the
- * two copies has separate declarations of a private property, so it stops being
- * assignable to itself — measured 2026-09-05 as **262 type errors in apps/web**
- * with this package's own type-check still reporting 0. Node resolves the root
- * copy by walking up from here, so the import below works unchanged.
- */
+// Replays the whole chain on PGlite (real PostgreSQL 18) and compares the result to the schema.
+// @electric-sql/pglite must stay a ROOT devDependency: declaring it here forks drizzle-orm's types.
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -77,12 +29,7 @@ function migrationStatements(tag: string): string[] {
     .filter((s) => s.length > 0)
 }
 
-/**
- * Reduce a PostgreSQL and a Drizzle type name to a common spelling.
- * `format_type()` returns the canonical form (`character varying(255)`) while
- * Drizzle emits the alias (`varchar(255)`); `serial` is a pseudo-type that IS
- * `integer` once created. Without this the comparison is 36 false diffs.
- */
+/** `format_type()` returns canonical names (`character varying`), Drizzle the aliases. */
 function normalizeType(raw: string): string {
   return raw
     .trim()
@@ -97,60 +44,31 @@ function normalizeType(raw: string): string {
 
 const dialect = new PgDialect()
 
-/**
- * Render a Drizzle `sql` fragment to the text PostgreSQL would have been given.
- * Used for SQL-valued column defaults and for index expressions/predicates.
- */
 function renderSql(node: SQL): string {
   return dialect.sqlToQuery(node).sql
 }
 
-/**
- * Reduce a default/index expression to a spelling both sides can agree on.
- * Drizzle emits `lower("categories"."name")`; PostgreSQL echoes the same thing
- * back as `lower((name)::text)` — the same expression with three cosmetic
- * differences (quoting, table qualifier, an implicit cast it makes explicit).
- * This strips exactly those. It is fitted to the spellings PostgreSQL actually
- * produced for this schema, not to a general SQL grammar, so a genuinely new
- * expression shape may need it extended — which surfaces as a test failure, not
- * as a silent pass.
- */
+/** Fitted to the spellings PostgreSQL produced for this schema; a new shape fails, never silently passes. */
 function normalizeExpr(raw: string): string {
   let s = raw.replace(/"/g, '')
   // Casts: '::text', '::subscriptionStatus', '::character varying'.
   s = s.replace(/::\s*[A-Za-z_][A-Za-z0-9_ ]*(\[\])?/g, '')
   // Table qualifiers: `categories.name` -> `name`.
   s = s.replace(/\b[A-Za-z_][A-Za-z0-9_]*\.(?=[A-Za-z_])/g, '')
-  // Parens PostgreSQL adds around a bare column inside a call: `lower((name))`.
-  // The lookbehind is load-bearing: without it this also strips a FUNCTION's
-  // own parens and `lower(name)` collapses to `lowername`.
+  // Parens PostgreSQL adds around a bare column inside a call: `lower((name))`. The lookbehind
+  // keeps a function's own parens, so `lower(name)` does not become `lowername`.
   s = s.replace(/(?<![A-Za-z0-9_])\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)/g, '$1')
   s = s.replace(/\s+/g, ' ').trim()
-  // Parens PostgreSQL adds around a NEGATED bare column when it is one term of
-  // a compound predicate: `isDefault AND (NOT isDeleted)`. The whole-expression
-  // unwrap below only handles a predicate with ONE condition, so without this
-  // every multi-term partial index would fail on parenthesization alone
-  // (Story 5-19's `userProfiles_one_default_per_user` is the first such index).
-  // Deliberately narrow: only `(NOT <bare column>)`, so it cannot collapse a
-  // real grouping like `(a OR b)` and hide a difference in operator precedence.
+  // `(NOT <bare column>)` inside a compound predicate. Deliberately narrow, so a real grouping
+  // like `(a OR b)` cannot collapse.
   s = s.replace(/\(\s*NOT\s+([A-Za-z_][A-Za-z0-9_]*)\s*\)/g, 'NOT $1')
   // A whole-expression wrapper: `(isDeleted = false)`.
   const wrapped = s.match(/^\((.*)\)$/)
   return (wrapped ? wrapped[1] : s).trim()
 }
 
-/**
- * The DB-level default schema.ts declares for a column, or undefined if it
- * declares none.
- *
- * Three cases that reading `hasDefault` alone would get wrong:
- * - `$defaultFn()` is generated in JS on insert and emits NO database default,
- *   so it must not be expected in the DDL;
- * - `serial`/`bigserial` set `hasDefault` with no `.default` value — the default
- *   is a `nextval()` over a generated sequence whose name is not worth pinning;
- * - a SQL-valued default (`defaultRandom()`, `defaultNow()`) is a fragment, not
- *   a literal, and has to be rendered rather than stringified.
- */
+// `$defaultFn()` emits no DB default, serial's sequence name is not pinned, and SQL-valued
+// defaults must be rendered, not stringified.
 function expectedDefaultFor(column: {
   hasDefault?: boolean
   default?: unknown
@@ -165,49 +83,22 @@ function expectedDefaultFor(column: {
   return normalizeExpr(String(value))
 }
 
-/** PostgreSQL's own rendering of a stored default, reduced the same way. */
 function normalizeDefault(raw: string): string {
   const s = raw.trim()
-  // `nextval('"rateLimits_id_seq"'::regclass)` — the sequence name is an
-  // implementation detail of `serial`; that it IS a nextval is the assertion.
+  // The sequence name is a serial detail; that it IS a nextval is the assertion.
   if (s.startsWith('nextval(')) return 'nextval'
   return normalizeExpr(s)
 }
 
-/**
- * Reduce a CHECK predicate to a spelling Drizzle and PostgreSQL can agree on.
- *
- * The two renderings of the same constraint are far apart. Drizzle emits
- * `"savingsGoals"."targetAmount" IS NULL OR "savingsGoals"."targetAmount" > 0`;
- * PostgreSQL echoes it back as
- * `CHECK ((("targetAmount" IS NULL) OR ("targetAmount" > 0)))` — fully
- * parenthesised per term, with implicit casts made explicit
- * (`(email)::text <> ''::text`). `normalizeExpr` already handles the quoting,
- * the qualifiers and the casts; what remains is the parenthesisation, and
- * PostgreSQL adds it at every level.
- *
- * ⚠️ So this strips EVERY paren, which means it cannot see a difference in
- * operator PRECEDENCE — `a OR b AND c` and `(a OR b) AND c` reduce alike. That
- * is a deliberate trade and it is not left uncovered: `check-constraints.test.ts`
- * proves each constraint's actual behaviour by asking the database to store rows
- * it must refuse AND rows it must accept, which is a stronger statement about the
- * predicate than any text match. This comparison's job is that the right
- * constraints EXIST on the right tables with the right names; that one's is that
- * they MEAN the right thing.
- */
+// Strips every paren, so operator precedence is invisible here; the constraint behaviour
+// tests prove what each predicate means.
 function normalizeCheckExpr(raw: string): string {
   // `pg_get_constraintdef` wraps the whole predicate in `CHECK (...)`.
   const body = raw.trim().replace(/^CHECK\s*\(([\s\S]*)\)$/i, '$1')
   return (
     normalizeExpr(body)
       .replace(/[()]/g, ' ')
-      // ⚠️ Re-space the comparison operators, and this line is load-bearing rather
-      // than cosmetic. `normalizeExpr`'s cast-stripping pattern ends in
-      // `[A-Za-z0-9_ ]*`, whose character class INCLUDES a space, so `::text <>`
-      // loses the separator with the cast and `(email)::text <> ''::text` reduces
-      // to `email<> ''` — which compares unequal to Drizzle's `email <> ''` for a
-      // reason that has nothing to do with the constraint. Grouping consecutive
-      // operator characters keeps `<>`, `>=` and `<=` whole.
+      // Re-space operators: the cast-stripping pattern also eats the space before `<>`.
       .replace(/([<>=!]+)/g, ' $1 ')
       .replace(/\s+/g, ' ')
       .trim()
@@ -219,7 +110,6 @@ interface ExpectedColumn {
   notNull: boolean
 }
 
-/** Expected shape, derived from schema.ts itself so it cannot drift from the code. */
 const expectedTables = new Map<string, Map<string, ExpectedColumn>>()
 const expectedPrimaryKeys = new Map<string, string[]>()
 const expectedForeignKeys = new Map<string, Set<string>>()
@@ -264,15 +154,7 @@ for (const value of Object.values(schema)) {
   }
   expectedDefaults.set(table, defaults)
 
-  // Uniqueness is declared two ways in this schema and both are enforcement,
-  // not decoration: `.unique()` / `unique()` become UNIQUE CONSTRAINTS, while
-  // `uniqueIndex()` becomes a unique INDEX — the only form that can be partial
-  // or over an expression, which is why `categories` needs it. They land in
-  // different catalogs, so they are asserted separately.
-  //
-  // ⚠️ `column.uniqueName` is populated on EVERY column whether or not it is
-  // unique, so reading it without gating on `isUnique` would claim a unique
-  // constraint on every column in the schema.
+  // `column.uniqueName` is set on every column, so gate on `isUnique`.
   expectedUniqueConstraints.set(
     table,
     [
@@ -289,9 +171,6 @@ for (const value of Object.values(schema)) {
         const cols = index.config.columns
           .map((c) => {
             if (is(c, SQL)) return normalizeExpr(renderSql(c))
-            // drizzle types the entries as `Partial<SQL | IndexedColumn>`; a plain
-            // column always carries its name. Fail loudly rather than compare
-            // against an index whose column could not be named.
             if (!('name' in c) || typeof c.name !== 'string') {
               throw new Error(`${table}: index ${index.config.name} has a column with no name`)
             }
@@ -306,10 +185,6 @@ for (const value of Object.values(schema)) {
       .sort()
   )
 
-  // Story 66.5: the eight `check()` declarations, keyed by the constraint name
-  // the migration must use. Derived from the metadata like everything else here,
-  // so a constraint added to `schema.ts` without a migration reddens this file
-  // rather than sitting in the code looking enforced.
   const checks: Record<string, string> = {}
   for (const check of config.checks) {
     checks[check.name] = normalizeCheckExpr(renderSql(check.value))
@@ -317,13 +192,7 @@ for (const value of Object.values(schema)) {
   expectedChecks.set(table, checks)
 }
 
-/**
- * Enums are collected from the schema module's own exports, NOT from the columns
- * that happen to use them. Collecting via columns under-reports an enum attached
- * to no column, and — worse — `it.each` over an empty map generates ZERO tests
- * and stays green, so a detection failure would silently stop asserting enums
- * altogether. The non-empty guard below exists for exactly that.
- */
+// Collected from module exports, not columns: an empty `it.each` generates zero tests and stays green.
 const expectedEnums = new Map<string, string[]>()
 for (const value of Object.values(schema)) {
   if (isPgEnum(value)) expectedEnums.set(value.enumName, [...value.enumValues])
@@ -334,11 +203,8 @@ let appliedStatements = 0
 
 beforeAll(async () => {
   db = await PGlite.create()
-  // One transaction for the WHOLE chain, mirroring drizzle's migrator
-  // (drizzle-orm pg-core/dialect.js wraps its migration loop in
-  // `session.transaction`). Applying statements in autocommit instead would
-  // green a migration that adds an enum value and uses it in the same
-  // transaction — legal here, rejected by PostgreSQL there.
+  // One transaction for the whole chain, like drizzle's migrator: autocommit would green a
+  // migration that adds an enum value and uses it in the same transaction.
   await db.exec('BEGIN')
   for (const entry of journal.entries) {
     for (const statement of migrationStatements(entry.tag)) {
@@ -361,51 +227,8 @@ afterAll(async () => {
 
 describe('clean-slate migration replay', () => {
   it('applies every journal migration onto an empty database, in one transaction', () => {
-    // beforeAll throws on the first failing statement, so reaching here IS the
-    // replay passing; these assert the run was the full chain, not a no-op.
-    // Story 102.1 (2026-10-06): 26 -> 27 journal entries and 168 -> 169 statements,
-    // for migration 0026 (journal idx 26): the single
-    // `ALTER TABLE "balanceTracking" ADD COLUMN "paymentExpenseId" uuid`, with NO
-    // foreign key on purpose (see the column's note in schema.ts). MEASURED: the run
-    // reported 27 and 169 against the old pins of 26 and 168.
-    // (Story 99.2 before it: 25 -> 26 journal entries and 165 -> 168 statements,
-    // for migration 0025 (journal idx 25): `CREATE TABLE retirementPlans`, its
-    // `userId` FK (a `DO $$` block) and `CREATE INDEX retirementPlans_userId_idx`.
-    // MEASURED: the run reported 26 and 168 against the old pins of 25 and 165, and
-    // 0025 holds exactly those three statements, so 0020's CHECKs and 0024's two
-    // hand-appended statements still replay. No CHECK on the new table (trap 5).)
-    // (Story 73.2 before it: 24 -> 25 journal entries and 159 -> 165 statements, for
-    // migration 0024: `CREATE TABLE jobRuns`, three `ALTER TABLE users ADD
-    // COLUMN` (`accessEndedAt`, `retentionNoticeSentAt`,
-    // `retentionNoticeAttemptedAt`), and two HAND-APPENDED data statements (the
-    // lapsed-row backfill and the `jobRuns` seed). MEASURED: 165. A
-    // regeneration that dropped the two hand-appended statements would land at 163.)
-    // (Story 70.1 before it: 23 -> 24 journal entries and 157 -> 159 statements, for
-    // migration 0023's `CREATE TYPE billingInterval` + `ALTER TABLE users ADD
-    // COLUMN billingInterval` — the plan the user bought. MEASURED: the run
-    // reported 159 against the old pin of 157, and 0023 holds exactly those two
-    // statements, so 0020's eight hand-written CHECKs still replay (a drop would
-    // have landed at 151).)
-    // (Story 68.1 before it: 22 -> 23 journal entries and 156 -> 157 statements, for
-    // migration 0022's single `ALTER TABLE users ADD COLUMN emailUpdatedAt` —
-    // the `customer.updated` ordering watermark, deliberately separate from
-    // `entitlementUpdatedAt`. The +1 is MEASURED and is itself the check that
-    // regenerating the chain did not silently drop 0020's eight hand-written
-    // CHECK statements: a drop would have landed at 149, not 157.)
-    // (Story sec-3 before it: 21 -> 22 journal entries and 155 -> 156 statements, for
-    // migration 0021's single `CREATE INDEX rateLimits_windowStart_idx` — the
-    // index the expired-window reaper's `WHERE windowStart < $1` needs, since
-    // the unique index leads with `scope` and cannot serve that range scan.)
-    // (Story 66.5 before it: 20 -> 21 journal entries and 147 -> 155 statements,
-    // for migration 0020's eight hand-written `ADD CONSTRAINT ... CHECK`. Story 65.2
-    // before it: 19 -> 20 and 146 -> 147, for `expenses.endsBeforeRetirement`;
-    // story 54.2 before that: 18 -> 19 and 145 -> 146.)
-    // Both numbers are MEASURED from the run, never predicted — and they are
-    // tripwires, not bookkeeping: they are what makes a migration that was
-    // generated but never committed, or a hand-edited chain, fail loudly here.
-    // ⚠️ They matter more since 0020 than before it: that migration is
-    // hand-authored and `drizzle-kit generate` cannot reproduce it, so a
-    // regeneration that drops all eight statements shows up HERE first.
+    // Measured from the run, never predicted: they catch a migration generated but not committed,
+    // or a regeneration that drops the hand-written SQL.
     expect(journal.entries.length).toBe(27)
     expect(appliedStatements).toBe(169)
   })
@@ -438,10 +261,7 @@ describe('clean-slate migration replay', () => {
       const actual = Object.fromEntries(
         result.rows.map((r) => [r.column_name, { type: normalizeType(r.pgtype), notNull: r.nn }])
       )
-      // Comparing the whole map at once, rather than names then types, so a
-      // wrong TYPE on a correctly-named column cannot pass. A migration landing
-      // `sessionsRevokedAt` as integer where schema.ts says bigint overflows on
-      // epoch-millis in production; a name-only check greens it.
+      // Whole-map comparison so a wrong type on a correctly-named column can't pass.
       expect(actual).toEqual(
         Object.fromEntries(expectedTables.get(table) as Map<string, ExpectedColumn>)
       )
@@ -495,26 +315,14 @@ describe('clean-slate migration replay', () => {
   )
 
   it('derived a non-zero set of defaults, unique rules and CHECKs (guards against asserting nothing)', () => {
-    // The failure shape the enum guard exists for, repeated here: if the
-    // metadata walk above silently stopped finding defaults or uniques, the
-    // per-table assertions below would compare {} to {} on every table that has
-    // none, and the suite would stay green while the interesting tables drifted.
-    // Verified 2026-09-05 by deleting the unique derivation: this test fails
-    // alongside the three per-table ones rather than leaving them to notice.
+    // Guards against the metadata walk silently finding nothing and comparing {} to {}.
     const totalDefaults = [...expectedDefaults.values()].reduce(
       (n, d) => n + Object.keys(d).length,
       0
     )
     const totalUniques = [...expectedUniqueConstraints.values()].reduce((n, u) => n + u.length, 0)
     const totalUniqueIndexes = [...expectedUniqueIndexes.values()].reduce((n, u) => n + u.length, 0)
-    // Story 66.5: EIGHT, and the exact number is the point. MEASURED at `0119528`:
-    // of the twelve tables, only FIVE declare a check at all (users 2,
-    // incomeSources 1, expenses 1, savingsGoals 3, balanceTracking 1) and seven
-    // declare none. So a collapsed derivation would compare {} to {} on those
-    // seven and only the five would notice — as five ordinary per-table failures
-    // rather than as "the metadata walk broke". The exact count also fails loudly
-    // when a ninth constraint is declared without a migration, which is the whole
-    // failure mode this story ended.
+    // Exactly eight: most tables declare no check, so a collapsed derivation would pass on them.
     const totalChecks = [...expectedChecks.values()].reduce((n, c) => n + Object.keys(c).length, 0)
     expect(totalDefaults).toBeGreaterThan(0)
     expect(totalUniques).toBeGreaterThan(0)
@@ -533,16 +341,11 @@ describe('clean-slate migration replay', () => {
           WHERE con.contype = 'c' AND n.nspname = 'public' AND cl.relname = $1`,
         [table]
       )
-      // ⚠️⚠️ `contype = 'c'` EXACTLY, and this is not defensive typing. PGlite
-      // reports PostgreSQL 18, where NOT NULL constraints are catalogued in
-      // `pg_constraint` too, as `contype = 'n'` — measured at 95 of them in this
-      // schema. Widening the filter, or scanning `pg_get_constraintdef` for the
-      // word CHECK, would drown eight real rows in ninety-five irrelevant ones.
+      // `contype = 'c'` exactly: PostgreSQL 18 also catalogues NOT NULL constraints, as 'n'.
       const actual = Object.fromEntries(
         result.rows.map((r) => [r.conname, normalizeCheckExpr(r.def)])
       )
-      // Whole-map comparison, for the reason the column assertion above gives:
-      // a constraint with the right NAME and a drifted PREDICATE must not pass.
+      // Whole map, so a drifted predicate under the right name can't pass.
       expect(actual).toEqual(expectedChecks.get(table))
     }
   )
@@ -563,11 +366,7 @@ describe('clean-slate migration replay', () => {
       const actual = Object.fromEntries(
         result.rows.map((r) => [r.column_name, normalizeDefault(r.def)])
       )
-      // Compared as whole maps, so this catches all three directions at once: a
-      // default the migration forgot, one it invented, and one whose expression
-      // drifted. The `gen_random_uuid()` defaults are more than tidiness — the
-      // client-generated-uuid contract from 5-14 leaves the database default as
-      // the path for server-originated rows.
+      // Whole maps: catches a forgotten, an invented and a drifted default.
       expect(actual).toEqual(expectedDefaults.get(table))
     }
   )
@@ -600,10 +399,7 @@ describe('clean-slate migration replay', () => {
     'lands %s with the unique indexes schema.ts declares',
     async (table) => {
       const result = await db.query<{ name: string; def: string }>(
-        // Indexes that BACK a unique constraint are excluded: they are the same
-        // rule the assertion above already covers, and counting them here would
-        // report every `.unique()` column as a unique index this schema never
-        // declares.
+        // Indexes backing a unique constraint are excluded, or every `.unique()` column would show up.
         `SELECT i.relname AS name, pg_get_indexdef(idx.indexrelid) AS def
            FROM pg_index idx
            JOIN pg_class i ON i.oid = idx.indexrelid
@@ -627,19 +423,12 @@ describe('clean-slate migration replay', () => {
           return `${r.name}(${cols})${where}`
         })
         .sort()
-      // Name, columns AND the partial predicate. The predicate is the whole
-      // point of the `categories` index: without `WHERE isDeleted = false` it
-      // would constrain soft-deleted rows too, so a name-and-columns check would
-      // green a uniqueness rule that silently blocks legitimate re-use of a
-      // deleted category's name.
+      // The partial predicate matters: without it, soft-deleted names would block re-use.
       expect(actual).toEqual(expectedUniqueIndexes.get(table))
     }
   )
 
   it('creates users.sessionsRevokedAt as declared (the column 5-8 AC-11 needs)', async () => {
-    // AC-4 calls this out explicitly. Note this proves the COLUMN exists on a
-    // clean replay — it does NOT close 5-8's AC-11, which is about applying 0004
-    // to the LIVE instance. That remains Story 5.17's.
     const users = expectedTables.get('users') as Map<string, ExpectedColumn>
     expect(users.has('sessionsRevokedAt')).toBe(true)
     const result = await db.query<{ pgtype: string }>(
@@ -652,9 +441,7 @@ describe('clean-slate migration replay', () => {
   })
 
   it('detected the enums declared in schema.ts (guards against asserting nothing)', () => {
-    // Without this, a change that breaks enum detection turns the it.each below
-    // into zero tests and the suite stays green while enums drift freely.
-    // Story 70.1: 6 -> 7, for `billingInterval` (migration 0023).
+    // Without this, broken enum detection turns the it.each below into zero tests.
     expect(expectedEnums.size).toBe(7)
   })
 

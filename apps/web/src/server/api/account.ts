@@ -1,17 +1,5 @@
-/**
- * Account management server functions (Story 10-5)
- *
- * Real, self-serve account ERASURE backing the Privacy Policy's "right to
- * erasure" promise (privacy.md, "Your rights") — GDPR Art. 17 / PIPEDA. This is a hard
- * DELETE of the user and every row they own, NOT a flip of the `isDeleted`
- * sync tombstone (Story 4-18): that tombstone is a cross-device delete-
- * propagation mechanism and leaves the financial values in the EU database,
- * so it does not satisfy erasure. See story Dev Notes.
- *
- * Data Sovereignty: all deletion runs against DanubeData EU PostgreSQL; the
- * only external call is a best-effort Paddle (UK/EU) subscription cancel — no
- * new US-resident processing (NFR1, NFR2).
- */
+// A hard DELETE, not the `isDeleted` sync tombstone: the tombstone leaves the values in the
+// database, so it does not satisfy erasure.
 
 import { logger } from '@/lib/logger'
 import { getPaddleConfig } from '@budget-planner/config'
@@ -34,30 +22,14 @@ import { cancelActiveSubscriptionsForCustomer } from '../paddle/subscription-api
 import { normalizeEmail } from './auth/email'
 import { getCurrentUserSession } from './auth/paddle'
 
-/**
- * Outcome of an account-deletion request.
- *
- * `reason` lets the route map failures to the correct HTTP status without
- * leaking internal detail: `unauthenticated` → 401, `error` → 500.
- */
 export interface DeleteAccountResult {
   success: boolean
   reason?: 'unauthenticated' | 'error'
   error?: string
 }
 
-/**
- * Hard-delete the authenticated user and ALL data they own, transactionally.
- *
- * The target user id is taken from the HMAC-signed, DB-authoritative session
- * (Story 5-7) ONLY — never from the request body — so a caller can only ever
- * erase their own account (AC-3 ownership).
- *
- * Idempotent: if the user row is already gone (double-submit, retry), every
- * DELETE simply affects zero rows and the call still reports success.
- */
+// The user id comes only from the signed session, never the body.
 export async function deleteUserAccount(request: Request): Promise<DeleteAccountResult> {
-  // 1) Authenticate. An unresolved session (exception) must NOT delete anything.
   const sessionResult = await getCurrentUserSession(request)
   if (!sessionResult.success) {
     return {
@@ -68,24 +40,17 @@ export async function deleteUserAccount(request: Request): Promise<DeleteAccount
   }
   const session = sessionResult.data
   if (!session) {
-    // No valid session cookie → not authenticated (route returns 401).
     return { success: false, reason: 'unauthenticated' }
   }
 
   const { userId, paddleId, email } = session
 
   try {
-    // 2) Best-effort billing coordination (Paddle is Merchant of Record —
-    //    deleting our row does NOT stop Paddle billing). Never blocks erasure.
+    // Paddle is Merchant of Record: deleting our row does not stop billing. Never blocks erasure.
     await cancelPaddleSubscriptionBestEffort(paddleId)
 
-    // 3) Transactional hard-delete — the ONE deletion order, shared with the
-    //    retention purge (Story 73.2). See `eraseAccountRows`.
     await db.transaction((tx) => eraseAccountRows(tx, { userId, email }))
 
-    // The session is now invalid regardless of the cookie: validateSessionToken
-    // resolves the user from the DB (Story 5-7) and that row is gone. The route
-    // additionally clears the cookie unconditionally.
     return { success: true }
   } catch (error) {
     logger.error('Account deletion failed', { error })
@@ -97,81 +62,28 @@ export async function deleteUserAccount(request: Request): Promise<DeleteAccount
   }
 }
 
-/** The transaction handle `db.transaction` passes to its callback. */
 export type AccountTx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
-/**
- * Hard-delete ONE user and every row they own, inside the caller's
- * transaction. The single FK-safe deletion order in the codebase: account
- * erasure (`deleteUserAccount`) and the retention purge
- * (`server/retention/sweep.ts`, Story 73.2) both call it, so there is no
- * second hand-written order to drift.
- *
- * Deliberately NO Paddle call here. Erasure cancels the subscription BEFORE
- * its transaction; the purge must not call Paddle at all, because Paddle's
- * resulting `subscription.canceled` re-creates the row for an unknown customer
- * (deferred-work.md, 74.1's resurrection HIGH).
- *
- * ⚠️ LOCK ORDER (Story 73.2, AC-6). The FIRST statement locks the `users`
- * row. Every caller therefore takes the `users` lock before any child-row
- * lock, so erasure and the purge cannot form a lock cycle on one user. The
- * purge takes that same lock with `SKIP LOCKED` BEFORE calling this, so it
- * never waits on an erasure in progress; this statement is then a no-op
- * re-lock. The protection is one-directional, as in `db-window.ts`: an
- * erasure CAN wait on a purge that already holds the row, for as long as that
- * one user's purge takes.
- *
- * `paddleWebhookEvents` and `paddleAdjustments` are NOT deleted: the event log
- * must survive so a replay after deletion is still recognised as a replay
- * (`schema.ts`, `paddleWebhookEvents` docblock).
- *
- * Idempotent: an absent user deletes zero rows everywhere.
- */
+// Locks the users row first so erasure and the retention purge cannot deadlock. No Paddle call:
+// during a purge, Paddle's subscription.canceled webhook would re-create the row.
 export async function eraseAccountRows(
   tx: AccountTx,
   { userId, email }: { userId: string; email: string }
 ): Promise<void> {
   await tx.execute(sql`SELECT ${users.id} FROM ${users} WHERE ${users.id} = ${userId} FOR UPDATE`)
 
-  // Every FK in the schema is RESTRICT (no
-  // CASCADE), so children MUST be deleted before their parents. Financial
-  // rows and forecasting profiles reference BOTH users.id and
-  // userProfiles.id, so they precede userProfiles; rateLimits and
-  // loginTokens reference only users.id. `users` is deleted last.
-  //
-  // ⚠️ `categories` (Story 30.4a) is referenced BY incomeSources.categoryId
-  // and expenses.categoryId, so it must come AFTER both of them — and it
-  // references users.id and userProfiles.id, so it must come BEFORE those.
-  // It is the only table in this list with a parent AND a child here.
-  //
-  // `rateLimits` is deleted TWICE: by `userId` (sync buckets) and by
-  // email `subject` (the magic-link throttle, whose `userId` is NULL).
+  // Every FK is RESTRICT, so children go before parents; `categories` is both a parent and a child here.
+  // `rateLimits` is deleted twice: by userId and by email subject.
   await tx.delete(forecastingProfiles).where(eq(forecastingProfiles.userId, userId))
   await tx.delete(incomeSources).where(eq(incomeSources.userId, userId))
   await tx.delete(expenses).where(eq(expenses.userId, userId))
   await tx.delete(categories).where(eq(categories.userId, userId))
   await tx.delete(savingsGoals).where(eq(savingsGoals.userId, userId))
   await tx.delete(balanceTracking).where(eq(balanceTracking.userId, userId))
-  // Story 99.2: the synced retirement plan (one row per user, references only
-  // users.id). ⚠️ Missing it here makes erasure AND the retention purge throw on
-  // the RESTRICT FK as soon as a premium user has synced a plan.
   await tx.delete(retirementPlans).where(eq(retirementPlans.userId, userId))
   await tx.delete(loginTokens).where(eq(loginTokens.userId, userId))
   await tx.delete(rateLimits).where(eq(rateLimits.userId, userId))
-  // Story 74.2: the magic-link throttle is written with a NULL `userId`
-  // (`request.ts`), so the delete above cannot see it. Left behind, it would
-  // hold the address (its `subject`) and carry the old counter into a new
-  // account at that address — a FIXED 15-min window, so a self-healing
-  // confound, not a lockout. Keyed through `normalizeEmail`, the SAME
-  // function the route keys it with; any other spelling is a silent no-op.
-  // Every window, not just the live one. Covers the account's CURRENT
-  // address only: a bucket under an address it had before an email change
-  // is not knowable here (deferred-work.md), and a request after COMMIT
-  // starts a fresh bucket, as it should.
-  // Locks: the reaper uses SKIP LOCKED, so it never waits on us (no cycle);
-  // we can wait on it only as the userId delete already can, bounded by its
-  // batch cap. A concurrent upsert waits on the ONE conflicting row we hold
-  // and holds no other lock while it does, so it cannot close a cycle.
+  // The magic-link throttle has a NULL userId; it is keyed by the normalized email subject.
   await tx
     .delete(rateLimits)
     .where(and(eq(rateLimits.scope, 'email'), eq(rateLimits.subject, normalizeEmail(email))))
@@ -179,31 +91,9 @@ export async function eraseAccountRows(
   await tx.delete(users).where(eq(users.id, userId))
 }
 
-/**
- * Overall ceiling for the whole best-effort Paddle cancel step, regardless of
- * how many subscriptions the account holds.
- *
- * Each individual Paddle HTTP call inside `cancelActiveSubscriptionsForCustomer`
- * already carries its own `AbortSignal.timeout(3000)`, but nothing previously
- * bounded the WHOLE step — a customer with N open subscriptions could still
- * take `list + N × cancel` seconds, run ahead of the erasure transaction, and
- * (on a platform request-timeout) leave NOTHING deleted at all: a silent
- * failure of the right-to-erasure guarantee this function's own docblock
- * promises never happens. This is a hard ceiling, not a request timeout: on
- * expiry, erasure proceeds regardless of how much cancellation finished.
- */
+// A hard ceiling for the whole cancel step: a slow Paddle must not stall erasure past a platform timeout.
 const CANCEL_STEP_TIMEOUT_MS = 8000
 
-/**
- * Best-effort Paddle subscription cancellation.
- *
- * Right to erasure is not conditional on a live subscription, and billing must
- * never block the DB erasure — so this NEVER throws and NEVER blocks longer
- * than {@link CANCEL_STEP_TIMEOUT_MS}. It cancels every active/trialing/
- * past_due subscription for the account's Paddle customer when a usable
- * Paddle credential is configured; otherwise it logs an actionable warning
- * and returns.
- */
 async function cancelPaddleSubscriptionBestEffort(paddleId: string): Promise<void> {
   try {
     const paddleConfig = getPaddleConfig()
@@ -230,9 +120,6 @@ async function cancelPaddleSubscriptionBestEffort(paddleId: string): Promise<voi
       )
     }
   } catch (error) {
-    // Defensive: even a config-read failure must not block erasure.
-    // `cancelActiveSubscriptionsForCustomer` itself never throws, but this
-    // outer guard stays — erasure must survive ANY billing-side surprise.
     logger.error('Account deletion: best-effort Paddle cancel failed (continuing with erasure)', {
       error,
     })

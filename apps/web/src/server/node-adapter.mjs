@@ -1,20 +1,5 @@
 // @ts-check
-/**
- * Node `http` ⇄ web-`fetch` adapter for the production server entrypoint
- * (Story 5-2, AC-1).
- *
- * The TanStack Start build (`dist/server/server.js`) exports a web-standard
- * `fetch(Request) => Response` handler with NO socket listener, and it does not
- * serve the static `dist/client/` assets. DanubeData Rapids (Knative) routes
- * traffic to a container that must listen on `$PORT`. This module bridges the
- * two: it serves real `dist/client/` files from disk and delegates everything
- * else to the Start fetch handler, so a plain `node:http` server can front the
- * whole app.
- *
- * Authored as runtime ESM (`.mjs`) so the production entrypoint runs with no
- * build/transpile step; `@ts-check` + JSDoc keep it type-safe. The pure helpers
- * are exported for unit testing.
- */
+/** Serves dist/client files from disk and delegates the rest to the Start fetch handler, which has no listener. */
 
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
@@ -23,28 +8,16 @@ import { Readable, pipeline } from 'node:stream'
 import { constants as zlibConstants, createBrotliCompress, createGzip } from 'node:zlib'
 
 /**
- * Response compression. Production measured 2026-10-02: nothing on the request
- * path compresses (no `content-encoding` from the app or the Envoy edge), so the
- * 521 KB entry chunk went out raw where gzip makes it 159 KB.
- *
- * Static assets are compressed ONCE at build time (`scripts/precompress.mjs`
- * writes `.br` / `.gz` siblings) and picked here by `Accept-Encoding`. Responses
- * from the Start handler (SSR HTML, `/api/*` JSON) are compressed on the fly.
+ * Nothing on the request path compresses, so static assets use build-time .br/.gz
+ * siblings and handler responses are compressed on the fly.
  */
 
 /** @typedef {'br' | 'gzip'} Encoding */
 
-/**
- * Bodies smaller than this are sent as-is: below ~1 KB the encoding overhead
- * and CPU outweigh the bytes saved.
- */
+/** Below ~1 KB the encoding overhead outweighs the bytes saved. */
 export const MIN_COMPRESS_BYTES = 1024
 
-/**
- * Extensions `scripts/precompress.mjs` writes `.br` / `.gz` siblings for, and
- * the only ones whose siblings the adapter will serve. Images and fonts are
- * already compressed formats.
- */
+/** The only extensions whose precompressed siblings are served; images and fonts are already compressed. */
 export const PRECOMPRESSED_EXTENSIONS = new Set([
   '.js',
   '.mjs',
@@ -62,12 +35,7 @@ export const PRECOMPRESSED_EXTENSIONS = new Set([
 const ENCODING_SUFFIX = { br: '.br', gzip: '.gz' }
 
 /**
- * Pick the response encoding from an `Accept-Encoding` header: brotli when the
- * client accepts it at least as strongly as gzip, else gzip, else none. A `q=0`
- * refuses a coding; `*` covers any coding not named. A missing header means
- * identity (what every client that cannot decode gets).
- *
- * @param {string | string[] | undefined} header
+ * Brotli when accepted at least as strongly as gzip; `q=0` refuses, `*` covers unnamed codings.
  * @returns {Encoding | null}
  */
 export function negotiateEncoding(header) {
@@ -106,11 +74,8 @@ export function negotiateEncoding(header) {
 }
 
 /**
- * Whether a response with this content type is worth compressing on the fly.
  * `text/event-stream` is excluded: an encoder would hold events back.
- *
  * @param {string | null} contentType
- * @returns {boolean}
  */
 export function isCompressibleType(contentType) {
   if (!contentType) {
@@ -132,12 +97,7 @@ export function isCompressibleType(contentType) {
   )
 }
 
-/**
- * Add `Accept-Encoding` to a `Vary` value, keeping what is already there.
- *
- * @param {string | number | string[] | undefined} existing
- * @returns {string}
- */
+/** @param {string | number | string[] | undefined} existing */
 function withVaryAcceptEncoding(existing) {
   const current = Array.isArray(existing) ? existing.join(', ') : existing ? String(existing) : ''
   const names = current
@@ -151,12 +111,7 @@ function withVaryAcceptEncoding(existing) {
 }
 
 /**
- * A streaming encoder for an on-the-fly response. Every write is flushed so a
- * streamed SSR document still reaches the browser chunk by chunk instead of
- * waiting in the encoder's buffer. Brotli runs at quality 5, not the default
- * 11, which is built for one-off static compression and far too slow per
- * request.
- *
+ * Every write is flushed so streamed SSR still arrives chunk by chunk; brotli quality 5 (11 is too slow per request).
  * @param {Encoding} encoding
  */
 function createEncoder(encoding) {
@@ -169,12 +124,7 @@ function createEncoder(encoding) {
   return createGzip({ flush: zlibConstants.Z_SYNC_FLUSH })
 }
 
-/**
- * Content types for the asset extensions the client build emits. Anything not
- * listed falls back to `application/octet-stream`.
- *
- * @type {Record<string, string>}
- */
+/** @type {Record<string, string>} */
 const CONTENT_TYPES = {
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
@@ -195,47 +145,29 @@ const CONTENT_TYPES = {
   '.ttf': 'font/ttf',
   '.txt': 'text/plain; charset=utf-8',
   '.wasm': 'application/wasm',
-  // PWA web app manifest (story 7-1). Browsers reject the manifest unless it is
-  // served as JSON/manifest+json; without this it would fall back to
-  // application/octet-stream and the install prompt would never appear.
+  // Browsers reject a manifest served as application/octet-stream.
   '.webmanifest': 'application/manifest+json',
-  // sitemap.xml (story seo-1). Without this a crawler is handed an
-  // application/octet-stream download. e2e cannot catch it — it runs the Vite
-  // dev server, not this adapter.
+  // Otherwise crawlers get an octet-stream download; e2e runs the Vite dev server, so can't catch it.
   '.xml': 'application/xml; charset=utf-8',
 }
 
-/**
- * @param {string} ext file extension including the leading dot
- * @returns {string}
- */
+/** @param {string} ext file extension including the leading dot */
 function contentTypeFor(ext) {
   return CONTENT_TYPES[ext.toLowerCase()] ?? 'application/octet-stream'
 }
 
 /**
- * Root-level service-worker scripts emitted by vite-plugin-pwa / Workbox
- * (`/sw.js` and the `/workbox-<hash>.js` runtime). These must NOT be pinned by a
- * long cache: a stale service worker can otherwise keep an old build alive and
- * defeat the auto-update / no-stale-build guarantee (story 7-1, AC-4). Matched
- * at the client root only — hashed `/assets/*` chunks stay immutable.
- *
- * @param {string} pathname URL pathname
- * @returns {boolean}
+ * Root-level SW scripts must not get a long cache: a stale service worker keeps an old build alive.
+ * @param {string} pathname
  */
 function isServiceWorkerScript(pathname) {
   return pathname === '/sw.js' || /^\/workbox-[^/]+\.js$/.test(pathname)
 }
 
-/**
- * Resolve the Cache-Control header for a static asset path.
- *
- * @param {string} pathname URL pathname
- * @returns {string}
- */
+/** @param {string} pathname */
 function cacheControlFor(pathname) {
   if (isServiceWorkerScript(pathname)) {
-    // Always revalidate so a redeploy's new SW is picked up promptly (AC-4).
+    // Always revalidate so a redeploy's new SW is picked up promptly.
     return 'no-cache'
   }
   return pathname.startsWith('/assets/')
@@ -243,28 +175,10 @@ function cacheControlFor(pathname) {
     : 'public, max-age=3600'
 }
 
-/**
- * @typedef {Object} StaticAsset
- * @property {string} filePath absolute path to the file on disk
- * @property {string} contentType resolved MIME type
- * @property {string} cacheControl Cache-Control header value
- * @property {number} size byte length (for Content-Length)
- * @property {boolean} compressible whether the type has precompressed siblings,
- *   so the response varies by `Accept-Encoding`
- * @property {Partial<Record<Encoding, { filePath: string, size: number }>>} variants
- *   precompressed siblings that exist and are not older than the file itself
- */
+/** @typedef {{ filePath: string, contentType: string, cacheControl: string, size: number, compressible: boolean, variants: Partial<Record<Encoding, { filePath: string, size: number }>> }} StaticAsset */
 
 /**
- * Resolve a request path to a concrete static file under `clientDir`, or `null`
- * if there is no safe matching file (so the caller falls back to SSR).
- *
- * Defense in depth against path traversal: the decoded path is joined to the
- * client dir, normalized, and rejected unless it stays within the client dir.
- * Hashed `/assets/*` files are immutable; other files get a short cache.
- *
- * @param {string} pathname URL pathname (may be percent-encoded)
- * @param {string} clientDir absolute path to `dist/client`
+ * @param {string} pathname may be percent-encoded
  * @returns {Promise<StaticAsset | null>}
  */
 export async function resolveStaticAsset(pathname, clientDir) {
@@ -272,13 +186,11 @@ export async function resolveStaticAsset(pathname, clientDir) {
   try {
     decoded = decodeURIComponent(pathname)
   } catch {
-    // Malformed percent-encoding — never a valid asset path.
     return null
   }
 
   const root = normalize(clientDir)
   const candidate = normalize(join(root, decoded))
-  // Must be the root itself or strictly contained within it.
   if (candidate !== root && !candidate.startsWith(root + sep)) {
     return null
   }
@@ -293,13 +205,8 @@ export async function resolveStaticAsset(pathname, clientDir) {
     return null
   }
 
-  // Classify cache-control from the RESOLVED path (relative to the client root),
-  // never the raw request pathname. An encoded-slash request like
-  // `/assets/..%2fsw.js` decodes+normalizes to `sw.js` on disk, but its raw
-  // pathname still starts with `/assets/` — classifying off that would mis-tag the
-  // service worker as `immutable` and defeat the AC-4 no-stale guarantee for any
-  // shared/CDN cache. Deriving from `candidate` keeps the header consistent with
-  // the bytes actually served.
+  // Classify from the resolved path, not the raw pathname: `/assets/..%2fsw.js`
+  // resolves to sw.js and must not be tagged immutable.
   const resolvedPathname = `/${relative(root, candidate).split(sep).join('/')}`
   const cacheControl = cacheControlFor(resolvedPathname)
 
@@ -311,15 +218,12 @@ export async function resolveStaticAsset(pathname, clientDir) {
       const variantPath = candidate + ENCODING_SUFFIX[encoding]
       try {
         const variantStats = await stat(variantPath)
-        // A sibling older than its file was compressed from a previous build's
-        // bytes (e.g. `sw.js`, which keeps its name across builds): serving it
-        // would ship stale content, so fall back to the file itself.
+        // A sibling older than its file came from a previous build (sw.js keeps its
+        // name), so serve the file itself.
         if (variantStats.isFile() && variantStats.mtimeMs >= stats.mtimeMs) {
           variants[encoding] = { filePath: variantPath, size: variantStats.size }
         }
-      } catch {
-        // No sibling for this encoding.
-      }
+      } catch {}
     }
   }
 
@@ -333,12 +237,7 @@ export async function resolveStaticAsset(pathname, clientDir) {
   }
 }
 
-/**
- * First hop of a possibly multi-valued / comma-joined forwarded header.
- *
- * @param {string | string[] | undefined} value
- * @returns {string | undefined}
- */
+/** @param {string | string[] | undefined} value */
 function firstForwardedValue(value) {
   if (value === undefined) {
     return undefined
@@ -349,17 +248,8 @@ function firstForwardedValue(value) {
 }
 
 /**
- * Convert a Node `IncomingMessage` into a web-standard `Request`.
- *
- * Behind the DanubeData Rapids / Knative TLS terminator the edge proxy sets
- * `X-Forwarded-Proto` / `X-Forwarded-Host`; honor them so `request.url` reflects
- * the real public scheme + host (matters for cookie-`Secure`, canonical-URL, and
- * redirect logic). Fall back to the direct connection's scheme/`Host` when the
- * forwarded headers are absent.
- *
+ * Honors X-Forwarded-Proto/Host from the TLS edge so request.url has the public scheme and host.
  * @param {import('node:http').IncomingMessage} nodeReq
- * @param {{ protocol?: string }} [options]
- * @returns {Request}
  */
 export function toWebRequest(nodeReq, options = {}) {
   const protocol =
@@ -383,8 +273,7 @@ export function toWebRequest(nodeReq, options = {}) {
   /** @type {RequestInit} */
   const init = { method, headers }
   if (method !== 'GET' && method !== 'HEAD') {
-    // Stream the request body through; `duplex: 'half'` is required by the spec
-    // when sending a streaming body (not yet in the lib DOM types).
+    // `duplex: 'half'` is required for a streaming body (not yet in the lib DOM types).
     init.body = /** @type {ReadableStream} */ (Readable.toWeb(nodeReq))
     // @ts-expect-error duplex is valid at runtime but missing from RequestInit
     init.duplex = 'half'
@@ -393,19 +282,8 @@ export function toWebRequest(nodeReq, options = {}) {
 }
 
 /**
- * Write a web-standard `Response` back to a Node `ServerResponse`.
- *
- * Set-Cookie is emitted as discrete headers — `Headers.forEach` collapses
- * multiple Set-Cookie values into one comma-joined string, which corrupts
- * cookies (notably the signed session cookie from stories 5-7/5-8).
- *
- * When `encoding` is given and the response is compressible text of unknown or
- * at least `MIN_COMPRESS_BYTES` length, the body is compressed on the fly.
- *
+ * Set-Cookie is written as discrete headers: Headers.forEach comma-joins them, corrupting cookies.
  * @param {import('node:http').ServerResponse} nodeRes
- * @param {Response} webResponse
- * @param {Encoding | null} [encoding] the client's negotiated encoding
- * @returns {Promise<void>}
  */
 async function applyWebResponse(nodeRes, webResponse, encoding = null) {
   nodeRes.statusCode = webResponse.status
@@ -426,9 +304,8 @@ async function applyWebResponse(nodeRes, webResponse, encoding = null) {
     nodeRes.setHeader('vary', withVaryAcceptEncoding(nodeRes.getHeader('vary')))
     if (encoding) {
       const source = Readable.fromWeb(/** @type {any} */ (webResponse.body))
-      // Most responses (Start's `json()` included) carry no content-length, so
-      // read until MIN_COMPRESS_BYTES before deciding: a tiny body such as
-      // `/api/health`'s 15 bytes would otherwise GROW when encoded.
+      // Most responses carry no content-length, so read up to MIN_COMPRESS_BYTES first:
+      // a tiny body would grow when encoded.
       const head = await readHead(source, MIN_COMPRESS_BYTES)
       if (head.ended) {
         const body = Buffer.concat(head.chunks)
@@ -449,22 +326,14 @@ async function applyWebResponse(nodeRes, webResponse, encoding = null) {
   }
 
   if (webResponse.body) {
-    // `pipeline` (not `.pipe`) so the source stream is destroyed when the client
-    // aborts mid-response — a bare `.pipe` leaks the open handle / keeps pulling.
+    // `pipeline`, not `.pipe`, so the source is destroyed when the client aborts.
     pipeline(Readable.fromWeb(/** @type {any} */ (webResponse.body)), nodeRes, onStreamDone)
   } else {
     nodeRes.end()
   }
 }
 
-/**
- * Whether a handler response may be compressed: compressible type, not already
- * encoded, not forbidden by `no-transform`, a status that carries a full body,
- * and not known to be under `MIN_COMPRESS_BYTES`.
- *
- * @param {Response} webResponse
- * @returns {boolean}
- */
+/** @param {Response} webResponse */
 function isEligibleForCompression(webResponse) {
   const { headers, status } = webResponse
   if (status === 204 || status === 206 || status === 304) {
@@ -481,12 +350,7 @@ function isEligibleForCompression(webResponse) {
 }
 
 /**
- * Read from `source` until at least `min` bytes arrived or it ended. On a
- * non-ended result the stream is left paused with the rest unread, for the
- * caller to pipe on.
- *
- * @param {Readable} source
- * @param {number} min
+ * On a non-ended result the stream is left paused with the rest unread, for the caller to pipe on.
  * @returns {Promise<{ chunks: Uint8Array[], ended: boolean }>}
  */
 function readHead(source, min) {
@@ -525,10 +389,7 @@ function readHead(source, min) {
 }
 
 /**
- * `pipeline` completion callback. It destroys both streams on error/abort
- * (fixing the bare-`.pipe` leak); client disconnects are expected and noisy, so
- * only genuine errors are surfaced to the container logs.
- *
+ * Client disconnects are expected and noisy, so only genuine errors are logged.
  * @param {NodeJS.ErrnoException | null} err
  */
 function onStreamDone(err) {
@@ -538,12 +399,8 @@ function onStreamDone(err) {
 }
 
 /**
- * Stream a resolved static file to the response.
- *
  * @param {import('node:http').ServerResponse} nodeRes
  * @param {StaticAsset} asset
- * @param {boolean} isHead
- * @param {Encoding | null} encoding the client's negotiated encoding
  */
 function serveStaticFile(nodeRes, asset, isHead, encoding) {
   const variant = encoding ? asset.variants[encoding] : undefined
@@ -561,41 +418,18 @@ function serveStaticFile(nodeRes, asset, isHead, encoding) {
     nodeRes.end()
     return
   }
-  // `pipeline` destroys the file stream on client abort / write error (no fd leak).
   pipeline(createReadStream(variant ? variant.filePath : asset.filePath), nodeRes, onStreamDone)
 }
 
-/**
- * Build a Node request listener that serves `dist/client/` static assets and
- * delegates everything else to the provided web-`fetch` handler.
- *
- * @param {Object} args
- * @param {(request: Request) => Promise<Response> | Response} args.fetchHandler
- * @param {string} args.clientDir absolute path to `dist/client`
- * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => Promise<void>}
- */
+/** @param {{ fetchHandler: (request: Request) => Promise<Response> | Response, clientDir: string }} args */
 export function createRequestListener({ fetchHandler, clientDir }) {
   return async function listener(nodeReq, nodeRes) {
     try {
       const method = nodeReq.method ?? 'GET'
       const encoding = negotiateEncoding(nodeReq.headers['accept-encoding'])
       if (method === 'GET' || method === 'HEAD') {
-        // `URL` resolves any `..` segments, so static matching uses the
-        // normalized pathname (query string excluded).
-        //
-        // ⚠️ Leading `/` and `\` runs are collapsed to a single `/` FIRST.
-        // Resolved against a base, a target that starts with `//` (or `/\`, or
-        // `\\` — WHATWG treats `\` as `/` for special schemes) is parsed as
-        // PROTOCOL-RELATIVE: what follows becomes the AUTHORITY, not the path.
-        // So `new URL('//evil.example/x', base)` yields pathname `/x` — matching
-        // a static file the client never requested — and `//` / `/\` alone
-        // throw ERR_INVALID_URL, a 500 reachable by anyone.
-        //
-        // Found in production 2026-09-09: a trailing slash on SITE_URL made the
-        // smoke check request `//`, and EVERY such request was a 500. The first
-        // fix (2026-09-10) only handled a literal leading `//` and only stripped
-        // `/`, so `\` variants still got through — caught in review the same day.
-        // `[/\\]+` covers `//`, `/\`, `\\`, `//\…` in one unconditional pass.
+        // Collapse leading `/` and `\` runs first: a `//` or `/\` prefix parses as
+        // protocol-relative (the rest becomes the authority) or throws ERR_INVALID_URL.
         const rawTarget = nodeReq.url ?? '/'
         const requestTarget = rawTarget.replace(/^[/\\]+/, '/')
         const { pathname } = new URL(requestTarget, 'http://localhost')
@@ -612,8 +446,7 @@ export function createRequestListener({ fetchHandler, clientDir }) {
       // Never leak internals to the client; surface to container logs.
       console.error('[server-entry] request handling failed:', error)
       if (nodeRes.headersSent) {
-        // Response already in flight — appending a body would corrupt it; just
-        // tear the socket down.
+        // Response already in flight: a body would corrupt it, so tear the socket down.
         nodeRes.destroy()
         return
       }

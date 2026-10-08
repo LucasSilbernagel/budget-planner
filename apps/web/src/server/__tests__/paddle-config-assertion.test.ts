@@ -1,13 +1,3 @@
-/**
- * `assertPaddleProductionConfig()` — the fail-closed guard for Paddle Billing
- * (Story 5-3). `packages/config` has no test suite of its own; this exercises the
- * real (built) assertion the webhook route depends on, driven through env vars.
- *
- * The webhook's own test mocks the assertion to a no-op, so without this the
- * revenue-critical "crash instead of silently earning nothing" behaviour ships
- * untested.
- */
-
 import { assertPaddleProductionConfig, resetConfig } from '@budget-planner/config'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -38,7 +28,6 @@ afterEach(() => {
   resetConfig()
 })
 
-/** Set env and re-load the config singleton. */
 function withEnv(env: Partial<Record<(typeof PADDLE_KEYS)[number], string>>) {
   for (const [k, v] of Object.entries(env)) process.env[k] = v
   resetConfig()
@@ -96,21 +85,8 @@ describe('assertPaddleProductionConfig', () => {
     expect(() => assertPaddleProductionConfig()).toThrow(/not fully configured/)
   })
 
-  // ── Story 5-20: the third plan ───────────────────────────────────────────
-  //
-  // The required-set and the must-differ guard were both PAIRWISE (annual +
-  // lifetime). Monthly is deliberately NOT added to the required set — see the
-  // rationale on the assertion itself — but it MUST join the distinctness
-  // check, because the `:216` mis-grant rationale applies just as hard to a
-  // monthly id colliding with the lifetime id.
-
   it('REQUIRES PADDLE_MONTHLY_PRICE_ID in production (story 5-20, settled at code review)', () => {
-    // ⚠️ INVERTED, not deleted. The first implementation of 5-20 made monthly
-    // optional, reasoning that a post-launch plan must not be able to take all
-    // billing down. Code review found that the same story states "€5.99 per
-    // month" on `content/legal/pricing.md` — the Paddle-required legal pricing
-    // page. A price stated on a compliance surface must be chargeable, so the
-    // id is required and a build without it must fail loudly rather than
+    // Monthly is required because its price is stated on the legal pricing page: a build must not
     // advertise a plan it cannot sell.
     const { PADDLE_MONTHLY_PRICE_ID: _omitted, ...withoutMonthly } = FULL
     withEnv({ NODE_ENV: 'production', PADDLE_ENVIRONMENT: 'production', ...withoutMonthly })
@@ -120,12 +96,8 @@ describe('assertPaddleProductionConfig', () => {
   it.each([['PADDLE_MONTHLY_PRICE_ID'], ['PADDLE_ANNUAL_PRICE_ID'], ['PADDLE_LIFETIME_PRICE_ID']])(
     'rejects a WHITESPACE-ONLY %s as missing, not as present',
     (key) => {
-      // ⚠️ THE REGRESSION THIS PINS was introduced by 5-20's own first pass and
-      // caught by two independent review layers. The required check used a plain
-      // `!env.X`, so '  ' read as PRESENT; the distinctness loop then dropped it as
-      // trimmed-empty, so nothing was compared and the assertion reported healthy.
-      // Production would boot with every plan unbuyable and every lifetime purchase
-      // silently ignored by the webhook — money taken, no entitlement granted.
+      // Whitespace-only ids must count as missing, or the distinctness check skips them and the
+      // assertion reports healthy.
       withEnv({
         NODE_ENV: 'production',
         PADDLE_ENVIRONMENT: 'production',
@@ -159,9 +131,7 @@ describe('assertPaddleProductionConfig', () => {
   })
 
   it('ignores surrounding whitespace when comparing the three ids', () => {
-    // The ids are `.trim()`-compared everywhere else (checkout-config trims
-    // before handing them to the browser; the webhook trims before matching),
-    // so a pasted trailing newline must not slip a collision past this guard.
+    // Ids are trimmed everywhere else, so a trailing newline must not slip a collision past this guard.
     withEnv({
       NODE_ENV: 'production',
       PADDLE_ENVIRONMENT: 'production',

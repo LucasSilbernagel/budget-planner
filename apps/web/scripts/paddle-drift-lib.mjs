@@ -1,32 +1,14 @@
-// The Paddle.js drift check (story sec-4, D2 (b)): pure, so the unit suite tests it on
-// synthetic sources and `check-paddle-drift.mjs` runs it on the live, unversioned
-// https://cdn.paddle.com/paddle/v2/paddle.js once a week.
-//
-// It checks the Paddle.js internals the app's headers and checkout code rely on:
-//   1. the overlay spinner <style> text, authorized by its sha256 in production
-//      `style-src-elem` (`PADDLE_LOADER_STYLE_CSP_HASH`);
-//   2. ProfitWell's `window.profitwell?.isLoaded` skip, which the `window.profitwell`
-//      stub in `lib/paddle/checkout.ts` relies on (sec-4 D1);
-//   3. the checkout frame's `allow = 'payment'` and its origins, which
-//      `Permissions-Policy: payment=(…)` names (`PADDLE_CHECKOUT_FRAME_ORIGIN`).
-// Every value is matched against the MINIFIED file, so the patterns below are the
-// minifier's shapes (measured on the build `last-modified: Thu, 24 Sep 2026 14:05:20 GMT`).
+// Patterns match the minified live paddle.js, so they are the minifier's shapes.
 
 import { createHash } from 'node:crypto'
 
 export const PADDLE_JS_URL = 'https://cdn.paddle.com/paddle/v2/paddle.js'
 
-/** Every `.innerHTML="…keyframes rotate…"` string literal (the spinner <style> text). */
 const LOADER_STYLE_RE = /\.innerHTML=("(?:[^"\\]|\\.)*keyframes rotate(?:[^"\\]|\\.)*")/g
 
 /**
- * `initPwSnippet`'s first line, `if (window.profitwell?.isLoaded) return`, in the shapes a
- * minifier gives optional chaining (sec-4 review): TypeScript's downlevel
- * (`null===(t=window.profitwell)||void 0===t?void 0:t.isLoaded`, the live build), its
- * `===null||===void 0` variant, terser's (`null==(t=window.profitwell)?void 0:t.isLoaded`),
- * esbuild/swc's (`(t=window.profitwell)==null?void 0:t.isLoaded`), or unminified. Identifiers
- * may carry `$`. Any other shape is reported as "gone or reshaped" (a red run to look at, by
- * design).
+ * The `window.profitwell?.isLoaded` guard in each shape minifiers give optional chaining;
+ * any other shape is reported as drift by design.
  */
 const PROFITWELL_GUARD_RE = new RegExp(
   [
@@ -40,23 +22,16 @@ const PROFITWELL_GUARD_RE = new RegExp(
 
 const FRAME_ALLOW_PAYMENT_RE = /\.allow="payment"/
 
-/** The CSP source expression for a <style> text: `sha256-<base64>`. */
 export function cspSha256(text) {
   return `sha256-${createHash('sha256').update(text, 'utf8').digest('base64')}`
 }
 
-/**
- * @param {string} source paddle.js as served.
- * @param {{ loaderStyleText: string, checkoutFrameOrigins: { production: string, sandbox: string } }} pinned
- * @returns {{ problems: string[], facts: string[] }}
- */
 export function checkPaddleJs(source, pinned) {
   const problems = []
   const facts = []
 
-  // The capture is a JS string literal; JSON.parse reads it only while its escapes are also
-  // JSON's (today: `\t` only). A JS-only escape (`\x09`, `\'`, `\0`, `\v`, `\u{…}`) is drift
-  // too, reported rather than thrown (sec-4 review).
+  // JSON.parse reads the JS literal only while its escapes are also JSON's; a JS-only
+  // escape is drift too, reported rather than thrown.
   const literals = []
   for (const m of source.matchAll(LOADER_STYLE_RE)) {
     try {

@@ -1,20 +1,6 @@
 /**
- * The accessible name of a locked premium row (`PremiumFeatureGate`'s button),
- * as a role-query matcher (story 116.2, FR184).
- *
- * Since 116.2 the button has no `aria-label`: its name is its own content, the
- * visible title, the description, the badge's "Premium" and a hidden ", locked".
- * So the matcher is anchored on BOTH ends: it starts with the visible `title`
- * (a whole word) and ends with "Premium, locked".
- *
- * ⚠️ It does not pin the full concatenated string, nor the exact spacing:
- * jsdom has no Tailwind, so its name puts a space before the comma ("Premium ,
- * locked") where Chrome may not. The real-browser name is checked by the
- * Lighthouse re-run (`label-content-name-mismatch`), not here.
- *
- * ⚠️ `getByRole`'s `name` matches the WHOLE name, so an absence probe on a
- * stale matcher passes silently: pair every `queryByRole(…, { name:
- * lockedName(…) })` absence with a positive control.
+ * Anchored on both ends only: jsdom puts a space before the comma that Chrome may not.
+ * `getByRole` matches the whole name, so pair every absence probe with a positive control.
  */
 import { within } from '@testing-library/react'
 import { expect } from 'vitest'
@@ -24,10 +10,8 @@ export function lockedName(title: string): RegExp {
   return new RegExp(`^${escaped}\\b.*\\bpremium\\s*,\\s*locked$`, 'i')
 }
 
-/** Any locked premium row, whatever its title. */
 export const ANY_LOCKED_NAME = /\bpremium\s*,\s*locked$/i
 
-/** The accessible name testing-library computes for `button` (via a `name` matcher). */
 function accessibleNameOf(button: HTMLElement): string {
   let name: string | null = null
   within(button.parentElement ?? document.body).queryAllByRole('button', {
@@ -40,14 +24,6 @@ function accessibleNameOf(button: HTMLElement): string {
   return name
 }
 
-/**
- * Asserts every locked premium row in `container` is named by what it SHOWS
- * (story 116.2, AC-1/AC-2): no `aria-label`/`aria-labelledby`; the name starts
- * with the row's first visible text (its title), contains every other visible
- * text (the description, the badge's "Premium") and ends "Premium, locked".
- * Derived from each row's own rendered text, so no title is hard-coded.
- * Returns the rows so callers can count them.
- */
 export function expectLockedRowsNamedByVisibleText(container: HTMLElement): HTMLElement[] {
   const rows = Array.from(
     container.querySelectorAll<HTMLElement>('[data-testid="premium-gate-locked"]')

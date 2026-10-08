@@ -1,22 +1,3 @@
-/**
- * Rendered proof that a profile switch removes the previous profile's data
- * (story 54.4, FR79, AC-2).
- *
- * ⚠️ Every "absent" probe is paired with a positive control that FINDS the same
- * thing before the switch. An absence probe against a wrong name or test id is a
- * silent green (see the icon-only-button-naming lesson), and today's bug renders
- * BOTH profiles together, so only absence of profile A proves anything.
- *
- * Harness mirrors `overview-reconciliation.test.tsx`: `HomePage` with a bare
- * `render` + a mocked `usePremiumAccess`; `IncomePage` via `renderWithProviders`.
- * Unit tests run currency-less, so money renders as a bare grouped decimal.
- *
- * Fixture (all monthly, so normalized == raw):
- *   A: income 1,000.00 · savings 100.00 · investment 50.00
- *   B: income 2,000.00 · savings 300.00 · investment 70.00
- *   B-only net worth = 300.00 + 70.00 = 370.00   (A+B = 520.00)
- */
-
 import { renderWithProviders, screen } from '@/test/utils'
 import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -179,9 +160,7 @@ describe('Overview after a profile switch (AC-2)', () => {
       useProfileStore.getState().switchProfile(B)
     })
 
-    // A-only was 1,000.00 and A+B would be 3,000.00; B-only is 2,000.00.
     expect(exactMoney('overview-total-income')).toBe('2,000.00')
-    // A-only was 150.00 and A+B would be 520.00; B-only is 370.00.
     expect(exactMoney('overview-net-worth')).toBe('370.00')
   })
 })
@@ -190,7 +169,6 @@ describe('Income page after a profile switch (AC-2)', () => {
   it('finds profile A row by name before the switch, and it is ABSENT after', () => {
     renderWithProviders(<IncomePage />)
 
-    // Positive control: the same probe used for absence below finds the row.
     expect(screen.getAllByText('Personal salary').length).toBeGreaterThan(0)
     expect(screen.queryAllByText('Business revenue')).toHaveLength(0)
 

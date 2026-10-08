@@ -1,45 +1,6 @@
 /**
- * A headline money figure that may wrap ONLY between digit groups (story 88.1,
- * FR142, decision D1).
- *
- * ## Why
- *
- * A formatted amount is one unbroken string, so its min-content width is the
- * whole figure. The stat cards sit in `grid-cols-*` columns, which are
- * `minmax(0,1fr)`: a column SHRINKS below its content and the figure overflows
- * its card silently instead of widening the page. With the seed's figures under
- * CI's font (DejaVu Sans) that cut or overflowed 19 of 46 measured figures, e.g.
- * `$1,013,222,221.80` needs 254 px against a 208 px card at 320 px (story 88.1
- * Dev Agent Record, Task 1).
- *
- * A `<wbr>` after each locale group separator gives the browser a break
- * opportunity there and nowhere else, so a figure that does not fit takes a
- * second line at a group boundary (`$1,013,222,` / `221.80`), and never splits
- * inside a group the way `overflow-wrap: anywhere` can (`$14,812,345,6` /
- * `78.90`), which is exactly the misreading this exists to prevent. The type
- * size is untouched. `<wbr>` carries no text, so `textContent`, copy-paste and
- * screen readers read exactly the formatted string.
- *
- * ## Contract
- *
- * `text` is the ALREADY-FORMATTED string from `useFormattedAmount()`. The
- * separator comes from the same locale, mode and currency that formatter used
- * (`useCurrencyPreferences()`), found with `Intl.formatToParts`, never a
- * hard-coded `,` (de-DE uses `.`, en-ZA a no-break space; de-CH's apostrophe
- * differs between CLDR versions).
- *
- * A separator only counts when a DIGIT sits on both sides of it: in en-ZA the
- * same no-break space also separates the `R` from the number, and a break there
- * would strand the symbol.
- *
- * ⚠️ The server and the first client render must agree on where the `<wbr>`s
- * go, and the locale comes from a persisted store. So render it either inside
- * a `hydrated` branch, or where every store involved is `skipHydration` and
- * rehydrates only in an effect: then both renders see the defaults (a
- * separator-free `0.00`) and the real figure arrives as a later re-render.
- * The story 88.4 callers outside a `hydrated` branch (Retirement's derived
- * figures, forecasting `StatCard`/`SummaryCard`, report `TotalRow`) rely on the
- * second rule; each says so at its call site.
+ * A `<wbr>` after each digit-flanked group separator, so a figure wraps only between groups.
+ * Server and first client render must agree: render inside `hydrated` or where all stores are `skipHydration`.
  */
 
 import { Fragment } from 'react'
@@ -47,13 +8,8 @@ import type React from 'react'
 import { useCurrencyPreferences } from '../../stores/currencyStore'
 
 /**
- * The digit-group separator of the formatter that produced the text, or `null`
- * if it has none (or the locale/currency is invalid).
- *
- * Pass `currency` in symbol mode: the separator is read from a CURRENCY-style
- * formatter, exactly as `formatCurrency` builds it. Some locales group
- * differently in currency style (de-AT: no-break space in decimal style, `.`
- * in currency style), so a decimal-style lookup would find no break at all.
+ * Pass `currency` in symbol mode: some locales group differently in currency style
+ * (de-AT: no-break space in decimal style, `.` in currency style).
  */
 export function groupSeparator(locale: string, currency?: string | null): string | null {
   try {
@@ -68,13 +24,9 @@ export function groupSeparator(locale: string, currency?: string | null): string
   }
 }
 
-/** Any decimal digit, not just ASCII (a locale with native digits still groups). */
 const DIGIT = /\p{Nd}/u
 
-/**
- * Splits `text` just AFTER each `separator` that has a digit on both sides.
- * Joining the result gives `text` back unchanged.
- */
+/** Splits after each separator with a digit on both sides (en-ZA uses the same space after `R`). */
 export function splitAtGroupSeparators(text: string, separator: string | null): string[] {
   if (!separator) return [text]
   const segments: string[] = []

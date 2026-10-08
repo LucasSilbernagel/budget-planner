@@ -1,24 +1,6 @@
 import type React from 'react'
 
-/**
- * The Settings gear (story 69.2, FR109).
- *
- * Moved here from `layout/GlobalNav.tsx`, where it drew the Settings row of the
- * More sheet. Story 69.2 took Settings OUT of the nav: signed-in users reach it
- * from the account menu, and signed-out users from an icon-only link in the
- * account cluster (`auth/auth-indicator.tsx`), which is the one place this
- * glyph is drawn now. Kept beside `ChevronDownIcon.tsx`, the precedent for a
- * shared header glyph.
- *
- * ⚠️ AMENDED by story 96.3 (FR163): it is drawn in the nav again too, as the
- * icon of the phone-only Settings row at the bottom of the More sheet
- * (`GlobalNav.tsx`); the account-cluster gear is the >= 640px route.
- *
- * Hand-rolled inline SVG, the app's house style (see `ui/RowActionIcons.tsx`).
- * Decorative: `aria-hidden`, so the link that wraps it carries the name. `rest`
- * is spread FIRST so no caller can undo that (the same rule `ChevronDownIcon`
- * adopted in 69.1's code review).
- */
+/** Decorative: `aria-hidden`, and `rest` is spread first so no caller can undo that. */
 export function SettingsIcon({
   className,
   ...rest

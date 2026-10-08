@@ -1,14 +1,4 @@
 // @vitest-environment node
-/**
- * DB-backed sync round trip: push on one device, pull on another.
- *
- * Every other test touching `processBatchSync` / `getSyncChanges` mocks the
- * database, which is how a push path that could not write a single
- * profile-scoped row shipped green: `syncOperationSchema` stripped `profileId`,
- * every INSERT violated `profileId NOT NULL`, and a second device signed in to an
- * empty account. This runs both halves against real PostgreSQL (PGlite, with the
- * full migration chain applied) so that class of defect cannot pass again.
- */
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -120,7 +110,6 @@ describe('sync push → pull round trip (real PostgreSQL)', () => {
 
     expect(result).toMatchObject({ success: true, processedCount: 1, failedCount: 0 })
 
-    // "Second device": a fresh full-snapshot pull for the same user + profile.
     const changes = await getSyncChanges(USER_A, null, 100, PROFILE_A)
     const income = changes.filter((c) => c.entityType === 'incomeSource')
     expect(income).toHaveLength(1)
@@ -231,13 +220,7 @@ describe('sync push → pull round trip (real PostgreSQL)', () => {
   })
 })
 
-/**
- * Story 78.3 review: `processBatchSync`'s OWN tier gate. The route tests mock
- * `processBatchSync`, and every other DB test pushes as `lifetime`, so nothing
- * pinned WHICH predicate this gate calls — swapping `hasPaidAccess` for its
- * sibling `hasPremiumFeatures` (one import away) would have refused a dunning
- * (`past_due`) customer's push with every test green.
- */
+/** Route tests mock processBatchSync, so this is the only pin on its own tier predicate. */
 describe('processBatchSync tier gate (paid access, not premium features)', () => {
   function pushAs(subscriptionStatus: SubscriptionStatus, operations: unknown[]) {
     return processBatchSync(

@@ -1,13 +1,3 @@
-/**
- * Magic-link VERIFY route tests (Story 5-16, Task 3 — AC-2, AC-3; review-hardened)
- *
- * The token is consumed ONLY on the POST. The GET is a read-only confirmation
- * interstitial (peek, no consume) that plants a double-submit CSRF cookie — so
- * email link-scanners can't burn the token and a cross-site POST can't sign a
- * victim in. The POST is rate-limited, CSRF-checked, then mints the signed
- * session with the exact Paddle-callback cookie semantics.
- */
-
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { checkDbRateLimit, buckets } = vi.hoisted(() => {
@@ -43,7 +33,6 @@ import { verifySession } from '@/server/api/auth/session'
 import { SESSION_COOKIE_MAX_AGE } from '@/server/api/auth/session-cookies'
 import { GET, POST } from '../verify'
 
-// Default trusted-hop count (0 = rightmost) resolves a lone XFF value to the client IP.
 const CLIENT_IP = { 'x-forwarded-for': '203.0.113.9' }
 
 const asMock = (fn: unknown) => fn as ReturnType<typeof vi.fn>
@@ -93,21 +82,17 @@ describe('GET /api/auth/login/verify (read-only interstitial)', () => {
     expect(res.headers.get('Content-Type')).toContain('text/html')
 
     const body = await res.text()
-    // Shows which account it will sign into, and posts back to consume.
     expect(body).toContain('user@example.com')
     expect(body).toContain('method="POST"')
     expect(body).toContain('name="token"')
     expect(body).toContain('name="csrf"')
-    // The shared page chrome carries the rebranded wordmark (Story 27-2).
     expect(body).toContain('>Longhand Budget</h1>')
 
-    // Plants the double-submit CSRF cookie; mints NO session on the GET.
     const setCookie = res.headers.get('Set-Cookie') ?? ''
     expect(setCookie).toMatch(/^ml_csrf=/)
     expect(setCookie).toContain('HttpOnly')
     expect(setCookie).not.toContain('session=')
 
-    // The token is NOT consumed by the GET.
     expect(verifyMagicLink).not.toHaveBeenCalled()
   })
 
@@ -140,7 +125,6 @@ describe('POST /api/auth/login/verify (consume + sign in)', () => {
     const getRes = await getVerify('good-token')
     const csrf = cookieValue(getRes.headers.get('Set-Cookie'), 'ml_csrf')
     expect(csrf).toBeTruthy()
-    // The form field carries the same CSRF value the cookie does.
     expect(await getRes.text()).toContain(`value="${csrf}"`)
 
     asMock(verifyMagicLink).mockResolvedValueOnce({
@@ -157,11 +141,9 @@ describe('POST /api/auth/login/verify (consume + sign in)', () => {
     expect(session).toMatch(/HttpOnly/)
     expect(session).toMatch(/SameSite=Lax/)
     expect(session).toMatch(new RegExp(`Max-Age=${SESSION_COOKIE_MAX_AGE}`))
-    expect(session).not.toContain('Secure') // not production in tests
-    // CSRF cookie is cleared.
+    expect(session).not.toContain('Secure')
     expect(setCookies.some((c) => c.startsWith('ml_csrf=') && c.includes('Max-Age=0'))).toBe(true)
 
-    // The minted session is genuine and revocation-eligible (carries iat, AC-3).
     const raw = decodeURIComponent((session as string).split(';')[0].replace('session=', ''))
     const payload = verifySession(raw)
     expect(payload).toMatchObject({
@@ -171,10 +153,7 @@ describe('POST /api/auth/login/verify (consume + sign in)', () => {
     })
     expect(typeof payload?.iat).toBe('number')
 
-    // Story 53.1: a deliberately NON-HttpOnly companion cookie is minted
-    // alongside the real session, so client-side code (SyncProvider) can tell
-    // "probably signed in" without being able to read the real session cookie
-    // at all (it is HttpOnly by design).
+    // A non-HttpOnly companion cookie lets client code tell a session probably exists.
     const hasSession = setCookies.find((c) => c.startsWith('has_session='))
     expect(hasSession).toBeDefined()
     expect(hasSession).toMatch(/SameSite=Lax/)
@@ -213,10 +192,6 @@ describe('POST /api/auth/login/verify (consume + sign in)', () => {
   })
 
   it('fails closed (generic redirect, no session, no leaked error) when session signing throws', async () => {
-    // Regression: SESSION_SECRET missing/weak in production makes signSession
-    // throw (getSessionSecret fails closed) — that must degrade to the same
-    // generic redirect as every other failure, not an uncaught 500 that leaks
-    // a raw framework error page to the user.
     asMock(verifyMagicLink).mockResolvedValueOnce({
       userId: '11111111-1111-1111-1111-111111111111',
       paddleId: 'pad_1',

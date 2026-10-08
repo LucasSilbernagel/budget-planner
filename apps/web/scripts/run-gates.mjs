@@ -1,17 +1,5 @@
-// Runs every gate and prints one line per gate (story 82.1, FR133).
-//
-//   pnpm gates                     # all gates: phase A in order, phase B at once
-//   pnpm gates --sequential        # phase B one at a time (the fallback)
-//   pnpm gates --only core,web     # a subset (phase A comes along when needed)
-//
-// Exit 0 only when every gate is GREEN (see `verdict` in `gates-lib.mjs`),
-// 1 when any gate is not, 2 when the run cannot start (a port is taken, a bad
-// flag), 130 when interrupted. Each gate's full output goes to a per-run
-// directory outside the repo; the path is printed first and last.
-//
-// ⚠️ Whether the phase B gates interfere with each other was NOT measured when
-// this landed (story 82.1, D8). If a gate fails here and passes alone, run
-// `--sequential`, and record it in deferred-work.md as N failures of M runs.
+// Exit 0 only when every gate is green, 1 when any is not, 2 when the run can't start,
+// 130 when interrupted. If a gate fails here but passes alone, try --sequential.
 
 import { execFileSync, spawn } from 'node:child_process'
 import {
@@ -43,11 +31,9 @@ import {
 } from './gates-lib.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
-/** Where workspace packages live (`pnpm-workspace.yaml`). */
 const WORKSPACE_DIRS = ['apps', 'packages']
 const KILL_GRACE_MS = 5_000
 
-/** Every workspace package with its scripts, read from disk. */
 function workspacePackages() {
   return WORKSPACE_DIRS.flatMap((parent) =>
     readdirSync(join(ROOT, parent), { withFileTypes: true })
@@ -75,19 +61,14 @@ function probe(port, host) {
 }
 
 /**
- * True when something accepts a connection on the port, on EITHER loopback.
- *
- * ⚠️ Both are needed: `vite dev` listens on `localhost`, which resolves to `::1`
- * here, so its servers are IPv6-only (MEASURED in review, story 82.1), while
- * the prod server binds `127.0.0.1`. Playwright's reuse check requests
- * `http://localhost:<port>` and finds either.
+ * Probes both loopbacks: `vite dev` listens on `localhost` (IPv6-only here), while the
+ * prod server binds 127.0.0.1.
  */
 async function portInUse(port) {
   const [v4, v6] = await Promise.all([probe(port, '127.0.0.1'), probe(port, '::1')])
   return v4 || v6
 }
 
-/** The first taken port of a gate, or null. */
 async function takenPort(gate) {
   for (const port of gate.ports ?? []) {
     if (await portInUse(port)) return port
@@ -99,7 +80,6 @@ const portMessage = (port) =>
   `Port ${port} is in use. Playwright would reuse that server and test its code, not this tree. ` +
   `Stop it first (find it with: ss -tlnp | grep :${port}).`
 
-/** Every gate process still running, so an interrupt can stop them all. */
 const live = new Set()
 /** Pending SIGKILL fallbacks: the runner must not exit before they fire. */
 const stopping = []
@@ -117,7 +97,6 @@ function killGroup(child, signal) {
 }
 
 let psWarned = false
-/** Every process descended from `pid`, whatever its process group. */
 function descendants(pid) {
   try {
     return treeOf(execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' }), pid)
@@ -133,17 +112,8 @@ function descendants(pid) {
 }
 
 /**
- * Stops a gate and everything it started.
- *
- * ⚠️ Killing the gate's process group is NOT enough. Playwright starts each
- * `webServer` in a process group of its own, so its three servers are outside
- * the gate's group, and Playwright does not stop them on SIGTERM. MEASURED
- * (story 82.1, Task 5): an interrupted run left :5173, :5174 and :5175 held,
- * and the next e2e run would have silently REUSED the two dev servers. So:
- * snapshot the whole process tree (after the leader dies, orphans are
- * reparented and can no longer be found), send SIGINT (Playwright's graceful
- * shutdown stops its servers), then, after a grace period, snapshot again (a
- * server may have been forked after the first snapshot) and SIGKILL the union.
+ * Killing the process group isn't enough: Playwright's webServers get their own groups.
+ * Snapshot the tree, SIGINT, then after a grace period SIGKILL a fresh snapshot's union.
  */
 function stopGate(child) {
   const first = descendants(child.pid)
@@ -161,7 +131,6 @@ function stopGate(child) {
   return done
 }
 
-/** Immediate SIGKILL of everything live (a second Ctrl-C, or a crash). */
 function killEverything() {
   for (const child of live) {
     const tree = descendants(child.pid)
@@ -170,10 +139,7 @@ function killEverything() {
   }
 }
 
-/**
- * Runs one command in its own process group (so its dev servers and workers
- * can be killed with it), output to `logPath`.
- */
+/** Own process group, so its dev servers and workers can be killed with it. */
 function runProcess({ cwd, command, args, env, timeoutMs, logPath }) {
   return new Promise((done) => {
     const fd = openSync(logPath, 'a')
@@ -199,13 +165,11 @@ function runProcess({ cwd, command, args, env, timeoutMs, logPath }) {
     }
     if (child.pid) live.add(child)
     child.once('error', (error) => {
-      // ENOENT/EACCES: the command never ran, so the log is empty. Say why in it.
       appendFileSync(logPath, `\n[run-gates] spawn failed: ${command}: ${error.message}\n`)
       settle({ exitCode: null, signal: null, timedOut, spawnError: error.message })
     })
     child.once('close', (exitCode, signal) => {
-      // The leader may exit before its children (a dev server Playwright started):
-      // make sure nothing in the group outlives the gate.
+      // The leader may exit before its children: nothing in the group may outlive the gate.
       killGroup(child, 'SIGKILL')
       settle({ exitCode, signal, timedOut })
     })
@@ -220,8 +184,7 @@ function readSummary(gate, logPath) {
 
 async function runGateUnsafe(gate, runDir, { sequential }) {
   const started = Date.now()
-  // Re-probed here, not only at start-up: phase A takes a while, and a server
-  // (or a second runner) started meanwhile would otherwise be reused silently.
+  // Re-probed here: a server started during phase A would otherwise be reused silently.
   const port = await takenPort(gate)
   if (port !== null) {
     appendFileSync(join(runDir, `${gate.id}.log`), `${portMessage(port)}\n`)
@@ -269,7 +232,6 @@ async function runGate(gate, runDir, options) {
   }
 }
 
-/** The working tree's changed and untracked files, repo-relative; [] if git fails. */
 function changedFiles() {
   try {
     const git = (args) =>
@@ -314,10 +276,8 @@ async function main() {
     process.exit(2)
   }
 
-  // A stray server on a Playwright port is SILENTLY reused by the dev-server
-  // projects (`reuseExistingServer: !CI`), so e2e would test whatever that
-  // server runs, not this tree. Refuse before spending minutes on phase A; the
-  // gate re-probes right before it starts, too.
+  // A stray server on a Playwright port is silently reused, so e2e would test whatever it
+  // runs. Refuse before spending minutes on phase A.
   for (const gate of gates) {
     const port = await takenPort(gate)
     if (port !== null) {
@@ -336,7 +296,6 @@ async function main() {
   const results = new Map()
   let interrupted = false
   const report = (result) => {
-    // A gate that finished after an interrupt was stopped, whatever it printed:
     // vitest can exit 0 with a partial report after SIGINT.
     const final = interrupted && !result.skipped ? { ...result, interrupted: true } : result
     results.set(final.id, final)
@@ -348,7 +307,6 @@ async function main() {
 
   const interrupt = (signal) => {
     if (interrupted) {
-      // A second signal: stop waiting for a graceful shutdown.
       console.error(`\n${signal} again: killing everything now.`)
       killEverything()
       process.exit(130)
@@ -359,12 +317,11 @@ async function main() {
   }
   process.on('SIGINT', () => interrupt('SIGINT'))
   process.on('SIGTERM', () => interrupt('SIGTERM'))
-  // The gates are detached (their own sessions), so a closed terminal does not
-  // reach them: without this, the Playwright servers would be orphaned.
+  // The gates are detached, so a closed terminal doesn't reach them; without this the
+  // Playwright servers would be orphaned.
   process.on('SIGHUP', () => interrupt('SIGHUP'))
 
-  // Phase A: in order; a failure stops the run, since everything after it
-  // would be measuring a missing or stale build.
+  // A phase A failure stops the run: everything after would measure a missing or stale build.
   let phaseAFailed = null
   const stopReason = () => (interrupted ? 'interrupted' : `${phaseAFailed} failed`)
   for (const gate of gates.filter((g) => g.phase === 'A')) {

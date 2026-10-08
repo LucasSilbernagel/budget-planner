@@ -1,33 +1,4 @@
 // @vitest-environment node
-/**
- * A permanently refused edit is NAMED to the user and REVERTED on this device
- * (story 75.2, FR119) — proven through the whole live chain.
- *
- * Real `ActiveSync` → `useSync` → core `SynchronizationService` → real
- * `sendSyncOperation` → real `/api/sync/batch` + `/api/sync/changes` handlers →
- * real PostgreSQL (PGlite, full migration chain). Only the session lookup, the
- * rate limiter and the logger are stubbed.
- *
- * DECISION (Lucas, 2026-09-28): REVERT. A refused create is removed locally, a
- * refused update or delete is restored from the server by a full re-pull.
- *
- * ⚠️ The bad op is written into the persisted queue DIRECTLY, as in 75.1's chain
- * test: the client queue gate refuses these values, so no form in today's app
- * can produce a permanent refusal. They arrive from queues written before a gate
- * existed or from version skew — this file is about what happens once one does.
- *
- * ⚠️⚠️ ORDERING IS CONTROLLED, and the revert tests depend on it. `ActiveSync`
- * starts a full pull and a push at mount. If the push landed first, that
- * initial full pull would restore the server value BY ITSELF and a missing
- * revert would pass unnoticed. So `/api/sync/batch` is held until the first
- * `/api/sync/changes` response has been served: the initial pull then sees the
- * bad op still queued and newer than the server row, and SUPPRESSES that row
- * (core's pull LWW). After the refusal, only the story's explicit re-pull can
- * bring the server value back before the 30s poll.
- *
- * ⚠️ Every test asserts a positive anchor — a request REACHED the route — so an
- * offline service (Node's `navigator` has no `onLine`) cannot pass vacuously.
- */
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -88,9 +59,7 @@ const QUEUE_KEY = `bp-sync-queue-${USER}`
 
 let pg: PGlite
 let db: ReturnType<typeof Drizzle>
-/** Every request the routes served, in order: `"<METHOD> <path> <status>"`. */
 const served: string[] = []
-/** Bodies of every POST to /api/sync/batch, parsed. */
 const pushed: { operations: SyncOperation[] }[] = []
 let releaseBatch: () => void = () => {}
 let batchGate: Promise<void> = Promise.resolve()
@@ -108,7 +77,8 @@ async function routeFetch(input: RequestInfo | URL, init?: RequestInit): Promise
   if (url.pathname === '/api/sync/changes') {
     const response = await changesGET({ request })
     served.push(`GET ${url.pathname} ${response.status}`)
-    // The first pull has been answered: pushes may now proceed (see header).
+    // Pushes are held until the first pull is answered; otherwise that pull alone would
+    // restore the server value and hide a missing revert.
     releaseBatch()
     return response
   }
@@ -180,8 +150,7 @@ beforeAll(async () => {
   vi.stubGlobal('fetch', routeFetch)
 
   const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://app.test/' })
-  // ⚠️ `localStorage` and `navigator` MUST come from the JSDOM window — see
-  // `cross-device-sync.db.test.tsx` and `permanent-rejection-chain.db.test.ts`.
+  // `localStorage` and `navigator` must come from the JSDOM window.
   for (const key of [
     'window',
     'document',
@@ -197,8 +166,7 @@ beforeAll(async () => {
       key === 'window' ? dom.window : (dom.window as unknown as Record<string, unknown>)[key]
     )
   }
-  // Rebind persisted stores to the JSDOM storage (same reason as
-  // `cross-device-sync.db.test.tsx`).
+  // Rebind persisted stores to the JSDOM storage.
   const { createJSONStorage } = await import('zustand/middleware')
   const persisted = await Promise.all([
     import('@/stores/incomeStore').then((m) => m.useIncomeStore),
@@ -249,8 +217,6 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
-  // Dismiss whatever this test left on screen, so the next test starts clean,
-  // then unmount (a page reload: engine gone, localStorage kept).
   for (const button of Array.from(document.querySelectorAll('button'))) {
     if (/^Dismiss/.test(button.getAttribute('aria-label') ?? '')) {
       rtl.fireEvent.click(button)
@@ -268,7 +234,6 @@ describe('a refused edit is named and reverted (story 75.2)', () => {
 
     rtl.render(<ActiveSync userId={USER} />)
 
-    // Positive anchor FIRST: the push reached the route and was refused there.
     await rtl.waitFor(() => expect(served).toContain('POST /api/sync/batch 200'), {
       timeout: 15_000,
     })
@@ -282,12 +247,10 @@ describe('a refused edit is named and reverted (story 75.2)', () => {
       },
       { timeout: 15_000 }
     )
-    // Positive anchor: the push really reached the route and was refused there.
     expect(served).toContain('POST /api/sync/batch 200')
     const [row] = await db.select().from(savingsGoals).where(eq(savingsGoals.id, GOAL))
     expect(row?.currentBalance).toBe(1000)
 
-    // THE REVERT: this device holds the server's value again.
     await rtl.waitFor(
       () => {
         const goal = useSavingsStore.getState().savingsGoals.find((g) => g.id === GOAL)
@@ -329,11 +292,9 @@ describe('a refused edit is named and reverted (story 75.2)', () => {
       { timeout: 15_000 }
     )
     expect(served).toContain('POST /api/sync/batch 200')
-    // One notice for the ROW, not one per op.
     expect(alerts().filter((t) => /Holiday/.test(t))).toHaveLength(1)
     expect(useSavingsStore.getState().savingsGoals.map((g) => g.id)).toEqual([GOAL])
 
-    // Let any bridge echo (a queued delete for the never-created row) surface.
     await new Promise((r) => setTimeout(r, 2500))
     expect(persistedQueue()).toEqual([])
     const sentTypes = pushed.flatMap((body) =>
@@ -345,10 +306,8 @@ describe('a refused edit is named and reverted (story 75.2)', () => {
   }, 60_000)
 
   it('a refused DELETE restores the row from the server and uses a fallback name (the row is gone locally)', async () => {
-    // The user deleted the goal on this device; the server still has it.
     useSavingsStore.setState({ savingsGoals: [] as never })
-    // `data` without `userId` fails the server's request schema ("Delete
-    // operations require userId") — a request-level 400, which core drops.
+    // `data` without `userId` fails the request schema: a request-level 400, which core drops.
     const bad = queuedOp({ type: 'delete', data: {} })
     localStorage.setItem(QUEUE_KEY, JSON.stringify([bad]))
 
@@ -363,7 +322,6 @@ describe('a refused edit is named and reverted (story 75.2)', () => {
       { timeout: 15_000 }
     )
     expect(served).toContain('POST /api/sync/batch 400')
-    // Never an empty quote pair or "undefined".
     expect(alerts().join(' ')).not.toMatch(/“”|""|undefined/)
     await rtl.waitFor(
       () => {
@@ -373,9 +331,7 @@ describe('a refused edit is named and reverted (story 75.2)', () => {
     )
   }, 60_000)
 
-  // Keyboard activation is proven by the component test (`RefusedEditNotice.test.tsx`,
-  // `user.keyboard('{Enter}')`); jsdom's `fireEvent.keyDown` does not activate a
-  // button, so this chain test only claims what a click proves (code review 75.2).
+  // jsdom's keyDown doesn't activate a button; keyboard activation is covered by the component test.
   it('a notice raised by a real refusal can be dismissed', async () => {
     useSavingsStore.setState({ savingsGoals: [localGoal(GOAL, 'Emergency fund', -1)] as never })
     localStorage.setItem(QUEUE_KEY, JSON.stringify([queuedOp({})]))
@@ -406,12 +362,9 @@ describe('a refused edit is named and reverted (story 75.2)', () => {
       timeout: 15_000,
     })
 
-    // Sign-out: the sync engine unmounts with the notice still undismissed.
     rtl.cleanup()
     resetSyncStore()
-    // The next paid session mounts in the same tab.
     rtl.render(<ActiveSync userId={USER} />)
-    // Positive anchor: the new session is live (it pulled).
     const pullsBefore = served.filter((r) => r.startsWith('GET')).length
     await rtl.waitFor(
       () => expect(served.filter((r) => r.startsWith('GET')).length).toBeGreaterThan(pullsBefore),

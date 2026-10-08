@@ -1,23 +1,3 @@
-/**
- * Investments and debts as what-if rows in the Scenario Builder (story 100.2,
- * FR165).
- *
- * Integration tests: the real builder, the real stores, the real engine and the
- * real currency store. Only the debounce is waited on. The one thing mocked is
- * `useIsInitialSyncPending`, as a pass-through spy, so the `nothingToSeed`
- * argument the builder hands it can be read (AC-6). The engine is the REAL one,
- * wrapped only to record each call's balance rows (story 100.3: a bad rate must
- * never reach it).
- *
- * Story 100.3: every investment row now compounds at its OWN annual return,
- * seeded at 6%. Every figure below that involves investment growth was re-derived
- * by hand at 6% (it was 7% in 100.2).
- *
- * Unlike the savings rows (100.1), these rows MOVE totals: a counted investment
- * contribution moves money from savings into investments, a debt lowers net
- * worth and falls by its payment.
- */
-
 import { fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useBalanceStore, useTotalInvestmentBalance } from '../../../stores/balanceStore'
@@ -139,7 +119,6 @@ function clearStores(): void {
   useBalanceStore.setState({ entries: [] })
 }
 
-/** Every result the builder lifts to the page (story 102.2 reads its yearly figures). */
 const onResult = vi.fn()
 
 beforeEach(() => {
@@ -202,7 +181,6 @@ describe('rows replace the investments total (AC-1, AC-11)', () => {
     render(<ScenarioBuilder onSave={vi.fn()} />)
 
     expect(rowNames()).toEqual(['Pension', 'Car loan', 'ISA'])
-    // Story 114.1: the asset is an Assets row instead, never a balance row.
     expect(
       within(screen.getByRole('region', { name: 'Assets' })).getByLabelText('Asset Name, row 1')
     ).toHaveValue('House')
@@ -211,14 +189,11 @@ describe('rows replace the investments total (AC-1, AC-11)', () => {
     expect(screen.getByLabelText('Balance for Pension')).toHaveValue('10,000.00')
     expect(screen.getByLabelText('Contribution for Pension')).toHaveValue('50.00')
     expect(screen.getByLabelText('Frequency for Pension')).toHaveValue('monthly')
-    // The flag on investment rows only.
     expect(
       screen.getByLabelText('Not taken from the money left over, for Pension')
     ).toBeInTheDocument()
     expect(screen.queryByLabelText('Not taken from the money left over, for Car loan')).toBeNull()
-    // A debt row carries its own label for the same flag (story 102.2, D2).
     expect(screen.getByLabelText('Payment already in Expenses, for Car loan')).not.toBeChecked()
-    // The single total is gone.
     expect(screen.queryByLabelText('Current Investments')).toBeNull()
   })
 
@@ -245,21 +220,16 @@ describe('rows replace the investments total (AC-1, AC-11)', () => {
     for (const control of within(section()).getAllByRole('textbox')) {
       expect(control).toHaveAttribute('autocomplete', 'off')
     }
-    // The money fields were spinbuttons until story 109.1; they are textboxes now,
-    // so the loop above covers them. Pin the COUNT, so the loop cannot pass
-    // without them: a Balance and a Contribution on each of the two rows.
     const money = within(section()).getAllByLabelText(/^(Balance|Contribution) for Same$/)
     expect(money).toHaveLength(4)
     for (const control of money) {
       expect(control).toHaveRole('textbox')
       expect(control).toHaveAttribute('autocomplete', 'off')
     }
-    // The checkbox keeps its visible label text inside its accessible name.
     const flag = screen.getByRole('checkbox', {
       name: 'Not taken from the money left over, for Same',
     })
     expect(flag).toHaveAttribute('autocomplete', 'off')
-    // Stacks at 320 px, a grid from md (jsdom cannot lay out: pin the classes).
     const grid = flag.closest('.surface')?.querySelector('.grid') as HTMLElement
     expect(grid.className).toContain('grid-cols-1')
     expect(grid.className).toContain('md:grid-cols-3')
@@ -278,7 +248,6 @@ describe('the seed (AC-6)', () => {
     expect(screen.getByLabelText('Frequency for Weekly')).toHaveValue('weekly')
     expect(screen.getByLabelText('Contribution for Yearly')).toHaveValue('6,000.00')
     expect(screen.getByLabelText('Frequency for Yearly')).toHaveValue('annually')
-    // An unrecognised frequency degrades to monthly.
     expect(screen.getByLabelText('Frequency for Odd')).toHaveValue('monthly')
   })
 
@@ -298,8 +267,6 @@ describe('the seed (AC-6)', () => {
   })
 
   it('survives a non-finite stored investment contribution and seeds it as 0', async () => {
-    // It used to throw in the store's `withTimeline` (reached through
-    // `useInvestmentEntries`) before the seed ran, taking the whole builder down.
     setEntries([
       entry({ id: 'e-1', name: 'NaN fund', monthlyContribution: Number.NaN }),
       entry({ id: 'e-2', name: 'Null fund', monthlyContribution: null as unknown as number }),
@@ -318,7 +285,6 @@ describe('the seed (AC-6)', () => {
   it('keeps the flag on an investment only', async () => {
     setEntries([
       entry({ id: 'e-1', name: 'Pension', contributionRecordedAsExpense: true }),
-      // A sync-applied debt can carry the flag (it is only enforced on write).
       entry({ id: 'e-2', name: 'Loan', type: 'debt', contributionRecordedAsExpense: true }),
     ])
     const onSave = vi.fn().mockResolvedValue({ success: true })
@@ -339,14 +305,11 @@ describe('the seed (AC-6)', () => {
     render(<ScenarioBuilder onSave={vi.fn()} />)
     expect(syncPendingCalls.length).toBeGreaterThan(0)
     expect(syncPendingCalls.every((empty) => empty === false)).toBe(true)
-    // Story 114.1 flipped this: an asset alone IS something to seed now (it
-    // seeds an Assets row). Before, it was the control for "not in scope".
     syncPendingCalls.length = 0
     document.body.innerHTML = ''
     setEntries([entry({ id: 'e-2', name: 'House', type: 'asset', currentBalance: 100_000 })])
     render(<ScenarioBuilder onSave={vi.fn()} />)
     expect(syncPendingCalls.at(-1)).toBe(false)
-    // Control: an empty store is still nothing to seed.
     syncPendingCalls.length = 0
     document.body.innerHTML = ''
     setEntries([])
@@ -421,13 +384,7 @@ describe('a debt seeds its payment from its linked expense (story 102.1, AC-10)'
   })
 })
 
-/**
- * The linked expense MOVES into the debt row (story 102.2, FR170, AC-1, AC-8).
- * The payment becomes one cash line, the debt row's, taken from net income only
- * while the debt is owed.
- */
 describe('the linked expense moves into the debt row (story 102.2)', () => {
-  /** Every Expenses row name the builder shows, in order. */
   function expenseRowNames(): string[] {
     const expenses = screen.getByRole('heading', { name: 'Expense Categories' }).closest('section')
     if (!expenses) throw new Error('no Expense Categories section')
@@ -459,16 +416,8 @@ describe('the linked expense moves into the debt row (story 102.2)', () => {
     expect(screen.getByLabelText('Contribution for Loan')).toHaveValue('200.00')
     const label = within(section()).getByText('from Expenses: Loan payment')
     expect(label.className.split(/\s+/)).toContain('text-faint')
-    // Code review 102.2 (Lucas): a labelled debt row has NO flag checkbox (its
-    // payment is visibly the row's own; ticking it would count it nowhere).
     expect(within(section()).queryAllByRole('checkbox')).toHaveLength(0)
     await waitForResult()
-    // Year 1 netIncome 1,200,000 and expenses 4,800,000: MEASURED at T0 by running
-    // the UNCHANGED engine (main `f6f1e96`, core `src` through tsx) with Rent
-    // 3,800.00 and Loan payment 200.00 both as expenses and the debt under 100.2
-    // D4 (the run that produced `V4_RESULT` below; its extra investment row does
-    // not touch `netIncome` or `expenses`). Not a run of the old builder itself.
-    // The money moved, it did not change.
     await waitFor(() => expect(engineRows.length).toBeGreaterThan(0))
     const year1 = onResult.mock.calls.at(-1)?.[0]?.projection[0]
     expect(year1?.netIncome).toBe(1_200_000)
@@ -520,8 +469,6 @@ describe('the linked expense moves into the debt row (story 102.2)', () => {
   })
 
   it('an unlinked what-if debt pays from cash too: no row creates money (AC-4)', async () => {
-    // 12,000.00 a year left over; + Add Balance → Debt 1,000.00 paying 100.00/mo.
-    // Year 1, by hand: 1,000.00 paid (1,200.00 > the balance) → net 11,000.00.
     useIncomeStore.setState({ incomeSources: [income(500_000)] })
     useExpenseStore.setState({ expenses: [expense(400_000)] })
     render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResult} />)
@@ -546,8 +493,6 @@ describe('the linked expense moves into the debt row (story 102.2)', () => {
   })
 
   it('on an UNLINKED debt whose payment is also an Expenses row, ticking the checkbox stops the double count, by hand (D2)', async () => {
-    // Rent 3,800.00 + Car payment 200.00 (NOT linked) = 4,000.00 a month, so
-    // 12,000.00 a year left over. Car loan 3,000.00, its payment typed as 200.00.
     useIncomeStore.setState({ incomeSources: [income(500_000)] })
     useExpenseStore.setState({
       expenses: [expense(380_000), expense(20_000, { id: 'exp-car', name: 'Car payment' })],
@@ -560,15 +505,12 @@ describe('the linked expense moves into the debt row (story 102.2)', () => {
     fireEvent.change(screen.getByLabelText('Contribution for Car loan'), {
       target: { value: '200' },
     })
-    // Unflagged, 2 years: Y1 pays 2,400.00 → 9,600.00 kept; Y2 pays the 600.00
-    // remainder → 11,400.00 kept. Savings 21,000.00, debt 0: ending 21,000.00.
     await waitFor(() => expect(card('Ending Net Worth')).toBe(format(2_100_000)), {
       timeout: 3000,
     })
     fireEvent.click(
       screen.getByRole('checkbox', { name: 'Payment already in Expenses, for Car loan' })
     )
-    // Flagged: the Expenses row alone takes the payment: 2 × 12,000.00 = 24,000.00.
     await waitFor(() => expect(card('Ending Net Worth')).toBe(format(2_400_000)), {
       timeout: 3000,
     })
@@ -604,7 +546,6 @@ describe('the linked expense moves into the debt row (story 102.2)', () => {
       expect(expenseRowNames()).toEqual(['Rent', 'Loan payment'])
       expect(screen.getByLabelText('Contribution for Loan')).toHaveValue('0.00')
       expect(within(section()).queryByText(/^from Expenses:/)).toBeNull()
-      // Unlabelled, so the row offers its flag as any debt does.
       expect(screen.getByLabelText('Payment already in Expenses, for Loan')).not.toBeChecked()
     }
   )
@@ -616,7 +557,6 @@ describe('the linked expense moves into the debt row (story 102.2)', () => {
     expect(within(section()).getByText('from Expenses: Loan payment')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Type for Loan'), { target: { value: 'investment' } })
     expect(within(section()).queryByText(/^from Expenses:/)).toBeNull()
-    // As an investment the row offers ITS flag (the label is hidden, kept in state).
     expect(screen.getByLabelText('Not taken from the money left over, for Loan')).toBeTruthy()
     fireEvent.change(screen.getByLabelText('Type for Loan'), { target: { value: 'debt' } })
     expect(within(section()).getByText('from Expenses: Loan payment')).toBeInTheDocument()
@@ -635,14 +575,12 @@ describe('the starting figures (AC-2)', () => {
       entry({ id: 'e-3', name: 'ISA', currentBalance: 50_000 }),
     ])
     const total = renderHook(() => useTotalInvestmentBalance()).result.current
-    // Independent of the hook: 1000001 + 50000.
     expect(total).toBe(1_050_001)
     const format = formatter()
     const onSave = vi.fn().mockResolvedValue({ success: true })
     render(<ScenarioBuilder onSave={onSave} />)
     await waitForResult()
 
-    // 123456 + 1050001 − 400000.
     expect(card('Starting Net Worth')).toBe(format(773_457))
     fireEvent.click(screen.getByRole('button', { name: /save forecast/i }))
     await waitFor(() => expect(onSave).toHaveBeenCalled())
@@ -651,9 +589,6 @@ describe('the starting figures (AC-2)', () => {
 })
 
 describe('a debt seeds as the amount owed, whatever its stored sign (Story 103.1, FR171/AC-3)', () => {
-  // The builder's half of `components/__tests__/debt-sign-agreement.test.tsx`:
-  // the same fixture there gives 5,000.00 on the Overview, /balance and the
-  // Report for both signs. Hand-computed: 2,000,000 − 1,500,000 = 500,000c.
   for (const sign of [1, -1] as const) {
     it(`Starting Net Worth is 500,000c with the debt stored ${
       sign > 0 ? '+' : '−'
@@ -679,7 +614,6 @@ describe('what-if only: nothing reaches the balance store (AC-7, D0)', () => {
     ])
     const before = localStorage.getItem(BALANCE_STORAGE_KEY)
     const stateBefore = useBalanceStore.getState().entries
-    // Positive control: the key really is persisted.
     expect(before).toContain('Pension')
 
     const state = useBalanceStore.getState() as unknown as Record<string, unknown>
@@ -694,7 +628,6 @@ describe('what-if only: nothing reaches the balance store (AC-7, D0)', () => {
     fireEvent.change(screen.getByLabelText('Balance for RRSP'), { target: { value: '9999' } })
     fireEvent.change(screen.getByLabelText('Contribution for RRSP'), { target: { value: '50' } })
     fireEvent.change(screen.getByLabelText('Frequency for RRSP'), { target: { value: 'weekly' } })
-    // Story 100.3: the rate is what-if only too (no rate field on /balance, D2).
     fireEvent.change(screen.getByLabelText('Annual return for RRSP'), { target: { value: '3' } })
     fireEvent.click(screen.getByLabelText('Not taken from the money left over, for RRSP'))
     fireEvent.change(screen.getByLabelText('Type for Loan'), { target: { value: 'investment' } })
@@ -739,12 +672,10 @@ describe('add, remove and type switch (AC-8)', () => {
     render(<ScenarioBuilder onSave={onSave} />)
     fireEvent.change(screen.getByLabelText('Type for Pension'), { target: { value: 'debt' } })
     expect(screen.queryByLabelText('Not taken from the money left over, for Pension')).toBeNull()
-    // A debt row has its own flag (story 102.2, D2), cleared by the switch.
     const debtFlag = screen.getByRole('checkbox', {
       name: 'Payment already in Expenses, for Pension',
     })
     expect(debtFlag).not.toBeChecked()
-    // Ticked on the debt, then back to Investment: cleared again (D8).
     fireEvent.click(debtFlag)
     expect(debtFlag).toBeChecked()
     fireEvent.change(screen.getByLabelText('Type for Pension'), { target: { value: 'investment' } })
@@ -770,26 +701,8 @@ describe('add, remove and type switch (AC-8)', () => {
 })
 
 describe('the per-row outcome and the totals (AC-10)', () => {
-  /**
-   * 12,000.00 a year left over. Over 2 years, BY HAND, Fund at the seeded 6%
-   * (story 100.3; at 100.2's 7% it was 3628.90 and 24,728.90):
-   *   Fund: 1000.00 → round(1060.00) + 1200.00 = 2260.00 → round(2395.60) + 1200.00 = 3595.60.
-   *   Loan: 3000.00 − 2400.00 = 600.00 → max(0, −1800.00) = 0 (paid off).
-   *   Card: 500.00, no payment, stays 500.00.
-   *   Starting: 0 + 1,000.00 − 3,500.00 = −2,500.00.
-   *
-   * Story 102.1: the Loan's 200.00 payment is its LINKED Expenses row, so Rent is
-   * 3,800.00 and the two total 4,000.00 a month.
-   *
-   * ⚠️ RE-PINNED by story 102.2 (FR170): the linked row moves into the Loan, so
-   * the Expenses rows hold Rent alone (14,400.00 a year left over) and the Loan
-   * pays from cash only while owed:
-   *   Y1: Loan pays 2,400.00 → net 12,000.00; savings + 12,000 − 1,200 = 10,800.00.
-   *   Y2: Loan pays the 600.00 remainder → net 13,800.00; savings + 12,600.00.
-   *   Savings 23,400.00 (was 21,600.00 under 100.2 D4: the 1,800.00 the paid-off
-   *   Loan no longer takes in year 2).
-   *   Ending net worth: 23,400.00 + 3,595.60 − 500.00 = 26,495.60 (was 24,695.60).
-   */
+  // Fund at 6%: 1000.00 → 2260.00 → 3595.60; Loan paid off in year 2; Card stays 500.00. The Loan pays from cash
+  // only while owed: savings 23,400.00, ending 23,400.00 + 3,595.60 − 500.00 = 26,495.60.
   function fillOutcomeFixture(): void {
     useIncomeStore.setState({ incomeSources: [income(500_000)] })
     useExpenseStore.setState({
@@ -827,7 +740,6 @@ describe('the per-row outcome and the totals (AC-10)', () => {
     expect(within(row('Card')).getByText(/^After 2 years:/).textContent).toBe(
       `After 2 years: ${format(50_000)}`
     )
-    // Plain text, not a live region.
     expect(
       within(row('Fund'))
         .getByText(/^After 2 years:/)
@@ -861,18 +773,13 @@ describe('the per-row outcome and the totals (AC-10)', () => {
     await waitFor(() => expect(card('Ending Net Worth')).toBe(format(2_649_560)))
 
     fireEvent.change(screen.getByLabelText('Contribution for Fund'), { target: { value: '200' } })
-    // At 6% (story 100.3; 6112.90 and 24,812.90 at 7%):
-    // Fund: 1000.00 → 1060.00 + 2400.00 = 3460.00 → round(3667.60) + 2400.00 = 6067.60.
-    // Savings (story 102.2, Loan paying from cash while owed): (12,000.00 − 2,400.00)
-    // + (13,800.00 − 2,400.00) = 21,000.00. Ending: 21,000.00 + 6,067.60 − 500.00.
+    // Fund at 6%: 1000.00 → 3460.00 → 6067.60. Savings (12,000.00 − 2,400.00) + (13,800.00 − 2,400.00) = 21,000.00.
     await waitFor(() => expect(card('Ending Net Worth')).toBe(format(2_656_760)), {
       timeout: 3000,
     })
   })
 
   it('blames counted investment contributions in the savings section when they exceed what is left over', async () => {
-    // 1,000.00/mo left over, 1,500.00/mo into an investment NOT flagged as an
-    // expense, and a savings row contributing nothing.
     useIncomeStore.setState({ incomeSources: [income(500_000)] })
     useExpenseStore.setState({ expenses: [expense(400_000)] })
     useSavingsStore.setState({
@@ -884,7 +791,6 @@ describe('the per-row outcome and the totals (AC-10)', () => {
     await waitForResult()
 
     const line = screen.getByTestId('savings-unassigned')
-    // (12,000.00 − 18,000.00) × 10.
     expect(line.textContent).toBe(
       `Your contributions are ${format(6_000_000)} more than you have left over by year 10`
     )
@@ -894,8 +800,6 @@ describe('the per-row outcome and the totals (AC-10)', () => {
 
 describe('over-contribution without savings rows (story 112.1, FR180)', () => {
   it('blames counted investment contributions even when there are no savings rows (AC-1)', async () => {
-    // The fixture above without its savings row: 1,000.00/mo left over, 1,500.00/mo
-    // into an investment NOT flagged as an expense.
     useIncomeStore.setState({ incomeSources: [income(500_000)] })
     useExpenseStore.setState({ expenses: [expense(400_000)] })
     setEntries([entry({ id: 'e-1', name: 'Fund', monthlyContribution: 150_000 })])
@@ -905,7 +809,6 @@ describe('over-contribution without savings rows (story 112.1, FR180)', () => {
 
     expect(screen.getByText('No savings accounts in this scenario')).toBeInTheDocument()
     const line = await screen.findByTestId('savings-unassigned')
-    // (12,000.00 − 18,000.00) × 10.
     expect(line.textContent).toBe(
       `Your contributions are ${format(6_000_000)} more than you have left over by year 10`
     )
@@ -923,10 +826,7 @@ describe('over-contribution without savings rows (story 112.1, FR180)', () => {
   })
 
   it('shows no line without savings rows for a rounding-only shortfall (111.1 review D1)', async () => {
-    // 5,000.00/mo in, 100.00/wk out: 4,566.67/mo left over once rounded monthly,
-    // 54,800.00 a year exactly. Contributing the rounded 4,566.67/mo takes 54,800.04
-    // a year: −0.04 a year, −0.40 by year 10, within the 0.60 drift tolerance
-    // (6¢ × 1 weekly entry × 10 years). Not over-contribution.
+    // Rounded 4,566.67/mo is 54,800.04 a year vs 54,800.00 exact: −0.40 over 10 years, inside the 0.60 drift tolerance.
     useIncomeStore.setState({ incomeSources: [income(500_000)] })
     useExpenseStore.setState({ expenses: [expense(10_000, { frequency: 'weekly' })] })
     setEntries([entry({ id: 'e-1', name: 'Fund', monthlyContribution: 456_667 })])
@@ -949,7 +849,6 @@ describe('over-contribution without savings rows (story 112.1, FR180)', () => {
     expect(screen.getByTestId('savings-unassigned').className).toContain('text-amber-800')
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove Pot' }))
-    // Before the debounced recompute: the result describes one row, the list has none.
     expect(screen.queryByTestId('savings-unassigned')).toBeNull()
     await waitFor(
       () =>
@@ -971,9 +870,7 @@ describe('over-contribution without savings rows (story 112.1, FR180)', () => {
     expect(screen.getByTestId('savings-unassigned').className).toContain('text-amber-800')
 
     fireEvent.click(screen.getByRole('button', { name: '+ Add Account' }))
-    // Before the debounced recompute: the result describes no rows, the list has one.
     expect(screen.queryByTestId('savings-unassigned')).toBeNull()
-    // The new row holds 0 and contributes 0, so the remainder is unchanged.
     await waitFor(
       () =>
         expect(screen.getByTestId('savings-unassigned').textContent).toBe(
@@ -1007,13 +904,6 @@ describe('each money field reports its own validity (AC-9)', () => {
   })
 
   it('text that cannot be read (1.2.3) is refused, never saved as 0 (replaces bug-3 AC-2, code review)', async () => {
-    // The bug-3 grouped (`12,345.67`) / symbol (`€7,500.50`) cases guarded a
-    // TEXT money field. Until story 109.1 the row fields were `type="number"`,
-    // where Chromium reports such text as value "" with `validity.badInput`
-    // (MEASURED, 81.1), and this case stubbed that report. The fields are text
-    // again (story 109.1): grouped text is READ now, and text that cannot be
-    // read arrives as itself. Without the "Enter a number." rule `parseFromInput`
-    // would read it as 0 and the row would be written 0.
     useIncomeStore.setState({ incomeSources: [income(500_000)] })
     setEntries([entry({ id: 'e-1', name: 'Fund', currentBalance: 100_000 })])
     const format = formatter()
@@ -1031,7 +921,6 @@ describe('each money field reports its own validity (AC-9)', () => {
     expect(screen.getByTestId('save-blocked-reason').textContent).toBe(
       'Fix the highlighted fields to save'
     )
-    // The last good figure stands: nothing recomputed the start at 0.
     await new Promise((resolve) => setTimeout(resolve, 600))
     expect(card('Starting Net Worth')).toBe(format(100_000))
   })
@@ -1087,8 +976,6 @@ describe('the builder is defensive on its own (AC-14, 100.1 review)', () => {
     )
     expect(rowNames()).toEqual(['Ok'])
     expect(screen.getByLabelText('Balance for Ok')).toHaveValue('10.00')
-    // Story 114.1: an asset entry inside `balanceAccounts` is still dropped, not
-    // moved to the Assets section: the assets channel is `assetAccounts`.
     expect(
       within(screen.getByRole('region', { name: 'Assets' })).queryAllByLabelText(
         /^Asset Name, row \d+$/
@@ -1107,13 +994,9 @@ describe('the builder is defensive on its own (AC-14, 100.1 review)', () => {
         })}
       />
     )
-    // Not an array: loads as the v1/v2 total.
     expect(rowNames()).toEqual(['Investments'])
     expect(screen.getByLabelText('Balance for Investments')).toHaveValue('12.34')
 
-    // Story 100.3 code review: the builder's OWN rate coercion
-    // (`annualReturnFromSaved`), with no mapper in front of it to strip the bad
-    // values first. null / a string / NaN → 6%; a finite in-range rate kept.
     document.body.innerHTML = ''
     const investment = (name: string, annualReturn: unknown) => ({
       name,
@@ -1150,14 +1033,7 @@ describe('the builder is defensive on its own (AC-14, 100.1 review)', () => {
   })
 })
 
-/**
- * A forecast saved before version 5 keeps its figures (story 102.2, AC-6, D1).
- *
- * ⚠️ `V4_RESULT` was MEASURED at T0, before any engine change: the pre-story
- * engine (main `f6f1e96`, core `src` run through tsx) on exactly the inputs the
- * builder sends for `V4_INPUTS` below, 5 years. It is NOT recomputed here, so it
- * cannot agree with the new code by construction.
- */
+// V4_RESULT was recorded from the pre-version-5 engine, not recomputed, so it cannot agree with new code by construction.
 const V4_RESULT = {
   baseline: [
     {
@@ -1306,7 +1182,6 @@ const V4_INPUTS = {
       contributionRecordedAsExpense: false,
       annualReturn: 0.06,
     },
-    // Saved under 100.2 D4: the flag `false`, the payment ALSO an Expenses row.
     {
       name: 'Loan',
       type: 'debt',
@@ -1359,17 +1234,11 @@ describe('a forecast saved before version 5 keeps its figures (story 102.2, AC-6
       expect(
         screen.getByRole('checkbox', { name: 'Payment already in Expenses, for Loan' })
       ).toBeChecked()
-      // Investment rows are untouched by the legacy rule.
       expect(
         screen.getByLabelText('Not taken from the money left over, for Fund')
       ).not.toBeChecked()
       await waitFor(() => expect(onResult).toHaveBeenCalled(), { timeout: 3000 })
       const recomputed = onResult.mock.calls.at(-1)?.[0]
-      // Story 107.1 (D2): the BASELINE is today's data (empty stores here), not the
-      // saved rows', so only the scenario's own figures are the T0 ones.
-      // Story 114.1: the builder always sends an asset total (0 here: a forecast
-      // saved before version 6 has no asset rows), so every recomputed row also
-      // carries `assets: 0`. Every figure is still the T0 one.
       expect({
         projection: recomputed?.projection,
         summary: recomputed?.summary,
@@ -1392,8 +1261,7 @@ describe('a forecast saved before version 5 keeps its figures (story 102.2, AC-6
       screen.getByRole('checkbox', { name: 'Payment already in Expenses, for Loan' })
     ).not.toBeChecked()
     await waitFor(() => expect(onResult).toHaveBeenCalled(), { timeout: 3000 })
-    // Year 1, by hand: the Loan payment is ALSO in Expenses here, so it is now
-    // counted twice (what the legacy flag exists to prevent): 1,200,000 − 240,000.
+    // The Loan payment is also in Expenses here, so it is counted twice: what the legacy flag exists to prevent.
     expect(onResult.mock.calls.at(-1)?.[0]?.projection[0]?.netIncome).toBe(960_000)
   })
 
@@ -1475,7 +1343,6 @@ describe('save writes the rows and the investment total (AC-12)', () => {
         frequency: 'weekly',
         contributionRecordedAsExpense: true,
       }),
-      // Story 102.1: the debt's payment comes from its linked expense.
       entry({
         id: 'e-2',
         name: 'Loan',
@@ -1502,12 +1369,8 @@ describe('save writes the rows and the investment total (AC-12)', () => {
         contribution: 2_500,
         frequency: 'weekly',
         contributionRecordedAsExpense: true,
-        // Story 100.3: the seeded 6%, on the investment row only (D8).
         annualReturn: 0.06,
       },
-      // A debt is saved WITHOUT a rate (`toEqual` fails on an extra defined key),
-      // and since story 102.2 (version 5) WITH the name of the Expenses row its
-      // payment came from (D6).
       {
         name: 'Loan',
         type: 'debt',
@@ -1522,12 +1385,6 @@ describe('save writes the rows and the investment total (AC-12)', () => {
   })
 })
 
-/**
- * Each investment row's own annual return (story 100.3, FR166). Every figure is
- * derived BY HAND in the comment beside it. The fixture is the AC-10 one above:
- * 12,000.00 a year left over; Fund 1000.00 contributing 100.00/mo; Loan 3000.00
- * paying 200.00/mo; Card 500.00. Two years.
- */
 describe('each investment row has its own annual return (story 100.3)', () => {
   function fillFixture(): void {
     useIncomeStore.setState({ incomeSources: [income(500_000)] })
@@ -1560,14 +1417,12 @@ describe('each investment row has its own annual return (story 100.3)', () => {
     expect(rateField('Pension')).toHaveAttribute('type', 'text')
     expect(rateField('Pension')).toHaveAttribute('inputmode', 'decimal')
     expect(rateField('Pension')).toHaveAttribute('autocomplete', 'off')
-    // The debt row has no rate field (positive control: its row is there).
     expect(screen.getByLabelText('Balance for Loan')).toBeInTheDocument()
     expect(screen.queryByLabelText('Annual return for Loan')).toBeNull()
     expect(within(section()).getAllByLabelText(/^Annual return for /)).toHaveLength(1)
 
     fireEvent.click(screen.getByRole('button', { name: '+ Add Balance' }))
     expect(rateField('New Investment')).toHaveValue('6.00%')
-    // A blank name reads "unnamed balance", like the row's other controls.
     fireEvent.change(screen.getByDisplayValue('New Investment'), { target: { value: '' } })
     expect(rateField('unnamed balance')).toHaveValue('6.00%')
   })
@@ -1598,8 +1453,7 @@ describe('each investment row has its own annual return (story 100.3)', () => {
       })
       expect(rateField('Fund')).not.toHaveAttribute('aria-invalid')
     }
-    // Seven debounced recomputes (500 ms each): measured 5195 ms under a full
-    // sequential gate run, past the 5 s default.
+    // Seven 500 ms debounced recomputes exceed the 5 s default under gate load.
   }, 15_000)
 
   it('a decimal comma is the decimal point: 2,5 means 2.5% (story 110.1, D3)', async () => {
@@ -1611,19 +1465,15 @@ describe('each investment row has its own annual return (story 100.3)', () => {
     fireEvent.change(rateField('Fund'), { target: { value: '2,5' } })
 
     await waitFor(() => expect(engineRows.length).toBeGreaterThan(calls), { timeout: 3000 })
-    // Fund is the fixture's only investment row (engine rows carry no name).
     const fund = (engineRows.at(-1) as Array<{ type: string; annualReturn?: unknown }>).find(
       (row) => row.type === 'investment'
     )
     expect(fund?.annualReturn).toBeCloseTo(0.025, 12)
-    // The field keeps what was typed (no blur reformat) and carries no error.
     expect(rateField('Fund')).toHaveValue('2,5')
     expect(rateField('Fund')).not.toHaveAttribute('aria-invalid')
   })
 
-  // `5abc` and `1e2` (code review): `parseFloat` alone would read 5% and 100% from
-  // them, silently. A SINGLE decimal comma is a rate since story 110.1 (D3), but
-  // `2,5,1`, `1.000,5` and `1,000.5` stay ambiguous and are refused.
+  // parseFloat alone would read `5abc` as 5% and `1e2` as 100%; text with several separators is ambiguous and refused.
   for (const bad of ['', 'abc', '150', '-101', '5abc', '1e2', '2,5,1', '1.000,5', '1,000.5']) {
     it(`"${bad}" is refused: error on the field, recompute and Save held, last result kept (AC-9)`, async () => {
       fillFixture()
@@ -1647,22 +1497,16 @@ describe('each investment row has its own annual return (story 100.3)', () => {
         expect.arrayContaining(['text-xs', 'text-red-600', 'dark:text-red-300'])
       )
       expect(reason()).toBe('Fix the highlighted fields to save')
-      // Past the debounce: no engine call at all, so the bad rate never reached it,
-      // and the last good figure stands.
       await new Promise((resolve) => setTimeout(resolve, 700))
       expect(engineRows.length).toBe(calls)
       expect(fundLine()).toBe(`After 2 years: ${format(359_560)}`)
 
-      // Fixing it recomputes (4%: 1000.00 → 1040.00 + 1200.00 = 2240.00 →
-      // round(2329.60) + 1200.00 = 3529.60).
       fireEvent.change(rateField('Fund'), { target: { value: '4' } })
       expect(reason()).toBeNull()
       expect(rateField('Fund')).not.toHaveAttribute('aria-invalid')
       await waitFor(() => expect(fundLine()).toBe(`After 2 years: ${format(352_960)}`), {
         timeout: 3000,
       })
-      // Every row the engine ever saw carried a usable investment rate, and the
-      // bad text never became one (`5abc` → 0.05, `1,5` → 0.01, `1e2` → 1 would).
       let investmentRowsSeen = 0
       for (const rows of engineRows) {
         for (const row of rows as Array<{ type: string; annualReturn?: unknown }>) {
@@ -1674,7 +1518,7 @@ describe('each investment row has its own annual return (story 100.3)', () => {
         }
       }
       expect(investmentRowsSeen).toBeGreaterThan(0)
-      // Several debounced recomputes in one test: 5 s is too tight under gate load.
+      // Several debounced recomputes: 5 s is too tight under gate load.
     }, 15_000)
   }
 
@@ -1714,7 +1558,6 @@ describe('each investment row has its own annual return (story 100.3)', () => {
     render(<ScenarioBuilder onSave={onSave} />)
     await waitForResult()
     fireEvent.change(rateField('Fund'), { target: { value: '5.5' } })
-    // A debt row that was an investment keeps no rate in the save either.
     fireEvent.change(screen.getByLabelText('Type for Loan'), { target: { value: 'investment' } })
     fireEvent.change(rateField('Loan'), { target: { value: '9' } })
     fireEvent.change(screen.getByLabelText('Type for Loan'), { target: { value: 'debt' } })

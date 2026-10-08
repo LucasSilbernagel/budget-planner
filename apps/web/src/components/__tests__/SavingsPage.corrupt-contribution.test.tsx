@@ -1,13 +1,5 @@
-/**
- * /savings survives a non-finite stored investment contribution
- * (spec-savings-nan-contribution-crash).
- *
- * localStorage is user-editable and `applyServerChanges` writes pulled rows
- * unvalidated, so an investment row's `monthlyContribution` can be NaN, ±Infinity
- * or `null` (NaN serializes to null). Core's `normalizeToMonthly` throws on all of
- * them, and four render-time memos on /savings reached it. The shared mapper now
- * counts such a row as 0 and marks it unreadable; the breakdown discloses it.
- */
+// localStorage is user-editable and pulled rows are unvalidated, so a contribution can be
+// NaN, ±Infinity or null; `normalizeToMonthly` throws on all of them.
 
 import { fireEvent, renderWithProviders, screen } from '@/test/utils'
 import { solveAutomaticAllocations } from '@budget-planner/core'
@@ -77,7 +69,6 @@ const autoGoal = {
   updatedAt: ISO,
 }
 
-/** $3,000 income, $500 rent, one investment row, one automatic goal. */
 function seed(monthlyContribution: number, recordedAsExpense?: boolean): void {
   useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
   useExpenseStore.setState({ expenses: [expenseRow(50_000)] })
@@ -114,7 +105,7 @@ const CORRUPT: [string, number][] = [
 
 describe('SavingsPage with a non-finite stored investment contribution', () => {
   it('positive control: the real solver throws for the raw NaN contribution', () => {
-    // So the RED below is against the /savings memos feeding it, not the stub.
+    // So a failure below comes from the /savings memos feeding it, not the stub.
     expect(() =>
       solveAutomaticAllocations({
         incomeSources: [incomeRow(300_000)],
@@ -141,16 +132,13 @@ describe('SavingsPage with a non-finite stored investment contribution', () => {
 
     // 3000 − 500 rent − 0.
     expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,500\.00/)
-    // The savings table rendered too.
     expect(screen.getAllByText('Auto one').length).toBeGreaterThan(0)
 
     openBreakdown()
     expect(screen.getByTestId('breakdown-contribution-inv-1')).toHaveTextContent(/TFSA/)
-    // Exactly zero (any currency symbol, no sign), not e.g. 500.00, -0.00 or NaN.
     expect(screen.getByTestId('breakdown-contribution-amount-inv-1').textContent).toMatch(
       /^[^\d\-−]*0\.00$/
     )
-    // The note's zero is in the display currency, the same string as the amount.
     expect(screen.getByTestId('breakdown-unreadable-inv-1')).toHaveTextContent(
       `Couldn’t read this contribution, so it counts as ${
         screen.getByTestId('breakdown-contribution-amount-inv-1').textContent

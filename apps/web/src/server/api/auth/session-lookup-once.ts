@@ -1,12 +1,5 @@
-/**
- * One session lookup per request.
- *
- * During SSR of `/login` the root loader and the route's `beforeLoad` guard
- * both call `getSessionSeed` in-process for the SAME request, and with a
- * session cookie each lookup is a `users` query. Keyed on the request object,
- * so every client navigation (its own RPC request) still resolves fresh, and
- * nothing outlives the request.
- */
+// During SSR the root loader and a route's beforeLoad both resolve the session for the same request.
+// Keyed on the request, so every client navigation still resolves fresh.
 
 const lookups = new WeakMap<Request, Promise<unknown>>()
 

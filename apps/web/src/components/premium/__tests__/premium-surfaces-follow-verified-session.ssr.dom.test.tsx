@@ -21,26 +21,8 @@ import { HomePage } from '../../HomePage'
 import { SettingsPage } from '../../settings/settings-page'
 import { PremiumFeatureGate } from '../PremiumFeatureGate'
 
-/**
- * Story 101.2 (AC 6): the readers that now follow the verified session render
- * the SAME HTML on the server and in the first client frame, whatever the
- * module store holds, and correct themselves only after hydration.
- *
- * Why it can go wrong: `verifiedSession` is a module singleton. A reader that
- * hydrates after `AuthIndicator`'s effect already wrote it (a lazy route chunk,
- * a later Suspense boundary) would, if it read the store directly in a
- * `useState` initializer, paint the client answer where the server painted the
- * seed: a hydration mismatch. Read through `useVerifiedSession()`, React uses
- * zustand's SERVER snapshot (`getInitialState`, i.e. `undefined`) while
- * hydrating, then re-renders with the client value.
- *
- * Here the store is PRE-SET to an answer that disagrees with the seed before
- * both the server render and `hydrateRoot`. `AccountSection` is stubbed (it
- * fetches the session itself and is not a tier reader).
- *
- * ⚠️ `router.load()` before `renderToString`, or the router emits an unresolved
- * Suspense boundary and every assertion passes on nothing.
- */
+// The store is pre-set to disagree with the seed: readers must render the seed while hydrating
+// and correct afterwards. `router.load()` first, or the HTML is an unresolved Suspense boundary.
 
 vi.mock('../../settings/account-section', () => ({
   AccountSection: () => <div data-testid="account-section" />,
@@ -105,7 +87,6 @@ async function serverHtml(seed: SessionSeed, Reader: ComponentType) {
   return renderToString(<RouterProvider router={await makeRouter(seed, Reader)} />)
 }
 
-/** Each reader, with a seed and the store answer that DISAGREES with it. */
 const READERS = [
   {
     name: 'a page with a PremiumFeatureGate',
@@ -171,7 +152,6 @@ async function hydrate(
   )
   const serverMarkup = container.innerHTML
   document.body.appendChild(container)
-  // The indicator has already answered on the client before this reader hydrates.
   setVerifiedSession(answer)
   renderingOnClient = true
   const clientRouter = await makeRouter(seed, Reader, withMismatch)
@@ -203,11 +183,7 @@ async function hydrate(
 }
 
 describe('AC 6: hydrating with a disagreeing store answer', () => {
-  /**
-   * ⚠️ DESIGNED RED: the same harness with one element that differs between
-   * server and client. Without it, "no recoverable error" below could mean the
-   * harness cannot see a mismatch at all.
-   */
+  /** Designed RED: without it, no recoverable error could mean the harness sees nothing. */
   it('reports a mismatch when the server and client trees differ (control)', async () => {
     const { recoverable, cleanup } = await hydrate(SIGNED_OUT, ENTITLED, GatesPage, true)
     try {
@@ -233,7 +209,6 @@ describe('AC 6: hydrating with a disagreeing store answer', () => {
           consoleErrors.filter((e) => /hydrat|did not match|mismatch/i.test(e)),
           'React reported a hydration mismatch'
         ).toEqual([])
-        // The correction landed after hydration (and the store was never written by a reader).
         expect(answerApplied(container), 'the reader did not follow the answer').toBe(true)
         expect(getVerifiedSession()).toEqual(answer)
       } finally {

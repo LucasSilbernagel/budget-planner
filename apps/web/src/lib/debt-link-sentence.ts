@@ -1,15 +1,4 @@
-/**
- * The sentence the expense delete dialog adds when debts name that expense as
- * their payment (Story 113.1, FR181, D6 copy).
- *
- * `names` are the linked debts' trimmed, non-blank names in balance-store order.
- * `unnamedCount` is the linked debts whose name was not a usable string: they
- * are left out of the list but still mean the expense is linked, so when EVERY
- * linked debt is unnamed the sentence still appears, without quotes.
- *
- * Returns `null` when nothing is linked: the dialog then reads exactly as it did
- * before this story.
- */
+/** Unnamed linked debts are left out of the list but still count as linked. */
 export function debtLinkSentence(names: readonly string[], unnamedCount: number): string | null {
   if (names.length === 0) {
     if (unnamedCount <= 0) return null

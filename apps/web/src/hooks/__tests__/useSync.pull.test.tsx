@@ -1,30 +1,16 @@
 /**
- * useSync — server → client PULL wiring tests (Story 4-18).
- *
- * Exercises the hook the way the app uses it: manual pull() applies pulled
- * changes into the Zustand domain stores, auto-poll fires on the interval, and a
- * failing transport does not crash. The HTTP client (`fetchServerChanges`) and
- * the server push fn are mocked — no real network (NFR8).
- *
- * NOTE: pull() updates an external (zustand) store and triggers a re-render; we
- * deliberately do NOT wrap it in `act()` (which deadlocks against the hook's
- * still-settling init effect under React 19) and instead await the returned
- * promise and assert via the store / `waitFor`.
+ * pull() is deliberately not wrapped in act(): that deadlocks against the hook's still-settling
+ * init effect under React 19.
  */
 
 import type { ServerChange } from '@budget-planner/core/sync'
 import { renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mock the HTTP transport the hook wires into the core service. Both the pull
-// (fetchServerChanges) and push (sendSyncOperation, Story 5-15) transports live
-// here now; mock both so no real network is touched (NFR8).
 vi.mock('../../features/api/client', () => {
   const fetchServerChanges = vi.fn()
   return {
     fetchServerChanges,
-    // The hook uses the envelope-aware variant; route it through the same mock
-    // so each test keeps stubbing and asserting `fetchServerChanges` alone.
     fetchServerChangesWithMeta: async (...args: unknown[]) => ({
       changes: await fetchServerChanges(...args),
       profileIds: undefined,
@@ -40,20 +26,7 @@ import { resetSyncStore, useSync } from '../useSync'
 
 const asMock = (fn: unknown) => fn as ReturnType<typeof vi.fn>
 
-// Story 5-14: entity ids are client-generatable uuids shared across devices, so a
-// pulled change reconciles by the uuid string directly (no numeric coercion).
-/**
- * ⚠️ The uuid the SERVER stamps on every row (story 66.2). Pulled rows are now
- * validated against their entity schema before they enter a store, and the
- * column is `uuid(...).notNull()` — so a fixture without a real `userId` is not
- * a production-shaped server row and is correctly refused.
- *
- * ⚠️ `userId` was not the only gap in the profile fixture below: `currency` had
- * to be added too, and it was independently load-bearing. `userProfileSchema`
- * declares it `.nullable()` but NOT `.optional()`, so an ABSENT key is a refusal
- * even though an explicit `null` is fine. The story's comment credited only
- * `userId`; its code review caught the omission.
- */
+/** `userProfileSchema` declares `currency` nullable but not optional, so the fixture needs the key. */
 const SERVER_USER_ID = '99999999-9999-4999-8999-999999999999'
 
 const INCOME_ID = '11111111-1111-4111-8111-111111111111'
@@ -152,10 +125,6 @@ describe('useSync pull wiring (Story 4-18)', () => {
 
     const pullResult = await result.current.pull()
 
-    // A transport failure surfaces as a structured failure result (AC-5: pull
-    // "surfaces success/failure"), NOT a throw — the core catches the rejection
-    // and returns { success: false, error }. The store stays intact and nothing
-    // crashes.
     expect(pullResult?.success).toBe(false)
     expect(pullResult?.error).toContain('network down')
     expect(useIncomeStore.getState().incomeSources).toEqual([])
@@ -171,8 +140,6 @@ describe('useSync pull wiring (Story 4-18)', () => {
       ],
       activeProfileId: PLACEHOLDER,
     })
-    // The server scopes financial rows to the requested profile: the placeholder
-    // gets only the profile list; the real profile gets the account's data.
     asMock(fetchServerChanges).mockImplementation(
       async (_since: number | null, _limit: number, profileId?: string) =>
         profileId === SERVER_PROFILE
@@ -196,8 +163,6 @@ describe('useSync pull wiring (Story 4-18)', () => {
 
     const { result, unmount } = renderHook(() =>
       // A poll interval far beyond the waitFor timeout: only the re-pull can pass.
-      // The session is the pulled profile's owner, as in production (story 86.2:
-      // another account's profile is never made active).
       useSync({ userId: SERVER_USER_ID, autoSync: false, autoPull: true, pullInterval: 600_000 })
     )
     await result.current.forcePull()
@@ -205,7 +170,6 @@ describe('useSync pull wiring (Story 4-18)', () => {
     await waitFor(() => {
       expect(useIncomeStore.getState().incomeSources.some((s) => s.id === INCOME_ID)).toBe(true)
     })
-    // Full snapshot for the new profile: its rows predate the profile-list cursor.
     expect(fetchServerChanges).toHaveBeenLastCalledWith(null, 100, SERVER_PROFILE)
     unmount()
   })

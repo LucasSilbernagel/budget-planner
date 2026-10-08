@@ -1,10 +1,3 @@
-/**
- * Balance Tracking Service Tests
- *
- * Unit tests for balance tracking service layer.
- * Tests validation, sorting, filtering, and utility functions.
- */
-
 import type { FinanceType } from '@budget-planner/db'
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
@@ -26,14 +19,6 @@ import {
   validateBalanceTracking,
   withTimeline,
 } from '../balanceTracking'
-
-// AC references for test documentation
-// AC 1: Create Balance Entry
-// AC 2: Read Balance Entries
-// AC 3: Update Balance Entry
-// AC 4: Delete Balance Entry
-// AC 5: Type Display
-// AC 6: Contribution Tracking
 
 describe('validateBalanceTracking', () => {
   it('should pass validation for valid input', () => {
@@ -103,9 +88,6 @@ describe('validateBalanceTracking', () => {
       monthlyContribution: 50000,
       frequency: 'monthly',
     }
-    // Story 103.1 (FR171): was -100000. A debt is now stored as the positive
-    // amount owed and a negative balance is refused (see the 103.1 block below),
-    // so the type-acceptance case uses a legal balance.
     const debt: ClientNewBalanceTracking = {
       type: 'debt',
       name: 'Debt',
@@ -142,10 +124,6 @@ describe('validateBalanceTracking', () => {
     )
   })
 
-  // Story 103.1 (FR171): this test used to be "should allow negative
-  // currentBalance for debts". The invariant is reversed on purpose: a debt is
-  // the positive amount owed (`NetWorthTotals.debtsCents`), and a negative one
-  // inflated net worth on every surface that summed it raw.
   it('should REFUSE a negative currentBalance for debts (Story 103.1)', () => {
     const input: ClientNewBalanceTracking = {
       type: 'debt',
@@ -223,7 +201,6 @@ describe('isValidBalanceTracking', () => {
   })
 })
 
-// Story 16-2: contribution frequency validation + normalization
 describe('validateBalanceTracking - frequency (Story 16-2)', () => {
   const base: ClientNewBalanceTracking = {
     type: 'investment',
@@ -258,8 +235,7 @@ describe('validateBalanceTracking - frequency (Story 16-2)', () => {
 })
 
 describe('monthlyContributionCents (Story 16-2)', () => {
-  // 50000 cents at each cadence, normalized to a monthly base (Math.round):
-  //   weekly ×52/12, biweekly ×26/12, monthly ×1, annually ×1/12
+  // weekly ×52/12, biweekly ×26/12, monthly ×1, annually ×1/12, then Math.round
   it('normalizes a weekly contribution to its monthly equivalent', () => {
     expect(monthlyContributionCents({ monthlyContribution: 50000, frequency: 'weekly' })).toBe(
       216667
@@ -285,8 +261,6 @@ describe('monthlyContributionCents (Story 16-2)', () => {
   })
 
   it('treats a legacy entry with no frequency as monthly (guard)', () => {
-    // Pre-migration rows may reach core without a frequency; normalization would
-    // otherwise throw. The guard keeps them as their current value.
     const legacy = { monthlyContribution: 50000 } as Pick<
       ClientBalanceTracking,
       'monthlyContribution' | 'frequency'
@@ -295,8 +269,6 @@ describe('monthlyContributionCents (Story 16-2)', () => {
   })
 
   it('coerces an unrecognized frequency to monthly instead of throwing (review E1)', () => {
-    // A corrupt value (tampered localStorage / future enum-rollback) must NOT throw
-    // — this runs inside withTimeline during render with no ErrorBoundary.
     const corrupt = {
       monthlyContribution: 50000,
       frequency: 'daily' as unknown as ClientBalanceTracking['frequency'],
@@ -307,8 +279,7 @@ describe('monthlyContributionCents (Story 16-2)', () => {
 })
 
 describe('annualContributionCents (story 111.1)', () => {
-  // amount × periods per year, exactly. The monthly round trip
-  // `monthlyContributionCents(...) × 12` gives 260004 / 2600004 / 600000 / 50004.
+  // `monthlyContributionCents(...) × 12` would give 260004 / 2600004 / 600000 / 50004.
   it.each([
     ['weekly', 5000, 260_000],
     ['biweekly', 100_000, 2_600_000],
@@ -332,25 +303,11 @@ describe('annualContributionCents (story 111.1)', () => {
   })
 })
 
-/**
- * `withTimeline` — frequency normalization (Story 16-2), re-anchored by story 49.1.
- *
- * ⚠️ These two tests carry STORY 16-2's coverage, not 26.4's, and were NOT deleted
- * with the contribution limit. They previously read the normalized contribution
- * back out through `monthsToLimit`; that field is gone, so they now read it through
- * `debtTimeline`, which is the only surviving output `withTimeline` computes from
- * `monthlyContributionCents`. The ARITHMETIC is deliberately unchanged — same
- * cadence, same amounts, same expected 3 and 2 — so a regression in normalization
- * still reddens exactly as before.
- *
- * The entries are debts with a `debtSubType` because that is the only branch that
- * still consumes the normalized figure (the branch is dormant in `apps/web`, which
- * is why this suite is the only thing pinning it).
- */
+// Debts with a debtSubType: the only branch that still reads the normalized contribution.
 describe('withTimeline - frequency normalization (Story 16-2)', () => {
   it('feeds the monthly-equivalent contribution into the debt payoff timeline', () => {
-    // Weekly 50000 → 216667/month. Against a 650000 balance: ceil(650000/216667) = 3.
-    // A raw (un-normalized) 50000 would wrongly yield ceil(650000/50000) = 13.
+    // Weekly 50000 → 216667/month: ceil(650000/216667) = 3.
+    // An un-normalized 50000 would give ceil(650000/50000) = 13.
     const entry: ClientBalanceTracking = {
       id: 'test-uuid',
       type: 'debt',
@@ -383,12 +340,6 @@ describe('withTimeline - frequency normalization (Story 16-2)', () => {
   })
 })
 
-/**
- * `withTimeline` — a corrupt stored contribution (NaN/Infinity, or null once JSON
- * has carried it). The store maps `withTimeline` over every row during render, and
- * only the debt branch reads the normalized figure, so every other row must skip
- * the throwing normalizer (it crashed the Scenario Builder).
- */
 describe('withTimeline - non-finite contribution', () => {
   const rows = [
     ['investment', undefined],
@@ -421,8 +372,6 @@ describe('withTimeline - non-finite contribution', () => {
     })
   }
 
-  // Unchanged on purpose (the spec's boundary): the dormant debt branch still
-  // normalizes, so it still throws. Nothing in apps/web sets `debtSubType`.
   it('still throws for a debt with a debtSubType and a NaN contribution', () => {
     const entry = {
       id: 'test-uuid',
@@ -581,9 +530,6 @@ describe('filterBalanceTracking', () => {
   })
 })
 
-// Story 5-14: ids are now client-generated uuids (replacing the old
-// localStorage-backed negative-integer counter) so an offline-created row keeps
-// the SAME id once synced.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 describe('generateBalanceTrackingTempId', () => {
@@ -603,7 +549,6 @@ describe('generateBalanceTrackingTempId', () => {
 describe('resetBalanceTrackingTempId', () => {
   it('is a stateless no-op and still yields fresh unique uuids', () => {
     const before = generateBalanceTrackingTempId()
-    // No counter to reset; the call must not throw and must not collide ids.
     resetBalanceTrackingTempId()
     const after = generateBalanceTrackingTempId()
     expect(after).toMatch(UUID_RE)
@@ -622,7 +567,7 @@ describe('toClientBalanceTracking', () => {
     }
     const result = toClientBalanceTracking(input)
 
-    expect(result.id).toMatch(UUID_RE) // client-generated uuid (Story 5-14)
+    expect(result.id).toMatch(UUID_RE)
     expect(result.name).toBe('Test')
     expect(result.type).toBe('investment')
     expect(result.currentBalance).toBe(100000)
@@ -669,17 +614,11 @@ describe('withTimeline', () => {
     const result = withTimeline(entry)
 
     expect(result.name).toBe('Test')
-    // Story 49.1: `monthsToLimit` is gone with the contribution-limit concept.
-    // A non-debt entry gets the untouched debt defaults.
     expect(result.debtProgress).toBeNull()
     expect(result.debtTimeline).toBeNull()
     expect('monthsToLimit' in result).toBe(false)
   })
 })
-
-// ============================================================================
-// Edge Case Tests - Addressing code review findings
-// ============================================================================
 
 describe('Edge Case Handling - Validation', () => {
   beforeEach(() => {
@@ -717,10 +656,6 @@ describe('Edge Case Handling - Validation', () => {
   })
 
   describe('Bounds validation', () => {
-    // Story 106.1 (FR174): the bound is now the int32 sync limit, not
-    // `MAX_SAFE_INTEGER / 100`, and the message names it ("can sync") rather
-    // than "safe integer bounds". `MAX_SAFE_INTEGER` is still refused, by the
-    // new bound; the exact edges are pinned in `money-limits.test.ts`.
     it('should reject currentBalance above the largest amount that can sync', () => {
       const input: Partial<ClientNewBalanceTracking> = {
         type: 'investment',
@@ -804,7 +739,6 @@ describe('Edge Case Handling - Sorting and Filtering', () => {
         },
       ]
       const result = sortByCreationDate(entries)
-      // Invalid date should be pushed to end
       expect(result.length).toBe(3)
       expect(result[0].name).toBe('Another Valid')
       expect(result[1].name).toBe('Valid')
@@ -881,10 +815,6 @@ describe('validateBalanceTracking — the asset type (Story 43.4, FR70/D2)', () 
   })
 
   it('REJECTS an asset carrying a contribution (D2 enforced on every write path)', () => {
-    // ⚠️ Not merely cosmetic. `SavingsPage` sums the `monthlyContribution` of
-    // `type === 'investment'` rows into the distributable pool; an asset carrying
-    // one is money the user is putting aside that the pool never deducts, so the
-    // pool is overstated and every automatic allocation runs too large.
     const errors = validateBalanceTracking(assetInput({ monthlyContribution: 50_000 }))
     expect(errors).toHaveLength(1)
     expect(errors[0]?.field).toBe('monthlyContribution')
@@ -911,10 +841,8 @@ describe('validateBalanceTracking — contributionRecordedAsExpense (Story 45.1,
     ...overrides,
   })
 
-  // ⚠️ ACCEPTANCE FIRST, and deliberately paired with the rejections below over the
-  // SAME fixture factory. Story 43.4 shipped a rejection assertion that passed only
-  // because its fixture was malformed and every parse threw — a guard that cannot
-  // fail. If the factory ever breaks, these acceptance cases go red and say so.
+  // Acceptance first, over the same fixture factory as the rejections, so a broken fixture
+  // can't make the rejections pass vacuously.
   it('ACCEPTS an investment row with the flag true', () => {
     expect(validateBalanceTracking(row({ contributionRecordedAsExpense: true }))).toEqual([])
   })
@@ -937,7 +865,7 @@ describe('validateBalanceTracking — contributionRecordedAsExpense (Story 45.1,
   })
 
   it('REJECTS an asset row carrying the flag, alongside the D2 contribution error', () => {
-    // Two independent rules fire here; assert BOTH so neither can mask the other.
+    // Two independent rules fire here; assert both so neither can mask the other.
     const errors = validateBalanceTracking(
       row({ type: 'asset', contributionRecordedAsExpense: true })
     )
@@ -948,15 +876,11 @@ describe('validateBalanceTracking — contributionRecordedAsExpense (Story 45.1,
   })
 
   it('does NOT reject a non-investment row whose flag is false or absent', () => {
-    // The rule keys on `=== true`, so a debt/asset row that merely carries the
-    // field at its default is untouched. This is what keeps the sync contract
-    // uniform across all three finance types (D8).
     expect(
       validateBalanceTracking({
         type: 'debt' as const,
         name: 'Mortgage',
-        // Story 103.1: was -30_000_000; a negative balance is now refused on
-        // its own, which would mask what this test is about (the flag).
+        // Non-negative so the sign rule can't mask the flag rule under test.
         currentBalance: 30_000_000,
         monthlyContribution: 0,
         frequency: 'monthly' as const,
@@ -977,8 +901,6 @@ describe('validateBalanceTracking — paymentExpenseId (Story 102.1, FR169/AC-6)
     ...overrides,
   })
 
-  // Acceptance first, over the same factory as the rejections (the 45.1 rule:
-  // a rejection that passes only because the fixture is malformed proves nothing).
   it('ACCEPTS a debt linked to an expense', () => {
     expect(validateBalanceTracking(row({ paymentExpenseId: EXPENSE_ID }))).toEqual([])
   })
@@ -1024,7 +946,6 @@ describe('validateBalanceTracking — a balance is never negative (Story 103.1, 
     frequency: 'monthly' as const,
   })
 
-  // Acceptance over the same factory as the refusals (the 45.1 rule).
   it('ACCEPTS 0 and a positive balance on every type', () => {
     for (const type of ['investment', 'debt', 'asset'] as const) {
       expect(validateBalanceTracking(row(type, 0))).toEqual([])
@@ -1041,8 +962,7 @@ describe('validateBalanceTracking — a balance is never negative (Story 103.1, 
   })
 
   it('does not ADD the sign error to a non-integer or non-finite balance (its own error says why)', () => {
-    // −Infinity already carries TWO errors (finite + the pre-existing bounds
-    // check), so this asserts the absence of the sign message, not a count.
+    // −Infinity also fails the bounds check, so assert the sign message is absent, not a count.
     for (const bad of [-1.5, Number.NEGATIVE_INFINITY]) {
       const errors = validateBalanceTracking(row('debt', bad))
       expect(errors.some((e) => e.field === 'currentBalance')).toBe(true)
@@ -1059,8 +979,7 @@ describe('debtOwedCents (Story 103.1, FR171/AC-2, D1)', () => {
   })
 
   it('returns a non-finite value UNCHANGED, so corrupt-row handling still sees it', () => {
-    // A NaN hidden as 0 would remove a debt from net worth with nothing on
-    // screen to explain it (net-worth.ts: partition + disclose, never drop).
+    // A NaN hidden as 0 would silently drop a debt from net worth.
     expect(debtOwedCents(Number.NaN)).toBeNaN()
     expect(debtOwedCents(Number.POSITIVE_INFINITY)).toBe(Number.POSITIVE_INFINITY)
     expect(debtOwedCents(Number.NEGATIVE_INFINITY)).toBe(Number.NEGATIVE_INFINITY)
@@ -1085,8 +1004,7 @@ describe('resolveDebtPaymentExpense (Story 102.1, FR169/AC-5)', () => {
   })
 
   it('⚠️ returns null for a DANGLING link (deleted, not yet pulled, other profile)', () => {
-    // The caller passes the active profile's expenses, so all three cases are
-    // the same thing here: an id that is not in the list.
+    // The caller passes the active profile's expenses, so all three cases are an id not in the list.
     expect(
       resolveDebtPaymentExpense({ type: 'debt', paymentExpenseId: 'gone' }, expenses)
     ).toBeNull()

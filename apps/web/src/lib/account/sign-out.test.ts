@@ -1,21 +1,3 @@
-/**
- * signOut tests (story 59.3, AC-7).
- *
- * The ONE sign-out implementation, shared by `/settings` (`AccountSection`) and
- * the chrome's account menu (`AuthIndicator`). What it must guarantee:
- *  - it POSTs `/api/auth/logout` BEFORE leaving, so the server clears the
- *    session cookies and revokes the session;
- *  - it then leaves with a FULL DOCUMENT LOAD to `/` (see the module docblock
- *    for why a client-side navigation is wrong here);
- *  - it leaves even when the POST fails, and never rejects: it runs from click
- *    handlers, where a rejection would be an unhandled promise — including when
- *    the navigation itself throws;
- *  - it gives the POST a deadline, so a hung request cannot strand the user
- *    (review: a hang disabled Sign out for the rest of the session);
- *  - it is ONE sign-out per app: a second call while the first is in flight
- *    joins it instead of sending a second POST, whichever control made it.
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { APP_SHELL_PURGE_TIMEOUT_MS } from '../pwa/app-shell-cache'
 import { resetSignOutStateForTests, returnToSignedOutHome, signOut } from './sign-out'
@@ -25,13 +7,10 @@ const originalFetch = global.fetch
 
 beforeEach(() => {
   vi.clearAllMocks()
-  // `clearAllMocks` clears CALLS, not implementations: the "navigation throws"
-  // test below would otherwise leave `assign` throwing for every later test.
+  // `clearAllMocks` keeps implementations, so reset `assign` or a throwing one leaks into later tests.
   assign.mockReset()
   resetSignOutStateForTests()
-  // jsdom's `location.assign` is not implemented (it logs "Not implemented:
-  // navigation"), so it is replaced rather than spied. Same as
-  // `account-section.test.tsx`.
+  // jsdom does not implement `location.assign`, so it is replaced rather than spied.
   vi.stubGlobal('location', { ...globalThis.location, assign })
 })
 afterEach(() => {
@@ -79,9 +58,6 @@ describe('signOut', () => {
   })
 
   it('joins an in-flight sign-out instead of sending a second POST', async () => {
-    // The two controls (chrome menu + /settings) used to guard themselves
-    // separately, so pressing one while the other was in flight sent a second
-    // POST and raced a second navigation.
     let calls = 0
     global.fetch = vi.fn(() => {
       calls += 1
@@ -115,13 +91,6 @@ describe('signOut', () => {
   })
 })
 
-/**
- * Story 101.1 (FR167, AC 4/6): sign-out deletes the service worker's page
- * cache (`app-shell`) AFTER the logout POST settles and BEFORE the document
- * load, whatever the POST did, and a purge that misbehaves never stops the
- * user leaving. The node environment has no `caches`, so each case stubs it;
- * the tests above run without one, which is the "no Cache Storage" path.
- */
 describe('signOut purges the app-shell page cache', () => {
   function stubCaches(remove: (name: string) => Promise<boolean>) {
     const del = vi.fn(remove)
@@ -141,8 +110,7 @@ describe('signOut purges the app-shell page cache', () => {
     }) as typeof global.fetch
     const del = stubCaches(async () => {
       order.push('purge-start')
-      // Settle on a later task, so a purge that is not awaited shows up as
-      // `assign` before `purge-settled`.
+      // Settle on a later task, so a purge that is not awaited shows up as `assign` first.
       await new Promise((resolve) => setTimeout(resolve, 0))
       order.push('purge-settled')
       return true

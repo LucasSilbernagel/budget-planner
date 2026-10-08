@@ -1,14 +1,3 @@
-/**
- * `onOperationsRejected` — how a permanent refusal reaches the web layer
- * (story 75.2, FR119).
- *
- * Before 75.2 a refused op was appended to `state.rejectedOperations`, which
- * nothing read and nothing emptied: the edit vanished from the outbox with no
- * signal, and the array grew for the life of the service. The subscription is
- * what the web layer uses to name the refused entry and revert it; the array is
- * now a capped diagnostic record.
- */
-
 import { type Mock, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SynchronizationService } from '../synchronization'
 import type { ProcessOperationFn, SyncOperation } from '../types'
@@ -46,7 +35,6 @@ describe('onOperationsRejected (story 75.2)', () => {
       add: vi.fn(async (o: AnyOp) => {
         operations.push(o)
       }),
-      // `destroy()` closes the queue (story 79.1).
       close: vi.fn(),
       getAll: vi.fn(() => [...operations]),
       getReadyOperations: vi.fn(() => [...operations]),
@@ -57,7 +45,6 @@ describe('onOperationsRejected (story 75.2)', () => {
           if (o && ids.includes(o.id)) operations.splice(i, 1)
         }
       }),
-      // Refused ops leave the queue through `discardBatch` (story 75.3).
       discardBatch: vi.fn(async (ids: string[]) => {
         const before = operations.length
         for (let i = operations.length - 1; i >= 0; i--) {
@@ -97,7 +84,6 @@ describe('onOperationsRejected (story 75.2)', () => {
 
     expect(seen).toEqual([{ ids: ['bad'], queuedAtCall: [] }])
 
-    // A second, clean sync reports nothing — no re-announcement of old refusals.
     operations.push(op('later'))
     await service.sync()
     expect(seen).toHaveLength(1)
@@ -118,14 +104,6 @@ describe('onOperationsRejected (story 75.2)', () => {
     expect(seen).toEqual([['create', 'update']])
   })
 
-  // Story 75.3 INVERTED the test that stood here ("does NOT fire for ops whose
-  // removal from the queue failed — they are still queued"). It pinned the defect:
-  // a removal that fails because storage refuses writes fails identically every
-  // cycle, so the op replayed for ever and the user was never told. A refused op
-  // now leaves this session's queue even when the write fails, and IS announced.
-  // The storage-failure path is covered over a real `SyncQueue` in
-  // `retryable-durability.test.ts`. Here only the contract with the queue is
-  // checked: an unpersisted discard is still announced.
   it('fires for ops whose discard could not be PERSISTED — they have left this session', async () => {
     const callback = vi.fn()
     service.onOperationsRejected(callback)
@@ -141,10 +119,8 @@ describe('onOperationsRejected (story 75.2)', () => {
 
     await service.sync()
 
-    // Positive anchor: the op really was sent and refused.
     expect(processOperation.mock.calls.map(([o]) => o.id)).toEqual(['bad'])
-    // Code review P1: without these two lines the test passed on pre-75.3 code,
-    // where `removeBatch` removed the op and the callback fired just the same.
+    // Without these the test also passed when `removeBatch` removed the op.
     expect(mockQueue.discardBatch).toHaveBeenCalledWith(['bad'])
     expect(mockQueue.removeBatch).not.toHaveBeenCalled()
     expect(callback).toHaveBeenCalledTimes(1)
@@ -175,7 +151,6 @@ describe('onOperationsRejected (story 75.2)', () => {
 
     await service.sync()
 
-    // Positive anchor (code review 75.2): all four really were sent and answered.
     expect(processOperation.mock.calls.map(([o]) => o.id).sort()).toEqual(
       ['auth', 'retry', 'tier', 'unclassified'].sort()
     )
@@ -207,12 +182,8 @@ describe('onOperationsRejected (story 75.2)', () => {
     await service.sync()
     expect(unsubscribed).not.toHaveBeenCalled()
 
-    // Story 79.1 changed this half. It used to call `sync()` AFTER `destroy()`
-    // and anchor on the destroyed service still SENDING `bad-2` and REMOVING it
-    // from the queue — the very behaviour 79.1 reverses (a destroyed service
-    // sends nothing and leaves the queue alone). The claim that matters is the
-    // real interleave: a refusal landing after `destroy()` reaches no subscriber
-    // AND stays queued, so the next session can report it.
+    // A refusal landing after `destroy()` reaches no subscriber and stays queued for the
+    // next session.
     const afterDestroy = vi.fn()
     service.onOperationsRejected(afterDestroy)
     operations.push(op('bad-2'))
@@ -224,7 +195,6 @@ describe('onOperationsRejected (story 75.2)', () => {
         })
     )
     const inFlight = service.sync()
-    // Positive anchor: `bad-2` really went out before the teardown.
     await vi.waitFor(() =>
       expect(processOperation.mock.calls.map(([o]) => o.id)).toContain('bad-2')
     )

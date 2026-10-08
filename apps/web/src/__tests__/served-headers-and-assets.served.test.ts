@@ -1,20 +1,4 @@
 // @vitest-environment node
-/**
- * What the app's own server SENDS: response headers and static assets
- * (story 84.4, FR137).
- *
- * Replaces `e2e/security-headers.spec.ts`, `favicon.spec.ts`, the asset half
- * of `page-metadata.spec.ts` (robots.txt, sitemap.xml) and `pwa.spec.ts`'s
- * manifest group. Every claim here is about the HTTP response, so it needs a
- * real server (`src/test/served-app.ts`), not a browser.
- *
- * What moved out of reach (story 84.4 D2, named losses): the browser
- * ENFORCING the policy (`securitypolicyviolation` events). The policy itself,
- * and that every inline script the server sends is authorized by it, are
- * pinned here. The header FUNCTION is unit-tested in
- * `server/middleware/__tests__/security-headers.test.ts`; this file is what
- * proves `start.ts` actually applies it to a served page.
- */
 
 import { createHash } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -35,13 +19,8 @@ vi.setConfig({ testTimeout: SERVED_TEST_TIMEOUT_MS })
 
 let app: ServedApp
 
-/**
- * A counter.dev site id for THIS server (story 117.1), so the analytics tag is
- * in the served HTML. Vite copies `VITE_*` keys from `process.env` into
- * `import.meta.env` when the server is created, so it is set before
- * `startServedApp()` and restored after. Fake id: nothing loads it here (no
- * browser).
- */
+// Vite copies `VITE_*` keys from `process.env` when the server is created, so this is set
+// before `startServedApp()`. Fake id: nothing loads it.
 const SERVED_COUNTERDEV_ID = 'served-test-site-id'
 const previousCounterDevId = process.env['VITE_COUNTERDEV_ID']
 
@@ -88,8 +67,6 @@ describe('the document response headers (was e2e security-headers AC-1)', () => 
     expect(policy).toContain(`default-src 'self'`)
 
     expect(header(response, 'referrer-policy')).toBe('strict-origin-when-cross-origin')
-    // Story sec-4 (AC-4): payment for self + Paddle's checkout frame, built from the
-    // SAME environment the CSP gets (this process's PADDLE_ENVIRONMENT).
     expect(header(response, 'permissions-policy')).toBe(
       buildPermissionsPolicy(paddleEnvironmentFromProcessEnv())
     )
@@ -117,15 +94,8 @@ describe('the document response headers (was e2e security-headers AC-1)', () => 
     expect(metaNonce(second.body)).toBe(secondNonce)
   })
 
-  /**
-   * Was e2e "a no-flash bootstrap executes under the CSP". The browser half
-   * (it RUNS) is the named loss; what the server controls is that no inline
-   * script it sends would be blocked: each carries the request's nonce, or the
-   * sha256 of its exact text is listed in `script-src`.
-   *
-   * Checked on more than `/` (84.4 review): a route-level `head().scripts`
-   * bootstrap on another route would otherwise ship unauthorized and green.
-   */
+  // Each inline script the server sends must carry the request's nonce or have the sha256 of
+  // its exact text listed in `script-src`.
   for (const path of ['/', '/income', '/docs/getting-started']) {
     it(`authorizes every inline <script> it serves on ${path}, by nonce or by exact hash`, async () => {
       const response = await app.get(path)
@@ -136,9 +106,7 @@ describe('the document response headers (was e2e security-headers AC-1)', () => 
       const inline = [...response.body.matchAll(/<script(\s[^>]*)?>([\s\S]*?)<\/script>/g)].filter(
         ([, attributes = '']) => !/\ssrc=/.test(attributes)
       )
-      // Anti-vacuity: the three pre-paint bootstraps (story 117.2 added the
-      // third) are hash-authorized inline scripts in <head>, so a parse that
-      // found none would be blind.
+      // Anti-vacuity: the pre-paint bootstraps are hash-authorized, so a parse finding none is blind.
       const hashed = inline.filter(([, attributes = '']) => !/\snonce=/.test(attributes))
       expect(hashed.length, 'expected the hash-authorized bootstraps').toBeGreaterThanOrEqual(3)
 
@@ -155,15 +123,6 @@ describe('the document response headers (was e2e security-headers AC-1)', () => 
   }
 })
 
-/**
- * Story 117.1 (FR185): the counter.dev tag is DEFERRED, so it no longer blocks
- * first paint. The unit pins in `lib/analytics/__tests__/counter.test.ts` see
- * the `head().scripts` entry; this sees what reaches the HTML through TanStack's
- * `<Scripts />` and React's SSR, which is what the browser acts on. That the
- * deferred tag still records the visit (counter.dev reads
- * `document.currentScript`) needs a browser: it was proven once, by hand, in the
- * story's evidence, because CI builds without a site id.
- */
 describe('the counter.dev analytics tag (story 117.1)', () => {
   it('is served once on /, deferred, with its data-id and the request nonce', async () => {
     const response = await app.get('/')
@@ -245,8 +204,7 @@ describe('the web app manifest (was e2e pwa (manifest))', () => {
   it('serves a valid, installable manifest', async () => {
     const response = await app.get('/manifest.webmanifest')
     expect(response.status).toBe(200)
-    // The dev plugin may say application/json; production's type is pinned by
-    // `server/__tests__/node-adapter.test.ts`.
+    // The dev plugin may say application/json; production's type is pinned elsewhere.
     expect(header(response, 'content-type') ?? '').toMatch(
       /application\/manifest\+json|application\/json/
     )

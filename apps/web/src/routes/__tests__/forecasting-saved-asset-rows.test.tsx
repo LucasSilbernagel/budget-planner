@@ -7,13 +7,6 @@ import { useBalanceStore } from '../../stores/balanceStore'
 import { useProfileStore } from '../../stores/profileStore'
 import { Route } from '../forecasting'
 
-/**
- * Reopening saved forecasts with and without asset rows (story 114.1, AC-10),
- * through the page's real `mapToSavedForecast` → builder path.
- *
- * The engine is the REAL one, wrapped only to record what it was called with.
- */
-
 type ForecastArgs = Parameters<typeof import('@budget-planner/core').calculateFinancialForecast>
 const engineCalls = vi.hoisted(() => [] as ForecastArgs[])
 
@@ -70,7 +63,6 @@ function savedRow(inputs: unknown, version: number): Record<string, unknown> {
   }
 }
 
-/** Open My Forecasts, Load "Plan", and wait for the loaded builder's first recompute. */
 async function loadPlan(inputs: unknown, version: number) {
   fetchForecasts.mockResolvedValue({ success: true, data: [savedRow(inputs, version)] })
   renderWithRouter(<ForecastingPage />)
@@ -85,7 +77,6 @@ async function loadPlan(inputs: unknown, version: number) {
   return last
 }
 
-/** Every asset row as `[name, value text]`. */
 function assetRows(): [string, string][] {
   const section = screen.getByRole('region', { name: 'Assets' })
   return within(section)

@@ -1,11 +1,4 @@
 // @vitest-environment node
-// No DOM needed: the `components/**` glob would give it jsdom (story 82.2).
-/**
- * Pure validation tests for the contact form (story 9-1, AC-2 / AC-5).
- *
- * Boundary conditions for the required message and the optional-but-validated
- * email, with no DOM or network in play.
- */
 
 import { describe, expect, it } from 'vitest'
 import {

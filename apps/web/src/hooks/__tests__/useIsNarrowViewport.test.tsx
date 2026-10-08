@@ -1,23 +1,9 @@
-/**
- * useIsNarrowViewport — narrow-viewport detection (Story 6.1)
- *
- * Verifies the hook reports the phone-width range (< Tailwind `sm` 640px) so
- * Recharts components can switch to mobile-friendly layouts, and that it is
- * SSR-safe (defaults to `false` when matchMedia is unavailable). Drives the
- * 320px responsive work without a hydration mismatch.
- */
-
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NARROW_VIEWPORT_MAX_WIDTH, useIsNarrowViewport } from '../useIsNarrowViewport'
 
 type Listener = (event: { matches: boolean }) => void
 
-/**
- * Install a controllable matchMedia stub; returns a setter to flip the match.
- * `api: 'legacy'` exposes only the deprecated `addListener`/`removeListener`
- * pair (no `addEventListener`) to emulate iOS Safari <14 / old Android.
- */
 function mockMatchMedia(initialMatches: boolean, api: 'modern' | 'legacy' = 'modern') {
   let matches = initialMatches
   const listeners = new Set<Listener>()
@@ -32,8 +18,7 @@ function mockMatchMedia(initialMatches: boolean, api: 'modern' | 'legacy' = 'mod
           addListener: (cb: Listener) => listeners.add(cb),
           removeListener: (cb: Listener) => listeners.delete(cb),
         }
-  // Define `matches` as a live getter on the final object — spreading a getter
-  // would snapshot its value, so the listener-driven updates below wouldn't show.
+  // Spreading a getter would snapshot it, so define `matches` as a live getter.
   const mql = Object.defineProperty(listenerApi, 'matches', {
     get: () => matches,
     enumerable: true,
@@ -93,7 +78,6 @@ describe('useIsNarrowViewport', () => {
     act(() => setMatches(true))
     expect(result.current).toBe(true)
 
-    // Cleanup must use removeListener (no throw on unmount).
     expect(() => unmount()).not.toThrow()
   })
 

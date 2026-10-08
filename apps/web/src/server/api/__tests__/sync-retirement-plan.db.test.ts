@@ -1,29 +1,7 @@
 // @vitest-environment node
 /**
- * The retirement plan round-trips through the REAL sync chain, both directions,
- * and every rejection path has a FATE that cannot deadlock (story 99.2, FR161:
- * AC-2, AC-6, AC-3 at the route level).
- *
- * Real `toServerPayload` → real core `SynchronizationService` (its
- * `syncOperationDataSchema` queue gate) → real `sendSyncOperation` → real
- * `/api/sync/batch` → real `processBatchSync` → real PostgreSQL (PGlite, the full
- * migration chain incl. 0025) → real `/api/sync/changes` → real
- * `fetchServerChanges` → core `pull()` (its LWW and `validateServerRow`) → real
- * `applyServerChangesToStores` → the real retirement store. Only the session
- * lookup, the rate limiter and the logger are stubbed.
- *
- * ⚠️ Every "dropped"/"kept" assertion reads the PERSISTED queue, and every test
- * also asserts what the route SERVED: without that anchor an offline service
- * (which sends nothing) satisfies every "not queued" claim
- * (`permanent-rejection-chain.db.test.ts` records the first run that did).
- *
- * ⚠️ Ops the client gate would refuse (AC-6 b/c/d) are written into the
- * persisted queue DIRECTLY: they model a queue written by another build or a
- * loosened gate. The test is about what the SERVER and transport do with them.
- *
- * This file queues plan ops through the core service directly. The app's own
- * push (story 99.3, `lib/sync/retirementPlanPush.ts`) is pinned by
- * `retirement-plan-push.dom.test.ts` and `cross-device-sync.db.test.tsx`.
+ * Dropped/kept assertions read the persisted queue AND what the route served: an
+ * offline service sends nothing and would pass every "not queued" claim.
  */
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -141,7 +119,6 @@ async function startService() {
   return sync
 }
 
-/** Queue a plan op the way story 99.3's push will: through the REAL mapper. */
 async function queuePlan(type: 'create' | 'update', plan: unknown) {
   const sync = service ?? (await startService())
   const payload = bridge.toServerPayload('retirementPlan', { id: USER, plan } as never, USER)
@@ -182,7 +159,6 @@ function rawOp(overrides: Partial<SyncOperation>): SyncOperation {
   } as SyncOperation
 }
 
-/** A fresh device: default plan, owned by this session, never pulled. */
 function resetStore() {
   store.useRetirementPlannerStore.setState({
     plan: { ...store.RETIREMENT_PLAN_DEFAULTS },
@@ -242,7 +218,6 @@ describe('AC-2: the plan round-trips through the real chain, both directions', (
     const sync = await queuePlan('update', PLAN)
     await sync.forceSync()
 
-    // (e) never the `update-delete` conflict: processed, no conflict, dequeued.
     expect(pushes().map((r) => r.status)).toEqual([200])
     expect(pushEnvelope()).toMatchObject({ processedCount: 1, conflictCount: 0, failedCount: 0 })
     expect(persistedQueue()).toEqual([])
@@ -250,14 +225,12 @@ describe('AC-2: the plan round-trips through the real chain, both directions', (
     expect(row?.plan).toEqual(PLAN)
     expect(row?.userId).toBe(USER)
 
-    // (a) pull it into a fresh device's store.
     resetStore()
     const result = await sync.pull()
     expect(result.applied.map((c) => c.entityType)).toContain('retirementPlan')
     const state = store.useRetirementPlannerStore.getState()
     expect(state.plan).toEqual(PLAN)
     expect(state.ownerUserId).toBe(USER)
-    // AC-3: stamped with the server version it came from.
     expect(state.serverUpdatedAt).toBe(row?.updatedAt.toISOString())
   })
 
@@ -300,7 +273,7 @@ describe('AC-2: the plan round-trips through the real chain, both directions', (
     const untouched = { ...PLAN, desiredIncomeTouched: false, postRetirementTouched: false }
     const sync = await queuePlan('update', untouched)
     await sync.forceSync()
-    // The coercion collapses an untouched post-retirement rate to '' (story 35.3).
+    // The coercion collapses an untouched post-retirement rate to ''.
     expect((await serverRow())?.plan).toMatchObject({
       desiredIncomeTouched: false,
       postRetirementTouched: false,
@@ -339,9 +312,8 @@ describe('AC-2: the plan round-trips through the real chain, both directions', (
   })
 
   it('(f) RACE: a create whose conflict check missed the row is still insert-if-absent', async () => {
-    // Another device's write lands between `checkConflict`'s SELECT and the
-    // INSERT. PGlite is one connection, so the window is SIMULATED: the conflict
-    // check's existence SELECT is stubbed to see no row.
+    // PGlite is one connection, so the race window is simulated by stubbing the
+    // conflict check's existence SELECT to see no row.
     const sync = await queuePlan('update', PLAN)
     await sync.forceSync()
     const before = await serverRow()
@@ -394,9 +366,8 @@ describe('AC-2: the plan round-trips through the real chain, both directions', (
 describe('AC-6: no rejection path can deadlock — each op has a FATE', () => {
   it('(a) client gate: an over-long field is a ZodError before queue.add — nothing queued, nothing sent', async () => {
     const sync = await startService()
-    // Straight to core, past the bridge: since the 99.2 review `toServerPayload`
-    // clamps strings to the gate's bound, so the bridge can no longer produce this
-    // payload. The gate itself must still refuse it.
+    // Straight to core: toServerPayload clamps strings, so only a direct op can
+    // reach the gate with this payload.
     await expect(
       sync.queueUpdate(
         'retirementPlan',
@@ -425,9 +396,8 @@ describe('AC-6: no rejection path can deadlock — each op has a FATE', () => {
   ])(
     '(b2) a string jsonb cannot hold, %s, is DROPPED, never kept queued (99.2 review)',
     async (_label, bad) => {
-      // Text columns take these; the plan's jsonb column refuses them with a
-      // SQLSTATE that is not permanent, so before the review the op stayed queued
-      // and replayed until the circuit breaker stopped all sync for the account.
+      // Text columns accept these; the jsonb column refuses them with a non-permanent
+      // SQLSTATE, which would replay until the circuit breaker stops sync.
       const op = rawOp({ data: { plan: { ...PLAN, desiredIncomeInput: bad }, userId: USER } })
       seedQueue([op])
       const sync = await startService()
@@ -460,7 +430,7 @@ describe('AC-6: no rejection path can deadlock — each op has a FATE', () => {
     await sync.forceSync()
 
     // The route answers 200 with a per-op `rejection`; the client transport maps
-    // it to 422 (`sendSyncOperation`), which core drops.
+    // it to 422, which core drops.
     expect(pushes().map((r) => r.status)).toEqual([200])
     expect(pushEnvelope()).toMatchObject({
       failedCount: 1,
@@ -477,8 +447,6 @@ describe('AC-6: no rejection path can deadlock — each op has a FATE', () => {
     const sync = await startService()
     await sync.forceSync()
 
-    // The route answers 200 with a per-op `rejection`; the client transport maps
-    // it to 422 (`sendSyncOperation`), which core drops.
     expect(pushes().map((r) => r.status)).toEqual([200])
     expect(pushEnvelope()).toMatchObject({
       conflictCount: 0,
@@ -494,8 +462,6 @@ describe('AC-6: no rejection path can deadlock — each op has a FATE', () => {
     const sync = await startService()
     await sync.forceSync()
 
-    // The route answers 200 with a per-op `rejection`; the client transport maps
-    // it to 422 (`sendSyncOperation`), which core drops.
     expect(pushes().map((r) => r.status)).toEqual([200])
     expect(persistedQueue()).toEqual([])
     expect((await serverRow())?.plan).toEqual(PLAN)
@@ -540,7 +506,6 @@ describe('AC-4: a still-queued plan edit is not overwritten by the pull', () => 
 
     expect(store.useRetirementPlannerStore.getState().plan.currentAgeInput).toBe('50')
     expect(sync.getQueue().getAll()).toHaveLength(1)
-    // ...and the edit then lands.
     await sync.forceSync()
     expect((await serverRow())?.plan).toMatchObject({ currentAgeInput: '50' })
   })

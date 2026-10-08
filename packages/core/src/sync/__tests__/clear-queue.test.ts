@@ -1,18 +1,5 @@
-/**
- * `SynchronizationService.clearQueue()` empties the queue the service itself
- * writes (story 86.1, FR139).
- *
- * "Clear local data" and account deletion used to clear storage through a fresh
- * `createSyncQueue(userId)`. The live service kept its own in-memory queue, and
- * every queue write is a whole-queue write from memory, so its next write put
- * the cleared ops back. These tests use a REAL service on the production storage
- * key (the per-test `localStorage` mock), with `navigator.onLine` stubbed true so
- * a "nothing was sent" assertion cannot pass because the service started offline.
- *
- * Decision D2: a sync in flight across the clear sent only ops the clear has
- * removed, so a refusal it gets is neither announced (no revert, no notice) nor
- * recorded, and neither is a conflict.
- */
+// `navigator.onLine` is stubbed true so a "nothing was sent" assertion can't pass just
+// because the service started offline.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SyncQueueClosedError } from '../queue'
@@ -103,7 +90,6 @@ describe('SynchronizationService.clearQueue (story 86.1)', () => {
   it('empties memory AND storage, so the next write carries only the new op', async () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify([op('A'), op('B')]))
     const service = await makeService(vi.fn(async () => ACCEPTED))
-    // Positive anchor: the service loaded both ops.
     expect(
       service
         .getQueue()
@@ -135,7 +121,6 @@ describe('SynchronizationService.clearQueue (story 86.1)', () => {
     expect(rejected).not.toHaveBeenCalled()
     expect(service.getState().rejectedOperations).toEqual([])
     expect(persistedIds()).toEqual([])
-    // Code review P-1: nor is the cleared op's failure recorded as this sync's.
     expect(service.getState().status).toBe(SyncStatus.COMPLETED)
     expect(service.getState().lastError).toBeUndefined()
   })
@@ -166,7 +151,6 @@ describe('SynchronizationService.clearQueue (story 86.1)', () => {
     const service = await makeService(send)
 
     const inFlight = service.sync()
-    // Positive anchor: the batch really started with A.
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1))
     await service.clearQueue()
     held.resolve(ACCEPTED)
@@ -209,9 +193,8 @@ describe('SynchronizationService.clearQueue (story 86.1)', () => {
     const queue = service.getQueue()
     const discard = queue.discardBatch.bind(queue)
     let clearing: Promise<void> | undefined
-    // The clear is requested AFTER the refusal's removal entered the queue's
-    // mutation chain, so the queue runs it second: the sync resumes before the
-    // clear has run, and must still treat its batch as cleared.
+    // Requested after the refusal's removal entered the mutation chain, so the sync resumes
+    // before the clear runs and must still treat its batch as cleared.
     queue.discardBatch = async (ids: string[]) => {
       const removal = discard(ids)
       clearing = service.clearQueue()
@@ -221,12 +204,10 @@ describe('SynchronizationService.clearQueue (story 86.1)', () => {
     await service.sync()
     await clearing
 
-    // Positive anchor: the removal path really ran and the clear really ran.
     expect(clearing).toBeDefined()
     expect(persistedIds()).toEqual([])
     expect(rejected).not.toHaveBeenCalled()
-    // The refusal's failure is not recorded either (the second D2 point, P-1):
-    // not even for a moment, which `clearQueue`'s own reset would hide.
+    // Not even momentarily, which `clearQueue`'s own reset would hide.
     expect(statuses).not.toContain(SyncStatus.FAILED)
     expect(service.getState().status).toBe(SyncStatus.COMPLETED)
     expect(service.getState().lastError).toBeUndefined()
@@ -263,14 +244,12 @@ describe('SynchronizationService.clearQueue (story 86.1)', () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify([op('A')]))
     const service = await makeService(vi.fn(async () => REFUSED))
     await service.sync()
-    // Positive anchor: the refusal is in the record.
     expect(service.getState().rejectedOperations.map((o) => o.id)).toEqual(['A'])
     expect(service.getState().lastError).toBe('refused')
 
     await service.clearQueue()
 
     expect(service.getState().rejectedOperations).toEqual([])
-    // P-1: the error the cleared op caused goes with it.
     expect(service.getState().lastError).toBeUndefined()
   })
 
@@ -296,7 +275,6 @@ describe('SynchronizationService.clearQueue (story 86.1)', () => {
       await service.sync()
       await vi.advanceTimersByTimeAsync(1_100)
     }
-    // Positive anchor: the op really escalated (79.2: 4 failures past the time floor).
     expect(service.getState().escalatedOperations.map((o) => o.id)).toEqual(['A'])
     expect(service.getState().status).toBe(SyncStatus.FAILED)
 
@@ -311,7 +289,6 @@ describe('SynchronizationService.clearQueue (story 86.1)', () => {
     const send = vi.fn(async () => RETRYABLE)
     const service = await makeService(send)
     await service.sync()
-    // Positive anchor: the failure is recorded and a retry is armed.
     expect(service.getState().failedOperations.map((o) => o.id)).toEqual(['A'])
     const statuses = vi.fn()
     service.onStatusChange(statuses)
@@ -356,7 +333,6 @@ describe('SynchronizationService.clearQueue (story 86.1)', () => {
     )
     await service.pull()
     const cursor = service.getState().lastPullTimestamp
-    // Positive anchor: the pull really set a cursor.
     expect(cursor).not.toBeNull()
 
     await service.clearQueue()
@@ -372,7 +348,7 @@ describe('SynchronizationService.clearQueue (story 86.1)', () => {
     service.destroy()
 
     await expect(clearing).rejects.toBeInstanceOf(SyncQueueClosedError)
-    // The caller (`purgeLocalFinancialData`) falls back to a fresh queue for this key.
+    // The caller falls back to a fresh queue for this key.
     expect(persistedIds()).toEqual(['A'])
   })
 

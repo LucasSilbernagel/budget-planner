@@ -1,13 +1,6 @@
 // @ts-check
-// Build-time static compression for `dist/client` (served by
-// `src/server/node-adapter.mjs`). For every compressible file of at least
-// MIN_COMPRESS_BYTES it writes a `.br` (quality 11) and a `.gz` (level 9)
-// sibling, which the adapter picks by `Accept-Encoding`. Doing it once here
-// gives the best ratio at zero per-request CPU.
-//
-// A sibling that would not be smaller than its file is not written, and any
-// existing one is deleted, so a stale sibling from an earlier build can never
-// outlive the decision.
+// A sibling that would not be smaller is not written, and any existing one is deleted,
+// so a stale sibling can't outlive the decision.
 
 import { readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'

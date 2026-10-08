@@ -1,10 +1,3 @@
-/**
- * `dropAnotherAccountsLocalData` (story 86.2, D2): the branches the ActiveSync
- * integration test does not reach, where some of this browser's profiles are
- * KEPT (the session's own, or one made on the Profiles page), and the measured
- * limit of the rule (D4 / G6).
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useBalanceStore } from '../../../stores/balanceStore'
 import { useCategoryStore } from '../../../stores/categoryStore'
@@ -101,8 +94,6 @@ describe('the D4 residual, MEASURED (story 86.2, AC 6 / G6)', () => {
   })
 
   it('a row made during a PAID session carries a placeholder until its first pull, so it is kept and adopted like a free-tier row', () => {
-    // A's paid session, push bridge registered, each row added through the real
-    // store action with the payload its page passes.
     registerSyncBridge({
       userId: ACCOUNT_A,
       queueCreate: vi.fn(async () => {}),
@@ -150,8 +141,7 @@ describe('the D4 residual, MEASURED (story 86.2, AC 6 / G6)', () => {
     ]
     expect(owners).toEqual([0, 0, undefined, undefined, 0])
 
-    // So B's sign-in keeps all five (indistinguishable from free-tier rows):
-    // recorded in deferred-work.md, not fixed by 86.2.
+    // Indistinguishable from free-tier rows, so all five are kept (a known limit).
     dropAnotherAccountsLocalData(ACCOUNT_B)
 
     expect(useIncomeStore.getState().incomeSources).toHaveLength(1)

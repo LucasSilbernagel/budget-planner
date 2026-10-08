@@ -21,21 +21,14 @@ import { useChartColors } from '../lib/chartTheme'
 import { useCurrencyPreferences } from '../stores/currencyStore'
 import { ErrorBoundary } from './ErrorBoundary'
 
-/**
- * Recharts chrome that cannot be driven by CSS (numeric/enum props) and so must
- * switch at the narrow-viewport breakpoint (story 24.1). On a phone we shrink the
- * chart, narrow the Y-axis gutter and ticks, trim the margins, and drop the axis
- * titles so the plot area stays usable down to 320px — mirroring the overview
- * charts' `useIsNarrowViewport` treatment. Pure + exported so both branches are
- * unit-tested directly (layout itself is not observable in jsdom).
- */
+// Recharts numeric props cannot be driven by CSS, so they switch at the breakpoint.
+// Pure and exported because layout is not observable in jsdom.
 export interface RetirementChartChrome {
   height: number
   yAxisWidth: number
   tickFontSize: number
   marginLeft: number
   marginRight: number
-  /** Whether to render the "Age" / "Assets" axis titles. */
   showAxisLabels: boolean
 }
 
@@ -46,10 +39,7 @@ export function getRetirementChartChrome(isNarrow: boolean): RetirementChartChro
         yAxisWidth: 48,
         tickFontSize: 10,
         marginLeft: 4,
-        // Trimmed from the desktop 64, but kept wide enough to clear the
-        // "Retirement" reference-line label — which is centered on a far-right
-        // retirement year in the default scenario, so ~42px of it sits right of
-        // the line. A smaller margin clips the word at 320px (story 24.1 review).
+        // Wide enough to clear the 'Retirement' reference-line label, which clips at 320px otherwise.
         marginRight: 44,
         showAxisLabels: false,
       }
@@ -63,22 +53,8 @@ export function getRetirementChartChrome(isNarrow: boolean): RetirementChartChro
       }
 }
 
-/**
- * Where to draw the "Retirement" reference line, as a years-from-now offset, or
- * `null` for no marker at all.
- *
- * Pure + exported for the same reason as `getRetirementChartChrome`: Recharts
- * renders no SVG children under jsdom's zero-size `ResponsiveContainer`, so a
- * DOM-based assertion cannot tell "no marker" apart from "no chart" — it passes
- * vacuously in both directions. Testing the decision directly is the only honest
- * coverage.
- *
- * Rounded to a whole year because the X axis is categorical (one point per
- * projected year); the solver returns month precision, which has no category to
- * sit on. `0` is a legitimate answer — a plan that is already met retires today,
- * and that is exactly when the user most wants the marker. An earlier `>= 1`
- * floor hid it for every solve under six months.
- */
+// Tested directly: jsdom renders no Recharts SVG. Rounded because the X axis is one category per year;
+// 0 is valid (an already-met plan retires today).
 export function getRetirementMarkerOffset(
   earliestRetirementAge: number | null,
   currentAge: number,
@@ -93,21 +69,7 @@ export function getRetirementMarkerOffset(
   return offset >= 0 && offset <= horizonYears ? offset : null
 }
 
-/**
- * The AGE the "Retirement" reference line is drawn at, or `null` for no marker.
- *
- * ⚠️ THIS EXISTS BECAUSE THE X AXIS PLOTS `age` (`dataKey="age"`, story 44.3).
- * `ReferenceLine`'s `x` has to be a value the axis actually has a category for,
- * so a years-from-now offset placed there lands on nothing.
- *
- * Deliberately a thin converter over `getRetirementMarkerOffset` rather than a
- * replacement for it: that function's horizon bounds — and the "offset 0 is a
- * real answer" pin story 29.1 added, without which an already-met plan drew no
- * marker at the exact moment the plan succeeded — stay untouched and keep their
- * own tests. Keeping the step named and exported also keeps it in view; the
- * same arithmetic inline in the JSX is the kind of thing that silently drifts
- * out of step with `dataKey` the next time the axis is touched.
- */
+// The X axis plots age, so ReferenceLine x must be an age, not a years-from-now offset.
 export function getRetirementMarkerAge(
   markerOffset: number | null,
   currentAge: number
@@ -115,16 +77,6 @@ export function getRetirementMarkerAge(
   return markerOffset === null ? null : currentAge + markerOffset
 }
 
-/**
- * Props for RetirementTimelineChart.
- *
- * ⚠️ Every value is REQUIRED and comes from the consolidated planner's single
- * shared input set (story 29.1). This component owns no inputs and keeps no
- * parameter state of its own — that is the whole point of the consolidation.
- * Before 29.1 it collected its own current-savings / contribution / return-rate /
- * age, defaulted them (principal `100000`!), and drew a curve that disagreed with
- * the planner's solver for the same user.
- */
 export interface RetirementTimelineChartProps {
   /** Current amount saved at year 0, in integer cents. */
   currentSavedCents: number
@@ -132,15 +84,9 @@ export interface RetirementTimelineChartProps {
   monthlySavingsCents: number
   /** Annual return as a decimal (0.06 = 6%). */
   annualReturnRate: number
-  /** The user's age today, in whole years. */
   currentAge: number
-  /** Horizon in whole years, derived from life expectancy − current age. */
   yearsToProject: number
-  /**
-   * The solver's earliest reachable retirement age, used for the reference-line
-   * marker. `null` when retirement is not reachable — no marker is drawn, so the
-   * chart can never claim a retirement the planner says is impossible.
-   */
+  // null when unreachable: no marker, so the chart never claims an impossible retirement.
   earliestRetirementAge: number | null
 }
 
@@ -154,15 +100,7 @@ interface RetirementChartPoint {
   retirementYear: boolean
 }
 
-/**
- * Format a CENTS amount for chart display, abbreviating large values.
- *
- * ⚠️ Takes cents, like every other `formatCurrency` caller in the app. Before
- * 29.1 this component kept `chartData` in dollars and handed those dollars
- * straight to this function from the tooltip — rendering every hovered balance
- * 100× too small — while the summary line remembered to multiply back up. Keeping
- * the whole series in cents removes the class of bug rather than the instance.
- */
+// Takes cents, like every other formatCurrency caller.
 function formatChartCurrency(
   cents: number,
   mode: CurrencyMode,
@@ -172,15 +110,7 @@ function formatChartCurrency(
   return formatCurrency(cents, { mode, currency, locale, abbreviate: true })
 }
 
-/**
- * Custom Tooltip component for the chart.
- *
- * Exported for the same reason as `getRetirementChartChrome` and
- * `getRetirementMarkerOffset`: Recharts renders no SVG under jsdom's zero-size
- * `ResponsiveContainer`, so the header can only be asserted by rendering this
- * directly. ⚠️ Its `label` is whatever the X axis's `dataKey` names — since
- * story 44.3 that is `age`, not `year`, and the header must say so.
- */
+// Exported because jsdom renders no Recharts SVG. `label` is the X axis dataKey (age).
 export function CustomTooltip({
   active,
   payload,
@@ -203,7 +133,6 @@ export function CustomTooltip({
 
   const data = firstEntry.payload as RetirementChartPoint
 
-  // Guard: check that required properties exist
   if (
     !('startingBalance' in data) ||
     !('annualContribution' in data) ||
@@ -238,19 +167,6 @@ export function CustomTooltip({
   )
 }
 
-/**
- * RetirementTimelineChart component
- *
- * Visualizes the accumulation curve behind the planner's numbers: the same
- * monthly-compounded projection the solver itself walks, sampled once per year.
- *
- * ⚠️ It samples `projectAccumulatedNestEgg` — the solver's own accumulation
- * function — and deliberately NOT `calculateCompoundingProjection`, which
- * compounds ANNUALLY over whole years (story 26.6 keeps the two distinct on
- * purpose). Driving the chart with the annual function while the planner solves
- * monthly would print two different nest eggs from one input set, which is
- * exactly the contradiction story 29.1 exists to remove.
- */
 function RetirementTimelineChartInner({
   currentSavedCents,
   monthlySavingsCents,
@@ -260,17 +176,11 @@ function RetirementTimelineChartInner({
   earliestRetirementAge,
 }: RetirementTimelineChartProps) {
   const { mode, currency, locale } = useCurrencyPreferences()
-  // Theme-aware Recharts chrome so axes/grid stay legible on the dark card.
   const chartColors = useChartColors()
-  // Drop desktop-only chart chrome below the `sm` breakpoint so the plot area
-  // stays usable at 320px (story 24.1).
   const isNarrow = useIsNarrowViewport()
   const chartChrome = getRetirementChartChrome(isNarrow)
 
-  // Build the curve. Returns a discriminated result rather than calling
-  // `setProjectionError` from inside the memo — the previous version did exactly
-  // that, a render-phase setState that would break under a Suspense/provider
-  // boundary. A failure here is a projection overflow, not a crash.
+  // Returns a result instead of calling setState inside the memo (a render-phase setState).
   const projection = useMemo<
     { ok: true; points: RetirementChartPoint[] } | { ok: false; message: string }
   >(() => {
@@ -282,10 +192,7 @@ function RetirementTimelineChartInner({
       const annualContribution = Math.max(0, monthlySavingsCents) * 12
       const points: RetirementChartPoint[] = []
 
-      // Starts at year 0 — today's balance, the one number on this curve the user
-      // actually knows to be true. Without it the series opened at age+1 while the
-      // summary said "starting with X at age N", and an immediately-reachable
-      // retirement (offset 0) had no category for its marker to sit on.
+      // Starts at year 0 so an immediately-reachable retirement (offset 0) has a category for its marker.
       for (let year = 0; year <= yearsToProject; year++) {
         const age = currentAge + year
         points.push({
@@ -297,7 +204,6 @@ function RetirementTimelineChartInner({
             annualReturnRate,
             Math.max(0, year - 1) * 12
           ),
-          // Nothing has been contributed yet at year 0.
           annualContribution: year === 0 ? 0 : annualContribution,
           endingBalance: projectAccumulatedNestEgg(
             currentSavedCents,
@@ -329,10 +235,6 @@ function RetirementTimelineChartInner({
     earliestRetirementAge,
   ])
 
-  // ⚠️ This component renders NO inputs, so an empty/failed projection can only
-  // ever replace the chart itself. Before 29.1 the six parameter inputs and the
-  // Reset button lived BELOW an identical early return, so typing `0` into Years
-  // or Return Rate made every control vanish with no way back short of a reload.
   if (!projection.ok || projection.points.length === 0) {
     return (
       <div className="p-8 text-center text-muted" data-testid="retirement-chart-empty">
@@ -347,28 +249,19 @@ function RetirementTimelineChartInner({
 
   const chartData = projection.points
   const finalPoint = chartData[chartData.length - 1]
-  // Years-from-now position of the retirement marker. Rounded to a whole year
-  // because the X axis is categorical (one point per projected year); the solver
-  // returns month precision, which has no category to sit on.
   const retirementYearOffset = getRetirementMarkerOffset(
     earliestRetirementAge,
     currentAge,
     finalPoint?.year ?? 0
   )
-  // The axis plots ages, so the marker is placed by age. The offset above is
-  // still the right basis for the summary's end-of-curve comparison below,
-  // which reasons in years from now.
+  // The axis plots ages, so the marker is placed by age; the summary below reasons in offsets.
   const retirementMarkerAge = getRetirementMarkerAge(retirementYearOffset, currentAge)
 
   return (
     <div className="space-y-6">
-      {/* Chart */}
       <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
         <ResponsiveContainer width="100%" height={chartChrome.height}>
-          {/* Extra right margin so the "Retirement" reference-line label, which
-              sits at the far-right final year in the default scenario (retire at
-              the end of the projection), is not clipped by the container edge.
-              Margins/labels are trimmed on narrow viewports (story 24.1). */}
+          {/* Extra right margin so the 'Retirement' label at the final year is not clipped. */}
           <LineChart
             data={chartData}
             margin={{
@@ -379,11 +272,7 @@ function RetirementTimelineChartInner({
             }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
-            {/* Plots the `age` already carried by every point (story 44.3) — the
-                terms the reader thinks in, and never re-derived here. ⚠️ The
-                tooltip header and the "Retirement" reference line both read
-                their meaning from this `dataKey`; all three move together or
-                the chart contradicts itself. */}
+            {/* The tooltip header and reference line read their meaning from this dataKey; change all three together. */}
             <XAxis
               dataKey="age"
               label={
@@ -430,8 +319,7 @@ function RetirementTimelineChartInner({
               dot={{ r: 4, fill: '#3B82F6' }}
               activeDot={{ r: 8, fill: '#1D4ED8' }}
             />
-            {/* Reference line at the solver's earliest reachable retirement —
-                never at a separately-entered age the solver disagrees with. */}
+            {/* At the solver's earliest reachable retirement, never a separately-entered age. */}
             {retirementMarkerAge !== null && (
               <ReferenceLine
                 x={retirementMarkerAge}
@@ -444,7 +332,6 @@ function RetirementTimelineChartInner({
         </ResponsiveContainer>
       </div>
 
-      {/* Summary */}
       <div className="p-4 surface-inset rounded-lg">
         <p className="text-sm text-body">
           <strong>Projection Summary:</strong> Starting with{' '}
@@ -457,11 +344,8 @@ function RetirementTimelineChartInner({
           </strong>{' '}
           in {finalPoint?.year ?? 0} {finalPoint?.year === 1 ? 'year' : 'years'}, at age{' '}
           {finalPoint?.age ?? currentAge}
-          {/* Only claim the end of the curve IS retirement when it actually is.
-              An already-met plan retires at offset 0 while the curve is floored
-              at one year so it has something to draw, so the last point sits a
-              year PAST retirement — saying "when you can retire" there would
-              contradict the earliest-retirement-age output by a year. */}
+          {/* An already-met plan retires at offset 0 but the curve is floored at one year, so its end
+             is a year past retirement. */}
           {retirementYearOffset !== null && retirementYearOffset === finalPoint?.year
             ? ' — when you can retire'
             : ''}
@@ -472,7 +356,6 @@ function RetirementTimelineChartInner({
   )
 }
 
-// Wrap with ErrorBoundary
 export function RetirementTimelineChart(props: RetirementTimelineChartProps) {
   return (
     <ErrorBoundary>

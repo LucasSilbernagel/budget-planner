@@ -1,150 +1,36 @@
 import { type ReactNode, useCallback, useEffect, useRef } from 'react'
 
 /**
- * Shared modal primitive (story 6-2).
- *
- * Centralizes the dialog behavior that every modal in the app must share so it
- * is implemented once, consistently:
- * - **Outside-click dismissal**: clicking the backdrop calls `onClose`
- *   (`closeOnOverlayClick`, default true). Clicks inside the content never close,
- *   and neither does a press/release gesture with either end inside the card
- *   (story 31.3) — a scrollbar or text-selection drag must not destroy a form.
- * - **Viewport fit**: the content card is capped at the visible viewport and
- *   scrolls internally via {@link MODAL_CARD_CONSTRAINT}, which is applied on
- *   top of `className` so no caller can opt out (story 31.3).
- * - **Escape dismissal**: a document-level `keydown` listener (active only while
- *   open) closes on Escape. This replaces the previous broken per-page pattern
- *   (a `pointer-events-none` div with `onKeyDown`, which can never receive keys).
- * - **Focus management**: focus moves into the dialog on open (to
- *   `initialFocusRef`, else the first focusable element, else the dialog itself),
- *   is trapped with Tab/Shift+Tab wrapping, and returns to the previously
- *   focused element (the trigger) on close.
- * - **Dialog semantics**: `role="dialog"` + `aria-modal="true"` with an
- *   accessible name from `labelledBy` (preferred) or `ariaLabel`.
- * - **Body scroll lock** while open.
- *
- * Dismissal performs no destructive action — `onClose` should be wired to each
- * caller's cancel/close handler (no save, no delete).
- *
- * SSR-safe: renders nothing when closed and touches the DOM only inside effects,
- * so the server and first client render never read `document`.
- *
- * The app does not deliberately stack modals, but two CAN be open at once (focus
- * can leave a dialog via a browser-chrome round trip and reach a trigger behind
- * the overlay). That used to close both on one Escape and leave the body
- * scroll-locked; both are fixed by the shared modal stack below, which owns the
- * scroll-lock and gives Escape to the topmost dialog only.
- *
- * ⚠️ Stacked modals are SAFE, not supported: the background is not inerted, so a
- * dialog behind another is still keyboard-reachable. `CategoryPicker`'s
- * no-nested-Modal constraint stands.
+ * Stacked modals are safe, not supported: the background is not inerted, so a dialog
+ * behind another is still keyboard-reachable.
  */
 
 export interface ModalProps {
-  /** Whether the modal is rendered. */
   isOpen: boolean
   /** Called when the modal requests to close (overlay click, Escape, etc.). Must not perform destructive work. */
   onClose: () => void
-  /** Modal body. Callers keep their own header/title and form markup. */
   children: ReactNode
-  /** id of the visible heading that names the dialog (preferred for accessibility). */
   labelledBy?: string
-  /** Accessible name used when no `labelledBy` heading id is available. */
   ariaLabel?: string
-  /** id of the element that describes the dialog (e.g. a confirmation message). */
   describedBy?: string
-  /** ARIA role. Use `alertdialog` for confirmations/destructive prompts. Default `dialog`. */
   role?: 'dialog' | 'alertdialog'
-  /** Classes for the content card. Overrides the default so callers keep their existing look. */
   className?: string
-  /** Close when the backdrop is clicked. Default true. */
   closeOnOverlayClick?: boolean
-  /** Element to receive focus when the modal opens. Defaults to the first focusable element. */
   initialFocusRef?: React.RefObject<HTMLElement | null>
-  /**
-   * Element to receive focus when the modal closes, overriding the default
-   * restore-to-trigger. Use when the triggering control is removed as a result
-   * of the modal's action (e.g. a confirmed delete) so focus lands on a stable
-   * element instead of falling to `<body>`. Applied on close regardless of
-   * whether the trigger detached synchronously, so it is robust to async
-   * actions. Falls back to the previously focused element when its `.current`
-   * is null.
-   */
+  /** Focus target on close, overriding restore-to-trigger; use when the action removes the trigger. */
   finalFocusRef?: React.RefObject<HTMLElement | null>
-  /** Optional `data-testid` applied to the dialog content element. */
   testId?: string
 }
 
 /**
- * Layout classes applied to the content card *in addition to* `className`
- * (story 31.3, UX-DR37), so a caller cannot drop them merely by supplying its
- * own `className`.
- *
- * ⚠️ **This is not a precedence mechanism.** Concatenation order confers no CSS
- * precedence — Tailwind conflicts resolve by STYLESHEET SOURCE ORDER. A future
- * caller that passes a genuinely competing utility (`overflow-hidden`,
- * `max-h-screen`, a responsive variant) can still defeat these, and the unit
- * test guarding this asserts the tokens are PRESENT, not that they are
- * EFFECTIVE. What the constant guarantees is that opting out has to be
- * deliberate: no caller loses the constraint just by styling its card, which
- * is how all four `className`-passing sites were unprotected before.
- *
- * **Why a separate constant and not the `className` default.** `className` is
- * a default PARAMETER assigned verbatim below; there is no `clsx`, no `cn()`
- * and no `tailwind-merge` anywhere in `apps/web`. A caller-supplied string
- * therefore REPLACES the default rather than merging with it. Folding the
- * constraint into the default would reach only the three call sites that don't
- * pass `className`, silently missing `ConfirmDialog` (which fans out to 8
- * sites) and the `BalancePage` add/edit form — the tallest modal in the app.
- *
- * **Why `max-h-full` and not `vh`/`dvh`.** `max-height: 100%` resolves against
- * the overlay's content box, and the overlay is `fixed inset-0 ... p-4`, so the
- * card is capped at exactly the viewport minus the existing 1rem gutter on all
- * four sides, by construction — and stays in sync if that gutter ever changes.
- * `vh` resolves to the LARGE viewport on mobile Safari (URL bar hidden), so
- * `max-h-[90vh]` can still exceed the visible area while the bar is showing:
- * precisely the bug this story exists to kill. `dvh` is the correct unit but
- * has no precedent in this repo and its 90% gutter would be unrelated to the
- * overlay's `p-4`.
- *
- * Holds LAYOUT only, never a visual class a caller might legitimately want to
- * override.
- *
- * Note: `overflow-y-auto` also computes `overflow-x` to `auto` (CSS Overflow 3:
- * a non-`visible` value on one axis forces the other), so the card becomes a
- * horizontal scroll container too. Content that can overflow horizontally needs
- * its own wrap relief — see `ConfirmDialog`'s message `<p>`.
+ * Appended to `className`, which replaces rather than merges the default, so styling a card can't drop it.
+ * `max-h-full`, not `vh`: mobile Safari's `vh` is the large viewport and can exceed the visible area.
  */
 export const MODAL_CARD_CONSTRAINT = 'max-h-full overflow-y-auto overscroll-contain'
 
 /**
- * Shared modal stack (story 41.1 code review, 2026-08-27).
- *
- * `Modal` used to assume one dialog was open at a time and kept the Escape
- * listener and the body scroll-lock per instance. That assumption was reachable
- * and MEASURED false: with one dialog open, focus can leave it (the Tab trap
- * wraps within the dialog, but a browser-chrome round trip returns focus to the
- * page) and activate a second trigger behind the overlay. Probed in a real
- * browser on the Overview, whose Premium section carries five gates:
- *
- *   2 dialogs open → ONE Escape → 0 dialogs, and `body.style.overflow` left
- *   `'hidden'` with nothing on screen. The page is scroll-locked until reload.
- *
- * Two independent causes, both fixed here:
- *   1. Every open instance registered its own document-level keydown, and
- *      `stopPropagation()` does not stop a sibling listener on the SAME node
- *      (that needs `stopImmediatePropagation`), so one Escape ran every
- *      instance's `onClose`. Now only the TOP modal responds.
- *   2. Each instance saved and restored `body.style.overflow` independently, so
- *      cleanup order decided the final value — the modal that opened SECOND
- *      restored the `'hidden'` its own effect had observed. The lock is now
- *      owned by the stack: taken when it becomes non-empty, released when it
- *      empties, restoring the value from before ANY modal opened.
- *
- * ⚠️ This makes stacked modals SAFE, not supported. Nothing here inerts the
- * background, so a second dialog is still reachable by keyboard behind the first
- * — an accessibility gap that needs a portal plus `inert`, tracked separately.
- * `CategoryPicker`'s no-nested-Modal constraint is unchanged and still binding.
+ * Shared across instances: only the topmost modal handles Escape, and the body scroll-lock
+ * is taken when the stack becomes non-empty and restored when it empties.
  */
 const modalStack: symbol[] = []
 
@@ -168,7 +54,6 @@ function popModal(id: symbol): void {
   }
 }
 
-/** Only the topmost open modal reacts to Escape. */
 function isTopModal(id: symbol): boolean {
   return modalStack.at(-1) === id
 }
@@ -203,25 +88,18 @@ export function Modal({
   testId,
 }: ModalProps) {
   const contentRef = useRef<HTMLDivElement>(null)
-  // Stable identity for this instance in `modalStack`. Lazily initialised so the
-  // symbol is created once, not on every render.
   const modalIdRef = useRef<symbol | null>(null)
   if (modalIdRef.current === null) {
     modalIdRef.current = Symbol('modal')
   }
   const modalId = modalIdRef.current
-  // Whether the current press/release gesture began AND ended on the backdrop
-  // itself (story 31.3, AC-7). See `handleOverlayPointerDown` below.
   const overlayGestureRef = useRef(false)
 
-  // Escape to close (document-level so it works regardless of focus position).
   useEffect(() => {
     if (!isOpen) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
-      // Only the topmost modal closes. Every open instance has a listener on
-      // `document`, and `stopPropagation()` does not stop siblings on the same
-      // node, so without this one Escape closed every open dialog at once.
+      // Only the topmost modal closes: `stopPropagation()` doesn't stop sibling listeners on `document`.
       if (!isTopModal(modalId)) return
       event.stopPropagation()
       onClose()
@@ -230,56 +108,42 @@ export function Modal({
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [isOpen, onClose, modalId])
 
-  // Focus management: move focus in on open, restore to the trigger on close.
   useEffect(() => {
     if (!isOpen) return
     const previouslyFocused = document.activeElement as HTMLElement | null
     const content = contentRef.current
 
     if (content) {
-      // Default initial focus to the dialog container (screen readers announce
-      // its role + name) rather than the first focusable element: in these
-      // modals the first focusable is the header "Close" button, and
-      // auto-focusing it would let an immediate Enter/Space dismiss the dialog.
-      // Callers pass initialFocusRef to focus a specific field instead.
+      // Focus the container, not the first focusable (usually "Close"), so an immediate Enter can't dismiss.
       const target = initialFocusRef?.current ?? content
       target.focus()
     }
 
     return () => {
-      // Prefer an explicit return-focus target (e.g. a stable element when the
-      // trigger was removed by the modal's action); otherwise restore to the
-      // element that was focused when the modal opened.
       const restoreTarget = finalFocusRef?.current ?? previouslyFocused
       restoreTarget?.focus?.()
     }
   }, [isOpen, initialFocusRef, finalFocusRef])
 
-  // Join the shared modal stack while open. The stack owns the body scroll-lock
-  // (see its docblock): a per-instance save/restore let the second modal to open
-  // restore the `'hidden'` it had itself observed, wedging the page.
   useEffect(() => {
     if (!isOpen) return
     pushModal(modalId)
     return () => popModal(modalId)
   }, [isOpen, modalId])
 
-  // Trap Tab focus within the dialog.
   const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Tab') return
     const content = contentRef.current
     if (!content) return
     const focusable = getFocusableElements(content)
     if (focusable.length === 0) {
-      // Nothing focusable inside: keep focus on the dialog container.
       event.preventDefault()
       content.focus()
       return
     }
     const first = focusable[0]
     const last = focusable[focusable.length - 1]
-    // Unreachable: the `length === 0` branch above already returned. Narrowed
-    // rather than asserted so `noUncheckedIndexedAccess` stays honest here.
+    // Unreachable after the length check; narrowed for `noUncheckedIndexedAccess`.
     if (!first || !last) return
     const active = document.activeElement
 
@@ -294,20 +158,8 @@ export function Modal({
 
   if (!isOpen) return null
 
-  // Dismiss only when BOTH the press and the release landed on the backdrop
-  // itself (story 31.3, AC-7).
-  //
-  // The card is now a scroll container, which puts a scrollbar flush against
-  // its edge. Press the thumb, drag, release over the backdrop, and `click`
-  // fires on the nearest common inclusive ancestor — the overlay. The card's
-  // `stopPropagation` never runs because the card is not in that event's path,
-  // and comparing `event.target` on the click does not help either: the target
-  // genuinely IS the overlay. Tracking the gesture's endpoints is the only
-  // thing that distinguishes a drag from a real backdrop click.
-  //
-  // Both halves are load-bearing. Press-origin alone still lets a text
-  // selection begun on the backdrop and released over the form destroy an
-  // unsaved 6-field entry.
+  // Dismiss only when both press and release land on the backdrop: a scrollbar drag or text
+  // selection released over the backdrop still fires `click` on the overlay.
   const handleOverlayPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     overlayGestureRef.current = event.target === event.currentTarget
   }
@@ -316,19 +168,13 @@ export function Modal({
     overlayGestureRef.current = overlayGestureRef.current && event.target === event.currentTarget
   }
 
-  // A cancelled press (touch turning into a scroll, long-press, the pointer
-  // leaving the window) never produces a `click`, so without this the verdict
-  // would sit in the ref until the next `pointerdown` overwrote it.
+  // A cancelled press never produces a `click`, so reset the verdict here.
   const handleOverlayPointerCancel = () => {
     overlayGestureRef.current = false
   }
 
   const handleOverlayClick = () => {
-    // CONSUME the gesture. A `click` that is not preceded by a fresh, paired
-    // pointer sequence — a programmatic `element.click()`, a synthesized
-    // activation — must not inherit the previous gesture's verdict. The ref
-    // outlives close/reopen because `isOpen` gates the RENDER, not the mount,
-    // so a stale `true` would otherwise survive into the next open.
+    // Consume the verdict: the ref outlives close/reopen, and a programmatic `click()` must not inherit it.
     const pressedAndReleasedOnBackdrop = overlayGestureRef.current
     overlayGestureRef.current = false
     if (!pressedAndReleasedOnBackdrop) return

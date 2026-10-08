@@ -1,48 +1,26 @@
-/**
- * Financial Visualization Utilities
- *
- * Provides data transformation and aggregation utilities for financial charts.
- * Supports category breakdowns, time period filtering, and drill-down functionality.
- *
- * Architecture Requirement: Story 3-3 - Enhanced income vs. expense visualization
- */
-
 import type { Frequency } from './normalization'
 
-// ============================================================================
-// Types
-// ============================================================================
-
-/**
- * Financial data point with category and time information
- */
 interface FinancialDataPoint {
   id: string | number
   name: string
-  amount: number // in cents
+  amount: number
   frequency: Frequency
   category?: string
   date?: Date
   type: 'income' | 'expense'
 }
 
-/**
- * Aggregated category data for charting
- */
 interface CategoryAggregate {
   category: string
-  amount: number // in cents
+  amount: number
   type: 'income' | 'expense'
   count: number
   color?: string
 }
 
-/**
- * Recharts-compatible data format
- */
 interface RechartsDataItem {
   name: string
-  value: number // in cents
+  value: number
   type?: 'income' | 'expense'
   category?: string
   fill?: string
@@ -52,9 +30,6 @@ interface RechartsDataItem {
   originalAmount?: number
 }
 
-/**
- * Drill-down state for navigation
- */
 interface DrillDownState {
   level: number
   path: string[]
@@ -62,37 +37,26 @@ interface DrillDownState {
   currentType?: 'income' | 'expense'
 }
 
-// ============================================================================
-// Constants
-// ============================================================================
-
-/**
- * Default color palette for categories
- * Expanded to 16 colors to support users with many categories
- */
 const CATEGORY_COLORS = [
-  '#3B82F6', // Blue
-  '#10B981', // Green
-  '#EF4444', // Red
-  '#8B5CF6', // Purple
-  '#F59E0B', // Orange
-  '#EC4899', // Pink
-  '#14B8A6', // Teal
-  '#6366F1', // Indigo
-  '#22C55E', // Emerald
-  '#F97316', // Amber
-  '#06B6D4', // Cyan
-  '#84CC16', // Lime
-  '#EAB308', // Yellow
-  '#A855F7', // Violet
-  '#F43F5E', // Rose
-  '#1E40AF', // Dark Blue
-  '#059669', // Dark Green
+  '#3B82F6',
+  '#10B981',
+  '#EF4444',
+  '#8B5CF6',
+  '#F59E0B',
+  '#EC4899',
+  '#14B8A6',
+  '#6366F1',
+  '#22C55E',
+  '#F97316',
+  '#06B6D4',
+  '#84CC16',
+  '#EAB308',
+  '#A855F7',
+  '#F43F5E',
+  '#1E40AF',
+  '#059669',
 ] as const
 
-/**
- * Default colors for income and expenses
- */
 const DEFAULT_COLORS = {
   income: '#10B981',
   expense: '#EF4444',
@@ -101,16 +65,7 @@ const DEFAULT_COLORS = {
   debt: '#DC2626',
 }
 
-// ============================================================================
-// Category Aggregation
-// ============================================================================
-
-/**
- * Aggregate financial data by category
- * Validates input per project context (zero tolerance for errors in financial calculations)
- */
 function aggregateByCategory(data: FinancialDataPoint[]): CategoryAggregate[] {
-  // Sanitize input data first
   const validatedData = sanitizeFinancialData(data)
   const categoryMap = new Map<string, CategoryAggregate>()
 
@@ -137,10 +92,6 @@ function aggregateByCategory(data: FinancialDataPoint[]): CategoryAggregate[] {
   return Array.from(categoryMap.values())
 }
 
-/**
- * Aggregate financial data by category and type (income vs expense)
- * Validates input per project context (zero tolerance for errors in financial calculations)
- */
 function aggregateByCategoryAndType(
   data: FinancialDataPoint[]
 ): Map<'income' | 'expense', CategoryAggregate[]> {
@@ -148,7 +99,6 @@ function aggregateByCategoryAndType(
   result.set('income', [])
   result.set('expense', [])
 
-  // Sanitize input data first
   const validatedData = sanitizeFinancialData(data)
   const categoryMap = new Map<string, CategoryAggregate>()
 
@@ -172,7 +122,6 @@ function aggregateByCategoryAndType(
     }
   }
 
-  // Separate by type
   for (const aggregate of categoryMap.values()) {
     result.get(aggregate.type)?.push(aggregate)
   }
@@ -180,20 +129,14 @@ function aggregateByCategoryAndType(
   return result
 }
 
-/**
- * Get top N categories by amount
- */
 function getTopCategories(aggregates: CategoryAggregate[], limit = 10): CategoryAggregate[] {
   return [...aggregates].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount)).slice(0, limit)
 }
 
-/**
- * Group small categories into "Other"
- */
 function groupSmallCategories(
   aggregates: CategoryAggregate[],
   topLimit = 8,
-  otherThreshold = 0.05 // 5% of total
+  otherThreshold = 0.05
 ): CategoryAggregate[] {
   if (aggregates.length <= topLimit) {
     return aggregates
@@ -203,14 +146,11 @@ function groupSmallCategories(
   const topItems = sorted.slice(0, topLimit)
   const otherItems = sorted.slice(topLimit)
 
-  // Calculate total amount
   const totalAmount = aggregates.reduce((sum, item) => sum + Math.abs(item.amount), 0)
 
-  // Check if other items are significant
   const otherTotal = otherItems.reduce((sum, item) => sum + Math.abs(item.amount), 0)
 
   if (otherTotal > 0 && otherTotal / totalAmount >= otherThreshold) {
-    // Find the first expense category to determine type for "Other"
     const firstOtherType = otherItems[0]?.type ?? 'expense'
     topItems.push({
       category: 'Other',
@@ -223,34 +163,22 @@ function groupSmallCategories(
   return topItems
 }
 
-// ============================================================================
-// Recharts Data Transformation
-// ============================================================================
-
-/**
- * Transform aggregated data to Recharts pie chart format
- */
 function toPieChartData(
   aggregates: CategoryAggregate[],
   colorMap: Record<string, string> = {}
 ): RechartsDataItem[] {
   return aggregates.map((agg, index) => ({
     name: agg.category,
-    value: Math.abs(agg.amount), // Use absolute value for charting
+    value: Math.abs(agg.amount),
     type: agg.type,
     category: agg.category,
-    fill: colorMap[agg.category] || CATEGORY_COLORS[index % CATEGORY_COLORS.length], // CATEGORY_COLORS is a const array with 16 colors
-    // Store original amount for tooltip
+    fill: colorMap[agg.category] || CATEGORY_COLORS[index % CATEGORY_COLORS.length],
     originalAmount: agg.amount,
     count: agg.count,
   }))
 }
 
-/**
- * Transform financial data to Recharts bar chart format
- */
 function toBarChartData(data: FinancialDataPoint[], categoryOrder?: string[]): RechartsDataItem[] {
-  // Group by category
   const categoryMap = new Map<string, RechartsDataItem>()
 
   for (const item of data) {
@@ -262,7 +190,7 @@ function toBarChartData(data: FinancialDataPoint[], categoryOrder?: string[]): R
         value: 0,
         type: item.type,
         category,
-        fill: CATEGORY_COLORS[categoryMap.size % CATEGORY_COLORS.length], // CATEGORY_COLORS is a const array with 16 colors
+        fill: CATEGORY_COLORS[categoryMap.size % CATEGORY_COLORS.length],
       })
     }
 
@@ -274,7 +202,6 @@ function toBarChartData(data: FinancialDataPoint[], categoryOrder?: string[]): R
 
   const result = Array.from(categoryMap.values())
 
-  // Sort by category order if provided, otherwise by value
   if (categoryOrder) {
     result.sort((a, b) => {
       const aIndex = categoryOrder.indexOf(a.name)
@@ -291,9 +218,6 @@ function toBarChartData(data: FinancialDataPoint[], categoryOrder?: string[]): R
   return result
 }
 
-/**
- * Transform to stacked bar chart data (income vs expense by category)
- */
 function toStackedBarChartData(data: FinancialDataPoint[]): {
   categories: string[]
   incomeData: number[]
@@ -319,9 +243,6 @@ function toStackedBarChartData(data: FinancialDataPoint[]): {
   }
 
   const categories = Array.from(categoryMap.keys())
-  // `cat` is a key obtained from categoryMap.keys(), so get() is guaranteed to
-  // return a value — the non-null assertion is safe and keeps the element type
-  // `number` (an optional chain here would wrongly widen it to `undefined`).
   // biome-ignore lint/style/noNonNullAssertion: cat comes from categoryMap.keys(); get() cannot be undefined and ?. would widen the element type to undefined.
   const incomeData = categories.map((cat) => categoryMap.get(cat)!.income)
   // biome-ignore lint/style/noNonNullAssertion: cat comes from categoryMap.keys(); get() cannot be undefined and ?. would widen the element type to undefined.
@@ -330,13 +251,6 @@ function toStackedBarChartData(data: FinancialDataPoint[]): {
   return { categories, incomeData, expenseData }
 }
 
-// ============================================================================
-// Drill-Down Functionality
-// ============================================================================
-
-/**
- * Create drill-down navigation state
- */
 function createDrillDownState(): DrillDownState {
   return {
     level: 0,
@@ -344,9 +258,6 @@ function createDrillDownState(): DrillDownState {
   }
 }
 
-/**
- * Navigate to a category in drill-down
- */
 function drillDownToCategory(
   state: DrillDownState,
   category: string,
@@ -360,9 +271,6 @@ function drillDownToCategory(
   }
 }
 
-/**
- * Navigate up one level in drill-down
- */
 function drillUp(state: DrillDownState): DrillDownState {
   if (state.level === 0) {
     return state
@@ -379,9 +287,6 @@ function drillUp(state: DrillDownState): DrillDownState {
   }
 }
 
-/**
- * Navigate to root level (reset drill-down)
- */
 function drillToRoot(): DrillDownState {
   return {
     level: 0,
@@ -389,9 +294,6 @@ function drillToRoot(): DrillDownState {
   }
 }
 
-/**
- * Get data for current drill-down level
- */
 function getDataForDrillDownLevel(
   allData: FinancialDataPoint[],
   state: DrillDownState
@@ -400,7 +302,6 @@ function getDataForDrillDownLevel(
     return allData
   }
 
-  // Filter by path entries
   let filteredData = [...allData]
 
   for (const pathEntry of state.path) {
@@ -413,51 +314,28 @@ function getDataForDrillDownLevel(
   return filteredData
 }
 
-/**
- * Check if drill-down is active
- */
 function isDrillDownActive(state: DrillDownState): boolean {
   return state.level > 0
 }
 
-// ============================================================================
-// Data Formatting Utilities
-// ============================================================================
-
-/**
- * Get percentage of total for a category
- */
 function getPercentageOfTotal(categoryAmount: number, totalAmount: number): number {
   if (totalAmount === 0) return 0
   return (Math.abs(categoryAmount) / Math.abs(totalAmount)) * 100
 }
 
-// ============================================================================
-// Color Utilities
-// ============================================================================
-
-/**
- * Get color for a financial type
- * Note: This function currently uses type-based colors only
- */
 function getColorForCategory(
   _category: string,
   type: 'income' | 'expense',
   _index: number
 ): string {
-  // Use type-based colors (category-specific colors handled by generateColorMap)
   return DEFAULT_COLORS[type]
 }
 
-/**
- * Generate color map for categories
- */
 function generateColorMap(categories: string[]): Record<string, string> {
   const colorMap: Record<string, string> = {}
 
   for (let i = 0; i < categories.length; i++) {
     const category = categories[i]
-    // Ensure category is a valid non-empty string for use as index
     if (
       typeof category !== 'string' ||
       category === '' ||
@@ -466,8 +344,6 @@ function generateColorMap(categories: string[]): Record<string, string> {
     ) {
       continue
     }
-    // Get color using modulo to cycle through the palette
-    // CATEGORY_COLORS is a const array with 16 colors, modulo guarantees valid index
     const colorIndex = i % CATEGORY_COLORS.length
     // biome-ignore lint/style/noNonNullAssertion: colorIndex = i % CATEGORY_COLORS.length is always a valid index; ?. would widen to string | undefined and break the Record<string, string> assignment.
     colorMap[category] = CATEGORY_COLORS[colorIndex]!
@@ -476,13 +352,6 @@ function generateColorMap(categories: string[]): Record<string, string> {
   return colorMap
 }
 
-// ============================================================================
-// Validation Utilities
-// ============================================================================
-
-/**
- * Validate financial data
- */
 function validateFinancialData(data: FinancialDataPoint[]): boolean {
   return data.every(
     (item) =>
@@ -495,9 +364,6 @@ function validateFinancialData(data: FinancialDataPoint[]): boolean {
   )
 }
 
-/**
- * Sanitize financial data (remove invalid entries)
- */
 function sanitizeFinancialData(data: FinancialDataPoint[]): FinancialDataPoint[] {
   return data.filter(
     (item) =>
@@ -509,10 +375,6 @@ function sanitizeFinancialData(data: FinancialDataPoint[]): FinancialDataPoint[]
       (item.type === 'income' || item.type === 'expense')
   )
 }
-
-// ============================================================================
-// Export
-// ============================================================================
 
 export type { FinancialDataPoint, CategoryAggregate, RechartsDataItem, DrillDownState }
 

@@ -4,19 +4,7 @@ import { DocsLayout } from '../../components/docs/docs-layout'
 import { MarkdownRenderer } from '../../components/docs/markdown-renderer'
 import { getDocPage } from '../../content/docs'
 
-/**
- * Individual documentation page route — `/docs/$docId` (story 4-10, AC-2).
- *
- * The page is resolved in a loader so an unknown slug throws `notFound()` and
- * renders the route's `notFoundComponent` with a real 404 status (correct for
- * crawlers/SEO) rather than a 200 "soft" not-found.
- *
- * `Route` is the ONLY export in this file. A non-route export here is left
- * un-code-split by the router plugin and warned about at every `pnpm dev`
- * (BUG-C, story 39-1) — `DocNotFound` lives in `components/docs/` for that
- * reason, and `src/__tests__/served-pages.served.test.ts` (was
- * `e2e/docs-not-found.spec.ts` until story 84.4) guards the wiring below.
- */
+// `Route` must stay the only export: any other export defeats the router's code splitting.
 export const Route = createFileRoute('/docs/$docId')({
   loader: ({ params }) => {
     const doc = getDocPage(params.docId)
@@ -25,15 +13,7 @@ export const Route = createFileRoute('/docs/$docId')({
     }
     return { doc }
   },
-  // Built from the RESOLVED doc, so each documentation page names itself rather
-  // than sharing one title across the whole section (story 40.1, FR65).
-  //
-  // ⚠️ `loaderData` IS OPTIONAL HERE, and the first version of this block
-  // assumed otherwise. `head()` also runs when there is no resolved doc — while
-  // the loader is pending, and for the `notFound()` an unknown slug throws — so
-  // the router types it `| undefined` and `tsc` rejects an unguarded read. The
-  // fallback names the SECTION, which is true in both of those states; naming a
-  // specific document would be a claim about a page that is not there.
+  // `loaderData` is undefined while pending and after notFound(), so fall back to the section.
   head: ({ loaderData }) => {
     const doc = loaderData?.doc
     if (!doc) {

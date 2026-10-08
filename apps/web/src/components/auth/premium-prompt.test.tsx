@@ -3,38 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { PREMIUM_BENEFIT_IDS } from '../../lib/premium/benefits'
 import { PremiumPrompt } from './premium-prompt'
 
-/**
- * Premium upgrade-prompt tests (story 20-3, CONTENT-J).
- *
- * Regression guard for the benefit list that Story 25-3 corrected: the prompt
- * must show EXACTLY the canonical Premium benefit set and NO "+ more features
- * coming soon" placeholder. Before this file `premium-prompt.tsx` had no test,
- * so nothing stopped a future edit from reintroducing the placeholder, padding
- * the list, or listing a benefit that is actually free/universal (Dark mode →
- * free per 25-3; ad-freeness is universal per 25-1).
- *
- * These pins encoded the SCP 2026-07-18 canonical set (multi-device sync · custom
- * profiles · advanced forecasting). Story 33.2 / FR56 **amended** that set to five
- * by adding the three Epic-30 capabilities that shipped and were listed nowhere —
- * the financial summary report (FR53), user-defined categories, and the category
- * breakdown view (FR54) — as TWO entries, because the categories manager and the
- * breakdown share the `/categories` route and are therefore one benefit whose copy
- * must name both (see `lib/premium/benefits.ts` for the full rationale). The counts below are derived from `PREMIUM_BENEFIT_IDS.length`, not
- * written as literals, so the next amendment cannot leave a stale hard-coded
- * number behind — which is exactly what had to be hunted down across six files
- * to land 33.2.
- *
- * Rendered with `renderWithRouter` because the CTA is a TanStack Router `<Link>`
- * that needs a router in scope (see Footer.test.tsx for the same pattern).
- */
-
-/** The exact benefit strings the prompt must list — and only these. */
 const CANONICAL_BENEFITS = [
   'Multi-Device Data Sync',
   'Advanced Forecasting — Raises, Rising Bills & One-Off Costs',
   'Custom User Profiles',
-  // "Downloadable" is the prompt's decided exception (story 95.1, D1); every other
-  // surface keeps the plain name (pinned both ways in benefit-set-parity.test.tsx).
+  // "Downloadable" is the prompt's decided exception; other surfaces keep the plain name.
   'Downloadable Financial Summary Report',
   'Custom Categories & Category Breakdown',
 ]
@@ -46,7 +19,6 @@ describe('PremiumPrompt benefit list (story 20-3)', () => {
     const list = await screen.findByRole('list')
     const items = within(list).getAllByRole('listitem')
 
-    // An extra item or a "coming soon" row would break this.
     expect(items).toHaveLength(PREMIUM_BENEFIT_IDS.length)
     expect(CANONICAL_BENEFITS).toHaveLength(PREMIUM_BENEFIT_IDS.length)
     for (const benefit of CANONICAL_BENEFITS) {
@@ -59,7 +31,7 @@ describe('PremiumPrompt benefit list (story 20-3)', () => {
     await screen.findByRole('list')
 
     expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument()
-    // Dark mode is free (25-3); "no ads" is universal (25-1) — neither is a perk.
+    // Dark mode is free and "no ads" is universal: neither is a perk.
     expect(screen.queryByText(/dark mode/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/no ads/i)).not.toBeInTheDocument()
   })
@@ -75,15 +47,12 @@ describe('PremiumPrompt benefit list (story 20-3)', () => {
     for (const benefit of CANONICAL_BENEFITS) {
       expect(within(list).getByText(benefit)).toBeInTheDocument()
     }
-    // Same negative guards as the inline mode — both render modes must be clean.
     expect(within(dialog).queryByText(/coming soon/i)).not.toBeInTheDocument()
     expect(within(dialog).queryByText(/dark mode/i)).not.toBeInTheDocument()
     expect(within(dialog).queryByText(/no ads/i)).not.toBeInTheDocument()
   })
 
-  // Story 95.1 (FR154): the footer states only where data is stored. Exact text
-  // (the old copy CONTAINED the new one, so a substring pin would pass on it), in
-  // both render modes, plus a scoped guard against the retired clause.
+  // Exact text: the old copy contained the new one, so a substring pin would pass on it.
   it('footer reads exactly "All data stored in Germany (EU)" in both modes (story 95.1)', async () => {
     const { unmount } = renderWithRouter(<PremiumPrompt />)
     await screen.findByRole('list')
@@ -110,9 +79,6 @@ describe('PremiumPrompt benefit list (story 20-3)', () => {
   })
 
   it('renders the upgrade CTA as a link pointing at the upgrade target', async () => {
-    // The whole `renderWithRouter` harness exists for this <Link>; pin that the
-    // primary action renders and routes to `upgradeHref` (PremiumFeatureGate
-    // passes `/pricing`), so the CTA cannot silently break or misroute.
     renderWithRouter(<PremiumPrompt upgradeHref="/pricing" />)
 
     const cta = await screen.findByRole('link', { name: /upgrade to premium/i })

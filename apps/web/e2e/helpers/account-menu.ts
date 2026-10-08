@@ -1,57 +1,17 @@
-/**
- * The account menu (story 59.3), located the one way that works.
- *
- * Unlike the nav's More (`nav-more.ts`), this trigger is a real
- * `<button aria-expanded>` (decision D1), so role locators DO find it, and its
- * panel exists in the DOM only while open. `aria-controls` is the link
- * between the two. The id comes from React's `useId()`, whose characters are
- * not valid in a bare `#id` selector, hence `[id="…"]`.
- *
- * ⚠️ The e2e servers have no real session. Call `mockSignedIn()`
- * (`nav-more.ts`) BEFORE `page.goto`, or there is no trigger to find: on the
- * free server the SSR seed is signed-out, and on the `:5174` paid seam the
- * post-mount `/api/auth/me` resolves signed-out and unmounts the trigger the
- * seed painted. That answer also drives the nav (story 99.1) and, since story
- * 101.2, the premium gates and the Overview/Settings premium sections.
- */
+// No e2e server has a real session: call mockSignedIn() before page.goto, or the
+// post-mount /api/auth/me answers signed-out and unmounts the trigger.
 import { type Locator, type Page, expect } from '@playwright/test'
 
-/**
- * How long to wait for the cluster to reflect the MOCKED session.
- *
- * ⚠️ Not a style choice. Every assertion about the cluster is really an
- * assertion about the post-mount `fetch('/api/auth/me')` in
- * `auth-indicator.tsx` having resolved AND re-rendered. That is hydration plus
- * a round trip, and on a loaded CI runner it does not reliably finish inside
- * Playwright's default 5s `expect` timeout: CI run 35782927398 failed
- * `account-menu.paid.spec.ts:115` on both attempts with "13 × locator resolved
- * to 0 elements", and left four more account-menu tests flaky. The default is
- * right for a rendered fact; it is wrong for a network-gated one.
- */
+// Network-gated: hydration plus the mocked /api/auth/me round trip can exceed the
+// 5s default on a loaded CI runner.
 export const SESSION_SETTLE_MS = 15_000
 
 export function accountTrigger(page: Page): Locator {
   return page.getByRole('button', { name: 'Account menu', exact: true })
 }
 
-/**
- * Wait until the cluster shows the MOCKED identity, not a seeded one.
- *
- * ⚠️ On the `:5174` paid server the SSR seed paints a complete, authenticated
- * cluster — with the SEED's email — in the first frame, so `accountTrigger`
- * being visible proves nothing about whether `mockSignedIn()` has landed. A
- * test that measures the email without this gate measures whichever identity
- * won the race. That is how CI run 35782927398 failed, and had the two emails
- * been similar enough it would have passed while measuring the wrong one.
- *
- * ⚠️ RE-POINTED by story 69.2. The trigger no longer shows the email (it is
- * `[avatar initial][chevron]`), so the identity is read from the ONE place the
- * cluster still carries it: the `sr-only` copy in the labelled `role="status"`
- * region, which is what a screen reader hears. `toContainText` reads
- * `textContent`, so `sr-only` is no obstacle. Do NOT gate on the trigger being
- * visible instead: on `:5174` it is visible in the first frame with the SEED's
- * identity, which is the race this helper exists to close.
- */
+// The paid seed paints a signed-in cluster with the SEED's identity, so a visible
+// trigger proves nothing; wait for the mocked email in the sr-only status text.
 export async function expectSignedInAs(page: Page, email: string): Promise<void> {
   await expect(
     page.getByRole('status', { name: /account status/i }),
@@ -59,32 +19,15 @@ export async function expectSignedInAs(page: Page, email: string): Promise<void>
   ).toContainText(email, { timeout: SESSION_SETTLE_MS })
 }
 
-/**
- * The panel the trigger controls.
- *
- * While CLOSED there is no panel and no `aria-controls` (it would be a dangling
- * IDREF), so this returns a locator that matches nothing — `toHaveCount(0)`
- * then means "closed", which is what callers assert. It is not an error state.
- */
+// Closed has no aria-controls, so this matches nothing. `[id=]` because useId
+// output isn't a valid #id selector.
 async function accountPanel(page: Page): Promise<Locator> {
   const id = await accountTrigger(page).getAttribute('aria-controls')
   return id === null ? page.locator('[data-account-panel-absent]') : page.locator(`[id="${id}"]`)
 }
 
-/**
- * Open the menu. ONE click by default — a retry would hide a swallowed first
- * click, which is a defect this suite should catch.
- *
- * ⚠️ `acrossHydration` is for the `:5174` PAID server only, where the SSR seed
- * paints the trigger in the first frame, so a click can land BEFORE hydration,
- * when no handler is attached and nothing happens. That window is accepted by
- * design: signing out needs JavaScript however the panel opens (decision D1),
- * and a pre-hydration click on a `<button>` simply does nothing, rather than
- * desyncing `open` from state the way `<details>` would have (story 59.2). On
- * the free server the trigger only appears AFTER the client session fetch, so
- * hydration has already happened and no retry is warranted — review caught this
- * helper retrying there too.
- */
+// One click by default: a retry would hide a swallowed click. acrossHydration is for
+// the paid seed, whose trigger is painted before hydration attaches handlers.
 export async function openAccountMenu(
   page: Page,
   { acrossHydration = false }: { acrossHydration?: boolean } = {}

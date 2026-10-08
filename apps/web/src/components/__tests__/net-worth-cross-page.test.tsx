@@ -1,25 +1,3 @@
-/**
- * Cross-page net-worth agreement (story 32.2, FR59, AC-5).
- *
- * ⚠️ This file exists because asserting each page against its own hand-computed
- * constant is NOT enough. Two such tests both keep passing when the two pages
- * drift onto different definitions — which is exactly the defect FR59 was raised
- * for (the Overview and the Balance page each re-derived net worth, and the
- * Balance page's copy could not even see the savings store). The only assertion
- * that can fail on drift is one seed, both pages, one comparison.
- *
- * ⚠️ This file covered THREE surfaces until story 43.3 (FR69) removed the free
- * Net Worth projection page and its "Current Net Worth" card. Two remain. The
- * invariant is unchanged and so is its reason — it is about every surface that
- * shows the user this claim, not about a fixed count — so a third surface added
- * later belongs here, in `netWorthTextFrom`, on the same seed.
- *
- * Harness note: the two page suites do not share one. `HomePage.test.tsx` uses a
- * bare `render` plus a `vi.mock` of `usePremiumAccess` (without it the Overview's
- * premium section reaches the network); `BalancePage.test.tsx` uses
- * `renderWithProviders`. Both conditions are reproduced here rather than unified.
- */
-
 import { renderWithProviders, screen } from '@/test/utils'
 import { cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -60,14 +38,6 @@ function clearStores(): void {
   useOverviewDurationStore.setState({ duration: 'annually' })
 }
 
-/**
- * ONE fixture, seeded once, read by both surfaces.
- *
- * investments 2,000,000c + savings 300,000c + assets 40,000,000c
- *   − debts 15,000,000c = +27,300,000c
- * (the pre-32.2 definition gave −13,000,000c on every one of them; before FR70
- * added the condo the figure was −12,700,000c.)
- */
 function seedSharedFixture(): void {
   useBalanceStore.setState({
     entries: [
@@ -92,8 +62,6 @@ function seedSharedFixture(): void {
         updatedAt: TS,
       },
       {
-        // Story 43.4 / FR70. Distinct from every other total so cross-surface
-        // agreement cannot hold by coincidence.
         id: 'asset-1',
         type: 'asset',
         name: 'Condo',
@@ -137,7 +105,6 @@ function seedSharedFixture(): void {
   })
 }
 
-/** Render one surface in isolation and return its net-worth text. */
 function netWorthTextFrom(surface: 'overview' | 'balance'): string {
   const testId = surface === 'overview' ? 'overview-net-worth' : 'stat-net-worth'
 
@@ -148,11 +115,7 @@ function netWorthTextFrom(surface: 'overview' | 'balance'): string {
   }
 
   const text = screen.getByTestId(testId).textContent ?? ''
-  // Properly UNMOUNT between surfaces (code review 32.2). Wiping
-  // `document.body.innerHTML` detaches the container while leaving the React root
-  // mounted and still subscribed to the shared zustand stores, so `clearStores()`
-  // in `afterEach` re-renders trees into detached DOM. `cleanup()` tears the roots
-  // down, and also guarantees the next `getByTestId` cannot match a leftover.
+  // Unmount between surfaces: wiping innerHTML leaves the root subscribed to the shared stores.
   cleanup()
   return text.trim()
 }
@@ -173,8 +136,6 @@ describe('net worth agrees across every surface that shows it (story 32.2)', () 
     const balance = netWorthTextFrom('balance')
 
     expect(overview).toBe(balance)
-    // Pinned to the hand-computed value too, so an agreement on a WRONG shared
-    // number (e.g. both reverting together) still fails.
     expect(overview).toContain('273,000.00')
   })
 
@@ -199,26 +160,6 @@ describe('net worth agrees across every surface that shows it (story 32.2)', () 
     expect(balance).toBe(overview)
   })
 
-  /**
-   * Story 32.3 — net worth is POINT-IN-TIME and must stay period-invariant.
-   *
-   * ⚠️ NEW AXIS, and the reason this is an extension rather than a repeat. Every
-   * case above renders at the default period with no flows seeded, so both
-   * surfaces were only ever measured at ONE point on the duration axis — the same
-   * blindness-by-construction 31.5 recorded. 32.3 puts a single period control in
-   * charge of the whole Overview, which is exactly the change that could sweep
-   * net worth up with the flow totals; if it ever did, the card would read
-   * a period-scaled figure at weekly — round(27,300,000 × 12/52) = 6,300,000c —
-   * and a different one at annually, while the Balance page held at $273,000.00.
-   * (The weekly figure read −$29,230.77 until code review 32.3 re-derived it:
-   * that value divides −1,520,000 rather than the fixture's −1,524,000. No
-   * assertion depended on it, but a hand-computed comment whose only job is to
-   * be an audit trail must be right, or it costs the next reader time.)
-   *
-   * Flows ARE seeded here (the fixture from the 32.3 reconciliation) so the two
-   * kinds of number sit on screen together, which is the condition under which a
-   * mistaken denormalization would be written.
-   */
   it('32.3: both surfaces hold the same net worth at every duration, with flows on screen', () => {
     seedSharedFixture()
     useIncomeStore.setState({
@@ -258,8 +199,6 @@ describe('net worth agrees across every surface that shows it (story 32.2)', () 
       const balance = netWorthTextFrom('balance')
 
       expect(balance).toBe(overview)
-      // Pinned as well as compared: two surfaces agreeing on a period-scaled
-      // WRONG figure would satisfy the equality on its own.
       expect(overview).toContain('273,000.00')
     }
   })

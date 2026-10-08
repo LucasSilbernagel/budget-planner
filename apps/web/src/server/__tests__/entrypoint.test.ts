@@ -1,17 +1,3 @@
-/**
- * Tests for the container entrypoint switch (Story 5-18, AC-2).
- *
- * The same image both serves traffic and applies migrations. Which one it does is
- * decided ONCE, at boot, from `APP_ENTRYPOINT` — never by a route and never by a
- * request, because Rapids (Knative Serving) offers no command override and an env
- * var is the only lever the platform gives us (see the story's D1).
- *
- * Two properties are asserted here, in both directions:
- *   1. the switch itself — only the exact string `migrate` selects migrate mode;
- *   2. the module graph — in migrate mode the built application server is never
- *      imported, so the SSR and `/api/*` routes do not exist in that process.
- */
-
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
@@ -33,10 +19,8 @@ describe('selectEntrypoint', () => {
     expect(selectEntrypoint({ APP_ENTRYPOINT: undefined })).toBe('serve')
   })
 
-  // The serving container runs with whatever env the platform carries. Anything
-  // that is not the exact opt-in must keep serving: a near-miss that silently
-  // migrated instead of serving would take the site down, and a near-miss that
-  // silently served instead of migrating is caught by the pipeline's own polling.
+  // A near-miss that migrated instead of serving would take the site down; one that
+  // served instead of migrating is caught by the pipeline's polling.
   it.each([
     ['', 'empty'],
     ['serve', 'the other mode'],
@@ -56,9 +40,7 @@ describe('module graph (AC-2: the migrate path is unreachable from a serving con
   const serveEntry = readWebFile('serve-entry.mjs')
   const migrateEntry = readWebFile('migrate-entry.mjs')
 
-  // The point of the dispatcher being tiny: importing it must not pull in either
-  // branch. A static `import` of the app server here would load the whole SSR
-  // route graph into the migrate process too, which is what AC-2 forbids.
+  // Importing the dispatcher must not pull in either branch's module graph.
   it('the dispatcher statically imports neither branch', () => {
     expect(dispatcher).not.toMatch(/^import[^\n]*['"]\.\/dist\/server\/server\.js['"]/m)
     expect(dispatcher).not.toMatch(/^import[^\n]*['"]\.\/serve-entry\.mjs['"]/m)
@@ -75,13 +57,8 @@ describe('module graph (AC-2: the migrate path is unreachable from a serving con
     expect(migrateEntry).not.toMatch(/dist\/server\/server\.js/)
   })
 
-  // Belt and braces on the same property: the migrate process has no route table
-  // to expose, so it cannot serve the app even if it is reachable on the network.
-  //
-  // ⚠️ TRANSITIVE, not just the entry file. Code review 2026-09-15: checking only
-  // `migrate-entry.mjs` would miss `migrate-status.mjs` or `migrate-runner.mjs`
-  // later importing the app server — the import would be two hops away and the
-  // guard would still be green. Walk the whole local module graph instead.
+  // Transitive, not just the entry file: an import of the app server two hops away
+  // must fail too.
   it('no module reachable from the migrate branch imports the application server', () => {
     const forbidden = [/dist\/server\/server\.js/, /node-adapter\.mjs/, /routeTree/]
 
@@ -123,16 +100,7 @@ describe('module graph (AC-2: the migrate path is unreachable from a serving con
   })
 })
 
-/**
- * The migrate container is bound to the pipeline run that started it (code review
- * 2026-09-15, Lucas's call). Without that binding, a container left over from an
- * earlier run could answer this run's poll with a stale but perfectly well-formed
- * `succeeded` — and the release would proceed on a migration that never ran.
- *
- * The contract has two halves and both must hold, so both are pinned here: the
- * container REQUIRES `MIGRATE_RUN_ID` at boot and reports it back in the verdict,
- * and the pipeline REFUSES a verdict whose id is not the one it minted.
- */
+/** Bound to the pipeline run, so a leftover container can't answer this run's poll with a stale `succeeded`. */
 describe('run-id binding (migrate container <-> pipeline run)', () => {
   const migrateEntry = readWebFile('migrate-entry.mjs')
   const workflow = readFileSync(
@@ -140,11 +108,7 @@ describe('run-id binding (migrate container <-> pipeline run)', () => {
     'utf8'
   )
 
-  // ⚠️ Changed 2026-09-16: the container used to EXIT on a missing run id, which
-  // crash-looped it once the pipeline stripped credentials from the permanent
-  // container (revision `budget-planner-migrator-00005`, CrashLoopBackOff). It now
-  // idles instead. The safety property is unchanged and is what this asserts:
-  // without a run id it does not migrate.
+  // Without a run id the container idles rather than migrating.
   it('will not migrate without a run id', () => {
     expect(migrateEntry).toMatch(/readEnv\('MIGRATE_RUN_ID'\)/)
     expect(migrateEntry).toMatch(/if \(!token \|\| !databaseUrl \|\| !runId\)/)
@@ -165,28 +129,12 @@ describe('run-id binding (migrate container <-> pipeline run)', () => {
 })
 
 /**
- * The migrate path spawns `packages/db`'s own `node_modules/.bin/{tsx,drizzle-kit}`
- * (migrate-entry.mjs → migrate-runner.mjs → migrate-lock-cli.ts) with cwd
- * `packages/db`, where `drizzle.config.ts` and `migrations/` live. The serving
- * container needs none of that, so a slim image can lose all of it and every
- * unit test, and every serve-path check, stays green while production
- * migrations break.
- *
- * Until story ops-1 the image was fat (the runtime stage copied the whole built
- * tree after a dev install) and this block pinned THAT. ops-1 slimmed it to a
- * prod-only install plus a selective COPY, so the invariant is now asserted
- * POSITIVELY: the toolchain is a production dependency of `packages/db`, the
- * prod install includes `packages/db`, and the runtime stage copies the whole
- * `packages/db` tree (payload + `node_modules/.bin` shims) at the path the
- * entrypoints resolve. The behavioural backstop is the image's own migrate
- * check in CI ("Verify the image serves and migrates", .github/scripts/verify-image.sh,
- * run by deploy.yml build-image and container-image.yml).
+ * The migrate path needs packages/db's toolchain and the serving path doesn't, so a slimmed
+ * image could break production migrations while every serve-path check stays green.
  */
 describe('Dockerfile (AC-2: the image actually carries the migrate payload)', () => {
   const dockerfile = readWebFile('Dockerfile')
-  // Comments are stripped before asserting: the file's prose discusses the old
-  // fat shape and the reasons for each step, and a test matching that prose
-  // would pass or fail on documentation rather than on build instructions.
+  // Comments are stripped so the assertions match build instructions, not prose.
   const instructions = dockerfile
     .split('\n')
     .filter((line) => !line.trimStart().startsWith('#'))
@@ -280,14 +228,8 @@ describe('Dockerfile (AC-2: the image actually carries the migrate payload)', ()
 })
 
 /**
- * The verdict travels on TWO channels: a bearer-gated HTTP endpoint, and a
- * sentinel line in the container logs. The second exists because the first cannot
- * survive revision churn — Knative routes the container URL to whatever revision
- * is currently ready, which need not be the one that migrated. Live run
- * 35042874267-1 succeeded and then answered every poll with 401 from a successor.
- *
- * `.github/scripts/rapids_verdict.py` parses these lines, so the format is a
- * contract between two files in different languages. Pin both ends.
+ * Knative may route the container URL to a successor revision, so the verdict also travels as a
+ * log sentinel parsed by the pipeline. Pin both ends of that cross-language contract.
  */
 describe('verdict sentinel (migrate container -> pipeline logs channel)', () => {
   const entry = readWebFile('migrate-entry.mjs')
@@ -311,8 +253,7 @@ describe('verdict sentinel (migrate container -> pipeline logs channel)', () => 
     expect(emitFn).not.toMatch(/token|DATABASE_URL|password|CA_CERT/i)
   })
 
-  // If either side is reworded without the other, the pipeline silently stops
-  // reading verdicts and every release times out. Keep the shapes aligned.
+  // Rewording either side alone silently stops the pipeline reading verdicts.
   it('matches the prefix the parser looks for', () => {
     expect(entry).toMatch(/\[migrate-entry\] VERDICT /)
     expect(parser).toMatch(/migrate-entry\\\]\\s\+VERDICT/)

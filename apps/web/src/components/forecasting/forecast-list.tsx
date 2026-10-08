@@ -1,13 +1,3 @@
-/**
- * Forecast List Component
- *
- * Displays a list of saved forecasting scenarios with management capabilities.
- * Allows users to view, load, edit, and delete saved forecasts.
- *
- * Architecture: React Component with Tailwind CSS
- * Data Sovereignty: Saved forecasts stored server-side for paid tier
- */
-
 import React, { useState, useCallback, useMemo, useRef } from 'react'
 import { signedAmount } from '../../lib/forecasting/today-baseline'
 import type { AriaSortValue } from '../../lib/table-sort'
@@ -17,45 +7,22 @@ import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { PencilIcon } from '../ui/RowActionIcons'
 import { useSortHeaderAnnouncements } from '../ui/SortableColumnHeader'
 
-// ============================================================================
-// Type Definitions
-// ============================================================================
-
-/**
- * Props for ForecastList component
- */
 export interface ForecastListProps {
-  /** Array of saved forecasts */
   forecasts: SavedForecast[]
-  /** Callback when user deletes a forecast */
   onDelete: (id: string) => void
-  /** Callback when user selects a forecast to load */
   onLoad?: (forecast: SavedForecast) => void
-  /**
-   * Each forecast's "vs. today" in cents, by id (story 107.1, Q1): its ending net
-   * worth minus today's data projected flat over the same years. Computed by the
-   * page (the list reads no store); a forecast missing here shows no line.
-   */
+  // Ending net worth minus today's data projected flat over the same years; a missing id shows no line.
   vsToday?: ReadonlyMap<string, number>
 }
 
 type SortField = 'name' | 'date' | 'netWorth'
 
-/** Each sortable column's label: its button's whole accessible name and the
- * `{label}` in "Sorted by {label}, ascending" (story 120.1). */
 const SORT_FIELD_LABELS: Readonly<Record<SortField, string>> = {
   name: 'Name',
   date: 'Created',
   netWorth: 'Ending Net Worth',
 }
 
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Format date for display
- */
 function formatDate(dateString: string): string {
   const date = new Date(dateString)
   return date.toLocaleDateString('en-US', {
@@ -65,59 +32,35 @@ function formatDate(dateString: string): string {
   })
 }
 
-/**
- * Truncate text for display
- */
 function truncate(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text
   return `${text.slice(0, maxLength)}...`
 }
 
-// ============================================================================
-// Main Component
-// ============================================================================
-
-/**
- * Secondary text in a forecast row (story 115.2, FR183). A selected row is
- * `bg-blue-50`, where `.text-muted` (gray-500) measures 4.44:1, just below WCAG
- * AA's 4.5:1; `.text-body` (gray-600) is 6.94:1. An unselected row keeps the
- * lighter token (4.83:1 on white) so the hierarchy holds there.
- */
+// On the selected bg-blue-50 row text-muted is 4.44:1, below AA, so it switches to text-body.
 function mutedOnRow(selected: boolean): 'text-body' | 'text-muted' {
   return selected ? 'text-body' : 'text-muted'
 }
 
-/**
- * Forecast List Component
- *
- * Displays and manages saved forecasting scenarios.
- * Provides search, filter, and bulk action capabilities.
- */
 export function ForecastList({
   forecasts,
   onDelete,
   onLoad,
   vsToday,
 }: ForecastListProps): React.ReactElement {
-  // Display amounts respect the user's currency mode (currency-less vs symbols).
   const formatCurrency = useFormattedAmount()
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'netWorth'>('date')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
-  // Pending destructive delete, surfaced via a themed dialog (replaces
-  // window.confirm). `single` carries the row id; `bulk` deletes the current
-  // selection. The list heading is a stable focus target after confirm (AC-5).
   const [pendingDelete, setPendingDelete] = useState<
     { type: 'single'; id: string } | { type: 'bulk' } | null
   >(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
 
-  // Filter and sort forecasts
   const filteredForecasts = useMemo(() => {
     let result = [...forecasts]
 
-    // Apply search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
       result = result.filter(
@@ -128,11 +71,7 @@ export function ForecastList({
       )
     }
 
-    // Apply sorting. Every `comparison` is ASCENDING (a before b when a is
-    // smaller/earlier), so `desc` really is descending and the ↓ arrow and
-    // `aria-sort` tell the truth. ⚠️ Story 120.1 (D1): `date` and `netWorth` used
-    // to be written `b - a`, so "Created ↓" listed the OLDEST first and "Ending
-    // Net Worth ↓" the SMALLEST first (MEASURED at `5b4ed69`).
+    // Every comparison is ascending, so desc really is descending and aria-sort tells the truth.
     result.sort((a, b) => {
       let comparison = 0
 
@@ -157,9 +96,7 @@ export function ForecastList({
     return result
   }, [forecasts, searchQuery, sortBy, sortDirection])
 
-  // Story 119.1 (FR187): only VISIBLE selections count, delete or drive Select
-  // all. `selectedIds` keeps ids hidden by the search (they come back when it is
-  // cleared) and ids gone from `forecasts`; neither is ever deleted from here.
+  // Only visible selections count; ids hidden by the search stay selected and are never deleted from here.
   const visibleSelectedIds = useMemo(
     () => filteredForecasts.filter((f) => selectedIds.has(f.id)).map((f) => f.id),
     [filteredForecasts, selectedIds]
@@ -167,7 +104,6 @@ export function ForecastList({
   const selectedCount = visibleSelectedIds.length
   const totalCount = filteredForecasts.length
 
-  // Toggle selection for a single forecast
   const toggleSelection = useCallback((id: string) => {
     setSelectedIds((prev) => {
       const newSet = new Set(prev)
@@ -180,7 +116,6 @@ export function ForecastList({
     })
   }, [])
 
-  // Toggle selection for all visible forecasts; hidden selections are untouched
   const toggleAllSelection = useCallback(() => {
     const allVisibleSelected = selectedCount === totalCount && totalCount > 0
     setSelectedIds((prev) => {
@@ -193,19 +128,16 @@ export function ForecastList({
     })
   }, [selectedCount, totalCount, filteredForecasts])
 
-  // Open the themed confirmation for a single forecast
   const handleDelete = useCallback((id: string, e: React.MouseEvent) => {
     e.stopPropagation()
     setPendingDelete({ type: 'single', id })
   }, [])
 
-  // Open the themed confirmation for the current selection
   const handleBulkDelete = useCallback(() => {
     if (selectedCount === 0) return
     setPendingDelete({ type: 'bulk' })
   }, [selectedCount])
 
-  // Execute the pending delete (single row or whole selection)
   const handleConfirmDelete = useCallback(() => {
     if (pendingDelete === null) return
     if (pendingDelete.type === 'single') {
@@ -229,7 +161,6 @@ export function ForecastList({
     setPendingDelete(null)
   }, [pendingDelete, visibleSelectedIds, onDelete])
 
-  // Handle load forecast
   const handleLoad = useCallback(
     (forecast: SavedForecast) => {
       onLoad?.(forecast)
@@ -237,7 +168,6 @@ export function ForecastList({
     [onLoad]
   )
 
-  // Toggle sort direction
   const toggleSortDirection = useCallback(
     (field: 'name' | 'date' | 'netWorth') => {
       if (sortBy === field) {
@@ -250,10 +180,6 @@ export function ForecastList({
     [sortBy]
   )
 
-  // Story 120.1 (FR188, D3): the same screen-reader contract as the finance
-  // tables' `SortableColumnHeader`s ("Sortable column, ..." description + a
-  // live region for a header click), with this table's own header markup.
-  // Always sorted here, so "Sort cleared" never occurs.
   const sortA11y = useSortHeaderAnnouncements({
     label: SORT_FIELD_LABELS[sortBy],
     direction: sortDirection,
@@ -269,7 +195,6 @@ export function ForecastList({
     toggleSortDirection(field)
   }
 
-  // Get sort indicator
   const getSortIndicator = (field: 'name' | 'date' | 'netWorth'): React.ReactElement => {
     if (sortBy !== field) {
       return <span className="text-gray-400">↕</span>
@@ -283,7 +208,6 @@ export function ForecastList({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="mb-4">
         <h2
           ref={headingRef}
@@ -295,13 +219,10 @@ export function ForecastList({
         <p className="text-muted mt-1">Manage your saved forecasting scenarios</p>
       </div>
 
-      {/* Empty State */}
       {forecasts.length === 0 && <EmptyState />}
 
-      {/* Toolbar */}
       {forecasts.length > 0 && (
         <div className="surface-inset rounded-xl p-4 flex flex-col md:flex-row gap-4 items-center justify-between">
-          {/* Search */}
           <div className="flex-1 min-w-[200px]">
             <label htmlFor="search" className="sr-only">
               Search forecasts
@@ -319,13 +240,11 @@ export function ForecastList({
             </div>
           </div>
 
-          {/* Selection Info */}
           <div className="flex items-center gap-4">
             {selectedCount > 0 && (
               <span className="text-sm text-body">{selectedCount} selected</span>
             )}
 
-            {/* Bulk Actions */}
             <button
               type="button"
               onClick={handleBulkDelete}
@@ -338,10 +257,8 @@ export function ForecastList({
         </div>
       )}
 
-      {/* Table */}
       {filteredForecasts.length > 0 && (
         <div className="surface rounded-xl shadow-lg border border-default overflow-x-auto">
-          {/* Table Header */}
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="surface-inset">
               <tr>
@@ -354,8 +271,6 @@ export function ForecastList({
                     aria-label="Select all"
                   />
                 </th>
-                {/* Story 120.1: `aria-sort` on the <th>, the glyph `aria-hidden`
-                    (the name is exactly the label), the state in a description. */}
                 <th
                   aria-sort={ariaSortOf('name')}
                   className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider"
@@ -413,7 +328,6 @@ export function ForecastList({
               </tr>
             </thead>
 
-            {/* Table Body */}
             <tbody className="surface divide-y divide-gray-200 dark:divide-gray-700">
               {filteredForecasts.map((forecast) => (
                 // biome-ignore lint/a11y/useKeyWithClickEvents: row click is a pointer convenience; keyboard users select via the per-row aria-labeled checkbox in the first cell.
@@ -424,7 +338,6 @@ export function ForecastList({
                     selectedIds.has(forecast.id) ? 'bg-blue-50 dark:bg-blue-950/40' : ''
                   }`}
                 >
-                  {/* Selection */}
                   <td className="px-4 py-4 whitespace-nowrap">
                     <input
                       type="checkbox"
@@ -437,7 +350,6 @@ export function ForecastList({
                     />
                   </td>
 
-                  {/* Name */}
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-subheading">
                       {truncate(forecast.name, 40)}
@@ -447,36 +359,25 @@ export function ForecastList({
                     </div>
                   </td>
 
-                  {/* Description */}
                   <td className="px-6 py-4">
                     <div className="text-sm text-body">
                       {truncate(forecast.description || 'No description', 60)}
                     </div>
                   </td>
 
-                  {/* Created Date */}
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-body">{formatDate(forecast.createdAt)}</div>
                   </td>
 
-                  {/* Ending Net Worth */}
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-semibold text-subheading">
                       {formatCurrency(forecast.result.summary.endingNetWorth)}
                     </div>
-                    {/* ⚠️ The `+` is conditional (story `forecast-1`). It used to be
-                        hard-coded, which was survivable only while a negative
-                        `totalGrowth` needed expenses to exceed income; a single
-                        "Money out" one-time event now makes one trivially, and
-                        `formatCurrency` emits its own leading `-` — so the cell
-                        rendered `+-40,000.00`. Same guard as
-                        `projection-chart.tsx`'s `{isPositive ? '+' : ''}`. */}
+                    {/* The + is conditional: formatCurrency emits its own -, which would render +-40,000.00. */}
                     <div className={`text-xs mt-1 ${mutedOnRow(selectedIds.has(forecast.id))}`}>
                       {forecast.result.summary.totalGrowth >= 0 ? '+' : ''}
                       {formatCurrency(forecast.result.summary.totalGrowth)}
                     </div>
-                    {/* Story 107.1 (Q1): against today's data, signed with the
-                        same guard as the line above. */}
                     {vsToday?.has(forecast.id) && (
                       <div className={`text-xs mt-1 ${mutedOnRow(selectedIds.has(forecast.id))}`}>
                         {signedAmount(vsToday.get(forecast.id) ?? 0, formatCurrency)} vs. today
@@ -484,7 +385,6 @@ export function ForecastList({
                     )}
                   </td>
 
-                  {/* Actions */}
                   <td className="px-6 py-4 whitespace-nowrap text-right">
                     <div className="flex items-center justify-end gap-2">
                       {onLoad && (
@@ -495,10 +395,6 @@ export function ForecastList({
                             handleLoad(forecast)
                           }}
                           className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg transition-colors"
-                          // Story 108.1 (FR176, D7): "Edit", not "Load". Reopening a
-                          // forecast and saving UPDATES it (97.1), so it is an edit;
-                          // the pencil is the finance tables' own glyph. The name
-                          // keeps the forecast's, so rows stay distinguishable.
                           aria-label={`Edit ${forecast.name}`}
                           title="Edit"
                         >
@@ -520,13 +416,10 @@ export function ForecastList({
               ))}
             </tbody>
           </table>
-          {/* Story 120.1: the header descriptions + sort live region, outside
-              the table (`useSortHeaderAnnouncements`). */}
           {sortA11y.nodes}
         </div>
       )}
 
-      {/* Results Count */}
       {forecasts.length > 0 && (
         <p className="text-sm text-muted">
           Showing {filteredForecasts.length} of {forecasts.length} forecasts
@@ -534,7 +427,6 @@ export function ForecastList({
         </p>
       )}
 
-      {/* Delete confirmation */}
       <ConfirmDialog
         isOpen={pendingDelete !== null}
         onConfirm={handleConfirmDelete}
@@ -550,13 +442,6 @@ export function ForecastList({
   )
 }
 
-// ============================================================================
-// Subcomponents
-// ============================================================================
-
-/**
- * Empty State Component
- */
 function EmptyState(): React.ReactElement {
   return (
     <div className="surface rounded-xl shadow-lg border border-default p-12 text-center">
@@ -573,10 +458,6 @@ function EmptyState(): React.ReactElement {
     </div>
   )
 }
-
-// ============================================================================
-// Icon Components
-// ============================================================================
 
 function SearchIcon({ className }: { className: string }): React.ReactElement {
   return (

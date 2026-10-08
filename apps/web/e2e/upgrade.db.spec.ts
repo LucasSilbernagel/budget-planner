@@ -5,44 +5,13 @@ import { signInWithEmailedLink } from './helpers/magic-link'
 import { STUB_TOTALS, installPaddleStub } from './helpers/paddle-stub'
 import { deliverWebhook, subscriptionCreatedPayload } from './helpers/paddle-webhook'
 
-/**
- * Flow F10: an upgrade, from `/pricing` to premium access (story 87.2, FR141;
- * added to FR137's closed D4 flow list).
- *
- * The REAL purchase flow of a new buyer (decision D1): checkout is not
- * auth-gated, the Paddle WEBHOOK creates the account, and the buyer then signs
- * in from `/welcome` with the email they paid with. So "premium without a
- * reload" is not a step here: premium arrives with the sign-in.
- *
- * ⚠️ `.db.spec.ts` is load-bearing: only `chromium-db` (:5176) runs it, the
- * only server with a database (the webhook writes `users` and the default
- * profile) and the mail outbox (the sign-in link).
- *
- * What is real and what is not:
- *   - FAKE: Paddle.js (decision D2, `helpers/paddle-stub.ts`: every browser
- *     request to `*.paddle.com` is answered by the test), and Paddle itself
- *     (decision D3: the TEST builds and signs the `subscription.created`, with
- *     `FAKE_PADDLE.webhookSecret`, the obvious fake the server is booted with).
- *   - REAL: `/pricing`, `/api/paddle/checkout-config`, the app's calls into
- *     Paddle.js, `/welcome`, the webhook route (signature, max age, event
- *     claim, user insert, default profile), and the whole F9 sign-in.
- *   - ⚠️ Fidelity limit (story 87.2 K4): the buyer's email is INLINE in the
- *     webhook, which real Paddle subscription payloads do not do, so the
- *     customer-API lookup is not exercised (its unit tests cover it). The
- *     `:5176` server cannot reach Paddle anyway: its outbound HTTP goes to a
- *     closed local proxy port (`playwright.config.ts`).
- *
- * Each step's assertion names the step, so a break fails AT the step that
- * broke (story 87.2, AC 3), not as a timeout further on.
- *
- * Retry-safe (87.1 review: the database and the outbox live for the RUN, not
- * the attempt): every attempt buys as a NEW customer, with its own email,
- * customer id and event id, so a retry never sees an earlier attempt's link,
- * user or claimed event.
- */
+// Only chromium-db runs `.db.spec.ts`. The webhook creates the account, so premium
+// arrives with the sign-in. Paddle.js and Paddle's webhook are faked by the test.
 
-// `page.route` does not see a service worker's requests, and the dev server
-// registers one: blocked, so every `*.paddle.com` request reaches the stub.
+// Real Paddle subscription payloads don't carry the email inline, so the customer-API
+// lookup isn't exercised here.
+
+// page.route doesn't see service-worker requests, so block the dev server's SW.
 test.use({ serviceWorkers: 'block' })
 
 const ORIGIN = `http://localhost:${DB_SERVER_PORT}`
@@ -54,7 +23,7 @@ test('F10: buy Premium on /pricing, the webhook lands, sign in, and Premium is t
   const attempt = `${Date.now()}r${testInfo.retry}`
   const email = `f10-buyer-${attempt}@example.test`
   const customerId = `ctm_e2e_f10_${attempt}`
-  // The page's sync requests wait until step 9 has read the profiles (there).
+  // Holds the page's sync requests until step 9 has read the profiles.
   let releaseSync: () => void = () => {}
   const syncGate = new Promise<void>((resolve) => {
     releaseSync = resolve
@@ -69,14 +38,13 @@ test('F10: buy Premium on /pricing, the webhook lands, sign in, and Premium is t
     [FAKE_PADDLE.lifetimePriceId]: STUB_TOTALS.lifetime,
   })
 
-  // 1. An anonymous visitor chooses the annual plan on /pricing.
   const checkoutConfig = page.waitForResponse(
     (response) => new URL(response.url()).pathname === '/api/paddle/checkout-config'
   )
   await page.goto('/pricing')
   const config = await checkoutConfig
   expect(config.status(), 'step 1: /api/paddle/checkout-config refused the visitor').toBe(200)
-  // Positive anchor first, so the absence below cannot pass on an unrendered nav.
+  // Positive anchor first, so the absence below can't pass on an unrendered nav.
   await expect(
     page.getByRole('navigation', { name: 'Primary' }).locator('a[href="/income"]').first(),
     'step 1: the primary nav did not render'
@@ -85,14 +53,8 @@ test('F10: buy Premium on /pricing, the webhook lands, sign in, and Premium is t
     page.getByRole('navigation', { name: 'Primary' }).locator('a[href="/financial-summary"]'),
     'step 1: the visitor must start on the FREE nav (a control for step 10)'
   ).toHaveCount(0)
-  // The stub's localized total, not the static `€39/yr` fallback: proves
-  // Paddle.js (the stub) loaded and `PricePreview` answered, and that the
-  // component has hydrated (the label is set by an effect).
-  // ⚠️ Network-gated, not a rendered fact: config fetch, then the lazy
-  // `@paddle/paddle-js` chunk, the script, `PricePreview`, and a re-render. On
-  // a cold dev server under concurrent `pnpm gates` that took longer than the
-  // default 5 s (MEASURED: failed at 8.8 s with every plan still disabled),
-  // hence the `SESSION_SETTLE_MS` budget the other network-gated waits use.
+  // The stub's total, not the static fallback: proves PricePreview answered after
+  // hydration. Network-gated, hence the settle budget.
   const annual = page.getByRole('radio', { name: `Annual · ${STUB_TOTALS.annual}` })
   await expect(
     annual,
@@ -105,15 +67,12 @@ test('F10: buy Premium on /pricing, the webhook lands, sign in, and Premium is t
   )
   await page.getByRole('button', { name: 'Get Premium' }).click()
 
-  // 2. The app opened checkout for the annual price, with /welcome as the
-  // success URL; the stub then completed it, as a real overlay does.
   await expect
     .poll(() => stub.checkoutOpens().length, {
       message: 'step 2: Get Premium never called Paddle.Checkout.open',
     })
     .toBe(1)
-  // Soft: a wrong argument is reported AND the flow goes on, so a dropped
-  // `successUrl` also shows where the buyer ends up (AC 3 (iii)).
+  // Soft, so a dropped successUrl also shows where the buyer ends up.
   const opened = stub.checkoutOpens()[0] ?? {}
   expect
     .soft(opened['items'], 'step 2: checkout must be for the annual price only')
@@ -125,7 +84,6 @@ test('F10: buy Premium on /pricing, the webhook lands, sign in, and Premium is t
   expect
     .soft(opened['customer'], 'step 2: an anonymous buyer has no email to pre-fill')
     .toBeUndefined()
-  // Page loads on a cold dev server: the same network-gated budget as step 1.
   await expect(page, 'step 2: the completed checkout never reached /welcome').toHaveURL(
     `${ORIGIN}/welcome`,
     { timeout: SESSION_SETTLE_MS }
@@ -135,9 +93,7 @@ test('F10: buy Premium on /pricing, the webhook lands, sign in, and Premium is t
     'step 2: /welcome did not render'
   ).toBeVisible({ timeout: SESSION_SETTLE_MS })
 
-  // 3. Paddle's webhook: a signed `subscription.created` for this new customer.
-  // `expect.soft`: on a refused delivery the test goes on and ALSO fails at
-  // the sign-in (step 5), which is what a buyer would meet (AC 3 (ii)).
+  // Soft: a refused delivery also fails at sign-in, which is what a buyer would meet.
   const delivered = await deliverWebhook(
     page.request,
     subscriptionCreatedPayload({ customerId, email, priceId: FAKE_PADDLE.annualPriceId }),
@@ -147,26 +103,20 @@ test('F10: buy Premium on /pricing, the webhook lands, sign in, and Premium is t
     .soft(delivered.status(), `step 3: the webhook was refused: ${await delivered.text()}`)
     .toBe(200)
 
-  // 4. /welcome's sign-in, as the buyer follows it.
   await page.getByRole('link', { name: 'Sign in to your account' }).click()
   await expect(page, 'step 4: /welcome did not lead to the sign-in page').toHaveURL(
     `${ORIGIN}/login`,
     { timeout: SESSION_SETTLE_MS }
   )
 
-  // 5-8. F9's magic-link sign-in, with the email used at checkout. "No link"
-  // at step 6 means the webhook created no account for this address.
+  // "No link" at step 6 means the webhook created no account for this address.
   const { linksFor, before } = await signInWithEmailedLink(page, context, email, {
     firstStep: 5,
     who: 'the new buyer (no account: was the webhook processed?)',
   })
 
-  // 9. The server agrees: the webhook's user is `active`, with a default
-  // profile. Read BEFORE the page may sync: the sync pull also creates a
-  // missing default profile (`routes/api/sync/changes.ts`'s backfill), which
-  // would hide a webhook that made none. The page's `/api/sync/*` requests are
-  // held (see the top) until this step has read `/api/profiles`, so only the
-  // WEBHOOK can have made what it finds. (`page.request` is not routed.)
+  // Read before the page may sync: the sync pull backfills a missing default profile,
+  // which would hide a webhook that made none. `page.request` isn't routed.
   const me = await page.request.get('/api/auth/me')
   expect(me.status(), 'step 9: /api/auth/me').toBe(200)
   const meBody = (await me.json()) as {
@@ -183,7 +133,6 @@ test('F10: buy Premium on /pricing, the webhook lands, sign in, and Premium is t
   ).toHaveLength(1)
   releaseSync()
 
-  // 10. Premium: the account chrome, the PAID nav, and the paid Overview.
   await expectSignedInAs(page, email)
   await expect(accountTrigger(page), 'step 10: no account menu').toBeVisible({
     timeout: SESSION_SETTLE_MS,
@@ -192,16 +141,13 @@ test('F10: buy Premium on /pricing, the webhook lands, sign in, and Premium is t
     page.getByRole('navigation', { name: 'Primary' }).locator('a[href="/financial-summary"]'),
     'step 10: the nav is not the paid nav'
   ).toHaveCount(1)
-  // The paid Overview drops the "Premium Features" upsell (F5's claim), next
-  // to a positive anchor so the absence cannot pass on an unrendered page.
+  // Positive anchor, so the absence can't pass on an unrendered page.
   await expect(page.getByText('Track your finances with privacy and control')).toBeVisible()
   await expect(
     page.getByRole('heading', { name: 'Premium Features' }),
     'step 10: the Overview still shows the free upsell'
   ).toHaveCount(0)
 
-  // 11. No request left for Paddle (AC 4): the page asked `*.paddle.com` for
-  // exactly one thing, the Paddle.js script, and the stub answered it.
   expect(stub.paddleRequests, 'step 11: a *.paddle.com request was not the stub').toEqual([
     { url: 'https://cdn.paddle.com/paddle/v2/paddle.js', answer: 'stub' },
   ])
@@ -209,7 +155,6 @@ test('F10: buy Premium on /pricing, the webhook lands, sign in, and Premium is t
     stub.calls.filter((call) => call.method === 'Environment.set').map((call) => call.args[0]),
     'step 11: Paddle.js must run in the sandbox environment'
   ).toEqual(['sandbox'])
-  // The token the browser got is the obvious fake (AC 4), not an ambient one.
   expect(
     stub.calls.filter((call) => call.method === 'Initialize').map((call) => call.args[0]),
     'step 11: Paddle.js must be initialized with the fake client token'

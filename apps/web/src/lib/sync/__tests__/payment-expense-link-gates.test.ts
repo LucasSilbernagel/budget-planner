@@ -1,22 +1,4 @@
-/**
- * `paymentExpenseId` sync-contract gates (Story 102.1, FR169, AC-7).
- *
- * The debt→expense payment link crosses three gates the compiler cannot check:
- *
- *   1. the client sync-queue schema — `syncOperationDataSchema` (core). It STRIPS
- *      undeclared keys and runs BEFORE `queue.add()`, so a missing line drops the
- *      link silently, and a REJECTION drops the whole operation (name, balance
- *      and all) into a bare `console.error`.
- *   2. the server ingest schema — `apps/web/src/server/api/sync.ts`.
- *   3. the syncBridge payload — `toServerPayload`. It must emit the key on EVERY
- *      balance payload: `updateEntity` does a partial `.set()`, so an omitted key
- *      leaves the previous server link in place and an UNLINK never lands.
- *
- * ⚠️ A uuid that matches no expense is valid at every gate (no FK, see
- * `schema.ts`): a dangling link is a normal state. That claim is proved against
- * a real database in `payment-expense-link-roundtrip.test.ts`; this file pins
- * each gate on its own.
- */
+/** Three gates the compiler can't check. A uuid matching no expense is valid at every gate (no FK). */
 
 import { syncOperationDataSchema } from '@budget-planner/core/sync/types'
 import { describe, expect, it } from 'vitest'
@@ -26,7 +8,6 @@ import { toServerPayload } from '../syncBridge'
 const USER_ID = '11111111-1111-4111-8111-111111111111'
 const EXPENSE_ID = '44444444-4444-4444-8444-444444444444'
 
-/** A minimal, otherwise-valid DEBT balanceTracking row (operation payload). */
 const baseRow = {
   type: 'debt' as const,
   name: 'Car loan',
@@ -36,8 +17,7 @@ const baseRow = {
   userId: USER_ID,
 }
 
-// ⚠️ The operation's own `type` (create/update/delete) is not the row's `type`,
-// which lives inside `data` (the trap `finance-type-gates.test.ts` records).
+// The op's `type` (create/update/delete) is not the row's `type`, which lives inside `data`.
 const op = (data: Record<string, unknown>) => ({
   id: '22222222-2222-4222-8222-222222222222',
   type: 'update' as const,
@@ -76,10 +56,7 @@ describe('Gate 1: the client sync-queue schema (the SILENT one)', () => {
 })
 
 describe('Gate 2: the server ingest schema', () => {
-  // ⚠️ This cannot fail on the new schema line: `syncOperationSchema` validates
-  // `data` inside a superRefine that DISCARDS its parse result, so `parsed.data`
-  // is the raw input whatever the entity schema declares (the 45.1 precedent).
-  // It pins the wire contract only; the REJECTS case below exercises the line.
+  // Can't fail on the schema line: superRefine discards its parse result. The rejects case exercises it.
   it('leaves a linked id on the wire (superRefine passthrough, not the schema line)', () => {
     const parsed = syncOperationSchema.parse(op({ ...baseRow, paymentExpenseId: EXPENSE_ID }))
     expect((parsed.data as Record<string, unknown>)['paymentExpenseId']).toBe(EXPENSE_ID)
@@ -121,8 +98,7 @@ describe('Gate 3: the syncBridge payload', () => {
   })
 
   it('⚠️⚠️ emits an explicit null for an unlinked row: absent, undefined or null', () => {
-    // The direction that breaks silently: without the key, `updateEntity`'s
-    // partial `.set()` keeps the old link on every other device.
+    // Without the key, a partial .set() keeps the old link on other devices.
     for (const value of [undefined, null]) {
       const payload = toServerPayload('balanceTracking', entity(value), USER_ID)
       expect(payload).toHaveProperty('paymentExpenseId', null)
@@ -135,9 +111,7 @@ describe('Gate 3: the syncBridge payload', () => {
   })
 
   it('⚠️ sends null for a corrupt stored value, so gate 1 never refuses the whole edit', () => {
-    // A hand-edited localStorage value forwarded unchanged would fail gate 1's
-    // uuid check and drop the operation, rename and balance included (the 65.2
-    // `"false"`-string lesson). Every reader already treats it as not linked.
+    // Forwarded unchanged, a bad value fails the uuid gate and drops the whole op.
     for (const bad of ['not-a-uuid', 42, true, {}, '']) {
       const payload = toServerPayload('balanceTracking', entity(bad), USER_ID)
       expect(payload).toHaveProperty('paymentExpenseId', null)

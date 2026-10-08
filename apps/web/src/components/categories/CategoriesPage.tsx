@@ -1,22 +1,3 @@
-/**
- * `/categories` page shell — the Premium gate around category management
- * (story 30.4b, FR54).
- *
- * Three render states, copied from `ReportPage.tsx` (story 30.3), which itself
- * follows the `/profiles` precedent (story 13-3), so routes and feature gates
- * can never disagree about a user's tier:
- *   - `status.isLoading` (SSR + first client paint) → a neutral spinner. Never
- *     category content, so a not-yet-verified tier cannot leak paid output.
- *   - resolved `!hasAccess` (free / past_due / canceled / unauthenticated / an
- *     ERRORED check) → a full-page upgrade surface.
- *   - resolved `hasAccess` → the manager.
- *
- * Fail-closed by construction: only an explicitly resolved, entitled tier
- * reaches the manager. This is the presentation boundary, not a security one —
- * categories live in the user's own browser, so there is nothing here for a
- * bypass to exfiltrate.
- */
-
 import type React from 'react'
 import { usePremiumAccess } from '../../hooks/usePremiumAccess'
 import { PremiumPrompt } from '../auth/premium-prompt'
@@ -27,11 +8,7 @@ export function CategoriesPage(): React.ReactElement {
   const { status } = usePremiumAccess()
 
   if (status.isLoading) {
-    // ⚠️ Each branch's outer element has its OWN `key` (story 117.2, FR185):
-    // without them React reused the spinner's <div> as the resolved page's
-    // container, and Chrome counted the 32 px node growing into the page as a
-    // layout shift (CLS 0.1153 on /categories, MEASURED). Keys make React replace
-    // the loading subtree. Do not tidy them away.
+    // Distinct keys make React replace the loading subtree rather than grow it (layout shift).
     return (
       <main
         key="premium-loading"
@@ -61,12 +38,7 @@ export function CategoriesPage(): React.ReactElement {
     )
   }
 
-  // ⚠️ ONE page shell for BOTH sections (story 30.5). The `min-h-screen` +
-  // `mx-auto max-w-3xl` wrappers used to live inside `CategoryManager`; leaving
-  // them there and stacking a second `min-h-screen` block would have put the
-  // breakdown a full viewport below the fold. Each child is a SINGLE element,
-  // so `space-y-8`'s `> * + *` rule can never margin the manager's fixed
-  // ConfirmDialog overlay — see the comment in `CategoryManager`.
+  // Each child must stay a single element, or space-y margins the manager's fixed dialog overlay.
   return (
     <div key="premium-content" className="min-h-screen surface-sunken p-4 sm:p-8">
       <div className="mx-auto max-w-3xl space-y-8">

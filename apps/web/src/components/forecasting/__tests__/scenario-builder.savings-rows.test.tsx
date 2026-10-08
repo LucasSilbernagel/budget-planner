@@ -1,14 +1,4 @@
-/**
- * Savings accounts as what-if rows in the Scenario Builder (story 100.1, FR164).
- *
- * Integration tests: the real builder, the real stores, the real engine and the
- * real currency store. Only the clock-free debounce is waited on.
- *
- * ⚠️ What a contribution edit can and cannot change: rows SPLIT savings (every cent
- * of net income already lands in savings), so totals, net worth and the summary
- * never move. The per-row `After N years` line is the visible outcome (D5), which
- * is why most cases here read that line rather than the summary.
- */
+// Rows only SPLIT savings, so totals and net worth never move: the per-row "After N years" line is the visible outcome.
 
 import { renderWithProviders } from '@/test/utils'
 import { solveAutomaticAllocations } from '@budget-planner/core'
@@ -120,25 +110,20 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-/** The `$`-or-not formatter the builder itself uses, for the current store state. */
 function formatter(): (cents: number) => string {
   return renderHook(() => useFormattedAmount()).result.current
 }
 
-/** Wait for the first debounced recompute: the summary renders only with a result. */
 async function waitForResult() {
   await screen.findByRole('button', { name: /save forecast/i }, { timeout: 3000 })
 }
 
-/** A displayed amount (`$1,234.56` or `1,234.56`) back to cents. */
 function centsOf(text: string): number {
   return Math.round(Number(text.replace(/[^0-9.-]/g, '')) * 100)
 }
 
 describe('rows replace the single savings total (AC-1, AC-9)', () => {
   it('lists one row per active-profile savings row, in display order, with name, balance and contribution', () => {
-    // The store keeps its array in display order on every write
-    // (`sortByDisplayOrder`), so the fixture is written in that order too.
     useSavingsStore.setState({
       savingsGoals: [
         goal({
@@ -160,8 +145,6 @@ describe('rows replace the single savings total (AC-1, AC-9)', () => {
     render(<ScenarioBuilder onSave={vi.fn()} />)
 
     const section = screen.getByRole('region', { name: 'Savings Accounts' })
-    // Store display order, goals and target-less accounts alike, and only the
-    // active profile's rows.
     const names = within(section)
       .getAllByLabelText(/^Account Name, row \d+$/)
       .map((input) => (input as HTMLInputElement).value)
@@ -170,8 +153,6 @@ describe('rows replace the single savings total (AC-1, AC-9)', () => {
     expect(screen.getByLabelText('Monthly Contribution for Emergency fund')).toHaveValue('200.00')
     expect(screen.getByLabelText('Balance for House fund')).toHaveValue('2,500.00')
 
-    // The single total is gone. (Current Investments went too, in story 100.2:
-    // `scenario-builder.balance-rows.test.tsx`.)
     expect(screen.queryByLabelText('Current Savings')).toBeNull()
     expect(screen.getByRole('region', { name: 'Investments & Debts' })).toBeInTheDocument()
   })
@@ -201,7 +182,6 @@ describe('the starting figure is unchanged (AC-2)', () => {
       savings: useTotalSavings(),
       investments: useTotalInvestmentBalance(),
     })).result.current
-    // Independent of the hooks: 345601 + 0 + 1000000 + 987600.
     expect(totals.savings + totals.investments).toBe(2_333_201)
     const format = formatter()
 
@@ -214,13 +194,8 @@ describe('the starting figure is unchanged (AC-2)', () => {
 })
 
 describe('contributions seed from the same figures /savings shows (AC-3)', () => {
-  /**
-   * income 500001 − expense 150000 = net 350001. Counted contributions: 50000
-   * (monthly) + 10000 (a corrupt `quarterly` cadence degrades to monthly); the
-   * 20000/wk row is recorded as an expense, so it is NOT counted. Manual 130000.
-   * Pool 350001 − 60000 − 130000 = 160001 across 3 automatic rows: 53334, 53334,
-   * 53333 (the remainder cents go to the first rows in order).
-   */
+  // Net 350001 − counted 60000 (the 20000/wk row is an expense, not counted) − manual 130000 = 160001,
+  // split 53334/53334/53333 (remainder cents go to the first rows).
   function fillParityFixture(): void {
     useIncomeStore.setState({ incomeSources: [income(500_001)] })
     useExpenseStore.setState({ expenses: [expense(150_000)] })
@@ -280,13 +255,12 @@ describe('contributions seed from the same figures /savings shows (AC-3)', () =>
         Number(
           (
             screen.getByLabelText(`Monthly Contribution for ${row.name}`) as HTMLInputElement
-          ).value.replaceAll(',', '') // grouped since story 109.1
+          ).value.replaceAll(',', '')
         ) * 100
       )
     )
 
     expect(seeded, 'builder vs /savings').toEqual(shown)
-    // Both against the hand-computed split, so a shared wrong figure cannot pass.
     expect(shown).toEqual(ROWS.map((row) => row.cents))
   })
 
@@ -304,8 +278,6 @@ describe('contributions seed from the same figures /savings shows (AC-3)', () =>
         goal({ id: 'auto-1', name: 'Auto one', sortOrder: 1 }),
       ],
     })
-    // Positive control (review): the solver really throws for this fixture, so
-    // the builder's `catch` is the path under test.
     expect(() =>
       solveAutomaticAllocations({
         incomeSources: useIncomeStore.getState().incomeSources,
@@ -358,7 +330,6 @@ describe('what-if only: nothing reaches the savings store (AC-4, D0)', () => {
     })
     const before = localStorage.getItem(SAVINGS_GOALS_STORAGE_KEY)
     const stateBefore = useSavingsStore.getState().savingsGoals
-    // Positive control: the key really is persisted, so "unchanged" is a claim.
     expect(before).toContain('Emergency fund')
 
     const state = useSavingsStore.getState() as unknown as Record<string, unknown>
@@ -399,7 +370,6 @@ describe('add and remove rows (AC-5)', () => {
     expect(screen.getByLabelText('Balance for New Account')).toHaveValue('0.00')
     expect(screen.getByLabelText('Monthly Contribution for New Account')).toHaveValue('0.00')
 
-    // A blank name falls back to a generic, still-meaningful name.
     fireEvent.change(screen.getByDisplayValue('New Account'), { target: { value: '   ' } })
     expect(screen.getByRole('button', { name: 'Remove account' })).toBeInTheDocument()
     expect(screen.getByLabelText('Balance for account')).toBeInTheDocument()
@@ -407,14 +377,12 @@ describe('add and remove rows (AC-5)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove Emergency fund' }))
     fireEvent.click(screen.getByRole('button', { name: 'Remove account' }))
 
-    // No "at least one item" rule for savings rows.
     expect(screen.getByText('No savings accounts in this scenario')).toBeInTheDocument()
     expect(screen.queryByText('At least one item is required')).toBeNull()
   })
 })
 
 describe('the per-row outcome (AC-7, AC-8, D5)', () => {
-  /** 5,000.00/mo in, 4,000.00/mo out: 12,000.00 a year left over. */
   function fillOutcomeFixture(contributionCents: number): void {
     useIncomeStore.setState({ incomeSources: [income(500_000)] })
     useExpenseStore.setState({ expenses: [expense(400_000)] })
@@ -438,17 +406,14 @@ describe('the per-row outcome (AC-7, AC-8, D5)', () => {
     await waitForResult()
 
     const row = screen.getByLabelText('Balance for House fund').closest('.surface') as HTMLElement
-    // 1,000.00 + 200.00 × 12 × 10.
     await waitFor(() =>
       expect(within(row).getByText(/^After 10 years:/).textContent).toBe(
         `After 10 years: ${format(2_500_000)}`
       )
     )
-    // (12,000.00 − 2,400.00) × 10.
     expect(screen.getByTestId('savings-unassigned').textContent).toBe(
       `Not assigned to an account after 10 years: ${format(9_600_000)}`
     )
-    // Plain text, not a live region (AC-16).
     expect(
       within(row)
         .getByText(/^After 10 years:/)
@@ -468,7 +433,6 @@ describe('the per-row outcome (AC-7, AC-8, D5)', () => {
     fireEvent.change(screen.getByLabelText('Monthly Contribution for House fund'), {
       target: { value: '500' },
     })
-    // 1,000.00 + 500.00 × 12 × 10.
     await waitFor(
       () =>
         expect(screen.getByText(/^After 10 years:/).textContent).toBe(
@@ -486,13 +450,11 @@ describe('the per-row outcome (AC-7, AC-8, D5)', () => {
     await waitForResult()
 
     const line = screen.getByTestId('savings-unassigned')
-    // (18,000.00 − 12,000.00) × 10, applied in full (AC-7).
     expect(line.textContent).toBe(
       `Your contributions are ${format(6_000_000)} more than you have left over by year 10`
     )
     expect(line.className).toContain('text-amber-800')
     expect(line.className).not.toContain('text-red')
-    // The row still gets every contribution: 1,000.00 + 1,500.00 × 12 × 10.
     expect(screen.getByText(/^After 10 years:/).textContent).toBe(
       `After 10 years: ${format(18_100_000)}`
     )
@@ -540,8 +502,6 @@ describe('each money field reports its own validity (AC-10)', () => {
       savingsGoals: [goal({ id: 'g-1', name: 'House fund', currentBalance: 100_000 })],
     })
     render(<ScenarioBuilder onSave={vi.fn()} />)
-    // Was `1e308` → "Enter a smaller amount." until story 109.1: the field now
-    // drops a typed exponent, and refuses anything above the money limit (Q1).
     fireEvent.change(screen.getByLabelText('Balance for House fund'), {
       target: { value: '21474836.48' },
     })
@@ -602,7 +562,6 @@ describe('save writes the rows and the total (AC-11)', () => {
   })
 })
 
-/** A saved forecast for the builder's `initialForecast`, with the given inputs and result. */
 function savedForecast(inputs: unknown, result?: SavedForecast['result']): SavedForecast {
   return {
     id: 'saved-1',
@@ -627,7 +586,6 @@ function savedForecast(inputs: unknown, result?: SavedForecast['result']): Saved
 
 describe('code review fixes (2026-10-05)', () => {
   it('flags a negative saved balance on the field from the start, and holds Save and the engine (Lucas decision)', async () => {
-    // A v1 forecast saved when the old Current Savings field accepted `-5`.
     render(
       <ScenarioBuilder
         onSave={vi.fn()}
@@ -638,15 +596,12 @@ describe('code review fixes (2026-10-05)', () => {
     expect(balance).toHaveValue('-5.00')
     expect(balance).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByText('Enter an amount of 0 or more.')).toBeInTheDocument()
-    // The saved result is on screen, so the Save area renders: blocked, with the reason.
     expect(screen.getByTestId('save-blocked-reason').textContent).toBe(
       'Fix the highlighted fields to save'
     )
-    // The recompute is held, so no engine refusal banner either.
     await new Promise((resolve) => setTimeout(resolve, 700))
     expect(screen.queryByTestId('calculation-error')).toBeNull()
 
-    // Fixing the field releases both.
     fireEvent.change(balance, { target: { value: '5' } })
     expect(balance).not.toHaveAttribute('aria-invalid')
     expect(screen.queryByTestId('save-blocked-reason')).toBeNull()
@@ -671,7 +626,6 @@ describe('code review fixes (2026-10-05)', () => {
     await waitForResult()
 
     const line = screen.getByTestId('savings-unassigned')
-    // (4,000.00 − 5,000.00) × 12 × 10 = −120,000.00, none of it contributed.
     expect(line.textContent).toBe(
       `Not assigned to an account after 10 years: ${format(-12_000_000)}`
     )
@@ -696,7 +650,6 @@ describe('code review fixes (2026-10-05)', () => {
     expect(screen.getByTestId('savings-unassigned')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '+ Add Account' }))
-    // Before the debounced recompute: the result describes one row, the list has two.
     expect(screen.queryByTestId('savings-unassigned')).toBeNull()
     await waitFor(() => expect(screen.getByTestId('savings-unassigned')).toBeInTheDocument(), {
       timeout: 3000,
@@ -738,7 +691,6 @@ describe('code review fixes (2026-10-05)', () => {
         )}
       />
     )
-    // No waiting for the debounce: the saved result already covers these rows.
     expect(screen.getByText(/^After 1 year:/).textContent).toBe(`After 1 year: ${format(340_000)}`)
     expect(screen.getByTestId('savings-unassigned')).toBeInTheDocument()
   })
@@ -760,7 +712,6 @@ describe('code review fixes (2026-10-05)', () => {
     cleanupAndRender(
       savedForecast({ savings: 1_234, investments: 0, years: 10, savingsAccounts: 'oops' })
     )
-    // Not an array: loads as the v1 total.
     expect(screen.getByLabelText('Balance for Savings')).toHaveValue('12.34')
   })
 
@@ -778,9 +729,6 @@ describe('code review fixes (2026-10-05)', () => {
     for (const input of within(section).getAllByRole('textbox')) {
       expect(input).toHaveAttribute('autocomplete', 'off')
     }
-    // The money fields were spinbuttons until story 109.1; they are textboxes now,
-    // so the loop above covers them. Pin the COUNT, so the loop cannot pass
-    // without them: a Balance and a Monthly Contribution on each of the two rows.
     const money = within(section).getAllByLabelText(
       /^(Balance|Monthly Contribution) for Same name$/
     )
@@ -798,12 +746,8 @@ function cleanupAndRender(forecast: SavedForecast): void {
 }
 
 describe('rounding cents are not over-contribution (story 111.1 review, D1)', () => {
-  /**
-   * The forecast annualises exactly (111.1) while an automatic row's allocation is
-   * monthly-canonical. 100.00/wk is 520,000 a year exactly but 43,333 × 12 =
-   * 519,996 monthly-canonical: 4 cents a year the allocation over-counts the
-   * left-over, 40 by year 10. Tolerance: 6 × 1 non-monthly entry × 10 years = 60.
-   */
+  // The forecast annualises exactly but allocation is monthly-canonical: 100.00/wk over-counts 4 cents a year.
+  // Tolerance: 6 × non-monthly entries × years.
   it('a fully allocated automatic row shows no amber line, and 0.00 unassigned', async () => {
     useIncomeStore.setState({ incomeSources: [income(500_000)] })
     useExpenseStore.setState({ expenses: [{ ...expense(10_000), frequency: 'weekly' as const }] })
@@ -821,7 +765,6 @@ describe('rounding cents are not over-contribution (story 111.1 review, D1)', ()
     )
   })
 
-  /** 5,000.00/mo in, one ANNUAL expense, a manual 4,000.00/mo row: 12 × 400,000 − net. */
   function fillShortfallFixture(annualExpenseCents: number): void {
     useIncomeStore.setState({ incomeSources: [income(500_000)] })
     useExpenseStore.setState({
@@ -840,7 +783,6 @@ describe('rounding cents are not over-contribution (story 111.1 review, D1)', ()
   }
 
   it('a shortfall exactly at the tolerance stays quiet', async () => {
-    // Net 6,000,000 − 1,200,006 = 4,799,994; contributions 4,800,000: 6 a year, 60 = tolerance.
     fillShortfallFixture(1_200_006)
     const format = formatter()
     render(<ScenarioBuilder onSave={vi.fn()} />)
@@ -854,7 +796,6 @@ describe('rounding cents are not over-contribution (story 111.1 review, D1)', ()
   })
 
   it('a shortfall one step above the tolerance still warns, with the full amount', async () => {
-    // Net 4,799,993; contributions 4,800,000: 7 a year, 70 > 60.
     fillShortfallFixture(1_200_007)
     const format = formatter()
     render(<ScenarioBuilder onSave={vi.fn()} />)

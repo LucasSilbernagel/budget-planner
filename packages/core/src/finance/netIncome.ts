@@ -1,27 +1,9 @@
-/**
- * Net Period Income Calculation
- *
- * Calculates net period income by normalizing all income and expense values
- * to a monthly base and then computing: totalNormalizedIncome - totalNormalizedExpenses
- *
- * Architecture Requirement: FR5 - Core calculations
- */
-
 import type { NormalizableFinancialItem } from './normalization'
 import { calculateTotalMonthlyNormalized } from './normalization'
 
-// ⚠️ Declared once, in `./normalization`, and re-exported here so existing
-// importers of this module keep working. It used to be a SECOND, identical
-// declaration, which made the name ambiguous through both barrels (`finance/index.ts`
-// and the package root re-export both) and let the two copies drift apart silently.
+// Re-exported, not redeclared: a second declaration made the name ambiguous across barrels.
 export type { NormalizableFinancialItem } from './normalization'
 
-/**
- * Calculates net period income from income sources and expenses
- * @param incomeSources - Array of income sources with amount and frequency
- * @param expenses - Array of expenses with amount and frequency
- * @returns Net period income in cents (positive = surplus, negative = deficit)
- */
 export function calculateNetPeriodIncome(
   incomeSources: NormalizableFinancialItem[],
   expenses: NormalizableFinancialItem[]
@@ -31,44 +13,24 @@ export function calculateNetPeriodIncome(
   const totalNormalizedIncome = calculateTotalMonthlyNormalized(sources)
   const totalNormalizedExpenses = calculateTotalMonthlyNormalized(expensesArray)
 
-  // Net period income = income - expenses
   return totalNormalizedIncome - totalNormalizedExpenses
 }
 
-/**
- * Calculates gross period income from income sources
- * @param incomeSources - Array of income sources with amount and frequency
- * @returns Gross period income in cents (always positive or zero)
- */
 export function calculateGrossPeriodIncome(incomeSources: NormalizableFinancialItem[]): number {
   return calculateTotalMonthlyNormalized(incomeSources || [])
 }
 
-/**
- * Calculates total period expenses from expenses
- * @param expenses - Array of expenses with amount and frequency
- * @returns Total period expenses in cents (always positive or zero)
- */
 export function calculateTotalPeriodExpenses(expenses: NormalizableFinancialItem[]): number {
   return calculateTotalMonthlyNormalized(expenses || [])
 }
 
-/**
- * Result type for net income calculation
- */
 export interface NetIncomeResult {
-  grossIncome: number // In cents, normalized to monthly
-  totalExpenses: number // In cents, normalized to monthly
-  netIncome: number // In cents, can be positive or negative
-  isSurplus: boolean // True if netIncome >= 0
+  grossIncome: number
+  totalExpenses: number
+  netIncome: number
+  isSurplus: boolean
 }
 
-/**
- * Calculates detailed net income result with breakdown
- * @param incomeSources - Array of income sources with amount and frequency
- * @param expenses - Array of expenses with amount and frequency
- * @returns Object with grossIncome, totalExpenses, netIncome, and isSurplus
- */
 export function calculateNetIncomeResult(
   incomeSources: NormalizableFinancialItem[],
   expenses: NormalizableFinancialItem[]

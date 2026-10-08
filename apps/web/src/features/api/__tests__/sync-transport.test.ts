@@ -1,14 +1,3 @@
-/**
- * Push Transport Tests (Story 5-15)
- *
- * Pins the contract between the served POST /api/sync/batch route and the core
- * SynchronizationService: sendSyncOperation maps the BatchSyncResponse envelope
- * to a ProcessOperationResult and classifies failures as retryable/permanent so
- * the queue retries transient errors but not permanent rejects.
- *
- * `fetch` is stubbed — no real network (NFR8).
- */
-
 import type { SyncOperation } from '@budget-planner/core/sync'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { sendSyncOperation } from '../client'
@@ -100,7 +89,6 @@ describe('sendSyncOperation', () => {
       })
     )
     const result = await sendSyncOperation(operation)
-    // 422 is in core's PERMANENT_REJECT_STATUS_CODES: the op is dropped, not replayed.
     expect(result).toEqual({
       success: false,
       error: 'Refused by the server (constraint)',
@@ -171,8 +159,6 @@ describe('sendSyncOperation', () => {
     stubFetch(async () =>
       jsonResponse({ success: false, error: 'Request too large', refusal: 'too-large' }, 413)
     )
-    // The client sends ONE op per request, so a request the route refuses for size
-    // is this op, on every replay. 422 is in core's PERMANENT_REJECT_STATUS_CODES.
     expect(await sendSyncOperation(operation)).toEqual({
       success: false,
       error: 'Request too large',
@@ -186,7 +172,6 @@ describe('sendSyncOperation', () => {
     ['a 413 with an empty JSON body', {}],
     ['a 413 with NO body at all', null],
     ['a 413 with an unknown refusal', { error: 'Request too large', refusal: 'something-else' }],
-    // Another KNOWN refusal is not proof either: only `too-large` names a 413.
     ['a 413 with the 400 refusal', { error: 'Request too large', refusal: 'invalid-request' }],
   ])(
     'story 79.3 (D1): an UNPROVEN 413 keeps statusCode 413 (kept queued) — %s',
@@ -237,8 +222,6 @@ describe('sendSyncOperation', () => {
   })
 
   it('does NOT treat a 200 envelope with nothing processed as success (review P4)', async () => {
-    // success:true but processedCount:0 — must be a retryable failure, not a silent
-    // drop of the op from the queue with nothing persisted.
     stubFetch(async () =>
       jsonResponse({ success: true, processedCount: 0, failedCount: 0, conflictCount: 0 })
     )

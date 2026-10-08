@@ -1,29 +1,5 @@
-/**
- * The Overview's PENDING server markup hydrates into the real figures with no
- * mismatch (story 84.4, FR137).
- *
- * Replaces `e2e/loading-state.spec.ts` › "the Overview resolves to the real
- * figure with no hydration error" and the hydration half of
- * `e2e/hydration.spec.ts` › "the pending markup 38.2 introduced hydrates
- * without a mismatch". The served-bytes half (the server sends skeletons, not
- * `$0.00`) is in `__tests__/served-pages.served.test.ts`.
- *
- * The real ordering: the server renders with EMPTY stores (it never sees
- * localStorage), `StoreHydration`'s mount effect fills the stores, and the
- * page content hydrates after that. `seedStores()` between the two renders
- * stands in for it (as in `stores/__tests__/store-selector-hydration.dom.test.tsx`).
- * The real Suspense boundary and timing are the F1 sweep's
- * (`e2e/hydration.spec.ts`, kept).
- *
- * ⚠️ 84.3's HIGH: React 19 reports NO hydration error for an extra or missing
- * server node DIRECTLY under the hydration root. The page is nested one level
- * down with a sibling after it, and a designed-RED control proves this harness
- * can see a mismatch at all.
- *
- * ⚠️ Assert on `onRecoverableError`, not `console.error`: once a handler is
- * passed, React never writes the mismatch to the console.
- */
-
+// React 19 reports no hydration error for a mismatched node directly under the root, so
+// the page is nested with a sibling. Assert on onRecoverableError: with it set React skips console.error.
 import { act } from 'react'
 import { hydrateRoot } from 'react-dom/client'
 import { renderToString } from 'react-dom/server'
@@ -43,13 +19,7 @@ import { HomePage } from '../HomePage'
 
 const NOW = '2026-01-01T00:00:00.000Z'
 
-/**
- * `e2e/hydration.spec.ts`'s seed. ⚠️ It MUST include savings goals: a
- * balance-only seed flips net worth with zero hydration errors because both
- * balance selectors are pure (38.1 trap 1), so it cannot fail.
- *
- * investments 800,000c + savings 300,000c − debts 15,000,000c = −13,900,000c
- */
+// Must include savings goals: a balance-only seed cannot fail, since both balance selectors are pure.
 function seedStores(): void {
   useSavingsStore.setState({
     savingsGoals: [
@@ -131,7 +101,6 @@ function seedStores(): void {
   })
 }
 
-/** Renders differently on the server and the client: the designed-RED control. */
 let renderingOnClient = false
 function Mismatch() {
   return renderingOnClient ? <i>client</i> : <b>server</b>
@@ -154,7 +123,6 @@ function Document({ withMismatch }: { withMismatch: boolean }) {
 async function hydratePendingOverview(withMismatch: boolean) {
   renderingOnClient = false
   const container = document.createElement('div')
-  // The server render: empty stores, the mount gate pending.
   container.innerHTML = renderToString(<Document withMismatch={withMismatch} />)
   document.body.appendChild(container)
   const serverHtml = container.innerHTML
@@ -199,7 +167,6 @@ describe('the Overview’s pending markup hydrates into the figures (story 38.2)
     useIncomeStore.setState({ incomeSources: [] })
     useExpenseStore.setState({ expenses: [] })
     useBalanceStore.setState({ entries: [] })
-    // The product default, so the figure reads as e2e read it.
     useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
   })
 
@@ -215,7 +182,6 @@ describe('the Overview’s pending markup hydrates into the figures (story 38.2)
   it('hydrates the skeleton markup with no mismatch and resolves to the real net worth', async () => {
     const { container, serverHtml, recoverable, cleanup } = await hydratePendingOverview(false)
     try {
-      // Precondition: what was hydrated really was the pending markup.
       expect(serverHtml).toContain('overview-net-worth-skeleton')
       expect(serverHtml).not.toContain('$0.00')
 

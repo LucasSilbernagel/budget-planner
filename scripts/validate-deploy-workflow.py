@@ -1,21 +1,5 @@
 #!/usr/bin/env python3
-"""Structural invariants for the production deploy pipeline (Story 5-4).
-
-`actionlint` checks GitHub Actions *syntax*. This checks the things that make
-the pipeline SAFE, which syntax cannot express: that a red build structurally
-cannot deploy, that secrets never reach a `run:` script, that the migration is
-gated before it can touch production, and that no job can silently lose access
-to the secrets it needs.
-
-This file exists because story 5-4's review found that those invariants had only
-ever been asserted in an ephemeral shell session — an unverifiable claim in a
-story record. Now they are re-runnable:
-
-    python3 scripts/validate-deploy-workflow.py
-
-Requires PyYAML (preinstalled on ubuntu-latest runners and most dev boxes).
-Exits non-zero on any violation, so it can be wired into CI if wanted.
-"""
+# Safety invariants of the deploy pipeline that actionlint cannot express.
 
 from __future__ import annotations
 
@@ -31,24 +15,18 @@ except ImportError:  # pragma: no cover
     print("SKIP: PyYAML not installed (pip install pyyaml)", file=sys.stderr)
     sys.exit(2)
 
-# Overridable so story 85.1's broken-ci.yml fixtures can prove each check RED.
-# Not `CI`: GitHub Actions sets CI=true on every runner.
+# Overridable for fixture tests. Not `CI`: GitHub Actions always sets that.
 CI = os.environ.get("VALIDATE_CI_PATH") or ".github/workflows/ci.yml"
 DEPLOY = ".github/workflows/deploy.yml"
 ENV_CHECK_HELPER = ".github/scripts/rapids_env_check.py"
 DEPLOYED_TAGS_HELPER = ".github/scripts/rapids_deployed_tags.py"
 VERDICT_HELPER = ".github/scripts/rapids_verdict.py"
-# Story ops-1: the image size guard, the two-mode image check and the registry
-# report, shared by deploy.yml and the PR-only container-image.yml.
 IMAGE_WORKFLOW = ".github/workflows/container-image.yml"
 IMAGE_SIZE_HELPER = ".github/scripts/image_size.py"
 VERIFY_IMAGE_HELPER = ".github/scripts/verify-image.sh"
 REGISTRY_REPORT_HELPER = ".github/scripts/registry-report.sh"
 WEB_PACKAGE = "apps/web/package.json"
-# App (strict, excludes tests), unit tests + test helpers, Playwright specs.
 WEB_TYPECHECK_CONFIGS = ("tsconfig.app.json", "tsconfig.vitest.json", "tsconfig.e2e.json")
-# Story 78.4: the build config (strict, excludes tests) and the no-emit test
-# config (tests + root-level TS files, relaxed index-access flags).
 PACKAGE_TYPECHECK_CONFIGS = ("tsconfig.json", "tsconfig.test.json")
 # package -> (package.json, the deploy step's exact `run`, configs its script must name)
 TYPECHECK_SCRIPTS = {
@@ -64,9 +42,7 @@ TYPECHECK_SCRIPTS = {
         PACKAGE_TYPECHECK_CONFIGS,
     ),
 }
-# Story 78.4 review: the package test configs themselves, so a config that still
-# exists but checks nothing (a narrowed `include`, a test-excluding `exclude`)
-# cannot pass on its name alone.
+# A config that exists but checks nothing must not pass on its name alone.
 PACKAGE_TEST_CONFIGS = ("packages/core/tsconfig.test.json", "packages/db/tsconfig.test.json")
 
 failures: list[str] = []
@@ -82,16 +58,7 @@ def check(condition: object, label: str) -> None:
 
 
 def code_only(script: str) -> str:
-    """A shell script with its comment lines removed.
-
-    ⚠️ Use this for every ABSENCE assertion. Four separate checks in this file
-    have failed on their own documentation: a step comment saying "never add
-    `--json` here", a Dockerfile note discussing `pnpm deploy --prod`, a module
-    docstring quoting the `sys.exit(0 if …)` shape it replaced, and another
-    explaining why `pg_try_advisory_lock` is wrong. Each time the guard was right
-    and the prose tripped it. Absence of a STRING is not absence of a BEHAVIOUR —
-    check what runs, not what is written about it.
-    """
+    """Comment lines removed: absence checks must look at what runs, not prose about it."""
     return "\n".join(
         line for line in script.split("\n") if not line.strip().startswith("#")
     )
@@ -120,9 +87,8 @@ def needs_of(jobs: dict, name: str) -> list[str]:
 SHARD_RESULT_ENV = "${{ needs.unit-shards.result }}"
 SHARD_RESULT_TEST = 'test "${SHARDS_RESULT}" = "success"'
 AGGREGATOR_RUN = ['echo "unit-shards result: ${SHARDS_RESULT}"', SHARD_RESULT_TEST]
-# The sharded package and the command CI runs for it. CI calls the binary
-# directly (so --shard reaches Vitest), so the package's own script must be
-# exactly what CI runs minus the flag, or CI and `pnpm test:unit` drift apart.
+# CI calls the binary directly so --shard reaches Vitest; the package script must be
+# exactly that minus the flag.
 SHARDED_PACKAGE = "apps/web"
 SHARDED_SCRIPT = "vitest run --config vitest.config.ts"
 SHARD_ONE_IF = "${{ !cancelled() && matrix.shard == 1 }}"
@@ -143,10 +109,6 @@ def _str(value: object) -> str:
 
 
 def workspace_test_packages() -> dict[str, str]:
-    """{directory: package name} for every pnpm workspace package with a
-    `test:unit` script, from the globs in pnpm-workspace.yaml (85.1 review P5).
-    A malformed file or package.json yields fewer packages, which the caller's
-    floor check reports, never a traceback (P6)."""
     try:
         globs = _list(_dict(yaml.safe_load(read("pnpm-workspace.yaml"))).get("packages"))
     except (OSError, yaml.YAMLError):
@@ -165,24 +127,12 @@ def workspace_test_packages() -> dict[str, str]:
 
 
 def check_unit_shards(ci_jobs: dict) -> None:
-    """Story 85.1: the web Vitest run is split across a matrix job, and the
-    required check `Unit tests (Vitest)` survives as an aggregator over it.
-
-    ⚠️ Branch protection on `main` requires the context `Unit tests (Vitest)`,
-    and GitHub treats a SKIPPED required check as passing. So the aggregator
-    must run `if: always()` and must pass ONLY on an explicit 'success' from the
-    shards: `!= 'failure'` would pass a cancelled or skipped shard run.
-
-    Both jobs are pinned by EXACT shape, not by substrings (85.1 review): a
-    step `if: false`, an earlier `exit`, a `|| true`, a path filter, an extra
-    `pnpm test:unit` step or a matrix `exclude` each passed the first version.
-    Every malformed shape is a FAIL line, never a traceback.
-    """
+    """GitHub treats a skipped required check as passing, so the aggregator must run
+    always() and pass only on an explicit 'success'."""
     print("\n== the unit tests are sharded, and the required check aggregates them (85.1) ==")
     shards = _dict(ci_jobs.get("unit-shards"))
     agg = _dict(ci_jobs.get("unit-tests"))
 
-    # --- the aggregator: the required check -----------------------------------
     check(agg.get("name") == "Unit tests (Vitest)",
           "the aggregator keeps the required check name `Unit tests (Vitest)`")
     agg_needs = agg.get("needs", [])
@@ -192,24 +142,21 @@ def check_unit_shards(ci_jobs: dict) -> None:
           "the aggregator runs `if: always()` (a skipped required check counts as passing)")
     check("timeout-minutes" in agg and "timeout-minutes" in shards,
           "the aggregator and the shards both have a timeout")
-    # Job-level keys that can change what its one step does or whether it counts.
     check(not {"defaults", "env", "strategy", "container", "services", "continue-on-error"} & set(agg),
           "the aggregator job has no defaults, env, strategy, container or continue-on-error")
     agg_steps = _list(agg.get("steps"))
     agg_step = _dict(agg_steps[0]) if len(agg_steps) == 1 else {}
-    # No `if:` (a skipped step leaves the job green), no `shell:`, no `uses:`.
+    # No `if:`: a skipped step leaves the job green.
     check(len(agg_steps) == 1 and isinstance(agg_steps[0], dict)
           and set(agg_step) <= {"name", "env", "run"},
           "the aggregator is ONE run step with no if, shell, uses or continue-on-error")
     check(_dict(agg_step.get("env")) == {"SHARDS_RESULT": SHARD_RESULT_ENV},
           "the aggregator's only input is needs.unit-shards.result")
     agg_code = [line.strip() for line in code_only(_str(agg_step.get("run"))).split("\n") if line.strip()]
-    # EXACT script: nothing before the test can exit or rebind, and only the
-    # literal word success passes (cancelled, skipped and failure all fail).
+    # Exact script: only the literal word success passes.
     check(agg_code == AGGREGATOR_RUN,
           "the aggregator's script is exactly: echo the result, then `test … = \"success\"`")
 
-    # --- the matrix ------------------------------------------------------------
     strategy = _dict(shards.get("strategy"))
     matrix = _dict(strategy.get("matrix"))
     shard_list = _list(matrix.get("shard"))
@@ -224,7 +171,6 @@ def check_unit_shards(ci_jobs: dict) -> None:
     check(not {"if", "defaults", "continue-on-error"} & set(shards),
           "the shard job has no if, defaults or continue-on-error")
 
-    # --- the steps: exactly the expected set, each in its exact form ----------
     packages = workspace_test_packages()
     check(all(packages.values()),
           "every workspace package with test:unit has a name (a nameless one could not be --filter'ed)")
@@ -285,18 +231,13 @@ def main() -> int:
     raw = open(DEPLOY, encoding="utf-8").read()
 
     print("\n== ci.yml: story 4-15's contract is preserved ==")
-    # 85.1 review P7: the fixture override must never be silent, or active in CI.
     if CI != ".github/workflows/ci.yml":
         print(f"  NOTE  validating ci.yml from the VALIDATE_CI_PATH override: {CI}")
     check(CI == ".github/workflows/ci.yml" or os.environ.get("GITHUB_ACTIONS") != "true",
           "the VALIDATE_CI_PATH fixture override is not active in CI")
-    # Story 85.1: `unit-shards` is new; the three REQUIRED check names (lint,
-    # unit-tests, e2e-tests job names) are unchanged.
     check(set(ci["jobs"]) == {"lint", "unit-shards", "unit-tests", "e2e-tests"},
           "the gate jobs are lint, unit-shards, unit-tests (aggregator) and e2e-tests")
     check("pull_request" in triggers(ci), "the PR trigger (what branch protection evaluates) is intact")
-    # Removed 2026-09-15: deploy.yml already runs these gates on every push to
-    # main, so a standalone push run only duplicated ~8 minutes of runner time.
     check("push" not in triggers(ci), "no push trigger duplicating the deploy-nested gates")
     check("workflow_call" in triggers(ci), "workflow_call exposed for the deploy gate")
     check_unit_shards(ci["jobs"])
@@ -320,8 +261,7 @@ def main() -> int:
     check(needs_of(jobs, "smoke") == ["deploy"], "smoke needs deploy")
 
     print("\n== the image builds in parallel, but only a gated build is pushed ==")
-    # build-image dropped its `needs:` on 2026-09-15 so it runs alongside the
-    # gates. That is only safe while it cannot publish anything.
+    # Running in parallel with the gates is safe only while it cannot publish anything.
     check(not needs_of(jobs, "build-image"), "build-image runs in parallel with the gates")
     check("secrets." not in yaml.safe_dump(jobs["build-image"]), "build-image reads no secrets")
     check("docker push" not in yaml.safe_dump(jobs["build-image"]), "build-image never pushes")
@@ -359,36 +299,24 @@ def main() -> int:
     check(sum("type-check" in run for run in runs) == 4, "four per-package type-check steps")
     check(not any("tsc:" in run for run in runs), "never invokes the dead tsc:* scripts")
 
-    # Story 78.2. The step above runs `pnpm --filter web type-check`, so what it
-    # actually checks lives in apps/web/package.json, not here. Before 78.2 that
-    # script named only tsconfig.app.json, which EXCLUDES every test file, and
-    # no gate type-checked a test or an e2e spec. Pin the script itself: each
-    # config must be named, and the commands must be joined by `&&` so a failing
-    # first `tsc` cannot be masked by a passing second one (`;` would do that).
-    # Story 78.4 extends the same pin to core and db, whose test files were
-    # excluded by their build tsconfig until then.
+    # The step runs a package script, so pin the script itself: each config named, joined
+    # by `&&` so a failing first tsc cannot be masked.
     check(not jobs["type-check"].get("continue-on-error")
           and not any(step.get("continue-on-error") for step in jobs["type-check"]["steps"]),
           "no continue-on-error anywhere in the type-check job")
-    # `if: false` on a step (or the job) skips it and the job still succeeds, so
-    # the exact `run` pin below would hold over a gate that never runs (78.4
-    # review, measured). Nothing in this job is conditional today; keep it so.
+    # `if: false` would skip a gate while the job still succeeds.
     check("if" not in jobs["type-check"]
           and not any("if" in step for step in jobs["type-check"]["steps"]),
           "no `if:` on the type-check job or any of its steps")
     for name, (package_json, step_run, required_configs) in TYPECHECK_SCRIPTS.items():
-        # Web keeps its pre-78.4 labels; the others name their package.
         scope = "" if name == "web" else f"{name} "
         if name == "web":
             print("\n== the web type-check covers the app, the unit tests and the e2e specs ==")
         else:
             print(f"\n== the {name} type-check covers the package and its test files ==")
-        # EXACT, not a substring: `pnpm --filter web type-check || true` contains the
-        # substring and would turn the gate into a no-op (78.2 review, measured).
+        # Exact, not substring: `... || true` contains the substring.
         check(any(run.strip() == step_run for run in runs),
               f"the gate runs the {name} package's own type-check script, unmodified")
-        # A malformed package.json must be a reported FAIL, not a traceback that
-        # skips every later check.
         try:
             package = json.loads(read(package_json))
             scripts = package.get("scripts")
@@ -396,9 +324,7 @@ def main() -> int:
         except (OSError, json.JSONDecodeError, AttributeError):
             scripts = package_name = None
         check(isinstance(scripts, dict), f"{package_json} parses and has a scripts table")
-        # A `--filter` that matches no project makes pnpm print "No projects
-        # matched the filters" and exit 0: the step would check nothing (78.4
-        # review, measured). pnpm also matches a scoped name by its bare part.
+        # A --filter matching nothing exits 0 having checked nothing.
         step_filter = step_run.split()[2]
         check(isinstance(package_name, str)
               and (package_name == step_filter or package_name.endswith("/" + step_filter)),
@@ -416,8 +342,6 @@ def main() -> int:
               f"every {scope}type-check command is a plain `tsc --noEmit -p <config>`")
         for config in required_configs:
             check(config in configs, f"the {name} type-check names {config}")
-        # Order and exact membership: the STRICT program runs first, and no extra
-        # or duplicated config rides along.
         check(configs == list(required_configs),
               f"the {name} type-check runs exactly {' then '.join(required_configs)}")
 
@@ -445,21 +369,10 @@ def main() -> int:
     check(not any(s.get("continue-on-error") for s in steps), "no continue-on-error in migrate")
     check(jobs["migrate"].get("environment") == "production", "migrate sits in the production environment")
 
-    # Story 5.18. The preflight -> drizzle-kit ordering moved INSIDE the image
-    # (apps/web/migrate-entry.mjs, pinned by its own unit tests), so it is no
-    # longer expressible as two workflow steps. What this file can still pin is
-    # that the pipeline runs the migration in-cluster and reads a real verdict.
     print("\n== the ADR-001 public-DNS window is retired and cannot come back ==")
     migrate_block = yaml.safe_dump(jobs["migrate"])
-    # Asserted over the executable surface — every step's `run:` script and its
-    # `env:` block — NOT the raw file, so the comments that explain why the window
-    # was retired do not read as the window still being there.
-    # Every place a value can actually reach a runner: step `run:` bodies, step
-    # `env:`, step `with:`, job-level `env:`, and the WORKFLOW-level `env:`.
-    # The last two mattered: `DB_INSTANCE` — the variable whose only purpose was
-    # naming the instance to the DNS-window commands — lived at workflow level,
-    # so a check that skipped it would have called the window retired while the
-    # variable that drove it sat there (code review 2026-09-15).
+    # Every place a value can reach a runner, not the raw file, so explanatory comments
+    # do not read as live config.
     executable = "\n".join(
         (step.get("run", "") or "")
         + "\n"
@@ -484,13 +397,8 @@ def main() -> int:
     teardown_run = steps[teardown_i].get("run", "")
     start_run = steps[start_i]["run"]
 
-    # ⚠️ EXACTLY ONE mutating call may configure and start the container.
-    # DanubeData confirmed (2026-09-16) that an update arriving while the previous
-    # update to the same container was still rolling out was accepted, returned
-    # success, and was never applied. The old design issued `apply` then `update`
-    # seconds apart on every run — that collision, built in. Two live runs were
-    # lost to it before the cause was known. CLI 1.3.0's `apply --env` makes one
-    # call sufficient; keep it that way.
+    # Exactly one mutating call may configure the container: an update arriving during
+    # the previous rollout is accepted and silently dropped.
     env_setters = [i for i, s in enumerate(steps)
                    if "--env " in (s.get("run", "") or "") and "--rm-env" not in (s.get("run", "") or "")]
     check(env_setters == [start_i],
@@ -499,23 +407,11 @@ def main() -> int:
     check("MIGRATE_RUN_ID=" in start_run,
           "the container is bound to this run, so a stale verdict cannot be accepted")
     check("--min-scale 1" in start_run, "and starts it, rather than leaving it idle")
-    # Generation-aware in 1.3.0: returns only once THIS call's spec_generation is
-    # observed and the operation is terminal. A green step therefore means the
-    # configuration is LIVE, not merely accepted — which is the distinction that
-    # cost two runs.
     check("--wait" in start_run, "it waits for its own rollout to actually land")
     check("--json" not in code_only(start_run),
           "the credential-carrying step never uses --json (it would print DATABASE_URL)")
     check(start_i < verdict_i, "the verdict is read after the migration is started")
 
-    # ⚠️ The container is never deleted by the pipeline. Two provisions failed
-    # after a deletion on 2026-09-16 and the orphaned-GitOps-config theory came
-    # from that; DanubeData later confirmed deletion is clean (the theory was
-    # ours), and that day's lost migrations were the apply+update collision
-    # (DEPLOY_RUNBOOK §4). The rule stands
-    # for the reasons §4 gives (no create/update races, no `serverless:delete`
-    # scope, less churn). The safety property deletion provided is now
-    # "credentials stripped", verified below.
     print("\n== the migrate container is never deleted, only emptied ==")
     all_migrate_runs = "\n".join((st.get("run", "") or "") for st in steps)
     check("rapids rm" not in all_migrate_runs,
@@ -535,13 +431,10 @@ def main() -> int:
             if not run:
                 continue
             where = f"{name}/{step.get('name')}"
-            # `case $?` reads the status of whatever ran immediately before, which
-            # under -e has already killed the shell if it was non-zero.
+            # `case $?` reads a status that -e has already made fatal.
             check("case $?" not in run,
                   f"{where} does not branch on a bare `case $?` (use `|| status=$?`)")
-            # Join `\` continuations first: the guard is often on the NEXT physical
-            # line, and a line-by-line check would flag correct code (it flagged
-            # `smoke`'s grep, whose `|| { … exit 1; }` sits on the following line).
+            # Join `\` continuations: the `||` guard is often on the next line.
             logical = re.sub(r"\\\n\s*", " ", run)
             for line in logical.split("\n"):
                 stripped = line.strip()
@@ -549,9 +442,6 @@ def main() -> int:
                     check("||" in stripped,
                           f"{where}: `{stripped[:48]}…` captures its status rather than tripping -e")
 
-    # Both of these are regressions that ALREADY HAPPENED on a live run
-    # (35042874267-1, 2026-09-16) and cost a stalled release each. Pinned so they
-    # cannot come back quietly.
     print("\n== the verdict poll survives the platform's redirect ==")
     verdict_run_early = steps[verdict_i]["run"]
     check("curl -fsSL" in verdict_run_early,
@@ -559,11 +449,8 @@ def main() -> int:
     check('[ -n "${body}" ]' in verdict_run_early,
           "an empty 200 is not treated as a verdict")
 
-    # ⚠️ The HTTP endpoint is reached through the container's public URL, which
-    # Knative routes to whatever revision is currently READY — not necessarily the
-    # one that migrated. Run 35042874267-1 succeeded and then answered every poll
-    # with 401 from a successor revision, so the job timed out on finished work.
-    # Logs aggregate across revisions; the run id makes a line attributable.
+    # Knative routes the URL to whichever revision is READY, not necessarily the one
+    # that migrated; logs aggregate across revisions.
     print("\n== the verdict has a second channel that survives revision churn ==")
     check("rapids_verdict.py" in verdict_run_early,
           "the poll also reads the verdict from the container logs")
@@ -584,7 +471,6 @@ def main() -> int:
               "an unavailable log backend reads as error, never as 'no verdict'")
         check("\\S+" not in vbody,
               "its field patterns are narrow (a greedy one read `succeeded\"}` as a failure)")
-    # The container has to emit what the helper parses.
     try:
         with open("apps/web/migrate-entry.mjs", encoding="utf-8") as fh:
             entry_src = fh.read()
@@ -597,9 +483,7 @@ def main() -> int:
           "both the normal and the unexpected-failure paths emit it")
 
     print("\n== migrations are serialised across pods ==")
-    # Knative started TWO revisions of the migrate container and both ran
-    # `drizzle-kit migrate` against production. `--min-scale 0` does not prevent
-    # it, so the exclusion must live in the database.
+    # Knative can run two migrate revisions at once, so exclusion must live in the database.
     try:
         with open("packages/db/src/migrate-lock.ts", encoding="utf-8") as fh:
             lock_src = fh.read()
@@ -607,11 +491,7 @@ def main() -> int:
         lock_src = ""
     check(bool(lock_src), "the migration advisory lock module exists")
     if lock_src:
-        # Strip comments and block comments first. This module DISCUSSES
-        # `pg_try_advisory_lock` at length to explain why it is the wrong
-        # primitive here, and a check that read the prose would fail on the
-        # explanation rather than on the code — the third time this exact trap
-        # has appeared in this story's guards.
+        # The module discusses pg_try_advisory_lock in prose; check only code.
         lock_code = re.sub(r"/\*[\s\S]*?\*/", "", lock_src)
         lock_code = "\n".join(
             line for line in lock_code.split("\n") if not line.strip().startswith("//")
@@ -638,10 +518,7 @@ def main() -> int:
           "the verdict step's last act on a non-success path is to exit non-zero")
     check('"${reported_run}" != "${RUN_ID}"' in verdict_run,
           "a verdict from a container this run did not start is rejected")
-    # The HIGH this file failed to catch the first time: the teardown's answer must
-    # be a WORD, because an exit code cannot distinguish "it is safe" from "we could
-    # not tell". That lesson survived the move from delete-the-container to
-    # strip-its-credentials; only the question changed.
+    # The teardown's answer must be a word: an exit code cannot say "could not tell".
     check("rapids_env_check.py" in teardown_run,
           "the credential check uses the three-state helper, not an ambiguous exit code")
     check('"${verdict}" = "clean"' in teardown_run,
@@ -655,9 +532,7 @@ def main() -> int:
         helper_src = ""
     check(bool(helper_src), "the credential-check helper exists")
     if helper_src:
-        # Strip the module docstring before asserting: it discusses the shapes it
-        # rejects, and a check that matched the prose would fail on documentation
-        # rather than on code.
+        # Strip the docstring: it discusses the shapes it rejects.
         body = helper_src.split('"""')[-1] if helper_src.count('"""') >= 2 else helper_src
         check("sys.exit(0 if" not in body, "the helper never encodes its answer in an exit code")
         check("sys.exit(main())" in body, "the helper's only exit is main()'s return")
@@ -676,9 +551,7 @@ def main() -> int:
     check(not re.search(r"echo\s+\"?\$\{?\{?\s*secrets", raw), "no step echoes a secret")
 
     print("\n== every job that uses environment secrets declares the environment ==")
-    # Regression guard: `build-image` once read `production` Environment secrets
-    # without an `environment:` key, so they resolved to EMPTY and `docker login`
-    # ran with blank credentials. Found in code review 2026-09-03.
+    # Environment secrets resolve to empty without an `environment:` key.
     for name, job in jobs.items():
         block = yaml.safe_dump(job)
         if re.search(r"secrets\.DANUBEDATA_REGISTRY|secrets\.DATABASE_MIGRATOR_PASSWORD|secrets\.DANUBE_TOKEN", block):
@@ -708,18 +581,12 @@ def main() -> int:
     check("THE BUILD IS BROKEN" in body, "a failed gate outranks the 'deploys are off' banner")
     check("which is NOT" in body, "a DEPLOY_ENABLED typo is reported, not treated as 'off'")
     print("\n== the Rapids rollout is real, authenticated, and cannot be raced ==")
-    # Story 4-16 replaced the `exit 1` placeholder with the actual rollout. These
-    # pin the properties that placeholder's own comment demanded, plus the ones
-    # discovered by reading the CLI's source (@danubedata/cli 1.1.0) rather than
-    # guessing at its interface.
     deploy_steps = jobs["deploy"]["steps"]
     deploy_step = next(
         (s for s in deploy_steps if s.get("name") == "Deploy revision to Rapids"), None
     )
     check(deploy_step is not None, "the deploy job has a 'Deploy revision to Rapids' step")
     if deploy_step is None:
-        # Nothing below can run without the step; skip its invariants rather than
-        # crash the whole validator on a rename.
         deploy_step = {"run": "", "env": {}}
     rollout = deploy_step["run"]
 
@@ -727,27 +594,19 @@ def main() -> int:
     check("exit 1" not in rollout, "the deploy step is no longer the unwired placeholder")
     check("set -euo pipefail" in rollout, "the rollout keeps strict bash")
 
-    # `apply` returns as soon as the API accepts the desired state. Without
-    # --wait the step exits 0 while the revision is still rolling out, and the
-    # smoke job then measures the OLD revision: a green deploy of nothing.
-    # ⚠️ `"--wait" in rollout` was the first spelling of this and it is VACUOUS:
-    # `--wait-timeout` contains it as a substring, so the check passed even with
-    # the standalone flag deleted. Caught by its own positive control. The
-    # lookahead requires --wait to end as its own flag.
+    # Without --wait, smoke measures the old revision. The lookahead matters:
+    # `--wait-timeout` contains `--wait`.
     check(re.search(r"--wait(?![\w-])", rollout),
           "the rollout blocks until the revision is terminal")
     check("--wait-timeout" in rollout, "the wait has an explicit ceiling")
 
-    # Creating a container REQUIRES a resource profile; without it the API
-    # returns 422 and the rollout dies after the migration has already run.
+    # Creating a container without a profile fails with 422, after the migration ran.
     check("--profile" in rollout, "the rollout names a resource profile")
     profile_env = str(deploy_step.get("env", {}).get("RESOURCE_PROFILE", ""))
     check("free" not in profile_env,
           "the profile is not the free tier, whose 128MB and max-scale-3 the rollout would exceed")
 
-    # The CLI reads DANUBE_TOKEN (dist/lib/config.js: getToken). RAPIDS_API_TOKEN
-    # was the placeholder's invented name, which the CLI never reads, so a step
-    # passing only that authenticates as nobody.
+    # The CLI reads DANUBE_TOKEN; RAPIDS_API_TOKEN authenticates as nobody.
     for step in deploy_steps:
         run = step.get("run", "") or ""
         if "danube " in run:
@@ -757,8 +616,6 @@ def main() -> int:
             check("RAPIDS_API_TOKEN" not in env,
                   f"'{label}' does not pass RAPIDS_API_TOKEN, which the CLI never reads")
 
-    # The same discipline the migrate job already follows: pin the CLI, and prove
-    # authentication works before mutating anything.
     joined = "\n".join((s.get("run", "") or "") for s in deploy_steps)
     check("DANUBE_CLI_VERSION" in yaml.safe_dump(jobs["deploy"]),
           "the deploy job pins the CLI version rather than floating")
@@ -766,16 +623,11 @@ def main() -> int:
     check("danube rapids preflight" in joined,
           "the image is preflighted before the rollout is attempted")
 
-    # The manifest is documentation rather than this CLI's deploy input, but a
-    # leftover placeholder would still be copied into a console by hand.
     manifest_text = read("apps/web/rapids-service.yaml")
     check("REPLACE_WITH_DANUBEDATA_REGISTRY" not in manifest_text,
           "rapids-service.yaml carries no unresolved registry placeholder")
 
-    # Asserted against the PARSED annotations rather than the file text: the file
-    # explains in prose why the old `danubedata.com/region` key was removed, and
-    # a raw substring check cannot tell an explanation from a live setting. The
-    # thing that must not exist is a KEY on the wrong vendor domain.
+    # Parsed, not raw text, so prose about a removed key cannot trip it.
     manifest = yaml.safe_load(manifest_text)
     annotation_keys = []
     for holder in (manifest.get("metadata", {}),
@@ -785,15 +637,8 @@ def main() -> int:
           "rapids-service.yaml pins no annotation key on the wrong vendor domain")
 
     print("\n== registry retention cannot eat its own rollback targets ==")
-    # A 500 MB registry filled after six SHA-tagged pushes and the seventh died
-    # with `denied: Storage quota exceeded` (run 34497637074, 2026-09-10).
-    # Pruning fixes that, but two safety properties must hold:
-    #   1. The prune runs BEFORE the push. A prune after a failed push never
-    #      runs, so a registry already at quota stays wedged forever — which is
-    #      exactly what happened. Pruning first lets it self-heal.
-    #   2. Rollback (DEPLOY_RUNBOOK §6) redeploys an EARLIER tag, so an over-eager
-    #      prune deletes the thing you would roll back to.
-    # These pin both.
+    # The prune must run before the push (so a full registry self-heals) and must
+    # spare rollback targets.
     build_steps = jobs["push-image"]["steps"]
     names = [str(step.get("name", "")) for step in build_steps]
     check("Prune old image tags" in names, "push-image has a 'Prune old image tags' step")
@@ -801,8 +646,6 @@ def main() -> int:
         "Push image to the DanubeData registry" in names,
         "push-image has a 'Push image to the DanubeData registry' step",
     )
-    # A rename fails the two checks above with a clean report; the position and
-    # body invariants below simply can't run, so guard rather than IndexError.
     if "Prune old image tags" in names and "Push image to the DanubeData registry" in names:
         push_at = names.index("Push image to the DanubeData registry")
         prune_at = names.index("Prune old image tags")
@@ -810,10 +653,7 @@ def main() -> int:
 
         check(prune_at < push_at, "tags are pruned BEFORE the push, so a full registry self-heals")
         check("GITHUB_SHA" in prune, "the prune refuses to delete this run's own tag")
-        # ⚠️ THE OUTAGE OF 2026-09-16. The prune deleted the tag `budget-planner-web`
-        # was running; a deployed Knative revision is pinned to that exact image, so
-        # the site died on its next cold start with `manifest unknown`. Sparing this
-        # run's own SHA was never enough — what matters is what is RUNNING.
+        # What matters is which tags are RUNNING: a revision cannot cold-start without its image.
         check("rapids_deployed_tags.py" in prune,
               "the prune asks which tags are currently deployed")
         check("tag in deployed" in prune,
@@ -828,8 +668,7 @@ def main() -> int:
         check(bool(tags_src), "the deployed-tags helper exists")
         if tags_src:
             tags_body = tags_src.split('"""')[-1] if tags_src.count('"""') >= 2 else tags_src
-            # Unlike the other helpers, this one's exit status IS the signal:
-            # "could not tell" must be distinguishable from "nothing is deployed".
+            # Unlike the other helpers, the exit status is the signal here.
             check("return None" in tags_body,
                   "an unreadable listing returns None rather than an empty list")
             check("return 1" in tags_body, "and exits non-zero so the caller skips pruning")
@@ -842,24 +681,16 @@ def main() -> int:
         check("KEEP_TAGS" in prune and ":-2}" in prune,
               "retention is configurable and defaults to 2 rollback targets "
               "(was 5 until fat images blew the 500 MB plan, run 34528527480)")
-        # A non-numeric or too-low REGISTRY_KEEP_TAGS must not silently wipe
-        # every rollback target (KEEP=0 → delete all) or fail-open under
-        # continue-on-error. The prune script clamps to >=1 and rejects
-        # non-integers loudly. (Review 2026-09-10.)
         check("[!0-9]" in prune or "isdigit" in prune or "ValueError" in prune,
               "the prune rejects a non-numeric REGISTRY_KEEP_TAGS instead of no-op'ing")
         check("-lt 1" in prune or "max(1," in prune,
               "the prune clamps retention to at least one rollback target")
         check("<<<" in prune or "/dev/null" in prune,
               "the rm-tag loop is not fed by a bare pipe (a CLI stdin read would drain it)")
-        # Deleting is the irreversible half; it must never run while deploys are off.
         check("DEPLOY_ENABLED" in str(build_steps[prune_at].get("if", "")),
               "the prune is gated on DEPLOY_ENABLED like every other mutating step")
 
     print("\n== the image fits the registry, and is proven in both modes before a push (ops-1) ==")
-    # 2026-10-02: a ~173 MB image, 2 rollback tags, the live tag and the
-    # migrator's pinned tag did not fit the 500 MB plan, and the push died
-    # AFTER every gate had run. The budget is now enforced at build time.
     push_if = " ".join(str(jobs["push-image"].get("if")).split())
     check("vars.DEPLOY_ENABLED == 'true'" in push_if and "github.ref == 'refs/heads/main'" in push_if,
           "push-image (prune + push) is confined to main, so a branch dispatch cannot spend quota")
@@ -913,7 +744,6 @@ def main() -> int:
     check("docker push" not in verify_src and "danube" not in verify_src,
           "verify-image.sh pushes nothing and calls no platform CLI")
 
-    # AC-1: the registry numbers are printed every run, around the prune and push.
     push_names = [str(step.get("name", "")) for step in jobs["push-image"]["steps"]]
     order = ["Registry usage before prune", "Prune old image tags", "Registry usage after prune",
              "Push image to the DanubeData registry", "Registry usage after push"]
@@ -932,7 +762,6 @@ def main() -> int:
     check("rapids" not in report_src,
           "the registry report never reads rapids output (container env carries credentials)")
 
-    # D5: the PR-time image check builds and verifies and can publish nothing.
     try:
         image_wf = load(IMAGE_WORKFLOW)
     except OSError:
@@ -953,13 +782,7 @@ def main() -> int:
               "container-image.yml runs the same size guard and image check as build-image")
 
     print("\n== every job brings its own toolchain ==")
-    # Each job gets a fresh runner. A job that invokes a tool must set that tool
-    # up itself; nothing carries over from a job that ran earlier.
-    #
-    # Found live on 2026-09-08: the `deploy` job ran `pnpm add -g` with no pnpm
-    # setup and failed with `pnpm: command not found` — AFTER the migration had
-    # already been applied to production, which is the expensive half of the run
-    # to have to repeat.
+    # Each job gets a fresh runner; nothing carries over.
     for name, job in jobs.items():
         if "uses" in job:
             continue
@@ -973,19 +796,8 @@ def main() -> int:
                   f"{name} runs pnpm and sets Node up")
 
     print("\n== configuration is readable from where the workflow reads it ==")
-    # GitHub resolves environment-scoped secrets/variables ONLY for jobs that
-    # declare `environment:`, and a job-level `if:` is evaluated BEFORE the
-    # environment is attached at all. So an environment-scoped value read from
-    # the wrong place does not error — it resolves to an EMPTY STRING.
-    #
-    # Found live on 2026-09-08: DEPLOY_ENABLED had been created as an
-    # environment variable. Every deploy job silently skipped and the run went
-    # GREEN, which is precisely the "success that deployed nothing" the summary
-    # job exists to prevent. The summary caught it; nothing else would have.
-    #
-    # Names that MUST live at repository scope, with the reason each one cannot
-    # be environment-scoped. Neither is sensitive: one is the word "true", the
-    # other a public URL. Nothing secret is pushed out of the environment.
+    # Environment-scoped values resolve to empty in a job without `environment:`, and a
+    # job-level `if:` is evaluated before any environment is attached.
     REPOSITORY_SCOPED = {
         "DEPLOY_ENABLED": "read in job-level if:, which cannot see environment scope",
         "SITE_URL": "read by `smoke`, which declares no environment",
@@ -998,8 +810,6 @@ def main() -> int:
         blob = yaml.safe_dump(job)
         job_if = str(job.get("if", ""))
 
-        # 1. A job-level `if:` can never see environment scope, environment
-        #    declared or not.
         for var in sorted(set(re.findall(r"vars\.([A-Z_]+)", job_if))):
             check(var in REPOSITORY_SCOPED,
                   f"{name}: vars.{var} in a job-level if: is repository-scoped")
@@ -1007,20 +817,16 @@ def main() -> int:
         if has_env:
             continue
 
-        # 2. A job with no environment can only read repository scope.
         for var in sorted(set(re.findall(r"vars\.([A-Z_]+)", blob))):
             check(var in REPOSITORY_SCOPED,
                   f"{name} (no environment): vars.{var} is repository-scoped")
 
-        # 3. A job with no environment must not read secrets at all. Rather than
-        #    move a secret to repository scope to make it reachable, give the job
-        #    an `environment:` — the protection is the point.
+        # Give the job an environment rather than moving a secret to repository scope.
         leaked = sorted(set(re.findall(r"secrets\.([A-Z_]+)", blob)))
         check(not leaked,
               f"{name} (no environment) reads no secrets"
               + (f" — found {', '.join(leaked)}" if leaked else ""))
 
-    # 4. The runbook must not tell an operator to create these anywhere else.
     runbook = read(".github/DEPLOY_RUNBOOK.md")
     for var in REPOSITORY_SCOPED:
         check(f"`{var}`" in runbook, f"DEPLOY_RUNBOOK documents {var}")

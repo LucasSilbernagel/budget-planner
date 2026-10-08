@@ -4,34 +4,10 @@ import { describe, expect, it } from 'vitest'
 import { DOC_PAGES } from '../../content/docs'
 import { globbedPagePaths } from './route-discovery'
 
-/**
- * Every page route is classified for crawlers, and the sitemap lists exactly
- * the indexable ones (story seo-1).
- *
- * WHY THIS EXISTS. Story 40.1 wrote robots.txt against the routes of its day.
- * `/welcome` landed afterwards (story 5-3) and fell under the `Allow: /` default
- * without anyone deciding it should — nothing tied the route set to the file.
- * This test does: it is driven by the DISCOVERED route set (the same discovery
- * story 40.1's head-coverage test uses, not a third walker), so a route added
- * tomorrow is unclassified — and red — the day it lands.
- *
- * Both files are read from disk, not fetched: this is about what ships in
- * `public/`, and a fetch would also depend on a server this suite does not run.
- * (Whether production serves the sitemap AS XML is the adapter test's job —
- * `src/server/__tests__/node-adapter.test.ts`.)
- */
-
 const PUBLIC_DIR = resolve(__dirname, '../../../public')
 const ORIGIN = 'https://www.longhandbudget.com'
 
-/**
- * The pages a stranger may land on from a search result, by ROUTE path.
- *
- * Written out by hand because it is a decision, not a derivation: the test's
- * job is to make sure every route has had that decision made, so a route
- * missing from here AND from robots.txt's `Disallow:` lines is the failure.
- * Keep it in step with robots.txt's "Indexable" comment.
- */
+// Written by hand: a decision, not a derivation. Keep in step with robots.txt's "Indexable" comment.
 const INDEXABLE_ROUTES = [
   '/',
   '/contact',
@@ -43,31 +19,17 @@ const INDEXABLE_ROUTES = [
   '/terms',
 ] as const
 
-/** Server routes, not pages — disallowed without a page route behind them. */
 const NON_PAGE_DISALLOWS = new Set(['/api/'])
 
 interface Robots {
   disallows: string[]
   allows: string[]
   sitemaps: string[]
-  /** Anything in the file this parser does not model. Must be empty. */
   unmodelled: string[]
 }
 
-/**
- * Just enough of the robots.txt grammar for this file: comments stripped,
- * field names case-insensitive and whitespace-tolerant (as crawlers accept),
- * so a `sitemap:` spelled differently cannot slip past the "exactly one" check.
- *
- * ⚠️ It models ONE group, `User-agent: *`, and nothing else — and it says so
- * loudly rather than guessing. A crawler obeys only the most specific group
- * that names it, so a `Disallow:` under `User-agent: Googlebot` (or outside any
- * group, which crawlers ignore) must not count as classifying a route for
- * everyone. Likewise `Allow:` wins over a shorter `Disallow:` (longest match),
- * so any `Allow:` beyond the `/` baseline would make "disallowed" here disagree
- * with a real crawler. All of those land in `unmodelled`, which a test pins
- * empty: extend this parser before extending the file.
- */
+// Models only the `User-agent: *` group. Other groups, stray rules or extra Allow lines land in
+// `unmodelled`, because a real crawler would read them differently.
 function parseRobots(text: string): Robots {
   const robots: Robots = { disallows: [], allows: [], sitemaps: [], unmodelled: [] }
   let groups = 0
@@ -94,7 +56,6 @@ function parseRobots(text: string): Robots {
       }
       agents.push(value)
     } else if (field === 'sitemap') {
-      // Sitemap is a file-level field, independent of any group.
       robots.sitemaps.push(value)
     } else if (field === 'allow' || field === 'disallow') {
       inRules = true
@@ -114,16 +75,8 @@ function parseRobots(text: string): Robots {
   return robots
 }
 
-/**
- * The shape THIS sitemap is written in: a prolog, one sitemaps.org 0.9
- * `urlset`, and nothing but `<url><loc>…</loc></url>` entries inside it —
- * matched over the WHOLE document (comments removed), so a missing
- * `</urlset>`, a stray tag or an unclosed `<url>` fails here instead of
- * slipping past a `<loc>` scan. `[^<&]` refuses entities outright: every URL
- * this site has is entity-free, and the `<loc>` scan below does not decode them.
- * This is deliberately narrower than "any valid sitemap" — widen it on purpose
- * (e.g. for `xhtml:link` alternates), not by accident.
- */
+// Matched over the whole document so a stray tag or unclosed `<url>` fails. `[^<&]` refuses
+// entities: the `<loc>` scan does not decode them.
 const SITEMAP_SHAPE =
   /^<\?xml version="1\.0" encoding="UTF-8"\?>\s*<urlset xmlns="http:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9">(?:\s*<url>\s*<loc>[^<&]+<\/loc>\s*<\/url>)+\s*<\/urlset>\s*$/
 
@@ -131,26 +84,18 @@ function withoutXmlComments(xml: string): string {
   return xml.replace(/<!--[\s\S]*?-->/g, '')
 }
 
-/**
- * `<loc>` values, with XML comments removed first: the sitemap's own header
- * comment talks about `<loc>` entries, and a regex over the raw text must not
- * be able to read prose as a URL.
- */
+// XML comments removed first so header prose about `<loc>` cannot be read as a URL.
 function parseSitemapLocs(xml: string): string[] {
   return [...withoutXmlComments(xml).matchAll(/<loc>\s*([^<]*?)\s*<\/loc>/g)].map((m) => m[1] ?? '')
 }
 
-/** robots.txt `Disallow:` is a PREFIX rule. */
 function disallowedBy(path: string, disallows: readonly string[]): string[] {
   return disallows.filter((rule) => path.startsWith(rule))
 }
 
-/** Route paths -> URL paths, with `/docs/$docId` expanded from `DOC_PAGES`. */
 function expandRoute(routePath: string): string[] {
   if (routePath === '/docs/$docId') return DOC_PAGES.map((doc) => `/docs/${doc.slug}`)
   if (routePath.includes('$')) {
-    // A new dynamic route cannot be listed in a sitemap without knowing its
-    // params. Fail by name rather than emitting a literal `$param` URL.
     throw new Error(`no sitemap expansion for dynamic route ${routePath} — add one here`)
   }
   return [routePath]
@@ -162,10 +107,8 @@ const robots = parseRobots(robotsText)
 const locs = parseSitemapLocs(sitemapXml)
 
 describe('the parsers read what the files actually say (story seo-1)', () => {
-  // Without these, an empty parse would make every "for each" below vacuous.
+  // Without these, an empty parse would make every loop below vacuous.
   it('robots.txt uses only the grammar this test models', () => {
-    // See `parseRobots`: other groups, stray rules or extra Allow lines would
-    // make every "disallowed" verdict below disagree with a real crawler.
     expect(robots.unmodelled).toEqual([])
     expect(robots.allows).toEqual(['/'])
   })
@@ -203,10 +146,7 @@ describe('every page route is classified in robots.txt (story seo-1, AC-1/AC-4)'
   })
 
   it('every Disallow line names a page route (except non-page paths)', () => {
-    // A rule must BE a route, or the parent segment of one — not merely a
-    // string prefix of one. `Disallow: /setting` (a typo) is a prefix of
-    // `/settings`, so a prefix check would call it live while it also blocks
-    // any future `/setting…` page.
+    // A rule must be a route or a parent segment, not a string prefix: `/setting` would match `/settings`.
     const stale = robots.disallows.filter(
       (rule) =>
         !NON_PAGE_DISALLOWS.has(rule) &&
@@ -226,7 +166,7 @@ describe('sitemap.xml lists exactly the indexable pages (story seo-1, AC-2/AC-3/
       const url = new URL(loc)
       return url.origin !== ORIGIN || `${url.origin}${url.pathname}` !== loc
     })
-    // Not the apex (it only 301s, ADR-007), not http, no query or fragment.
+    // Not the apex (it only 301s), not http, no query or fragment.
     expect(offOrigin).toEqual([])
   })
 
@@ -248,8 +188,6 @@ describe('sitemap.xml lists exactly the indexable pages (story seo-1, AC-2/AC-3/
   })
 
   it('robots.txt names it once, absolutely, on the same origin as every <loc>', () => {
-    // Relative Sitemap URLs are invalid; a second line would be a second
-    // decision that nothing keeps in step with the first.
     expect(robots.sitemaps).toEqual([`${ORIGIN}/sitemap.xml`])
   })
 })

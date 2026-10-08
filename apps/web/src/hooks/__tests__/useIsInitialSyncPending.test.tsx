@@ -1,14 +1,3 @@
-/**
- * useIsInitialSyncPending (Story 53.1, AC-4; redesigned in code review).
- *
- * True only while a confirmed paid sync session, on a device that has NEVER
- * completed a sync pull before (a persisted, device-level localStorage flag),
- * with the CALLING page's own collection currently empty, has not completed
- * its first pull this session yet. False for free/unauthenticated sessions,
- * for a device that has synced before, for a page whose collection already
- * has data, and once a pull resolves (or the bounded timeout fires).
- */
-
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -79,18 +68,10 @@ describe('useIsInitialSyncPending', () => {
     useLastPullTimestamp.mockReturnValue(null)
 
     const { result } = renderHook(() => useIsInitialSyncPending(true))
-    // The localStorage read happens in an effect (not the initial render, to
-    // avoid a hydration mismatch — see the hook's own docblock), so RTL's
-    // act-wrapped render must flush it before this assertion is meaningful.
     expect(result.current).toBe(false)
   })
 
   it('starts false on the very first render regardless of localStorage (no hydration-mismatch risk)', () => {
-    // Not asserting mid-render state directly (RTL doesn't expose pre-effect
-    // renders), but confirms the flag is read via an effect, not a
-    // synchronous initializer, by checking the mocked read only takes effect
-    // after mount — i.e. a device with the flag set still needs an act-flushed
-    // render before `pending` reflects it (proven by the previous test).
     window.localStorage.setItem(STORAGE_KEY, '1')
     useSyncSessionStatus.mockReturnValue(status({ resolved: true, isPaidSyncSession: true }))
     useLastPullTimestamp.mockReturnValue(null)

@@ -1,19 +1,4 @@
-/**
- * The retirement plan's sync contract in core (story 99.2, FR161).
- *
- * Gates pinned here (story 99.2 "Gate inventory"):
- *   - G2: `syncOperationDataSchema` carries `plan` (a nested object that STRIPS),
- *     and the per-entity refinement makes it REQUIRED for a plan op;
- *   - G3: `retirementPlanSyncSchema` — every field required, enums from ONE
- *     constant, the adopted-cents bound (key PARITY with the web defaults is
- *     pinned web-side, where `RETIREMENT_PLAN_DEFAULTS` lives);
- *   - G4: `SERVER_ROW_SCHEMAS.retirementPlan` — LENIENT on fields, strict on the
- *     envelope;
- *   - G5: `isStrandedByDeletedProfile` exempts a plan op on BOTH paths.
- *
- * AC-6a: a client gate refusal is a ZodError before `queue.add`, so nothing is
- * queued. Every such test reads the QUEUE, not just the throw.
- */
+// A client gate refusal throws before `queue.add`, so tests check the queue, not just the throw.
 
 import { type Mock, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { INCOME_BASES, RETIREMENT_MODELS } from '../../finance/retirement'
@@ -36,7 +21,7 @@ const USER = '11111111-1111-4111-8111-111111111111'
 const PROFILE = '22222222-2222-4222-8222-222222222222'
 const ISO = '2026-10-05T00:00:00.000Z'
 
-/** A whole plan, every field non-default so a dropped key cannot pass by luck. */
+/** Every field non-default so a dropped key cannot pass by luck. */
 const PLAN = {
   currentAgeInput: '41',
   lifeExpectancyInput: '88',
@@ -233,7 +218,6 @@ describe('G5: a plan op is never stranded by a deleted profile', () => {
     timestamp: 1_000,
     deviceId: 'device-b',
     userId: USER,
-    // The ACTIVE-profile stamp every op carries — here, the profile being deleted.
     profileId: PROFILE,
   })
   const childOp: SyncOperation = {
@@ -280,7 +264,6 @@ describe('G5: a plan op is never stranded by a deleted profile', () => {
 
     await service.pull()
 
-    // Positive anchor: the stranding rule really ran (the child went).
     expect(queue.getAll().map((o) => o.id)).toEqual(['plan'])
   })
 

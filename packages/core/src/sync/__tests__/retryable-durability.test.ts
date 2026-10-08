@@ -1,23 +1,5 @@
-/**
- * Retryable durability and refused-op discard (story 75.3, FR120).
- *
- * Two defects from the 2026-09-24 review (`deferred-work.md`), both pinned here
- * over a REAL `SyncQueue` and a storage double that can refuse writes (the
- * sibling suites' queue doubles always resolve, so neither defect was visible):
- *
- * 1. A retryable op was removed from the PERSISTED queue on its first failure and
- *    held only in `state.failedOperations` (memory) until a retry timer re-added
- *    it. Past the retry budget nothing re-added it, and a reload at any point in
- *    between lost it. It was also invisible to every queue reader meanwhile —
- *    pull's LWW index and `hasPendingOperations` among them.
- * 2. When the storage write for removing a PERMANENTLY refused op failed (quota,
- *    private mode, blocked site data), the op stayed queued, was re-sent and
- *    re-refused every cycle, and the user was never told.
- *
- * ⚠️ The service starts OFFLINE in Node (its `navigator` has no `onLine`), and an
- * offline service sends nothing, so every "not sent" assertion here would pass
- * vacuously. Each test forces `isOnline` and asserts a positive anchor.
- */
+// The service starts offline in Node (no `navigator.onLine`) and sends nothing, so
+// each test forces `isOnline` and asserts a positive anchor.
 
 import { type Mock, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SyncQueue } from '../queue'
@@ -43,7 +25,6 @@ type TestStorage = SyncQueueStorage & {
   persistedIds: () => string[]
 }
 
-/** Map-backed queue storage whose writes can be switched to THROW. */
 function createStorage(): TestStorage {
   const stored = new Map<string, SyncOperation[]>()
   const storage: TestStorage = {
@@ -84,7 +65,6 @@ function op(id: string, overrides: Partial<SyncOperation> = {}): SyncOperation {
   }
 }
 
-/** A queue rebuilt from the same storage — what a page reload does. */
 async function reload(storage: TestStorage): Promise<string[]> {
   const fresh = new SyncQueue(USER, storage)
   await fresh.initialize()
@@ -140,16 +120,13 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
     vi.restoreAllMocks()
   })
 
-  /** Fail `id` retryably until the retry budget is spent and no timer remains. */
   async function exhaustRetryBudget(id: string): Promise<void> {
     resultFor.set(id, RETRYABLE)
     await service.sync()
     await vi.advanceTimersByTimeAsync(10_000)
-    // Positive anchor: the first attempt plus all three retries really went out.
     expect(sentIds().filter((sent) => sent === id)).toHaveLength(4)
     expect(service.getState().retryCount).toBe(3)
-    // ⚠️ Not `retryTimeout === null`: `scheduleRetry` never nulls the handle after
-    // it fires, so a stale handle stays truthy. Count the live timers instead.
+    // `scheduleRetry` never nulls the handle after it fires, so count live timers instead.
     expect(vi.getTimerCount()).toBe(0)
   }
 
@@ -187,7 +164,6 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
       expect(storage.persistedIds()).toEqual(['flaky'])
       expect(await reload(storage)).toEqual(['flaky'])
 
-      // Past the 30 s cooldown the deferred timer fires; the op lands this time.
       resultFor.set('flaky', { success: true })
       await vi.advanceTimersByTimeAsync(40_000)
 
@@ -202,7 +178,6 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
       await service.sync()
       const afterFailure = service.getState()
       expect(afterFailure.failedOperations.map((o) => o.id)).toEqual(['flaky'])
-      // A subset of pending, not in addition to it.
       expect(afterFailure.pendingOperations.map((o) => o.id)).toEqual(['flaky'])
 
       resultFor.set('flaky', { success: true })
@@ -222,7 +197,6 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
 
       resultFor.set('flaky', { success: true })
       const before = sentIds().length
-      // Stands in for the web's edit / visibility / online / mount triggers.
       const result = await service.sync()
 
       expect(sentIds().slice(before)).toEqual(['flaky'])
@@ -233,17 +207,14 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
     })
 
     it('resets the retry budget when the queue is found empty', async () => {
-      // The op is later dropped by pull LWW, leaving the budget exhausted with
-      // nothing queued. An empty queue is a clean state, so the next genuine
-      // failure must get its fast retries again.
+      // An empty queue is a clean state, so the next genuine failure gets its fast retries again.
       await queue.add(op('flaky', { timestamp: 1_000 }))
       await exhaustRetryBudget('flaky')
       fetchServerChanges.mockResolvedValueOnce([
         {
           entityType: 'incomeSource',
           entityId: 'entity-flaky',
-          // A VALID row: this server change must WIN LWW, and since story 75.4 a
-          // row that fails its schema is refused instead of displacing the op.
+          // Must be a valid row: an invalid one is refused instead of displacing the op.
           data: {
             name: 'server',
             amount: 100,
@@ -255,7 +226,6 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
         },
       ])
       const pulled = await service.pull()
-      // Positive anchor: the server row won LWW and took the queued op with it.
       expect(pulled.applied.map((c) => c.entityId)).toEqual(['entity-flaky'])
       expect(queue.getAll()).toEqual([])
       expect(service.getState().failedOperations).toEqual([])
@@ -274,7 +244,6 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
       await service.sync()
       expect(vi.getTimerCount()).toBe(1)
 
-      // An external sync (an edit, tab focus) lands the op before the timer fires.
       resultFor.set('flaky', { success: true })
       await service.sync()
       expect(service.getState().retryCount).toBe(0)
@@ -321,7 +290,6 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
 
       const result = await service.sync()
 
-      // Positive anchor: it was sent and accepted; the removal is what failed.
       expect(sentIds()).toEqual(['accepted'])
       expect(result.failedCount).toBe(1)
       expect(queue.getAll().map((o) => o.id)).toEqual(['accepted'])
@@ -339,7 +307,6 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
       const rejected = vi.fn()
       service.onOperationsRejected(rejected)
       storage.failWrites = true
-      // `discardBatch` logs the refused write; expected here, so keep it quiet.
       vi.spyOn(console, 'error').mockImplementation(() => {})
 
       await service.sync()
@@ -358,7 +325,6 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
       const before = sentIds().length
       await service.sync()
 
-      // Positive anchor: the second sync DID send — just not the refused op.
       expect(sentIds().slice(before)).toEqual(['later'])
       expect(rejected).toHaveBeenCalledTimes(1)
     })
@@ -366,8 +332,6 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
     it('LIMIT: it comes back on a reload while storage is still refusing writes', async () => {
       await refuseWhileStorageFails()
 
-      // Storage never took the removal, so a rebuilt queue still has it. It will
-      // be sent once more, refused once more and announced once more.
       expect(await reload(storage)).toEqual(['bad', 'later'])
       expect(queue.getAll().map((o) => o.id)).toEqual(['later'])
     })
@@ -384,9 +348,6 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
 
   describe('code review 75.4: an op that lost pull LWW is dropped even when storage refuses', () => {
     it('does not push the stale edit over the value the pull just applied', async () => {
-      // Before: `removeBatch` threw on the storage failure, the op stayed queued,
-      // and the next sync sent the OLD local edit over the NEWER server value the
-      // pull had just applied. Its comment called that "a redundant retry".
       await queue.add(op('stale', { timestamp: 1_000 }))
       storage.failWrites = true
       fetchServerChanges.mockResolvedValueOnce([
@@ -406,10 +367,8 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
 
       const pulled = await service.pull()
 
-      // Positive anchors: the server row won and was applied.
       expect(pulled.applied.map((c) => c.entityId)).toEqual(['entity-stale'])
       expect(queue.getAll()).toEqual([])
-      // The stated limit: storage refused the write, so it still holds the op.
       expect(storage.persistedIds()).toEqual(['stale'])
 
       storage.failWrites = false
@@ -465,7 +424,6 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
 
       await vi.advanceTimersByTimeAsync(1_000)
 
-      // Positive anchor: the retry really ran.
       expect(sentIds()).toEqual(['flaky', 'flaky'])
       expect(queue.getAll().map((o) => o.id)).toEqual(['flaky'])
       expect(storage.persistedIds()).toEqual(['flaky'])
@@ -491,7 +449,6 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
       const error = vi.spyOn(console, 'error').mockImplementation(() => {})
 
       const outcome = await queue.discardBatch(['a'])
-      // Code review P5: the storage error is logged, not swallowed.
       const logged = error.mock.calls.map((call) => String(call[1]))
       error.mockRestore()
 

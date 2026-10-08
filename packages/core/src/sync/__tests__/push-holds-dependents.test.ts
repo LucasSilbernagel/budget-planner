@@ -1,21 +1,5 @@
-/**
- * A dependent op is not SENT before the op it `dependsOn` has landed, and it
- * leaves with that op when the server refuses it for good (story 76.2, code
- * review, decision (a) — Lucas 2026-09-28).
- *
- * ## The defect this closes (MEASURED by the review's Edge layer)
- *
- * `removeProfile(X)` queues `delete X` then `promote Y` (`dependsOn: delete X`).
- * The link was honoured on PULL only. When `delete X` failed transiently, the
- * push loop sent `promote Y` anyway; the server's `promoteProfile` demoted X
- * and bumped its `updatedAt`; the next pull then saw a live X newer than the
- * delete's `baseVersion` and dropped the delete as "lost". The user's deletion
- * was undone by the device's OWN promotion, silently, after the promotion had
- * already landed.
- *
- * Over a REAL `SyncQueue` (story 75.3: a double must be able to express the
- * regression), with `isOnline` set so the service actually sends (75.1).
- */
+// removeProfile queues `delete X` then `promote Y`. Sending Y before X lands lets the
+// server's promotion bump X, and the next pull then drops the delete as stale.
 
 import { type Mock, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SyncQueue } from '../queue'
@@ -115,9 +99,7 @@ describe('push honours dependsOn (story 76.2 code review)', () => {
 
     await service.sync()
 
-    // RED before the fix: ['delete-X', 'promote-Y'] — the promotion went out alone.
     expect(sentIds()).toEqual(['delete-X'])
-    // Both stay queued: the promotion waits, it is not lost.
     expect(queuedIds()).toEqual(['delete-X', 'promote-Y'])
   })
 
@@ -151,7 +133,6 @@ describe('push honours dependsOn (story 76.2 code review)', () => {
 
     await service.sync()
 
-    // RED before the fix: the promotion was sent and stayed out of the refusal.
     expect(sentIds()).toEqual(['delete-X'])
     expect(queuedIds()).toEqual([])
     expect(rejected).toEqual([['delete-X', 'promote-Y']])
@@ -168,7 +149,6 @@ describe('push honours dependsOn (story 76.2 code review)', () => {
   })
 
   it('a dependsOn naming an op that is NOT queued does not hold anything back', async () => {
-    // The delete landed in an earlier sync (or was never queued here).
     await queue.add(promoteY())
 
     await service.sync()

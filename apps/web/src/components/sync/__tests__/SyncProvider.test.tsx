@@ -1,16 +1,3 @@
-/**
- * SyncProvider Gating Tests (Story 5-15)
- *
- * The provider is the single gate that decides whether multi-device sync runs:
- *  - unauthenticated / free → no useSync, no bridge registration, no network sync.
- *  - authenticated paid (active | past_due | lifetime) → mounts useSync and registers the
- *    push queue with the bridge, then seeds via an initial pull.
- *
- * `useSync` and the sync bridge are mocked so the test asserts the wiring
- * decisions, not the service internals. `fetch` (the /api/auth/me probe) is
- * stubbed — no real network (NFR8).
- */
-
 import { render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -45,11 +32,8 @@ function stubMe(user: { userId: string; subscriptionStatus: string } | null, ok 
   )
 }
 
-// The probe is skipped entirely when no `has_session` marker cookie is present
-// (review P3 / Story 53.1), so authenticated-path tests must set one; the
-// anonymous test clears it. `has_session` — not `session` — is what the gate
-// checks: see the Story 53.1 tests below for why (the real `session` cookie is
-// HttpOnly and is never visible to `document.cookie` in a real browser).
+// The probe only runs when the `has_session` marker cookie is present (the real
+// session cookie is HttpOnly).
 function setSessionCookie() {
   document.cookie = 'has_session=1'
 }
@@ -74,8 +58,7 @@ afterEach(() => {
 })
 
 describe('SyncProvider gating', () => {
-  // Bridge registration is gated on a reconciled REAL server profile (review P1);
-  // these tests assert registration, so anchor a server-backed active profile.
+  // Bridge registration requires a reconciled server-backed active profile.
   beforeEach(() => {
     useProfileStore.setState({
       profiles: [
@@ -96,7 +79,6 @@ describe('SyncProvider gating', () => {
     stubMe(null)
     render(<SyncProvider />)
 
-    // No session cookie → the probe is skipped entirely; nothing mounts.
     await waitFor(() => expect(useSyncMock).not.toHaveBeenCalled())
     expect(fetch).not.toHaveBeenCalled()
     expect(registerSyncBridge).not.toHaveBeenCalled()
@@ -119,7 +101,6 @@ describe('SyncProvider gating', () => {
     expect(useSyncMock).toHaveBeenCalledWith(
       expect.objectContaining({ userId: SESSION_USER_ID, autoPull: true })
     )
-    // Bridge handle carries the session userId + the three queue functions.
     expect(registerSyncBridge).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: SESSION_USER_ID,
@@ -128,7 +109,6 @@ describe('SyncProvider gating', () => {
         queueDelete: expect.any(Function),
       })
     )
-    // Seeds local state with an immediate pull.
     await waitFor(() => expect(forcePull).toHaveBeenCalledTimes(1))
   })
 
@@ -138,14 +118,6 @@ describe('SyncProvider gating', () => {
     await waitFor(() => expect(registerSyncBridge).toHaveBeenCalledTimes(1))
   })
 
-  /**
-   * Story 34.1a / 78.3: the client gate once lacked `lifetime` while the server
-   * had it, so a lifetime buyer got NO sync — silently, because this component
-   * never fires a request. `sync-status-parity.test.ts` used to compare the
-   * client and server constants; since 78.3 both gates call the ONE
-   * `hasPaidAccess`, so that comparison could no longer fail and was retired in
-   * favour of asserting the behaviour itself.
-   */
   it('also mounts for a LIFETIME buyer (the status the client gate once lacked)', async () => {
     stubMe({ userId: SESSION_USER_ID, subscriptionStatus: 'lifetime' })
     render(<SyncProvider />)
@@ -173,7 +145,6 @@ describe('SyncProvider gating', () => {
 
 describe('SyncProvider free→paid seeding + push gate (review P1)', () => {
   it('does NOT register the push bridge OR seed while the active profile is the un-synced bootstrap', async () => {
-    // Bootstrap placeholder profile (userId ''): not server-backed.
     useProfileStore.setState({
       profiles: [
         {
@@ -189,10 +160,7 @@ describe('SyncProvider free→paid seeding + push gate (review P1)', () => {
     stubMe({ userId: SESSION_USER_ID, subscriptionStatus: 'active' })
     render(<SyncProvider />)
 
-    // The component mounts and instantiates useSync (poller/pull can run) ...
     await waitFor(() => expect(useSyncMock).toHaveBeenCalled())
-    // ... but with no reconciled server profile, the PUSH bridge is NOT registered
-    // (no op would carry a valid profileId) and seeding does not run.
     expect(registerSyncBridge).not.toHaveBeenCalled()
     expect(seedOnce).not.toHaveBeenCalled()
   })
@@ -224,12 +192,6 @@ describe('hasProbableSession — Story 53.1 cross-device sync fix', () => {
   })
 
   it('is false for the real (HttpOnly) session cookie name alone', () => {
-    // This is the exact pre-fix defect, reproduced directly: a real browser
-    // never exposes an HttpOnly cookie to `document.cookie`, so even if
-    // `session=...` were somehow present here, checking for it is checking
-    // for something that can never appear in production. Before this story,
-    // this function (inlined) tested for `session=` — which is why the sync
-    // engine never mounted for ANY authenticated user, not just a new device.
     expect(hasProbableSession('session=abc123')).toBe(false)
   })
 

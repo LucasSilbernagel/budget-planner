@@ -1,41 +1,17 @@
-/**
- * Sync Changes Pull Route Boundary Tests (Story 4-18)
- *
- * Drives the actual served GET handler end-to-end: real Request → query parsing
- * → server-side auth/premium gate → getSyncChanges → JSON Response with the
- * correct HTTP status and the EXACT shape the client's fetchServerChanges
- * consumes (`{ success, changes: ServerChange[], lastPullTimestamp }`).
- *
- * The db layer is mocked out by mocking getSyncChanges (which owns the Drizzle
- * query); the assertions instead pin the security-critical contract: the delta
- * is requested with the SESSION user id (never a client-supplied one) plus the
- * parsed `since`/`limit`/`profileId`. The premium gate is exercised with the
- * REAL `hasPaidAccess` (active|past_due|lifetime — the same function as push,
- * not the premium-features gate).
- */
-
 import type { ServerChange } from '@budget-planner/core/sync'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mock the session lookup the route imports (resolved via the '@' alias).
 vi.mock('@/server/api/auth/paddle', () => ({
   getCurrentUserSession: vi.fn(),
 }))
 
-// Fully mock the sync module so the test needs no database (and does not load
-// the real sync.ts, which transitively imports db/zod). The paid-access gate is
-// NOT mocked: the route imports `hasPaidAccess` from `lib/premium/access-statuses`,
-// so the cases below exercise the real rule. (Until Story 78.3 this mock carried
-// its own `['active', 'past_due']` "verbatim" copy — missing `lifetime`.)
+// `hasPaidAccess` is deliberately not mocked, so these cases exercise the real rule.
 vi.mock('@/server/api/sync', () => ({
   getSyncChanges: vi.fn(),
   checkRateLimit: vi.fn(),
   getLiveProfileIds: vi.fn(async () => []),
 }))
 
-// Post-53.1-incident fix: the route self-heals a missing default profile
-// (pre-story-5-3 accounts never got one, which permanently deadlocked
-// `reconcileActiveProfile()` client-side even after 53.1's cookie fix).
 vi.mock('@/server/functions/profiles', () => ({
   createDefaultProfileForUser: vi.fn(),
 }))
@@ -184,7 +160,6 @@ describe('GET /api/sync/changes served boundary', () => {
     expect(response.status).toBe(429)
     expect(payload.success).toBe(false)
     expect(payload.error).toContain('Rate limit')
-    // Gated before touching the database.
     expect(getSyncChanges).not.toHaveBeenCalled()
   })
 
@@ -197,7 +172,6 @@ describe('GET /api/sync/changes served boundary', () => {
 
     expect(response.status).toBe(200)
     expect(payload.success).toBe(true)
-    // The shape fetchServerChanges() consumes: { success, changes[], lastPullTimestamp }
     expect(Array.isArray(payload.changes)).toBe(true)
     expect(payload.changes).toEqual([sampleChange])
     expect(payload.changes[0]).toMatchObject({
@@ -206,7 +180,6 @@ describe('GET /api/sync/changes served boundary', () => {
       updatedAt: 1700,
       isDeleted: false,
     })
-    // lastPullTimestamp = max updatedAt of the returned batch.
     expect(payload.lastPullTimestamp).toBe(1700)
   })
 
@@ -217,8 +190,6 @@ describe('GET /api/sync/changes served boundary', () => {
     })
 
     expect(response.status).toBe(200)
-    // SECURITY: getSyncChanges is called with the session user id, never a
-    // client-supplied one, plus the parsed cursor/limit/profile.
     expect(getSyncChanges).toHaveBeenCalledWith(SESSION_USER_ID, 1234, 25, 'profile-xyz')
   })
 
@@ -269,8 +240,7 @@ describe('GET /api/sync/changes served boundary', () => {
 
       expect(createDefaultProfileForUser).toHaveBeenCalledTimes(1)
       expect(createDefaultProfileForUser).toHaveBeenCalledWith(SESSION_USER_ID)
-      // Runs BEFORE the actual delta fetch, so a freshly-created profile's
-      // rows (if any) are visible to this same pull.
+      // Runs before the delta fetch, so a freshly created profile's rows are visible to this pull.
       const backfillOrder = (createDefaultProfileForUser as unknown as ReturnType<typeof vi.fn>)
         .mock.invocationCallOrder[0]
       const fetchOrder = (getSyncChanges as unknown as ReturnType<typeof vi.fn>).mock

@@ -1,24 +1,7 @@
 // @vitest-environment node
 /**
- * Retention sweep against REAL PostgreSQL (Story 73.2, AC-4/5/6/7).
- *
- * PGlite with the full migration chain; `drizzle-orm` is NOT mocked, and every
- * assertion reads rows back. Only the mailer (no real email), the logger and
- * the error tracker are mocked.
- *
- * ⚠️ SURVIVAL FIRST (epic AC-7). The first `describe` proves that paying and
- * not-yet-due accounts SURVIVE a sweep whose window has passed for every row —
- * with all of their child rows intact — and only then that an eligible account
- * is deleted. A purge that deletes nothing passes every survival case, which is
- * why the deletion cases sit in the SAME test as the survivors: one sweep, both
- * outcomes, so neither can pass vacuously.
- *
- * WHAT THIS FILE CANNOT PROVE: true concurrency. PGlite is one connection, so
- * `FOR UPDATE SKIP LOCKED` never meets a held lock here. The re-check under the
- * lock is exercised by SIMULATING the interleaving through the sweep's
- * `beforePurgeLock` seam (a re-entitlement lands between candidate selection
- * and the locked re-select). The lock-ordering argument itself rests on the
- * SQL being read correctly — see `sweep.ts` and `eraseAccountRows`.
+ * Survivors and deletions are asserted in the same sweep so neither passes vacuously. PGlite
+ * can't produce real lock contention; the beforePurgeLock seam simulates the interleaving.
  */
 
 import { readFileSync } from 'node:fs'
@@ -50,7 +33,7 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
 vi.mock('@/lib/error-tracking', () => ({ captureError }))
-// `account.ts` imports these for USER erasure; the purge never calls Paddle.
+// The purge never calls Paddle.
 vi.mock('@/server/paddle/subscription-api', () => ({
   cancelActiveSubscriptionsForCustomer: vi.fn(() => {
     throw new Error('the retention purge must never call Paddle')
@@ -82,7 +65,6 @@ const MIGRATIONS = new URL('../../../../../../packages/db/migrations/', import.m
 const NOW = Date.parse('2028-10-01T12:00:00.000Z')
 const DAY = 24 * 60 * 60 * 1000
 
-/** `months` calendar months before NOW, in UTC. */
 function monthsAgo(months: number, extraMs = 0): number {
   const d = new Date(NOW)
   d.setUTCMonth(d.getUTCMonth() - months)
@@ -95,10 +77,6 @@ let seq = 0
 
 type Status = 'free' | 'active' | 'past_due' | 'canceled' | 'lifetime'
 
-/**
- * One account with a row in EVERY table erasure touches, plus a webhook-event
- * log row that must survive any purge.
- */
 async function seedAccount(opts: {
   label: string
   status: Status
@@ -146,7 +124,6 @@ async function seedAccount(opts: {
   await db
     .insert(forecastingProfiles)
     .values({ userId, profileId, name: 'Plan', scenarioData: '{}' })
-  // Story 99.2: the synced retirement plan (`id` = the user's id).
   await db.insert(retirementPlans).values({ id: userId, userId, plan: { currentAgeInput: '40' } })
   await db.insert(loginTokens).values({
     userId,
@@ -163,7 +140,6 @@ async function seedAccount(opts: {
   return { userId, email, paddleId }
 }
 
-/** Every owned row, per table — so "survived" means ALL of it survived. */
 async function footprint(account: { userId: string; email: string; paddleId: string }) {
   const count = async (rows: Promise<unknown[]>) => (await rows).length
   return {
@@ -224,7 +200,7 @@ const INTACT = {
   webhookEvents: 1,
 }
 
-/** Erased: every owned row gone — but the webhook log KEPT (replay dedup). */
+/** The webhook log is kept for replay dedup. */
 const ERASED = {
   users: 0,
   userProfiles: 0,
@@ -292,7 +268,7 @@ describe('survival first — paying and not-yet-due accounts survive a sweep tha
   it('keeps every entitled and not-yet-due account whole, and erases exactly the eligible ones', async () => {
     const longAgo = monthsAgo(24)
     const oldNotice = NOW - 60 * DAY
-    // ⚠️ The entitled rows carry an OLD clock and an OLD notice on purpose: the
+    // The entitled rows carry an OLD clock and an OLD notice on purpose: the
     // only thing standing between them and deletion is their STATUS.
     const lifetime = await seedAccount({
       label: 'lifetime',
@@ -312,16 +288,13 @@ describe('survival first — paying and not-yet-due accounts survive a sweep tha
       accessEndedAt: longAgo,
       retentionNoticeSentAt: oldNotice,
     })
-    // Lapsed but only 11 months in — even with a (forced) old notice.
     const notYet = await seedAccount({
       label: 'notyet',
       status: 'canceled',
       accessEndedAt: monthsAgo(11),
       retentionNoticeSentAt: oldNotice,
     })
-    // 12 calendar months end ONE MINUTE after NOW. 365 days ended yesterday
-    // (29 Feb 2028 is inside the window), so a day-count implementation
-    // deletes this row a day early.
+    // 12 calendar months end one minute after NOW; 365 days ended yesterday.
     const calendarEdge = await seedAccount({
       label: 'edge',
       status: 'canceled',
@@ -339,7 +312,6 @@ describe('survival first — paying and not-yet-due accounts survive a sweep tha
       accessEndedAt: monthsAgo(13),
       retentionNoticeSentAt: NOW - 10 * DAY,
     })
-    // A notice sent during a PREVIOUS lapse does not license deleting this one.
     const staleLapseNotice = await seedAccount({
       label: 'stalelapse',
       status: 'canceled',
@@ -381,7 +353,6 @@ describe('survival first — paying and not-yet-due accounts survive a sweep tha
 
 describe('the warning email (AC-4, D2)', () => {
   it('emails a lapsed account once its deletion is 30 days away, and stamps the notice', async () => {
-    // 11.5 months in: the 12-month deadline is ~15 days away.
     const due = await seedAccount({
       label: 'due',
       status: 'canceled',
@@ -392,9 +363,7 @@ describe('the warning email (AC-4, D2)', () => {
 
     expect(result).toMatchObject({ noticesDue: 1, noticesSent: 1, noticeFailures: 0, purged: 0 })
     expect(sendRetentionNoticeEmail).toHaveBeenCalledTimes(1)
-    // The purge needs a 30-day-old notice, so the date promised is always
-    // NOW + 30 days: never earlier than the 12-month deadline, which a notice
-    // candidate always has at most 30 days away.
+    // The purge needs a 30-day-old notice, so the promised date is always NOW + 30 days.
     expect(sendRetentionNoticeEmail).toHaveBeenCalledWith(due.email, {
       deletionDate: '31 October 2028',
     })
@@ -479,7 +448,7 @@ describe('re-check under the lock (AC-6) — SIMULATED interleaving', () => {
 
     const result = await runRetentionSweep({
       now: NOW,
-      // What the webhook's W2 UPDATE does on `subscription.activated`.
+      // What the webhook's UPDATE does on `subscription.activated`.
       beforePurgeLock: async (userId) => {
         await db
           .update(users)
@@ -526,8 +495,6 @@ describe('single-flight lease and success heartbeat', () => {
   })
 
   it('a run with a per-account failure still COMPLETES — one refused address is not a stopped schedule', async () => {
-    // Review decision (Lucas, 2026-09-28): the heartbeat measures completion.
-    // The failure itself is still reported (the route 500s on it).
     await seedAccount({ label: 'fail', status: 'canceled', accessEndedAt: monthsAgo(13) })
     sendRetentionNoticeEmail.mockRejectedValue(new Error('down'))
 
@@ -660,13 +627,11 @@ describe('code review 73.2 fixes', () => {
     await runRetentionSweep({ now: NOW, noticeLimit: 1 })
     await runRetentionSweep({ now: NOW + DAY, noticeLimit: 1 })
 
-    // Run 1 tried the oldest (refused); run 2 moved on to the next account.
     expect(sendRetentionNoticeEmail.mock.calls.map((c) => c[0])).toEqual([
       refused.email,
       next.email,
     ])
     expect((await readUser(next.userId)).retentionNoticeSentAt).toBe(NOW + DAY)
-    // Never deleted unwarned (Lucas, 2026-09-28).
     expect((await readUser(refused.userId)).retentionNoticeSentAt).toBeNull()
     await runRetentionSweep({ now: NOW + 400 * DAY })
     expect((await footprint(refused)).users).toBe(1)

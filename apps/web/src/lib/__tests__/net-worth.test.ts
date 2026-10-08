@@ -1,24 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { netWorthFromTotals } from '../net-worth'
 
-/**
- * FR59 net-worth definition tests (story 32.2).
- *
- * ⚠️ Every expectation below is HAND-COMPUTED. A test that calls
- * `netWorthFromTotals` to build its own expectation passes even when the
- * operator is wrong — the rule stated verbatim in `build-financial-summary.test.ts:1-12`.
- *
- * The shared fixture (story §3) is chosen so that every sign slip lands on a
- * distinct, wrong value:
- *
- *   investments 2,000,000c + savings 300,000c + assets 0c − debts 15,000,000c
- *     = −12,700,000c
- *
- *   old (savings dropped) → −13,000,000c
- *   savings subtracted    → −13,300,000c
- *   debts added           → +17,300,000c
- *   assets dropped        → see ASSET_FIXTURE below (story 43.4)
- */
+/** Expectations are hand-computed; deriving them via `netWorthFromTotals` would mirror an operator bug. */
 
 const FIXTURE = {
   investmentsCents: 2_000_000,
@@ -27,17 +10,7 @@ const FIXTURE = {
   debtsCents: 15_000_000,
 }
 
-/**
- * Story 43.4 (FR70) fixture. Every component is non-zero and MUTUALLY DISTINCT
- * so a term swapped for another is visible in the result:
- *
- *   investments 5,000,000c + savings 300,000c + assets 40,000,000c
- *     − debts 30,000,000c = +15,300,000c
- *
- *   assets dropped entirely → −24,700,000c
- *   assets subtracted       → −64,700,000c
- *   assets swapped w/ debts → −4,700,000c
- */
+/** Every component is non-zero and distinct so a swapped or dropped term is visible. */
 const ASSET_FIXTURE = {
   investmentsCents: 5_000_000,
   savingsCents: 300_000,
@@ -52,7 +25,6 @@ describe('netWorthFromTotals', () => {
   })
 
   it('does not silently drop savings (the pre-32.2 definition)', () => {
-    // The value the OLD `investments − debts` formula produced for this fixture.
     expect(netWorthFromTotals(FIXTURE)).not.toBe(-13_000_000)
   })
 
@@ -77,8 +49,6 @@ describe('netWorthFromTotals', () => {
   })
 
   it('isolates savings when investments and debts cancel exactly', () => {
-    // Investments and debts are equal, so the ONLY thing left is savings. A sign
-    // error on savings is unmissable here: −300,000 instead of +300,000.
     expect(
       netWorthFromTotals({
         investmentsCents: 2_000_000,
@@ -100,8 +70,6 @@ describe('netWorthFromTotals', () => {
     ).toBe(0)
   })
 
-  // --- Story 43.4 / FR70: the asset term -----------------------------------
-
   it('returns the asset total for an asset-only user', () => {
     expect(
       netWorthFromTotals({
@@ -114,9 +82,6 @@ describe('netWorthFromTotals', () => {
   })
 
   it('is POSITIVE for a condo worth more than the mortgage against it (FR70)', () => {
-    // The requirement's own scenario: a $400,000 condo and a $300,000 mortgage.
-    // Before FR70 the property could not be recorded at all, so this user saw
-    // −$300,000. Hand-computed: 40,000,000 − 30,000,000.
     expect(
       netWorthFromTotals({
         investmentsCents: 0,
@@ -143,7 +108,6 @@ describe('netWorthFromTotals', () => {
   })
 
   it('isolates assets when investments, savings and debts cancel exactly', () => {
-    // Everything else nets to zero, so a sign error on assets is unmissable.
     expect(
       netWorthFromTotals({
         investmentsCents: 1_000_000,

@@ -1,21 +1,6 @@
 #!/usr/bin/env python3
-"""Print the registry's tag list as `tag  bytes_size  pushed_at` (story ops-1, AC-1).
-
-    danube --json registry repos tags "$REPO" | python3 .github/scripts/registry_tags_table.py <label>
-
-The push job runs this before the prune, after the prune and after the push, so
-every run's log shows exactly how the 500 MB quota is being spent: per tag, at
-the size the registry itself bills (`bytes_size`), and the sum.
-
-Only those three fields are printed — never the digest or anything else from a
-row, and this helper is never fed a `rapids` listing (those rows carry container
-env values, i.e. credentials).
-
-The CLI's `--json` mode double-wraps the server payload (`.data.data`, see the
-prune step in deploy.yml); a bare list under `.data` is accepted too. Any other
-shape prints a warning and exits 0: this is a report, and a report must never
-fail a deploy.
-"""
+# A report only: any unexpected shape warns and exits 0. Never feed it a `rapids`
+# listing (those rows carry container env values).
 
 from __future__ import annotations
 

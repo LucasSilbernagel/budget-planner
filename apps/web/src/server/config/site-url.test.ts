@@ -1,11 +1,3 @@
-/**
- * getSiteUrl production fail-closed tests (Story 5-16 review patch)
- *
- * Magic-link emails build absolute links from SITE_URL. In production a missing,
- * localhost, or non-HTTPS value would silently email unusable links, so it fails
- * closed (mirrors getSessionSecret). Development returns the value/localhost default.
- */
-
 import { getSiteUrl, resetConfig } from '@budget-planner/config'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 

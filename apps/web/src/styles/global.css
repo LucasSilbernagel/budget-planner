@@ -2,16 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom base styles */
 @layer base {
   html {
     @apply antialiased;
 
-    /* Tell the browser the document supports both schemes so NATIVE chrome —
-       scrollbars, form controls, spinners, the canvas behind an overscroll —
-       follows the device preference too (story 61.1). Without this the page
-       darkens but the scrollbar stays light, which is the most visible remnant
-       of a half-applied theme. */
+    /* So native chrome (scrollbars, form controls) follows the device scheme too. */
     color-scheme: light dark;
   }
 
@@ -19,26 +14,8 @@
     @apply text-gray-900 bg-gray-50;
   }
 
-  /* Dark theme canvas (story 7-3; re-keyed in story 61.1, FR93).
-     The root background/text darken even on surfaces that have not yet been
-     given their own `dark:` variants.
-
-     ⚠️ THIS IS A HAND-WRITTEN RULE, NOT A `dark:` UTILITY, and that distinction
-     is load-bearing. It used to be `.dark body`, matching the class the deleted
-     theme toggle set on <html>. `tailwind.config.js` now uses `darkMode: 'media'`,
-     so every `dark:` utility recompiled to this same media query automatically —
-     but a `.dark` selector would NOT have. Left as it was, nothing would ever add
-     the class, the canvas would stay light while every `dark:` utility went
-     dark, and the app would render dark cards on a white page.
-
-     ⚠️ THE GUARD WAS `e2e/theme-dark-mode.spec.ts`, WHICH READ `document.body`;
-     since story 84.5 it is `src/__tests__/theme-media.guard.test.ts`, which pins
-     this rule under the media query (the painted canvas is unpinned).
-     Measured by mutation, because the obvious guess is wrong: reverting this rule
-     to `.dark body` leaves `e2e/theme-page-coverage.spec.ts` ENTIRELY GREEN. That
-     sweep asserts `.surface-sunken` / `.surface`, which are `dark:` UTILITIES —
-     they recompile to this same media query automatically and darken whatever
-     happens here. Only an assertion on <body> itself can see this rule. */
+  /* A media query, not `.dark body`: nothing sets a `.dark` class since dark mode
+     became media-driven. */
   @media (prefers-color-scheme: dark) {
     body {
       @apply text-gray-100 bg-gray-900;
@@ -46,7 +23,6 @@
   }
 }
 
-/* Custom component styles */
 @layer components {
   .btn {
     @apply px-4 py-2 rounded-md text-sm font-medium;
@@ -60,24 +36,12 @@
     @apply bg-gray-200 text-gray-800 hover:bg-gray-300;
   }
 
-  /* --- Semantic surface + text tokens (story 11-2, AC-4) ---
-     Each token pairs the existing light value with the dark palette established
-     by stories 7-3 and 11-1 (gray-800 cards on a gray-900 canvas; gray-100/300
-     text; gray-400 for muted text — never gray-500, which is sub-AA on a dark
-     card, a contrast bug 7-3's review caught; gray-700 borders). Purpose: define
-     dark mode ONCE here instead of re-applying `dark:` utilities on every page,
-     so future pages stop drifting light-only (the root cause this story closes).
-     Color-only, so they compose with layout utilities (rounded/shadow/padding).
-     Light values are unchanged from before this story (AC-6). */
   .surface {
     @apply bg-white dark:bg-gray-800;
   }
   .surface-sunken {
     @apply bg-gray-50 dark:bg-gray-900;
   }
-  /* A panel nested on a `.surface` card (thead, empty-state, stat tile): reads a
-     touch lighter than the gray-800 card it sits on rather than matching the
-     gray-900 page canvas. */
   .surface-inset {
     @apply bg-gray-50 dark:bg-gray-700/40;
   }
@@ -97,11 +61,7 @@
   .text-muted {
     @apply text-gray-500 dark:text-gray-400;
   }
-  /* Story 115.2 (FR183): was gray-400 in light, 2.54:1 on white and 2.43:1 on
-     gray-50, below WCAG AA's 4.5:1 at every one of its sites (Lighthouse audit
-     2026-10-07). gray-500 is 4.83:1 / 4.63:1. So `.text-faint` now has the SAME
-     values as `.text-muted` in both themes; the name is kept so its sites need
-     no edit, and a future lighter shade must clear 4.5:1 on its background. */
+  /* Same values as .text-muted: anything lighter fails WCAG AA 4.5:1 on white. */
   .text-faint {
     @apply text-gray-500 dark:text-gray-400;
   }
@@ -110,215 +70,57 @@
     @apply border-gray-200 dark:border-gray-700;
   }
 
-  /* --- White text on a green fill (story 115.1, FR183) ---
-     The ONE green for white-text buttons and badges. White on green-700
-     (#15803d) is 5.02:1, above WCAG AA's 4.5:1 for normal text; the green-600
-     it replaces was 3.30:1 and the dark-mode green-500 2.28:1 (Lighthouse audit
-     2026-10-07). So there is deliberately NO dark variant: a lighter green in
-     dark mode fails again. Hover stays at the call site (`hover:bg-green-800`,
-     7.13:1) because the Premium badge is not interactive.
-     ⚠️ A call site must not also carry a `bg-green-*` utility: utilities are
-     emitted after this layer and would win. `white-on-fill.guard.test.ts` pins
-     both rules. Do not remap `green-600` in the Tailwind config instead:
-     `text-green-600` colours income amounts elsewhere. */
+  /* No dark variant: lighter greens fail 4.5:1 under white text. A call site must not
+     also carry a bg-green-* utility, which is emitted later and would win. */
   .fill-green {
     @apply bg-green-700 text-white;
   }
 
-  /* --- Interactive surface + accent (story 30-1, FR51) ---
-     Declared AFTER `.surface-inset` deliberately. Both set `background-color`
-     and both live in @layer components, where Tailwind does NOT sort by
-     specificity — the winner is whichever is declared later in THIS file, not
-     whichever appears later in a className. Never put both on one element.
-
-     The hover is baked in rather than written as `hover:surface-inset` at the
-     call site: that variant compiles cleanly but resolves to the SAME values
-     `.surface-inset` already sets, so it is a silent no-op that still passes
-     lint, type-check and class-token assertions.
-
-     The hover step is deliberately a full shade (50→200, not 50→100): the
-     review measured the one-shade version at ~1.05:1 light and ~1.03:1 dark,
-     a 4/255 nudge that is imperceptible in practice. Since the blue fill is
-     gone, hover is the primary "this is clickable" signal on pointer devices,
-     so it has to be visible. */
+  /* Must stay declared after .surface-inset: same layer, both set background-color,
+     so source order here decides. Never put both on one element. */
   .surface-interactive {
     @apply bg-gray-50 hover:bg-gray-200 dark:bg-gray-700/40 dark:hover:bg-gray-600/60;
   }
 
-  /* Accent for interactive text and affordance glyphs (the "Open →" link and
-     the locked tiles' chevron). Load-bearing, not decorative: hover does not
-     exist on touch and the locked state has no "Open →", so without a
-     persistent accented cue a free visitor on a phone cannot tell the two
-     tappable tiles from the listed sync benefit. blue-300 on dark per the
-     palette rule above — never a 500-weight on a dark card. */
+  /* Load-bearing on touch, where there is no hover: the only persistent cue that a
+     tile is tappable. */
   .text-accent {
     @apply text-blue-700 dark:text-blue-300;
   }
 
-  /* --- Pre-paint Retirement nav suppression (story 35.2, FR55, AC-4) ---
-     `data-hide-retirement="1"` is set on <html> by the synchronous <head>
-     bootstrap in `lib/nav/no-flash-planner-visibility-script`, before first
-     paint. This rule is the half of the feature that runs BEFORE React: every
-     persisted store is `skipHydration: true`, so the server render and the first
-     client render must both paint the deterministic default (visible), and
-     GlobalNav's own filter cannot apply until after mount. Without this rule the
-     entry paints and then vanishes on every page load for a user who hid it.
-
-     ⚠️ THE ATTRIBUTE IS KEPT IN SYNC AFTER HYDRATION, AND THAT IS NOT OPTIONAL.
-     An earlier version of this comment claimed the rule "then matches nothing"
-     because GlobalNav stops rendering the <li>. That was FALSE on the re-enable
-     path, and shipped a real bug: the <head> script only ever SETS the
-     attribute, so after a user turned the planner back on in the same session,
-     React re-rendered the entry and this rule went on hiding it until a reload.
-     `components/nav/PlannerVisibilityProvider` now removes the attribute when
-     the preference is on. (This used to cite `ThemeProvider` as the pattern it
-     mirrors; story 61.1 deleted that provider, so this stands alone now.) This
-     rule is authoritative only for the first frame, but it stays live, so the
-     attribute must remain truthful for the whole document lifetime.
-
-     ⚠️ `display: none` (not visibility/opacity) so the entry leaves the
-     accessibility tree too, matching the post-hydration DOM.
-
-     ⚠️ WHY A COMPONENTS-LAYER RULE IS SAFE HERE, PRECISELY — and note this is
-     NOT the source-order hazard documented for `.surface-inset` above. This is
-     Tailwind 3.4 with `@tailwind` directives: the layers are resolved at BUILD
-     time into plain CSS, not native `@layer` blocks, so normal specificity still
-     decides. This selector is 0-2-0 (two attribute selectors) and a `display`
-     utility like `sm:block` is 0-1-0 (a media query adds no specificity), so
-     this rule wins even though utilities are emitted later. An earlier version
-     of this comment claimed the opposite; it was corrected in code review.
-
-     The rule would only lose to a higher-specificity or `!important` display
-     declaration on the same element. Until story 69.3 the one target <li>
-     carried `max-sm:min-w-0` and no display utility at all. Since 69.3 there
-     are TWO targets: the sheet row (`max-sm:min-w-0 lg:hidden`) and the lg ROW
-     copy (`hidden lg:block`). `lg:block` is exactly the 0-1-0 display utility
-     described above, and this rule still beats it:
-     `e2e/nav-planner-visibility.spec.ts` asserts the row copy is `display:
-     none` on the first frame at 1280px. Both copies carry `data-nav-path`,
-     which is what makes that true.
-
-     Either way `e2e/nav-planner-visibility.spec.ts` asserts the first frame at
-     BOTH 320px and 1280px (and at 800px since story 69.3, where the desktop
-     panel now lives). Until story 59.2 the failure mode was asymmetric:
-     at >= 640px `sm:contents` dissolved the sheet into the desktop row, so a
-     broken rule could hide the entry on mobile and reveal it on desktop. Since
-     59.2 the entry sits in the nav's More `<details>` at both widths, closed on
-     the first frame. That does NOT make this rule redundant. The native
-     `<details>` toggle works BEFORE hydration, so a user who opens More in that
-     window sees exactly what this rule has or has not hidden. */
+  /* Hides the entry before hydration; the attribute must be removed when the
+     preference is turned back on, since this rule stays live. */
   [data-hide-retirement='1'] [data-nav-path='/retirement'] {
     display: none;
   }
 
-  /* --- Pre-paint Overview account-notice suppression (story 55.1, FR82, AC-4) ---
-     `data-dismiss-account-notice="1"` is set on <html> by the synchronous <head>
-     bootstrap in `lib/overview/no-flash-account-notice-script`, before first
-     paint. This rule is the half of the feature that runs BEFORE React.
-
-     ⚠️ WHY IT IS REQUIRED, and note the reason DIFFERS from the planner rule
-     above. There the blocker is `skipHydration: true` stores. Here it is
-     simpler and harder: the dismissal is per-browser localStorage, so the
-     SERVER cannot know it. The server must render the box present — and
-     `src/__tests__/served-pages.served.test.ts`'s SEO fence independently REQUIRES that the
-     copy survive in the server response — so the box is always in the SSR HTML
-     and `AccountNoticeBox`'s own read is in an effect, i.e. after first paint.
-     Without this rule the box paints and then vanishes on every page load for a
-     user who closed it, which is the exact annoyance the story removes.
-
-     ⚠️ UNLIKE THE PLANNER RULE, THIS ATTRIBUTE NEEDS NO POST-HYDRATION CLEAN-UP,
-     and that is a property of the feature rather than an oversight. The warning
-     above exists because planner visibility is RE-ENABLABLE, so a <head> script
-     that only ever SETS the attribute left the entry hidden after a user turned
-     it back on mid-session. This dismissal is one-way and permanent (AC-2):
-     there is no undo surface, so the attribute can never outlive its truth.
-     ⚠️ If an "undo" is ever added, whatever restores the box MUST also remove
-     this attribute, or the box stays invisible until a reload.
-
-     ⚠️ `display: none` (not visibility/opacity) so the box leaves the
-     accessibility tree too, matching the post-hydration DOM where React has
-     removed the node outright.
-
-     Specificity: 0-2-0 (two attribute selectors) versus a 0-1-0 display
-     utility, and this is Tailwind 3.4 — `@tailwind` layers resolve at BUILD
-     time into plain CSS, so normal specificity decides and this rule wins even
-     though utilities are emitted later. The target <div> carries no display
-     utility today. `e2e/overview-account-notice.spec.ts` asserts the FIRST
-     FRAME, so deleting this rule turns that suite red. */
+  /* Hides the dismissed box before hydration (the server cannot see localStorage).
+     Dismissal is one-way; any future undo must also remove the attribute. */
   [data-dismiss-account-notice='1'] [data-account-notice] {
     display: none;
   }
 
-  /* --- Pre-paint Overview pending-block reservation (story 117.2, FR185) ---
-     `data-overview-has-data="1"` is set on <html> by the synchronous <head>
-     bootstrap in `lib/overview/no-flash-overview-data-script` when this browser
-     holds budget rows. The server cannot know that, so the pending block is
-     sized like the resolved-EMPTY onboarding card (story 38.2); with data it
-     then grew ~890 px into the charts and pushed "Premium Features" out of the
-     desktop viewport: CLS 0.1285, MEASURED. One viewport of height puts
-     everything after the block below the fold from the first frame, so the
-     growth moves only off-screen content, which CLS does not count.
-
-     ⚠️ ONLY WITH DATA. Without the attribute nothing changes: a new visitor,
-     the case most first visits hit, still gets 38.2's zero shift.
-     The attribute is never removed; that is safe because this hook exists only
-     while the Overview is pending (see the bootstrap's header).
-
-     Specificity 0-2-0 against no min-height utility on the block. jsdom cannot
-     prove the cascade or the first frame; the story's CLS probe and Lighthouse
-     run did. */
+  /* With data, reserve a viewport so later growth moves only off-screen content
+     (no CLS). Without the attribute the empty-state size is kept. */
   [data-overview-has-data='1'] [data-hook='overview-sections-pending'] {
     min-height: 100vh;
   }
 }
 
-/* Custom utility styles */
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
 }
 
-/* --- Print stylesheet (story 30-3, FR53) ---
-   Backs the Premium financial summary report, which is produced entirely by the
-   browser's own print dialog (`window.print()`) — no PDF library, no server, no
-   asset request, so no financial figure leaves the device to produce it.
-
-   These rules are GLOBAL by nature: `@media print` applies on every route. That
-   is deliberate for the chrome rules (app navigation should never reach paper
-   from any page) and deliberately scoped for the rest — the colour overrides
-   below name `#financial-summary-report` so printing any other page behaves
-   exactly as it did before this story. */
 @media print {
-  /* App chrome never reaches paper. `[data-print-hide]` marks the root header
-     wrapper (covering GlobalNav's desktop bar AND its fixed mobile tab bar, plus
-     AuthIndicator), the global Footer, and the report's own Print button, which
-     must not appear in its own output.
-
-     ⚠️ Deliberately an ATTRIBUTE, never the bare `footer` element selector.
-     `<footer>` is not unique to the app chrome — `routes/forecasting.tsx:524`
-     renders its own in-page footer carrying that page's EU data-location
-     disclosure, and a bare selector silently suppressed it whenever that page was
-     printed. Opting elements in is the only way this stays scoped to chrome as
-     the app grows. (Code review 2026-08-09.) */
+  /* An opt-in attribute, not `footer`: some pages render their own in-page footer. */
   [data-print-hide] {
     display: none !important;
   }
 
-  /* ⚠️ Dark mode must never reach paper. Browsers omit background colours when
-     printing by default but KEEP text colour, so a DARK-THEMED document would print
-     near-white text onto white paper — a page that looks blank. Forcing black on
-     white here is what makes the report legible when printed from either theme;
-     it is not cosmetic, and it is load-bearing in BOTH themes (light `.text-muted`
-     is `gray-500`, far too pale for paper — a review mutation proved the light
-     case fails without this too).
-
-     Scoped to the report's subtree, and NOT applied to `html`/`body`. An earlier
-     revision forced black-on-white document-wide, which silently changed how every
-     other page printed while the comment above claimed the opposite — the rule and
-     its own description disagreed. Applied to the whole subtree because the
-     semantic text tokens (`.text-heading`, `.text-body`, `.text-muted`, …) each set
-     their own dark colour on descendants, which an ancestor rule cannot override. */
+  /* Browsers drop backgrounds but keep text colour when printing, so force black on
+     white across the subtree (token classes set colour on descendants). */
   #financial-summary-report,
   #financial-summary-report * {
     background-color: transparent !important;
@@ -326,9 +128,6 @@
     border-color: #9ca3af !important;
   }
 
-  /* Keep related content together across page breaks. A section taller than a
-     page still breaks — browsers degrade gracefully — but a single table ROW is
-     never split, and a heading never sits alone at the foot of a page. */
   #financial-summary-report section {
     break-inside: avoid;
   }

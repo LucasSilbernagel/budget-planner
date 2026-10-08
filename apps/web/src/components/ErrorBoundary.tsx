@@ -1,31 +1,20 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 
-/**
- * Error Boundary Props
- */
 export interface ErrorBoundaryProps {
   children: ReactNode
   fallback?: ReactNode
   onError?: (error: Error, errorInfo: ErrorInfo) => void
 }
 
-/**
- * Error Boundary State
- */
 interface ErrorBoundaryState {
   hasError: boolean
   errorMessage: string | null
 }
 
-/**
- * Sanitizes error messages for display to users
- * Removes potentially sensitive information
- */
 function sanitizeErrorMessage(error: Error): string {
-  // List of sensitive patterns to remove
   const sensitivePatterns = [
-    /at \w+ \(/g, // "at functionName ("
-    /\.tsx:\d+:\d+/g, // file locations
+    /at \w+ \(/g,
+    /\.tsx:\d+:\d+/g,
     /\.ts:\d+:\d+/g,
     /\.jsx:\d+:\d+/g,
     /\.js:\d+:\d+/g,
@@ -33,12 +22,10 @@ function sanitizeErrorMessage(error: Error): string {
 
   let message = error.message
 
-  // Remove sensitive information
   for (const pattern of sensitivePatterns) {
     message = message.replace(pattern, '')
   }
 
-  // If message is now empty or too generic, use a standard message
   if (!message || message.length < 10) {
     return 'An unexpected error occurred'
   }
@@ -46,11 +33,6 @@ function sanitizeErrorMessage(error: Error): string {
   return message
 }
 
-/**
- * Error Boundary component
- * Catches JavaScript errors anywhere in the component tree, logs those errors,
- * and displays a fallback UI.
- */
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props)
@@ -61,8 +43,6 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    // Update state so the next render will show the fallback UI
-    // Store sanitized message, not raw error
     return {
       hasError: true,
       errorMessage: sanitizeErrorMessage(error),
@@ -70,16 +50,13 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   override componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    // Log the full error to error reporting service (server-side)
     console.error('ErrorBoundary caught an error:', error, errorInfo)
 
-    // Call optional error handler with sanitized message
     this.props.onError?.(error, errorInfo)
   }
 
   override render(): ReactNode {
     if (this.state.hasError) {
-      // Fallback UI if provided, otherwise show default error message
       if (this.props.fallback) {
         return this.props.fallback
       }

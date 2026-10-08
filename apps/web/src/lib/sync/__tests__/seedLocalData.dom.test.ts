@@ -1,12 +1,3 @@
-/**
- * Free→paid Seeding Tests (Story 5-15, Task 5)
- *
- * Pins the backlog backfill: every existing local financial row is enqueued as a
- * create through the sync bridge, profiles are NOT seeded, and the per-user marker
- * makes it run exactly once (a re-login does not replay creates → no conflict-count
- * pollution).
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useBalanceStore } from '../../../stores/balanceStore'
 import { useCategoryStore } from '../../../stores/categoryStore'
@@ -132,27 +123,8 @@ describe('seedLocalDataToServer', () => {
   })
 
   it('⚠️ enqueues CATEGORIES FIRST — loop order is wire order, and categoryId is a real FK', async () => {
-    // Story 30.4a. Each `consider(...)` enqueues immediately and the queue drains
-    // in timestamp order (SyncQueue.getReadyOperations sorts ascending;
-    // synchronization.ts stamps Date.now() at enqueue), so the ORDER OF THE LOOPS
-    // in seedLocalDataToServer is the order operations reach the server.
-    //
-    // `incomeSources.categoryId` / `expenses.categoryId` are real foreign keys to
-    // `categories`. A cashflow row that arrives before its category is rejected on
-    // the FK, so an upgrading user's first sync would drop rows.
-    //
-    // This asserts POSITION, not membership — the arrayContaining check above
-    // passes no matter where the category loop sits, which is exactly how this
-    // defect would ship unnoticed.
-    //
-    // ⚠️ SCOPE OF THIS GUARANTEE, corrected by code review 30.4a: ordering is
-    // NECESSARY BUT NOT SUFFICIENT. `toServerPayload` emits no `id` and
-    // `syncOperationDataSchema` declares none, so the server inserts each
-    // category under a fresh uuid; the cashflow row that follows still carries
-    // the CLIENT's category uuid and fails the FK (23503) whatever the order.
-    // This test pins the ordering so it survives a future tidy-up — it does NOT
-    // demonstrate that categorized rows sync. That needs the `profileId` + `id`
-    // repair recorded in deferred-work.md.
+    // Categories must be seeded before cashflow rows: those reference them by foreign key,
+    // and the queue drains in enqueue order.
     await seedLocalDataToServer(USER_ID)
 
     const types = handle.queueCreate.mock.calls.map((c) => c[0])
@@ -162,11 +134,7 @@ describe('seedLocalDataToServer', () => {
   })
 
   it('does NOT seed a tombstoned category — a deleted one must not come back to life', async () => {
-    // Code review 30.4a. `categoryStore` is the only store that keeps
-    // soft-deleted rows locally, and `toServerPayload`'s category case does not
-    // forward `isDeleted`. Seeding a tombstone therefore inserts it LIVE on the
-    // server (column default false), and the next pull flips the user's own
-    // deletion back to visible on every device.
+    // The category payload drops `isDeleted`, so seeding a tombstone would resurrect it on the server.
     useCategoryStore.setState({
       categories: [
         {
@@ -189,8 +157,6 @@ describe('seedLocalDataToServer', () => {
   })
 
   it('still seeds LIVE categories — the tombstone filter is not a blanket skip', async () => {
-    // Negative control for the test above: proves the filter is keyed on
-    // isDeleted rather than having disabled category seeding altogether.
     await seedLocalDataToServer(USER_ID)
 
     const categoryCalls = handle.queueCreate.mock.calls.filter((call) => call[0] === 'category')
@@ -198,13 +164,11 @@ describe('seedLocalDataToServer', () => {
   })
 
   it('SKIPS rows already on the server (review P6: no create-create conflicts)', async () => {
-    // A row whose userId is already the session uuid was overwritten by a prior
-    // pull → it is server-backed and must NOT be re-created.
     useIncomeStore.setState({
       incomeSources: [
         {
           id: 'inc-synced',
-          userId: USER_ID, // already server-backed
+          userId: USER_ID,
           categoryId: null,
           name: 'Synced',
           amount: 1,
@@ -240,7 +204,7 @@ describe('seedLocalDataToServer', () => {
       name: 'Salary',
       amount: 500000,
       frequency: 'monthly',
-      categoryId: null, // Story 30.4a — always forwarded, see syncBridge
+      categoryId: null,
       userId: USER_ID,
     })
   })
@@ -267,7 +231,6 @@ describe('seedOnce — once-per-user gating', () => {
   it('does NOT mark when the bridge is inactive (retry next session, no silent loss)', async () => {
     clearSyncBridge()
     const count = await seedOnce(USER_ID)
-    // No bridge → nothing queued AND the marker is NOT set, so a later session retries.
     expect(handle.queueCreate).not.toHaveBeenCalled()
     expect(count).toBe(0)
     expect(hasSeeded(USER_ID)).toBe(false)
@@ -275,10 +238,7 @@ describe('seedOnce — once-per-user gating', () => {
 })
 
 describe("seedOnce — another account's rows on a shared browser (story 86.2, AC 3)", () => {
-  // Account A synced on this browser, signed out, and B (USER_ID) signs in. A's
-  // pulled rows carry A's uuid, which is "not the session user" exactly as a
-  // free-tier `0` is. Before 86.2 the seed read every such row as never synced
-  // and uploaded A's whole history into B's account.
+  // A's pulled rows carry A's uuid, which is "not the session user" just as a free-tier `0` is.
   const OTHER_ACCOUNT = '86286286-2862-4862-8862-862862862862'
   const ISO = '2026-06-01T00:00:00.000Z'
 
@@ -310,7 +270,6 @@ describe("seedOnce — another account's rows on a shared browser (story 86.2, A
           createdAt: ISO,
           updatedAt: ISO,
         },
-        // The positive control: a free-tier row is still adopted (5-15 AC-2).
         {
           id: 'inc-free',
           userId: 0,

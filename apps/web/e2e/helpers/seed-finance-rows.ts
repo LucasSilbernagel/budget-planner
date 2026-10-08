@@ -1,78 +1,12 @@
 import type { Page } from '@playwright/test'
 
-/**
- * Shared adversarial finance-row seed (extracted from `responsive-320.spec.ts`
- * by story 42.2).
- *
- * ⚠️ Since story 84.5 (FR137) its only importers are the screenshot specs
- * (`pages.screenshot.spec.ts`, `nav.screenshot.paid.spec.ts`). Every other spec
- * this file names below (`responsive-320`, `table-scroll-affordance`,
- * `premium-locked`, `categories-premium`) was deleted by stories 84.2/84.5; the
- * notes about them are history, kept for why the seed looks the way it does.
- *
- * ⚠️ EXTRACTED RATHER THAN COPIED, deliberately. `src/test/responsive-table-tokens.ts:5-10`
- * records that divergent copies of a guard fixture mean the WEAKEST copy
- * defines the protection. Both `responsive-320.spec.ts` (which asserts these
- * rows fit at 320px) and `table-scroll-affordance.spec.ts` (which asserts they
- * OVERFLOW at 768px and are signposted) must be measuring the same rows, or the
- * two suites silently drift apart and one of them stops describing the app.
- *
- * ⚠️ Do NOT also share the `WIDE_FONT` style tag. The convention runs the other
- * way for measurement ENVIRONMENTS — `premium-locked.spec.ts:280-281`:
- * "Deliberately re-declared rather than exported across specs — nothing depends
- * on these two strings matching; each spec pins its own measurement
- * environment." Share the fixture, re-declare the font pin.
- */
-
-// A single unbroken 138-character run (46 x 3). Reachable in production: none of the
-// four name inputs has a `maxLength`. `overflow-wrap: break-word` does NOT
-// reduce min-content width, so an auto-layout table sizes to this whole run —
-// which is exactly the failure mode this seed has to produce.
+// One unbroken run: no name input has a maxLength, and `overflow-wrap: break-word`
+// doesn't reduce min-content width, so an auto-layout table sizes to it.
 const LONG_UNBROKEN_NAME = 'Longestpossibleaccountnicknamewithoutanyspaces'.repeat(3)
 
 /**
- * Seed all four finance stores plus categories and currency (symbol mode, the
- * widest figures).
- *
- * ⚠️ This used to seed a THEME store too, and callers passed `'light' | 'dark'`.
- * Story 61.1 (FR93) deleted that store: the theme now follows the device's
- * `prefers-color-scheme`, so a spec that wants a dark run asks Playwright for one
- * with `page.emulateMedia({ colorScheme: 'dark' })` (or the `colorScheme` fixture
- * option) instead of writing localStorage. That is a faithful lever — it drives
- * the same input a real user's OS drives — where the old seed drove an in-app
- * preference that no longer exists.
- *
- * Store keys, wrapper shapes and versions are the CURRENT ones — note that
- * savings/balance break the `-v1` convention (colon-separated keys), currency
- * persists `{ mode, currency }` at version 2 (`locale` was removed in story
- * 8-1 and is derived), and a balance row without `frequency` makes the
- * normalization engine throw. Every store uses `skipHydration: true`, which is
- * why writing localStorage in `addInitScript` before `goto` takes effect.
- */
-/**
- * ⚠️ THE CATEGORY ASSIGNMENTS BELOW ARE NOW INERT — deliberately kept, not
- * overlooked (story 33.3, FR57).
- *
- * `inc-1`/`exp-1` carry real `categoryId`s so the Category pill would contribute
- * width to the 320px measurement. Since 33.3 that column renders only for
- * entitled users, and this suite — like every e2e suite here — is
- * UNAUTHENTICATED, so the pill never appears and the seeded ids change nothing
- * about what is measured.
- *
- * They stay because they cost nothing and because a future story that gives e2e
- * a way to seed an entitled session would want them back. ⚠️ They do NOT protect
- * anything: `categories-premium.spec.ts` (deleted by 84.5) had its OWN file-local
- * `seedCategorizedRows`, so this seed has no effect on that suite's assertions
- * (an earlier version of this comment claimed otherwise — code review 33.3).
- * Do not read their presence as evidence that this sweep exercises the Category
- * column: it cannot, at any width, in either tier.
- *
- * ⚠️ Related blind spot, recorded rather than "fixed": the desktop header check
- * in this file asserts `visibleHeaderCells > 0`, not a specific count. That is
- * correct here (an unauthenticated visitor now legitimately sees four columns,
- * not five) but it means this suite is structurally insensitive to the column
- * count. Header/cell parity is pinned in `category-assignment.test.tsx`, which
- * is the only layer that can render both tiers.
+ * Savings/balance keys break the `-v1` convention, and a balance row without
+ * `frequency` makes the normalization engine throw.
  */
 export async function seedFinanceRows(page: Page): Promise<void> {
   await page.addInitScript(
@@ -162,8 +96,6 @@ export async function seedFinanceRows(page: Page): Promise<void> {
                 updatedAt: now,
               },
               {
-                // Account row (null target) — exercises the "No target" / "N/A"
-                // progress branch alongside the goal row above.
                 id: 'sav-2',
                 name: 'Emergency Fund',
                 targetAmount: null,
@@ -185,11 +117,6 @@ export async function seedFinanceRows(page: Page): Promise<void> {
           state: {
             entries: [
               {
-                // ⚠️ Story 49.1 (FR75) deleted the Max Contribution and Remaining
-                // Room columns, so `/balance` is now FIVE columns, not seven, and
-                // this row no longer carries a `maxContributionLimit`. The seeded
-                // figures below still drive the width fixtures in
-                // `table-scroll-affordance.spec.ts` — do not shrink them casually.
                 id: 'bal-1',
                 type: 'investment',
                 name: longName,
@@ -200,19 +127,9 @@ export async function seedFinanceRows(page: Page): Promise<void> {
                 updatedAt: now,
               },
               {
-                // Story 102.1 (FR169): a debt's payment is its LINKED Expenses
-                // row, so the Contribution cell shows `exp-1`'s figure plus a
-                // "Paid by" line carrying the 138-character unbroken name: the
-                // widest case that cell can render, kept deliberately.
                 id: 'bal-2',
                 type: 'debt',
                 name: 'Mortgage',
-                // Story 103.1 (FR171, D4): a debt is stored as the positive
-                // amount owed, the only sign the store write path now accepts.
-                // Was -98765432100. This seed writes localStorage directly, so
-                // the old value was never refused; it was flipped because after
-                // 103.1 a negative debt renders exactly like a positive one, so
-                // as a legacy fixture it tested nothing the unit tests don't.
                 currentBalance: 98765432100,
                 monthlyContribution: 0,
                 frequency: 'monthly',
@@ -226,8 +143,6 @@ export async function seedFinanceRows(page: Page): Promise<void> {
         })
       )
 
-      // Explicit-symbols mode renders the widest currency-formatted figures.
-      // Current persist shape: `{ mode, currency }` at version 2.
       localStorage.setItem(
         'budget-planner-currency-prefs-v1',
         JSON.stringify({ state: { mode: 'symbol', currency: 'USD' }, version: 2 })

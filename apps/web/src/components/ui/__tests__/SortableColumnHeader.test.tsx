@@ -10,16 +10,6 @@ import {
 } from '../../../lib/table-sort'
 import { SortableColumnHeader, useSortHeaderAnnouncements } from '../SortableColumnHeader'
 
-/**
- * The sortable column header (story 34.2, FR61).
- *
- * ⚠️ `TableSortNotice`'s four tests used to live in this file. Story 48.1
- * replaced that component with `TableSortControl`, and each of the four has a
- * direct successor in `TableSortControl.test.tsx` — the sorted-column report,
- * the `sm:hidden` + 44px pair, the focus ring, and "renders no table markup".
- * They were MIGRATED, not dropped.
- */
-
 function HeaderHarness({
   ariaSort,
   onToggle,
@@ -60,11 +50,7 @@ function renderHeader(ariaSort: AriaSortValue, onActivate?: () => void) {
   return { onToggle, th, unmount }
 }
 
-/**
- * A table whose sort the test drives directly: `toggle` is the header path (it
- * cycles like `nextSortState`), `restore` is any other writer (the mobile picker,
- * a rehydrated store), which must NOT announce (story 120.1, D2).
- */
+/** `toggle` is the header path; `restore` is any other writer, which must NOT announce. */
 function AnnouncingTable() {
   const [state, setState] = useState<SortState<'amount'> | null>(null)
   const a11y = useSortHeaderAnnouncements(
@@ -110,11 +96,7 @@ describe('SortableColumnHeader', () => {
   })
 
   it('keeps the <th> text content EXACTLY the column label, in every state', () => {
-    // ⚠️ `category-assignment.test.tsx` reads every `<th>` with
-    // `th.textContent?.trim()` and pins the result as an exact array, on two
-    // pages, for both tier variants. An sr-only span or a textual arrow here
-    // breaks four assertions there. The direction indicator must stay an
-    // aria-hidden <svg>, which contributes no text.
+    // `<th>` textContent is pinned elsewhere as an exact array; the indicator must stay an aria-hidden svg.
     for (const state of ['none', 'ascending', 'descending'] as const) {
       const { th } = renderHeader(state)
       expect(th.textContent?.trim()).toBe('Amount')
@@ -128,11 +110,7 @@ describe('SortableColumnHeader', () => {
   })
 
   it('renders a decorative, non-announced indicator for the ACTIVE column only', () => {
-    // ⚠️ Width, not aesthetics. A persistent per-column chevron cost ~16px each
-    // and pushed the free-tier 4-column table over
-    // `categories-premium.spec.ts`'s 768px wrapper-overflow guard (688 vs a
-    // 656 + 24 limit) on both /income and /expenses. Unsorted must render no
-    // icon at all.
+    // Width: a persistent per-column chevron overflows the free-tier table. Unsorted renders no icon.
     expect(renderHeader('none').th.querySelector('svg')).toBeNull()
     for (const state of ['ascending', 'descending'] as const) {
       const svg = renderHeader(state).th.querySelector('svg')
@@ -163,12 +141,7 @@ describe('SortableColumnHeader', () => {
   })
 
   it('does NOT carry a mobile tap-target floor', () => {
-    // ⚠️ STILL TRUE AFTER STORY 48.1, and deliberately unchanged. A phone CAN
-    // now sort — but through `TableSortControl`, which sits outside the table.
-    // The `<thead>` is still `display: none` below `sm`, so a
-    // `max-sm:min-h-[44px]` HERE would still be dead CSS on a hidden ancestor
-    // and `assertHasMobileTapTarget` would still be asserting nothing. What
-    // changed is where the mobile affordance lives, not this element.
+    // The `<thead>` is `display: none` below `sm`, so a mobile tap-target floor here would be dead CSS.
     renderHeader('none')
     const classes = screen.getByRole('button', { name: 'Amount' }).className
     expect(classes).not.toContain('min-h-[44px]')
@@ -178,8 +151,7 @@ describe('SortableColumnHeader', () => {
 
 describe('sortable header screen-reader state (story 120.1, FR188)', () => {
   it('describes the button as sortable plus its current state, keeping name and <th> text', () => {
-    // ⚠️ `aria-sort="none"` is generally NOT announced, so before 120.1 an
-    // unsorted header read as "Amount, button". The description says it sorts.
+    // `aria-sort="none"` is generally not announced; the description says the column sorts.
     const expected = {
       none: 'Sortable column, not sorted',
       ascending: 'Sortable column, sorted ascending',
@@ -247,8 +219,7 @@ describe('sortable header screen-reader state (story 120.1, FR188)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'restore' }))
     expect(region.textContent).toBe('')
 
-    // desc -> none by header click: the SAME string as before. Without the
-    // emptying it was a React no-op and nothing was spoken (MEASURED in review).
+    // desc -> none gives the same string as before; without emptying it was a React no-op and silent.
     fireEvent.click(header())
     expect(region.textContent).toBe('Sort cleared')
   })

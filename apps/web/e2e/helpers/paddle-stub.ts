@@ -1,40 +1,10 @@
-/**
- * A fake Paddle.js for flow F10 (story 87.2, decision D2). No request reaches
- * Paddle: every browser request to `*.paddle.com` is answered here.
- *
- * What it fakes, and why exactly that (read from `@paddle/paddle-js` 1.6.4,
- * `dist/index.esm.js`, the version `apps/web/package.json` resolves):
- *
- *   - `initializePaddle({ token, environment })` injects ONE script,
- *     `https://cdn.paddle.com/paddle/v2/paddle.js` (Billing v1, the default
- *     version), waits for its `load` event, then reads `window.PaddleBillingV1`
- *     and calls `Environment.set(environment)` and, as `Initialized` is falsy,
- *     `Initialize({ token })`. A missing `window.PaddleBillingV1` rejects with
- *     "Paddle.js not available".
- *   - The app then calls only `PricePreview({ items })`
- *     (`lib/paddle/checkout.ts` `getLocalizedPlanPrices`, reading
- *     `data.details.lineItems[].price.id` and `.formattedTotals`) and
- *     `Checkout.open({ items, settings: { displayMode, variant, successUrl },
- *     customer? })` (`openPaddleCheckout`).
- *
- * `Checkout.open` records its argument and then does what a completed real
- * checkout does with a `successUrl`: navigates there. With NO `successUrl` it
- * stays put, as the real overlay does (it shows its own confirmation), so a
- * dropped `successUrl` never reaches `/welcome` (story 87.2 AC 3 (iii)).
- *
- * The stub reports every call through a binding the test exposes, so the
- * record survives the navigation `Checkout.open` starts.
- */
+// A fake Paddle.js: every browser request to *.paddle.com is answered here.
+// Checkout.open navigates to successUrl as a real checkout does; without one it stays put.
 import type { Page } from '@playwright/test'
 
-/** The one script `@paddle/paddle-js` 1.6.4 loads for Paddle Billing. */
 const PADDLE_JS_URL = 'https://cdn.paddle.com/paddle/v2/paddle.js'
 
-/**
- * The stub's localized totals. Deliberately NOT the app's static fallback
- * labels (`€39/yr`, ...), so a label showing one of these proves the stub was
- * loaded and `PricePreview` answered.
- */
+/** Deliberately not the app's fallback labels, so seeing one proves the stub's PricePreview answered. */
 export const STUB_TOTALS = {
   monthly: '€5.99',
   annual: '€39.00',
@@ -47,20 +17,13 @@ interface PaddleStubCall {
 }
 
 export interface PaddleStub {
-  /** Every stub method call, in order. */
   calls: PaddleStubCall[]
-  /** Every browser request to a `*.paddle.com` host, and how it was answered. */
   paddleRequests: Array<{ url: string; answer: 'stub' | 'aborted' }>
-  /** The arguments of each `Checkout.open` call. */
   checkoutOpens(): Record<string, unknown>[]
 }
 
 const BINDING = '__paddleStubRecord'
 
-/**
- * The fake script. `priceTotals` maps a price id to the localized total the
- * fake `PricePreview` reports for it.
- */
 function stubScript(priceTotals: Record<string, string>): string {
   return `(() => {
   const totals = ${JSON.stringify(priceTotals)};
@@ -96,17 +59,8 @@ function stubScript(priceTotals: Record<string, string>): string {
 })();`
 }
 
-/**
- * Serve the fake Paddle.js for every `*.paddle.com` request this page makes
- * and record what the app calls. Call BEFORE the first `page.goto`.
- *
- * Any `*.paddle.com` request other than the script is ABORTED and recorded, so
- * the test can assert none was made (AC 4): with the real script gone nothing
- * else should ask Paddle for anything.
- *
- * ⚠️ `page.route` does not see requests a service worker makes, and the dev
- * server registers one: the spec must run with `serviceWorkers: 'block'`.
- */
+// Call before the first goto. page.route doesn't see service-worker requests, so the
+// spec must run with `serviceWorkers: 'block'`.
 export async function installPaddleStub(
   page: Page,
   priceTotals: Record<string, string>

@@ -2,33 +2,11 @@ import { render } from '@/test/utils'
 import { describe, expect, it } from 'vitest'
 import { DocsLayout } from '../docs-layout'
 
-/**
- * DocsLayout theming guards (story 31-1, AC-1/AC-7/AC-8).
- *
- * This component owns the `/docs` page canvas and header chrome and had no test
- * file before this story. It is asserted on class-TOKEN membership, never
- * substrings: `-` and `:` are not word boundaries, so `toContain('bg-gray-50')`
- * on a className string would false-match `dark:bg-gray-50` and `hover:bg-gray-50`
- * alike (the documented anti-pattern in `dark-mode-overrides.test.tsx:24,32`).
- *
- * The negative sweep covers the layout AND the sidebar it renders, because both
- * are in this story's scope; `hover:`-prefixed light values are deliberately NOT
- * in the retired list — they are distinct tokens and the sidebar still carries a
- * legitimate `hover:bg-gray-100`.
- */
-
-/** Every class token on the subtree, so a light-only leak anywhere is caught. */
 function sweep(root: HTMLElement): string[] {
   return [root, ...root.querySelectorAll('*')].flatMap((element) => [...element.classList])
 }
 
-/**
- * The retired light-only set, kept IDENTICAL across every subtree sweep in this
- * story. A code review found the sweeps had each grown their own list — the
- * legal one omitted `text-gray-700` and all of them omitted borders — so the
- * same claim carried different guarantees per file and the weakest list defined
- * the real protection. Any addition here must be made in all four sweeps.
- */
+// Keep identical across every subtree sweep, so no file carries a weaker guarantee.
 const RETIRED_LIGHT_ONLY_TOKENS = [
   'bg-white',
   'bg-gray-50',
@@ -58,7 +36,6 @@ describe('DocsLayout theming', () => {
     const root = renderLayout()
     const tokens = [...root.classList]
     expect(tokens).toContain('surface-sunken')
-    // The layout utilities the token composes with must survive the swap.
     expect(tokens).toContain('min-h-screen')
     expect(tokens).not.toContain('bg-gray-50')
   })

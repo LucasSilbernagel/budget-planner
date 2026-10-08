@@ -1,560 +1,92 @@
 import type { ReactNode } from 'react'
 
 /**
- * Shared responsive-table class layer (story 31.2, UX-DR36).
- *
- * The finance pages (Income, Expenses, Savings, Balance) render genuine
- * semantic `<table>`s whose every cell carries
- * `whitespace-nowrap` and `px-6`. At 320px that is the direct cause of
- * horizontal overflow: the auto-layout table sizes to its longest unbroken run
- * and its `overflow-x-auto` wrapper silently absorbs the excess into a scroll
- * bar. This module makes those rows read as stacked cards below `sm` while
- * leaving the >= 640px rendering byte-identical.
- *
- * ## Approach: one DOM, a CSS display-mode switch
- *
- * There is exactly ONE `<table>` in the DOM at every viewport. Below `sm` the
- * table/`<tbody>`/`<tr>`/`<td>` display modes are switched with `max-sm:`
- * utilities and a mobile-only label span is added per cell. Two alternatives
- * were rejected and must not be reintroduced:
- *
- *   - **Dual-render** (`hidden sm:table` table + `sm:hidden` card list): every
- *     value would exist twice in the DOM. jsdom applies no media queries, so
- *     the existing page suites would get multi-match failures on
- *     `getByText`/`getByTestId`.
- *   - **A `useIsNarrowViewport()` branch**: that hook returns `false` on the
- *     server AND on the first client render, so SSR would emit the desktop
- *     table at 320px and hydration would swap it — the hydration reflow/CLS
- *     already logged in `deferred-work.md`. The hook is scoped to props that
- *     cannot be driven by CSS (Recharts); a layout swap is not that case.
- *
- * ## Composition rule — follow it exactly
- *
- *   - Mobile-only **styling on a shared element** -> a `max-sm:` variant
- *     APPENDED to the unchanged desktop class string. Never neutralise a base
- *     class with an unprefixed override; partition by breakpoint instead.
- *   - Mobile-only **element** (the field labels) -> base classes + `sm:hidden`.
- *
- * That keeps the >= 640px cascade untouched, which is what makes "desktop is
- * unchanged" provable by inspection rather than by screenshot.
- *
- * ## Two traps baked into these values
- *
- *   - `break-words` (`overflow-wrap: break-word`) does **not** reduce an
- *     element's min-content width, so an auto-layout table still sizes to its
- *     longest unbroken run. The cells use `[overflow-wrap:anywhere]` (Tailwind
- *     v3.4 has no `wrap-anywhere` utility) together with
- *     `max-sm:whitespace-normal`. Swapping either one out was measured at
- *     ~1134px inside a 320px viewport, so both are load-bearing.
- *   - **Never put `.surface-inset` and `.surface-interactive` on the same
- *     element.** Both set `background-color` inside `@layer components`, where
- *     the winner is whichever is declared later in `global.css` — not whichever
- *     appears later in the className. For the same reason `hover:surface-inset`
- *     compiles and lints cleanly but is a silent no-op; do not write it.
- *
- * ## Accessibility note
- *
- * Setting `display: block`/`flex` on `<tr>`/`<td>` drops table semantics from
- * the accessibility tree below `sm`. That is deliberate and accepted, because
- * every cell gains its own visible {@link FieldLabel} — the field/value
- * association moves from the column header to an adjacent label rather than
- * being lost. Do **not** re-add `role="table"`/`role="row"`/`role="cell"`:
- * re-asserting a grid the user can no longer navigate by column is worse than
- * the linearised reading. The `<thead>` stays in the DOM (hidden via
- * `display: none`, so correctly out of the a11y tree) and takes over again at
- * >= 640px.
+ * Below `sm` rows become cards via appended `max-sm:` display modes: one DOM, no JS branch, so SSR matches.
+ * Don't re-add table roles: each cell gains a visible label in place of column-header association.
  */
 
-/** `<div>` wrapping the table.
- *
- * The wrapper stays a scroll container at EVERY width — deliberately, and after
- * this was reconsidered once. An earlier draft added `max-sm:overflow-x-visible`
- * so that a future regression would propagate to `documentElement` and trip the
- * document-level 320px assertion, which is otherwise unfalsifiable here (a
- * scroll container absorbs its content's overflow rather than passing it up).
- *
- * That reasoning was incomplete. Both configurations detect a regression
- * equally well — measured: with a visible wrapper the document-level check
- * fires (1134px at a 320px viewport); with a scrollable wrapper the per-wrapper
- * check fires instead (1094px vs a 240px client width) on every seeded case.
- * Since detection is a wash, the only thing the choice changes is what a real
- * user gets when a regression escapes CI: a single sideways-scrolling table, or
- * a sideways-scrolling *document* at 320px — which is the exact UX-DR9
- * violation this work exists to remove. Containment wins.
- *
- * So `e2e/responsive-320.spec.ts`'s per-wrapper assertion was the primary guard
- * and its document-level assertion the escape hatch for overflow that bypasses
- * the wrapper entirely, until stories 84.2/84.5 (FR137) deleted it.
- *
- * ⚠️ Story 42.2 (UX-DR46) did NOT change this decision — it is still live, and
- * this constant is still exactly `overflow-x-auto`. What 42.2 added is a
- * SIGNPOST for the scrolling this decision allows, in
- * {@link RESPONSIVE_SCROLL_SHADOW_CLASS}, plus `role="region"` / `aria-label` and
- * a focus stop at each call site (since story 93.1 all through
- * `TableScrollRegion`, whose `tabindex="0"` is present only while the table
- * actually scrolls). Containment without a signpost was the defect:
- * measured on the CI font at a 768px viewport, `/income` hid 889px of table
- * behind an overlay scrollbar with nothing on screen saying so, and the Actions
- * column is the last thing that falls off that edge.
- *
- * ⚠️ `role="region"` on THIS element is not a violation of the accessibility
- * note above. That note forbids re-adding `role="table"`/`row"`/`cell"` INSIDE
- * the table, where it would re-assert a grid the user can no longer navigate.
- * The wrapper is outside the table and is a genuine scrollable region: while
- * the table overflows it is a focus stop that can be scrolled with the arrow
- * keys, which is the only pointer-free way to see the overflowed columns that
- * hold no focusable control (the Actions buttons scroll into view on Tab). */
+/** Stays a scroll container at every width, so an escaped overflow scrolls the table, not the page. */
 export const RESPONSIVE_WRAPPER_CLASS = 'overflow-x-auto'
 
-/** Scroll shadows for the wrapper (story 42.2, UX-DR46). Applied ALONGSIDE
- * {@link RESPONSIVE_WRAPPER_CLASS}, never merged into it — that constant is
- * pinned by exact equality in `ResponsiveTable.test.tsx`, deliberately.
- *
- * ## Why a painted background and not an element
- *
- * The width budget below leaves ZERO slack: on the CI font the free-tier
- * four-column `/income` table measures 656px against a 656px wrapper. A
- * scroll affordance that occupies width — a rail, a gutter, an inline hint —
- * flips that table from "fits" to "overflows" on the runner while staying green
- * on a dev box, which is the exact failure `SortableColumnHeader`'s always-on
- * chevron already shipped once. Backgrounds do not affect box size, so this
- * costs a host-independent 0px. Measured: wrapper `scrollWidth` at 768px is
- * unchanged on all four routes (1545/1536/1908/1994).
- *
- * ## How it self-hides — no JS, no measurement, no `ResizeObserver`
- *
- * Four background layers. Two COVERS in the surface colour, painted `local` so
- * they scroll with the content; two SHADOWS, painted `scroll` so they stay
- * pinned to the box. With nothing to scroll, content width equals box width, so
- * each cover sits exactly over its shadow and nothing is visible. Scroll right
- * and the left cover travels out of view, revealing the left shadow. That is
- * why a table that fits paints no affordance without anything having to ask how
- * wide it is — which also keeps this off the `useIsNarrowViewport` path the
- * module rejects above.
- *
- * ⚠️ THE COVERS MUST MATCH THE SURFACE BEHIND THE TABLE, so `surface` is on this
- * constant and the `dark:` gradient pair is not optional — a white-only cover
- * smears across a gray-800 card.
- *
- * ⚠️⚠️ THE DARK SHADOW IS A LIGHT GLOW, NOT A DARKER BLACK, AND THAT IS FORCED BY
- * ARITHMETIC. A black shadow can only darken what is already there: over
- * gray-800 (31,41,55), even `rgba(0,0,0,0.55)` reaches 18 — a delta of 13/255,
- * measured, against 36 for the light theme. It is very nearly invisible. The
- * dark shadow layers are therefore `rgba(255,255,255,0.3)`, which lifts 31 to
- * ~98 (delta ~67) and reads as an edge on a dark card. Do not "make the dark
- * shadow stronger" by raising the black alpha; it has no headroom. Code review
- * found this — the original dark pair shipped every test green because the only
- * dark assertion was an ABSENCE check.
- *
- * ⚠️ `bg-local` / `bg-scroll` CANNOT EXPRESS THIS. Tailwind v3.4's
- * `backgroundAttachment` and `backgroundRepeat` are static utility plugins with
- * no arbitrary-value support, so `bg-local` would set ONE value for ALL FOUR
- * layers: the shadows would become `local`, travel away with the covers, and
- * the affordance would be permanently invisible while every class-token test
- * stayed green. Hence the arbitrary-PROPERTY syntax for those two.
- *
- * ⚠️ Tables OUTSIDE this shared layer do not inherit any of this and are
- * deliberately out of scope for story 42.2: `forecasting/forecast-list.tsx`
- * (its own hand-rolled `overflow-x-auto`) and `categories/CategoryBreakdown.tsx`.
- * (`reports/FinancialSummaryReport.tsx` used to be listed here; story 91.2 put
- * every report table inside this wrapper + shadow pair, with `print:` resets.) The
- * forecast list is a real scroll container and carries the same unsignposted
- * defect; it is premium-gated, so the unauthenticated e2e layer cannot reach it
- * and nothing here guards it. Recorded so the header's list of pages above is
- * read as "what this layer covers", never as "every table in the app".
- *
- * ⚠️ Known and accepted occlusion: the `<thead>` is `surface-inset` and the
- * hovered `<tr>` is `bg-gray-50`, both opaque, so the shadow does not paint
- * behind the header strip or under the row the pointer is on. The shadow reads
- * over the remaining rows, which is where the eye is. Fixing either would mean
- * making a header or a hover state transparent, which costs more than it buys. */
+/**
+ * Covers painted `local` and shadows painted `scroll`, so shadows show only while scrolled; `bg-local`
+ * can't set per-layer values. The dark shadow is a light glow because black can't darken gray-800.
+ */
 export const RESPONSIVE_SCROLL_SHADOW_CLASS =
   'surface bg-[linear-gradient(to_right,white,rgba(255,255,255,0)),linear-gradient(to_left,white,rgba(255,255,255,0)),linear-gradient(to_right,rgba(0,0,0,0.25),rgba(0,0,0,0)),linear-gradient(to_left,rgba(0,0,0,0.25),rgba(0,0,0,0))] dark:bg-[linear-gradient(to_right,#1f2937,rgba(31,41,55,0)),linear-gradient(to_left,#1f2937,rgba(31,41,55,0)),linear-gradient(to_right,rgba(255,255,255,0.3),rgba(255,255,255,0)),linear-gradient(to_left,rgba(255,255,255,0.3),rgba(255,255,255,0))] bg-[length:24px_100%,24px_100%,12px_100%,12px_100%] bg-[position:left_center,right_center,left_center,right_center] [background-repeat:no-repeat] [background-attachment:local,local,scroll,scroll]'
 
-/** The `<table>`.
- *
- * ⚠️ `max-sm:block` here (and on the `<tbody>`/`<tr>` below) is DEFENSIVE, not
- * the mechanism. Measured at 320px: removing it changes nothing, because every
- * `<td>` already leaves table formatting via `max-sm:flex` / `max-sm:block`, so
- * the row's children are all non-table boxes and the browser stacks them inside
- * one generated anonymous cell. Removing `max-sm:flex` from the CELL, by
- * contrast, immediately overflows (351px at 320px). The explicit block chain is
- * kept anyway: depending on anonymous-box generation for the whole card layout
- * is far more fragile than declaring the display mode we actually want.
- *
- * `max-sm:divide-y-0` matters because `divide-y` targets `> * + *` and a
- * `display: none` `<thead>` is still counted by the `+` combinator, leaving a
- * stray rule above the first card. */
+/** `max-sm:divide-y-0`: a `display: none` `<thead>` still counts for `> * + *`. */
 export const RESPONSIVE_TABLE_CLASS =
   'min-w-full divide-y divide-gray-200 dark:divide-gray-700 max-sm:block max-sm:min-w-0 max-sm:divide-y-0'
 
-/** The `<thead>`. Hidden below `sm`; each cell carries its own label instead. */
 export const RESPONSIVE_THEAD_CLASS = 'surface-inset max-sm:hidden'
 
 /**
- * ## ⚠️ THE `max-lg:px-4` ON EVERY CELL CONSTANT BELOW IS A WIDTH BUDGET, NOT A
- * STYLE PREFERENCE. Do not "simplify" it back to a bare `px-6`.
- *
- * Between `sm` (640px) and `lg` (1024px) these tables are a real `<table>` with
- * no card fallback, and the four-column free-tier `/income` and `/expenses`
- * tables do not fit their `overflow-x-auto` wrapper at `px-6`. Measured on
- * `/income` at a 768px viewport (656px of wrapper client width), with the
- * long-name/12-digit-amount seed `e2e/categories-premium.spec.ts` used (deleted
- * by story 84.5):
- *
- * | build                          | Noto Sans (dev) | DejaVu Sans (CI) |
- * | ------------------------------ | --------------- | ---------------- |
- * | pre-34.1b, `px-6`              | 656 (fits)      | 658 (+2)         |
- * | post-34.1b move arrows, `px-6` | 672 (+16)       | 706 (+50)        |
- * | post-34.1b, `max-lg:px-4`      | 656 (fits)      | 656 (fits)       |
- *
- * Story 34.1b's two move chevrons cost a host-INDEPENDENT 48px in the Actions
- * column (2 x 16px icon + 2 x 8px `sm:mr-2`) — 658 + 48 = 706 exactly. Dev
- * fonts hid it: the text columns still had 32px of compressible slack, so the
- * local number landed at 672, inside the guard's 24px tolerance, and the suite
- * went green while CI went red. Dropping 8px of horizontal padding per side on
- * four columns reclaims 64px, which covers the 48px and restores the pre-34.1b
- * fit on BOTH hosts.
- *
- * ⚠️ `system-ui` DOES NOT RESOLVE TO THE SAME FACE ON THE RUNNER. GitHub's
- * ubuntu image resolves it to DejaVu Sans, which is materially wider than the
- * Noto Sans a typical dev box picks. To reproduce a CI width locally, inject
- * `* { font-family: "DejaVu Sans" !important }` — that reproduced 706 to the
- * pixel. A green local run is NOT evidence about a width budget.
- *
- * The cascade is `max-sm:px-3` (< 640) -> `max-lg:px-4` (640-1023) -> `px-6`
- * (>= 1024), and it resolves in that order because Tailwind sorts `max-*`
- * variants by DESCENDING breakpoint, so `max-sm` is emitted after `max-lg` and
- * wins on a phone. Verified by computed style at 320/640/768/1023/1024/1280.
- * `px-6` stays in every string as the `lg`-and-up base, which is also what keeps
- * `ResponsiveTable.test.tsx`'s class-TOKEN pins passing.
+ * `max-lg:px-4` is a width budget: at `px-6` the four-column tables overflow their wrapper
+ * between `sm` and `lg` on CI's wider font.
  */
 
-/** A column header `<th>` (story 34.2).
- *
- * Before this story the five `<thead>`s each hand-rolled this literal, and two
- * of them wrote the same token set in a different order (`text-left text-xs
- * font-medium text-muted ...` on Income/Expenses vs `font-medium text-muted
- * text-xs text-left ...` on Savings/Balance). Identical computed output, and
- * nothing pins a `<th>` className, so collapsing them into one constant is safe
- * — and it is what lets {@link SortableColumnHeader} match a plain `<th>` on
- * every page without five per-page overrides.
- *
- * ⚠️ The `<thead>` is `display: none` below `sm` ({@link RESPONSIVE_THEAD_CLASS}),
- * so anything placed in a header cell is unreachable on a phone. That is why
- * header controls deliberately do NOT carry
- * {@link RESPONSIVE_ACTION_BUTTON_CLASS}: a 44px floor on a `display: none`
- * ancestor is dead CSS, and `assertHasMobileTapTarget` would be asserting
- * nothing.
- *
- * ⚠️ This used to add "that is why sorting is a >= 640px affordance" (story
- * 34.2, decision 1). Story 48.1 reversed that: a phone sorts through
- * `TableSortControl`, which renders `sm:hidden` OUTSIDE the table and DOES carry
- * the 44px pair, precisely because it has no hidden ancestor. The rule that
- * survives is about this element — a header cell cannot host a mobile
- * affordance — not about the feature. */
+/** No 44px floor on header controls: the `<thead>` is `display: none` below `sm`, a hidden
+ * ancestor, so mobile sorting lives outside the table in `TableSortControl`. */
 export const RESPONSIVE_HEADER_CELL_CLASS =
   'px-6 max-lg:px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider'
 
-/** A right-aligned column header `<th>` — the trailing `Actions` column. */
 export const RESPONSIVE_HEADER_CELL_RIGHT_CLASS =
   'px-6 max-lg:px-4 py-3 text-right text-xs font-medium text-muted uppercase tracking-wider'
 
-/** The `<tbody>`.
- *
- * ⚠️ NO `surface` HERE, AND THAT IS LOAD-BEARING (story 42.2). An opaque
- * `<tbody>` spans the table's full SCROLL width, so it paints over anything on
- * the wrapper behind it — with `surface` here the scroll shadows in
- * {@link RESPONSIVE_SCROLL_SHADOW_CLASS} are invisible in light mode and the
- * signpost silently does nothing while every class-token test stays green.
- * Measured: restoring it makes all four routes read pure white at the right
- * edge with up to 1338px of table hidden. The surface colour moved to the
- * wrapper, which is also where the cover gradients have to match it. */
+/** No `surface` here: an opaque `<tbody>` would paint over the wrapper's scroll shadows. */
 export const RESPONSIVE_TBODY_CLASS =
   'divide-y divide-gray-200 dark:divide-gray-700 max-sm:block max-sm:divide-y-0'
 
-/** A data `<tr>` — the card below `sm`. It sits on the `.surface` WRAPPER (the
- * colour moved there in 42.2, see {@link RESPONSIVE_TBODY_CLASS}), so it is
- * already on the gray-800 card colour in dark mode; definition comes from
- * `border-default`, not a second background token. */
 export const RESPONSIVE_ROW_CLASS =
   'hover:bg-gray-50 dark:hover:bg-gray-700/40 max-sm:block max-sm:mb-3 max-sm:rounded-lg max-sm:border max-sm:border-default max-sm:p-2'
 
-/** Shared cell base WITHOUT a cross-axis alignment, so the variants below can
- * each pick their own without two conflicting `align-items` utilities landing
- * on one element (Tailwind resolves those by CSS source order, not className
- * order — an unreliable thing to rely on). */
+/** No cross-axis alignment here: Tailwind resolves conflicting `items-*` by CSS order, not class order. */
 const RESPONSIVE_CELL_BASE =
   'px-6 max-lg:px-4 py-4 whitespace-nowrap max-sm:flex max-sm:justify-between max-sm:gap-3 max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere] max-sm:px-3 max-sm:py-2'
 
-/** A data `<td>`: label left, value right below `sm`. */
 export const RESPONSIVE_CELL_CLASS = `${RESPONSIVE_CELL_BASE} max-sm:items-baseline`
 
-/** The trailing row-actions `<td>`. Centred rather than baseline-aligned
- * because its children are >= 44px tap targets, not text.
- *
- * ⚠️ `max-sm:flex-col` (story 34.1b): below `sm` the label stacks ABOVE the
- * button group instead of sitting beside it. With four 44px targets in the group
- * (move up, move down, Edit, Delete) the row simply does not fit otherwise — a
- * 320px viewport leaves about 200px of inner cell width once the page, section,
- * card and cell padding are subtracted, and the "Actions" label was consuming
- * roughly a quarter of it. Stacking reclaims that width; `e2e/responsive-320.spec.ts`
- * proved the result fits until stories 84.2/84.5 (FR137) deleted it.
- *
- * `max-sm:items-center` is retained and still does real work under `flex-col`,
- * where it centres the button group on the cross axis. */
+/** `max-sm:flex-col` stacks the label above the buttons, which don't fit beside it at 320px. */
 export const RESPONSIVE_ACTIONS_CELL_CLASS = `${RESPONSIVE_CELL_BASE} max-sm:flex-col max-sm:items-center text-right text-sm`
 
-/** A `<td>` whose content is full-width (the Savings progress bar) and so must
- * stack under its label instead of sitting beside it.
- *
- * Also every {@link RESPONSIVE_VALUE_TAG_CLASS} cell (the Savings name + badge
- * and allocation + pill), since story 91.1. Once {@link FIELD_LABEL_CLASS}
- * stopped breaking mid-word, a label beside a pair left the pair too little
- * width: measured at 320px under DejaVu Sans, an ordinary `$987.65` + `Fixed`
- * overflowed the cell by 8.6px (`CHF 987.65`: 32.5px), because a figure with no
- * group separator cannot wrap, and `Emergency Fund` broke as `Emergenc` / `y
- * Fund` beside its `Account` badge. Stacked, the pair gets the card's full
- * width. Desktop tokens are the same as {@link RESPONSIVE_CELL_CLASS}'s. */
 export const RESPONSIVE_STACKED_CELL_CLASS =
   'px-6 max-lg:px-4 py-4 whitespace-nowrap max-sm:block max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere] max-sm:px-3 max-sm:py-2'
 
-/** A cell holding a VALUE next to a TAG — the Savings "Monthly Allocation"
- * amount beside its Auto/Fixed pill, and the Savings name beside its
- * Account/Goal badge (story 42.3, UX-DR47).
- *
- * ## The defect these fix, and why the cell is not the place to fix it
- *
- * `max-sm:whitespace-normal` and `max-sm:[overflow-wrap:anywhere]` on
- * {@link RESPONSIVE_CELL_CLASS} INHERIT into both children. `overflow-wrap:
- * anywhere` (unlike `break-word`) reduces min-content width to about one
- * character, so the flex items can shrink almost without limit;
- * `max-sm:justify-between` then serves the field label first and collapses the
- * pair. Measured at 320px on the CI font, pre-fix: the pair was squeezed to
- * ~92px inside a 222px cell, the amount broke onto TWO lines, and the
- * four-letter "Goal" badge rendered at 25px on FOUR lines — one character each.
- *
- * ⚠️ The fix belongs HERE, on the pair, and never on the cell. Restoring
- * `whitespace-nowrap` to the cell would revert the wrapping contract recorded
- * at the top of this module, which was measured at ~1134px inside a 320px
- * viewport. Both cell tokens must survive this story byte-identical.
- *
- * ## ⚠️ THE VALUE AND THE TAG DO NOT GET THE SAME TREATMENT
- *
- * {@link RESPONSIVE_TAG_CLASS} goes on every tag. {@link RESPONSIVE_AMOUNT_CLASS}
- * goes ONLY on a currency figure. The Savings NAME is user-supplied free text
- * with no `maxLength`, so it must keep the cell's `anywhere` and wrap; `nowrap`
- * (or `overflow-wrap: normal`) there is exactly the ~1134px revert above.
- * Protect the tag, never the free-text value.
- *
- * ## ⚠️ The bound, re-measured by story 91.1
- *
- * Until 91.1 the allocation figure was `nowrap` and held up to `$987,654,321.00`
- * at 320px only because `justify-between` crushed the "Monthly Allocation"
- * label to ~21px (`MONT/HLY/ALLO/CATIO/N`). Once the label stopped breaking
- * mid-word, an ORDINARY `$987.65` + `Fixed` overflowed the cell by 8.6px and
- * `CHF 987.65` by 32.5px (a figure with no group separator cannot wrap). So
- * both pair cells are now stacked below `sm` (see
- * {@link RESPONSIVE_STACKED_CELL_CLASS}) and the figure wraps between groups
- * (`RESPONSIVE_AMOUNT_CLASS`). Measured at 320px under DejaVu Sans: no cell or
- * wrapper overflow from USD x0.0001 to x10000 of the e2e seed (`$9.88` to
- * `$9,876,540,000.00` per month) and CHF x0.001 to x100. No layout test pins
- * this (`e2e/value-tag-one-line.spec.ts` was deleted by stories 84.2/84.5);
- * `savings-320-light` shows the seeded figures, so re-measure (story 91.1's
- * harness) before narrowing these cells.
- *
- * ## ⚠️ `max-sm:items-start` — why the alignment is partitioned by breakpoint
- *
- * `items-center` is right while both halves are one line, and wrong the moment
- * the VALUE wraps: measured at 320px against the 138-character seeded name, the
- * now-intact badge floated **88px** down the block, vertically centred beside
- * ten lines of text and touching none of them. `max-sm:items-start` anchors it
- * to the first line (-2px) while desktop keeps computed `center` — verified at
- * 1280px — and the allocation pair's top delta stays 0 at BOTH widths. This
- * follows the composition rule at the top of this module: append a `max-sm:`
- * variant, never neutralise the base class. ⚠️ The misalignment only became
- * visible once the badge stopped being crushed, so it is a consequence of this
- * story's own fix, not a pre-existing defect. */
+/**
+ * Fix the pair, never the cell: the cell's `anywhere` wrapping must stay. Protect the tag, not the free-text value.
+ * `max-sm:items-start` keeps the tag on the first line when the value wraps.
+ */
 export const RESPONSIVE_VALUE_TAG_CLASS = 'flex items-center gap-2 max-sm:items-start'
 
-/** The TAG half of a {@link RESPONSIVE_VALUE_TAG_CLASS} pair.
- *
- * `whitespace-nowrap` is the whole mechanism, and it works by raising a FLOOR
- * rather than by forbidding a shrink: a flex item's `min-width: auto` floors it
- * at min-content, and for non-wrapping text min-content IS the full string. The
- * inherited `overflow-wrap: anywhere` is what drops that floor to about one
- * character, which is how a four-letter "Goal" badge ended up 25px wide across
- * four lines.
- *
- * ⚠️ `shrink-0` WAS HERE AND WAS REMOVED, deliberately — do not add it back
- * without a failing test. Measured both ways:
- *
- *   - nowrap alone (no `shrink-0`): every geometry assertion GREEN. `shrink-0`
- *     is a no-op once the floor is already the full string.
- *   - `shrink-0` alone (no nowrap): WORSE THAN NEITHER. It pins the tag at
- *     max-content while the badge text can still break, so the row cannot
- *     absorb the excess: the wrapper overflowed 242 against 240 at 320px and
- *     the widest-amount case overflowed its cell.
- *
- * So the token that reads like the protective one is the one that causes an
- * overflow on its own, and the token that actually protects is the other. That
- * asymmetry is only visible by mutating them SEPARATELY — mutating the pair
- * together would have shown a red arm and taught the wrong lesson.
- *
- * Unprefixed on purpose: at and above `sm` the cell is already
- * `whitespace-nowrap`, so this is a no-op there and the desktop rendering is
- * unchanged by inspection. */
+/**
+ * `whitespace-nowrap` raises the tag's min-content floor to the full string. Don't add `shrink-0`:
+ * on its own it overflows the wrapper.
+ */
 export const RESPONSIVE_TAG_CLASS = 'whitespace-nowrap'
 
-/** A row's MONEY figure — ⚠️ ONLY for a formatted currency amount rendered as a
- * `GroupedAmount`. Never put this on free text; see the asymmetry note on
- * {@link RESPONSIVE_VALUE_TAG_CLASS}. Every row amount on the four finance
- * pages carries it, including the Savings allocation beside its pill.
- *
- * ## Why (story 91.1, FR146)
- *
- * The cell's inherited `overflow-wrap: anywhere` let a plain-string figure
- * break between ANY two characters: measured at 320px under DejaVu Sans before
- * this story, `$12,345,67` / `8.90` (Savings Current Balance), `$12,345,6` /
- * `78.90` and `$456,789.0` / `0` (Balance). The `<wbr>`s `GroupedAmount`
- * places after each group separator are what fix that: `anywhere` breaks
- * inside a word only when a line has NO other break opportunity, so a figure
- * that does not fit now wraps as `$12,345,` / `678.90`.
- *
- * ⚠️ What THIS class adds is a floor, and it is not load-bearing at today's
- * widths (measured, story 91.1 arms A1 and A1+L2: with it removed, no figure
- * split inside a group at 320px across USD x0.0001-x10000 and CHF x0.001-x100).
- * `overflow-wrap: normal` makes the figure's min-content its widest group, so
- * a group wider than the space the cell leaves OVERFLOWS instead of splitting
- * (`CHF 98` / `7'`), which keeps "never inside a group" true in that corner.
- * That case was reachable before the Savings pair cells were stacked
- * (`CHF 987'` in a 49.5px allocation slot). The class alone, without
- * `GroupedAmount`, makes the whole figure one unbreakable run: measured (arm
- * A2) as a 27.4px cell overflow and a 246px-wide wrapper at 320px.
- *
- * ## Why not `whitespace-nowrap` (what the Savings allocation used until 91.1)
- *
- * nowrap kept the allocation on one line only because the cell crushed its
- * "Monthly Allocation" label to ~21px first (the bound measured on
- * {@link RESPONSIVE_VALUE_TAG_CLASS}). Once {@link FIELD_LABEL_CLASS} stopped
- * breaking mid-word, that slack was gone, so a figure that no longer fits now
- * WRAPS at a group boundary instead of overflowing the cell.
- *
- * ## ⚠️ `sm:[&_wbr]:hidden` keeps desktop byte-identical, and it is load-bearing
- *
- * At and above `sm` the cell is `whitespace-nowrap`, but Chromium still breaks
- * at a `<wbr>` under an inherited `nowrap` (story 88.1's measured finding), and
- * the auto-layout table then shrinks the column to the widest GROUP. Measured
- * under DejaVu Sans with this token missing: every row figure on all four pages
- * wrapped at 640, 768 AND 1280px (`$12,` / `345,` / `678.90` on /income), and
- * the tables narrowed by 22-135px. `display: none` on the `<wbr>`s removes the
- * break opportunity (88.1 arm M2b), so the desktop table lays out exactly as
- * before this story (measured: 0 differences at 640/768/1280).
- *
- * `[overflow-wrap:normal]` is unprefixed: at and above `sm` the cell is
- * `nowrap`, under which it has nothing to act on. Set on the CHILD, not the
- * cell: a child's own `overflow-wrap` beats the value it inherits. */
+/**
+ * Only for a `GroupedAmount` figure, never free text. `sm:[&_wbr]:hidden` is load-bearing:
+ * Chromium breaks at `<wbr>` even under inherited `nowrap`, which would wrap desktop figures.
+ */
 export const RESPONSIVE_AMOUNT_CLASS = '[overflow-wrap:normal] sm:[&_wbr]:hidden'
 
-/** Wraps the row action buttons so the actions cell has exactly two flex
- * children (label + button group) below `sm`. Inert on desktop: an unclassed
- * block `<div>` leaves the inline buttons right-aligned exactly as before.
- *
- * ⚠️ The group holds TWO buttons — Edit and Delete. It held FOUR between stories
- * 34.1b and 48.2, which added and then removed the move-up/move-down chevrons.
- * The four-button arithmetic was 4 x 44 + 3 x 4 = 188px, inside the ~200px the
- * stacked cell above makes available. The gap is KEPT rather than retuned: it is
- * the separation between Edit and Delete, not a four-button accommodation.
- *
- * ⚠️ THE TWO-BUTTON FIGURE IS 108px, NOT THE 92px THIS COMMENT CLAIMED FROM 48.2
- * UNTIL STORY 50.1. `2 x 44 + 1 x 4 = 92` counts the tap floors and the flex gap
- * and forgets that the Edit button also carries an UNPREFIXED `mr-4`, which
- * therefore applies below `sm` too. Measured at 320px on `/income`: buttons 44
- * and 44, `margin-right` 16px, `column-gap` 4px, group width **108px** — leaving
- * ~92px of slack, which is probably how the wrong number got written down. Still
- * comfortably inside the budget, so nothing has ever been broken by it.
- *
- * ⚠️ This figure is measured from the `max-sm:` floor plus that margin, NOT from
- * label width, so story 50.1's icons do not move it. An earlier revision said so
- * while defending the wrong total and told the next reader not to correct it —
- * a review layer caught both halves.
- *
- * `max-sm:flex-wrap` is likewise kept, and is graceful degradation rather than
- * the expected layout: at a larger root font size the `<FieldLabel>Actions` above
- * the group, or the rem-sized icons inside it, can grow, and wrapping to a second
- * line is a better failure than overflowing the card. That argument is about root
- * font size, not button count, so neither removing two BUTTONS (48.2) nor removing
- * two LABELS (50.1) retires it.
- *
- * ⚠️ Before story 50.1 that sentence read "the label or the buttons can grow",
- * where "the label" was ambiguous between the `<FieldLabel>` sibling OUTSIDE this
- * group and the buttons' own text INSIDE it. Only the sibling reading survives —
- * the buttons have no text now. */
+/** `max-sm:flex-wrap` is graceful degradation for larger root font sizes. */
 export const RESPONSIVE_ACTIONS_GROUP_CLASS =
   'max-sm:flex max-sm:items-center max-sm:flex-wrap max-sm:justify-center max-sm:gap-1'
 
-/** Mobile tap-target sizing for a row action button (>= 44px both dimensions).
- * Breakpoint-scoped on purpose — an unprefixed `min-h-[44px]` would change the
- * desktop rendering, and `ResponsiveTable.test.tsx` asserts EVERY token here
- * starts with `max-sm:`. `inline-flex` centres the button's content inside the
- * enlarged box; it is not what makes the box 44px (a `<button>` is
- * `inline-block` by default, so `min-h`/`min-w` already apply).
- *
- * ⚠️ THAT PARENTHESISED MEASUREMENT WAS TAKEN WITH A TEXT CHILD, AND STORY 50.1
- * REPLACED THE TEXT WITH AN SVG. The 44px rect still comes from `min-h`/`min-w`,
- * but with an SVG-only child the centring tokens do real work they did not do
- * before, and nobody has re-measured the drop-`inline-flex` case since. Treat the
- * centring as load-bearing rather than incidental.
- *
- * ⚠️ ABOVE `sm` THIS CONSTANT CONTRIBUTES NOTHING, SO THE DESKTOP HIT AREA IS
- * WHATEVER THE CONTENT MAKES IT. That used to be a text box; since 50.1 it is a
- * glyph, and the callers add their own `p-1` to clear WCAG 2.2 SC 2.5.8's 24x24
- * floor. That padding belongs at the CALL SITE, never here — an unprefixed token
- * in this string reddens the `max-sm:`-only guard, and this constant is shared
- * with `TableSortControl`, which is not a row action. */
+/** Every token must stay `max-sm:`-prefixed; desktop hit-area padding belongs at the call site. */
 export const RESPONSIVE_ACTION_BUTTON_CLASS =
   'max-sm:inline-flex max-sm:items-center max-sm:justify-center max-sm:min-h-[44px] max-sm:min-w-[44px]'
 
-/** The mobile-only field label.
- *
- * ⚠️ `[overflow-wrap:normal]` (story 91.1, FR146, D1) stops the label
- * inheriting the cell's `overflow-wrap: anywhere`. With it inherited, the
- * label's min-content was one character and `justify-between` crushed it:
- * measured at 320px under DejaVu Sans, `N/A/M/E` one letter per line beside a
- * long name and `MONT/HLY/ALLO/CATIO/N`. Now it breaks only between words, so
- * its floor is its longest word. Unprefixed, and no `max-sm:` variant (the
- * label rule below): the label is `display: none` at and above `sm`. Do NOT
- * use `whitespace-nowrap` instead: a one-line `MONTHLY ALLOCATION` takes most
- * of a ~222px cell and leaves too little for the figure.
- *
- * ⚠️ `basis-0 grow` (story 91.1) makes the LABEL take only the width the value
- * leaves, never less than that longest-word floor (a flex item's `min-width:
- * auto`), so the value keeps its full one-line width whenever it fits and
- * shrinks (wrapping at a group) only when it does not. Flex otherwise shrinks
- * items in proportion to their one-line width, so a two-word label and the
- * figure beside it both wrapped: measured at 320px under DejaVu Sans, `CURRENT
- * BALANCE` held 114px over two lines while `$12,345.68` wrapped to `$12,` /
- * `345.68`. ⚠️ Do NOT swap in `shrink-[1000]` (the Retirement outlook's `dt`,
- * story 88.4 D7): measured, it still took ~0.02px from the value, more than
- * Chromium's 1/64px layout unit, so a figure that fitted exactly wrapped at
- * its `<wbr>` anyway (`$12,345,` / `678.90` beside a 130px label at 375px).
- * With nothing left to grow into, `justify-between` no longer matters. In the
- * stacked cells (`display: block`) and the column actions cell these do
- * nothing. */
+/**
+ * `[overflow-wrap:normal]` stops the label breaking mid-word; `basis-0 grow` gives the value its full
+ * width whenever it fits. Not `whitespace-nowrap` (starves the value) nor `shrink-[1000]` (still shaves it).
+ */
 export const FIELD_LABEL_CLASS =
   'sm:hidden text-xs font-medium uppercase tracking-wider text-muted [overflow-wrap:normal] basis-0 grow'
 
-/**
- * The mobile-only label for a single card field (AC-4): below `sm` the column
- * header row is hidden, so each value carries the header text beside it. Hidden
- * at >= 640px, where the real `<thead>` does the job.
- *
- * Declared at MODULE scope on purpose. A component defined inside a page body
- * gets a new function identity on every render, which forces React to unmount
- * and remount its subtree — the focus-loss failure this repo has already
- * shipped once and fixed. Never move this (or any other component) inside a
- * page component.
- */
+/** Module scope on purpose: a component defined in a page body remounts every render and loses focus. */
 export function FieldLabel({ children }: { children: ReactNode }) {
   return <span className={FIELD_LABEL_CLASS}>{children}</span>
 }

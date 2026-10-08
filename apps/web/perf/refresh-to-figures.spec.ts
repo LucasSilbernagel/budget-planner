@@ -1,116 +1,24 @@
 import { type Page, expect, test } from '@playwright/test'
 
-/**
- * M2 — refresh-to-figures (story 38.3, NFR9).
- *
- * ## What is measured
- *
- * Milliseconds from the document's navigation start (`performance.timeOrigin`,
- * which is what `performance.now()` counts from inside a freshly navigated
- * document) to the moment `[data-testid="overview-net-worth"]` holds the user's
- * REAL figure.
- *
- * ## The instrument OBSERVES the transition; it does not poll for it
- *
- * The figure arrives in a single frame. Story 38.2's review recorded what happens
- * when you assert on that with a locator: the new "client navigation does not
- * re-enter pending" test used auto-retrying `toHaveCount(0)` against a one-frame
- * flash, so reverting the fix left it passing 19/19. And
- * `loading-state.spec.ts:8-11` (deleted by story 84.4): "asserting on a raced `getByTestId()` right after
- * `goto` is flake, not a test."
- *
- * So the timestamp comes from a {@link MutationObserver} armed in
- * `addInitScript` — before any app script runs. The Playwright assertion that
- * follows is only a WAIT: it guarantees we do not read `window.__figure` before
- * the page resolved. It never supplies the number.
- *
- * ## ⚠️ The element already exists in the SSR HTML
- *
- * Story 38.2 kept the `<p data-testid="overview-net-worth">` and swapped only its
- * CONTENT for a skeleton — an explicit decision ("It asserted the resolved element
- * disappears. It does not, and it must not."). So the predicate keys on the TEXT
- * becoming a real currency figure, never on the element appearing. {@link isRealFigure}
- * additionally rejects `$0.00`, so a skeleton, an empty render, or a genuinely
- * empty store can never satisfy the metric.
- *
- * ## Manual only, outside every suite (story 84.5, D3, Lucas 2026-10-01)
- *
- * This file is the MEASUREMENT: the 11-sample medians at 1x and 4x CPU that
- * produced NFR9's numbers, with the throttle and cache controls. It lives in
- * `apps/web/perf/` and runs ONLY through `playwright.perf.config.ts`, which the
- * default `playwright test` (every gate, every CI run) never loads. It ran in no
- * gate before either: it was env-gated inside `e2e/`, and the four always-on
- * tests beside it checked the INSTRUMENT, not the app. Those were dropped; the
- * one app claim among them ("the SSR response carries NO chart library") moved to
- * `src/__tests__/served-pages.served.test.ts`.
- *
- * Run it against a production build you started yourself (a number measured
- * against a Vite dev server is a number about Vite, not about the app):
- *
- *   pnpm --filter web build
- *   cd apps/web && DATABASE_URL='' PORT=8080 node server-entry.mjs   # leave running
- *   cd apps/web && PLAYWRIGHT_BASE_URL=http://localhost:8080 \
- *     ./node_modules/.bin/playwright test --config playwright.perf.config.ts
- *
- * (Exactly what ran at story 84.5's close: `84-5-evidence/perf-run.log`.)
- *
- * ⚠️ **Never turn M2 into a CI assertion.** A shared CI runner's timings are a
- * property of the runner, and the repo already carries the lesson that a flaky
- * gate invites re-running until green.
- */
+// Manual measurement only (playwright.perf.config.ts) against a production build you
+// started. Never a CI assertion: shared-runner timings belong to the runner.
 
-/**
- * Budget for a WAIT (a first load can be slow, e.g. a cold server or a throttled
- * CPU). NOT a performance budget — no
- * assertion in this file compares against it.
- */
+// A MutationObserver armed before any app script timestamps the figure. The element is
+// already in the SSR HTML, so the predicate keys on its text, never its appearance.
+
+/** A wait budget, not a performance budget. */
 const COLD_COMPILE_TIMEOUT_MS = 60_000
 
-/** Sample count per condition. Odd, so the median is a real reading. */
+/** Odd, so the median is a real reading. */
 const SAMPLES = 11
 
-/**
- * The seeded data size, stated as a number of rows so the measurement is
- * reproducible from the story text alone (AC-3).
- *
- * 3 income + 5 expenses + 2 savings goals + 4 balance entries = 14 rows across
- * four persisted stores.
- */
 const SEED_SIZE = { income: 3, expenses: 5, savingsGoals: 2, balanceEntries: 4 } as const
 
-/**
- * Net worth is `investments + savings − debts` (`hooks/useNetWorth.ts`).
- * From the seed below, in cents:
- *   investments 800_000 + 4_200_000 = 5_000_000
- *   savings       250_000 +  50_000 =   300_000
- *   debts         350_000 +  45_000 =   395_000
- *   → 5_000_000 + 300_000 − 395_000 = 4_905_000 cents
- *
- * The store default currency is `$`/USD, and nothing in the seed changes it.
- */
+// investments 5_000_000 + savings 300_000 − debts 395_000 = 4_905_000 cents
 const EXPECTED_NET_WORTH = '$49,050.00'
 
-/**
- * Fixed UUIDs and a fixed timestamp — `crypto.randomUUID()` and `new Date()` would
- * make the run unreproducible, which is the one thing a baseline may not be.
- *
- * Every envelope carries its OWN store's current version — 3 for income/expenses/
- * savings, 4 for balance — so no `migrate` runs. That is deliberate: a returning
- * user's storage is at the current version, and the migration path is not what
- * this story measures.
- *
- * ⚠️ The versions are NOT uniform and must not be "tidied" back to a single
- * number. Story 49.1 bumped `balanceStore` to 4 (it strips a retired key); until
- * this note the balance envelope still said 3, which silently put `/balance`
- * through `migrate` on every run and made this comment's own claim false while
- * every assertion stayed green. Check `<store>.ts`'s `persist` options when
- * adding an envelope.
- *
- * ⚠️ The savings store is seeded on purpose and must stay seeded. Story 38.1's
- * Trap 6: a balance-only seed flips the Overview's net worth with ZERO hydration
- * errors, because both balance selectors are pure. **The seed, not the assertion,
- * decides whether a detector can fire.**
- */
+// Each envelope carries its own store's current version (they differ), so no migrate
+// runs. Savings must stay seeded: balance selectors are pure and can't detect anything.
 function seedOverview() {
   const now = '2026-01-01T00:00:00.000Z'
   const id = (n: number) => `11111111-1111-4111-8111-${String(n).padStart(12, '0')}`
@@ -199,7 +107,7 @@ function seedOverview() {
           },
         ],
       },
-      version: 4, // balanceStore is at 4 since story 49.1 — see the note above
+      version: 4,
     })
   )
 
@@ -306,24 +214,16 @@ function seedOverview() {
   )
 }
 
-/** What {@link armFigureObserver} leaves on `window`. */
 interface FigureReading {
-  /** `performance.now()` at the first real figure, or `null` if it never arrived. */
   at: number | null
-  /** The text that satisfied the predicate. */
   text: string | null
-  /** `'observer'` on the normal path; `'initial'` means it was already resolved at document start. */
   source: 'observer' | 'initial' | null
-  /** Whether the MutationObserver callback ever ran at all. */
   observerRan: boolean
 }
 
 /**
- * Arm the instrument. Must be installed with `page.addInitScript` BEFORE `goto`.
- *
- * ⚠️ `source` is the anti-vacuity field. If a future change made the figure present
- * at document start, `at` would still be a number and the test would still pass —
- * but it would be measuring nothing. {@link assertHonest} requires `'observer'`.
+ * Install before goto. `source` is anti-vacuity: a figure already present at document
+ * start would measure nothing, so assertHonest requires 'observer'.
  */
 function armFigureObserver() {
   const w = window as unknown as { __figure?: FigureReading }
@@ -336,15 +236,8 @@ function armFigureObserver() {
     return text === undefined || text === '' ? null : text
   }
 
-  // A real figure is currency-shaped AND not the confident zero. Story 38.2 removed
-  // every `$0.00` from the server response for `/`; if one ever comes back, this
-  // metric must not count it as the user's figure.
-  // ⚠️ Both halves were loosened by code review's counter-examples. The shape check
-  // used to be `[\d,]+`, which accepts `$,.00` and `$1,2,3.00`; it now requires
-  // well-formed thousands groups. And the zero check used to be an exact compare
-  // against `'$0.00'`, which let `-$0.00` — a real `Intl` output for a negative
-  // near-zero — count as the user's figure, in an instrument documented as one a
-  // zero can never satisfy. Parsing the number closes both.
+  // Currency-shaped with well-formed groups, and nonzero once parsed: `-$0.00` is a real
+  // Intl output that must not count as the user's figure.
   const isRealFigure = (text: string | null): boolean => {
     if (text === null || !/^-?\$\d{1,3}(?:,\d{3})*\.\d{2}$/.test(text)) {
       return false
@@ -372,57 +265,25 @@ function armFigureObserver() {
 }
 
 /**
- * A named measurement condition. `network: null` means unthrottled transport.
- *
- * ⚠️ **The loopback condition flatters a byte saving into invisibility, and that
- * is why more than one condition is measured here.** Serving from the same
- * machine, 110 KB of gzipped JavaScript arrives in ~0 ms, so removing it can only
- * save the parse/compile time — a fraction of what the same removal saves a user
- * on a real connection, where the bytes must also cross the wire. Measuring only
- * over loopback would understate the change; measuring only over a modelled
- * network would overstate the confidence. Both are reported.
+ * Loopback delivers bytes in ~0 ms, hiding what a byte saving costs in transfer, so
+ * more than one condition is measured.
  */
 interface Condition {
   name: string
   cpu: number
   network: { downloadKbps: number; uploadKbps: number; latencyMs: number } | null
-  /**
-   * Serve every asset from the network instead of the HTTP cache.
-   *
-   * ⚠️ This flag is what separates "the browser must fetch everything again" from
-   * "…over a modelled connection", and adding it is how the removed Fast-3G arm was
-   * shown to be inert. A REFRESH re-reads its JavaScript from the HTTP cache, so for
-   * the returning user this story is about, a byte saving buys parse time, not
-   * transfer time. Transfer is what a FIRST visit pays — which is what this models.
-   */
+  /** A refresh re-reads JS from the HTTP cache; a cold cache models a first visit. */
   coldCache: boolean
 }
 
-/**
- * The conditions the story reports.
- *
- * ⚠️ **A modelled "Fast 3G" arm was REMOVED here rather than fixed.** It was measured
- * against a cold-cache loopback arm added specifically to separate cache from
- * bandwidth, and the two came out at 610.0ms vs 610.6ms — `Network.emulateNetworkConditions`
- * was contributing nothing through this harness. Keeping it would have meant shipping
- * a condition whose LABEL claimed a modelled connection it did not have, which is the
- * failure this story exists to avoid. No bandwidth claim is made anywhere; the
- * cold-cache arm carries the first-visit case instead.
- */
+// No modelled-network arm: emulateNetworkConditions measurably contributed nothing
+// through this harness.
 const CONDITIONS: Condition[] = [
-  // What a RETURNING user experiences: the assets are already cached, so a byte
-  // saving buys parse time only.
   { name: 'cpu 1x, loopback, warm cache', cpu: 1, network: null, coldCache: false },
   { name: 'cpu 4x, loopback, warm cache', cpu: 4, network: null, coldCache: false },
-  // What a FIRST visit pays, and the only condition here under which removing bytes
-  // can save transfer rather than only parse time.
   { name: 'cpu 4x, loopback, cold cache', cpu: 4, network: null, coldCache: true },
 ]
 
-/**
- * Apply a condition for the life of this page. `cpu: 1` with `network: null` is
- * no throttling at all.
- */
 async function applyCondition(page: Page, condition: Condition): Promise<void> {
   const client = await page.context().newCDPSession(page)
   await client.send('Emulation.setCPUThrottlingRate', { rate: condition.cpu })
@@ -439,26 +300,18 @@ async function applyCondition(page: Page, condition: Condition): Promise<void> {
   }
 }
 
-/**
- * One measurement. Returns the reading the in-page observer recorded.
- *
- * `about:blank` first so every sample is an unambiguously fresh document with the
- * init scripts re-run, rather than relying on `goto`-to-the-same-URL semantics.
- */
+/** `about:blank` first, so every sample is a fresh document with init scripts re-run. */
 async function measureOnce(page: Page): Promise<FigureReading> {
   await page.goto('about:blank')
   await page.goto('/', { waitUntil: 'commit' })
-  // A WAIT, not the measurement: the number is already recorded in-page by the
-  // time this resolves, so a longer timeout cannot inflate it. (It was sized for a
-  // cold Vite dev server, where the 5 s default failed at ~5.1 s, when this file
-  // still ran in `e2e/`.)
+  // A wait, not the measurement: the number is recorded in-page first, so a longer
+  // timeout can't inflate it.
   await expect(page.getByTestId('overview-net-worth')).toHaveText(EXPECTED_NET_WORTH, {
     timeout: COLD_COMPILE_TIMEOUT_MS,
   })
   return await page.evaluate(() => (window as unknown as { __figure: FigureReading }).__figure)
 }
 
-/** Every reading must be observed, real, and equal to the seeded figure. */
 function assertHonest(reading: FigureReading): void {
   expect(reading.observerRan, 'the MutationObserver never ran — the instrument was not armed').toBe(
     true
@@ -482,7 +335,6 @@ test.describe('refresh-to-figures (story 38.3, NFR9)', () => {
     await page.addInitScript(armFigureObserver)
   })
 
-  /** The numbers the story reports. Recipe: this file's header. */
   test.describe('MEASUREMENT', () => {
     test('medians under each named condition, with the throttle control', async ({ page }) => {
       expect(
@@ -491,9 +343,7 @@ test.describe('refresh-to-figures (story 38.3, NFR9)', () => {
       ).toBeTruthy()
       test.setTimeout(900_000)
 
-      // AC-2 pins 1280x720 and says "name it, do not rely on it being implied" —
-      // so assert it. A `playwright.config.ts` change would otherwise move the
-      // measured viewport silently, and every recorded median with it.
+      // A config change would otherwise silently move every recorded median.
       expect(page.viewportSize()).toEqual({ width: 1280, height: 720 })
 
       const medians = new Map<string, number>()
@@ -517,13 +367,8 @@ test.describe('refresh-to-figures (story 38.3, NFR9)', () => {
         )
       }
 
-      // ⚠️ THE THROTTLE CONTROL, AND IT IS THE POINT OF THIS TEST (AC-5.1).
-      // If `Emulation.setCPUThrottlingRate` silently failed — a renamed CDP
-      // method, a browser that ignored it, a session opened against the wrong
-      // target — every loop would measure an UNTHROTTLED page and the "4x"
-      // figures would be fabrications indistinguishable from real ones. That is
-      // exactly the shape story 37.1 shipped: a number labelled measured that was
-      // never computed. Asserting the ratios is what makes the label earned.
+      // Throttle control: if CPU throttling silently failed, every "4x" figure would be an
+      // unthrottled reading under a false label.
       const fast = medians.get('cpu 1x, loopback, warm cache') as number
       const slowCpu = medians.get('cpu 4x, loopback, warm cache') as number
       const cold = medians.get('cpu 4x, loopback, cold cache') as number
@@ -538,12 +383,7 @@ test.describe('refresh-to-figures (story 38.3, NFR9)', () => {
         1
       )}ms) — the CPU throttle did not take, so neither figure means what it says`
       expect(slowCpu, cpuWhy).toBeGreaterThan(fast * 1.5)
-      // ⚠️ This compares cold-cache against warm-cache at the SAME cpu rate, so
-      // exactly one variable changes. The assertion it replaced compared a
-      // Fast-3G-cold arm against a loopback-WARM arm and blamed
-      // `Network.emulateNetworkConditions` for a gap the disabled cache produced on
-      // its own — it passed on a run where the story's own diagnostic measured the
-      // emulation contributing nothing (610.6ms vs 610.0ms).
+      // Same cpu rate, so exactly one variable (the cache) changes.
       const cacheWhy = `the cold-cache median (${cold.toFixed(
         1
       )}ms) is not above the warm-cache median at the same CPU rate (${slowCpu.toFixed(

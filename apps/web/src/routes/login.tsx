@@ -1,16 +1,3 @@
-/**
- * Login Page
- *
- * Passwordless email magic-link sign-in (Story 5-16). A returning paid user
- * enters their email and receives a one-time link; opening it mints the signed
- * session. Account creation happens at Paddle Billing checkout (Story 5-3), not
- * here — this page is re-authentication only.
- *
- * Route: /login
- *
- * Data Sovereignty: the sign-in email is sent via an EU-resident provider (NFR1/NFR2).
- */
-
 import { MagicLinkForm } from '@/components/auth/magic-link-form'
 import { getSessionSeed } from '@/server/api/auth/session-seed'
 import { createFileRoute, redirect } from '@tanstack/react-router'
@@ -18,22 +5,12 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 // Exported because `routeTree.gen.ts` infers `LoginRoute` from `validateSearch`'s
 // return type and cannot name a type that is module-private (TS4023).
 export interface LoginSearch {
-  /** Generic error code from a failed verify redirect (e.g. invalid_or_expired). */
   error?: string
 }
 
 export const Route = createFileRoute('/login')({
-  // The only route guard in the app (see `routes/retirement.tsx` for why every
-  // other gate prefers rendering an in-place notice over a redirect): a signed-in
-  // user has nothing to do on a sign-IN form, and leaving them on it risks them
-  // re-entering their email against an already-authenticated session. Reuses the
-  // same server-only resolver the root loader seeds the first paint with, so an
-  // authenticated visitor never sees the form flash before bouncing to `/`.
-  // During SSR this shares the root loader's lookup (one per request, see
-  // `server/api/auth/session-lookup-once.ts`); a client navigation here is its
-  // own request, so it always checks the session fresh. A
-  // `null` seed (resolver errored/unverified) is treated as signed-out — fail
-  // open to the form rather than trap an uncertain session on a redirect loop.
+  // A null seed (resolver errored) counts as signed-out: fail open to the form
+  // rather than risk a redirect loop.
   beforeLoad: async () => {
     const seed = await getSessionSeed()
     if (seed?.isAuthenticated) {
@@ -58,7 +35,6 @@ export const Route = createFileRoute('/login')({
   component: LoginPage,
 })
 
-/** Map an opaque error code to a generic, non-enumerating message. */
 function errorMessage(code: string | undefined): string | undefined {
   if (code === 'invalid_or_expired') {
     return 'That sign-in link was invalid or has expired. Please request a new one.'
@@ -72,13 +48,11 @@ function LoginPage() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center surface-sunken p-4">
       <div className="w-full max-w-md">
-        {/* Logo / Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-heading">Longhand Budget</h1>
           <p className="text-body mt-2">Track your finances with privacy and control</p>
         </div>
 
-        {/* Auth Card */}
         <div className="surface shadow-md rounded-2xl p-6 sm:p-8 border border-default">
           <div className="text-center">
             <h2 className="text-2xl font-semibold text-heading mb-2">Sign in</h2>
@@ -88,14 +62,8 @@ function LoginPage() {
             </p>
           </div>
 
-          {/* New-customer panel (UX review, 2026-09-14): this page only ever
-              re-authenticates an EXISTING account — magic-link login silently
-              no-ops for an unknown email (no enumeration signal) — and account
-              creation happens ONLY via a completed Paddle checkout. Someone who
-              landed here without ever buying had no way to learn that; this
-              mirrors the "No account needed" panel below (same pattern,
-              pointed the other direction), placed above the form so it's seen
-              before typing an email that will just silently go nowhere. */}
+          {/* Magic-link login silently no-ops for unknown emails and accounts are only
+              created by checkout, so tell newcomers before they type. */}
           <div className="mb-6 p-4 surface-inset rounded-lg border border-default text-left">
             <h3 className="font-medium text-heading mb-1">New here?</h3>
             <p className="text-sm text-body">
@@ -109,7 +77,6 @@ function LoginPage() {
             </a>
           </div>
 
-          {/* Magic-link email form */}
           <MagicLinkForm initialError={errorMessage(error)} />
 
           <div className="mt-4 text-center text-sm text-muted">
@@ -125,9 +92,7 @@ function LoginPage() {
             </p>
           </div>
 
-          {/* Free Tier Notice — `.surface-inset`, not `.surface-sunken`: this
-              panel is nested ON the auth card, so it should read a touch lighter
-              than the gray-800 card rather than matching the gray-900 canvas. */}
+          {/* surface-inset, not surface-sunken: nested on the card, so it reads lighter. */}
           <div className="mt-6 p-4 surface-inset rounded-lg border border-default">
             <h3 className="font-medium text-heading mb-1">No account needed</h3>
             <p className="text-sm text-body">

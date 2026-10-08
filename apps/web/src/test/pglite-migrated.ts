@@ -1,12 +1,3 @@
-/**
- * A PGlite database with the real migration chain applied (story 83.1).
- *
- * The same loader the `*.db.test.ts` files inline (e.g.
- * `server/functions/__tests__/forecastingProfiles.create-race.db.test.ts`):
- * the drizzle-kit journal, in index order, split on `--> statement-breakpoint`.
- * Shared here so the new route and chain tests do not add three more copies.
- */
-
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { PGlite } from '@electric-sql/pglite'

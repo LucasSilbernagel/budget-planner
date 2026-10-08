@@ -1,15 +1,4 @@
-/**
- * Tests for the migrate container's status server (Story 5-18, AC-3).
- *
- * This is the pipeline's ONLY verdict channel. Readiness deliberately does not
- * encode the migration outcome (story D3): `/healthz` answers "the container
- * booted", and `/migrate-status` answers "what happened", so a failed migration,
- * a broken image and a slow start are three distinguishable signals rather than
- * one indistinguishable `--wait` timeout.
- *
- * Exercised over a real loopback server, not just the listener function, because
- * the bearer check and the 404 fallthrough are the security-relevant parts.
- */
+/** Over a real loopback server: the bearer check and 404 fallthrough are the security-relevant parts. */
 
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
@@ -43,12 +32,7 @@ afterEach(async () => {
   )
 })
 
-/**
- * Send a hand-written request line and return the parsed status + body.
- *
- * Needed because every HTTP client normalises the target before sending: to test
- * what the SERVER does with an odd target, the bytes have to be written directly.
- */
+/** Raw request line, because every HTTP client normalises the target before sending. */
 function rawRequest(base: string, requestLine: string): Promise<{ status: number; body: string }> {
   const { port } = new URL(base)
   return new Promise((resolve, reject) => {
@@ -82,9 +66,6 @@ async function startServer(options: Record<string, unknown>): Promise<string> {
 }
 
 describe('createMigrateStatusListener', () => {
-  // Without a token the status endpoint would be an open description of the
-  // production database's migration state. Refusing at construction means the
-  // container fails to boot rather than coming up unguarded.
   it.each([[undefined], [''], ['   ']])(
     'refuses to be constructed without a token (%j)',
     (token) => {
@@ -95,8 +76,6 @@ describe('createMigrateStatusListener', () => {
   )
 
   it('answers the health path with 200 and no credentials', async () => {
-    // Knative's readiness probe carries no Authorization header, so this path
-    // must be open — it reveals only that a process is listening.
     const base = await startServer({ token: TOKEN, readState: () => ({ state: 'running' }) })
     const response = await fetch(`${base}/healthz`)
 
@@ -154,8 +133,6 @@ describe('createMigrateStatusListener', () => {
     ['no header at all', undefined],
     ['an empty bearer', 'Bearer '],
     ['the wrong token', `Bearer ${'b'.repeat(64)}`],
-    // Length mismatch is the case that makes a naive timingSafeEqual THROW,
-    // which would surface as a 500 and read like a broken container.
     ['a shorter token', 'Bearer short'],
     ['a longer token', `Bearer ${'a'.repeat(128)}`],
     ['the token without the scheme', TOKEN],
@@ -193,12 +170,8 @@ describe('createMigrateStatusListener', () => {
     }
   })
 
-  // ⚠️ These go over a RAW SOCKET, not `fetch`. Code review 2026-09-15 caught the
-  // earlier version asserting nothing: undici normalises `/migrate-status/../healthz`
-  // to `/healthz` in the CLIENT before it ever reaches the wire, so the server's
-  // own parsing was never exercised and the test passed even against a literal
-  // string comparison. Writing the request line by hand is the only way to put an
-  // unnormalised target in front of the listener.
+  // Raw socket, not fetch: undici normalises `..` client-side, so the server's
+  // own parsing would never be exercised.
   it('resolves dot segments server-side, and cannot traverse into the guarded endpoint', async () => {
     const base = await startServer({ token: TOKEN, readState: () => ({ state: 'failed' }) })
 
@@ -213,12 +186,8 @@ describe('createMigrateStatusListener', () => {
     expect(toStatus.body).not.toContain('failed')
   })
 
-  // Node's HTTP parser accepts absolute-form request targets whose authority the
-  // WHATWG URL parser rejects, and hands them to the listener verbatim. An
-  // unguarded `new URL()` throws there — an UNCAUGHT exception inside a request
-  // listener, which exits the process. On this container that means killing a
-  // running migration, from an unauthenticated request, on a publicly routable
-  // URL that is printed into the run log. Found by code review 2026-09-15.
+  // Node's parser accepts absolute-form targets that new URL() rejects; unguarded,
+  // the throw would exit the process mid-migration.
   it.each([
     ['an out-of-range port', 'GET http://a:99999/ HTTP/1.1'],
     ['a non-numeric port', 'GET http://a:b/ HTTP/1.1'],
@@ -248,13 +217,6 @@ describe('createMigrateStatusListener', () => {
   })
 })
 
-/**
- * The idle listener exists because a permanent migrate container whose credentials
- * have been stripped used to `exit(1)` and crash-loop — revision
- * `budget-planner-migrator-00005`, four restarts, a CrashLoopBackOff email from the
- * platform, 2026-09-16. Nothing was actually wrong; the container just had no way
- * to say "nothing to do".
- */
 describe('createIdleHealthListener (unconfigured migrate container)', () => {
   it('answers the health path so the revision goes Ready instead of crash-looping', async () => {
     const server = createServer(createIdleHealthListener({}))
@@ -278,8 +240,8 @@ describe('createIdleHealthListener (unconfigured migrate container)', () => {
     for (const path of ['/migrate-status', '/', '/api/ready']) {
       const response = await fetch(`http://127.0.0.1:${port}${path}`)
       expect(response.status, `expected 404 for ${path}`).toBe(404)
-      // Crucially it must not look like a verdict: the pipeline's poll must fail,
-      // not read a success from a container that did nothing.
+      // It must not look like a verdict: the pipeline's poll must fail, not read a
+      // success from a container that did nothing.
       expect(await response.text()).not.toMatch(/succeeded|state/)
     }
   })
@@ -307,10 +269,7 @@ describe('createIdleHealthListener (unconfigured migrate container)', () => {
   })
 })
 
-/**
- * The entrypoint must choose idle vs configured as a unit: a PARTIAL configuration
- * is a mistake, not a configuration, and migrating on it would be worse than idling.
- */
+/** A partial configuration is a mistake: migrating on it would be worse than idling. */
 describe('migrate-entry idle gating (source-level)', () => {
   const entry = readFileSync(new URL('../../../migrate-entry.mjs', import.meta.url), 'utf8')
 

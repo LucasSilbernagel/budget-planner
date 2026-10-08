@@ -7,33 +7,11 @@ import type { BillingInterval, SubscriptionStatus } from '@budget-planner/db/src
 import { useEffect, useRef, useState } from 'react'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 
-/**
- * Account controls on the consolidated `/settings` surface (Story 10-5).
- *
- * Home for the self-serve account-deletion control (AC-4), folded into the
- * story 11-6 settings surface rather than a standalone `/account` route
- * (resolved decision #1, 2026-07-04). Also surfaces sign-out — before this
- * there was NO signed-in place to log out. This component uses a plain
- * `fetch('/api/auth/me')` rather than react-query (the app mounts no
- * `QueryClientProvider`). It also avoided the client-bundled
- * `checkPremiumAccessServer` "Buffer is not defined" hazard, which story 83.1
- * removed (the premium hook now asks this route too). The same fetch pattern
- * backs the persistent `AuthIndicator` (story 13-2).
- *
- * AC-4: the whole section renders ONLY for an authenticated user — free /
- * unauthenticated visitors (and the pre-resolution loading state) see nothing,
- * so the destructive control is never exposed to them (fail-closed).
- */
-
 interface CurrentUser {
   userId: string
   email: string
   subscriptionStatus: SubscriptionStatus
-  /**
-   * Story 70.1. Optional because a server that predates the field (a rolling
-   * deploy) omits it; absent is read as "not known" — "Active" for an active
-   * subscriber, "Payment overdue" for a past-due one (see `planLabel`).
-   */
+  // Optional: an older server mid-deploy omits it; absent reads as "not known".
   billingInterval?: BillingInterval | null
 }
 
@@ -68,7 +46,6 @@ export function AccountSection() {
         setAuthState(user ? { status: 'authenticated', user } : { status: 'unauthenticated' })
       })
       .catch(() => {
-        // Fail closed: any failure resolving the session hides the controls.
         if (active) {
           setAuthState({ status: 'unauthenticated' })
         }
@@ -78,20 +55,14 @@ export function AccountSection() {
     }
   }, [])
 
-  // Sign-out is the shared implementation in `lib/account/sign-out.ts` (story
-  // 59.3), also called by the chrome's account menu. Its docblock records why
-  // it is a full document load and not a client-side navigation.
   const [isSigningOut, setIsSigningOut] = useState(false)
   const handleSignOut = async (): Promise<void> => {
-    // No re-entry guard here: `disabled` stops a second click and `signOut()`
-    // dedupes at module level (which is also what stops the chrome's Sign out
-    // from firing a second POST while this one is in flight).
+    // No re-entry guard: `disabled` blocks a second click and `signOut()` dedupes at module level.
     setIsSigningOut(true)
     try {
       await signOut()
     } finally {
-      // Reset, so a sign-out that timed out rather than navigating leaves the
-      // button usable (review: a hung POST disabled it permanently).
+      // Reset so a sign-out that timed out rather than navigating leaves the button usable.
       setIsSigningOut(false)
     }
   }
@@ -105,8 +76,6 @@ export function AccountSection() {
     setIsDeleting(true)
     setError(null)
 
-    // Phase 1: the server call. A failure HERE means nothing was deleted — show
-    // the inline error and close the dialog so it is not occluded by the overlay.
     try {
       const response = await fetch('/api/account/delete', { method: 'POST' })
       if (!response.ok) {
@@ -119,38 +88,25 @@ export function AccountSection() {
       return
     }
 
-    // Phase 2: past this point the account is IRREVERSIBLY deleted server-side
-    // and the session cookie is cleared. Local cleanup + sign-out are
-    // best-effort and must NEVER be reported as a deletion failure. No setState
-    // after navigation (the component unmounts on redirect).
-    // AC-5: purge locally persisted financial data (incl. the durable sync queue)
-    // so a signed-out browser does not still show/retain the deleted numbers.
+    // Past here the account is irreversibly deleted; local cleanup and sign-out are
+    // best-effort and must never surface as a deletion failure.
     await purgeLocalFinancialData(userId)
-    // Story 101.1 (FR167): the service worker's cached pages carry the deleted
-    // account's seed (its email). Bounded and never rejects.
+    // The service worker's cached pages carry the deleted account's email.
     await purgeAppShellCache()
     setIsConfirmOpen(false)
     try {
       returnToSignedOutHome()
     } catch (error) {
-      // Account is already gone; a redirect hiccup must not become a false error.
       console.error('Account deleted, but sign-out redirect failed', error)
     }
   }
 
-  // AC-4: never render the destructive control for unauthenticated/loading.
   if (authState.status !== 'authenticated') {
     return null
   }
 
-  // Story 5-19 AC-6: deletion cancels the Paddle subscription with
-  // `effective_from: 'immediately'`, so remaining paid time is forfeited. The
-  // product decision was to KEEP that (a subscription outliving its deleted
-  // user row lets a later webhook resurrect the account) and to say so plainly
-  // instead. Shown only to someone who actually HAS paid access — telling a
-  // free or already-cancelled user their subscription is about to end would be
-  // a lie about their own account.
-  // Only live paid access has anything to forfeit; `canceled` has already ended.
+  // Deletion cancels the subscription immediately, forfeiting paid time. Deliberate:
+  // a subscription outliving the user row could resurrect the account via webhook.
   const billingForfeitureNotice = hasPaidAccess(authState.user.subscriptionStatus)
     ? ' Your Premium subscription is cancelled immediately — any remaining paid time is forfeited and will not be refunded.'
     : ''
@@ -174,25 +130,10 @@ export function AccountSection() {
             <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
               {authState.user.email}
             </span>
-            {/* Story 70.1: the plan NAME, not the raw status enum — which is what
-                made monthly and annual both read "Active", and (through CSS
-                `capitalize`) rendered `past_due` as "Past_due". */}
             <span className="text-xs text-gray-500 dark:text-gray-400">
               {planLabel(authState.user.subscriptionStatus, authState.user.billingInterval)}
             </span>
           </div>
-          {/* Story 70.2 (FR112): a border and a background at REST, since a
-              touch user never hovers. The recipe is Clear local data's
-              (`local-data-section.tsx`), so the page's secondary actions match.
-              The border carries the affordance, since the fill equals the
-              card's in both themes, so it is gray-500 to reach 3:1 against
-              that fill (4.83 light, 3.04 dark; review decision, Lucas
-              2026-09-25). A test pins the two buttons' classes together.
-              Outlined and neutral, so it stays
-              subordinate to Delete account's solid red. ⚠️ The account menu's
-              Sign out (`auth-indicator.tsx`, `SIGN_OUT_CLASS`) deliberately
-              keeps the menu-row style. Inside that panel the panel is the
-              affordance, and story 69.2 made its rows match each other. */}
           <button
             type="button"
             onClick={handleSignOut}
