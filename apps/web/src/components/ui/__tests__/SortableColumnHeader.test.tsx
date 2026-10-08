@@ -1,7 +1,14 @@
 import { assertHasFocusRing } from '@/test/responsive-table-tokens'
 import { fireEvent, renderWithProviders, screen } from '@/test/utils'
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { SortableColumnHeader } from '../SortableColumnHeader'
+import {
+  type AriaSortValue,
+  type SortState,
+  ariaSortFor,
+  nextSortState,
+} from '../../../lib/table-sort'
+import { SortableColumnHeader, useSortHeaderAnnouncements } from '../SortableColumnHeader'
 
 /**
  * The sortable column header (story 34.2, FR61).
@@ -13,20 +20,84 @@ import { SortableColumnHeader } from '../SortableColumnHeader'
  * They were MIGRATED, not dropped.
  */
 
-function renderHeader(ariaSort: 'ascending' | 'descending' | 'none') {
+function HeaderHarness({
+  ariaSort,
+  onToggle,
+  onActivate,
+}: {
+  ariaSort: AriaSortValue
+  onToggle: () => void
+  onActivate?: () => void
+}) {
+  const a11y = useSortHeaderAnnouncements(null)
+  return (
+    <>
+      <table>
+        <thead>
+          <tr>
+            <SortableColumnHeader
+              label="Amount"
+              ariaSort={ariaSort}
+              onToggle={onToggle}
+              describedBy={a11y.describedBy(ariaSort)}
+              onActivate={onActivate ?? a11y.markActivated}
+            />
+          </tr>
+        </thead>
+      </table>
+      {a11y.nodes}
+    </>
+  )
+}
+
+function renderHeader(ariaSort: AriaSortValue, onActivate?: () => void) {
   const onToggle = vi.fn()
-  const { container } = renderWithProviders(
-    <table>
-      <thead>
-        <tr>
-          <SortableColumnHeader label="Amount" ariaSort={ariaSort} onToggle={onToggle} />
-        </tr>
-      </thead>
-    </table>
+  const { container, unmount } = renderWithProviders(
+    <HeaderHarness ariaSort={ariaSort} onToggle={onToggle} onActivate={onActivate} />
   )
   const th = container.querySelector('th')
   if (!th) throw new Error('no <th> rendered')
-  return { onToggle, th }
+  return { onToggle, th, unmount }
+}
+
+/**
+ * A table whose sort the test drives directly: `toggle` is the header path (it
+ * cycles like `nextSortState`), `restore` is any other writer (the mobile picker,
+ * a rehydrated store), which must NOT announce (story 120.1, D2).
+ */
+function AnnouncingTable() {
+  const [state, setState] = useState<SortState<'amount'> | null>(null)
+  const a11y = useSortHeaderAnnouncements(
+    state ? { label: 'Amount', direction: state.direction } : null
+  )
+  const ariaSort = ariaSortFor(state, 'amount')
+  return (
+    <>
+      <button type="button" onClick={() => setState({ key: 'amount', direction: 'desc' })}>
+        restore
+      </button>
+      <table>
+        <thead>
+          <tr>
+            <SortableColumnHeader
+              label="Amount"
+              ariaSort={ariaSort}
+              onToggle={() => setState((s) => nextSortState(s, 'amount'))}
+              describedBy={a11y.describedBy(ariaSort)}
+              onActivate={a11y.markActivated}
+            />
+          </tr>
+        </thead>
+      </table>
+      {a11y.nodes}
+    </>
+  )
+}
+
+function liveRegion(container: HTMLElement): HTMLElement {
+  const region = container.querySelector<HTMLElement>('[aria-live="polite"]')
+  if (!region) throw new Error('no live region rendered')
+  return region
 }
 
 describe('SortableColumnHeader', () => {
@@ -102,5 +173,83 @@ describe('SortableColumnHeader', () => {
     const classes = screen.getByRole('button', { name: 'Amount' }).className
     expect(classes).not.toContain('min-h-[44px]')
     expect(classes).not.toContain('min-w-[44px]')
+  })
+})
+
+describe('sortable header screen-reader state (story 120.1, FR188)', () => {
+  it('describes the button as sortable plus its current state, keeping name and <th> text', () => {
+    // ⚠️ `aria-sort="none"` is generally NOT announced, so before 120.1 an
+    // unsorted header read as "Amount, button". The description says it sorts.
+    const expected = {
+      none: 'Sortable column, not sorted',
+      ascending: 'Sortable column, sorted ascending',
+      descending: 'Sortable column, sorted descending',
+    } as const
+    for (const state of ['none', 'ascending', 'descending'] as const) {
+      const { th, unmount } = renderHeader(state)
+      const button = screen.getByRole('button', { name: 'Amount' })
+      expect(button).toHaveAccessibleDescription(expected[state])
+      // The description node is OUTSIDE the <th>: its text content is unchanged.
+      expect(th.textContent?.trim()).toBe('Amount')
+      unmount()
+    }
+  })
+
+  it('runs onActivate BEFORE onToggle, so the resulting change is announced', () => {
+    const calls: string[] = []
+    const { onToggle } = renderHeader('none', () => calls.push('activate'))
+    onToggle.mockImplementation(() => calls.push('toggle'))
+    fireEvent.click(screen.getByRole('button', { name: 'Amount' }))
+    expect(calls).toEqual(['activate', 'toggle'])
+  })
+
+  it('announces each header click in a polite live region, from an empty start', () => {
+    const { container } = renderWithProviders(<AnnouncingTable />)
+    const region = liveRegion(container)
+    expect(region).toHaveAttribute('aria-atomic', 'true')
+    expect(region).not.toHaveAttribute('role')
+    expect(region.textContent).toBe('')
+    // Never inside the table (AC 6).
+    expect(region.closest('table')).toBeNull()
+
+    const header = () => screen.getByRole('button', { name: 'Amount' })
+    fireEvent.click(header())
+    expect(region.textContent).toBe('Sorted by Amount, ascending')
+    expect(screen.getByRole('columnheader')).toHaveAttribute('aria-sort', 'ascending')
+    fireEvent.click(header())
+    expect(region.textContent).toBe('Sorted by Amount, descending')
+    fireEvent.click(header())
+    expect(region.textContent).toBe('Sort cleared')
+    expect(screen.getByRole('columnheader')).toHaveAttribute('aria-sort', 'none')
+  })
+
+  it('stays silent when the sort changes WITHOUT a header click (picker, rehydrate)', () => {
+    const { container } = renderWithProviders(<AnnouncingTable />)
+    fireEvent.click(screen.getByRole('button', { name: 'restore' }))
+    // The description follows the state; the live region does not speak.
+    expect(screen.getByRole('button', { name: 'Amount' })).toHaveAccessibleDescription(
+      'Sortable column, sorted descending'
+    )
+    expect(liveRegion(container).textContent).toBe('')
+  })
+
+  it('empties the region on a silent change, so a repeat of the last message is still announced (code review)', () => {
+    const { container } = renderWithProviders(<AnnouncingTable />)
+    const region = liveRegion(container)
+    const header = () => screen.getByRole('button', { name: 'Amount' })
+    fireEvent.click(header())
+    fireEvent.click(header())
+    fireEvent.click(header())
+    expect(region.textContent).toBe('Sort cleared')
+
+    // A silent writer re-sorts: the stale "Sort cleared" would now contradict
+    // the table, so the region empties.
+    fireEvent.click(screen.getByRole('button', { name: 'restore' }))
+    expect(region.textContent).toBe('')
+
+    // desc -> none by header click: the SAME string as before. Without the
+    // emptying it was a React no-op and nothing was spoken (MEASURED in review).
+    fireEvent.click(header())
+    expect(region.textContent).toBe('Sort cleared')
   })
 })

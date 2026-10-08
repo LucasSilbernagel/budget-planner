@@ -1,4 +1,8 @@
 # generated: 2026-06-18
+# last_updated: 2026-10-08b (120.1 + 120.2 reviewed + done; epic 120 done.)
+# last_updated: 2026-10-08a (120.2 created ready-for-dev.)
+# last_updated: 2026-10-07k (120.1 created ready-for-dev; epic 120 in-progress.)
+# last_updated: 2026-10-07j (epic 120 added: a11y control state, FR188.)
 # last_updated: 2026-10-07i (119.1 reviewed + done; epic 119 done.)
 # last_updated: 2026-10-07h (119.1 dev done -> review.)
 # last_updated: 2026-10-07g (epic 119 added from 118.1 review LOW (FR187); 119.1 created -> ready-for-dev.)
@@ -1431,6 +1435,10 @@ development_status:
   epic-119: done  # DONE 2026-10-07 (119.1 reviewed, merge pending).  # Added 2026-10-07 from deferred-work (118.1 review LOW), value judgment by Lucas: scheduled; REASONED at 2b04746 (FR187)
   119-1-bulk-delete-acts-only-on-visible-forecasts: done  # REVIEWED 2026-10-07 (Fable, 3 layers): APPROVED, 1 test patch applied; reload race (deferred) MEASURED + FIXED here by Lucas's call; 5 deferred CLOSED by decision; gates ALL GREEN 6m37s (web 5249). Done after merge.  # DEV DONE 2026-10-07 (branch story/119-1-bulk-delete-visible, uncommitted): gates ALL GREEN 6m09s (web 5242->5248, e2e 23); 6/6 RED before fix; mutation arms RED (5, 2). Next: code review.  # DEV STARTED 2026-10-07 on branch story/119-1-bulk-delete-visible; baseline gates at 2b04746 ALL GREEN 5m56s (web 5242, e2e 23); D1-D3 CONFIRMED by Lucas (all rec).  # CREATED 2026-10-07 at 2b04746; defect MEASURED by throwaway RTL probe (hidden A deleted: onDelete [[a],[b]]; Select all checked with visible row unchecked; removed id still counted); D1-D3 await Lucas (rec as written)
   epic-119-retrospective: optional
+  epic-120: done  # DONE 2026-10-08 (both stories reviewed).  # Added 2026-10-07 from Lucas a11y feedback (FR188); proposal sprint-change-proposal-2026-10-07-a11y-control-state.md APPROVED (D1 focus + change, D2-D4 rec)
+  120-1-sortable-headers-announce-sort: done  # REVIEWED 2026-10-08: APPROVED after 5 patches (repeat/stale announcement emptied on silent change, region reset on unmount, record fixes, epics.md D1 amendment), arms RED; gates ALL GREEN 6m06s (web 5278, e2e 23). INTEGRATION 2026-10-08: 47feb4f gates ALL GREEN 5m15s (web 5275, e2e 23), screenshots compare 37791065264 27/27. DEV DONE 2026-10-08: c6c17eb (branch story/120-1-sortable-headers-announce-sort, not pushed), gates --sequential ALL GREEN 7m37s (core 1400, db 321/7, web 5264, e2e 23), 6/6 arms RED, CDP AX tree pasted; screenshots compare pending (predicted 0). DEV LAUNCHED 2026-10-08 (worktree fork off 43b50aa, branch story/120-1-sortable-headers-announce-sort). CREATED 2026-10-07 at 43b50aa; D1 (fix inverted My Forecasts Created/Net Worth comparators, MEASURED) D2 D3 CONFIRMED by Lucas 2026-10-08 (all rec)
+  120-2-forecasting-tabs-and-chart-toggle-state: done  # REVIEWED 2026-10-08: APPROVED after 2 patches (modifier-key guard, ring-offset pin), arms RED. INTEGRATION 2026-10-08: 47feb4f gates ALL GREEN 5m15s (web 5275, e2e 23), screenshots compare 37791065264 27/27. SCOPE ADD (Lucas 2026-10-08): chart toggle focus ring 4fb7903, gates ALL GREEN 6m14s (web 5262, e2e 23), arm RED. DEV DONE 2026-10-08: 94f58d0 (branch story/120-2-forecasting-tabs-chart-toggles, not pushed), gates --sequential ALL GREEN 7m25s (core 1400, db 321/7, web 5259, e2e 23), 5/5 arms RED (+1), 0 old locators; screenshots compare pending (predicted 0). DEV LAUNCHED 2026-10-08 (worktree fork off 43b50aa, branch story/120-2-forecasting-tabs-chart-toggles). CREATED 2026-10-08 at 43b50aa; 33 tab locators in 13 files + 2 e2e to migrate; D1 (no panel tabIndex) D2 (static ids) CONFIRMED by Lucas 2026-10-08 (all rec)
+  epic-120-retrospective: optional
 
 action_items:
   - epic: 6

@@ -50,7 +50,7 @@ import {
 } from './ui/ResponsiveTable'
 import { PencilIcon, TrashIcon } from './ui/RowActionIcons'
 import { EmptyStateSkeleton, LoadingStatus, PendingFigure } from './ui/Skeleton'
-import { SortableColumnHeader } from './ui/SortableColumnHeader'
+import { SortableColumnHeader, useSortHeaderAnnouncements } from './ui/SortableColumnHeader'
 import { TableScrollRegion } from './ui/TableScrollRegion'
 import { TableSortControl } from './ui/TableSortControl'
 
@@ -325,6 +325,13 @@ export function BalancePage() {
   )
   const sort = useTableSort('balance', balanceEntries, sortExtractors)
   const sortedRows = sort.rows
+  // Story 120.1 (FR188): the headers' "Sortable column, ..." description and the
+  // live region that announces a header click.
+  const sortA11y = useSortHeaderAnnouncements(
+    sort.state
+      ? { label: SORT_COLUMN_LABELS[sort.state.key], direction: sort.state.direction }
+      : null
+  )
   // Amounts are stored in cents; the formatter respects the user's currency
   // display preference (currency-less vs explicit symbols) from the store.
   const formatAmount = useFormattedAmount()
@@ -836,21 +843,29 @@ export function BalancePage() {
                         <SortableColumnHeader
                           label={SORT_COLUMN_LABELS.type}
                           ariaSort={sort.ariaSort('type')}
+                          describedBy={sortA11y.describedBy(sort.ariaSort('type'))}
+                          onActivate={sortA11y.markActivated}
                           onToggle={() => sort.toggle('type')}
                         />
                         <SortableColumnHeader
                           label={SORT_COLUMN_LABELS.name}
                           ariaSort={sort.ariaSort('name')}
+                          describedBy={sortA11y.describedBy(sort.ariaSort('name'))}
+                          onActivate={sortA11y.markActivated}
                           onToggle={() => sort.toggle('name')}
                         />
                         <SortableColumnHeader
                           label={SORT_COLUMN_LABELS.currentBalance}
                           ariaSort={sort.ariaSort('currentBalance')}
+                          describedBy={sortA11y.describedBy(sort.ariaSort('currentBalance'))}
+                          onActivate={sortA11y.markActivated}
                           onToggle={() => sort.toggle('currentBalance')}
                         />
                         <SortableColumnHeader
                           label={SORT_COLUMN_LABELS.contribution}
                           ariaSort={sort.ariaSort('contribution')}
+                          describedBy={sortA11y.describedBy(sort.ariaSort('contribution'))}
+                          onActivate={sortA11y.markActivated}
                           onToggle={() => sort.toggle('contribution')}
                         />
                         {/* Not sortable: no button, and no `aria-sort` at all. */}
@@ -966,6 +981,9 @@ export function BalancePage() {
                     </tbody>
                   </table>
                 </TableScrollRegion>
+                {/* Story 120.1: the header descriptions + sort live region. LAST
+                    children and outside the table (`useSortHeaderAnnouncements`). */}
+                {sortA11y.nodes}
               </>
             )}
           </section>

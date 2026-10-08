@@ -1,3 +1,4 @@
+import { type ReactElement, useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { AriaSortValue } from '../../lib/table-sort'
 import { RESPONSIVE_HEADER_CELL_CLASS } from './ResponsiveTable'
 
@@ -37,8 +38,18 @@ import { RESPONSIVE_HEADER_CELL_CLASS } from './ResponsiveTable'
  *
  * Rendering the indicator only when a column is active restores the unsorted
  * width exactly, and costs 16px on ONE column while a sort is active. The
- * sortable affordance is still carried by the hover colour change, the focus
- * ring, and `aria-sort="none"` for assistive technology.
+ * sortable affordance is still carried by the hover colour change and the focus
+ * ring.
+ *
+ * ⚠️ This paragraph USED to add "and `aria-sort="none"` for assistive
+ * technology". Most screen readers do not announce `none` (the ARIA APG puts
+ * `aria-sort` on the SORTED column only), so an unsorted header read as just
+ * "Amount, button". Story 120.1 (FR188) gives every header a DESCRIPTION
+ * ("Sortable column, not sorted" / "sorted ascending" / "sorted descending")
+ * through `aria-describedby`, and announces a header click in a polite live
+ * region, both from {@link useSortHeaderAnnouncements}. Both nodes live OUTSIDE
+ * the `<th>` and the `<table>`, for the exact-array reason above: a description
+ * span inside the `<th>` would be part of its `textContent` even when `hidden`.
  *
  * ## Why there is no 44px tap target here
  *
@@ -111,16 +122,150 @@ interface SortableColumnHeaderProps {
   ariaSort: AriaSortValue
   /** Advance this column through `none -> asc -> desc -> none`. */
   onToggle: () => void
+  /** The id of this column's state description, from
+   * `useSortHeaderAnnouncements().describedBy(ariaSort)` (story 120.1).
+   * REQUIRED, so a table that forgets the wiring fails `tsc`. */
+  describedBy: string
+  /** `useSortHeaderAnnouncements().markActivated`. Runs BEFORE `onToggle`, so
+   * the resulting sort change is announced (story 120.1, D2). */
+  onActivate: () => void
 }
 
-export function SortableColumnHeader({ label, ariaSort, onToggle }: SortableColumnHeaderProps) {
+export function SortableColumnHeader({
+  label,
+  ariaSort,
+  onToggle,
+  describedBy,
+  onActivate,
+}: SortableColumnHeaderProps) {
   return (
     <th aria-sort={ariaSort} className={RESPONSIVE_HEADER_CELL_CLASS}>
-      <button type="button" onClick={onToggle} className={SORT_BUTTON_CLASS}>
+      <button
+        type="button"
+        onClick={() => {
+          onActivate()
+          onToggle()
+        }}
+        aria-describedby={describedBy}
+        className={SORT_BUTTON_CLASS}
+      >
         {label}
         {ariaSort === 'ascending' && <SortAscendingIcon />}
         {ariaSort === 'descending' && <SortDescendingIcon />}
       </button>
     </th>
   )
+}
+
+/** The column a table is sorted by. `null` (passed to the hook) = unsorted. */
+export interface SortAnnouncementState {
+  label: string
+  direction: 'asc' | 'desc'
+}
+
+export interface SortHeaderAnnouncements {
+  /** The id of the hidden description for a header in this state. */
+  describedBy: (ariaSort: AriaSortValue) => string
+  /** Call from a header's click handler, BEFORE it changes the sort. */
+  markActivated: () => void
+  /** The three descriptions and the live region. Render them OUTSIDE the
+   * `<table>`, as LAST children after it: `hidden` and `sr-only` (absolute)
+   * nodes there cannot shift a sibling under `space-y-*` or a flex/grid `gap`. */
+  nodes: ReactElement
+}
+
+const SORT_DESCRIPTIONS: Readonly<Record<AriaSortValue, string>> = {
+  ascending: 'Sortable column, sorted ascending',
+  descending: 'Sortable column, sorted descending',
+  none: 'Sortable column, not sorted',
+}
+
+const SORT_DESCRIPTION_STATES = Object.keys(SORT_DESCRIPTIONS) as AriaSortValue[]
+
+/**
+ * Screen-reader state for ONE table's sortable headers (story 120.1, FR188).
+ *
+ * - **On focus:** each header button is described by one of three `hidden`
+ *   spans ({@link SortHeaderAnnouncements.describedBy}). Accname reads a
+ *   `hidden` node when it is referenced directly, so the text is never visible
+ *   and never inside a `<th>`.
+ * - **On change:** a polite live region says "Sorted by Amount, ascending" or
+ *   "Sort cleared".
+ *
+ * ⚠️ ONLY A HEADER CLICK ANNOUNCES (story 120.1, D2). `markActivated` sets a flag
+ * and the effect announces the RESULTING `current` only while that flag is set,
+ * so the message can never disagree with the table. A first render, a sort
+ * restored from storage after a reload, and the mobile `TableSortControl` picker
+ * change `current` without the flag and stay silent (they EMPTY the region): a restored sort is not
+ * news, and the picker's `<select>` already speaks its new value (a second
+ * announcement would double-speak, the reason `TableSortControl` has no live
+ * region).
+ *
+ * ⚠️ NOT `role="status"`: each page already owns exactly ONE status region (its
+ * loading skeleton, story 38.2 AC-8). The region is present, EMPTY, from the
+ * first render, because a polite region inserted already filled is not reliably
+ * announced.
+ *
+ * Ids come from `useId`: these pages server-render and hydrate.
+ */
+export function useSortHeaderAnnouncements(
+  current: SortAnnouncementState | null
+): SortHeaderAnnouncements {
+  const baseId = useId()
+  const activated = useRef(false)
+  const [message, setMessage] = useState('')
+
+  // Primitives, not the object: callers build `current` inline on every render.
+  const label = current?.label ?? null
+  const direction = current?.direction ?? null
+
+  useEffect(() => {
+    if (!activated.current) {
+      // A change WITHOUT a header click (picker, restore, tier change) EMPTIES
+      // the region rather than leaving it alone (code review 120.1, MEASURED):
+      // kept text would contradict the table in browse mode, and the next
+      // header click producing the same string would be a React no-op, i.e.
+      // silent. Emptying a polite region announces nothing.
+      setMessage('')
+      return
+    }
+    activated.current = false
+    setMessage(
+      label === null
+        ? 'Sort cleared'
+        : `Sorted by ${label}, ${direction === 'asc' ? 'ascending' : 'descending'}`
+    )
+  }, [label, direction])
+
+  const describedBy = useCallback((ariaSort: AriaSortValue) => `${baseId}-${ariaSort}`, [baseId])
+
+  const markActivated = useCallback(() => {
+    activated.current = true
+  }, [])
+
+  // The nodes unmount with their table (a search with no match, the last row
+  // deleted) while this hook's owner stays mounted. Empty the message on unmount
+  // so the region never comes BACK already filled, which is not reliably
+  // announced (code review 120.1). Stable identity on purpose: an inline ref
+  // callback re-runs with `null` on every render and would wipe each message.
+  const regionRef = useCallback((element: HTMLParagraphElement | null) => {
+    if (element === null) {
+      setMessage('')
+    }
+  }, [])
+
+  const nodes = (
+    <>
+      {SORT_DESCRIPTION_STATES.map((state) => (
+        <span key={state} id={describedBy(state)} hidden>
+          {SORT_DESCRIPTIONS[state]}
+        </span>
+      ))}
+      <p ref={regionRef} className="sr-only" aria-live="polite" aria-atomic="true">
+        {message}
+      </p>
+    </>
+  )
+
+  return { describedBy, markActivated, nodes }
 }

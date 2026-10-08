@@ -13,9 +13,12 @@
  *
  * The buttons are found by role and name, which also pins that the names did not
  * change: the icons are `aria-hidden`, so hiding them cannot rename a tab.
+ * Since story 120.2 (FR188) they are still `<button>` elements but carry
+ * `role="tab"`, so the locators ask for `tab`; the class-token pins are unchanged.
  */
 
 import { renderWithRouter, screen } from '@/test/utils'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
 import { Route } from '../forecasting'
@@ -52,7 +55,7 @@ beforeEach(() => {
 async function renderTabs(): Promise<HTMLElement[]> {
   renderWithRouter(<ForecastingPage />)
   await screen.findByTestId('forecasting-intro')
-  return TAB_NAMES.map((name) => screen.getByRole('button', { name }))
+  return TAB_NAMES.map((name) => screen.getByRole('tab', { name }))
 }
 
 function tokens(el: Element): string[] {
@@ -134,5 +137,122 @@ describe('forecasting tab strip below 640 px (story 91.3)', () => {
         ])
       )
     }
+  })
+})
+
+/**
+ * The views are APG tabs (story 120.2, FR188): a labelled tablist, one selected tab,
+ * each tab controlling a panel that EXISTS (Projections and My Forecasts content is
+ * still mounted only while active, but its panel wrapper is always rendered), a
+ * roving tabIndex, and automatic activation on ←/→ (wrapping) and Home/End.
+ */
+describe('tab semantics (story 120.2)', () => {
+  function selected(): string[] {
+    return screen
+      .getAllByRole('tab')
+      .filter((tab) => tab.getAttribute('aria-selected') === 'true')
+      .map((tab) => tab.textContent ?? '')
+  }
+
+  it('exposes a labelled tablist with exactly one selected tab and a roving tabIndex', async () => {
+    const tabs = await renderTabs()
+    expect(screen.getByRole('tablist', { name: 'Forecasting views' })).toBe(tabs[0]?.parentElement)
+    expect(selected()).toEqual(['Scenario Builder'])
+    expect(tabs.map((tab) => tab.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false'])
+    expect(tabs.map((tab) => tab.tabIndex)).toEqual([0, -1, -1])
+  })
+
+  it('points every tab, selected or not, at an existing tabpanel labelled by that tab', async () => {
+    for (const tab of await renderTabs()) {
+      const panelId = tab.getAttribute('aria-controls')
+      expect(panelId, `${tab.textContent} has aria-controls`).toBeTruthy()
+      const panel = document.getElementById(panelId as string)
+      expect(panel, `${tab.textContent}'s panel exists`).not.toBeNull()
+      expect(panel).toHaveAttribute('role', 'tabpanel')
+      expect(tab.id).toBeTruthy()
+      expect(panel).toHaveAttribute('aria-labelledby', tab.id)
+    }
+  })
+
+  it('moves focus and selection with the arrow keys, wrapping, and with Home/End', async () => {
+    const user = userEvent.setup()
+    const [builder, projections, saved] = await renderTabs()
+
+    builder?.focus()
+    await user.keyboard('{ArrowRight}')
+    expect(projections).toHaveFocus()
+    expect(selected()).toEqual(['Projections'])
+    expect(projections?.tabIndex).toBe(0)
+    expect(builder?.tabIndex).toBe(-1)
+    // Automatic activation: the panel content switched too.
+    expect(screen.getByRole('heading', { name: 'Forecast Projections' })).toBeInTheDocument()
+
+    await user.keyboard('{ArrowRight}')
+    expect(saved).toHaveFocus()
+    expect(selected()).toEqual(['My Forecasts'])
+
+    // Wraps forward from the last tab ...
+    await user.keyboard('{ArrowRight}')
+    expect(builder).toHaveFocus()
+    expect(selected()).toEqual(['Scenario Builder'])
+
+    // ... and backward from the first.
+    await user.keyboard('{ArrowLeft}')
+    expect(saved).toHaveFocus()
+    expect(selected()).toEqual(['My Forecasts'])
+
+    await user.keyboard('{Home}')
+    expect(builder).toHaveFocus()
+    expect(selected()).toEqual(['Scenario Builder'])
+
+    await user.keyboard('{End}')
+    expect(saved).toHaveFocus()
+    expect(selected()).toEqual(['My Forecasts'])
+  })
+
+  it('leaves Alt / Ctrl / Meta + arrow and Home/End to the browser (code review)', async () => {
+    const user = userEvent.setup()
+    const [builder] = await renderTabs()
+    builder?.focus()
+    for (const combo of [
+      '{Alt>}{ArrowRight}{/Alt}',
+      '{Alt>}{ArrowLeft}{/Alt}',
+      '{Control>}{End}{/Control}',
+      '{Meta>}{ArrowRight}{/Meta}',
+    ]) {
+      let prevented: boolean | undefined
+      const spy = (event: KeyboardEvent) => {
+        prevented = event.defaultPrevented
+      }
+      document.addEventListener('keydown', spy)
+      await user.keyboard(combo)
+      document.removeEventListener('keydown', spy)
+      expect(prevented, `${combo} is not swallowed`).toBe(false)
+      expect(selected(), `${combo} does not switch tabs`).toEqual(['Scenario Builder'])
+      expect(builder).toHaveFocus()
+    }
+  })
+
+  it('keeps an unsaved builder edit across a keyboard round trip (the builder stays mounted)', async () => {
+    const user = userEvent.setup()
+    const [builder] = await renderTabs()
+    const field = screen.getByLabelText('Projection Period (years)')
+    await user.clear(field)
+    await user.type(field, '7')
+    expect(field).toHaveValue(7)
+
+    builder?.focus()
+    await user.keyboard('{ArrowRight}{ArrowRight}{ArrowLeft}{ArrowLeft}')
+    expect(selected()).toEqual(['Scenario Builder'])
+    expect(screen.getByLabelText('Projection Period (years)')).toBe(field)
+    expect(field).toHaveValue(7)
+  })
+
+  it('still switches on click', async () => {
+    const user = userEvent.setup()
+    const [, projections] = await renderTabs()
+    await user.click(projections as HTMLElement)
+    expect(selected()).toEqual(['Projections'])
+    expect(projections?.tabIndex).toBe(0)
   })
 })

@@ -88,7 +88,7 @@ function savedRow(inputs: unknown, version: number): Record<string, unknown> {
 async function loadPlan(inputs: unknown, version: number) {
   fetchForecasts.mockResolvedValue({ success: true, data: [savedRow(inputs, version)] })
   renderWithRouter(<ForecastingPage />)
-  fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
+  fireEvent.click(await screen.findByRole('tab', { name: /my forecasts/i }))
   const load = await screen.findByRole('button', { name: 'Edit Plan' })
   const before = engineCalls.length
   fireEvent.click(load)
@@ -294,7 +294,7 @@ describe('a v1/v2 forecast reopens as one Investments row, at 6% (AC-13; 100.3 D
       data: [savedRow({ savings: 0, investments: -500, years: 7 }, 2)],
     })
     renderWithRouter(<ForecastingPage />)
-    fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
+    fireEvent.click(await screen.findByRole('tab', { name: /my forecasts/i }))
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Plan' }))
     const field = await screen.findByLabelText('Balance for Investments')
     expect(field).toHaveValue('-5.00')
@@ -493,7 +493,7 @@ describe('a v4 forecast reloads each investment row at its own rate (story 100.3
       ],
     })
     renderWithRouter(<ForecastingPage />)
-    fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
+    fireEvent.click(await screen.findByRole('tab', { name: /my forecasts/i }))
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Plan' }))
     const field = await screen.findByLabelText('Annual return for Wild')
     expect(field).toHaveValue('150.00%')

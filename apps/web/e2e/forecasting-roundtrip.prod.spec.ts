@@ -213,7 +213,7 @@ test('a paid user saves a forecast, finds it after a reload, and deletes it (83.
   // Reload: the list comes back from the "server", not from page state.
   await page.reload()
   await expect(builderHeading).toBeVisible({ timeout: 20_000 })
-  await page.getByRole('button', { name: /my forecasts/i }).click()
+  await page.getByRole('tab', { name: /my forecasts/i }).click()
   await expect(deleteButton).toBeVisible()
 
   // Delete.

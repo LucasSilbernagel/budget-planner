@@ -86,6 +86,7 @@ function mobileLabelsIn(row: HTMLElement): string[] {
   return [...row.querySelectorAll('span.sm\\:hidden')].map((el) => el.textContent ?? '')
 }
 
+import { expectSortHeaderAnnouncements } from '@/test/sort-announcements'
 import { expectSharedGreen } from '@/test/white-fill-tokens'
 import { ExpensesPage } from '../ExpensesPage'
 
@@ -581,6 +582,12 @@ describe('ExpensesPage — sort by column (34.2)', () => {
     // Not `none` — no attribute at all. `aria-sort="none"` advertises a column
     // as sortable, which this one is not.
     expect(actions).not.toHaveAttribute('aria-sort')
+  })
+
+  it('describes its headers and announces a header click, not a picker change (120.1)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ExpensesPage />)
+    await expectSortHeaderAnnouncements(user, 'Sort expenses')
   })
 
   it('cycles a column ascending -> descending -> back to manual order', async () => {

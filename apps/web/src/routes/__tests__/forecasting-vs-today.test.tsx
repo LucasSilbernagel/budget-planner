@@ -187,7 +187,7 @@ afterEach(() => {
 describe('a saved forecast is compared against today (story 107.1)', () => {
   it('My Forecasts shows each row "vs. today" from today\'s data, not the stored baseline (Q1, D2)', async () => {
     renderWithRouter(<ForecastingPage />)
-    fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
+    fireEvent.click(await screen.findByRole('tab', { name: /my forecasts/i }))
     const format = formatter()
     // Positive control: the row and its stored ending rendered.
     const ending = await screen.findByText(format(STORED_ENDING))
@@ -199,11 +199,11 @@ describe('a saved forecast is compared against today (story 107.1)', () => {
 
   it("a reopened forecast's Projections never shows the stored baseline (AC-7)", async () => {
     renderWithRouter(<ForecastingPage />)
-    fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
+    fireEvent.click(await screen.findByRole('tab', { name: /my forecasts/i }))
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Big plan' }))
     // Straight to Projections, inside the builder's 500 ms debounce: this is the
     // page's own lifted result, the one that used to carry the stored baseline.
-    fireEvent.click(screen.getByRole('button', { name: /projections/i }))
+    fireEvent.click(screen.getByRole('tab', { name: /projections/i }))
     // Read SYNCHRONOUSLY, no waitFor: no timer can fire between the click and
     // this line, so the 500 ms recompute cannot have replaced the page's result.
     // The builder stays mounted, CSS-hidden, with its own card: take the visible one.
@@ -222,9 +222,9 @@ describe('a saved forecast is compared against today (story 107.1)', () => {
   // `<dd>`, which axe's `definition-list` rule rejects inside a `<dl>` group.
   it('both summaries are description lists: every term in a <dl>, groups hold only <dt>/<dd> (story 116.1)', async () => {
     renderWithRouter(<ForecastingPage />)
-    fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
+    fireEvent.click(await screen.findByRole('tab', { name: /my forecasts/i }))
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Big plan' }))
-    fireEvent.click(screen.getByRole('button', { name: /projections/i }))
+    fireEvent.click(screen.getByRole('tab', { name: /projections/i }))
 
     // Positive control: both summaries rendered (builder, CSS-hidden, + Projections).
     const lists = Array.from(document.querySelectorAll('dl')).filter((dl) =>
@@ -275,9 +275,9 @@ describe('a saved forecast is compared against today (story 107.1)', () => {
     })
     syncPending.value = true
     renderWithRouter(<ForecastingPage />)
-    fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
+    fireEvent.click(await screen.findByRole('tab', { name: /my forecasts/i }))
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Big plan' }))
-    fireEvent.click(screen.getByRole('button', { name: /projections/i }))
+    fireEvent.click(screen.getByRole('tab', { name: /projections/i }))
     expect(
       screen.getByText('Build a scenario in the Scenario Builder to see its projection here.')
     ).toBeInTheDocument()
