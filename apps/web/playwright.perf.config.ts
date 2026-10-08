@@ -8,18 +8,18 @@ import { defineConfig, devices } from '@playwright/test'
 const baseURL = process.env['PLAYWRIGHT_BASE_URL']
 
 export default defineConfig({
-  testDir: './perf',
-  fullyParallel: false,
-  workers: 1,
-  retries: 0,
-  reporter: 'line',
-  use: {
-    ...devices['Desktop Chrome'],
-    baseURL,
-    // The measurement asserts this exact viewport.
-    viewport: { width: 1280, height: 720 },
-  },
-  projects: [
-    { name: 'perf', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 720 } } },
-  ],
+	testDir: './perf',
+	fullyParallel: false,
+	workers: 1,
+	retries: 0,
+	reporter: 'line',
+	use: {
+		...devices['Desktop Chrome'],
+		baseURL,
+		// The measurement asserts this exact viewport.
+		viewport: { width: 1280, height: 720 },
+	},
+	projects: [
+		{ name: 'perf', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 720 } } },
+	],
 })

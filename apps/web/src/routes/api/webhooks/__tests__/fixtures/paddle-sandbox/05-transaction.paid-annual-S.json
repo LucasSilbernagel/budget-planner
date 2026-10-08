@@ -1,159 +1,159 @@
 {
-  "data": {
-    "id": "txn_01m44c50p6299mj8rw9wk8mqzs",
-    "items": [
-      {
-        "price": {
-          "id": "pri_01m292p4a2eb5653a5aqwfz35k",
-          "name": "Annual",
-          "type": "standard",
-          "status": "active",
-          "quantity": {
-            "maximum": 100,
-            "minimum": 1
-          },
-          "tax_mode": "location",
-          "created_at": "2026-09-11T20:31:31.138Z",
-          "product_id": "pro_01m292p45my6t33z2p6fvv8kxz",
-          "unit_price": {
-            "amount": "3900",
-            "currency_code": "EUR"
-          },
-          "updated_at": "2026-09-11T20:31:31.138Z",
-          "custom_data": null,
-          "description": "Premium annual EUR",
-          "trial_period": null,
-          "billing_cycle": {
-            "interval": "year",
-            "frequency": 1
-          },
-          "unit_price_overrides": []
-        },
-        "quantity": 1,
-        "proration": null
-      }
-    ],
-    "origin": "web",
-    "status": "paid",
-    "details": {
-      "totals": {
-        "fee": null,
-        "tax": "507",
-        "total": "4407",
-        "credit": "0",
-        "balance": "0",
-        "discount": "0",
-        "earnings": null,
-        "subtotal": "3900",
-        "grand_total": "4407",
-        "currency_code": "EUR",
-        "grand_total_tax": "507",
-        "credit_to_balance": "0"
-      },
-      "line_items": [
-        {
-          "id": "txnitm_01m44c54vrt693wsyhfm66e7r3",
-          "totals": {
-            "tax": "507",
-            "total": "4407",
-            "discount": "0",
-            "subtotal": "3900"
-          },
-          "product": {
-            "id": "pro_01m292p45my6t33z2p6fvv8kxz",
-            "name": "Premium",
-            "type": "standard",
-            "status": "active",
-            "image_url": null,
-            "created_at": "2026-09-11T20:31:30.996Z",
-            "updated_at": "2026-09-11T20:31:30.996Z",
-            "custom_data": null,
-            "description": "Budget Planner Premium: sync, forecasting, multiple profiles, reports, and categories.",
-            "tax_category": "saas"
-          },
-          "price_id": "pri_01m292p4a2eb5653a5aqwfz35k",
-          "quantity": 1,
-          "tax_rate": "0.13",
-          "unit_totals": {
-            "tax": "507",
-            "total": "4407",
-            "discount": "0",
-            "subtotal": "3900"
-          }
-        }
-      ],
-      "payout_totals": null,
-      "tax_rates_used": [
-        {
-          "totals": {
-            "tax": "507",
-            "total": "4407",
-            "discount": "0",
-            "subtotal": "3900"
-          },
-          "tax_rate": "0.13"
-        }
-      ],
-      "adjusted_totals": {
-        "fee": null,
-        "tax": "507",
-        "total": "4407",
-        "earnings": null,
-        "subtotal": "3900",
-        "grand_total": "4407",
-        "retained_fee": "0",
-        "currency_code": "EUR",
-        "grand_total_tax": "507"
-      },
-      "adjusted_payout_totals": null
-    },
-    "checkout": {
-      "url": "https://localhost:8811?_ptxn=txn_01m44c50p6299mj8rw9wk8mqzs"
-    },
-    "payments": [
-      {
-        "amount": "4407",
-        "status": "captured",
-        "created_at": "2026-10-04T21:12:14.579231Z",
-        "error_code": null,
-        "captured_at": "2026-10-04T21:12:17.121912Z",
-        "method_details": {
-          "card": {
-            "type": "visa",
-            "last4": "4242",
-            "expiry_year": 2030,
-            "expiry_month": 12,
-            "cardholder_name": "Test Buyer"
-          },
-          "type": "card",
-          "paypal": null,
-          "south_korea_local_card": null
-        },
-        "payment_method_id": "paymtd_01m44c57wpgbc6bkws0sth0v5j",
-        "payment_attempt_id": "06859d24-270a-4400-9229-56190e30fb03",
-        "stored_payment_method_id": "97ce1b28-a13a-49a7-94a2-5f6a25740402"
-      }
-    ],
-    "billed_at": "2026-10-04T21:12:17.394647008Z",
-    "address_id": "add_01m44c54pdjew79vs5e8axdbe2",
-    "created_at": "2026-10-04T21:12:07.659607Z",
-    "invoice_id": null,
-    "revised_at": null,
-    "updated_at": "2026-10-04T21:12:17.394648381Z",
-    "business_id": null,
-    "custom_data": null,
-    "customer_id": "ctm_01m44c50kqx272q8c72dyfyyza",
-    "discount_id": null,
-    "receipt_data": null,
-    "currency_code": "EUR",
-    "billing_period": null,
-    "invoice_number": null,
-    "billing_details": null,
-    "collection_mode": "automatic",
-    "subscription_id": null
-  },
-  "event_id": "evt_01m44c5a80tnx53q5khcc8zbbe",
-  "event_type": "transaction.paid",
-  "occurred_at": "2026-10-04T21:12:17.408167Z",
-  "notification_id": "ntf_01m44c5am6p37j6bhvnnbxq57m"
+	"data": {
+		"id": "txn_01m44c50p6299mj8rw9wk8mqzs",
+		"items": [
+			{
+				"price": {
+					"id": "pri_01m292p4a2eb5653a5aqwfz35k",
+					"name": "Annual",
+					"type": "standard",
+					"status": "active",
+					"quantity": {
+						"maximum": 100,
+						"minimum": 1
+					},
+					"tax_mode": "location",
+					"created_at": "2026-09-11T20:31:31.138Z",
+					"product_id": "pro_01m292p45my6t33z2p6fvv8kxz",
+					"unit_price": {
+						"amount": "3900",
+						"currency_code": "EUR"
+					},
+					"updated_at": "2026-09-11T20:31:31.138Z",
+					"custom_data": null,
+					"description": "Premium annual EUR",
+					"trial_period": null,
+					"billing_cycle": {
+						"interval": "year",
+						"frequency": 1
+					},
+					"unit_price_overrides": []
+				},
+				"quantity": 1,
+				"proration": null
+			}
+		],
+		"origin": "web",
+		"status": "paid",
+		"details": {
+			"totals": {
+				"fee": null,
+				"tax": "507",
+				"total": "4407",
+				"credit": "0",
+				"balance": "0",
+				"discount": "0",
+				"earnings": null,
+				"subtotal": "3900",
+				"grand_total": "4407",
+				"currency_code": "EUR",
+				"grand_total_tax": "507",
+				"credit_to_balance": "0"
+			},
+			"line_items": [
+				{
+					"id": "txnitm_01m44c54vrt693wsyhfm66e7r3",
+					"totals": {
+						"tax": "507",
+						"total": "4407",
+						"discount": "0",
+						"subtotal": "3900"
+					},
+					"product": {
+						"id": "pro_01m292p45my6t33z2p6fvv8kxz",
+						"name": "Premium",
+						"type": "standard",
+						"status": "active",
+						"image_url": null,
+						"created_at": "2026-09-11T20:31:30.996Z",
+						"updated_at": "2026-09-11T20:31:30.996Z",
+						"custom_data": null,
+						"description": "Budget Planner Premium: sync, forecasting, multiple profiles, reports, and categories.",
+						"tax_category": "saas"
+					},
+					"price_id": "pri_01m292p4a2eb5653a5aqwfz35k",
+					"quantity": 1,
+					"tax_rate": "0.13",
+					"unit_totals": {
+						"tax": "507",
+						"total": "4407",
+						"discount": "0",
+						"subtotal": "3900"
+					}
+				}
+			],
+			"payout_totals": null,
+			"tax_rates_used": [
+				{
+					"totals": {
+						"tax": "507",
+						"total": "4407",
+						"discount": "0",
+						"subtotal": "3900"
+					},
+					"tax_rate": "0.13"
+				}
+			],
+			"adjusted_totals": {
+				"fee": null,
+				"tax": "507",
+				"total": "4407",
+				"earnings": null,
+				"subtotal": "3900",
+				"grand_total": "4407",
+				"retained_fee": "0",
+				"currency_code": "EUR",
+				"grand_total_tax": "507"
+			},
+			"adjusted_payout_totals": null
+		},
+		"checkout": {
+			"url": "https://localhost:8811?_ptxn=txn_01m44c50p6299mj8rw9wk8mqzs"
+		},
+		"payments": [
+			{
+				"amount": "4407",
+				"status": "captured",
+				"created_at": "2026-10-04T21:12:14.579231Z",
+				"error_code": null,
+				"captured_at": "2026-10-04T21:12:17.121912Z",
+				"method_details": {
+					"card": {
+						"type": "visa",
+						"last4": "4242",
+						"expiry_year": 2030,
+						"expiry_month": 12,
+						"cardholder_name": "Test Buyer"
+					},
+					"type": "card",
+					"paypal": null,
+					"south_korea_local_card": null
+				},
+				"payment_method_id": "paymtd_01m44c57wpgbc6bkws0sth0v5j",
+				"payment_attempt_id": "06859d24-270a-4400-9229-56190e30fb03",
+				"stored_payment_method_id": "97ce1b28-a13a-49a7-94a2-5f6a25740402"
+			}
+		],
+		"billed_at": "2026-10-04T21:12:17.394647008Z",
+		"address_id": "add_01m44c54pdjew79vs5e8axdbe2",
+		"created_at": "2026-10-04T21:12:07.659607Z",
+		"invoice_id": null,
+		"revised_at": null,
+		"updated_at": "2026-10-04T21:12:17.394648381Z",
+		"business_id": null,
+		"custom_data": null,
+		"customer_id": "ctm_01m44c50kqx272q8c72dyfyyza",
+		"discount_id": null,
+		"receipt_data": null,
+		"currency_code": "EUR",
+		"billing_period": null,
+		"invoice_number": null,
+		"billing_details": null,
+		"collection_mode": "automatic",
+		"subscription_id": null
+	},
+	"event_id": "evt_01m44c5a80tnx53q5khcc8zbbe",
+	"event_type": "transaction.paid",
+	"occurred_at": "2026-10-04T21:12:17.408167Z",
+	"notification_id": "ntf_01m44c5am6p37j6bhvnnbxq57m"
 }

@@ -8,7 +8,7 @@ This document outlines the standards and best practices for `tsconfig.json` file
 
 All `tsconfig.json` files must adhere to the project's Biome configuration:
 
-- **Indentation**: 2 spaces (no tabs)
+- **Indentation**: tabs
 - **Line endings**: LF (Unix-style, no CRLF)
 - **Trailing newlines**: Files must end with a newline character
 - **No trailing whitespace**: Lines must not have trailing spaces
@@ -18,8 +18,7 @@ The Biome configuration is defined in `biome.json` at the repository root:
 ```json
 {
   "formatter": {
-    "indentStyle": "space",
-    "indentWidth": 2,
+    "indentStyle": "tab",
     "lineEnding": "lf"
   }
 }
@@ -206,7 +205,7 @@ This script checks for:
 
 **Symptom**: Biome linter reports formatting issues.
 
-**Fix**: Run `pnpm lint:fix` or `pnpm biome check . --apply` to auto-format files.
+**Fix**: Run `pnpm lint:fix` or `pnpm biome check . --write` to auto-format files.
 
 ## Changelog
 

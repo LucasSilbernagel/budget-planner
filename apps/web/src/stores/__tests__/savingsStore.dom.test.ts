@@ -3,133 +3,133 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { SAVINGS_GOALS_STORAGE_KEY, useSavingsStore } from '../savingsStore'
 
 const base = {
-  createdAt: new Date('2026-01-01').toISOString(),
-  updatedAt: new Date('2026-01-01').toISOString(),
+	createdAt: new Date('2026-01-01').toISOString(),
+	updatedAt: new Date('2026-01-01').toISOString(),
 }
 
 const goal: ClientSavingsGoal = {
-  id: 'goal-1',
-  name: 'Vacation',
-  targetAmount: 100000,
-  currentBalance: 60000,
-  ...base,
+	id: 'goal-1',
+	name: 'Vacation',
+	targetAmount: 100000,
+	currentBalance: 60000,
+	...base,
 }
 
 const account: ClientSavingsGoal = {
-  id: 'acc-1',
-  name: 'Checking Buffer',
-  targetAmount: null,
-  currentBalance: 250000,
-  ...base,
+	id: 'acc-1',
+	name: 'Checking Buffer',
+	targetAmount: null,
+	currentBalance: 250000,
+	...base,
 }
 
 beforeEach(() => {
-  localStorage.clear()
-  useSavingsStore.setState({ savingsGoals: [] })
+	localStorage.clear()
+	useSavingsStore.setState({ savingsGoals: [] })
 })
 
 describe('savingsStore — accounts vs goals (Story 16-1)', () => {
-  it('getTotalSavings includes account balances', () => {
-    useSavingsStore.setState({ savingsGoals: [goal, account] })
-    // 60000 (goal) + 250000 (account)
-    expect(useSavingsStore.getState().getTotalSavings()).toBe(310000)
-  })
+	it('getTotalSavings includes account balances', () => {
+		useSavingsStore.setState({ savingsGoals: [goal, account] })
+		// 60000 (goal) + 250000 (account)
+		expect(useSavingsStore.getState().getTotalSavings()).toBe(310000)
+	})
 
-  it('getTotalTargetAmount excludes accounts (null target)', () => {
-    useSavingsStore.setState({ savingsGoals: [goal, account] })
-    expect(useSavingsStore.getState().getTotalTargetAmount()).toBe(100000)
-  })
+	it('getTotalTargetAmount excludes accounts (null target)', () => {
+		useSavingsStore.setState({ savingsGoals: [goal, account] })
+		expect(useSavingsStore.getState().getTotalTargetAmount()).toBe(100000)
+	})
 
-  it('getSavingsProgress returns null for an account (absent, not 0%)', () => {
-    useSavingsStore.setState({ savingsGoals: [account] })
-    const progress = useSavingsStore.getState().getSavingsProgress('acc-1')
-    expect(progress).toBeNull()
-    expect(progress).not.toBe(0)
-  })
+	it('getSavingsProgress returns null for an account (absent, not 0%)', () => {
+		useSavingsStore.setState({ savingsGoals: [account] })
+		const progress = useSavingsStore.getState().getSavingsProgress('acc-1')
+		expect(progress).toBeNull()
+		expect(progress).not.toBe(0)
+	})
 
-  it('getSavingsProgress returns the numeric percentage for a goal', () => {
-    useSavingsStore.setState({ savingsGoals: [goal] })
-    expect(useSavingsStore.getState().getSavingsProgress('goal-1')).toBe(60)
-  })
+	it('getSavingsProgress returns the numeric percentage for a goal', () => {
+		useSavingsStore.setState({ savingsGoals: [goal] })
+		expect(useSavingsStore.getState().getSavingsProgress('goal-1')).toBe(60)
+	})
 
-  it('getSavingsProgress returns 0 for an unknown id (unchanged)', () => {
-    expect(useSavingsStore.getState().getSavingsProgress('nope')).toBe(0)
-  })
+	it('getSavingsProgress returns 0 for an unknown id (unchanged)', () => {
+		expect(useSavingsStore.getState().getSavingsProgress('nope')).toBe(0)
+	})
 
-  it('getOverallProgress is computed over goals only — an account balance does not move it', () => {
-    useSavingsStore.setState({ savingsGoals: [goal] })
-    const goalOnly = useSavingsStore.getState().getOverallProgress()
-    expect(goalOnly).toBe(60)
+	it('getOverallProgress is computed over goals only — an account balance does not move it', () => {
+		useSavingsStore.setState({ savingsGoals: [goal] })
+		const goalOnly = useSavingsStore.getState().getOverallProgress()
+		expect(goalOnly).toBe(60)
 
-    // Adding a large account must NOT inflate goal progress (it has no target).
-    useSavingsStore.setState({ savingsGoals: [goal, account] })
-    expect(useSavingsStore.getState().getOverallProgress()).toBe(60)
-  })
+		// Adding a large account must NOT inflate goal progress (it has no target).
+		useSavingsStore.setState({ savingsGoals: [goal, account] })
+		expect(useSavingsStore.getState().getOverallProgress()).toBe(60)
+	})
 
-  it('getOverallProgress is 0 when there are only accounts (no targets)', () => {
-    useSavingsStore.setState({ savingsGoals: [account] })
-    expect(useSavingsStore.getState().getOverallProgress()).toBe(0)
-  })
+	it('getOverallProgress is 0 when there are only accounts (no targets)', () => {
+		useSavingsStore.setState({ savingsGoals: [account] })
+		expect(useSavingsStore.getState().getOverallProgress()).toBe(0)
+	})
 })
 
 describe('savingsStore — v1→v2 allocation backfill (Story 26.1)', () => {
-  it("backfills allocationMode='automatic' and monthlyAllocation=null for a legacy v1 row", async () => {
-    localStorage.setItem(
-      SAVINGS_GOALS_STORAGE_KEY,
-      JSON.stringify({
-        version: 1,
-        state: {
-          savingsGoals: [
-            {
-              id: 'legacy-uuid-1',
-              name: 'Old Vacation',
-              targetAmount: 100000,
-              currentBalance: 60000,
-              createdAt: '2024-01-01T00:00:00Z',
-              updatedAt: '2024-01-01T00:00:00Z',
-            },
-          ],
-        },
-      })
-    )
+	it("backfills allocationMode='automatic' and monthlyAllocation=null for a legacy v1 row", async () => {
+		localStorage.setItem(
+			SAVINGS_GOALS_STORAGE_KEY,
+			JSON.stringify({
+				version: 1,
+				state: {
+					savingsGoals: [
+						{
+							id: 'legacy-uuid-1',
+							name: 'Old Vacation',
+							targetAmount: 100000,
+							currentBalance: 60000,
+							createdAt: '2024-01-01T00:00:00Z',
+							updatedAt: '2024-01-01T00:00:00Z',
+						},
+					],
+				},
+			})
+		)
 
-    await useSavingsStore.persist.rehydrate()
+		await useSavingsStore.persist.rehydrate()
 
-    const [goal] = useSavingsStore.getState().savingsGoals
-    expect(goal.allocationMode).toBe('automatic')
-    expect(goal.monthlyAllocation).toBeNull()
-    expect(goal.name).toBe('Old Vacation')
-    expect(goal.targetAmount).toBe(100000)
-    expect(goal.currentBalance).toBe(60000)
-    expect(goal.id).toBe('legacy-uuid-1')
-  })
+		const [goal] = useSavingsStore.getState().savingsGoals
+		expect(goal.allocationMode).toBe('automatic')
+		expect(goal.monthlyAllocation).toBeNull()
+		expect(goal.name).toBe('Old Vacation')
+		expect(goal.targetAmount).toBe(100000)
+		expect(goal.currentBalance).toBe(60000)
+		expect(goal.id).toBe('legacy-uuid-1')
+	})
 
-  it('preserves an already-present manual allocation on migration', async () => {
-    localStorage.setItem(
-      SAVINGS_GOALS_STORAGE_KEY,
-      JSON.stringify({
-        version: 1,
-        state: {
-          savingsGoals: [
-            {
-              id: 'legacy-uuid-2',
-              name: 'Rent',
-              targetAmount: null,
-              currentBalance: 0,
-              allocationMode: 'manual',
-              monthlyAllocation: 50000,
-              createdAt: '2024-01-01T00:00:00Z',
-              updatedAt: '2024-01-01T00:00:00Z',
-            },
-          ],
-        },
-      })
-    )
+	it('preserves an already-present manual allocation on migration', async () => {
+		localStorage.setItem(
+			SAVINGS_GOALS_STORAGE_KEY,
+			JSON.stringify({
+				version: 1,
+				state: {
+					savingsGoals: [
+						{
+							id: 'legacy-uuid-2',
+							name: 'Rent',
+							targetAmount: null,
+							currentBalance: 0,
+							allocationMode: 'manual',
+							monthlyAllocation: 50000,
+							createdAt: '2024-01-01T00:00:00Z',
+							updatedAt: '2024-01-01T00:00:00Z',
+						},
+					],
+				},
+			})
+		)
 
-    await useSavingsStore.persist.rehydrate()
+		await useSavingsStore.persist.rehydrate()
 
-    const [goal] = useSavingsStore.getState().savingsGoals
-    expect(goal.allocationMode).toBe('manual')
-    expect(goal.monthlyAllocation).toBe(50000)
-  })
+		const [goal] = useSavingsStore.getState().savingsGoals
+		expect(goal.allocationMode).toBe('manual')
+		expect(goal.monthlyAllocation).toBe(50000)
+	})
 })

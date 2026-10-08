@@ -1,25 +1,25 @@
 {
-  "extends": "./tsconfig.app.json",
-  "compilerOptions": {
-    "composite": true,
-    "rootDir": ".",
-    "tsBuildInfoFile": "./tsconfig.vitest.tsbuildinfo",
-    "lib": ["ES2021", "ES2022.Object", "DOM", "DOM.Iterable"],
-    "types": ["react", "react-dom", "vitest/globals"],
-    "noPropertyAccessFromIndexSignature": false,
-    "noUncheckedIndexedAccess": false
-  },
-  "references": [
-    {
-      "path": "../../packages/core"
-    },
-    {
-      "path": "../../packages/db"
-    },
-    {
-      "path": "../../packages/config"
-    }
-  ],
-  "include": ["src/**/*", "vitest.setup.ts", "vitest.config.ts"],
-  "exclude": ["node_modules", "dist"]
+	"extends": "./tsconfig.app.json",
+	"compilerOptions": {
+		"composite": true,
+		"rootDir": ".",
+		"tsBuildInfoFile": "./tsconfig.vitest.tsbuildinfo",
+		"lib": ["ES2021", "ES2022.Object", "DOM", "DOM.Iterable"],
+		"types": ["react", "react-dom", "vitest/globals"],
+		"noPropertyAccessFromIndexSignature": false,
+		"noUncheckedIndexedAccess": false
+	},
+	"references": [
+		{
+			"path": "../../packages/core"
+		},
+		{
+			"path": "../../packages/db"
+		},
+		{
+			"path": "../../packages/config"
+		}
+	],
+	"include": ["src/**/*", "vitest.setup.ts", "vitest.config.ts"],
+	"exclude": ["node_modules", "dist"]
 }

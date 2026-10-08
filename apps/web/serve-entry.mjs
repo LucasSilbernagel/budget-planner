@@ -26,49 +26,49 @@ const SHUTDOWN_TIMEOUT_MS = 10_000
  * @returns {number}
  */
 function parsePort(raw) {
-  const parsed = Number(raw)
-  if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 65535) {
-    return parsed
-  }
-  if (raw !== undefined && raw !== '') {
-    console.warn(`[server-entry] invalid PORT "${raw}"; falling back to ${DEFAULT_PORT}`)
-  }
-  return DEFAULT_PORT
+	const parsed = Number(raw)
+	if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 65535) {
+		return parsed
+	}
+	if (raw !== undefined && raw !== '') {
+		console.warn(`[server-entry] invalid PORT "${raw}"; falling back to ${DEFAULT_PORT}`)
+	}
+	return DEFAULT_PORT
 }
 
 const port = parsePort(process.env['PORT'])
 const host = process.env['HOST'] || '0.0.0.0'
 
 const listener = createRequestListener({
-  fetchHandler: (request) => server.fetch(request),
-  clientDir,
+	fetchHandler: (request) => server.fetch(request),
+	clientDir,
 })
 
 const httpServer = createServer(listener)
 
 httpServer.on('error', (err) => {
-  console.error('[server-entry] HTTP server error:', err)
-  process.exit(1)
+	console.error('[server-entry] HTTP server error:', err)
+	process.exit(1)
 })
 
 httpServer.listen(port, host, () => {
-  console.log(`[server-entry] budget-planner listening on http://${host}:${port}`)
+	console.log(`[server-entry] budget-planner listening on http://${host}:${port}`)
 })
 
 let shuttingDown = false
 for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
-  process.on(signal, () => {
-    if (shuttingDown) {
-      return
-    }
-    shuttingDown = true
-    console.log(`[server-entry] ${signal} received; draining…`)
-    httpServer.close(() => process.exit(0))
-    // Close idle keep-alive sockets so close()'s callback can fire; hard-cap the drain.
-    httpServer.closeIdleConnections()
-    setTimeout(() => {
-      console.warn('[server-entry] drain timed out; forcing exit')
-      process.exit(1)
-    }, SHUTDOWN_TIMEOUT_MS).unref()
-  })
+	process.on(signal, () => {
+		if (shuttingDown) {
+			return
+		}
+		shuttingDown = true
+		console.log(`[server-entry] ${signal} received; draining…`)
+		httpServer.close(() => process.exit(0))
+		// Close idle keep-alive sockets so close()'s callback can fire; hard-cap the drain.
+		httpServer.closeIdleConnections()
+		setTimeout(() => {
+			console.warn('[server-entry] drain timed out; forcing exit')
+			process.exit(1)
+		}, SHUTDOWN_TIMEOUT_MS).unref()
+	})
 }

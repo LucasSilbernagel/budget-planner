@@ -8,22 +8,22 @@ import { create } from 'zustand'
 import type { SessionSeed } from '../../context/session-seed'
 
 const useVerifiedSessionStore = create<{ seed: SessionSeed | undefined }>(() => ({
-  seed: undefined,
+	seed: undefined,
 }))
 
 /** Call from an effect only. */
 export function setVerifiedSession(seed: SessionSeed): void {
-  useVerifiedSessionStore.setState({ seed })
+	useVerifiedSessionStore.setState({ seed })
 }
 
 export function useVerifiedSession(): SessionSeed | undefined {
-  return useVerifiedSessionStore((state) => state.seed)
+	return useVerifiedSessionStore((state) => state.seed)
 }
 
 export function getVerifiedSession(): SessionSeed | undefined {
-  return useVerifiedSessionStore.getState().seed
+	return useVerifiedSessionStore.getState().seed
 }
 
 export function resetVerifiedSessionForTests(): void {
-  useVerifiedSessionStore.setState({ seed: undefined })
+	useVerifiedSessionStore.setState({ seed: undefined })
 }

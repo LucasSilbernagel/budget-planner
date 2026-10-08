@@ -4,60 +4,60 @@
  */
 
 import {
-  type AnalyticsService,
-  type ClientMetadata,
-  createAnalyticsService,
-  parseMetadataFromUrl,
+	type AnalyticsService,
+	type ClientMetadata,
+	createAnalyticsService,
+	parseMetadataFromUrl,
 } from '@budget-planner/core'
-import { type ReactNode, createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from 'react'
 
 interface MetadataContextValue {
-  metadata: ClientMetadata
-  analytics: AnalyticsService
+	metadata: ClientMetadata
+	analytics: AnalyticsService
 }
 
 const MetadataContext = createContext<MetadataContextValue | null>(null)
 
 export function MetadataProvider({ children }: { children: ReactNode }) {
-  const [metadata, setMetadata] = useState<ClientMetadata>({})
+	const [metadata, setMetadata] = useState<ClientMetadata>({})
 
-  const analyticsRef = useRef<AnalyticsService | null>(null)
-  if (analyticsRef.current === null) {
-    analyticsRef.current = createAnalyticsService()
-  }
-  const analytics = analyticsRef.current
+	const analyticsRef = useRef<AnalyticsService | null>(null)
+	if (analyticsRef.current === null) {
+		analyticsRef.current = createAnalyticsService()
+	}
+	const analytics = analyticsRef.current
 
-  // Runs the capture at most once despite StrictMode's double-invoked effects or a remount.
-  const hasCapturedRef = useRef(false)
+	// Runs the capture at most once despite StrictMode's double-invoked effects or a remount.
+	const hasCapturedRef = useRef(false)
 
-  useEffect(() => {
-    if (typeof window === 'undefined' || hasCapturedRef.current) {
-      return
-    }
-    hasCapturedRef.current = true
-    const captured = parseMetadataFromUrl(window.location.search)
-    setMetadata(captured)
-    analytics.setMetadata(captured)
-    analytics.track('page_view')
-  }, [analytics])
+	useEffect(() => {
+		if (typeof window === 'undefined' || hasCapturedRef.current) {
+			return
+		}
+		hasCapturedRef.current = true
+		const captured = parseMetadataFromUrl(window.location.search)
+		setMetadata(captured)
+		analytics.setMetadata(captured)
+		analytics.track('page_view')
+	}, [analytics])
 
-  return (
-    <MetadataContext.Provider value={{ metadata, analytics }}>{children}</MetadataContext.Provider>
-  )
+	return (
+		<MetadataContext.Provider value={{ metadata, analytics }}>{children}</MetadataContext.Provider>
+	)
 }
 
 function useMetadataContext(): MetadataContextValue {
-  const ctx = useContext(MetadataContext)
-  if (ctx === null) {
-    throw new Error('useMetadata/useAnalytics must be used within a <MetadataProvider>')
-  }
-  return ctx
+	const ctx = useContext(MetadataContext)
+	if (ctx === null) {
+		throw new Error('useMetadata/useAnalytics must be used within a <MetadataProvider>')
+	}
+	return ctx
 }
 
 export function useMetadata(): ClientMetadata {
-  return useMetadataContext().metadata
+	return useMetadataContext().metadata
 }
 
 export function useAnalytics(): AnalyticsService {
-  return useMetadataContext().analytics
+	return useMetadataContext().analytics
 }

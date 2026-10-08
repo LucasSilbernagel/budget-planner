@@ -9,12 +9,12 @@ import { CSP_NONCE_GLOBAL_KEY } from './csp-nonce-key'
 
 const nonceStorage = new AsyncLocalStorage<string>()
 ;(globalThis as Record<string, unknown>)[CSP_NONCE_GLOBAL_KEY] = (): string | undefined =>
-  nonceStorage.getStore()
+	nonceStorage.getStore()
 
 export function generateCspNonce(): string {
-  return randomBytes(16).toString('base64')
+	return randomBytes(16).toString('base64')
 }
 
 export function runWithCspNonce<T>(nonce: string, fn: () => T): T {
-  return nonceStorage.run(nonce, fn)
+	return nonceStorage.run(nonce, fn)
 }

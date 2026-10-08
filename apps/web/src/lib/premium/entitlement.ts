@@ -6,5 +6,5 @@ import { hasPremiumFeatures } from './access-statuses'
  * never this predicate. seedToStatus duplicates the rule; entitlement.test asserts parity.
  */
 export function isEntitledSeed(seed: SessionSeed | null): boolean {
-  return seed?.isAuthenticated === true && hasPremiumFeatures(seed.subscriptionStatus)
+	return seed?.isAuthenticated === true && hasPremiumFeatures(seed.subscriptionStatus)
 }

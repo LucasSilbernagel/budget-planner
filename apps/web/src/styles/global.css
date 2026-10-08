@@ -3,142 +3,142 @@
 @tailwind utilities;
 
 @layer base {
-  html {
-    @apply antialiased;
+	html {
+		@apply antialiased;
 
-    /* So native chrome (scrollbars, form controls) follows the device scheme too. */
-    color-scheme: light dark;
-  }
+		/* So native chrome (scrollbars, form controls) follows the device scheme too. */
+		color-scheme: light dark;
+	}
 
-  body {
-    @apply text-gray-900 bg-gray-50;
-  }
+	body {
+		@apply text-gray-900 bg-gray-50;
+	}
 
-  /* A media query, not `.dark body`: nothing sets a `.dark` class since dark mode
+	/* A media query, not `.dark body`: nothing sets a `.dark` class since dark mode
      became media-driven. */
-  @media (prefers-color-scheme: dark) {
-    body {
-      @apply text-gray-100 bg-gray-900;
-    }
-  }
+	@media (prefers-color-scheme: dark) {
+		body {
+			@apply text-gray-100 bg-gray-900;
+		}
+	}
 }
 
 @layer components {
-  .btn {
-    @apply px-4 py-2 rounded-md text-sm font-medium;
-  }
+	.btn {
+		@apply px-4 py-2 rounded-md text-sm font-medium;
+	}
 
-  .btn-primary {
-    @apply bg-blue-600 text-white hover:bg-blue-700;
-  }
+	.btn-primary {
+		@apply bg-blue-600 text-white hover:bg-blue-700;
+	}
 
-  .btn-secondary {
-    @apply bg-gray-200 text-gray-800 hover:bg-gray-300;
-  }
+	.btn-secondary {
+		@apply bg-gray-200 text-gray-800 hover:bg-gray-300;
+	}
 
-  .surface {
-    @apply bg-white dark:bg-gray-800;
-  }
-  .surface-sunken {
-    @apply bg-gray-50 dark:bg-gray-900;
-  }
-  .surface-inset {
-    @apply bg-gray-50 dark:bg-gray-700/40;
-  }
+	.surface {
+		@apply bg-white dark:bg-gray-800;
+	}
+	.surface-sunken {
+		@apply bg-gray-50 dark:bg-gray-900;
+	}
+	.surface-inset {
+		@apply bg-gray-50 dark:bg-gray-700/40;
+	}
 
-  .text-heading {
-    @apply text-gray-900 dark:text-gray-100;
-  }
-  .text-subheading {
-    @apply text-gray-800 dark:text-gray-100;
-  }
-  .text-label {
-    @apply text-gray-700 dark:text-gray-300;
-  }
-  .text-body {
-    @apply text-gray-600 dark:text-gray-300;
-  }
-  .text-muted {
-    @apply text-gray-500 dark:text-gray-400;
-  }
-  /* Same values as .text-muted: anything lighter fails WCAG AA 4.5:1 on white. */
-  .text-faint {
-    @apply text-gray-500 dark:text-gray-400;
-  }
+	.text-heading {
+		@apply text-gray-900 dark:text-gray-100;
+	}
+	.text-subheading {
+		@apply text-gray-800 dark:text-gray-100;
+	}
+	.text-label {
+		@apply text-gray-700 dark:text-gray-300;
+	}
+	.text-body {
+		@apply text-gray-600 dark:text-gray-300;
+	}
+	.text-muted {
+		@apply text-gray-500 dark:text-gray-400;
+	}
+	/* Same values as .text-muted: anything lighter fails WCAG AA 4.5:1 on white. */
+	.text-faint {
+		@apply text-gray-500 dark:text-gray-400;
+	}
 
-  .border-default {
-    @apply border-gray-200 dark:border-gray-700;
-  }
+	.border-default {
+		@apply border-gray-200 dark:border-gray-700;
+	}
 
-  /* No dark variant: lighter greens fail 4.5:1 under white text. A call site must not
+	/* No dark variant: lighter greens fail 4.5:1 under white text. A call site must not
      also carry a bg-green-* utility, which is emitted later and would win. */
-  .fill-green {
-    @apply bg-green-700 text-white;
-  }
+	.fill-green {
+		@apply bg-green-700 text-white;
+	}
 
-  /* Must stay declared after .surface-inset: same layer, both set background-color,
+	/* Must stay declared after .surface-inset: same layer, both set background-color,
      so source order here decides. Never put both on one element. */
-  .surface-interactive {
-    @apply bg-gray-50 hover:bg-gray-200 dark:bg-gray-700/40 dark:hover:bg-gray-600/60;
-  }
+	.surface-interactive {
+		@apply bg-gray-50 hover:bg-gray-200 dark:bg-gray-700/40 dark:hover:bg-gray-600/60;
+	}
 
-  /* Load-bearing on touch, where there is no hover: the only persistent cue that a
+	/* Load-bearing on touch, where there is no hover: the only persistent cue that a
      tile is tappable. */
-  .text-accent {
-    @apply text-blue-700 dark:text-blue-300;
-  }
+	.text-accent {
+		@apply text-blue-700 dark:text-blue-300;
+	}
 
-  /* Hides the entry before hydration; the attribute must be removed when the
+	/* Hides the entry before hydration; the attribute must be removed when the
      preference is turned back on, since this rule stays live. */
-  [data-hide-retirement='1'] [data-nav-path='/retirement'] {
-    display: none;
-  }
+	[data-hide-retirement="1"] [data-nav-path="/retirement"] {
+		display: none;
+	}
 
-  /* Hides the dismissed box before hydration (the server cannot see localStorage).
+	/* Hides the dismissed box before hydration (the server cannot see localStorage).
      Dismissal is one-way; any future undo must also remove the attribute. */
-  [data-dismiss-account-notice='1'] [data-account-notice] {
-    display: none;
-  }
+	[data-dismiss-account-notice="1"] [data-account-notice] {
+		display: none;
+	}
 
-  /* With data, reserve a viewport so later growth moves only off-screen content
+	/* With data, reserve a viewport so later growth moves only off-screen content
      (no CLS). Without the attribute the empty-state size is kept. */
-  [data-overview-has-data='1'] [data-hook='overview-sections-pending'] {
-    min-height: 100vh;
-  }
+	[data-overview-has-data="1"] [data-hook="overview-sections-pending"] {
+		min-height: 100vh;
+	}
 }
 
 @layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+	.text-balance {
+		text-wrap: balance;
+	}
 }
 
 @media print {
-  /* An opt-in attribute, not `footer`: some pages render their own in-page footer. */
-  [data-print-hide] {
-    display: none !important;
-  }
+	/* An opt-in attribute, not `footer`: some pages render their own in-page footer. */
+	[data-print-hide] {
+		display: none !important;
+	}
 
-  /* Browsers drop backgrounds but keep text colour when printing, so force black on
+	/* Browsers drop backgrounds but keep text colour when printing, so force black on
      white across the subtree (token classes set colour on descendants). */
-  #financial-summary-report,
-  #financial-summary-report * {
-    background-color: transparent !important;
-    color: #000 !important;
-    border-color: #9ca3af !important;
-  }
+	#financial-summary-report,
+	#financial-summary-report * {
+		background-color: transparent !important;
+		color: #000 !important;
+		border-color: #9ca3af !important;
+	}
 
-  #financial-summary-report section {
-    break-inside: avoid;
-  }
+	#financial-summary-report section {
+		break-inside: avoid;
+	}
 
-  #financial-summary-report tr {
-    break-inside: avoid;
-  }
+	#financial-summary-report tr {
+		break-inside: avoid;
+	}
 
-  #financial-summary-report h1,
-  #financial-summary-report h2,
-  #financial-summary-report caption {
-    break-after: avoid;
-  }
+	#financial-summary-report h1,
+	#financial-summary-report h2,
+	#financial-summary-report caption {
+		break-after: avoid;
+	}
 }

@@ -1,5 +1,5 @@
 export interface ApiResult<T> {
-  success: boolean
-  data?: T
-  error?: string
+	success: boolean
+	data?: T
+	error?: string
 }

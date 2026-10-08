@@ -1,83 +1,139 @@
 {
-  "$schema": "https://biomejs.dev/schemas/1.5.3/schema.json",
-  "organizeImports": {
-    "enabled": true
-  },
-  "formatter": {
-    "enabled": true,
-    "formatWithErrors": false,
-    "indentStyle": "space",
-    "indentWidth": 2,
-    "lineEnding": "lf",
-    "lineWidth": 100
-  },
-  "javascript": {
-    "formatter": {
-      "quoteStyle": "single",
-      "semicolons": "asNeeded",
-      "trailingComma": "es5"
-    }
-  },
-  "linter": {
-    "enabled": true,
-    "rules": {
-      "recommended": true,
-      "complexity": {
-        "noUselessFragments": "error",
-        "useLiteralKeys": "off"
-      },
-      "correctness": {
-        "noUnusedVariables": "error",
-        "useExhaustiveDependencies": "error",
-        "noEmptyPattern": "error"
-      },
-      "suspicious": {
-        "noExplicitAny": "error",
-        "noArrayIndexKey": "error",
-        "noUnsafeNegation": "error",
-        "useNamespaceKeyword": "error"
-      },
-      "performance": {
-        "noAccumulatingSpread": "error"
-      },
-      "style": {
-        "useConst": "error",
-        "useSelfClosingElements": "error",
-        "useShorthandArrayType": "error"
-      },
-      "security": {
-        "noDangerouslySetInnerHtml": "error"
-      }
-    }
-  },
-  "files": {
-    "ignore": [
-      "node_modules",
-      "dist",
-      "dev-dist",
-      ".pnpm-store",
-      "pnpm-lock.yaml",
-      "**/*.d.ts",
-      "_bmad-output",
-      "routeTree.gen.ts",
-      "**/migrations/meta/**",
-      "**/test-results",
-      "**/test-results/**",
-      "**/playwright-report",
-      "**/playwright-report/**",
-      "**/*.timestamp-*.mjs"
-    ]
-  },
-  "overrides": [
-    {
-      "include": ["**/__tests__/**", "**/*.test.ts", "**/*.test.tsx"],
-      "linter": {
-        "rules": {
-          "suspicious": {
-            "noExplicitAny": "off"
-          }
-        }
-      }
-    }
-  ]
+	"$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+	"assist": {
+		"actions": {
+			"source": {
+				"organizeImports": "on"
+			}
+		}
+	},
+	"formatter": {
+		"enabled": true,
+		"formatWithErrors": false,
+		"indentStyle": "tab",
+		"lineEnding": "lf",
+		"lineWidth": 100
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "single",
+			"semicolons": "asNeeded",
+			"trailingCommas": "es5"
+		}
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "recommended",
+			"complexity": {
+				"noUselessFragments": "error",
+				"useLiteralKeys": "off",
+				"noForEach": "error",
+				"noStaticOnlyClass": "error",
+				"noUselessSwitchCase": "error",
+				"useFlatMap": "error",
+				"useDateNow": "error",
+				"noUselessUndefined": "error"
+			},
+			"correctness": {
+				"noUnusedVariables": "error",
+				"useExhaustiveDependencies": "error",
+				"noEmptyPattern": "error"
+			},
+			"suspicious": {
+				"noExplicitAny": "error",
+				"noArrayIndexKey": "error",
+				"noUnsafeNegation": "error",
+				"useNamespaceKeyword": "error",
+				"useErrorMessage": "error",
+				"useIsArray": "error",
+				"useNumberToFixedDigitsArgument": "error",
+				"noUnknownAtRules": {
+					"level": "error",
+					"options": {
+						"ignore": ["tailwind"]
+					}
+				}
+			},
+			"performance": {
+				"noAccumulatingSpread": "error"
+			},
+			"style": {
+				"useConst": "error",
+				"useSelfClosingElements": "error",
+				"useConsistentArrayType": {
+					"level": "error",
+					"options": {
+						"syntax": "shorthand"
+					}
+				},
+				"useExplicitLengthCheck": "error",
+				"useForOf": "error",
+				"useCollapsedIf": "error",
+				"useAtIndex": "error",
+				"useNumberNamespace": "error",
+				"noSubstr": "error",
+				"useTrimStartEnd": "error",
+				"useThrowNewError": "error"
+			},
+			"security": {
+				"noDangerouslySetInnerHtml": "error"
+			}
+		}
+	},
+	"files": {
+		"includes": [
+			"**",
+			"!**/node_modules",
+			"!**/dist",
+			"!**/dev-dist",
+			"!**/.pnpm-store",
+			"!**/pnpm-lock.yaml",
+			"!**/*.d.ts",
+			"!_bmad",
+			"!_bmad-output",
+			"!.claude",
+			"!.agents",
+			"!**/routeTree.gen.ts",
+			"!**/migrations/meta",
+			"!**/test-results",
+			"!**/playwright-report",
+			"!**/*.timestamp-*.mjs"
+		]
+	},
+	"overrides": [
+		{
+			"includes": ["**/__tests__/**", "**/*.test.ts", "**/*.test.tsx"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noExplicitAny": "off",
+						"noDocumentCookie": "off",
+						"noExportsInTest": "off",
+						"noTemplateCurlyInString": "off",
+						"noThenProperty": "off",
+						"useErrorMessage": "off"
+					},
+					"correctness": {
+						"noUnsafeOptionalChaining": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": ["apps/web/src/styles/global.css"],
+			"linter": {
+				"rules": {
+					"complexity": {
+						"noImportantStyles": "off"
+					}
+				}
+			}
+		}
+	],
+	"css": {
+		"parser": {
+			"tailwindDirectives": true
+		}
+	}
 }

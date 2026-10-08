@@ -1,318 +1,318 @@
 import { describe, expect, it } from 'vitest'
 import {
-  type NetIncomeResult,
-  calculateGrossPeriodIncome,
-  calculateNetIncomeResult,
-  calculateNetPeriodIncome,
-  calculateTotalPeriodExpenses,
+	calculateGrossPeriodIncome,
+	calculateNetIncomeResult,
+	calculateNetPeriodIncome,
+	calculateTotalPeriodExpenses,
+	type NetIncomeResult,
 } from '../netIncome.js'
 
 describe('Net Period Income Calculation', () => {
-  describe('calculateGrossPeriodIncome', () => {
-    it('should calculate gross income from single monthly source ($500 → 50000 cents)', () => {
-      const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
+	describe('calculateGrossPeriodIncome', () => {
+		it('should calculate gross income from single monthly source ($500 → 50000 cents)', () => {
+			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
 
-      const result = calculateGrossPeriodIncome(incomeSources)
-      expect(result).toBe(50000)
-    })
+			const result = calculateGrossPeriodIncome(incomeSources)
+			expect(result).toBe(50000)
+		})
 
-    it('should calculate gross income from weekly source ($100/week)', () => {
-      const incomeSources = [{ amount: 10000, frequency: 'weekly' as const }]
+		it('should calculate gross income from weekly source ($100/week)', () => {
+			const incomeSources = [{ amount: 10000, frequency: 'weekly' as const }]
 
-      const result = calculateGrossPeriodIncome(incomeSources)
-      expect(result).toBe(43333)
-    })
+			const result = calculateGrossPeriodIncome(incomeSources)
+			expect(result).toBe(43333)
+		})
 
-    it('should calculate gross income from multiple sources with different frequencies', () => {
-      const incomeSources = [
-        { amount: 10000, frequency: 'weekly' as const },
-        { amount: 20000, frequency: 'biweekly' as const },
-        { amount: 50000, frequency: 'monthly' as const },
-      ]
+		it('should calculate gross income from multiple sources with different frequencies', () => {
+			const incomeSources = [
+				{ amount: 10000, frequency: 'weekly' as const },
+				{ amount: 20000, frequency: 'biweekly' as const },
+				{ amount: 50000, frequency: 'monthly' as const },
+			]
 
-      const result = calculateGrossPeriodIncome(incomeSources)
-      // 43333 + 43333 + 50000 = 136666
-      expect(result).toBe(136666)
-    })
+			const result = calculateGrossPeriodIncome(incomeSources)
+			// 43333 + 43333 + 50000 = 136666
+			expect(result).toBe(136666)
+		})
 
-    it('should return 0 for empty array', () => {
-      const result = calculateGrossPeriodIncome([])
-      expect(result).toBe(0)
-    })
+		it('should return 0 for empty array', () => {
+			const result = calculateGrossPeriodIncome([])
+			expect(result).toBe(0)
+		})
 
-    it('should handle negative income amounts', () => {
-      const incomeSources = [{ amount: -50000, frequency: 'monthly' as const }]
+		it('should handle negative income amounts', () => {
+			const incomeSources = [{ amount: -50000, frequency: 'monthly' as const }]
 
-      const result = calculateGrossPeriodIncome(incomeSources)
-      expect(result).toBe(-50000)
-    })
-  })
+			const result = calculateGrossPeriodIncome(incomeSources)
+			expect(result).toBe(-50000)
+		})
+	})
 
-  describe('calculateTotalPeriodExpenses', () => {
-    it('should calculate total expenses from single monthly expense ($200 → 20000 cents)', () => {
-      const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
+	describe('calculateTotalPeriodExpenses', () => {
+		it('should calculate total expenses from single monthly expense ($200 → 20000 cents)', () => {
+			const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
 
-      const result = calculateTotalPeriodExpenses(expenses)
-      expect(result).toBe(20000)
-    })
+			const result = calculateTotalPeriodExpenses(expenses)
+			expect(result).toBe(20000)
+		})
 
-    it('should calculate total expenses from weekly expense ($50/week)', () => {
-      const expenses = [{ amount: 5000, frequency: 'weekly' as const }]
+		it('should calculate total expenses from weekly expense ($50/week)', () => {
+			const expenses = [{ amount: 5000, frequency: 'weekly' as const }]
 
-      const result = calculateTotalPeriodExpenses(expenses)
-      // $50 * 52/12 = $216.666... = 21667 cents (rounded)
-      expect(result).toBe(21667)
-    })
+			const result = calculateTotalPeriodExpenses(expenses)
+			// $50 * 52/12 = $216.666... = 21667 cents (rounded)
+			expect(result).toBe(21667)
+		})
 
-    it('should calculate total expenses from multiple expenses with different frequencies', () => {
-      const expenses = [
-        { amount: 10000, frequency: 'weekly' as const },
-        { amount: 5000, frequency: 'biweekly' as const },
-        { amount: 20000, frequency: 'monthly' as const },
-      ]
+		it('should calculate total expenses from multiple expenses with different frequencies', () => {
+			const expenses = [
+				{ amount: 10000, frequency: 'weekly' as const },
+				{ amount: 5000, frequency: 'biweekly' as const },
+				{ amount: 20000, frequency: 'monthly' as const },
+			]
 
-      const result = calculateTotalPeriodExpenses(expenses)
-      // 43333 + 10833 + 20000 = 74166
-      expect(result).toBe(74166)
-    })
+			const result = calculateTotalPeriodExpenses(expenses)
+			// 43333 + 10833 + 20000 = 74166
+			expect(result).toBe(74166)
+		})
 
-    it('should return 0 for empty array', () => {
-      const result = calculateTotalPeriodExpenses([])
-      expect(result).toBe(0)
-    })
+		it('should return 0 for empty array', () => {
+			const result = calculateTotalPeriodExpenses([])
+			expect(result).toBe(0)
+		})
 
-    it('should handle negative expense amounts', () => {
-      const expenses = [{ amount: -20000, frequency: 'monthly' as const }]
+		it('should handle negative expense amounts', () => {
+			const expenses = [{ amount: -20000, frequency: 'monthly' as const }]
 
-      const result = calculateTotalPeriodExpenses(expenses)
-      expect(result).toBe(-20000)
-    })
-  })
+			const result = calculateTotalPeriodExpenses(expenses)
+			expect(result).toBe(-20000)
+		})
+	})
 
-  describe('calculateNetPeriodIncome', () => {
-    it('should calculate net income with surplus (income > expenses)', () => {
-      const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
-      const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
+	describe('calculateNetPeriodIncome', () => {
+		it('should calculate net income with surplus (income > expenses)', () => {
+			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
+			const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
 
-      const result = calculateNetPeriodIncome(incomeSources, expenses)
-      expect(result).toBe(30000)
-    })
+			const result = calculateNetPeriodIncome(incomeSources, expenses)
+			expect(result).toBe(30000)
+		})
 
-    it('should calculate net income with deficit (expenses > income)', () => {
-      const incomeSources = [{ amount: 20000, frequency: 'monthly' as const }]
-      const expenses = [{ amount: 50000, frequency: 'monthly' as const }]
+		it('should calculate net income with deficit (expenses > income)', () => {
+			const incomeSources = [{ amount: 20000, frequency: 'monthly' as const }]
+			const expenses = [{ amount: 50000, frequency: 'monthly' as const }]
 
-      const result = calculateNetPeriodIncome(incomeSources, expenses)
-      expect(result).toBe(-30000)
-    })
+			const result = calculateNetPeriodIncome(incomeSources, expenses)
+			expect(result).toBe(-30000)
+		})
 
-    it('should calculate net income with break-even (income = expenses)', () => {
-      const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
-      const expenses = [{ amount: 50000, frequency: 'monthly' as const }]
+		it('should calculate net income with break-even (income = expenses)', () => {
+			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
+			const expenses = [{ amount: 50000, frequency: 'monthly' as const }]
 
-      const result = calculateNetPeriodIncome(incomeSources, expenses)
-      expect(result).toBe(0)
-    })
+			const result = calculateNetPeriodIncome(incomeSources, expenses)
+			expect(result).toBe(0)
+		})
 
-    it('should calculate net income with mixed frequencies', () => {
-      const incomeSources = [{ amount: 10000, frequency: 'weekly' as const }]
-      const expenses = [{ amount: 10000, frequency: 'biweekly' as const }]
+		it('should calculate net income with mixed frequencies', () => {
+			const incomeSources = [{ amount: 10000, frequency: 'weekly' as const }]
+			const expenses = [{ amount: 10000, frequency: 'biweekly' as const }]
 
-      const result = calculateNetPeriodIncome(incomeSources, expenses)
-      // 43333 - 21667 = 21666
-      expect(result).toBe(21666)
-    })
+			const result = calculateNetPeriodIncome(incomeSources, expenses)
+			// 43333 - 21667 = 21666
+			expect(result).toBe(21666)
+		})
 
-    it('should handle empty income and expense arrays', () => {
-      const result = calculateNetPeriodIncome([], [])
-      expect(result).toBe(0)
-    })
+		it('should handle empty income and expense arrays', () => {
+			const result = calculateNetPeriodIncome([], [])
+			expect(result).toBe(0)
+		})
 
-    it('should handle empty expenses array', () => {
-      const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
-      const result = calculateNetPeriodIncome(incomeSources, [])
-      expect(result).toBe(50000)
-    })
+		it('should handle empty expenses array', () => {
+			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
+			const result = calculateNetPeriodIncome(incomeSources, [])
+			expect(result).toBe(50000)
+		})
 
-    it('should handle empty income array', () => {
-      const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
-      const result = calculateNetPeriodIncome([], expenses)
-      expect(result).toBe(-20000)
-    })
-  })
+		it('should handle empty income array', () => {
+			const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
+			const result = calculateNetPeriodIncome([], expenses)
+			expect(result).toBe(-20000)
+		})
+	})
 
-  describe('calculateNetIncomeResult', () => {
-    it('should return detailed result with surplus', () => {
-      const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
-      const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
+	describe('calculateNetIncomeResult', () => {
+		it('should return detailed result with surplus', () => {
+			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
+			const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
 
-      const result = calculateNetIncomeResult(incomeSources, expenses)
+			const result = calculateNetIncomeResult(incomeSources, expenses)
 
-      expect(result).toEqual<NetIncomeResult>({
-        grossIncome: 50000,
-        totalExpenses: 20000,
-        netIncome: 30000,
-        isSurplus: true,
-      })
-    })
+			expect(result).toEqual<NetIncomeResult>({
+				grossIncome: 50000,
+				totalExpenses: 20000,
+				netIncome: 30000,
+				isSurplus: true,
+			})
+		})
 
-    it('should return detailed result with deficit', () => {
-      const incomeSources = [{ amount: 20000, frequency: 'monthly' as const }]
-      const expenses = [{ amount: 50000, frequency: 'monthly' as const }]
+		it('should return detailed result with deficit', () => {
+			const incomeSources = [{ amount: 20000, frequency: 'monthly' as const }]
+			const expenses = [{ amount: 50000, frequency: 'monthly' as const }]
 
-      const result = calculateNetIncomeResult(incomeSources, expenses)
+			const result = calculateNetIncomeResult(incomeSources, expenses)
 
-      expect(result).toEqual<NetIncomeResult>({
-        grossIncome: 20000,
-        totalExpenses: 50000,
-        netIncome: -30000,
-        isSurplus: false,
-      })
-    })
+			expect(result).toEqual<NetIncomeResult>({
+				grossIncome: 20000,
+				totalExpenses: 50000,
+				netIncome: -30000,
+				isSurplus: false,
+			})
+		})
 
-    it('should return detailed result with break-even', () => {
-      const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
-      const expenses = [{ amount: 50000, frequency: 'monthly' as const }]
+		it('should return detailed result with break-even', () => {
+			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
+			const expenses = [{ amount: 50000, frequency: 'monthly' as const }]
 
-      const result = calculateNetIncomeResult(incomeSources, expenses)
+			const result = calculateNetIncomeResult(incomeSources, expenses)
 
-      expect(result).toEqual<NetIncomeResult>({
-        grossIncome: 50000,
-        totalExpenses: 50000,
-        netIncome: 0,
-        isSurplus: false, // 0 is break-even, not surplus
-      })
-    })
+			expect(result).toEqual<NetIncomeResult>({
+				grossIncome: 50000,
+				totalExpenses: 50000,
+				netIncome: 0,
+				isSurplus: false, // 0 is break-even, not surplus
+			})
+		})
 
-    it('should handle empty arrays', () => {
-      const result = calculateNetIncomeResult([], [])
+		it('should handle empty arrays', () => {
+			const result = calculateNetIncomeResult([], [])
 
-      expect(result).toEqual<NetIncomeResult>({
-        grossIncome: 0,
-        totalExpenses: 0,
-        netIncome: 0,
-        isSurplus: false, // 0 is break-even, not surplus
-      })
-    })
-  })
+			expect(result).toEqual<NetIncomeResult>({
+				grossIncome: 0,
+				totalExpenses: 0,
+				netIncome: 0,
+				isSurplus: false, // 0 is break-even, not surplus
+			})
+		})
+	})
 
-  describe('Mathematical Validation - Zero Tolerance', () => {
-    it('should pass exact validation: weekly income vs monthly expense', () => {
-      const incomeSources = [{ amount: 10000, frequency: 'weekly' as const }]
-      const expenses = [{ amount: 10000, frequency: 'monthly' as const }]
+	describe('Mathematical Validation - Zero Tolerance', () => {
+		it('should pass exact validation: weekly income vs monthly expense', () => {
+			const incomeSources = [{ amount: 10000, frequency: 'weekly' as const }]
+			const expenses = [{ amount: 10000, frequency: 'monthly' as const }]
 
-      const result = calculateNetPeriodIncome(incomeSources, expenses)
-      // 43333 - 10000 = 33333
-      expect(result).toBe(33333)
-    })
+			const result = calculateNetPeriodIncome(incomeSources, expenses)
+			// 43333 - 10000 = 33333
+			expect(result).toBe(33333)
+		})
 
-    it('should pass exact validation: complex scenario with multiple frequencies', () => {
-      const incomeSources = [
-        { amount: 10000, frequency: 'weekly' as const },
-        { amount: 5000, frequency: 'biweekly' as const },
-      ]
-      const expenses = [
-        { amount: 20000, frequency: 'monthly' as const },
-        { amount: 5000, frequency: 'weekly' as const },
-      ]
+		it('should pass exact validation: complex scenario with multiple frequencies', () => {
+			const incomeSources = [
+				{ amount: 10000, frequency: 'weekly' as const },
+				{ amount: 5000, frequency: 'biweekly' as const },
+			]
+			const expenses = [
+				{ amount: 20000, frequency: 'monthly' as const },
+				{ amount: 5000, frequency: 'weekly' as const },
+			]
 
-      const result = calculateNetPeriodIncome(incomeSources, expenses)
-      // Income 43333 + 10833 = 54166; expenses 20000 + 21667 = 41667; net 12499.
-      expect(result).toBe(12499)
-    })
-  })
+			const result = calculateNetPeriodIncome(incomeSources, expenses)
+			// Income 43333 + 10833 = 54166; expenses 20000 + 21667 = 41667; net 12499.
+			expect(result).toBe(12499)
+		})
+	})
 
-  describe('Edge Cases - Zero Tolerance for Errors', () => {
-    it('should handle empty income array', () => {
-      const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
-      const result = calculateNetPeriodIncome([], expenses)
-      expect(result).toBe(-20000)
-    })
+	describe('Edge Cases - Zero Tolerance for Errors', () => {
+		it('should handle empty income array', () => {
+			const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
+			const result = calculateNetPeriodIncome([], expenses)
+			expect(result).toBe(-20000)
+		})
 
-    it('should handle empty expenses array', () => {
-      const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
-      const result = calculateNetPeriodIncome(incomeSources, [])
-      expect(result).toBe(50000)
-    })
+		it('should handle empty expenses array', () => {
+			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
+			const result = calculateNetPeriodIncome(incomeSources, [])
+			expect(result).toBe(50000)
+		})
 
-    it('should handle all negative amounts', () => {
-      const incomeSources = [{ amount: -10000, frequency: 'monthly' as const }]
-      const expenses = [{ amount: -5000, frequency: 'monthly' as const }]
-      const result = calculateNetPeriodIncome(incomeSources, expenses)
-      // -10000 - (-5000) = -5000
-      expect(result).toBe(-5000)
-    })
+		it('should handle all negative amounts', () => {
+			const incomeSources = [{ amount: -10000, frequency: 'monthly' as const }]
+			const expenses = [{ amount: -5000, frequency: 'monthly' as const }]
+			const result = calculateNetPeriodIncome(incomeSources, expenses)
+			// -10000 - (-5000) = -5000
+			expect(result).toBe(-5000)
+		})
 
-    it('should handle very large numbers', () => {
-      const incomeSources = [{ amount: Number.MAX_SAFE_INTEGER, frequency: 'monthly' as const }]
-      const expenses = [{ amount: 0, frequency: 'monthly' as const }]
-      const result = calculateNetPeriodIncome(incomeSources, expenses)
-      expect(result).toBe(Number.MAX_SAFE_INTEGER)
-    })
+		it('should handle very large numbers', () => {
+			const incomeSources = [{ amount: Number.MAX_SAFE_INTEGER, frequency: 'monthly' as const }]
+			const expenses = [{ amount: 0, frequency: 'monthly' as const }]
+			const result = calculateNetPeriodIncome(incomeSources, expenses)
+			expect(result).toBe(Number.MAX_SAFE_INTEGER)
+		})
 
-    it('should handle null incomeSources array', () => {
-      const result = calculateNetPeriodIncome(null as any, [])
-      expect(result).toBe(0)
-    })
+		it('should handle null incomeSources array', () => {
+			const result = calculateNetPeriodIncome(null as any, [])
+			expect(result).toBe(0)
+		})
 
-    it('should handle undefined incomeSources array', () => {
-      const result = calculateNetPeriodIncome(undefined as any, [])
-      expect(result).toBe(0)
-    })
+		it('should handle undefined incomeSources array', () => {
+			const result = calculateNetPeriodIncome(undefined as any, [])
+			expect(result).toBe(0)
+		})
 
-    it('should handle null expenses array', () => {
-      const result = calculateNetPeriodIncome([], null as any)
-      expect(result).toBe(0)
-    })
+		it('should handle null expenses array', () => {
+			const result = calculateNetPeriodIncome([], null as any)
+			expect(result).toBe(0)
+		})
 
-    it('should handle undefined expenses array', () => {
-      const result = calculateNetPeriodIncome([], undefined as any)
-      expect(result).toBe(0)
-    })
+		it('should handle undefined expenses array', () => {
+			const result = calculateNetPeriodIncome([], undefined as any)
+			expect(result).toBe(0)
+		})
 
-    it('should handle both null arrays', () => {
-      const result = calculateNetPeriodIncome(null as any, null as any)
-      expect(result).toBe(0)
-    })
+		it('should handle both null arrays', () => {
+			const result = calculateNetPeriodIncome(null as any, null as any)
+			expect(result).toBe(0)
+		})
 
-    it('should throw error for arrays with null elements', () => {
-      const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }, null as any]
-      const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
-      expect(() => calculateNetPeriodIncome(incomeSources, expenses)).toThrow(
-        'Amount must be a finite number'
-      )
-    })
+		it('should throw error for arrays with null elements', () => {
+			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }, null as any]
+			const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
+			expect(() => calculateNetPeriodIncome(incomeSources, expenses)).toThrow(
+				'Amount must be a finite number'
+			)
+		})
 
-    it('should throw error for arrays with undefined elements', () => {
-      const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }, undefined as any]
-      const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
-      expect(() => calculateNetPeriodIncome(incomeSources, expenses)).toThrow(
-        'Amount must be a finite number'
-      )
-    })
+		it('should throw error for arrays with undefined elements', () => {
+			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }, undefined as any]
+			const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
+			expect(() => calculateNetPeriodIncome(incomeSources, expenses)).toThrow(
+				'Amount must be a finite number'
+			)
+		})
 
-    it('should throw error for NaN in income amounts', () => {
-      const incomeSources = [{ amount: NaN, frequency: 'monthly' as const }]
-      const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
-      expect(() => calculateNetPeriodIncome(incomeSources, expenses)).toThrow(
-        'Amount must be a finite number'
-      )
-    })
+		it('should throw error for NaN in income amounts', () => {
+			const incomeSources = [{ amount: Number.NaN, frequency: 'monthly' as const }]
+			const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
+			expect(() => calculateNetPeriodIncome(incomeSources, expenses)).toThrow(
+				'Amount must be a finite number'
+			)
+		})
 
-    it('should throw error for Infinity in income amounts', () => {
-      const incomeSources = [{ amount: Infinity, frequency: 'monthly' as const }]
-      const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
-      expect(() => calculateNetPeriodIncome(incomeSources, expenses)).toThrow(
-        'Amount must be a finite number'
-      )
-    })
+		it('should throw error for Infinity in income amounts', () => {
+			const incomeSources = [{ amount: Number.POSITIVE_INFINITY, frequency: 'monthly' as const }]
+			const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
+			expect(() => calculateNetPeriodIncome(incomeSources, expenses)).toThrow(
+				'Amount must be a finite number'
+			)
+		})
 
-    it('should throw error for string numbers (type coercion)', () => {
-      const incomeSources = [{ amount: '50000' as any, frequency: 'monthly' as const }]
-      const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
-      expect(() => calculateNetPeriodIncome(incomeSources, expenses)).toThrow(
-        'Amount must be a finite number'
-      )
-    })
-  })
+		it('should throw error for string numbers (type coercion)', () => {
+			const incomeSources = [{ amount: '50000' as any, frequency: 'monthly' as const }]
+			const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
+			expect(() => calculateNetPeriodIncome(incomeSources, expenses)).toThrow(
+				'Amount must be a finite number'
+			)
+		})
+	})
 })

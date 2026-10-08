@@ -4,8 +4,8 @@ import { pwaRuntimeCaching } from '../../../../pwa.config.mjs'
 import { APP_SHELL_CACHE_NAME } from '../app-shell-cache'
 
 describe('app-shell cache name parity', () => {
-  it('the client purges the cache the service worker writes to', () => {
-    expect(pwaRuntimeCaching).toHaveLength(1)
-    expect(pwaRuntimeCaching[0].options.cacheName).toBe(APP_SHELL_CACHE_NAME)
-  })
+	it('the client purges the cache the service worker writes to', () => {
+		expect(pwaRuntimeCaching).toHaveLength(1)
+		expect(pwaRuntimeCaching[0].options.cacheName).toBe(APP_SHELL_CACHE_NAME)
+	})
 })

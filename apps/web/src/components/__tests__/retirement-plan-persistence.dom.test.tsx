@@ -1,13 +1,13 @@
-import { act, renderWithProviders, screen, userEvent } from '@/test/utils'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { act, renderWithProviders, screen, userEvent } from '@/test/utils'
 import { useBalanceStore } from '../../stores/balanceStore'
 import { useCurrencyStore } from '../../stores/currencyStore'
 import { useExpenseStore } from '../../stores/expenseStore'
 import { useIncomeStore } from '../../stores/incomeStore'
 import {
-  RETIREMENT_PLANNER_STORAGE_KEY,
-  RETIREMENT_PLANNER_VERSION,
-  useRetirementPlannerStore,
+	RETIREMENT_PLANNER_STORAGE_KEY,
+	RETIREMENT_PLANNER_VERSION,
+	useRetirementPlannerStore,
 } from '../../stores/retirementPlannerStore'
 import { RetirementAccumulationPlanner } from '../RetirementAccumulationPlanner'
 
@@ -17,412 +17,412 @@ import { RetirementAccumulationPlanner } from '../RetirementAccumulationPlanner'
 const ISO = '2026-08-06T00:00:00.000Z'
 
 const incomeRow = (amount: number) => ({
-  id: 'inc-1',
-  userId: 0,
-  categoryId: null,
-  name: 'Salary',
-  amount,
-  frequency: 'monthly' as const,
-  createdAt: ISO,
-  updatedAt: ISO,
+	id: 'inc-1',
+	userId: 0,
+	categoryId: null,
+	name: 'Salary',
+	amount,
+	frequency: 'monthly' as const,
+	createdAt: ISO,
+	updatedAt: ISO,
 })
 
 const investmentRow = (currentBalance: number, monthlyContribution = 0) => ({
-  id: 'inv-1',
-  type: 'investment' as const,
-  name: 'RRSP',
-  currentBalance,
-  monthlyContribution,
-  frequency: 'monthly' as const,
-  createdAt: ISO,
-  updatedAt: ISO,
+	id: 'inv-1',
+	type: 'investment' as const,
+	name: 'RRSP',
+	currentBalance,
+	monthlyContribution,
+	frequency: 'monthly' as const,
+	createdAt: ISO,
+	updatedAt: ISO,
 })
 
 const SAVED_PLAN = {
-  currentAgeInput: '42',
-  lifeExpectancyInput: '88',
-  desiredIncomeInput: '55,000.00',
-  desiredIncomeTouched: true,
-  desiredIncomeLocale: 'en-US',
-  incomeBasis: 'monthly',
-  annualReturnInput: '7.5',
-  postRetirementReturnInput: '3.25',
-  postRetirementTouched: true,
-  model: 'perpetual',
+	currentAgeInput: '42',
+	lifeExpectancyInput: '88',
+	desiredIncomeInput: '55,000.00',
+	desiredIncomeTouched: true,
+	desiredIncomeLocale: 'en-US',
+	incomeBasis: 'monthly',
+	annualReturnInput: '7.5',
+	postRetirementReturnInput: '3.25',
+	postRetirementTouched: true,
+	model: 'perpetual',
 } as const
 
 function seedStoredPlan(plan: unknown, version: number = RETIREMENT_PLANNER_VERSION): void {
-  localStorage.setItem(RETIREMENT_PLANNER_STORAGE_KEY, JSON.stringify({ state: { plan }, version }))
+	localStorage.setItem(RETIREMENT_PLANNER_STORAGE_KEY, JSON.stringify({ state: { plan }, version }))
 }
 
 async function rehydrate(): Promise<void> {
-  await act(async () => {
-    await useRetirementPlannerStore.persist.rehydrate()
-  })
+	await act(async () => {
+		await useRetirementPlannerStore.persist.rehydrate()
+	})
 }
 
 const MIRROR_HINT = /Follows the rate above until you change it/
 
 beforeEach(() => {
-  useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
-  useBalanceStore.setState({ entries: [] })
-  useIncomeStore.setState({ incomeSources: [] })
-  useExpenseStore.setState({ expenses: [] })
+	useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
+	useBalanceStore.setState({ entries: [] })
+	useIncomeStore.setState({ incomeSources: [] })
+	useExpenseStore.setState({ expenses: [] })
 })
 
 describe('first visit (AC-2)', () => {
-  it('pre-fills age 35 and life expectancy 90', () => {
-    renderWithProviders(<RetirementAccumulationPlanner />)
-    expect(screen.getByLabelText('Current Age')).toHaveValue(35)
-    expect(screen.getByLabelText('Life Expectancy')).toHaveValue(90)
-  })
+	it('pre-fills age 35 and life expectancy 90', () => {
+		renderWithProviders(<RetirementAccumulationPlanner />)
+		expect(screen.getByLabelText('Current Age')).toHaveValue(35)
+		expect(screen.getByLabelText('Life Expectancy')).toHaveValue(90)
+	})
 
-  it('leaves the 6.0% return and the deplete model as they were', () => {
-    renderWithProviders(<RetirementAccumulationPlanner />)
-    expect(screen.getByLabelText('Expected Annual Return')).toHaveValue('6.0')
-    expect(screen.getByRole('radio', { name: /deplete/i })).toBeChecked()
-  })
+	it('leaves the 6.0% return and the deplete model as they were', () => {
+		renderWithProviders(<RetirementAccumulationPlanner />)
+		expect(screen.getByLabelText('Expected Annual Return')).toHaveValue('6.0')
+		expect(screen.getByRole('radio', { name: /deplete/i })).toBeChecked()
+	})
 })
 
 describe('the plan outlives the component (AC-1)', () => {
-  it('keeps every typed field across an unmount and remount', async () => {
-    const user = userEvent.setup()
-    const first = renderWithProviders(<RetirementAccumulationPlanner />)
+	it('keeps every typed field across an unmount and remount', async () => {
+		const user = userEvent.setup()
+		const first = renderWithProviders(<RetirementAccumulationPlanner />)
 
-    await user.clear(screen.getByLabelText('Current Age'))
-    await user.type(screen.getByLabelText('Current Age'), '42')
-    await user.type(screen.getByLabelText('Desired Retirement Income'), '55000')
-    await user.click(screen.getByRole('radio', { name: /perpetual/i }))
+		await user.clear(screen.getByLabelText('Current Age'))
+		await user.type(screen.getByLabelText('Current Age'), '42')
+		await user.type(screen.getByLabelText('Desired Retirement Income'), '55000')
+		await user.click(screen.getByRole('radio', { name: /perpetual/i }))
 
-    first.unmount()
-    renderWithProviders(<RetirementAccumulationPlanner />)
+		first.unmount()
+		renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(screen.getByLabelText('Current Age')).toHaveValue(42)
-    // Grouped: clicking the radio blurred the money field, which re-echoes it in locale form.
-    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('55,000.00')
-    expect(screen.getByRole('radio', { name: /perpetual/i })).toBeChecked()
-  })
+		expect(screen.getByLabelText('Current Age')).toHaveValue(42)
+		// Grouped: clicking the radio blurred the money field, which re-echoes it in locale form.
+		expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('55,000.00')
+		expect(screen.getByRole('radio', { name: /perpetual/i })).toBeChecked()
+	})
 
-  it('renders a plan restored from storage', async () => {
-    seedStoredPlan(SAVED_PLAN)
-    await rehydrate()
-    renderWithProviders(<RetirementAccumulationPlanner />)
+	it('renders a plan restored from storage', async () => {
+		seedStoredPlan(SAVED_PLAN)
+		await rehydrate()
+		renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(screen.getByLabelText('Current Age')).toHaveValue(42)
-    expect(screen.getByLabelText('Life Expectancy')).toHaveValue(88)
-    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('55,000.00')
-    expect(screen.getByLabelText('Income period')).toHaveValue('monthly')
-    expect(screen.getByLabelText('Expected Annual Return')).toHaveValue('7.5')
-    expect(screen.getByLabelText('Post-Retirement Annual Return')).toHaveValue('3.25')
-    expect(screen.getByRole('radio', { name: /perpetual/i })).toBeChecked()
-  })
+		expect(screen.getByLabelText('Current Age')).toHaveValue(42)
+		expect(screen.getByLabelText('Life Expectancy')).toHaveValue(88)
+		expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('55,000.00')
+		expect(screen.getByLabelText('Income period')).toHaveValue('monthly')
+		expect(screen.getByLabelText('Expected Annual Return')).toHaveValue('7.5')
+		expect(screen.getByLabelText('Post-Retirement Annual Return')).toHaveValue('3.25')
+		expect(screen.getByRole('radio', { name: /perpetual/i })).toBeChecked()
+	})
 
-  it('restores a comma rate as typed and solves it as the point rate (story 110.1)', async () => {
-    useBalanceStore.setState({ entries: [investmentRow(1_000_000_00, 150_000)] })
-    seedStoredPlan({ ...SAVED_PLAN, annualReturnInput: '7.5', postRetirementReturnInput: '3.25' })
-    await rehydrate()
-    const first = renderWithProviders(<RetirementAccumulationPlanner />)
-    const outcome = () => screen.getByTestId('accumulation-outputs').textContent
-    const atPoint = outcome()
-    first.unmount()
+	it('restores a comma rate as typed and solves it as the point rate (story 110.1)', async () => {
+		useBalanceStore.setState({ entries: [investmentRow(1_000_000_00, 150_000)] })
+		seedStoredPlan({ ...SAVED_PLAN, annualReturnInput: '7.5', postRetirementReturnInput: '3.25' })
+		await rehydrate()
+		const first = renderWithProviders(<RetirementAccumulationPlanner />)
+		const outcome = () => screen.getByTestId('accumulation-outputs').textContent
+		const atPoint = outcome()
+		first.unmount()
 
-    seedStoredPlan({ ...SAVED_PLAN, annualReturnInput: '7,5', postRetirementReturnInput: '3,25' })
-    await rehydrate()
-    renderWithProviders(<RetirementAccumulationPlanner />)
+		seedStoredPlan({ ...SAVED_PLAN, annualReturnInput: '7,5', postRetirementReturnInput: '3,25' })
+		await rehydrate()
+		renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(screen.getByLabelText('Expected Annual Return')).toHaveValue('7,5')
-    expect(screen.getByLabelText('Post-Retirement Annual Return')).toHaveValue('3,25')
-    expect(outcome()).toBe(atPoint)
-  })
+		expect(screen.getByLabelText('Expected Annual Return')).toHaveValue('7,5')
+		expect(screen.getByLabelText('Post-Retirement Annual Return')).toHaveValue('3,25')
+		expect(outcome()).toBe(atPoint)
+	})
 })
 
 describe('the income prefill must not clobber a restored plan (AC-1)', () => {
-  it('leaves a restored desired income alone WITH income rows present', async () => {
-    // Without income rows the prefill is null and the seeding effect returns early,
-    // so this would pass with no guard at all.
-    useIncomeStore.setState({ incomeSources: [incomeRow(200_000)] })
-    seedStoredPlan(SAVED_PLAN)
-    await rehydrate()
+	it('leaves a restored desired income alone WITH income rows present', async () => {
+		// Without income rows the prefill is null and the seeding effect returns early,
+		// so this would pass with no guard at all.
+		useIncomeStore.setState({ incomeSources: [incomeRow(200_000)] })
+		seedStoredPlan(SAVED_PLAN)
+		await rehydrate()
 
-    renderWithProviders(<RetirementAccumulationPlanner />)
+		renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // The prefill would be $2,000 x 12 x 0.5 = 12,000.00 if the guard were gone.
-    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('55,000.00')
-  })
+		// The prefill would be $2,000 x 12 x 0.5 = 12,000.00 if the guard were gone.
+		expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('55,000.00')
+	})
 
-  it('still seeds the field for a user who has never authored it', () => {
-    useIncomeStore.setState({ incomeSources: [incomeRow(200_000)] })
-    renderWithProviders(<RetirementAccumulationPlanner />)
-    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('12,000.00')
-  })
+	it('still seeds the field for a user who has never authored it', () => {
+		useIncomeStore.setState({ incomeSources: [incomeRow(200_000)] })
+		renderWithProviders(<RetirementAccumulationPlanner />)
+		expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('12,000.00')
+	})
 
-  it('stops seeding as soon as the user types in the field', async () => {
-    const user = userEvent.setup()
-    renderWithProviders(<RetirementAccumulationPlanner />)
+	it('stops seeding as soon as the user types in the field', async () => {
+		const user = userEvent.setup()
+		renderWithProviders(<RetirementAccumulationPlanner />)
 
-    await user.type(screen.getByLabelText('Desired Retirement Income'), '999')
-    act(() => {
-      useIncomeStore.setState({ incomeSources: [incomeRow(200_000)] })
-    })
+		await user.type(screen.getByLabelText('Desired Retirement Income'), '999')
+		act(() => {
+			useIncomeStore.setState({ incomeSources: [incomeRow(200_000)] })
+		})
 
-    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('999')
-  })
+		expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('999')
+	})
 })
 
 describe('a deliberately cleared field stays cleared (AC-4)', () => {
-  it('does not re-default an age the user emptied, across a remount', async () => {
-    const user = userEvent.setup()
-    const first = renderWithProviders(<RetirementAccumulationPlanner />)
+	it('does not re-default an age the user emptied, across a remount', async () => {
+		const user = userEvent.setup()
+		const first = renderWithProviders(<RetirementAccumulationPlanner />)
 
-    await user.clear(screen.getByLabelText('Current Age'))
-    expect(screen.getByLabelText('Current Age')).toHaveValue(null)
+		await user.clear(screen.getByLabelText('Current Age'))
+		expect(screen.getByLabelText('Current Age')).toHaveValue(null)
 
-    first.unmount()
-    renderWithProviders(<RetirementAccumulationPlanner />)
+		first.unmount()
+		renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(screen.getByLabelText('Current Age')).toHaveValue(null)
-  })
+		expect(screen.getByLabelText('Current Age')).toHaveValue(null)
+	})
 
-  it('does not re-default an emptied age restored from storage', async () => {
-    seedStoredPlan({ ...SAVED_PLAN, currentAgeInput: '', lifeExpectancyInput: '' })
-    await rehydrate()
-    renderWithProviders(<RetirementAccumulationPlanner />)
+	it('does not re-default an emptied age restored from storage', async () => {
+		seedStoredPlan({ ...SAVED_PLAN, currentAgeInput: '', lifeExpectancyInput: '' })
+		await rehydrate()
+		renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(screen.getByLabelText('Current Age')).toHaveValue(null)
-    expect(screen.getByLabelText('Life Expectancy')).toHaveValue(null)
-    expect(screen.getByLabelText('Expected Annual Return')).toHaveValue('7.5')
-  })
+		expect(screen.getByLabelText('Current Age')).toHaveValue(null)
+		expect(screen.getByLabelText('Life Expectancy')).toHaveValue(null)
+		expect(screen.getByLabelText('Expected Annual Return')).toHaveValue('7.5')
+	})
 
-  it('takes the default for a field genuinely ABSENT from the payload', async () => {
-    const { annualReturnInput: _omitted, ...withoutRate } = SAVED_PLAN
-    seedStoredPlan({ ...withoutRate, currentAgeInput: '' })
-    await rehydrate()
-    renderWithProviders(<RetirementAccumulationPlanner />)
+	it('takes the default for a field genuinely ABSENT from the payload', async () => {
+		const { annualReturnInput: _omitted, ...withoutRate } = SAVED_PLAN
+		seedStoredPlan({ ...withoutRate, currentAgeInput: '' })
+		await rehydrate()
+		renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(screen.getByLabelText('Expected Annual Return')).toHaveValue('6.0')
-    expect(screen.getByLabelText('Current Age')).toHaveValue(null)
-  })
+		expect(screen.getByLabelText('Expected Annual Return')).toHaveValue('6.0')
+		expect(screen.getByLabelText('Current Age')).toHaveValue(null)
+	})
 })
 
 describe('the mirror hint matches the restored plan (AC-3)', () => {
-  it('drops the "follows the rate above" clause for a restored touched plan', async () => {
-    seedStoredPlan(SAVED_PLAN)
-    await rehydrate()
-    renderWithProviders(<RetirementAccumulationPlanner />)
+	it('drops the "follows the rate above" clause for a restored touched plan', async () => {
+		seedStoredPlan(SAVED_PLAN)
+		await rehydrate()
+		renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(screen.getByLabelText('Post-Retirement Annual Return')).toHaveValue('3.25')
-    expect(screen.queryByText(MIRROR_HINT)).not.toBeInTheDocument()
-  })
+		expect(screen.getByLabelText('Post-Retirement Annual Return')).toHaveValue('3.25')
+		expect(screen.queryByText(MIRROR_HINT)).not.toBeInTheDocument()
+	})
 
-  it('keeps the clause, and the mirror, for a restored untouched plan', async () => {
-    seedStoredPlan({
-      ...SAVED_PLAN,
-      postRetirementReturnInput: '',
-      postRetirementTouched: false,
-    })
-    await rehydrate()
-    renderWithProviders(<RetirementAccumulationPlanner />)
+	it('keeps the clause, and the mirror, for a restored untouched plan', async () => {
+		seedStoredPlan({
+			...SAVED_PLAN,
+			postRetirementReturnInput: '',
+			postRetirementTouched: false,
+		})
+		await rehydrate()
+		renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(screen.getByText(MIRROR_HINT)).toBeInTheDocument()
-    expect(screen.getByLabelText('Post-Retirement Annual Return')).toHaveValue('7.5')
-  })
+		expect(screen.getByText(MIRROR_HINT)).toBeInTheDocument()
+		expect(screen.getByLabelText('Post-Retirement Annual Return')).toHaveValue('7.5')
+	})
 
-  it('sets the flag as the user edits, so the hint and the value never disagree', async () => {
-    const user = userEvent.setup()
-    renderWithProviders(<RetirementAccumulationPlanner />)
-    expect(screen.getByText(MIRROR_HINT)).toBeInTheDocument()
+	it('sets the flag as the user edits, so the hint and the value never disagree', async () => {
+		const user = userEvent.setup()
+		renderWithProviders(<RetirementAccumulationPlanner />)
+		expect(screen.getByText(MIRROR_HINT)).toBeInTheDocument()
 
-    await user.clear(screen.getByLabelText('Post-Retirement Annual Return'))
-    await user.type(screen.getByLabelText('Post-Retirement Annual Return'), '3')
+		await user.clear(screen.getByLabelText('Post-Retirement Annual Return'))
+		await user.type(screen.getByLabelText('Post-Retirement Annual Return'), '3')
 
-    expect(screen.queryByText(MIRROR_HINT)).not.toBeInTheDocument()
-    expect(useRetirementPlannerStore.getState().plan.postRetirementTouched).toBe(true)
-  })
+		expect(screen.queryByText(MIRROR_HINT)).not.toBeInTheDocument()
+		expect(useRetirementPlannerStore.getState().plan.postRetirementTouched).toBe(true)
+	})
 })
 
 describe('the derived figures still derive (AC-8)', () => {
-  it('is absent from the persisted payload', async () => {
-    useBalanceStore.setState({ entries: [investmentRow(1_000_000_00)] })
-    renderWithProviders(<RetirementAccumulationPlanner />)
-    act(() => {
-      useRetirementPlannerStore.getState().setCurrentAgeInput('42')
-    })
+	it('is absent from the persisted payload', async () => {
+		useBalanceStore.setState({ entries: [investmentRow(1_000_000_00)] })
+		renderWithProviders(<RetirementAccumulationPlanner />)
+		act(() => {
+			useRetirementPlannerStore.getState().setCurrentAgeInput('42')
+		})
 
-    const parsed = JSON.parse(localStorage.getItem(RETIREMENT_PLANNER_STORAGE_KEY) as string)
-    // A new persisted key is a decision; derived figures must stay out (they would restore stale money).
-    expect(Object.keys(parsed.state.plan).sort()).toEqual(
-      [
-        'adoptedMonthlyCents',
-        'annualReturnInput',
-        'currentAgeInput',
-        'desiredIncomeInput',
-        'desiredIncomeLocale',
-        'desiredIncomeTouched',
-        'incomeBasis',
-        'lifeExpectancyInput',
-        'model',
-        'postRetirementReturnInput',
-        'postRetirementTouched',
-      ].sort()
-    )
-  })
+		const parsed = JSON.parse(localStorage.getItem(RETIREMENT_PLANNER_STORAGE_KEY) as string)
+		// A new persisted key is a decision; derived figures must stay out (they would restore stale money).
+		expect(Object.keys(parsed.state.plan).sort()).toEqual(
+			[
+				'adoptedMonthlyCents',
+				'annualReturnInput',
+				'currentAgeInput',
+				'desiredIncomeInput',
+				'desiredIncomeLocale',
+				'desiredIncomeTouched',
+				'incomeBasis',
+				'lifeExpectancyInput',
+				'model',
+				'postRetirementReturnInput',
+				'postRetirementTouched',
+			].sort()
+		)
+	})
 
-  it('shows today’s investment total, not the one that was on screen when saved', async () => {
-    seedStoredPlan(SAVED_PLAN)
-    await rehydrate()
-    useBalanceStore.setState({ entries: [investmentRow(7_777_00, 33_300)] })
+	it('shows today’s investment total, not the one that was on screen when saved', async () => {
+		seedStoredPlan(SAVED_PLAN)
+		await rehydrate()
+		useBalanceStore.setState({ entries: [investmentRow(7_777_00, 33_300)] })
 
-    renderWithProviders(<RetirementAccumulationPlanner />)
+		renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(screen.getByTestId('derived-current-saved')).toHaveTextContent('7,777.00')
-    expect(screen.getByTestId('derived-monthly-savings')).toHaveTextContent('333.00')
-  })
+		expect(screen.getByTestId('derived-current-saved')).toHaveTextContent('7,777.00')
+		expect(screen.getByTestId('derived-monthly-savings')).toHaveTextContent('333.00')
+	})
 })
 
 describe('corrupt payloads (AC-5)', () => {
-  it('renders the planner on defaults without throwing', async () => {
-    seedStoredPlan({ currentAgeInput: 42, lifeExpectancyInput: null, model: 'preserve' })
-    await rehydrate()
-    renderWithProviders(<RetirementAccumulationPlanner />)
+	it('renders the planner on defaults without throwing', async () => {
+		seedStoredPlan({ currentAgeInput: 42, lifeExpectancyInput: null, model: 'preserve' })
+		await rehydrate()
+		renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(screen.getByLabelText('Current Age')).toHaveValue(35)
-    expect(screen.getByLabelText('Life Expectancy')).toHaveValue(90)
-    expect(screen.getByRole('radio', { name: /deplete/i })).toBeChecked()
-  })
+		expect(screen.getByLabelText('Current Age')).toHaveValue(35)
+		expect(screen.getByLabelText('Life Expectancy')).toHaveValue(90)
+		expect(screen.getByRole('radio', { name: /deplete/i })).toBeChecked()
+	})
 
-  it('never hands the parsers a non-string, which would throw before any guard', async () => {
-    // `parseAge` calls `.trim()`; a surviving number would throw inside the parse memo.
-    seedStoredPlan({ ...SAVED_PLAN, currentAgeInput: 42 }, RETIREMENT_PLANNER_VERSION)
-    await rehydrate()
-    renderWithProviders(<RetirementAccumulationPlanner />)
+	it('never hands the parsers a non-string, which would throw before any guard', async () => {
+		// `parseAge` calls `.trim()`; a surviving number would throw inside the parse memo.
+		seedStoredPlan({ ...SAVED_PLAN, currentAgeInput: 42 }, RETIREMENT_PLANNER_VERSION)
+		await rehydrate()
+		renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(
-      screen.queryByText(/check the highlighted|could not be read as a number/i)
-    ).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Current Age')).toHaveValue(35)
-  })
+		expect(
+			screen.queryByText(/check the highlighted|could not be read as a number/i)
+		).not.toBeInTheDocument()
+		expect(screen.getByLabelText('Current Age')).toHaveValue(35)
+	})
 })
 
 describe('the income basis and the seeded figure stay in step (code review)', () => {
-  it('re-seeds an UNTOUCHED figure when the basis changes, so it round-trips', async () => {
-    const user = userEvent.setup()
-    useIncomeStore.setState({ incomeSources: [incomeRow(200_000)] })
-    renderWithProviders(<RetirementAccumulationPlanner />)
+	it('re-seeds an UNTOUCHED figure when the basis changes, so it round-trips', async () => {
+		const user = userEvent.setup()
+		useIncomeStore.setState({ incomeSources: [incomeRow(200_000)] })
+		renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('12,000.00')
-    await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
+		expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('12,000.00')
+		await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
 
-    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('1,000.00')
-    expect(useRetirementPlannerStore.getState().plan.desiredIncomeInput).toBe('1,000.00')
-  })
+		expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('1,000.00')
+		expect(useRetirementPlannerStore.getState().plan.desiredIncomeInput).toBe('1,000.00')
+	})
 
-  it('leaves an AUTHORED figure alone when the basis changes', async () => {
-    const user = userEvent.setup()
-    useIncomeStore.setState({ incomeSources: [incomeRow(200_000)] })
-    renderWithProviders(<RetirementAccumulationPlanner />)
+	it('leaves an AUTHORED figure alone when the basis changes', async () => {
+		const user = userEvent.setup()
+		useIncomeStore.setState({ incomeSources: [incomeRow(200_000)] })
+		renderWithProviders(<RetirementAccumulationPlanner />)
 
-    const field = screen.getByLabelText('Desired Retirement Income')
-    await user.clear(field)
-    await user.type(field, '9999')
-    await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
+		const field = screen.getByLabelText('Desired Retirement Income')
+		await user.clear(field)
+		await user.type(field, '9999')
+		await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
 
-    // Grouped because blurring the money field re-echoes it; a re-seed would give 1,000.00.
-    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('9,999.00')
-  })
+		// Grouped because blurring the money field re-echoes it; a re-seed would give 1,000.00.
+		expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('9,999.00')
+	})
 })
 
 describe('a persisted money string survives a currency change (code review, HIGH)', () => {
-  it('re-expresses an authored figure instead of reinterpreting it', async () => {
-    // '55.000,00' authored under de-DE and reparsed under en-US yields 5500 cents.
-    seedStoredPlan({
-      ...SAVED_PLAN,
-      desiredIncomeInput: '55.000,00',
-      desiredIncomeLocale: 'de-DE',
-      desiredIncomeTouched: true,
-    })
-    await rehydrate()
-    useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
+	it('re-expresses an authored figure instead of reinterpreting it', async () => {
+		// '55.000,00' authored under de-DE and reparsed under en-US yields 5500 cents.
+		seedStoredPlan({
+			...SAVED_PLAN,
+			desiredIncomeInput: '55.000,00',
+			desiredIncomeLocale: 'de-DE',
+			desiredIncomeTouched: true,
+		})
+		await rehydrate()
+		useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
 
-    renderWithProviders(<RetirementAccumulationPlanner />)
+		renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('55,000.00')
-    expect(useRetirementPlannerStore.getState().plan.desiredIncomeLocale).toBe('en-US')
-  })
+		expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('55,000.00')
+		expect(useRetirementPlannerStore.getState().plan.desiredIncomeLocale).toBe('en-US')
+	})
 
-  it('leaves the figure untouched when the locale has not changed', async () => {
-    seedStoredPlan(SAVED_PLAN)
-    await rehydrate()
-    useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
+	it('leaves the figure untouched when the locale has not changed', async () => {
+		seedStoredPlan(SAVED_PLAN)
+		await rehydrate()
+		useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
 
-    renderWithProviders(<RetirementAccumulationPlanner />)
+		renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('55,000.00')
-  })
+		expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('55,000.00')
+	})
 
-  it('carries the magnitude of a grouped-vs-decimal ambiguity correctly', async () => {
-    // Under de-DE the comma is the decimal separator: this is 1.2, not 12.
-    seedStoredPlan({
-      ...SAVED_PLAN,
-      desiredIncomeInput: '1,2',
-      desiredIncomeLocale: 'de-DE',
-      desiredIncomeTouched: true,
-    })
-    await rehydrate()
-    useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
+	it('carries the magnitude of a grouped-vs-decimal ambiguity correctly', async () => {
+		// Under de-DE the comma is the decimal separator: this is 1.2, not 12.
+		seedStoredPlan({
+			...SAVED_PLAN,
+			desiredIncomeInput: '1,2',
+			desiredIncomeLocale: 'de-DE',
+			desiredIncomeTouched: true,
+		})
+		await rehydrate()
+		useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
 
-    renderWithProviders(<RetirementAccumulationPlanner />)
+		renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('1.20')
-  })
+		expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('1.20')
+	})
 
-  it('keeps a genuinely unparseable entry exactly as typed rather than mangling it', async () => {
-    seedStoredPlan({
-      ...SAVED_PLAN,
-      desiredIncomeInput: '-',
-      desiredIncomeLocale: 'de-DE',
-      desiredIncomeTouched: true,
-    })
-    await rehydrate()
-    useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
+	it('keeps a genuinely unparseable entry exactly as typed rather than mangling it', async () => {
+		seedStoredPlan({
+			...SAVED_PLAN,
+			desiredIncomeInput: '-',
+			desiredIncomeLocale: 'de-DE',
+			desiredIncomeTouched: true,
+		})
+		await rehydrate()
+		useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
 
-    renderWithProviders(<RetirementAccumulationPlanner />)
+		renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('-')
-    expect(useRetirementPlannerStore.getState().plan.desiredIncomeLocale).toBe('en-US')
-  })
+		expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('-')
+		expect(useRetirementPlannerStore.getState().plan.desiredIncomeLocale).toBe('en-US')
+	})
 })
 
 describe('the authored latch is not tripped by a rejected keystroke (code review)', () => {
-  it('keeps seeding after a character the sanitizer throws away', async () => {
-    const user = userEvent.setup()
-    useIncomeStore.setState({ incomeSources: [incomeRow(200_000)] })
-    renderWithProviders(<RetirementAccumulationPlanner />)
+	it('keeps seeding after a character the sanitizer throws away', async () => {
+		const user = userEvent.setup()
+		useIncomeStore.setState({ incomeSources: [incomeRow(200_000)] })
+		renderWithProviders(<RetirementAccumulationPlanner />)
 
-    await user.type(screen.getByLabelText('Desired Retirement Income'), 'x')
+		await user.type(screen.getByLabelText('Desired Retirement Income'), 'x')
 
-    expect(useRetirementPlannerStore.getState().plan.desiredIncomeTouched).toBe(false)
-    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('12,000.00')
-  })
+		expect(useRetirementPlannerStore.getState().plan.desiredIncomeTouched).toBe(false)
+		expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('12,000.00')
+	})
 })
 
 describe('an UNTOUCHED seeded figure written under another locale (story 99.3: a plan pulled from another device)', () => {
-  it('is re-expressed in this device’s locale even with no income to seed from', async () => {
-    // Read raw under en-US, '66.000,00' is 6,600 cents: a 1000x error.
-    seedStoredPlan({
-      ...SAVED_PLAN,
-      desiredIncomeInput: '66.000,00',
-      desiredIncomeLocale: 'de-DE',
-      desiredIncomeTouched: false,
-    })
-    await rehydrate()
-    useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
+	it('is re-expressed in this device’s locale even with no income to seed from', async () => {
+		// Read raw under en-US, '66.000,00' is 6,600 cents: a 1000x error.
+		seedStoredPlan({
+			...SAVED_PLAN,
+			desiredIncomeInput: '66.000,00',
+			desiredIncomeLocale: 'de-DE',
+			desiredIncomeTouched: false,
+		})
+		await rehydrate()
+		useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
 
-    renderWithProviders(<RetirementAccumulationPlanner />)
+		renderWithProviders(<RetirementAccumulationPlanner />)
 
-    expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('66,000.00')
-    expect(useRetirementPlannerStore.getState().plan).toMatchObject({
-      desiredIncomeLocale: 'en-US',
-      desiredIncomeTouched: false,
-    })
-  })
+		expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('66,000.00')
+		expect(useRetirementPlannerStore.getState().plan).toMatchObject({
+			desiredIncomeLocale: 'en-US',
+			desiredIncomeTouched: false,
+		})
+	})
 })

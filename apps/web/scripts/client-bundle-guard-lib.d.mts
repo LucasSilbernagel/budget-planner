@@ -7,12 +7,12 @@ export const SERVER_ONLY_MARKERS: readonly string[]
 export const DEV_ONLY_SEAMS: readonly { readonly marker: string; readonly source: string }[]
 
 export function checkDevSeamsAbsent(
-  distRoot: string,
-  appRoot: string,
-  seams?: readonly { readonly marker: string; readonly source: string }[]
+	distRoot: string,
+	appRoot: string,
+	seams?: readonly { readonly marker: string; readonly source: string }[]
 ): { ok: boolean; problems: string[] }
 
 export function checkClientBundle(
-  distRoot: string,
-  markers?: readonly string[]
+	distRoot: string,
+	markers?: readonly string[]
 ): { ok: boolean; problems: string[] }

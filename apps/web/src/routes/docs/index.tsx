@@ -3,25 +3,25 @@ import { DocsIndex } from '../../components/docs/docs-index'
 import { DocsLayout } from '../../components/docs/docs-layout'
 
 export const Route = createFileRoute('/docs/')({
-  head: () => ({
-    meta: [
-      { title: 'Documentation · Longhand Budget' },
-      {
-        name: 'description',
-        content: 'Guides and answers for getting the most out of Longhand Budget.',
-      },
-    ],
-  }),
-  component: DocsIndexPage,
+	head: () => ({
+		meta: [
+			{ title: 'Documentation · Longhand Budget' },
+			{
+				name: 'description',
+				content: 'Guides and answers for getting the most out of Longhand Budget.',
+			},
+		],
+	}),
+	component: DocsIndexPage,
 })
 
 function DocsIndexPage() {
-  return (
-    <DocsLayout
-      title="Documentation"
-      description="Guides and answers for getting the most out of Longhand Budget."
-    >
-      <DocsIndex />
-    </DocsLayout>
-  )
+	return (
+		<DocsLayout
+			title="Documentation"
+			description="Guides and answers for getting the most out of Longhand Budget."
+		>
+			<DocsIndex />
+		</DocsLayout>
+	)
 }

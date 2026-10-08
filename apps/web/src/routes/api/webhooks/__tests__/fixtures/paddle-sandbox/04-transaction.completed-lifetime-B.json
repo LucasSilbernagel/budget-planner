@@ -1,184 +1,184 @@
 {
-  "data": {
-    "id": "txn_01m44c4g550vkv6bmm6q1a4bpk",
-    "items": [
-      {
-        "price": {
-          "id": "pri_01m292p4qkt0xa4d6zb89pjr7p",
-          "name": "Lifetime",
-          "type": "standard",
-          "status": "active",
-          "quantity": {
-            "maximum": 100,
-            "minimum": 1
-          },
-          "tax_mode": "location",
-          "created_at": "2026-09-11T20:31:31.571Z",
-          "product_id": "pro_01m292p45my6t33z2p6fvv8kxz",
-          "unit_price": {
-            "amount": "9900",
-            "currency_code": "EUR"
-          },
-          "updated_at": "2026-09-11T20:31:31.571Z",
-          "custom_data": null,
-          "description": "Premium lifetime EUR",
-          "trial_period": null,
-          "billing_cycle": null,
-          "unit_price_overrides": []
-        },
-        "quantity": 1,
-        "proration": null
-      }
-    ],
-    "origin": "web",
-    "status": "completed",
-    "details": {
-      "totals": {
-        "fee": "603",
-        "tax": "1287",
-        "total": "11187",
-        "credit": "0",
-        "balance": "0",
-        "discount": "0",
-        "earnings": "9297",
-        "subtotal": "9900",
-        "grand_total": "11187",
-        "currency_code": "EUR",
-        "grand_total_tax": "1287",
-        "credit_to_balance": "0"
-      },
-      "line_items": [
-        {
-          "id": "txnitm_01m44c4mb1c4a7mn98vkb5e59v",
-          "totals": {
-            "tax": "1287",
-            "total": "11187",
-            "discount": "0",
-            "subtotal": "9900"
-          },
-          "product": {
-            "id": "pro_01m292p45my6t33z2p6fvv8kxz",
-            "name": "Premium",
-            "type": "standard",
-            "status": "active",
-            "image_url": null,
-            "created_at": "2026-09-11T20:31:30.996Z",
-            "updated_at": "2026-09-11T20:31:30.996Z",
-            "custom_data": null,
-            "description": "Budget Planner Premium: sync, forecasting, multiple profiles, reports, and categories.",
-            "tax_category": "saas"
-          },
-          "price_id": "pri_01m292p4qkt0xa4d6zb89pjr7p",
-          "quantity": 1,
-          "tax_rate": "0.13",
-          "unit_totals": {
-            "tax": "1287",
-            "total": "11187",
-            "discount": "0",
-            "subtotal": "9900"
-          }
-        }
-      ],
-      "payout_totals": {
-        "fee": "665",
-        "tax": "1421",
-        "total": "12346",
-        "credit": "0",
-        "balance": "0",
-        "discount": "0",
-        "earnings": "10260",
-        "fee_rate": "0.05",
-        "subtotal": "10925",
-        "grand_total": "12346",
-        "currency_code": "USD",
-        "exchange_rate": "1.1035584",
-        "grand_total_tax": "1420",
-        "credit_to_balance": "0"
-      },
-      "tax_rates_used": [
-        {
-          "totals": {
-            "tax": "1287",
-            "total": "11187",
-            "discount": "0",
-            "subtotal": "9900"
-          },
-          "tax_rate": "0.13"
-        }
-      ],
-      "adjusted_totals": {
-        "fee": "603",
-        "tax": "1287",
-        "total": "11187",
-        "earnings": "9297",
-        "subtotal": "9900",
-        "grand_total": "11187",
-        "retained_fee": "0",
-        "currency_code": "EUR",
-        "grand_total_tax": "1287"
-      },
-      "adjusted_payout_totals": {
-        "fee": "665",
-        "tax": "1421",
-        "total": "12346",
-        "earnings": "10260",
-        "subtotal": "10925",
-        "retained_fee": "0",
-        "currency_code": "USD",
-        "exchange_rate": "1.1035584",
-        "chargeback_fee": {
-          "amount": "0",
-          "original": null
-        }
-      }
-    },
-    "checkout": {
-      "url": "https://localhost:8811?_ptxn=txn_01m44c4g550vkv6bmm6q1a4bpk"
-    },
-    "payments": [
-      {
-        "amount": "11187",
-        "status": "captured",
-        "created_at": "2026-10-04T21:11:57.584088Z",
-        "error_code": null,
-        "captured_at": "2026-10-04T21:12:00.292484Z",
-        "method_details": {
-          "card": {
-            "type": "visa",
-            "last4": "4242",
-            "expiry_year": 2030,
-            "expiry_month": 12,
-            "cardholder_name": "Test Buyer"
-          },
-          "type": "card",
-          "paypal": null,
-          "south_korea_local_card": null
-        },
-        "payment_method_id": "paymtd_01m44c4qatdbrns9jmcrb0kj6v",
-        "payment_attempt_id": "6cb690a3-e5b6-4563-8688-918db9783711",
-        "stored_payment_method_id": "9fae5fe2-f668-4ee0-9ca6-db827b0b4470"
-      }
-    ],
-    "billed_at": "2026-10-04T21:12:00.577396Z",
-    "address_id": "add_01m44c4m687ngr57dts38q875r",
-    "created_at": "2026-10-04T21:11:50.731874Z",
-    "invoice_id": "inv_01m44c4t1r0dftwksnp7smqd03",
-    "revised_at": null,
-    "updated_at": "2026-10-04T21:12:02.213978437Z",
-    "business_id": null,
-    "custom_data": null,
-    "customer_id": "ctm_01m44c4g2vdv7cyd2bctn0gj71",
-    "discount_id": null,
-    "receipt_data": null,
-    "currency_code": "EUR",
-    "billing_period": null,
-    "invoice_number": "127738-10003",
-    "billing_details": null,
-    "collection_mode": "automatic",
-    "subscription_id": null
-  },
-  "event_id": "evt_01m44c4vdcnn8edmg2nxj8gmw6",
-  "event_type": "transaction.completed",
-  "occurred_at": "2026-10-04T21:12:02.220237Z",
-  "notification_id": "ntf_01m44c4vwz8t1xy8kffmkmgpjf"
+	"data": {
+		"id": "txn_01m44c4g550vkv6bmm6q1a4bpk",
+		"items": [
+			{
+				"price": {
+					"id": "pri_01m292p4qkt0xa4d6zb89pjr7p",
+					"name": "Lifetime",
+					"type": "standard",
+					"status": "active",
+					"quantity": {
+						"maximum": 100,
+						"minimum": 1
+					},
+					"tax_mode": "location",
+					"created_at": "2026-09-11T20:31:31.571Z",
+					"product_id": "pro_01m292p45my6t33z2p6fvv8kxz",
+					"unit_price": {
+						"amount": "9900",
+						"currency_code": "EUR"
+					},
+					"updated_at": "2026-09-11T20:31:31.571Z",
+					"custom_data": null,
+					"description": "Premium lifetime EUR",
+					"trial_period": null,
+					"billing_cycle": null,
+					"unit_price_overrides": []
+				},
+				"quantity": 1,
+				"proration": null
+			}
+		],
+		"origin": "web",
+		"status": "completed",
+		"details": {
+			"totals": {
+				"fee": "603",
+				"tax": "1287",
+				"total": "11187",
+				"credit": "0",
+				"balance": "0",
+				"discount": "0",
+				"earnings": "9297",
+				"subtotal": "9900",
+				"grand_total": "11187",
+				"currency_code": "EUR",
+				"grand_total_tax": "1287",
+				"credit_to_balance": "0"
+			},
+			"line_items": [
+				{
+					"id": "txnitm_01m44c4mb1c4a7mn98vkb5e59v",
+					"totals": {
+						"tax": "1287",
+						"total": "11187",
+						"discount": "0",
+						"subtotal": "9900"
+					},
+					"product": {
+						"id": "pro_01m292p45my6t33z2p6fvv8kxz",
+						"name": "Premium",
+						"type": "standard",
+						"status": "active",
+						"image_url": null,
+						"created_at": "2026-09-11T20:31:30.996Z",
+						"updated_at": "2026-09-11T20:31:30.996Z",
+						"custom_data": null,
+						"description": "Budget Planner Premium: sync, forecasting, multiple profiles, reports, and categories.",
+						"tax_category": "saas"
+					},
+					"price_id": "pri_01m292p4qkt0xa4d6zb89pjr7p",
+					"quantity": 1,
+					"tax_rate": "0.13",
+					"unit_totals": {
+						"tax": "1287",
+						"total": "11187",
+						"discount": "0",
+						"subtotal": "9900"
+					}
+				}
+			],
+			"payout_totals": {
+				"fee": "665",
+				"tax": "1421",
+				"total": "12346",
+				"credit": "0",
+				"balance": "0",
+				"discount": "0",
+				"earnings": "10260",
+				"fee_rate": "0.05",
+				"subtotal": "10925",
+				"grand_total": "12346",
+				"currency_code": "USD",
+				"exchange_rate": "1.1035584",
+				"grand_total_tax": "1420",
+				"credit_to_balance": "0"
+			},
+			"tax_rates_used": [
+				{
+					"totals": {
+						"tax": "1287",
+						"total": "11187",
+						"discount": "0",
+						"subtotal": "9900"
+					},
+					"tax_rate": "0.13"
+				}
+			],
+			"adjusted_totals": {
+				"fee": "603",
+				"tax": "1287",
+				"total": "11187",
+				"earnings": "9297",
+				"subtotal": "9900",
+				"grand_total": "11187",
+				"retained_fee": "0",
+				"currency_code": "EUR",
+				"grand_total_tax": "1287"
+			},
+			"adjusted_payout_totals": {
+				"fee": "665",
+				"tax": "1421",
+				"total": "12346",
+				"earnings": "10260",
+				"subtotal": "10925",
+				"retained_fee": "0",
+				"currency_code": "USD",
+				"exchange_rate": "1.1035584",
+				"chargeback_fee": {
+					"amount": "0",
+					"original": null
+				}
+			}
+		},
+		"checkout": {
+			"url": "https://localhost:8811?_ptxn=txn_01m44c4g550vkv6bmm6q1a4bpk"
+		},
+		"payments": [
+			{
+				"amount": "11187",
+				"status": "captured",
+				"created_at": "2026-10-04T21:11:57.584088Z",
+				"error_code": null,
+				"captured_at": "2026-10-04T21:12:00.292484Z",
+				"method_details": {
+					"card": {
+						"type": "visa",
+						"last4": "4242",
+						"expiry_year": 2030,
+						"expiry_month": 12,
+						"cardholder_name": "Test Buyer"
+					},
+					"type": "card",
+					"paypal": null,
+					"south_korea_local_card": null
+				},
+				"payment_method_id": "paymtd_01m44c4qatdbrns9jmcrb0kj6v",
+				"payment_attempt_id": "6cb690a3-e5b6-4563-8688-918db9783711",
+				"stored_payment_method_id": "9fae5fe2-f668-4ee0-9ca6-db827b0b4470"
+			}
+		],
+		"billed_at": "2026-10-04T21:12:00.577396Z",
+		"address_id": "add_01m44c4m687ngr57dts38q875r",
+		"created_at": "2026-10-04T21:11:50.731874Z",
+		"invoice_id": "inv_01m44c4t1r0dftwksnp7smqd03",
+		"revised_at": null,
+		"updated_at": "2026-10-04T21:12:02.213978437Z",
+		"business_id": null,
+		"custom_data": null,
+		"customer_id": "ctm_01m44c4g2vdv7cyd2bctn0gj71",
+		"discount_id": null,
+		"receipt_data": null,
+		"currency_code": "EUR",
+		"billing_period": null,
+		"invoice_number": "127738-10003",
+		"billing_details": null,
+		"collection_mode": "automatic",
+		"subscription_id": null
+	},
+	"event_id": "evt_01m44c4vdcnn8edmg2nxj8gmw6",
+	"event_type": "transaction.completed",
+	"occurred_at": "2026-10-04T21:12:02.220237Z",
+	"notification_id": "ntf_01m44c4vwz8t1xy8kffmkmgpjf"
 }

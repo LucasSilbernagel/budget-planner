@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { type SortState, nextSortState } from '../lib/table-sort'
+import { nextSortState, type SortState } from '../lib/table-sort'
 
 /**
  * Per-device view preference: never writes sortOrder or syncs. Validates shape only; useTableSort
@@ -15,34 +15,34 @@ export const TABLE_SORT_VERSION = 1
 
 /** Single source of the valid table set; TABLE_SORT_IDS derives from these keys. */
 const DEFAULT_SORTS: Record<TableSortId, SortState<string> | null> = {
-  income: null,
-  expenses: null,
-  savings: null,
-  balance: null,
+	income: null,
+	expenses: null,
+	savings: null,
+	balance: null,
 }
 
 export const TABLE_SORT_IDS = Object.keys(DEFAULT_SORTS) as readonly TableSortId[]
 
 interface TableSortStoreState {
-  sorts: Record<TableSortId, SortState<string> | null>
-  setTableSort: (table: TableSortId, state: SortState<string> | null) => void
-  clearTableSort: (table: TableSortId) => void
-  toggleTableSort: (table: TableSortId, key: string) => void
+	sorts: Record<TableSortId, SortState<string> | null>
+	setTableSort: (table: TableSortId, state: SortState<string> | null) => void
+	clearTableSort: (table: TableSortId) => void
+	toggleTableSort: (table: TableSortId, key: string) => void
 }
 
 /** `'ASC'` is rejected on purpose: nothing in the app writes it. */
 export function coerceSortState(value: unknown): SortState<string> | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return null
-  }
-  const candidate = value as { key?: unknown; direction?: unknown }
-  if (typeof candidate.key !== 'string' || candidate.key.length === 0) {
-    return null
-  }
-  if (candidate.direction !== 'asc' && candidate.direction !== 'desc') {
-    return null
-  }
-  return { key: candidate.key, direction: candidate.direction }
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+		return null
+	}
+	const candidate = value as { key?: unknown; direction?: unknown }
+	if (typeof candidate.key !== 'string' || candidate.key.length === 0) {
+		return null
+	}
+	if (candidate.direction !== 'asc' && candidate.direction !== 'desc') {
+		return null
+	}
+	return { key: candidate.key, direction: candidate.direction }
 }
 
 /**
@@ -50,58 +50,57 @@ export function coerceSortState(value: unknown): SortState<string> | null {
  * `__proto__` key out.
  */
 export function coerceSorts(value: unknown): Record<TableSortId, SortState<string> | null> {
-  const record =
-    typeof value === 'object' && value !== null && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : {}
+	const record =
+		typeof value === 'object' && value !== null && !Array.isArray(value)
+			? (value as Record<string, unknown>)
+			: {}
 
-  const next = {} as Record<TableSortId, SortState<string> | null>
-  for (const id of TABLE_SORT_IDS) {
-    // `hasOwnProperty.call`: the tsconfig lib is below es2022, so Object.hasOwn does not type-check.
-    next[id] = Object.prototype.hasOwnProperty.call(record, id) ? coerceSortState(record[id]) : null
-  }
-  return next
+	const next = {} as Record<TableSortId, SortState<string> | null>
+	for (const id of TABLE_SORT_IDS) {
+		next[id] = Object.hasOwn(record, id) ? coerceSortState(record[id]) : null
+	}
+	return next
 }
 
 export const useTableSortStore = create<TableSortStoreState>()(
-  persist(
-    (set) => ({
-      sorts: { ...DEFAULT_SORTS },
+	persist(
+		(set) => ({
+			sorts: { ...DEFAULT_SORTS },
 
-      setTableSort: (table, state) => {
-        set((current) => ({ sorts: { ...current.sorts, [table]: state } }))
-      },
+			setTableSort: (table, state) => {
+				set((current) => ({ sorts: { ...current.sorts, [table]: state } }))
+			},
 
-      clearTableSort: (table) => {
-        set((current) => ({ sorts: { ...current.sorts, [table]: null } }))
-      },
+			clearTableSort: (table) => {
+				set((current) => ({ sorts: { ...current.sorts, [table]: null } }))
+			},
 
-      toggleTableSort: (table, key) => {
-        set((current) => ({
-          sorts: { ...current.sorts, [table]: nextSortState(current.sorts[table], key) },
-        }))
-      },
-    }),
-    {
-      name: TABLE_SORT_STORAGE_KEY,
-      skipHydration: true,
-      partialize: (state) => ({ sorts: state.sorts }),
-      version: TABLE_SORT_VERSION,
-      migrate: (persisted) => ({
-        sorts: coerceSorts((persisted as { sorts?: unknown } | undefined)?.sorts),
-      }),
-      // Runs on every rehydrate (migrate does not at the current version), so this is the
-      // corrupt-payload guard.
-      merge: (persisted, current) => ({
-        ...current,
-        sorts: coerceSorts((persisted as { sorts?: unknown } | undefined)?.sorts),
-      }),
-    }
-  )
+			toggleTableSort: (table, key) => {
+				set((current) => ({
+					sorts: { ...current.sorts, [table]: nextSortState(current.sorts[table], key) },
+				}))
+			},
+		}),
+		{
+			name: TABLE_SORT_STORAGE_KEY,
+			skipHydration: true,
+			partialize: (state) => ({ sorts: state.sorts }),
+			version: TABLE_SORT_VERSION,
+			migrate: (persisted) => ({
+				sorts: coerceSorts((persisted as { sorts?: unknown } | undefined)?.sorts),
+			}),
+			// Runs on every rehydrate (migrate does not at the current version), so this is the
+			// corrupt-payload guard.
+			merge: (persisted, current) => ({
+				...current,
+				sorts: coerceSorts((persisted as { sorts?: unknown } | undefined)?.sorts),
+			}),
+		}
+	)
 )
 
 export const useTableSortSelection = (table: TableSortId) =>
-  useTableSortStore((state) => state.sorts[table])
+	useTableSortStore((state) => state.sorts[table])
 
 export const useSetTableSort = () => useTableSortStore((state) => state.setTableSort)
 

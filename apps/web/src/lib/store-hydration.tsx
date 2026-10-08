@@ -18,35 +18,35 @@ import { applyAccountBoundary, readCookieString, sessionForBoundary } from './sy
  * so a selector must derive from its argument, never call a state method.
  */
 export function StoreHydration({ seed }: { seed?: SessionSeed | null } = {}) {
-  // Read once at mount: the session is fixed for the life of a document.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only by design (see above).
-  useEffect(() => {
-    const stores = [
-      useIncomeStore,
-      useExpenseStore,
-      useSavingsStore,
-      useBalanceStore,
-      useCategoryStore,
-      useCurrencyStore,
-      useProfileStore,
-      useOverviewDurationStore,
-      usePlannerVisibilityStore,
-      useTableSortStore,
-      useRetirementPlannerStore,
-    ]
+	// Read once at mount: the session is fixed for the life of a document.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: mount-only by design (see above).
+	useEffect(() => {
+		const stores = [
+			useIncomeStore,
+			useExpenseStore,
+			useSavingsStore,
+			useBalanceStore,
+			useCategoryStore,
+			useCurrencyStore,
+			useProfileStore,
+			useOverviewDurationStore,
+			usePlannerVisibilityStore,
+			useTableSortStore,
+			useRetirementPlannerStore,
+		]
 
-    for (const store of stores) {
-      Promise.resolve(store.persist.rehydrate()).catch((error) => {
-        console.error('Store rehydration failed:', error)
-      })
-    }
+		for (const store of stores) {
+			Promise.resolve(store.persist.rehydrate()).catch((error) => {
+				console.error('Store rehydration failed:', error)
+			})
+		}
 
-    // Must run after rehydrate (an earlier write would replace saved data with defaults) and before route content paints.
-    const session = sessionForBoundary(seed, readCookieString())
-    if (session !== undefined) {
-      applyAccountBoundary(session)
-    }
-  }, [])
+		// Must run after rehydrate (an earlier write would replace saved data with defaults) and before route content paints.
+		const session = sessionForBoundary(seed, readCookieString())
+		if (session !== undefined) {
+			applyAccountBoundary(session)
+		}
+	}, [])
 
-  return null
+	return null
 }

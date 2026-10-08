@@ -1,42 +1,42 @@
 {
-  "compilerOptions": {
-    "target": "ES2021",
-    "lib": ["ES2021", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "rootDir": ".",
-    "paths": {
-      "@budget-planner/web": ["./apps/web/src"],
-      "@budget-planner/db": ["./packages/db/src"],
-      "@budget-planner/config": ["./packages/config/src"],
-      "@budget-planner/core": ["./packages/core/src"],
-      "@budget-planner/core/*": ["./packages/core/src/*"],
-      "@/*": ["./apps/web/src/*"]
-    },
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "outDir": "./dist",
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "isolatedModules": true,
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-    "noPropertyAccessFromIndexSignature": true,
-    "allowUnusedLabels": false,
-    "allowUnreachableCode": false,
-    "skipLibCheck": true
-  },
-  "files": [],
-  "references": [
-    { "path": "./apps/web" },
-    { "path": "./packages/db" },
-    { "path": "./packages/config" },
-    { "path": "./packages/core" }
-  ]
+	"compilerOptions": {
+		"target": "ES2021",
+		"lib": ["ES2021", "ES2022.Object", "DOM", "DOM.Iterable"],
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"rootDir": ".",
+		"paths": {
+			"@budget-planner/web": ["./apps/web/src"],
+			"@budget-planner/db": ["./packages/db/src"],
+			"@budget-planner/config": ["./packages/config/src"],
+			"@budget-planner/core": ["./packages/core/src"],
+			"@budget-planner/core/*": ["./packages/core/src/*"],
+			"@/*": ["./apps/web/src/*"]
+		},
+		"declaration": true,
+		"declarationMap": true,
+		"sourceMap": true,
+		"outDir": "./dist",
+		"esModuleInterop": true,
+		"forceConsistentCasingInFileNames": true,
+		"isolatedModules": true,
+		"strict": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noImplicitReturns": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedIndexedAccess": true,
+		"noImplicitOverride": true,
+		"noPropertyAccessFromIndexSignature": true,
+		"allowUnusedLabels": false,
+		"allowUnreachableCode": false,
+		"skipLibCheck": true
+	},
+	"files": [],
+	"references": [
+		{ "path": "./apps/web" },
+		{ "path": "./packages/db" },
+		{ "path": "./packages/config" },
+		{ "path": "./packages/core" }
+	]
 }

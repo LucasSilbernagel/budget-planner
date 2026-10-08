@@ -1,43 +1,43 @@
 {
-  "name": "@budget-planner/db",
-  "version": "0.0.1",
-  "description": "Longhand Budget: Database schema and ORM (Drizzle ORM)",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "dev": "echo 'DB dev script (to be configured)'",
-    "build": "tsc",
-    "type-check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
-    "lint": "biome check .",
-    "lint:fix": "biome check . --apply",
-    "test": "vitest run",
-    "test:unit": "vitest run",
-    "test:watch": "vitest",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate:preflight": "tsx src/migrate-preflight-cli.ts",
-    "db:migrate": "PGOPTIONS='-c TimeZone=UTC' drizzle-kit migrate",
-    "db:smoke": "tsx src/db-smoke-cli.ts",
-    "db:studio": "drizzle-kit studio",
-    "db:ca-expiry": "tsx src/ca-expiry-cli.ts"
-  },
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "dependencies": {
-    "dotenv": "^16.3.1",
-    "drizzle-kit": "^0.23.0",
-    "drizzle-orm": "^0.32.0",
-    "pg": "^8.11.0",
-    "tsx": "^4.7.0"
-  },
-  "devDependencies": {
-    "@types/node": "^20.11.0",
-    "@types/pg": "^8.10.9",
-    "typescript": "^5.3.3",
-    "@biomejs/biome": "1.5.3",
-    "vitest": "^1.6.1"
-  },
-  "engines": {
-    "node": ">=24.0.0"
-  },
-  "pnpm": {}
+	"name": "@budget-planner/db",
+	"version": "0.0.1",
+	"description": "Longhand Budget: Database schema and ORM (Drizzle ORM)",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "echo 'DB dev script (to be configured)'",
+		"build": "tsc",
+		"type-check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
+		"lint": "biome check .",
+		"lint:fix": "biome check . --write",
+		"test": "vitest run",
+		"test:unit": "vitest run",
+		"test:watch": "vitest",
+		"db:generate": "drizzle-kit generate",
+		"db:migrate:preflight": "tsx src/migrate-preflight-cli.ts",
+		"db:migrate": "PGOPTIONS='-c TimeZone=UTC' drizzle-kit migrate",
+		"db:smoke": "tsx src/db-smoke-cli.ts",
+		"db:studio": "drizzle-kit studio",
+		"db:ca-expiry": "tsx src/ca-expiry-cli.ts"
+	},
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"dependencies": {
+		"dotenv": "^16.3.1",
+		"drizzle-kit": "^0.23.0",
+		"drizzle-orm": "^0.32.0",
+		"pg": "^8.11.0",
+		"tsx": "^4.7.0"
+	},
+	"devDependencies": {
+		"@types/node": "^20.11.0",
+		"@types/pg": "^8.10.9",
+		"typescript": "^5.3.3",
+		"@biomejs/biome": "2.5.15",
+		"vitest": "^1.6.1"
+	},
+	"engines": {
+		"node": ">=24.0.0"
+	},
+	"pnpm": {}
 }

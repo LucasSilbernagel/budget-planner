@@ -9,7 +9,7 @@ import { selectEntrypoint } from './src/server/entrypoint.mjs'
 const mode = selectEntrypoint(process.env)
 
 if (mode === 'migrate') {
-  await import('./migrate-entry.mjs')
+	await import('./migrate-entry.mjs')
 } else {
-  await import('./serve-entry.mjs')
+	await import('./serve-entry.mjs')
 }
