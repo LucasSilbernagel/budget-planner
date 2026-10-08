@@ -1,7 +1,7 @@
 {
   "name": "budget-planner",
   "version": "0.0.1",
-  "description": "Budget Planner - Personal finance tracking application",
+  "description": "Longhand Budget: private, EU-hosted budgeting, savings and forecasting",
   "private": true,
   "packageManager": "pnpm@10.34.3",
   "scripts": {

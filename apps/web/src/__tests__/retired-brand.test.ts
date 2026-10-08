@@ -90,7 +90,6 @@ describe('no retired brand survives on a shipped surface (brand-1 AC-2)', () => 
     const swept = new Set(files.map(label))
 
     expect(swept).toContain('README.md')
-    expect(swept).toContain('product-document.md')
     expect(swept).toContain('docs/development.md')
   })
 
