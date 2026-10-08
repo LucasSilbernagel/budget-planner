@@ -63,6 +63,18 @@ interface ChartConfig {
 // Constants
 // ============================================================================
 
+/**
+ * The Grid / Legend / Tooltips toggles' keyboard focus indicator (story 120.2,
+ * Lucas scope addition 2026-10-08). The repo's focus-ring convention, as on the
+ * forecasting tabs and `SavingsPage`'s breakdown toggle: a blue ring, and
+ * `forced-colors:focus:outline` because Tailwind's ring is a `box-shadow`, which
+ * Windows High Contrast discards (WCAG 2.4.7; `HomePage.tsx` records the same).
+ * No ring offset: its default colour is white and would band the dark card.
+ * `focus:` only paints while focused, so the unfocused rendering is unchanged.
+ */
+const CHART_TOGGLE_FOCUS_CLASS =
+  'focus:outline-none focus:ring-2 focus:ring-blue-500 forced-colors:focus:outline forced-colors:focus:outline-2'
+
 const DEFAULT_CONFIG: ChartConfig = {
   showGrid: true,
   showLegend: true,
@@ -384,7 +396,7 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
             type="button"
             aria-pressed={config.showGrid}
             onClick={() => toggleOption('showGrid')}
-            className={`px-3 py-1 text-sm rounded-md ${
+            className={`px-3 py-1 text-sm rounded-md ${CHART_TOGGLE_FOCUS_CLASS} ${
               config.showGrid
                 ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
                 : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
@@ -396,7 +408,7 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
             type="button"
             aria-pressed={config.showLegend}
             onClick={() => toggleOption('showLegend')}
-            className={`px-3 py-1 text-sm rounded-md ${
+            className={`px-3 py-1 text-sm rounded-md ${CHART_TOGGLE_FOCUS_CLASS} ${
               config.showLegend
                 ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
                 : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
@@ -408,7 +420,7 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
             type="button"
             aria-pressed={config.showTooltip}
             onClick={() => toggleOption('showTooltip')}
-            className={`px-3 py-1 text-sm rounded-md ${
+            className={`px-3 py-1 text-sm rounded-md ${CHART_TOGGLE_FOCUS_CLASS} ${
               config.showTooltip
                 ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
                 : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
