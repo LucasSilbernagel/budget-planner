@@ -112,7 +112,7 @@ describe('a saved forecast with an out-of-range years reopens at the default per
       fetchForecasts.mockResolvedValue({ success: true, data: [savedRow(years)] })
       renderWithRouter(<ForecastingPage />)
 
-      fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
+      fireEvent.click(await screen.findByRole('tab', { name: /my forecasts/i }))
       const loadButton = await screen.findByRole('button', { name: 'Edit Long plan' })
       // Only calls made AFTER the load count (review P4): the builder mounted on
       // first render may already have computed its own default period.
@@ -153,10 +153,19 @@ describe('a saved forecast with an out-of-range years reopens at the default per
     fetchForecasts.mockResolvedValue({ success: true, data: [savedRow(25)] })
     renderWithRouter(<ForecastingPage />)
 
-    fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
+    fireEvent.click(await screen.findByRole('tab', { name: /my forecasts/i }))
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Long plan' }))
 
     expect(await screen.findByLabelText('Projection Period (years)')).toHaveValue(25)
+    // Story 120.2 (AC 3): Edit switches back to the builder, and the tab selection
+    // and roving tabIndex follow the programmatic switch.
+    const builderTab = screen.getByRole('tab', { name: /scenario builder/i })
+    expect(builderTab).toHaveAttribute('aria-selected', 'true')
+    expect(builderTab.tabIndex).toBe(0)
+    expect(screen.getByRole('tab', { name: /my forecasts/i })).toHaveAttribute(
+      'aria-selected',
+      'false'
+    )
     await waitFor(() => expect(engineYears).toContain(25), { timeout: 3000 })
   })
 })

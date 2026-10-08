@@ -212,12 +212,22 @@ describe('an account with no financial profile is told BEFORE it builds anything
     renderWithRouter(<ForecastingPage />)
 
     const saveButton = await findSaveButton()
-    const projectionsTab = screen.getByRole('button', { name: /projections/i })
+    const projectionsTab = screen.getByRole('tab', { name: /projections/i })
     expect(projectionsTab).not.toBeDisabled()
 
     fireEvent.click(saveButton)
 
     await waitFor(() => expect(projectionsTab).toBeDisabled())
+
+    // Story 120.2 (AC 5): neither the keyboard nor a click moves the selection
+    // while the save is in flight. The key goes to the tablist, which owns the
+    // arrow handling (a disabled tab cannot hold focus to receive it).
+    const builderTab = screen.getByRole('tab', { name: /scenario builder/i })
+    fireEvent.keyDown(screen.getByRole('tablist'), { key: 'ArrowRight' })
+    fireEvent.keyDown(screen.getByRole('tablist'), { key: 'End' })
+    fireEvent.click(projectionsTab)
+    expect(builderTab).toHaveAttribute('aria-selected', 'true')
+    expect(projectionsTab).toHaveAttribute('aria-selected', 'false')
 
     release({ success: false, error: 'Name already in use' })
 
@@ -263,6 +273,16 @@ describe('a save reports its outcome where the user is looking (AC-5, AC-7)', ()
     const confirmation = await screen.findByTestId('save-success')
     expect(confirmation).toHaveTextContent(/My Financial Forecast/)
     expect(confirmation).toHaveAttribute('role', 'status')
+
+    // Story 120.2 (AC 3): the programmatic switch to My Forecasts moves the tab
+    // selection and the roving tabIndex with it.
+    const savedTab = screen.getByRole('tab', { name: /my forecasts/i })
+    expect(savedTab).toHaveAttribute('aria-selected', 'true')
+    expect(savedTab.tabIndex).toBe(0)
+    expect(screen.getByRole('tab', { name: /scenario builder/i })).toHaveAttribute(
+      'aria-selected',
+      'false'
+    )
 
     // ⚠️ The builder is CSS-hidden (never unmounted) once the page switches to the
     // "saved" tab, so a confirmation rendered inside it would still be findable in

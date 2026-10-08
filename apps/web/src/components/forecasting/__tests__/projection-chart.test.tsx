@@ -1,5 +1,6 @@
+import { assertHasFocusRing } from '@/test/responsive-table-tokens'
 import type { ForecastingResult } from '@budget-planner/core'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { ProjectionChart } from '../projection-chart'
 
@@ -93,4 +94,36 @@ describe('ProjectionChart (bug-3 AC-3)', () => {
     expect(screen.getByText(/build a scenario/i)).toBeInTheDocument()
     expect(screen.queryByText('Starting Net Worth')).toBeNull()
   })
+})
+
+describe('chart layer toggles report on/off (story 120.2, FR188)', () => {
+  it.each(['Grid', 'Legend', 'Tooltips'])('%s starts pressed and flips on each click', (name) => {
+    render(<ProjectionChart result={null} />)
+    const toggle = screen.getByRole('button', { name })
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it.each(['Grid', 'Legend', 'Tooltips'])(
+    '%s shows a visible keyboard focus indicator, including in forced colours',
+    (name) => {
+      // Lucas scope addition 2026-10-08. Class tokens, not paint: jsdom has no
+      // Tailwind. The ring is a box-shadow, which Windows High Contrast discards,
+      // so the forced-colours outline is what keeps WCAG 2.4.7 there.
+      render(<ProjectionChart result={null} />)
+      const toggle = screen.getByRole('button', { name })
+      assertHasFocusRing(toggle, name)
+      const tokens = toggle.className.split(/\s+/)
+      expect(tokens).toEqual(
+        expect.arrayContaining([
+          'focus:outline-none',
+          'forced-colors:focus:outline',
+          'forced-colors:focus:outline-2',
+        ])
+      )
+    }
+  )
 })

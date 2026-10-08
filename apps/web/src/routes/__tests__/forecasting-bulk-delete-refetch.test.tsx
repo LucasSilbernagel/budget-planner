@@ -105,7 +105,7 @@ describe('bulk delete list reloads', () => {
     const rowBoxes = () => screen.queryAllByRole('checkbox', { name: /^Select (One|Two|Three)$/ })
 
     renderWithRouter(<ForecastingPage />)
-    fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
+    fireEvent.click(await screen.findByRole('tab', { name: /my forecasts/i }))
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Select all' }))
     expect(rowBoxes()).toHaveLength(3)
     fireEvent.click(screen.getByRole('button', { name: 'Delete Selected' }))

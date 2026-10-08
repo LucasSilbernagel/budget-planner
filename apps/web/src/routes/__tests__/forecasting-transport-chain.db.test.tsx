@@ -471,7 +471,7 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
     await view.findByTestId('save-success', {}, { timeout: 5000 })
     const [first] = await storedRows()
 
-    rtl.fireEvent.click(view.getByRole('button', { name: /Scenario Builder/ }))
+    rtl.fireEvent.click(view.getByRole('tab', { name: /Scenario Builder/ }))
     await setIncomeGrowth(view, '3')
     await pressSave(view)
     expect(await view.findByTestId('save-success', {}, { timeout: 5000 })).toBeTruthy()
@@ -552,7 +552,7 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
 
   it('deleting the loaded forecast in My Forecasts drops it as the target: the next Save creates (AC-6)', async () => {
     const { view, first } = await saveThenLoad()
-    rtl.fireEvent.click(view.getByRole('button', { name: /My Forecasts/ }))
+    rtl.fireEvent.click(view.getByRole('tab', { name: /My Forecasts/ }))
     rtl.fireEvent.click(await view.findByRole('button', { name: 'Delete My Financial Forecast' }))
     rtl.fireEvent.click(
       rtl.within(await view.findByRole('alertdialog')).getByRole('button', { name: 'Delete' })
@@ -562,7 +562,7 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
     )
     expect(await storedRows()).toEqual([])
 
-    rtl.fireEvent.click(view.getByRole('button', { name: /Scenario Builder/ }))
+    rtl.fireEvent.click(view.getByRole('tab', { name: /Scenario Builder/ }))
     await pressSave(view)
     expect(await view.findByTestId('save-success', {}, { timeout: 5000 })).toBeTruthy()
 
@@ -585,7 +585,7 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
     // `forecast-list.tsx`'s per-id `onDelete` loop, a different path from the
     // single-row button above.
     const { view, first } = await saveThenLoad()
-    rtl.fireEvent.click(view.getByRole('button', { name: /My Forecasts/ }))
+    rtl.fireEvent.click(view.getByRole('tab', { name: /My Forecasts/ }))
     rtl.fireEvent.click(await view.findByRole('checkbox', { name: 'Select all' }))
     rtl.fireEvent.click(view.getByRole('button', { name: 'Delete Selected' }))
     rtl.fireEvent.click(
@@ -596,7 +596,7 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
     )
     expect(await storedRows()).toEqual([])
 
-    rtl.fireEvent.click(view.getByRole('button', { name: /Scenario Builder/ }))
+    rtl.fireEvent.click(view.getByRole('tab', { name: /Scenario Builder/ }))
     await pressSave(view)
     expect(await view.findByTestId('save-success', {}, { timeout: 5000 })).toBeTruthy()
 
@@ -626,7 +626,7 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
     // The list is refetched (code review of 97.1): the gone forecast leaves My
     // Forecasts, so it cannot be Loaded again only to 404 a second time.
     // (The list is only rendered on its own tab, so look there.)
-    rtl.fireEvent.click(view.getByRole('button', { name: /My Forecasts/ }))
+    rtl.fireEvent.click(view.getByRole('tab', { name: /My Forecasts/ }))
     // Positive control (108.1): the list's empty state IS on screen, so the null
     // below is the row gone and not a stale button name matching nothing (the
     // action was renamed Load → Edit; `name` is a full-string match).
@@ -636,7 +636,7 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
     await rtl.waitFor(() =>
       expect(view.queryByRole('button', { name: 'Edit My Financial Forecast' })).toBeNull()
     )
-    rtl.fireEvent.click(view.getByRole('button', { name: /Scenario Builder/ }))
+    rtl.fireEvent.click(view.getByRole('tab', { name: /Scenario Builder/ }))
 
     await pressSave(view)
     expect(await view.findByTestId('save-success', {}, { timeout: 5000 })).toBeTruthy()

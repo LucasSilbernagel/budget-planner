@@ -92,7 +92,7 @@ for (const width of [320, 1280]) {
     const heading = page.getByRole('heading', { name: 'Forecast Projections' })
     await expect(async () => {
       if (!(await heading.isVisible())) {
-        await page.getByRole('button', { name: 'Projections' }).click({ timeout: 1000 })
+        await page.getByRole('tab', { name: 'Projections' }).click({ timeout: 1000 })
       }
       await expect(heading).toBeVisible({ timeout: 1000 })
     }).toPass({ timeout: SHOT_TIMEOUT })
