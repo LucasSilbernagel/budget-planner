@@ -376,10 +376,13 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
           </p>
         </div>
 
-        {/* Chart Controls */}
+        {/* Chart Controls. Each is a toggle button: `aria-pressed` tells a screen
+            reader whether that layer shows, which the colour alone never did
+            (story 120.2, FR188). */}
         <div className="flex flex-wrap gap-2 mb-4">
           <button
             type="button"
+            aria-pressed={config.showGrid}
             onClick={() => toggleOption('showGrid')}
             className={`px-3 py-1 text-sm rounded-md ${
               config.showGrid
@@ -391,6 +394,7 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
           </button>
           <button
             type="button"
+            aria-pressed={config.showLegend}
             onClick={() => toggleOption('showLegend')}
             className={`px-3 py-1 text-sm rounded-md ${
               config.showLegend
@@ -402,6 +406,7 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
           </button>
           <button
             type="button"
+            aria-pressed={config.showTooltip}
             onClick={() => toggleOption('showTooltip')}
             className={`px-3 py-1 text-sm rounded-md ${
               config.showTooltip

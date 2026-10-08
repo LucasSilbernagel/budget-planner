@@ -86,7 +86,7 @@ function savedRow(inputs: unknown, version = 1): Record<string, unknown> {
 async function loadPlan(inputs: unknown, version?: number) {
   fetchForecasts.mockResolvedValue({ success: true, data: [savedRow(inputs, version)] })
   renderWithRouter(<ForecastingPage />)
-  fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
+  fireEvent.click(await screen.findByRole('tab', { name: /my forecasts/i }))
   const load = await screen.findByRole('button', { name: 'Edit Plan' })
   const before = engineCalls.length
   fireEvent.click(load)

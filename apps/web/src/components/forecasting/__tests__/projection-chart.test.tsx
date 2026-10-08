@@ -1,5 +1,5 @@
 import type { ForecastingResult } from '@budget-planner/core'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { ProjectionChart } from '../projection-chart'
 
@@ -92,5 +92,17 @@ describe('ProjectionChart (bug-3 AC-3)', () => {
     render(<ProjectionChart result={result} />)
     expect(screen.getByText(/build a scenario/i)).toBeInTheDocument()
     expect(screen.queryByText('Starting Net Worth')).toBeNull()
+  })
+})
+
+describe('chart layer toggles report on/off (story 120.2, FR188)', () => {
+  it.each(['Grid', 'Legend', 'Tooltips'])('%s starts pressed and flips on each click', (name) => {
+    render(<ProjectionChart result={null} />)
+    const toggle = screen.getByRole('button', { name })
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
   })
 })

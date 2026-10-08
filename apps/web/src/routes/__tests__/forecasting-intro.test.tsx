@@ -138,11 +138,12 @@ describe('the /forecasting page intro (57.1, AC-3)', () => {
     // The tab strip is located through a tab BUTTON rather than a class string, so
     // restyling it cannot quietly retarget this assertion.
     // ⚠️ NAMING: `closest('div')` resolves to the button's nearest ancestor div —
-    // the inner pill strip, NOT the outer `mb-8` tab section. So this proves
+    // the inner pill strip (the `role="tablist"` since story 120.2), NOT the outer
+    // `mb-8` tab section. So this proves
     // "precedes and is not inside the tab STRIP". Moving the intro inside `mb-8`
     // but before <TabNavigation> keeps this green, and that is correct: it still
     // renders above the tab bar, which is what the AC requires.
-    const tabStrip = screen.getByRole('button', { name: /scenario builder/i }).closest('div')
+    const tabStrip = screen.getByRole('tab', { name: /scenario builder/i }).closest('div')
     expect(tabStrip).not.toBeNull()
 
     const position = intro.compareDocumentPosition(tabStrip as Node)
@@ -163,9 +164,9 @@ describe('the /forecasting page intro (57.1, AC-3)', () => {
     renderWithRouter(<ForecastingPage />)
 
     // Positive anchors first (awaited, so the absence below is not vacuous).
-    expect(await screen.findByRole('button', { name: /scenario builder/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /projections/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /my forecasts/i })).toBeInTheDocument()
+    expect(await screen.findByRole('tab', { name: /scenario builder/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /projections/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /my forecasts/i })).toBeInTheDocument()
 
     // jsdom applies no Tailwind, so the old `hidden sm:block` description WAS in
     // this DOM — but only the ACTIVE tab's one. So each tab is activated in turn
@@ -178,7 +179,7 @@ describe('the /forecasting page intro (57.1, AC-3)', () => {
       [/my forecasts/i, 'Saved scenarios and results'],
     ]
     for (const [tabName, description] of descriptionByTab) {
-      fireEvent.click(screen.getByRole('button', { name: tabName }))
+      fireEvent.click(screen.getByRole('tab', { name: tabName }))
       expect(screen.queryByText(description), `"${description}" must be gone`).toBeNull()
     }
   })

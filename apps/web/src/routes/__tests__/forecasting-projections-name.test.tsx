@@ -76,7 +76,7 @@ function legendNames(): string[] {
 }
 
 async function openProjections() {
-  fireEvent.click(screen.getByRole('button', { name: /projections/i }))
+  fireEvent.click(screen.getByRole('tab', { name: /projections/i }))
   await waitFor(() => expect(legendNames().length).toBe(2))
 }
 
@@ -104,7 +104,7 @@ afterEach(() => {
 describe('the Projections legend names the scenario', () => {
   it('(a) after loading a saved forecast from My Forecasts', async () => {
     renderWithRouter(<ForecastingPage />)
-    fireEvent.click(await screen.findByRole('button', { name: /my forecasts/i }))
+    fireEvent.click(await screen.findByRole('tab', { name: /my forecasts/i }))
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Buy a house' }))
     await waitFor(() => expect(screen.getByDisplayValue('Buy a house')).toBeInTheDocument())
 
@@ -119,7 +119,7 @@ describe('the Projections legend names the scenario', () => {
     await openProjections()
     await waitFor(() => expect(legendNames()).toEqual(['Baseline', 'My Financial Forecast']))
 
-    fireEvent.click(screen.getByRole('button', { name: /scenario builder/i }))
+    fireEvent.click(screen.getByRole('tab', { name: /scenario builder/i }))
     fireEvent.change(nameField, { target: { value: 'Buy a house' } })
     // Wait out the builder's 500 ms debounced recompute (it stays mounted).
     await new Promise((resolve) => setTimeout(resolve, 700))

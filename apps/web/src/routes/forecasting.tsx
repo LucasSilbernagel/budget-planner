@@ -864,7 +864,16 @@ function ForecastingPage(): React.ReactElement {
           {/* The builder stays mounted (hidden when another tab is active) so
               switching to Projections/Saved and back does NOT wipe unsaved edits.
               Only a Load (via the nonce below) or a fresh session resets it. */}
-          <div className={activeTab === 'scenarios' ? '' : 'hidden'}>
+          {/* Each view is a `tabpanel` labelled by its tab (story 120.2, FR188).
+              All three panel wrappers are ALWAYS rendered, so every tab's
+              `aria-controls` names an element that exists; only Projections and
+              My Forecasts CONTENT is still mounted on entry, as before. */}
+          <div
+            role="tabpanel"
+            id={tabPanelId('scenarios')}
+            aria-labelledby={tabId('scenarios')}
+            className={activeTab === 'scenarios' ? '' : 'hidden'}
+          >
             <ScenarioBuilder
               // Remount (resetting all internal state) on every Load — including
               // re-loading the same forecast — so the builder re-seeds from it.
@@ -880,16 +889,30 @@ function ForecastingPage(): React.ReactElement {
             />
           </div>
 
-          {activeTab === 'projections' && <ProjectionChart result={scenarioResult} />}
+          <div
+            role="tabpanel"
+            id={tabPanelId('projections')}
+            aria-labelledby={tabId('projections')}
+            className={activeTab === 'projections' ? '' : 'hidden'}
+          >
+            {activeTab === 'projections' && <ProjectionChart result={scenarioResult} />}
+          </div>
 
-          {activeTab === 'saved' && (
-            <ForecastList
-              forecasts={savedForecasts}
-              vsToday={vsTodayById}
-              onDelete={handleDeleteForecast}
-              onLoad={handleLoadForecast}
-            />
-          )}
+          <div
+            role="tabpanel"
+            id={tabPanelId('saved')}
+            aria-labelledby={tabId('saved')}
+            className={activeTab === 'saved' ? '' : 'hidden'}
+          >
+            {activeTab === 'saved' && (
+              <ForecastList
+                forecasts={savedForecasts}
+                vsToday={vsTodayById}
+                onDelete={handleDeleteForecast}
+                onLoad={handleLoadForecast}
+              />
+            )}
+          </div>
         </div>
 
         {/* Info Footer */}
@@ -960,6 +983,11 @@ const tabs: { id: ForecastingTab; label: string }[] = [
   { id: 'saved', label: 'My Forecasts' },
 ]
 
+// Static ids (story 120.2, D2): the page renders one tab strip, so a fixed id is
+// unique and SSR-stable, like the page's other static `aria-controls` targets.
+const tabId = (tab: ForecastingTab): string => `forecasting-tab-${tab}`
+const tabPanelId = (tab: ForecastingTab): string => `forecasting-panel-${tab}`
+
 /**
  * Below `sm` (story 91.3, FR147). At 320 px the three tabs measured 388 px in a
  * 288 px content box (DejaVu, `91-3-evidence/`): each button's min-content is its
@@ -986,18 +1014,82 @@ const TAB_ICON_PHONE_CLASS = 'max-sm:hidden'
  * than overflowing into the neighbouring tab. See {@link TAB_BUTTON_PHONE_CLASS}. */
 const TAB_LABEL_CLASS = 'ml-2 max-sm:ml-0 max-sm:[overflow-wrap:anywhere]'
 
+/**
+ * The forecasting views as WAI-ARIA APG tabs (story 120.2, FR188).
+ *
+ * `role="tablist"` (named "Forecasting views") over three `role="tab"` buttons,
+ * each with `aria-selected` and `aria-controls` → its always-rendered
+ * `role="tabpanel"`. Before this the active view was shown by colour alone, so a
+ * screen reader heard three identical buttons.
+ *
+ * - **Automatic activation** (proposal D3): ←/→ (wrapping) and Home/End move focus
+ *   AND switch the view. Switching is instant (the builder stays mounted; the other
+ *   two views mount on entry), so manual activation would only add a keypress.
+ *   Keys go through `onTabChange`, the same path as a click, so they also retire
+ *   the save confirmation.
+ * - **Roving tabIndex**: only the selected tab is in the Tab order, and it follows
+ *   `activeTab` however that changes (click, keys, a save → My Forecasts, a Load →
+ *   Scenario Builder).
+ * - While `disabled` (a save in flight, 62.2) keys do nothing, as clicks already do.
+ *
+ * ⚠️ The tablist `<div>` must stay the DIRECT parent of the three buttons:
+ * `forecasting-tabs.test.tsx` pins the strip's children, and
+ * `forecasting-intro.test.tsx` finds the strip as a tab's nearest ancestor div.
+ */
 function TabNavigation({
   activeTab,
   onTabChange,
   disabled = false,
 }: TabNavigationProps): React.ReactElement {
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (disabled) return
+    const current = tabs.findIndex((tab) => tab.id === activeTab)
+    let target: number
+    switch (event.key) {
+      case 'ArrowRight':
+        target = (current + 1) % tabs.length
+        break
+      case 'ArrowLeft':
+        target = (current - 1 + tabs.length) % tabs.length
+        break
+      case 'Home':
+        target = 0
+        break
+      case 'End':
+        target = tabs.length - 1
+        break
+      default:
+        return
+    }
+    event.preventDefault()
+    const next = tabs[target]
+    if (!next) return
+    onTabChange(next.id)
+    tabRefs.current[target]?.focus()
+  }
+
   return (
     <div className="flex flex-col sm:flex-row gap-4">
-      <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
-        {tabs.map((tab) => (
+      <div
+        role="tablist"
+        aria-label="Forecasting views"
+        onKeyDown={handleKeyDown}
+        className="flex space-x-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1"
+      >
+        {tabs.map((tab, index) => (
           <button
             key={tab.id}
+            ref={(element) => {
+              tabRefs.current[index] = element
+            }}
             type="button"
+            role="tab"
+            id={tabId(tab.id)}
+            aria-selected={activeTab === tab.id}
+            aria-controls={tabPanelId(tab.id)}
+            tabIndex={activeTab === tab.id ? 0 : -1}
             onClick={() => onTabChange(tab.id)}
             disabled={disabled}
             className={`px-4 ${TAB_BUTTON_PHONE_CLASS} py-2 text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${
