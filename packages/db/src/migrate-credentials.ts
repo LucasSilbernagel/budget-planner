@@ -36,7 +36,7 @@ import {
 } from './client'
 
 /** The pg SSL option for a migrating connection. Identical to the app pool's. */
-export type MigrationDbSsl = ReturnType<typeof buildDbSsl>
+type MigrationDbSsl = ReturnType<typeof buildDbSsl>
 
 export interface MigrationCredentials {
   host: string

@@ -12,10 +12,10 @@
  */
 
 /** RFC 5321 maximum email length. */
-export const EMAIL_MAX_LENGTH = 254
+const EMAIL_MAX_LENGTH = 254
 
 /** Cheap shape check — one `@`, a dot in the domain, no whitespace. */
-export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 /**
  * Canonical form for storage and lookup: trim, then lowercase.

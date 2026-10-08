@@ -27,8 +27,6 @@ import { db } from '@budget-planner/db'
 import type { ForecastingProfile, NewForecastingProfile } from '@budget-planner/db'
 import { forecastingProfiles, userProfiles } from '@budget-planner/db/src/schema'
 import { type SQL, and, desc, eq, inArray, ne } from 'drizzle-orm'
-import { getCurrentUserSession } from '../api/auth/paddle'
-import type { ApiResult } from '../api/auth/paddle'
 import { type DbTx, lockUserProfileSet } from '../api/profile-set-lock'
 
 /** Where a read or write runs: autocommit on `db`, or inside a transaction. */
@@ -77,7 +75,7 @@ export interface ForecastingProfileOutput extends ForecastingProfile {
  * / 409. A failure with NO reason is unexpected and becomes a 500 whose message
  * is fixed, so `error` there may carry internal detail for the log.
  */
-export type ForecastFailureReason = 'invalid-input' | 'not-found' | 'conflict'
+type ForecastFailureReason = 'invalid-input' | 'not-found' | 'conflict'
 
 /** A core's result. `error` of a reasoned failure is shown to the user verbatim. */
 export type ForecastResult<T> =
@@ -229,7 +227,7 @@ function checkForecastInput(input: {
 const DUPLICATE_NAME_ERROR = 'A forecast with this name already exists for this profile.'
 
 /** The 404 text of an update whose forecast is gone (story 97.1, D3). */
-export const FORECAST_GONE_ERROR =
+const FORECAST_GONE_ERROR =
   'This forecast was deleted, so it was not saved. Save again to keep it as a new forecast.'
 
 // ============================================================================
@@ -415,70 +413,6 @@ export async function getForecastingProfiles(
 }
 
 /**
- * Get a single forecasting profile by ID
- * Requires authentication and ownership validation
- */
-export async function getForecastingProfileById(
-  request: Request,
-  id: number
-): Promise<ApiResult<ForecastingProfileOutput>> {
-  try {
-    // Check authentication
-    const userResult = await getCurrentUserSession(request)
-
-    if (!userResult.success) {
-      return {
-        success: false,
-        error: userResult.error || 'Authentication check failed',
-      }
-    }
-
-    const user = userResult.data
-
-    if (!user) {
-      return {
-        success: false,
-        error: 'Authentication required',
-      }
-    }
-
-    // Get the profile
-    const [profile] = await db
-      .select()
-      .from(forecastingProfiles)
-      .where(and(eq(forecastingProfiles.id, id), eq(forecastingProfiles.userId, user.userId)))
-      .limit(1)
-
-    if (!profile) {
-      return {
-        success: false,
-        error: 'Forecasting profile not found or access denied',
-      }
-    }
-
-    // Get the profile name
-    const [userProfile] = await db
-      .select({ name: userProfiles.name })
-      .from(userProfiles)
-      .where(eq(userProfiles.id, profile.profileId))
-      .limit(1)
-
-    return {
-      success: true,
-      data: {
-        ...profile,
-        profileName: userProfile?.name,
-      },
-    }
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to get forecasting profile',
-    }
-  }
-}
-
-/**
  * Update one of `userId`'s forecasts in place (story 97.1, FR157: `PUT
  * /api/forecasts?id=`).
  *
@@ -571,89 +505,6 @@ export async function deleteForecastingProfile(
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to delete forecasting profile',
-    }
-  }
-}
-
-/**
- * Set a forecasting profile as default for the user/profile combination
- * Requires authentication and ownership validation
- */
-export async function setDefaultForecastingProfile(
-  request: Request,
-  id: number
-): Promise<ApiResult<ForecastingProfileOutput>> {
-  try {
-    // Check authentication
-    const userResult = await getCurrentUserSession(request)
-
-    if (!userResult.success) {
-      return {
-        success: false,
-        error: userResult.error || 'Authentication check failed',
-      }
-    }
-
-    const user = userResult.data
-
-    if (!user) {
-      return {
-        success: false,
-        error: 'Authentication required',
-      }
-    }
-
-    // Get the profile to validate ownership and get profileId
-    const [profile] = await db
-      .select()
-      .from(forecastingProfiles)
-      .where(and(eq(forecastingProfiles.id, id), eq(forecastingProfiles.userId, user.userId)))
-      .limit(1)
-
-    if (!profile) {
-      return {
-        success: false,
-        error: 'Forecasting profile not found or access denied',
-      }
-    }
-
-    // Ensure only one default per user/profile
-    await ensureSingleDefault(user.userId, profile.profileId, id)
-
-    // Set this profile as default
-    const [updatedProfile] = await db
-      .update(forecastingProfiles)
-      // See the note above: a timestamp column needs a Date, not a string.
-      .set({ isDefault: true, updatedAt: new Date() })
-      .where(eq(forecastingProfiles.id, id))
-      .returning()
-
-    // Get the profile name
-    const [userProfile] = await db
-      .select({ name: userProfiles.name })
-      .from(userProfiles)
-      .where(eq(userProfiles.id, profile.profileId))
-      .limit(1)
-
-    // ⚠️ `.returning()` yields an array, so the destructured row is
-    // possibly-undefined. Without this guard, spreading `undefined` produced a
-    // "success" payload carrying only `profileName` — a malformed row the caller
-    // would have taken at face value. A write that returns nothing is a failure.
-    if (!updatedProfile) {
-      return { success: false, error: 'Failed to update forecasting profile' }
-    }
-
-    return {
-      success: true,
-      data: {
-        ...updatedProfile,
-        profileName: userProfile?.name,
-      },
-    }
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to set default forecasting profile',
     }
   }
 }

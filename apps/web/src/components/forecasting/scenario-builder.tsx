@@ -93,7 +93,7 @@ export interface LocalFinancialItem extends NormalizableFinancialItem {
  * cents. Never written back to the savings store (D0): the row is the scenario's
  * own copy, seeded from the store once.
  */
-export interface LocalSavingsAccount {
+interface LocalSavingsAccount {
   id: string
   name: string
   balance: number
@@ -111,7 +111,7 @@ export interface LocalSavingsAccount {
  * it is shown, sent to the engine and saved on INVESTMENT rows only. A debt row
  * keeps it hidden, so switching back to Investment shows it again (D8).
  */
-export interface LocalBalanceAccount {
+interface LocalBalanceAccount {
   id: string
   name: string
   type: 'investment' | 'debt'
@@ -142,7 +142,7 @@ export interface LocalBalanceAccount {
  * cents. A CONSTANT (D7): no growth, no contribution, so the row is only a name
  * and a value. Never written back to the balance store (D0).
  */
-export interface LocalAssetAccount {
+interface LocalAssetAccount {
   id: string
   name: string
   balance: number
@@ -151,7 +151,7 @@ export interface LocalAssetAccount {
 /**
  * One-time event for forecasting
  */
-export interface OneTimeEvent {
+interface OneTimeEvent {
   id: string
   year: number
   amount: number // In cents
@@ -227,7 +227,7 @@ export interface ScenarioBuilderProps {
  * a profile". Collapsing them again reintroduces two defects at once — a prompt
  * that flashes on every page load, and wrong advice for anyone whose fetch failed.
  */
-export type SaveAvailability =
+type SaveAvailability =
   | { kind: 'loading' }
   | { kind: 'ready' }
   | { kind: 'none' }
@@ -322,8 +322,8 @@ const FIELDS_INVALID_SHORT = 'Fix the highlighted fields to save'
  * Copy for the Savings Accounts section (story 100.1). The note is Lucas's to
  * tweak (AC-9); a copy test pins it.
  */
-export const SAVINGS_WHAT_IF_NOTE = "What-if only: changes here don't change your Savings page."
-export const NO_SAVINGS_ACCOUNTS = 'No savings accounts in this scenario'
+const SAVINGS_WHAT_IF_NOTE = "What-if only: changes here don't change your Savings page."
+const NO_SAVINGS_ACCOUNTS = 'No savings accounts in this scenario'
 
 /**
  * Copy for the Investments & Debts section (story 100.2, AC-11). Lucas may tweak
@@ -331,9 +331,9 @@ export const NO_SAVINGS_ACCOUNTS = 'No savings accounts in this scenario'
  * starting net worth. (Until story 114.1 a third one said assets were not
  * included; they have their own section now.)
  */
-export const BALANCE_WHAT_IF_NOTE =
+const BALANCE_WHAT_IF_NOTE =
   "What-if only: changes here don't change your Balance Tracking page. Debts count against your starting net worth."
-export const NO_BALANCE_ACCOUNTS = 'No investments or debts in this scenario'
+const NO_BALANCE_ACCOUNTS = 'No investments or debts in this scenario'
 /**
  * Copy for the Assets section (story 114.1, AC-5). Lucas may tweak it; a copy
  * test pins it. The second sentence is D7: an asset does not grow.
@@ -740,7 +740,7 @@ export interface ForecastRows {
  *   so the scenario and today's baseline carry the same keys (107.1 AC-5). The
  *   engine adds it to every year's net worth; nothing grows (D7).
  */
-export function forecastInputFromRows(rows: ForecastRows): ForecastInputData {
+function forecastInputFromRows(rows: ForecastRows): ForecastInputData {
   return {
     income: toNormalizableItems(rows.incomeItems),
     expenses: toNormalizableItems(rows.expenseItems),

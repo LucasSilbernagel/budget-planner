@@ -28,7 +28,7 @@ export function lockedName(title: string): RegExp {
 export const ANY_LOCKED_NAME = /\bpremium\s*,\s*locked$/i
 
 /** The accessible name testing-library computes for `button` (via a `name` matcher). */
-export function accessibleNameOf(button: HTMLElement): string {
+function accessibleNameOf(button: HTMLElement): string {
   let name: string | null = null
   within(button.parentElement ?? document.body).queryAllByRole('button', {
     name: (computed, node) => {

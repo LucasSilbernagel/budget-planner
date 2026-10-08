@@ -32,13 +32,13 @@ import { createIntervalGate, passIfDue } from './interval-gate'
  * IP is read N entries in from the right. The exact count is platform-specific —
  * confirm against Rapids before overriding (pairs with 5-2).
  */
-export function trustedProxyHops(): number {
+function trustedProxyHops(): number {
   const raw = Number.parseInt(process.env['RATE_LIMIT_TRUSTED_PROXY_HOPS'] ?? '', 10)
   return Number.isInteger(raw) && raw >= 0 ? raw : 0
 }
 
 /** Max plausible length of an IP literal (IPv6 + zone-id headroom). */
-export const MAX_IP_LENGTH = 64
+const MAX_IP_LENGTH = 64
 
 /**
  * How often one instance may log the "no trustworthy client IP" condition.

@@ -21,7 +21,7 @@
 
 import { X509Certificate } from 'node:crypto'
 
-export type CaExpiryStatus = 'ok' | 'warn' | 'expired' | 'invalid'
+type CaExpiryStatus = 'ok' | 'warn' | 'expired' | 'invalid'
 
 export interface CaExpiryResult {
   status: CaExpiryStatus

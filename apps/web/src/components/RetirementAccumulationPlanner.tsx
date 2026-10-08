@@ -40,7 +40,7 @@ import {
   useSetPostRetirementReturn,
 } from '../stores/retirementPlannerStore'
 import { ErrorBoundary } from './ErrorBoundary'
-import RetirementTimelineChart from './RetirementTimelineChart'
+import { RetirementTimelineChart } from './RetirementTimelineChart'
 import { GroupedAmount } from './ui/GroupedAmount'
 
 /**
@@ -1811,5 +1811,3 @@ export function RetirementAccumulationPlanner() {
     </ErrorBoundary>
   )
 }
-
-export default RetirementAccumulationPlanner

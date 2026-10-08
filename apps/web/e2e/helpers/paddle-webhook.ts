@@ -17,7 +17,7 @@ import { createHmac, randomUUID } from 'node:crypto'
 import type { APIRequestContext, APIResponse } from '@playwright/test'
 
 /** Sign `rawBody` the way Paddle does, at `ts` (unix seconds). */
-export function paddleSignature(rawBody: string, secret: string, ts: number): string {
+function paddleSignature(rawBody: string, secret: string, ts: number): string {
   const h1 = createHmac('sha256', secret).update(`${ts}:${rawBody}`).digest('hex')
   return `ts=${ts};h1=${h1}`
 }

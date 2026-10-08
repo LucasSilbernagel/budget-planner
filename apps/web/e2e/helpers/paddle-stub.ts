@@ -28,7 +28,7 @@
 import type { Page } from '@playwright/test'
 
 /** The one script `@paddle/paddle-js` 1.6.4 loads for Paddle Billing. */
-export const PADDLE_JS_URL = 'https://cdn.paddle.com/paddle/v2/paddle.js'
+const PADDLE_JS_URL = 'https://cdn.paddle.com/paddle/v2/paddle.js'
 
 /**
  * The stub's localized totals. Deliberately NOT the app's static fallback
@@ -41,7 +41,7 @@ export const STUB_TOTALS = {
   lifetime: '€99.00',
 } as const
 
-export interface PaddleStubCall {
+interface PaddleStubCall {
   method: string
   args: unknown[]
 }

@@ -11,14 +11,10 @@
  * - Database types imported from @budget-planner/db
  */
 
-import type { BalanceTracking as DbBalanceTracking, FinanceType } from '@budget-planner/db'
+import type { FinanceType } from '@budget-planner/db'
 import { MAX_MONEY_CENTS } from '../finance/money-limits'
 import { type Frequency, normalizeToAnnual, normalizeToMonthly } from '../finance/normalization'
-import {
-  DebtCalculationResult,
-  DebtSubType,
-  calculateDebtMetrics,
-} from '../utils/balanceCalculations'
+import { DebtSubType, calculateDebtMetrics } from '../utils/balanceCalculations'
 import { generateUuid } from '../utils/uuid'
 
 // ============================================================================
@@ -134,51 +130,6 @@ export interface BalanceTrackingWithTimeline extends ClientBalanceTracking {
 }
 
 /**
- * Database Balance Tracking type (re-exported for convenience)
- * Uses serial IDs (positive integers) from PostgreSQL sequence
- * Note: Differs from ClientBalanceTracking which uses negative IDs for client-side storage
- */
-export type DatabaseBalanceTracking = DbBalanceTracking
-
-/**
- * Input type for creating a new balance tracking entry in the database
- */
-export interface CreateBalanceTrackingInput {
-  type: FinanceType
-  name: string
-  currentBalance: number // In cents
-  monthlyContribution: number // In cents — amount at `frequency` cadence (Story 16-2)
-  frequency: Frequency // Cadence of monthlyContribution (Story 16-2)
-  contributionRecordedAsExpense?: boolean // Story 45.1 (FR72); see ClientBalanceTracking
-  paymentExpenseId?: string | null // Story 102.1 (FR169); see ClientBalanceTracking
-  userId?: number // Optional for free tier (null), required for paid tier
-}
-
-/**
- * Input type for updating an existing balance tracking entry
- * Uses number IDs to align with database serial and client-side negative IDs
- */
-export interface UpdateBalanceTrackingInput {
-  id: string // uuid PK (Story 5-14) — shared client/server identity
-  type?: FinanceType
-  name?: string
-  currentBalance?: number // In cents
-  monthlyContribution?: number // In cents — amount at `frequency` cadence (Story 16-2)
-  frequency?: Frequency // Cadence of monthlyContribution (Story 16-2)
-  contributionRecordedAsExpense?: boolean // Story 45.1 (FR72); see ClientBalanceTracking
-  paymentExpenseId?: string | null // Story 102.1 (FR169); see ClientBalanceTracking
-}
-
-/**
- * Result type for balance tracking operations
- */
-export interface BalanceTrackingResult {
-  success: boolean
-  data?: ClientBalanceTracking | DatabaseBalanceTracking
-  error?: string
-}
-
-/**
  * Filter options for querying balance tracking entries
  */
 export interface BalanceTrackingFilter {
@@ -194,7 +145,7 @@ export interface BalanceTrackingFilter {
  * The valid contribution cadences (Story 16-2), mirroring the DB `frequencyEnum`.
  * Single source shared by validation and the normalization chokepoint.
  */
-export const VALID_FREQUENCIES: readonly Frequency[] = ['weekly', 'biweekly', 'monthly', 'annually']
+const VALID_FREQUENCIES: readonly Frequency[] = ['weekly', 'biweekly', 'monthly', 'annually']
 
 /**
  * Monthly-equivalent of an entry's contribution, in cents (Story 16-2).
@@ -702,12 +653,6 @@ export function toClientBalanceTracking(input: ClientNewBalanceTracking): Client
 // ============================================================================
 // Exports
 // ============================================================================
-
-// Re-export debt calculation types
-export type { DebtSubType, DebtCalculationResult }
-export { calculateDebtMetrics }
-
-export { withTimeline as withBalanceTrackingTimeline }
 
 /**
  * The expense that pays a debt (Story 102.1, FR169), or `null`.

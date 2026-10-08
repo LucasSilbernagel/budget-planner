@@ -13,7 +13,7 @@ import { expect } from 'vitest'
  * so `hidden` false-matches `overflow-hidden` and `bg-white` false-matches
  * `dark:bg-white`.
  */
-export const RETIRED_SURFACE_TOKENS = [
+const RETIRED_SURFACE_TOKENS = [
   // Raw surface colours that must come from `.surface` / `.surface-inset`.
   'bg-white',
   'bg-gray-50',
@@ -55,27 +55,21 @@ const RESPONSIVE_VARIANTS = new Set([
   'max-2xl',
 ])
 
-/**
- * What this sweep does NOT catch, stated plainly so nobody reads a green run as
- * more than it is:
- *
- *  - **State variants are deliberately preserved, not stripped.** `hover:` /
- *    `focus:` / `active:` forms are left intact, so `hover:bg-gray-50` does not
- *    match `bg-gray-50`. That is intentional: story 11.2 sanctioned the row
- *    hover accent (`hover:bg-gray-50 dark:hover:bg-gray-700/40`) as a one-off,
- *    and it sits on every swept row. The cost is that a hand-rolled
- *    `dark:hover:bg-gray-900` surface would slip through.
- *  - **Only the tokens listed above.** Notably `BalancePage.tsx`'s
- *    unknown/legacy finance-type fallback pill carries `text-gray-800`, a
- *    listed token on an element with no exemption hook. It is unreachable with
- *    valid data (both real types resolve in `TYPE_OPTIONS`), so no current test
- *    trips it — but a future test seeding a corrupt `type` would fail this
- *    sweep on pre-existing, sanctioned styling rather than on a real leak.
- */
-export const SWEEP_KNOWN_BLIND_SPOTS = [
-  'state variants (hover:/focus:/active:) are not stripped',
-  'BalancePage unknown-type fallback pill carries text-gray-800 with no exemption hook',
-] as const
+// What this sweep does NOT catch, stated plainly so nobody reads a green run as
+// more than it is:
+//
+//  - **State variants are deliberately preserved, not stripped.** `hover:` /
+//    `focus:` / `active:` forms are left intact, so `hover:bg-gray-50` does not
+//    match `bg-gray-50`. That is intentional: story 11.2 sanctioned the row
+//    hover accent (`hover:bg-gray-50 dark:hover:bg-gray-700/40`) as a one-off,
+//    and it sits on every swept row. The cost is that a hand-rolled
+//    `dark:hover:bg-gray-900` surface would slip through.
+//  - **Only the tokens listed above.** Notably `BalancePage.tsx`'s
+//    unknown/legacy finance-type fallback pill carries `text-gray-800`, a
+//    listed token on an element with no exemption hook. It is unreachable with
+//    valid data (both real types resolve in `TYPE_OPTIONS`), so no current test
+//    trips it — but a future test seeding a corrupt `type` would fail this
+//    sweep on pre-existing, sanctioned styling rather than on a real leak.
 
 /**
  * The one-off accents story 11.2 explicitly carved OUT of the token layer:
@@ -85,7 +79,7 @@ export const SWEEP_KNOWN_BLIND_SPOTS = [
  * Exemptions are by ELEMENT, not by token, so a leak anywhere else in the same
  * subtree still fails.
  */
-export const SANCTIONED_ACCENT_SELECTORS = [
+const SANCTIONED_ACCENT_SELECTORS = [
   // Savings Account/Goal badge — `text-gray-700` light arm.
   '[data-testid^="savings-badge-"]',
   // Savings Auto/Fixed allocation-mode chip — `text-gray-600 dark:text-gray-300`.

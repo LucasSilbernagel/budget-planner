@@ -33,7 +33,7 @@ import { createIntervalGate, passIfDue } from './interval-gate'
  * scope can never consume another scope's budget (e.g. a user's sync traffic can
  * never eat into anyone's login budget, and vice-versa).
  */
-export type RateLimitScope = 'ip' | 'email' | 'login-verify' | 'sync'
+type RateLimitScope = 'ip' | 'email' | 'login-verify' | 'sync'
 
 export interface RateLimitDecision {
   /** False → the caller should reject (429 / generic throttle). */

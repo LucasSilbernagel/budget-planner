@@ -50,7 +50,7 @@ import { netWorthFromTotals } from '../net-worth'
  * rejected here instead of throwing inside core. The store's own row types are
  * not exported, and are structurally assignable to this.
  */
-export interface ReportCashflowInput {
+interface ReportCashflowInput {
   id: string
   name: string
   /** In cents, at `frequency` cadence. */
@@ -59,7 +59,7 @@ export interface ReportCashflowInput {
 }
 
 /** Structural shape of a balance-tracking row (investment or debt). */
-export interface ReportBalanceInput {
+interface ReportBalanceInput {
   id: string
   name: string
   type: string
@@ -68,7 +68,7 @@ export interface ReportBalanceInput {
 }
 
 /** Structural shape of a savings goal or account. */
-export interface ReportSavingsInput {
+interface ReportSavingsInput {
   id: string
   name: string
   /** In cents; `null` ⇒ a savings account with no target, not a zero target. */
@@ -100,14 +100,14 @@ export interface ReportCashflowRow {
   monthlyCents: number
 }
 
-export interface ReportBalanceRow {
+interface ReportBalanceRow {
   id: string
   name: string
   /** In cents. */
   balanceCents: number
 }
 
-export interface ReportSavingsRow {
+interface ReportSavingsRow {
   id: string
   name: string
   /** In cents; `null` for an account with no target. */
@@ -123,9 +123,9 @@ export interface ReportSavingsRow {
 }
 
 /** Whether the monthly budget lands above, below, or exactly at break-even. */
-export type BudgetStatus = 'surplus' | 'deficit' | 'break-even'
+type BudgetStatus = 'surplus' | 'deficit' | 'break-even'
 
-export interface ReportBudgetSection {
+interface ReportBudgetSection {
   income: ReportCashflowRow[]
   expenses: ReportCashflowRow[]
   /** Monthly-normalized totals, in cents, from core's `calculateNetIncomeResult`. */
@@ -138,7 +138,7 @@ export interface ReportBudgetSection {
   isEmpty: boolean
 }
 
-export interface ReportNetWorthSection {
+interface ReportNetWorthSection {
   investments: ReportBalanceRow[]
   debts: ReportBalanceRow[]
   /** Things owned outright — property, vehicle, cash (story 43.4, FR70). */
@@ -168,7 +168,7 @@ export interface ReportNetWorthSection {
   isEmpty: boolean
 }
 
-export interface ReportSavingsSection {
+interface ReportSavingsSection {
   goals: ReportSavingsRow[]
   totalCurrentCents: number
   totalTargetCents: number

@@ -341,25 +341,3 @@ async function fetchSessionSeed(): Promise<
 // ============================================================================
 // Utility Hook for Route Protection
 // ============================================================================
-
-/**
- * Hook for protecting premium routes
- * Returns whether user can access the route and loading state
- *
- * @returns Object with access status and loading state
- */
-export function usePremiumRouteAccess(): {
-  canAccess: boolean
-  isLoading: boolean
-  subscriptionStatus: 'free' | 'active' | 'past_due' | 'canceled' | 'lifetime' | null
-  isAuthenticated: boolean
-} {
-  const { status } = usePremiumAccess()
-
-  return {
-    canAccess: status.hasAccess,
-    isLoading: status.isLoading,
-    subscriptionStatus: status.subscriptionStatus,
-    isAuthenticated: status.isAuthenticated,
-  }
-}

@@ -26,7 +26,6 @@
     "@budget-planner/core": "workspace:*",
     "@budget-planner/db": "workspace:*",
     "@paddle/paddle-js": "^1.6.4",
-    "@radix-ui/react-slot": "^1.0.2",
     "@tanstack/react-router": "^1.170.16",
     "drizzle-orm": "^0.32.0",
     "markdown-to-jsx": "^9.8.2",

@@ -38,7 +38,7 @@ export interface DbShape {
  *   over a database that has no tables at all.
  * - `unreadable` — the probe returned values that cannot be trusted.
  */
-export type DbProvenance = 'empty' | 'journaled' | 'push-built' | 'inconsistent' | 'unreadable'
+type DbProvenance = 'empty' | 'journaled' | 'push-built' | 'inconsistent' | 'unreadable'
 
 export interface MigrateVerdict {
   safe: boolean

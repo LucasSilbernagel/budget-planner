@@ -68,7 +68,7 @@ export const PERSISTED_STORES: readonly unknown[] = [
   useRetirementPlannerStore,
 ]
 
-export function reloadChain(): void {
+function reloadChain(): void {
   cleanup()
 
   const snapshot: [string, string][] = []

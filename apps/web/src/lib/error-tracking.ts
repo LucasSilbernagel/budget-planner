@@ -27,7 +27,7 @@ export interface ScrubbedEvent {
 }
 
 /** A transport forwards an already-scrubbed event to the provider. */
-export type ErrorTransport = (event: ScrubbedEvent) => void
+type ErrorTransport = (event: ScrubbedEvent) => void
 
 interface InitOptions {
   /** Runtime secret (Rapids-injected). Absent ⇒ tracking stays disabled. */

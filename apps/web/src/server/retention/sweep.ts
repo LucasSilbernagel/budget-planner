@@ -71,21 +71,21 @@ import { type SQL, and, asc, count, eq, sql } from 'drizzle-orm'
 import { LAPSED_STATUSES, statusIn } from './status-classes'
 
 /** The retention period, in calendar months. Mirrors `privacy.md`. */
-export const RETENTION_MONTHS = 12
+const RETENTION_MONTHS = 12
 
 /** How far ahead of deletion the one warning email goes (D2). Mirrors `privacy.md`. */
-export const NOTICE_LEAD_MS = 30 * 24 * 60 * 60 * 1000
+const NOTICE_LEAD_MS = 30 * 24 * 60 * 60 * 1000
 
 /** Per-run caps. The remainder goes on the next run. */
-export const NOTICE_BATCH_LIMIT = 50
-export const PURGE_BATCH_LIMIT = 50
+const NOTICE_BATCH_LIMIT = 50
+const PURGE_BATCH_LIMIT = 50
 
 /**
  * Real elapsed time after which a run starts no further account. Well under
  * Rapids' 60s request timeout: one Brevo call is itself capped at 10s
  * (`BREVO_TIMEOUT_MS`), so the worst overrun is one call past this budget.
  */
-export const RUN_BUDGET_MS = 40_000
+const RUN_BUDGET_MS = 40_000
 
 /** The `jobRuns.name` this job claims. Seeded by migration 0024. */
 export const RETENTION_JOB = 'retention-sweep'
@@ -149,14 +149,14 @@ function noticedThisLapse(): SQL {
 }
 
 /** Due for the warning: deletion is at most NOTICE_LEAD away, and no notice yet. */
-export function dueForNotice(now: number): SQL {
+function dueForNotice(now: number): SQL {
   return sql`${lapsedWithClock()}
     AND ${retentionDeadline()} - make_interval(secs => ${NOTICE_LEAD_MS / 1000}) <= ${utc(now)}
     AND NOT (${noticedThisLapse()})`
 }
 
 /** Due for deletion: the period has run AND the notice is at least NOTICE_LEAD old. */
-export function dueForPurge(now: number): SQL {
+function dueForPurge(now: number): SQL {
   return sql`${lapsedWithClock()}
     AND ${retentionDeadline()} <= ${utc(now)}
     AND ${noticedThisLapse()}

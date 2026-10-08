@@ -244,16 +244,3 @@ export async function sendSyncOperation(operation: SyncOperation): Promise<Proce
     retryable: true,
   }
 }
-
-/**
- * Generic API error class
- */
-export class ApiError extends Error {
-  constructor(
-    public override readonly message: string,
-    public readonly statusCode?: number
-  ) {
-    super(message)
-    this.name = 'ApiError'
-  }
-}

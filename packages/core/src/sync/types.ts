@@ -331,7 +331,7 @@ export const RETIREMENT_PLAN_STRING_MAX = 255
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/
 
 /** Whether jsonb can store this string: no NUL and no lone surrogate (see above). */
-export function isJsonbStorableString(value: string): boolean {
+function isJsonbStorableString(value: string): boolean {
   return !value.includes('\u0000') && !LONE_SURROGATE.test(value)
 }
 
@@ -400,7 +400,7 @@ export const retirementPlanSyncSchema = z.object({
  * `plan` is required (the column is NOT NULL); `.default()` is banned here, as on
  * every read gate (trap 1).
  */
-export const retirementPlanRowSchema = z.object({
+const retirementPlanRowSchema = z.object({
   plan: z.record(z.unknown()),
   userId: z.string().uuid(),
 })

@@ -127,6 +127,15 @@ jobs:
           # own positive controls (the markers must be present in `dist/server`).
           node apps/web/scripts/check-client-bundle.mjs
 
+      # Unused files, exports, types and dependencies (config: knip.json). A
+      # knip-flagged export that IS needed (e.g. reached only through a config
+      # alias or a CLI invoked by name) belongs in knip.json's `entry`, not in an
+      # ignore comment. Runs AFTER the build above: `apps/web/src/routeTree.gen.ts`
+      # is gitignored and only the TanStack Start vite plugin emits it, so on a
+      # clean checkout knip would report `./routeTree.gen` as unresolved.
+      - name: Knip (unused code)
+        run: pnpm knip
+
   unit-shards:
     # Story 85.1 (FR138). The web Vitest run was the deploy's critical path
     # (84.6: 4 of 4 runs), so it is split by FILE across two jobs. Core and db

@@ -480,5 +480,3 @@ export function RetirementTimelineChart(props: RetirementTimelineChartProps) {
     </ErrorBoundary>
   )
 }
-
-export default RetirementTimelineChart

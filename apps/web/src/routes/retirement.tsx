@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { ErrorBoundary } from '../components/ErrorBoundary'
-import RetirementAccumulationPlanner from '../components/RetirementAccumulationPlanner'
+import { RetirementAccumulationPlanner } from '../components/RetirementAccumulationPlanner'
 import { RetirementDisabledNotice } from '../components/retirement/RetirementDisabledNotice'
 import { useShowRetirementPlanner } from '../stores/plannerVisibilityStore'
 
