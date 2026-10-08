@@ -15,6 +15,7 @@ import {
   useTableSortStore,
 } from '../../stores/tableSortStore'
 import { renderAfterReload } from '../../test/reload-chain'
+import { sortLiveRegion } from '../../test/sort-announcements'
 import { BalancePage } from '../BalancePage'
 import { ExpensesPage } from '../ExpensesPage'
 import { IncomePage } from '../IncomePage'
@@ -720,6 +721,24 @@ describe('a sort survives the reload chain (was e2e, story 84.5)', () => {
     // have come out of storage.
     expect(renderedOrder()).toEqual(BY_NAME_ASC)
     expect(nameHeader()).toHaveAttribute('aria-sort', 'ascending')
+  })
+
+  it('a restored sort is DESCRIBED on the header but never ANNOUNCED (story 120.1, D2)', async () => {
+    // The live region speaks only for a header click in THIS mount. A sort that
+    // came back out of storage is not news: describe it, stay silent.
+    const user = userEvent.setup()
+    seedIncome()
+    renderWithProviders(<IncomePage />)
+    await clickName(user)
+    expect(sortLiveRegion().textContent).toBe('Sorted by Name, ascending')
+
+    await renderAfterReload(<IncomePage />)
+
+    expect(nameHeader()).toHaveAttribute('aria-sort', 'ascending')
+    expect(within(nameHeader()).getByRole('button', { name: 'Name' })).toHaveAccessibleDescription(
+      'Sortable column, sorted ascending'
+    )
+    expect(sortLiveRegion().textContent).toBe('')
   })
 
   it('the DIRECTION survives, not just the column (was e2e table-sort-persistence:141)', async () => {

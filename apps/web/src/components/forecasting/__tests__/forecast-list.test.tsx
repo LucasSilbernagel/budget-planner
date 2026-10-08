@@ -394,3 +394,115 @@ describe('selection acts only on visible forecasts (story 119.1, FR187)', () => 
     expect(screen.getByText('2 selected')).toBeInTheDocument()
   })
 })
+
+describe('My Forecasts sortable headers (story 120.1, FR188)', () => {
+  /**
+   * Three forecasts whose three orderings all differ, so no direction can pass
+   * by accident:
+   *   by name:     Alpha, Bravo, Charlie
+   *   by created:  Bravo (Jan), Charlie (Mar), Alpha (Jun)
+   *   by net worth: Charlie (10), Alpha (50), Bravo (90)
+   */
+  function forecastNamed(name: string, createdAt: string, endingNetWorth: number): SavedForecast {
+    return {
+      ...sampleForecast,
+      id: `saved-${name}`,
+      name,
+      result: {
+        ...sampleForecast.result,
+        summary: { ...sampleForecast.result.summary, endingNetWorth },
+      },
+      createdAt,
+      updatedAt: createdAt,
+    }
+  }
+  const FORECASTS = [
+    forecastNamed('Alpha', '2026-06-01T00:00:00Z', 50_00),
+    forecastNamed('Bravo', '2026-01-01T00:00:00Z', 90_00),
+    forecastNamed('Charlie', '2026-03-01T00:00:00Z', 10_00),
+  ]
+  const LABELS = ['Name', 'Created', 'Ending Net Worth'] as const
+
+  function renderList() {
+    return render(<ForecastList forecasts={FORECASTS} onDelete={vi.fn()} />)
+  }
+  function rowOrder(): string[] {
+    return screen
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => FORECASTS.find((f) => row.textContent?.includes(f.name))?.name ?? '?')
+  }
+  function header(name: (typeof LABELS)[number]): HTMLElement {
+    return screen.getByRole('columnheader', { name })
+  }
+  function sortButton(name: (typeof LABELS)[number]): HTMLElement {
+    return within(header(name)).getByRole('button', { name })
+  }
+  function liveRegion(container: HTMLElement): HTMLElement {
+    const region = container.querySelector<HTMLElement>('[aria-live="polite"]')
+    if (!region) throw new Error('no live region rendered')
+    return region
+  }
+
+  it('names each sort button EXACTLY its label: the arrows are aria-hidden but still drawn', () => {
+    renderList()
+    for (const name of LABELS) {
+      const button = sortButton(name)
+      const glyph = button.querySelector('span')
+      expect(glyph).toHaveAttribute('aria-hidden', 'true')
+      expect(glyph?.textContent).toMatch(/^[↕↑↓]$/)
+    }
+  })
+
+  it('reports the state on each <th> and in each button description', () => {
+    renderList()
+    // Default: Created, descending.
+    expect(header('Created')).toHaveAttribute('aria-sort', 'descending')
+    expect(sortButton('Created')).toHaveAccessibleDescription('Sortable column, sorted descending')
+    for (const name of ['Name', 'Ending Net Worth'] as const) {
+      expect(header(name)).toHaveAttribute('aria-sort', 'none')
+      expect(sortButton(name)).toHaveAccessibleDescription('Sortable column, not sorted')
+    }
+    // Not sortable: no `aria-sort` at all.
+    expect(screen.getByRole('columnheader', { name: 'Description' })).not.toHaveAttribute(
+      'aria-sort'
+    )
+    expect(screen.getByRole('columnheader', { name: 'Actions' })).not.toHaveAttribute('aria-sort')
+  })
+
+  it('shows the order the arrow claims: ↓ is newest, largest and Z→A first (D1)', async () => {
+    const user = userEvent.setup()
+    renderList()
+    // ⚠️ Before 120.1, "Created ↓" listed the OLDEST first and "Ending Net
+    // Worth ↓" the SMALLEST first (MEASURED at `5b4ed69`).
+    expect(rowOrder()).toEqual(['Alpha', 'Charlie', 'Bravo'])
+
+    await user.click(sortButton('Created'))
+    expect(header('Created')).toHaveAttribute('aria-sort', 'ascending')
+    expect(rowOrder()).toEqual(['Bravo', 'Charlie', 'Alpha'])
+
+    await user.click(sortButton('Ending Net Worth'))
+    expect(header('Ending Net Worth')).toHaveAttribute('aria-sort', 'descending')
+    expect(rowOrder()).toEqual(['Bravo', 'Alpha', 'Charlie'])
+    await user.click(sortButton('Ending Net Worth'))
+    expect(rowOrder()).toEqual(['Charlie', 'Alpha', 'Bravo'])
+
+    await user.click(sortButton('Name'))
+    expect(header('Name')).toHaveAttribute('aria-sort', 'descending')
+    expect(rowOrder()).toEqual(['Charlie', 'Bravo', 'Alpha'])
+  })
+
+  it('announces a header click in a polite live region outside the table', async () => {
+    const user = userEvent.setup()
+    const { container } = renderList()
+    const region = liveRegion(container)
+    expect(region).toHaveAttribute('aria-atomic', 'true')
+    expect(region.closest('table')).toBeNull()
+    expect(region.textContent).toBe('')
+
+    await user.click(sortButton('Created'))
+    expect(region.textContent).toBe('Sorted by Created, ascending')
+    await user.click(sortButton('Ending Net Worth'))
+    expect(region.textContent).toBe('Sorted by Ending Net Worth, descending')
+  })
+})

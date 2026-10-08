@@ -40,7 +40,7 @@ import {
 } from './ui/ResponsiveTable'
 import { PencilIcon, TrashIcon } from './ui/RowActionIcons'
 import { EmptyStateSkeleton, LoadingStatus } from './ui/Skeleton'
-import { SortableColumnHeader } from './ui/SortableColumnHeader'
+import { SortableColumnHeader, useSortHeaderAnnouncements } from './ui/SortableColumnHeader'
 import { TableScrollRegion } from './ui/TableScrollRegion'
 import { TableSortControl } from './ui/TableSortControl'
 
@@ -150,6 +150,14 @@ export function IncomePage() {
   )
   const sort = useTableSort('income', incomeSources, sortExtractors)
   const sortedRows = sort.rows
+  // Story 120.1 (FR188): the headers' "Sortable column, ..." description and the
+  // live region that announces a header click. The EFFECTIVE `sort.state`, so an
+  // orphaned Category sort reads as unsorted.
+  const sortA11y = useSortHeaderAnnouncements(
+    sort.state
+      ? { label: SORT_COLUMN_LABELS[sort.state.key], direction: sort.state.direction }
+      : null
+  )
   // Currency preferences drive the input's symbol affordance and locale-aware
   // grouping/parsing (story 14-3). In currency-less mode no symbol is shown and
   // grouping uses the neutral en-US locale (per the store).
@@ -450,16 +458,22 @@ export function IncomePage() {
                         <SortableColumnHeader
                           label={SORT_COLUMN_LABELS.name}
                           ariaSort={sort.ariaSort('name')}
+                          describedBy={sortA11y.describedBy(sort.ariaSort('name'))}
+                          onActivate={sortA11y.markActivated}
                           onToggle={() => sort.toggle('name')}
                         />
                         <SortableColumnHeader
                           label={SORT_COLUMN_LABELS.amount}
                           ariaSort={sort.ariaSort('amount')}
+                          describedBy={sortA11y.describedBy(sort.ariaSort('amount'))}
+                          onActivate={sortA11y.markActivated}
                           onToggle={() => sort.toggle('amount')}
                         />
                         <SortableColumnHeader
                           label={SORT_COLUMN_LABELS.frequency}
                           ariaSort={sort.ariaSort('frequency')}
+                          describedBy={sortA11y.describedBy(sort.ariaSort('frequency'))}
+                          onActivate={sortA11y.markActivated}
                           onToggle={() => sort.toggle('frequency')}
                         />
                         {/* Premium-only (story 33.3). Gated on the SAME expression
@@ -471,6 +485,8 @@ export function IncomePage() {
                           <SortableColumnHeader
                             label={SORT_COLUMN_LABELS.category}
                             ariaSort={sort.ariaSort('category')}
+                            describedBy={sortA11y.describedBy(sort.ariaSort('category'))}
+                            onActivate={sortA11y.markActivated}
                             onToggle={() => sort.toggle('category')}
                           />
                         )}
@@ -542,6 +558,9 @@ export function IncomePage() {
                     </tbody>
                   </table>
                 </TableScrollRegion>
+                {/* Story 120.1: the header descriptions + sort live region. LAST
+                    children and outside the table (`useSortHeaderAnnouncements`). */}
+                {sortA11y.nodes}
               </>
             )}
           </section>

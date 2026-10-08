@@ -10,10 +10,12 @@
 
 import React, { useState, useCallback, useMemo, useRef } from 'react'
 import { signedAmount } from '../../lib/forecasting/today-baseline'
+import type { AriaSortValue } from '../../lib/table-sort'
 import type { SavedForecast } from '../../routes/forecasting'
 import { useFormattedAmount } from '../../stores/currencyStore'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { PencilIcon } from '../ui/RowActionIcons'
+import { useSortHeaderAnnouncements } from '../ui/SortableColumnHeader'
 
 // ============================================================================
 // Type Definitions
@@ -35,6 +37,16 @@ export interface ForecastListProps {
    * page (the list reads no store); a forecast missing here shows no line.
    */
   vsToday?: ReadonlyMap<string, number>
+}
+
+type SortField = 'name' | 'date' | 'netWorth'
+
+/** Each sortable column's label: its button's whole accessible name and the
+ * `{label}` in "Sorted by {label}, ascending" (story 120.1). */
+const SORT_FIELD_LABELS: Readonly<Record<SortField, string>> = {
+  name: 'Name',
+  date: 'Created',
+  netWorth: 'Ending Net Worth',
 }
 
 // ============================================================================
@@ -116,7 +128,11 @@ export function ForecastList({
       )
     }
 
-    // Apply sorting
+    // Apply sorting. Every `comparison` is ASCENDING (a before b when a is
+    // smaller/earlier), so `desc` really is descending and the ↓ arrow and
+    // `aria-sort` tell the truth. ⚠️ Story 120.1 (D1): `date` and `netWorth` used
+    // to be written `b - a`, so "Created ↓" listed the OLDEST first and "Ending
+    // Net Worth ↓" the SMALLEST first (MEASURED at `5b4ed69`).
     result.sort((a, b) => {
       let comparison = 0
 
@@ -125,12 +141,12 @@ export function ForecastList({
           comparison = a.name.localeCompare(b.name)
           break
         case 'date':
-          comparison = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
           break
         case 'netWorth': {
           const aWorth = a.result.summary.endingNetWorth
           const bWorth = b.result.summary.endingNetWorth
-          comparison = bWorth - aWorth
+          comparison = aWorth - bWorth
           break
         }
       }
@@ -234,6 +250,25 @@ export function ForecastList({
     [sortBy]
   )
 
+  // Story 120.1 (FR188, D3): the same screen-reader contract as the finance
+  // tables' `SortableColumnHeader`s ("Sortable column, ..." description + a
+  // live region for a header click), with this table's own header markup.
+  // Always sorted here, so "Sort cleared" never occurs.
+  const sortA11y = useSortHeaderAnnouncements({
+    label: SORT_FIELD_LABELS[sortBy],
+    direction: sortDirection,
+  })
+  const ariaSortOf = (field: SortField): AriaSortValue => {
+    if (sortBy !== field) {
+      return 'none'
+    }
+    return sortDirection === 'asc' ? 'ascending' : 'descending'
+  }
+  const activateSort = (field: SortField) => {
+    sortA11y.markActivated()
+    toggleSortDirection(field)
+  }
+
   // Get sort indicator
   const getSortIndicator = (field: 'name' | 'date' | 'netWorth'): React.ReactElement => {
     if (sortBy !== field) {
@@ -319,37 +354,57 @@ export function ForecastList({
                     aria-label="Select all"
                   />
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
+                {/* Story 120.1: `aria-sort` on the <th>, the glyph `aria-hidden`
+                    (the name is exactly the label), the state in a description. */}
+                <th
+                  aria-sort={ariaSortOf('name')}
+                  className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider"
+                >
                   <button
                     type="button"
                     className="flex items-center uppercase cursor-pointer hover:text-gray-700 dark:hover:text-gray-200"
-                    onClick={() => toggleSortDirection('name')}
+                    onClick={() => activateSort('name')}
+                    aria-describedby={sortA11y.describedBy(ariaSortOf('name'))}
                   >
-                    Name
-                    <span className="ml-1">{getSortIndicator('name')}</span>
+                    {SORT_FIELD_LABELS.name}
+                    <span className="ml-1" aria-hidden="true">
+                      {getSortIndicator('name')}
+                    </span>
                   </button>
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
                   Description
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
+                <th
+                  aria-sort={ariaSortOf('date')}
+                  className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider"
+                >
                   <button
                     type="button"
                     className="flex items-center uppercase cursor-pointer hover:text-gray-700 dark:hover:text-gray-200"
-                    onClick={() => toggleSortDirection('date')}
+                    onClick={() => activateSort('date')}
+                    aria-describedby={sortA11y.describedBy(ariaSortOf('date'))}
                   >
-                    Created
-                    <span className="ml-1">{getSortIndicator('date')}</span>
+                    {SORT_FIELD_LABELS.date}
+                    <span className="ml-1" aria-hidden="true">
+                      {getSortIndicator('date')}
+                    </span>
                   </button>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
+                <th
+                  aria-sort={ariaSortOf('netWorth')}
+                  className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider"
+                >
                   <button
                     type="button"
                     className="flex items-center uppercase cursor-pointer hover:text-gray-700 dark:hover:text-gray-200"
-                    onClick={() => toggleSortDirection('netWorth')}
+                    onClick={() => activateSort('netWorth')}
+                    aria-describedby={sortA11y.describedBy(ariaSortOf('netWorth'))}
                   >
-                    Ending Net Worth
-                    <span className="ml-1">{getSortIndicator('netWorth')}</span>
+                    {SORT_FIELD_LABELS.netWorth}
+                    <span className="ml-1" aria-hidden="true">
+                      {getSortIndicator('netWorth')}
+                    </span>
                   </button>
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-muted uppercase tracking-wider">
@@ -465,6 +520,9 @@ export function ForecastList({
               ))}
             </tbody>
           </table>
+          {/* Story 120.1: the header descriptions + sort live region, outside
+              the table (`useSortHeaderAnnouncements`). */}
+          {sortA11y.nodes}
         </div>
       )}
 

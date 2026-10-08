@@ -4,6 +4,7 @@ import {
   assertIsIconOnlyAction,
   collectRetiredTokenViolations,
 } from '@/test/responsive-table-tokens'
+import { expectSortHeaderAnnouncements } from '@/test/sort-announcements'
 import {
   act,
   fireEvent,
@@ -1271,6 +1272,12 @@ describe('SavingsPage — sort by column (34.2)', () => {
     const actions = header('Actions')
     expect(within(actions).queryByRole('button')).toBeNull()
     expect(actions).not.toHaveAttribute('aria-sort')
+  })
+
+  it('describes its headers and announces a header click, not a picker change (120.1)', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SavingsPage />)
+    await expectSortHeaderAnnouncements(user, 'Sort savings goals and accounts')
   })
 
   it('cycles a column ascending -> descending -> back to manual order', async () => {
