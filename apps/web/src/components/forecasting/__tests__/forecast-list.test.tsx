@@ -505,4 +505,21 @@ describe('My Forecasts sortable headers (story 120.1, FR188)', () => {
     await user.click(sortButton('Ending Net Worth'))
     expect(region.textContent).toBe('Sorted by Ending Net Worth, descending')
   })
+
+  it('brings the live region back EMPTY when the table returns after a search hid it (code review)', async () => {
+    const user = userEvent.setup()
+    const { container } = renderList()
+    await user.click(sortButton('Created'))
+    expect(liveRegion(container).textContent).toBe('Sorted by Created, ascending')
+
+    // No match: the table, and the region with it, unmount.
+    await user.type(screen.getByRole('searchbox'), 'zzz-no-match')
+    expect(container.querySelector('[aria-live="polite"]')).toBeNull()
+
+    // Back: a region re-inserted already filled is not reliably announced, and
+    // its text would be stale, so it returns empty. The sort itself is kept.
+    await user.clear(screen.getByRole('searchbox'))
+    expect(liveRegion(container).textContent).toBe('')
+    expect(header('Created')).toHaveAttribute('aria-sort', 'ascending')
+  })
 })

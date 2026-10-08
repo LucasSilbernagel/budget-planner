@@ -57,5 +57,12 @@ export async function expectSortHeaderAnnouncements(
   await user.selectOptions(screen.getByRole('combobox', { name: pickerName }), 'name:desc')
   expect(header()).toHaveAttribute('aria-sort', 'descending')
   expect(button()).toHaveAccessibleDescription('Sortable column, sorted descending')
+  // ...and EMPTIES the region (code review 120.1): the old "Sort cleared" would
+  // contradict the table, and would swallow the identical announcement below.
+  expect(region.textContent).toBe('')
+
+  // desc -> none by header click: the same string as before the picker, and it
+  // still reaches the region (it was a React no-op before the review fix).
+  await user.click(button())
   expect(region.textContent).toBe('Sort cleared')
 }

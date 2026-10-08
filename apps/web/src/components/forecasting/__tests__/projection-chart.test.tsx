@@ -124,6 +124,9 @@ describe('chart layer toggles report on/off (story 120.2, FR188)', () => {
           'forced-colors:focus:outline-2',
         ])
       )
+      // AC 8: NO ring offset at all. `assertHasFocusRing` accepts an offset that
+      // has a `dark:` counterpart, so it alone would not catch one (code review).
+      expect(tokens.filter((token) => token.includes('ring-offset'))).toEqual([])
     }
   )
 })

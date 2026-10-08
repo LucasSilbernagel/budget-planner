@@ -196,7 +196,7 @@ const SORT_DESCRIPTION_STATES = Object.keys(SORT_DESCRIPTIONS) as AriaSortValue[
  * and the effect announces the RESULTING `current` only while that flag is set,
  * so the message can never disagree with the table. A first render, a sort
  * restored from storage after a reload, and the mobile `TableSortControl` picker
- * change `current` without the flag and stay silent: a restored sort is not
+ * change `current` without the flag and stay silent (they EMPTY the region): a restored sort is not
  * news, and the picker's `<select>` already speaks its new value (a second
  * announcement would double-speak, the reason `TableSortControl` has no live
  * region).
@@ -221,6 +221,12 @@ export function useSortHeaderAnnouncements(
 
   useEffect(() => {
     if (!activated.current) {
+      // A change WITHOUT a header click (picker, restore, tier change) EMPTIES
+      // the region rather than leaving it alone (code review 120.1, MEASURED):
+      // kept text would contradict the table in browse mode, and the next
+      // header click producing the same string would be a React no-op, i.e.
+      // silent. Emptying a polite region announces nothing.
+      setMessage('')
       return
     }
     activated.current = false
@@ -237,6 +243,17 @@ export function useSortHeaderAnnouncements(
     activated.current = true
   }, [])
 
+  // The nodes unmount with their table (a search with no match, the last row
+  // deleted) while this hook's owner stays mounted. Empty the message on unmount
+  // so the region never comes BACK already filled, which is not reliably
+  // announced (code review 120.1). Stable identity on purpose: an inline ref
+  // callback re-runs with `null` on every render and would wipe each message.
+  const regionRef = useCallback((element: HTMLParagraphElement | null) => {
+    if (element === null) {
+      setMessage('')
+    }
+  }, [])
+
   const nodes = (
     <>
       {SORT_DESCRIPTION_STATES.map((state) => (
@@ -244,7 +261,7 @@ export function useSortHeaderAnnouncements(
           {SORT_DESCRIPTIONS[state]}
         </span>
       ))}
-      <p className="sr-only" aria-live="polite" aria-atomic="true">
+      <p ref={regionRef} className="sr-only" aria-live="polite" aria-atomic="true">
         {message}
       </p>
     </>

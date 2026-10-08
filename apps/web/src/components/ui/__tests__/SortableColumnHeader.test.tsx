@@ -232,4 +232,24 @@ describe('sortable header screen-reader state (story 120.1, FR188)', () => {
     )
     expect(liveRegion(container).textContent).toBe('')
   })
+
+  it('empties the region on a silent change, so a repeat of the last message is still announced (code review)', () => {
+    const { container } = renderWithProviders(<AnnouncingTable />)
+    const region = liveRegion(container)
+    const header = () => screen.getByRole('button', { name: 'Amount' })
+    fireEvent.click(header())
+    fireEvent.click(header())
+    fireEvent.click(header())
+    expect(region.textContent).toBe('Sort cleared')
+
+    // A silent writer re-sorts: the stale "Sort cleared" would now contradict
+    // the table, so the region empties.
+    fireEvent.click(screen.getByRole('button', { name: 'restore' }))
+    expect(region.textContent).toBe('')
+
+    // desc -> none by header click: the SAME string as before. Without the
+    // emptying it was a React no-op and nothing was spoken (MEASURED in review).
+    fireEvent.click(header())
+    expect(region.textContent).toBe('Sort cleared')
+  })
 })

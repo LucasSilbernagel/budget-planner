@@ -1045,6 +1045,10 @@ function TabNavigation({
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
     if (disabled) return
+    // A held modifier belongs to the browser or assistive tech (Alt+Arrow is
+    // Back/Forward, Ctrl+Home/End, Cmd+Arrow): never swallow it (code review
+    // 120.2, MEASURED: Alt+ArrowLeft switched tabs and was preventDefault-ed).
+    if (event.altKey || event.ctrlKey || event.metaKey) return
     const current = tabs.findIndex((tab) => tab.id === activeTab)
     let target: number
     switch (event.key) {

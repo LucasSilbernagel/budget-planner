@@ -210,6 +210,29 @@ describe('tab semantics (story 120.2)', () => {
     expect(selected()).toEqual(['My Forecasts'])
   })
 
+  it('leaves Alt / Ctrl / Meta + arrow and Home/End to the browser (code review)', async () => {
+    const user = userEvent.setup()
+    const [builder] = await renderTabs()
+    builder?.focus()
+    for (const combo of [
+      '{Alt>}{ArrowRight}{/Alt}',
+      '{Alt>}{ArrowLeft}{/Alt}',
+      '{Control>}{End}{/Control}',
+      '{Meta>}{ArrowRight}{/Meta}',
+    ]) {
+      let prevented: boolean | undefined
+      const spy = (event: KeyboardEvent) => {
+        prevented = event.defaultPrevented
+      }
+      document.addEventListener('keydown', spy)
+      await user.keyboard(combo)
+      document.removeEventListener('keydown', spy)
+      expect(prevented, `${combo} is not swallowed`).toBe(false)
+      expect(selected(), `${combo} does not switch tabs`).toEqual(['Scenario Builder'])
+      expect(builder).toHaveFocus()
+    }
+  })
+
   it('keeps an unsaved builder edit across a keyboard round trip (the builder stays mounted)', async () => {
     const user = userEvent.setup()
     const [builder] = await renderTabs()
