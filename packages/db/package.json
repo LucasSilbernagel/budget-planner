@@ -1,7 +1,7 @@
 {
   "name": "@budget-planner/db",
   "version": "0.0.1",
-  "description": "Budget Planner - Database schema and ORM (Drizzle ORM)",
+  "description": "Longhand Budget: Database schema and ORM (Drizzle ORM)",
   "private": true,
   "type": "module",
   "scripts": {

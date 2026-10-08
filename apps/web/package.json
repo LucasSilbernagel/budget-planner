@@ -1,7 +1,7 @@
 {
   "name": "@budget-planner/web",
   "version": "0.0.1",
-  "description": "Budget Planner - Frontend application (TanStack Start)",
+  "description": "Longhand Budget web app (TanStack Start)",
   "private": true,
   "type": "module",
   "scripts": {

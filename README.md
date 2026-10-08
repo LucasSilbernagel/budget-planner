@@ -136,7 +136,7 @@ pnpm install
 3. Set up environment variables.
    Copy `apps/web/.env.example` to `apps/web/.env` and fill in values as needed (see [Environment Variables](#environment-variables) below).
    The free-tier app runs without any of these set.
-   There is also a root `.env.example`, which covers only the database and session secret; `apps/web/.env.example` is the one to copy for app development.
+   The root `.env.example` is only for running database migrations (`packages/db/drizzle.config.ts` reads it).
 
 4. Start the development server:
 
@@ -165,6 +165,7 @@ A full production or paid-tier deployment additionally requires the server secre
 | `PADDLE_WEBHOOK_SECRET` | Server | Secret used to verify Paddle billing webhook signatures. A runtime secret. |
 | `PADDLE_MONTHLY_PRICE_ID` / `PADDLE_ANNUAL_PRICE_ID` / `PADDLE_LIFETIME_PRICE_ID` | Client-safe | Live Paddle price IDs for the €5.99/mo, €39/yr and €99 lifetime plans. All three are **required in production** and must differ from each other (`assertPaddleProductionConfig` throws otherwise). |
 | `PADDLE_WEBHOOK_MAX_AGE_SECONDS` | Server | Webhook timestamp-freshness window, in seconds. Optional, defaults to `300`. |
+| `RETENTION_SWEEP_TOKEN` | Server | Bearer token for `POST /api/internal/retention-sweep`. Must meet the same length floor as `SESSION_SECRET`; when unset or too short the endpoint refuses every call. |
 | `VITE_FORMSPARK_FORM_ID` | Client | Public identifier for the in-app contact form, not a secret. When unset, the contact form shows "temporarily unavailable." |
 | `VITE_COUNTERDEV_ID` | Client | Public identifier for counter.dev analytics, not a secret. When unset, no analytics script is loaded. |
 
