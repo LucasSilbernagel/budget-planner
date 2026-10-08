@@ -142,7 +142,7 @@ export function Modal({
       return
     }
     const first = focusable[0]
-    const last = focusable[focusable.length - 1]
+    const last = focusable.at(-1)
     // Unreachable after the length check; narrowed for `noUncheckedIndexedAccess`.
     if (!first || !last) return
     const active = document.activeElement
@@ -182,7 +182,7 @@ export function Modal({
   }
 
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: the overlay's click only triggers dismissal; the keyboard equivalent (Escape) is handled by the document-level listener above, and the dialog content is keyboard-operable on its own.
+    // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: the overlay's click only triggers dismissal; the keyboard equivalent (Escape) is handled by the document-level listener above, and the dialog content is keyboard-operable on its own.
     <div
       className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
       onPointerDown={handleOverlayPointerDown}
@@ -190,6 +190,7 @@ export function Modal({
       onPointerCancel={handleOverlayPointerCancel}
       onClick={handleOverlayClick}
     >
+      {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useAriaPropsSupportedByRole: role is a dialog/alertdialog prop Biome can't resolve */}
       <div
         ref={contentRef}
         role={role}

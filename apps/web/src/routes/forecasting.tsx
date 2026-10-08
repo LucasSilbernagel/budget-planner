@@ -6,7 +6,8 @@ import {
 } from '@budget-planner/core'
 import type { Frequency } from '@budget-planner/core/finance'
 import { createFileRoute } from '@tanstack/react-router'
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import type React from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { PremiumPrompt } from '../components/auth/premium-prompt'
 import { ForecastList } from '../components/forecasting/forecast-list'
 import { ProjectionChart } from '../components/forecasting/projection-chart'
@@ -166,7 +167,7 @@ function mapToSavedForecast(profile: ForecastWire): SavedForecast | null {
         assetAccounts?: unknown
       }
     }
-    if (!parsed?.scenario || !parsed?.result || !parsed.result.summary) {
+    if (!parsed?.scenario || !parsed?.result?.summary) {
       return null
     }
     // Only a bad `years` is replaced, never the whole `inputs`: dropping inputs would

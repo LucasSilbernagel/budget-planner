@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   SyncStatus,
-  SynchronizationService,
+  type SynchronizationService,
   createSyncQueue,
   createSynchronizationService,
 } from '../index'

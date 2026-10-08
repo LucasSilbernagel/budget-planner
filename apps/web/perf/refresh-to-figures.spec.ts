@@ -362,7 +362,7 @@ test.describe('refresh-to-figures (story 38.3, NFR9)', () => {
             readings
           ).toFixed(1)}ms ` +
             `min=${(sorted[0] as number).toFixed(1)}ms ` +
-            `max=${(sorted[sorted.length - 1] as number).toFixed(1)}ms ` +
+            `max=${(sorted.at(-1) as number).toFixed(1)}ms ` +
             `all=[${sorted.map((v) => v.toFixed(0)).join(', ')}]`
         )
       }

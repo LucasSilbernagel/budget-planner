@@ -34,7 +34,7 @@ vi.mock('recharts', () => {
       return <div>{children}</div>
     },
     XAxis: ({ ticks, domain }: { ticks: number[]; domain: [number, number] }) => {
-      const current = captured.charts[captured.charts.length - 1]
+      const current = captured.charts.at(-1)
       if (current) {
         current.ticks = ticks
         current.domain = domain
@@ -118,8 +118,8 @@ describe('CategoryBreakdown chart wiring', () => {
 
     expect(income.ticks).toEqual(incomeTicks)
     expect(expense.ticks).toEqual(expenseTicks)
-    expect(income.domain[1]).toBe(incomeTicks[incomeTicks.length - 1])
-    expect(expense.domain[1]).toBe(expenseTicks[expenseTicks.length - 1])
+    expect(income.domain[1]).toBe(incomeTicks.at(-1))
+    expect(expense.domain[1]).toBe(expenseTicks.at(-1))
     expect(expense.ticks).not.toEqual(pooledTicks)
     expect(expense.domain[1]).not.toBe(income.domain[1])
   })

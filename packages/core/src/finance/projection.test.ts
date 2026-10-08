@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  NetWorthProjectionInput,
+  type NetWorthProjectionInput,
   calculateYearsToNetWorthTarget,
   createNetWorthProjection,
   isNetWorthProjectionInput,
@@ -477,7 +477,7 @@ describe('Summary Statistics', () => {
 
     expect(result.summary.startingNetWorthCents).toBe(toCents(100000))
     expect(result.summary.endingNetWorthCents).toBe(
-      result.timeline[result.timeline.length - 1].netWorthCents
+      result.timeline.at(-1).netWorthCents
     )
     expect(result.summary.totalGrowthCents).toBe(
       result.summary.endingNetWorthCents - result.summary.startingNetWorthCents

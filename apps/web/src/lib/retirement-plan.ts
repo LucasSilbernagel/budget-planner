@@ -54,7 +54,7 @@ const VALID_INCOME_BASES: readonly IncomeBasis[] = INCOME_BASES
 /** typeof check, not `||`: absent → default, but '' (cleared) must be preserved. */
 function readField(record: Record<string, unknown>, field: keyof RetirementPlan): unknown {
   // Not Object.hasOwn: the tsconfig lib is below es2022. Also keeps a `__proto__` key out.
-  return Object.prototype.hasOwnProperty.call(record, field) ? record[field] : undefined
+  return  Object.hasOwn(record, field) ? record[field] : undefined
 }
 
 function coerceString(value: unknown, fallback: string): string {

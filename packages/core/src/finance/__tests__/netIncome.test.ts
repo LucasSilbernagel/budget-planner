@@ -292,7 +292,7 @@ describe('Net Period Income Calculation', () => {
     })
 
     it('should throw error for NaN in income amounts', () => {
-      const incomeSources = [{ amount: NaN, frequency: 'monthly' as const }]
+      const incomeSources = [{ amount: Number.NaN, frequency: 'monthly' as const }]
       const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
       expect(() => calculateNetPeriodIncome(incomeSources, expenses)).toThrow(
         'Amount must be a finite number'
@@ -300,7 +300,7 @@ describe('Net Period Income Calculation', () => {
     })
 
     it('should throw error for Infinity in income amounts', () => {
-      const incomeSources = [{ amount: Infinity, frequency: 'monthly' as const }]
+      const incomeSources = [{ amount: Number.POSITIVE_INFINITY, frequency: 'monthly' as const }]
       const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
       expect(() => calculateNetPeriodIncome(incomeSources, expenses)).toThrow(
         'Amount must be a finite number'

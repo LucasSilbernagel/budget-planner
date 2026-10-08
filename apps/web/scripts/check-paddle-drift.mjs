@@ -47,7 +47,7 @@ const { problems, facts } = checkPaddleJs(source, {
   checkoutFrameOrigins: PADDLE_CHECKOUT_FRAME_ORIGIN,
 })
 for (const fact of facts) console.log(`  ${fact}`)
-if (problems.length) {
+if (problems.length > 0) {
   console.error(
     `\nPADDLE.JS DRIFT: ${problems.length} problem(s). Story sec-4 records why each matters.`
   )

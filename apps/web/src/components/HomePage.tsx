@@ -55,7 +55,6 @@ let chartChunkResolved = false
 function useChartsChunkReady(): boolean {
   const [ready, setReady] = React.useState(chartChunkResolved)
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only by design
   React.useEffect(() => {
     if (chartChunkResolved) {
       return

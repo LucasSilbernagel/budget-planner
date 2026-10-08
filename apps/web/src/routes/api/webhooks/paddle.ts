@@ -3,7 +3,7 @@
  * is refused (Paddle verifies payment, not email ownership); unentitled rows are re-keyed.
  */
 
-import crypto from 'crypto'
+import crypto from 'node:crypto'
 import { captureError } from '@/lib/error-tracking'
 import { logger } from '@/lib/logger'
 import { isValidEmail, normalizeEmail } from '@/server/api/auth/email'

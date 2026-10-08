@@ -224,7 +224,6 @@ describe('testDbConnection (diagnosability, 2026-09-10)', () => {
   const originalEnv = process.env['NODE_ENV']
 
   afterEach(async () => {
-    // biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
     if (originalUrl === undefined) delete process.env['DATABASE_URL']
     else process.env['DATABASE_URL'] = originalUrl
     process.env['NODE_ENV'] = originalEnv
@@ -234,7 +233,6 @@ describe('testDbConnection (diagnosability, 2026-09-10)', () => {
 
   it('logs a structured, safe summary of the failure server-side', async () => {
     // Missing DATABASE_URL makes getPool() throw synchronously, reaching the catch without a database.
-    // biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
     delete process.env['DATABASE_URL']
     process.env['NODE_ENV'] = 'production'
     const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)

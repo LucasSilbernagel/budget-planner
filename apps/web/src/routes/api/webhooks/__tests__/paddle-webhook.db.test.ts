@@ -2,7 +2,7 @@
 // Real PostgreSQL (PGlite): the sibling suite mocks drizzle-orm, so its `.where()`s are no-ops.
 // Not covered even here: the setWhere race guard, which needs two connections.
 
-import crypto from 'crypto'
+import crypto from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { PGlite } from '@electric-sql/pglite'

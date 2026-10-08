@@ -55,7 +55,7 @@ export function useTableSort<Row, Key extends string>(
   // `hasOwnProperty`: the persisted key is untrusted JSON, and `toString` would resolve via the
   // prototype chain.
   const extractor =
-    persisted == null || !Object.prototype.hasOwnProperty.call(extractors, persisted.key)
+    persisted == null || !Object.hasOwn(extractors, persisted.key)
       ? undefined
       : extractors[persisted.key as Key]
 

@@ -1,4 +1,4 @@
-import { db, users } from '@budget-planner/db'
+import { type db, users } from '@budget-planner/db'
 import { eq } from 'drizzle-orm'
 
 export type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0]

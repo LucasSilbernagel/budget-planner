@@ -3,7 +3,7 @@
  * double-submit CSRF cookie so a cross-site POST cannot sign a victim in.
  */
 
-import crypto from 'crypto'
+import crypto from 'node:crypto'
 import { captureError } from '@/lib/error-tracking'
 import { logger } from '@/lib/logger'
 import { peekMagicLink, verifyMagicLink } from '@/server/api/auth/magic-link'

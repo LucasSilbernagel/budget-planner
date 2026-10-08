@@ -240,7 +240,7 @@ export async function resolveStaticAsset(pathname, clientDir) {
 /** @param {string | string[] | undefined} value */
 function firstForwardedValue(value) {
   if (value === undefined) {
-    return undefined
+    return 
   }
   const raw = Array.isArray(value) ? value[0] : value
   const first = raw?.split(',')[0]?.trim()

@@ -129,7 +129,7 @@ afterEach(() => {
 
 function lastResult(): ForecastingResult {
   const calls = onResult.mock.calls
-  const result = calls[calls.length - 1]?.[0] as ForecastingResult | null | undefined
+  const result = calls.at(-1)?.[0] as ForecastingResult | null | undefined
   if (!result) throw new Error('no result lifted yet')
   return result
 }

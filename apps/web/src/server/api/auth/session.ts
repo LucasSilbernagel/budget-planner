@@ -1,6 +1,6 @@
 // Signed, not encrypted: the payload holds identity only; subscription status is read from the DB.
 
-import crypto from 'crypto'
+import crypto from 'node:crypto'
 import { getSessionSecret } from '@budget-planner/config'
 
 // `iat` is HMAC-protected, so a client cannot back-date it past a revocation watermark.

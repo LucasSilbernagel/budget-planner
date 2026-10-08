@@ -3,7 +3,7 @@
  * fails the workflow. Fails closed (503) when the token is unset or short.
  */
 
-import crypto from 'crypto'
+import crypto from 'node:crypto'
 import { captureError } from '@/lib/error-tracking'
 import { logger } from '@/lib/logger'
 import { runRetentionSweep } from '@/server/retention/sweep'

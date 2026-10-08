@@ -39,7 +39,6 @@ function requestWithSessionCookie(rawToken: string): Request {
 
 afterEach(() => {
   if (ORIGINAL_SESSION_SECRET === undefined) {
-    // biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
     delete process.env.SESSION_SECRET
   } else {
     process.env.SESSION_SECRET = ORIGINAL_SESSION_SECRET

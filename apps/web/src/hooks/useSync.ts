@@ -10,7 +10,7 @@ import type {
 } from '@budget-planner/core/sync'
 import {
   SyncStatus as SyncStatusEnum,
-  SynchronizationService,
+  type SynchronizationService,
   createSynchronizationService,
 } from '@budget-planner/core/sync'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
@@ -264,7 +264,7 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
         ) {
           return service.forceSync()
         }
-        return undefined
+        return 
       })
       .catch((error) => {
         console.error('Failed to initialize sync service:', error)

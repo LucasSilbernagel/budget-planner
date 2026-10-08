@@ -206,7 +206,7 @@ describe('handleRejectedOperations — reverting', () => {
     const d = deps({
       lookupLocalRow: vi.fn((_type, id: string) => {
         if (id === 'row-bad') throw new Error('corrupt store')
-        return undefined
+        return 
       }),
     })
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})

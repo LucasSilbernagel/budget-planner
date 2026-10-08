@@ -4,7 +4,8 @@ import {
   type CurrencyMode,
   currencySymbol,
 } from '@budget-planner/core/format/currency'
-import React, { useState } from 'react'
+import type React from 'react'
+import { useState } from 'react'
 import {
   CartesianGrid,
   Legend,
@@ -105,8 +106,8 @@ export function projectionYAxis(values: number[]): {
   step: number
 } {
   const finite = values.filter((v) => Number.isFinite(v))
-  let min = (finite.length ? Math.min(...finite) : 0) - Y_DOMAIN_PADDING
-  let max = (finite.length ? Math.max(...finite) : 0) + Y_DOMAIN_PADDING
+  let min = (finite.length > 0? Math.min(...finite) : 0) - Y_DOMAIN_PADDING
+  let max = (finite.length > 0? Math.max(...finite) : 0) + Y_DOMAIN_PADDING
   const minSpan = Math.max(Math.abs(min), Math.abs(max)) * Y_MIN_SPAN_RATIO
   if (max - min < minSpan) {
     const mid = (min + max) / 2
@@ -115,7 +116,7 @@ export function projectionYAxis(values: number[]): {
   }
   const ticks = niceAxisTicks(min, max, 5)
   const first = ticks[0] ?? 0
-  const last = ticks[ticks.length - 1] ?? first
+  const last = ticks.at(-1) ?? first
   const step = ticks.length > 1 ? (ticks[1] as number) - first : Y_DOMAIN_PADDING
   return { ticks, domain: [first, last], step }
 }
@@ -201,7 +202,7 @@ export function CustomTooltip({
   const formatCurrency = useFormattedAmount()
   // The default gray-700 would be near-invisible on the dark tooltip surface.
   const chartColors = useChartColors()
-  if (!active || !payload || !payload.length) return null
+  if (!active || !payload?.length) return null
 
   return (
     <div className="max-w-[16rem] whitespace-normal bg-white dark:bg-gray-800 dark:text-gray-100 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-3">

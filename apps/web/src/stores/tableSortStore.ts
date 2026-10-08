@@ -58,7 +58,7 @@ export function coerceSorts(value: unknown): Record<TableSortId, SortState<strin
   const next = {} as Record<TableSortId, SortState<string> | null>
   for (const id of TABLE_SORT_IDS) {
     // `hasOwnProperty.call`: the tsconfig lib is below es2022, so Object.hasOwn does not type-check.
-    next[id] = Object.prototype.hasOwnProperty.call(record, id) ? coerceSortState(record[id]) : null
+    next[id] = Object.hasOwn(record, id) ? coerceSortState(record[id]) : null
   }
   return next
 }

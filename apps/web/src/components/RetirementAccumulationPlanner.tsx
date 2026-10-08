@@ -13,7 +13,8 @@ import {
   formatForInputDisplay,
   parseFromInput,
 } from '@budget-planner/core/format/currency'
-import React, { useEffect, useMemo } from 'react'
+import type React from 'react'
+import { useEffect, useMemo } from 'react'
 import { summarizeEndingExpenses } from '../lib/retirement-ending-expenses'
 import { parseAge, parseCurrencyToCents, parsePercentageToDecimal } from '../lib/retirement-parsers'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'

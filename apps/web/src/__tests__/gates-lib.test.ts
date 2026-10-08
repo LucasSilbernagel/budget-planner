@@ -522,7 +522,7 @@ describe('buildGates', () => {
     // A string/array literal or a CONSTANT_CASE identifier (`tag: LAYOUT`), not
     // any value: `page.evaluate` results carry `tag: el?.tagName` keys.
     const tagged = specs.filter((file) =>
-      /\btag:\s*(['"`\[]|[A-Z_][A-Z0-9_]*\b)/.test(readFileSync(join(dir, file), 'utf8'))
+      /\btag:\s*(['"`[]|[A-Z_][A-Z0-9_]*\b)/.test(readFileSync(join(dir, file), 'utf8'))
     )
     expect(tagged, 'spec(s) still carry a Playwright tag').toEqual([])
   })

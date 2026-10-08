@@ -239,7 +239,7 @@ describe('corrupt, absent and foreign payloads (AC-5)', () => {
     // The control. Without it the tests above could be passing because the
     // fixture is inert again rather than because the guard works.
     const parsed = JSON.parse('{"plan":{"__proto__":{"currentAgeInput":"polluted"}}}').plan
-    expect(Object.prototype.hasOwnProperty.call(parsed, '__proto__')).toBe(true)
+    expect(Object.hasOwn(parsed, '__proto__')).toBe(true)
   })
 
   it('opens on defaults when the stored value is not JSON', async () => {

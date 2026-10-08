@@ -482,7 +482,7 @@ export function calculateFinancialForecast(
     assets === undefined
       ? currentData.savings + currentData.investments - startingDebts
       : currentData.savings + currentData.investments + assets - startingDebts
-  const lastProjection = projection[projection.length - 1]
+  const lastProjection = projection.at(-1)
   const endingNetWorth = lastProjection ? lastProjection.netWorth : startingNetWorth
   const totalGrowth = endingNetWorth - startingNetWorth
   const averageAnnualGrowth = totalGrowth / years

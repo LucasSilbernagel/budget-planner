@@ -533,8 +533,8 @@ describe('CategoryBreakdown', () => {
       const expenseTicks = barDomainTicks(expenseAmounts)
 
       expect(incomeTicks).not.toEqual(expenseTicks)
-      expect(incomeTicks[incomeTicks.length - 1]).toBeGreaterThan(
-        expenseTicks[expenseTicks.length - 1] ?? 0
+      expect(incomeTicks.at(-1)).toBeGreaterThan(
+        expenseTicks.at(-1) ?? 0
       )
       expect(barDomainTicks([...incomeAmounts, ...expenseAmounts])).not.toEqual(expenseTicks)
     })

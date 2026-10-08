@@ -14,7 +14,7 @@ function MetadataProbe() {
 function AnalyticsProbe() {
   const analytics = useAnalytics()
   const events = analytics.getEvents()
-  const last = events[events.length - 1]
+  const last = events.at(-1)
   return (
     <div data-testid="analytics">
       {events.length}:{last?.name ?? 'none'}:{last?.metadata.source ?? 'none'}

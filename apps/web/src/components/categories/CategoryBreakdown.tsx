@@ -337,7 +337,7 @@ function BreakdownBarChart({
   const ticks = barDomainTicks(rows.map((row) => row.totalCents))
   // Narrowed rather than cast: noUncheckedIndexedAccess widens the index read, and domain needs [number, number].
   const domainMin = ticks[0] ?? 0
-  const domainMax = ticks[ticks.length - 1] ?? 0
+  const domainMax = ticks.at(-1) ?? 0
   const data = rows.map((row) => ({
     key: rowKey(row),
     category: row.label,

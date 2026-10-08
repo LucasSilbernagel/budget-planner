@@ -15,7 +15,7 @@ export function ProfileIconPicker({ value, onChange, idPrefix }: ProfileIconPick
   // explicitly because the roving tabindex leaves other options unfocusable.
   const handleIconKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     const count = PROFILE_ICONS.length
-    const current = PROFILE_ICONS.findIndex((icon) => icon === value)
+    const current = PROFILE_ICONS.indexOf(value)
     // -1 for an unrecognised stored icon; start from the first so the keyboard still works.
     const from = current === -1 ? 0 : current
 
@@ -64,6 +64,7 @@ export function ProfileIconPicker({ value, onChange, idPrefix }: ProfileIconPick
         {PROFILE_ICONS.map((icon, index) => {
           const selected = value === icon
           return (
+            // biome-ignore lint/a11y/useSemanticElements: roving-tabindex icon buttons implement the ARIA radio pattern
             <button
               key={icon}
               type="button"

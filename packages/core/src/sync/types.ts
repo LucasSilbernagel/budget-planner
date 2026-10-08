@@ -250,7 +250,7 @@ export type ServerRowVerdict = { ok: true } | { ok: false; fields: string[] }
 export function validateServerRow(change: ServerChange): ServerRowVerdict {
   // Own-property check: `entityType` comes from the server, and inherited keys like `toString`
   // would otherwise match. (`Object.hasOwn` needs ES2022.)
-  if (!Object.prototype.hasOwnProperty.call(SERVER_ROW_SCHEMAS, change.entityType)) {
+  if (!Object.hasOwn(SERVER_ROW_SCHEMAS, change.entityType)) {
     return { ok: true }
   }
   const schema = SERVER_ROW_SCHEMAS[change.entityType]

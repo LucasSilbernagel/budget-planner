@@ -74,32 +74,32 @@ describe('formatProgress', () => {
 
 describe('Edge Case Handling - calculateProjectedBalance', () => {
   it('should return currentBalance for NaN currentBalance', () => {
-    const result = calculateProjectedBalance(NaN, 10000, 5)
-    expect(result).toBe(NaN)
+    const result = calculateProjectedBalance(Number.NaN, 10000, 5)
+    expect(result).toBe(Number.NaN)
   })
 
   it('should return currentBalance for Infinity currentBalance', () => {
-    const result = calculateProjectedBalance(Infinity, 10000, 5)
-    expect(result).toBe(Infinity)
+    const result = calculateProjectedBalance(Number.POSITIVE_INFINITY, 10000, 5)
+    expect(result).toBe(Number.POSITIVE_INFINITY)
   })
 
   it('should return currentBalance for NaN monthlyContribution', () => {
-    const result = calculateProjectedBalance(100000, NaN, 5)
+    const result = calculateProjectedBalance(100000, Number.NaN, 5)
     expect(result).toBe(100000)
   })
 
   it('should return currentBalance for Infinity monthlyContribution', () => {
-    const result = calculateProjectedBalance(100000, Infinity, 5)
+    const result = calculateProjectedBalance(100000, Number.POSITIVE_INFINITY, 5)
     expect(result).toBe(100000)
   })
 
   it('should return currentBalance for NaN months', () => {
-    const result = calculateProjectedBalance(100000, 10000, NaN)
+    const result = calculateProjectedBalance(100000, 10000, Number.NaN)
     expect(result).toBe(100000)
   })
 
   it('should return currentBalance for Infinity months', () => {
-    const result = calculateProjectedBalance(100000, 10000, Infinity)
+    const result = calculateProjectedBalance(100000, 10000, Number.POSITIVE_INFINITY)
     expect(result).toBe(100000)
   })
 
@@ -146,7 +146,7 @@ describe('Debt-Specific Calculations', () => {
 
   describe('calculateDebtMetrics with invalid inputs', () => {
     it('should handle NaN inputs gracefully', () => {
-      const result = calculateDebtMetrics(NaN, 50000, 'credit-card')
+      const result = calculateDebtMetrics(Number.NaN, 50000, 'credit-card')
       expect(result.progress).toBeNull()
       expect(result.progressLabel).toBe('Invalid data')
       expect(result.timeline).toBeNull()
@@ -154,7 +154,7 @@ describe('Debt-Specific Calculations', () => {
     })
 
     it('should handle Infinity inputs gracefully', () => {
-      const result = calculateDebtMetrics(Infinity, 50000, 'credit-card')
+      const result = calculateDebtMetrics(Number.POSITIVE_INFINITY, 50000, 'credit-card')
       expect(result.progress).toBeNull()
       expect(result.progressLabel).toBe('Invalid data')
       expect(result.timeline).toBeNull()

@@ -64,7 +64,7 @@ export function parseCurrencyToCents(value: string, locale?: string): number {
     throw new Error('Invalid currency: contains non-numeric characters')
   }
 
-  const amount = parseFloat(candidate)
+  const amount = Number.parseFloat(candidate)
 
   if (Number.isNaN(amount) || !Number.isFinite(amount)) {
     throw new Error('Invalid currency: must be a valid finite number')
@@ -109,7 +109,7 @@ export function parsePercentageToDecimal(value: string): number {
     throw new Error('Invalid percentage: contains non-numeric characters')
   }
 
-  const num = parseFloat(cleaned)
+  const num = Number.parseFloat(cleaned)
 
   if (Number.isNaN(num) || !Number.isFinite(num)) {
     throw new Error('Invalid percentage: must be a valid finite number')
@@ -129,7 +129,7 @@ export function parseAge(value: string): number | null {
     throw new Error('Age must be a whole number')
   }
 
-  const num = parseInt(trimmed, 10)
+  const num = Number.parseInt(trimmed, 10)
 
   if (!Number.isFinite(num)) {
     throw new Error('Age must be a finite number')

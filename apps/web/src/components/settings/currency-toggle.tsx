@@ -34,6 +34,7 @@ export function CurrencyToggle({ className }: CurrencyToggleProps) {
   }
 
   return (
+    // biome-ignore lint/a11y/useSemanticElements: fieldset's min-inline-size: min-content defeats flex-wrap
     <div
       role="group"
       aria-label="Currency display"

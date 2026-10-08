@@ -114,7 +114,7 @@ function staticSpecifiers(source: string): string[] {
       if (k > n && /^[ \t]*(?:import|export)(?=\s)/.test(cur)) break
       const quoted = [...cur.matchAll(/['"]([^'"]+)['"]/g)]
       if (quoted.length > 0) {
-        const last = quoted[quoted.length - 1]?.[1]
+        const last = quoted.at(-1)?.[1]
         if (last !== undefined) specs.push(last)
         n = k
         break

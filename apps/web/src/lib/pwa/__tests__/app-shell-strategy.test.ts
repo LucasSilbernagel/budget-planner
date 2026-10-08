@@ -58,7 +58,7 @@ const fakeCaches = {
       const hit = await cacheFor(name).match(req)
       if (hit) return hit
     }
-    return undefined
+    return 
   },
 }
 

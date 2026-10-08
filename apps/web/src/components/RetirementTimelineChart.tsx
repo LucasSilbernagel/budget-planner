@@ -248,7 +248,7 @@ function RetirementTimelineChartInner({
   }
 
   const chartData = projection.points
-  const finalPoint = chartData[chartData.length - 1]
+  const finalPoint = chartData.at(-1)
   const retirementYearOffset = getRetirementMarkerOffset(
     earliestRetirementAge,
     currentAge,

@@ -1220,7 +1220,7 @@ async function fetchTableChangesSafely<
   const belowBoundary = rows.filter((row) => row.updatedAt.getTime() < boundaryMs)
   if (belowBoundary.length > 0) {
     // Defer the whole boundary group rather than return it incomplete.
-    const lastSafeRow = belowBoundary[belowBoundary.length - 1]
+    const lastSafeRow = belowBoundary.at(-1)
     const safeWatermark = lastSafeRow ? lastSafeRow.updatedAt.getTime() : Number.NEGATIVE_INFINITY
     return { changes: belowBoundary.map(toChange), safeWatermark }
   }

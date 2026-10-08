@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import React from 'react'
+import type React from 'react'
 import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../../lib/premium/benefits'
 import { Modal } from '../ui/Modal'
 

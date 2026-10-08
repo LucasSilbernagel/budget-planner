@@ -653,7 +653,7 @@ describe('validateFinancialData', () => {
 
   it('should return false for data with NaN amount', () => {
     const invalidData: FinancialDataPoint[] = [
-      { id: '1', name: 'A', amount: NaN, frequency: 'monthly', type: 'income' },
+      { id: '1', name: 'A', amount: Number.NaN, frequency: 'monthly', type: 'income' },
     ]
 
     expect(validateFinancialData(invalidData)).toBe(false)
@@ -661,7 +661,7 @@ describe('validateFinancialData', () => {
 
   it('should return false for data with Infinity amount', () => {
     const invalidData: FinancialDataPoint[] = [
-      { id: '1', name: 'A', amount: Infinity, frequency: 'monthly', type: 'income' },
+      { id: '1', name: 'A', amount: Number.POSITIVE_INFINITY, frequency: 'monthly', type: 'income' },
     ]
 
     expect(validateFinancialData(invalidData)).toBe(false)
@@ -684,7 +684,7 @@ describe('sanitizeFinancialData', () => {
   it('should remove invalid entries', () => {
     const mixedData: FinancialDataPoint[] = [
       { id: '1', name: 'Valid', amount: 1000, frequency: 'monthly', type: 'income' },
-      { id: '2', name: 'Invalid', amount: NaN, frequency: 'monthly', type: 'income' },
+      { id: '2', name: 'Invalid', amount: Number.NaN, frequency: 'monthly', type: 'income' },
       { id: '3', name: 'Valid Expense', amount: -500, frequency: 'monthly', type: 'expense' },
     ]
 
@@ -696,7 +696,7 @@ describe('sanitizeFinancialData', () => {
 
   it('should return empty array for all invalid data', () => {
     const invalidData: FinancialDataPoint[] = [
-      { id: '1', name: 'Invalid', amount: NaN, frequency: 'monthly', type: 'income' },
+      { id: '1', name: 'Invalid', amount: Number.NaN, frequency: 'monthly', type: 'income' },
     ]
 
     const result = sanitizeFinancialData(invalidData)

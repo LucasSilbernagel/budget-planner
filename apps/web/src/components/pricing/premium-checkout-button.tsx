@@ -143,7 +143,7 @@ function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
     let cancelled = false
     getPaddleInstance({ environment: config.environment, clientToken: config.clientToken })
       .then((paddle) => {
-        if (!paddle || cancelled) return undefined
+        if (!paddle || cancelled) return 
         return getLocalizedPlanPrices(paddle, {
           // Only a configured monthly id: an undefined line item fails the whole preview call.
           monthlyPriceId: config.monthlyPriceId ?? undefined,
@@ -268,6 +268,7 @@ function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
         className="flex rounded-lg border border-gray-300 dark:border-gray-600 p-1 text-sm"
       >
         {planOptions.map(({ id, label, disabled }) => (
+          // biome-ignore lint/a11y/useSemanticElements: roving-tabindex buttons implement the ARIA radio pattern
           <button
             key={id}
             ref={(el) => {

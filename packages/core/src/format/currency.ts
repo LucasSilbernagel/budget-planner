@@ -145,7 +145,7 @@ export function parseFromInput(value: string, locale?: string): number {
 
   if ((cleaned.match(/\./g) || []).length > 1) return 0
 
-  const amount = parseFloat(cleaned)
+  const amount = Number.parseFloat(cleaned)
 
   if (Number.isNaN(amount) || !Number.isFinite(amount)) return 0
 
@@ -153,10 +153,10 @@ export function parseFromInput(value: string, locale?: string): number {
   if (cleaned.includes('.')) {
     const [whole = '', decimal = ''] = cleaned.split('.')
     const paddedDecimal = decimal.padEnd(2, '0').slice(0, 2)
-    return parseInt(whole + paddedDecimal, 10) || 0
+    return Number.parseInt(whole + paddedDecimal, 10) || 0
   }
 
-  return parseInt(`${cleaned}00`, 10) || 0
+  return Number.parseInt(`${cleaned}00`, 10) || 0
 }
 
 // Character filter that must never change magnitude: malformed input passes through so

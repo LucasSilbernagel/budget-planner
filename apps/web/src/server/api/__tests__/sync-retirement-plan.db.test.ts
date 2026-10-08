@@ -260,7 +260,7 @@ describe('AC-2: the plan round-trips through the real chain, both directions', (
 
     const plan = (await serverRow())?.plan as Record<string, unknown>
     // A present `null`, not a missing key.
-    expect(Object.prototype.hasOwnProperty.call(plan, 'adoptedMonthlyCents')).toBe(true)
+    expect(Object.hasOwn(plan, 'adoptedMonthlyCents')).toBe(true)
     expect(plan['adoptedMonthlyCents']).toBeNull()
     store.useRetirementPlannerStore.setState({
       plan: { ...store.RETIREMENT_PLAN_DEFAULTS, adoptedMonthlyCents: 5 },

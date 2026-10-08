@@ -73,7 +73,7 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
   try {
     const changes = await getSyncChanges(session.data.userId, since, limit, profileId)
     // `noUncheckedIndexedAccess` cannot see through the ternary.
-    const newestChange = changes[changes.length - 1]
+    const newestChange = changes.at(-1)
     const lastPullTimestamp = newestChange ? newestChange.updatedAt : since
     // Optional: if unreadable, the client skips unsynced-profile detection this round.
     let profileIds: string[] | undefined

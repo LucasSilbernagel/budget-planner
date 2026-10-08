@@ -43,7 +43,7 @@ export function CategoryBarCanvas({
 }: CategoryBarCanvasProps): React.ReactElement {
   // niceAxisTicks never returns [], but the type allows undefined; undefined falls back to Recharts' auto domain.
   const first = ticks[0]
-  const last = ticks[ticks.length - 1]
+  const last = ticks.at(-1)
   const domain: [number, number] | undefined =
     first !== undefined && last !== undefined ? [first, last] : undefined
 

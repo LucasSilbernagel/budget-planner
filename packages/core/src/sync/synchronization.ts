@@ -324,13 +324,11 @@ export class SynchronizationService {
       }
 
       this.boundHandleVisibilityChange = () => {
-        if (document.visibilityState === 'visible') {
-          if (this.state.isOnline && this.queue.getCount() > 0) {
+        if (document.visibilityState === 'visible' && this.state.isOnline && this.queue.getCount() > 0) {
             this.sync().catch((error) => {
               this.log('Visibility sync error:', error)
             })
           }
-        }
       }
 
       window.addEventListener('online', this.boundHandleOnline)
@@ -1591,7 +1589,7 @@ export class SynchronizationService {
 
     // A refused change still advances the cursor, or it would be re-fetched forever. The cursor
     // stops below the earliest change suppressed by a queued op, until that op pushes.
-    const earliestSuppressed = conflicts.length
+    const earliestSuppressed = conflicts.length > 0
       ? Math.min(...conflicts.map((c) => c.updatedAt))
       : null
     let newCursor = since

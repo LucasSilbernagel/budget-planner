@@ -282,7 +282,7 @@ describe('Savings Capacity Calculation', () => {
     })
 
     it('should throw error for NaN in income amounts', () => {
-      const incomeSources = [{ amount: NaN, frequency: 'monthly' as const }]
+      const incomeSources = [{ amount: Number.NaN, frequency: 'monthly' as const }]
       const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
       expect(() => calculateSavingsCapacityPercentage(incomeSources, expenses)).toThrow(
         'Amount must be a finite number'

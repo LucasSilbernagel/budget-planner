@@ -346,7 +346,7 @@ describe('Retirement Modeler', () => {
     })
 
     it('should throw error for NaN in calculateRequiredAssets parameters', () => {
-      expect(() => calculateRequiredAssets(NaN, 0.06)).toThrow(
+      expect(() => calculateRequiredAssets(Number.NaN, 0.06)).toThrow(
         'Monthly income must be a finite number'
       )
     })

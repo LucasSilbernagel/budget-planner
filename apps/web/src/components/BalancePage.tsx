@@ -6,7 +6,8 @@ import {
 } from '@budget-planner/core/format/currency'
 import type { ClientBalanceTracking } from '@budget-planner/core/services/balanceTracking'
 import type { Frequency } from '@budget-planner/db'
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import type React from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
 import { useNetWorth } from '../hooks/useNetWorth'
 import { useStoresHydrated } from '../hooks/useStoresHydrated'
@@ -289,8 +290,7 @@ export function BalancePage() {
   }
 
   useEffect(() => {
-    if (isModalOpen) {
-      if (editingId === null) {
+    if (isModalOpen && editingId === null) {
         setType('investment')
         setName('')
         setCurrentBalance('')
@@ -299,7 +299,6 @@ export function BalancePage() {
         setPaymentExpenseId(null)
         setStoredPaymentExpenseId(null)
       }
-    }
   }, [isModalOpen, editingId])
 
   useEffect(() => {

@@ -5,7 +5,8 @@ import {
   parseFromInput,
 } from '@budget-planner/core/format/currency'
 import type { Frequency } from '@budget-planner/db'
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import type React from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useCategoryNameMap } from '../hooks/useCategoryLabels'
 import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
 import { usePremiumAccess } from '../hooks/usePremiumAccess'
@@ -144,15 +145,13 @@ export function ExpensesPage() {
   }
 
   useEffect(() => {
-    if (isModalOpen) {
-      if (editingId === null) {
+    if (isModalOpen && editingId === null) {
         setName('')
         setAmount('')
         setFrequency('monthly')
         setCategoryId(null)
         setEndsBeforeRetirement(false)
       }
-    }
   }, [isModalOpen, editingId])
 
   useEffect(() => {

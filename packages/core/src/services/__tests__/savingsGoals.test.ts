@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  ClientNewSavingsGoal,
-  ClientSavingsGoal,
-  SavingsGoalWithProgress,
+  type ClientNewSavingsGoal,
+  type ClientSavingsGoal,
+  type SavingsGoalWithProgress,
   calculateProgress,
   filterSavingsGoals,
   generateSavingsGoalTempId,

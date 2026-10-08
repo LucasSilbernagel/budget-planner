@@ -24,6 +24,7 @@ export function TableScrollRegion({
   const ref = useRef<HTMLDivElement>(null)
   const scrolls = useHorizontalOverflow(ref)
   return (
+    // biome-ignore lint/a11y/useSemanticElements: a <section> region would be announced even when it doesn't scroll
     <div
       ref={ref}
       className={className}

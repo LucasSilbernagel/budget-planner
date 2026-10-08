@@ -128,7 +128,7 @@ export function createBalanceSortExtractors(
     // Own-property check: a `type` of 'constructor' would otherwise read an inherited function.
     // `Object.hasOwn` is unavailable at this `lib` target.
     type: (row) =>
-      Object.prototype.hasOwnProperty.call(TYPE_SORT_RANK, row.type)
+      Object.hasOwn(TYPE_SORT_RANK, row.type)
         ? TYPE_SORT_RANK[row.type] ?? TYPE_SORT_RANK_FALLBACK
         : TYPE_SORT_RANK_FALLBACK,
     name: (row) => textOrNull(row.name),

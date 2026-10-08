@@ -10,7 +10,8 @@ import {
   formatForInputDisplay,
   parseFromInput,
 } from '@budget-planner/core/format/currency'
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import type React from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
 import { useStoresHydrated } from '../hooks/useStoresHydrated'
 import { useTableSort } from '../hooks/useTableSort'
@@ -268,8 +269,7 @@ export function SavingsPage() {
   }
 
   useEffect(() => {
-    if (isModalOpen) {
-      if (editingId === null) {
+    if (isModalOpen && editingId === null) {
         setName('')
         setIsAccount(false)
         setTargetAmount('')
@@ -277,7 +277,6 @@ export function SavingsPage() {
         setAllocationMode('automatic')
         setMonthlyAllocation('')
       }
-    }
   }, [isModalOpen, editingId])
 
   useEffect(() => {

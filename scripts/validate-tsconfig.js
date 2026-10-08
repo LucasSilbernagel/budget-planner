@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-const fs = require('fs')
-const path = require('path')
+const fs = require('node:fs')
+const path = require('node:path')
 
 const projectRoot = path.resolve(__dirname, '..')
 
@@ -133,7 +133,7 @@ function validateTsConfig(filePath) {
       }
 
       for (const ref of config.references) {
-        if (!ref || !ref.path) continue
+        if (!ref?.path) continue
         let refDir = path.resolve(configDir, ref.path)
         // `references` paths may point at a directory or directly at a tsconfig file.
         if (refDir.endsWith('.json')) {

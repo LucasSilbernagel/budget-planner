@@ -418,7 +418,7 @@ describe('toServerPayload — retirementPlan (story 99.2)', () => {
     )
     const wire = JSON.parse(JSON.stringify(payload)) as { plan: Record<string, unknown> }
     expect(wire.plan['currentAgeInput']).toBe('')
-    expect(Object.prototype.hasOwnProperty.call(wire.plan, 'adoptedMonthlyCents')).toBe(true)
+    expect(Object.hasOwn(wire.plan, 'adoptedMonthlyCents')).toBe(true)
     expect(wire.plan['adoptedMonthlyCents']).toBeNull()
     expect(Object.keys(wire.plan).sort()).toEqual(Object.keys(PLAN).sort())
   })

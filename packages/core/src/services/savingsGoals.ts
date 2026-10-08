@@ -170,15 +170,13 @@ export function validateSavingsGoal(input: Partial<ClientNewSavingsGoal>): Valid
 
   // A manual amount is checked only in 'manual' mode: an automatic account ignores any
   // stored amount, so a stale one must not raise an error.
-  if (input.allocationMode !== undefined) {
-    if (input.allocationMode !== 'manual' && input.allocationMode !== 'automatic') {
+  if (input.allocationMode !== undefined && input.allocationMode !== 'manual' && input.allocationMode !== 'automatic') {
       errors.push({
         field: 'allocationMode',
         message: 'Allocation mode must be "manual" or "automatic"',
         value: input.allocationMode,
       })
     }
-  }
 
   if (
     input.allocationMode === 'manual' &&

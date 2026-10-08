@@ -42,9 +42,7 @@ async function hydrateAsADismissedUser(Component: () => ReactElement | null) {
 }
 
 function ReadsStorageDuringRender() {
-  return wasAccountNoticeDismissed() ? (
-    <></>
-  ) : (
+  return wasAccountNoticeDismissed() ? null : (
     <div data-account-notice>
       <p>No account needed</p>
     </div>

@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react'
+import type React from 'react'
+import { useState, useCallback, useMemo, useRef } from 'react'
 import { signedAmount } from '../../lib/forecasting/today-baseline'
 import type { AriaSortValue } from '../../lib/table-sort'
 import type { SavedForecast } from '../../routes/forecasting'
@@ -330,7 +331,6 @@ export function ForecastList({
 
             <tbody className="surface divide-y divide-gray-200 dark:divide-gray-700">
               {filteredForecasts.map((forecast) => (
-                // biome-ignore lint/a11y/useKeyWithClickEvents: row click is a pointer convenience; keyboard users select via the per-row aria-labeled checkbox in the first cell.
                 <tr
                   key={forecast.id}
                   onClick={() => toggleSelection(forecast.id)}

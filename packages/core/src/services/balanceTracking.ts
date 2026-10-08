@@ -1,7 +1,7 @@
 import type { FinanceType } from '@budget-planner/db'
 import { MAX_MONEY_CENTS } from '../finance/money-limits'
 import { type Frequency, normalizeToAnnual, normalizeToMonthly } from '../finance/normalization'
-import { DebtSubType, calculateDebtMetrics } from '../utils/balanceCalculations'
+import { type DebtSubType, calculateDebtMetrics } from '../utils/balanceCalculations'
 import { generateUuid } from '../utils/uuid'
 
 // Restated rather than imported from @budget-planner/db: that barrel throws when bundled
@@ -208,15 +208,13 @@ export function validateBalanceTracking(
 
   // Enforced here, not just in the form: every store write path calls this, and a stray
   // contribution on an asset would inflate the distributable pool.
-  if (input.type === 'asset' && typeof input.monthlyContribution === 'number') {
-    if (input.monthlyContribution !== 0) {
+  if (input.type === 'asset' && typeof input.monthlyContribution === 'number' && input.monthlyContribution !== 0) {
       errors.push({
         field: 'monthlyContribution',
         message: 'An asset has no contribution — record recurring saving on the Savings page',
         value: input.monthlyContribution,
       })
     }
-  }
 
   // Only investment rows feed the distributable pool, so the flag on any other type
   // would claim an effect that doesn't exist.

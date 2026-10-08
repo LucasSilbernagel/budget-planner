@@ -153,7 +153,6 @@ describe('AC-1/AC-3: a malformed server row is refused, not written', () => {
           createdAt: ISO,
           updatedAt: ISO,
         },
-        // biome-ignore lint/suspicious/noExplicitAny: deliberately shaped as the store type
       ] as any,
     })
 
@@ -291,7 +290,6 @@ describe('AC-6: a tombstone is never validated', () => {
           createdAt: ISO,
           updatedAt: ISO,
         },
-        // biome-ignore lint/suspicious/noExplicitAny: deliberately shaped as the store type
       ] as any,
     })
 
@@ -326,7 +324,6 @@ describe('AC-6: a tombstone is never validated', () => {
           createdAt: ISO,
           updatedAt: ISO,
         },
-        // biome-ignore lint/suspicious/noExplicitAny: deliberately shaped as the store type
       ] as any,
     })
 
@@ -341,7 +338,6 @@ describe('AC-6: a tombstone is never validated', () => {
 describe('AC-7: a pull whose only row was refused does not perturb ordering or the active profile', () => {
   it('the empty-id refusal inside the applier does not re-sort the collection', () => {
     useIncomeStore.setState({
-      // biome-ignore lint/suspicious/noExplicitAny: deliberately shaped as the store type
       incomeSources: [
         {
           id: ROW_B,
@@ -370,7 +366,6 @@ describe('AC-7: a pull whose only row was refused does not perturb ordering or t
     // `stampMissingSortOrder` assigns positions to rows lacking one, so an all-refused batch must
     // not trigger it or a rejected pull rewrites the user's ordering.
     useIncomeStore.setState({
-      // biome-ignore lint/suspicious/noExplicitAny: deliberately shaped as the store type
       incomeSources: [
         {
           id: ROW_B,
@@ -395,7 +390,6 @@ describe('AC-7: a pull whose only row was refused does not perturb ordering or t
     // A rejected `userProfile` must not set `appliedProfile`, or `reconcileActiveProfile` can
     // repoint the active profile against an incomplete list.
     useProfileStore.setState({
-      // biome-ignore lint/suspicious/noExplicitAny: deliberately shaped as the store type
       profiles: [{ id: 'local-default', name: 'Main Profile', userId: '', isDefault: true }] as any,
       activeProfileId: 'local-default',
     })
@@ -479,7 +473,6 @@ describe('an unknown entity type is still ignored defensively, not warned about'
     try {
       const result = await pullThrough([
         {
-          // biome-ignore lint/suspicious/noExplicitAny: simulating a NEWER server
           entityType: 'somethingNew' as any,
           entityId: ROW_A,
           data: { id: ROW_A },

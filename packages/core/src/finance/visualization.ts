@@ -277,7 +277,7 @@ function drillUp(state: DrillDownState): DrillDownState {
   }
 
   const newPath = state.path.slice(0, -1)
-  const lastEntry = newPath[newPath.length - 1]
+  const lastEntry = newPath.at(-1)
 
   return {
     level: state.level - 1,

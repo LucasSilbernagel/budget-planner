@@ -86,12 +86,12 @@ export const useSavingsStore = create<SavingsState>()(
         const index = state.savingsGoals.findIndex((g) => g.id === id)
 
         if (index === -1) {
-          return undefined
+          return 
         }
 
         const previousGoal = state.savingsGoals[index]
         if (previousGoal === undefined) {
-          return undefined
+          return 
         }
         const updatedGoal: ClientSavingsGoal = {
           ...previousGoal,

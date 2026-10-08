@@ -164,13 +164,11 @@ export function getSiteUrl(): string {
   const env = getConfig()
   const url = env.SITE_URL?.trim()
 
-  if (env.NODE_ENV === 'production') {
-    if (!url || url.includes('localhost') || !url.startsWith('https://')) {
+  if (env.NODE_ENV === 'production' && (!url || url.includes('localhost') || !url.startsWith('https://'))) {
       throw new Error(
         'SITE_URL must be set to the public https origin (not localhost) in production — magic-link emails build absolute links from it.'
       )
     }
-  }
 
   return url || 'http://localhost:5173'
 }

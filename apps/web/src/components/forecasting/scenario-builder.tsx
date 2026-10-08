@@ -24,7 +24,8 @@ import type { Frequency, NormalizableFinancialItem } from '@budget-planner/core/
 import type { ClientBalanceTracking } from '@budget-planner/core/services/balanceTracking'
 import type { ClientSavingsGoal } from '@budget-planner/core/services/savingsGoals'
 import { Link } from '@tanstack/react-router'
-import React, {
+import type React from 'react'
+import {
   useState,
   useCallback,
   useMemo,
@@ -198,7 +199,7 @@ const FREQUENCY_OPTIONS = [
 ]
 
 function generateId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 }
 
 function toNormalizableItems(items: LocalFinancialItem[]): NormalizableFinancialItem[] {
@@ -1759,7 +1760,7 @@ function InputField({
     if (parseValue) {
       onChange(parseValue(rawValue))
     } else if (type === 'number') {
-      const numValue = parseFloat(rawValue)
+      const numValue = Number.parseFloat(rawValue)
       // isFinite, not isNaN, so no raw Infinity reaches the parent.
       onChange(Number.isFinite(numValue) ? numValue : 0)
     } else {
@@ -2063,7 +2064,7 @@ function OneTimeEventRow({
   const calendarYear = new Date().getFullYear() + event.year
 
   const handleYearChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const year = Math.max(1, Math.min(maxYear, parseInt(e.target.value, 10) || 1))
+    const year = Math.max(1, Math.min(maxYear, Number.parseInt(e.target.value, 10) || 1))
     onUpdate(event.id, 'year', year)
   }
 
@@ -2231,7 +2232,7 @@ const PERCENT_TEXT = /^\s*[-+]?(?:\d+\.?\d*|\.\d+)\s*%?\s*$/
 // A single decimal comma converts to a point first.
 function parsePercentText(raw: string): number {
   const text = decimalCommaToPoint(raw)
-  return PERCENT_TEXT.test(text) ? parseFloat(text) / 100 : Number.NaN
+  return PERCENT_TEXT.test(text) ? Number.parseFloat(text) / 100 : Number.NaN
 }
 
 function usePercentDraft(

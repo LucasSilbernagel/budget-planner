@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  NormalizableFinancialItem,
+  type NormalizableFinancialItem,
   calculateTotalMonthlyNormalized,
   denormalizeFromMonthly,
   getNormalizationMultiplier,
@@ -219,15 +219,15 @@ describe('Frequency Normalization Engine', () => {
 
   describe('Edge Cases - Zero Tolerance for Errors', () => {
     it('should throw error for NaN input', () => {
-      expect(() => normalizeToMonthly(NaN, 'weekly')).toThrow('Amount must be a finite number')
+      expect(() => normalizeToMonthly(Number.NaN, 'weekly')).toThrow('Amount must be a finite number')
     })
 
     it('should throw error for Infinity input', () => {
-      expect(() => normalizeToMonthly(Infinity, 'weekly')).toThrow('Amount must be a finite number')
+      expect(() => normalizeToMonthly(Number.POSITIVE_INFINITY, 'weekly')).toThrow('Amount must be a finite number')
     })
 
     it('should throw error for negative Infinity input', () => {
-      expect(() => normalizeToMonthly(-Infinity, 'weekly')).toThrow(
+      expect(() => normalizeToMonthly(Number.NEGATIVE_INFINITY, 'weekly')).toThrow(
         'Amount must be a finite number'
       )
     })
@@ -356,9 +356,9 @@ describe('Frequency Normalization Engine', () => {
       })
 
       it('should throw error for non-finite numbers', () => {
-        expect(() => validateAmount(NaN)).toThrow('Amount must be a finite number')
-        expect(() => validateAmount(Infinity)).toThrow('Amount must be a finite number')
-        expect(() => validateAmount(-Infinity)).toThrow('Amount must be a finite number')
+        expect(() => validateAmount(Number.NaN)).toThrow('Amount must be a finite number')
+        expect(() => validateAmount(Number.POSITIVE_INFINITY)).toThrow('Amount must be a finite number')
+        expect(() => validateAmount(Number.NEGATIVE_INFINITY)).toThrow('Amount must be a finite number')
       })
     })
   })

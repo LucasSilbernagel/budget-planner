@@ -1,4 +1,4 @@
-import { resolve } from 'path'
+import { resolve } from 'node:path'
 import * as dotenv from 'dotenv'
 import type { Config } from 'drizzle-kit'
 import { normalizeCaCert } from './src/ca-cert'

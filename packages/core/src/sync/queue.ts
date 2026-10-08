@@ -253,7 +253,7 @@ export class SyncQueue {
     return this.serialize(async () => {
       this.assertOpen()
       if (this.queue.length === 0) {
-        return undefined
+        return 
       }
 
       const operation = this.queue[0]

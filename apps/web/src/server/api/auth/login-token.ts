@@ -1,4 +1,4 @@
-import crypto from 'crypto'
+import crypto from 'node:crypto'
 import { db } from '@budget-planner/db'
 import { loginTokens } from '@budget-planner/db/src/schema'
 import { and, eq, gt, isNull } from 'drizzle-orm'

@@ -81,7 +81,7 @@ describe('describeNotSyncedRow — naming a row whose edit keeps failing', () =>
       ],
       (_entityType, id) => {
         if (id === 'row-2') throw new Error('store unavailable')
-        return undefined
+        return 
       }
     )
 

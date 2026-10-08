@@ -1,7 +1,7 @@
 // @vitest-environment node
 // Fixtures are POSTed as raw bytes and signed over those bytes, so JSON formatting can't matter.
 
-import crypto from 'crypto'
+import crypto from 'node:crypto'
 import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { PGlite } from '@electric-sql/pglite'

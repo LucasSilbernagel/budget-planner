@@ -1,4 +1,5 @@
-import React, { useState, useId, useRef, useEffect } from 'react'
+import type React from 'react'
+import { useState, useId, useRef, useEffect } from 'react'
 
 /**
  * Hover and focus are tracked independently so neither hides a tooltip the other still holds.
@@ -37,6 +38,7 @@ export function InfoTooltip({ label, text }: { label: string; text: string }): R
   useEffect(() => () => clearTimeout(closeTimer.current), [])
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: hover convenience; the inner button handles focus and keyboard
     <span
       className="inline-flex align-middle"
       onMouseEnter={openHover}

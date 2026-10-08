@@ -300,7 +300,7 @@ export function GlobalNav() {
             // `group-open:` matches any open `.group` ancestor; none exists above the nav.
             className="group max-sm:h-full"
           >
-            {/* biome-ignore lint/a11y/useKeyWithClickEvents: a <summary> is natively keyboard-operable; a keydown handler would double-toggle */}
+            {/* biome-ignore lint/a11y/noStaticElementInteractions: a <summary> is natively keyboard-operable; a keydown handler would double-toggle */}
             <summary
               ref={triggerRef}
               // Once hydrated, React owns the toggle: natively, the listeners arm only after the async

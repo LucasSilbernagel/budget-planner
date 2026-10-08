@@ -2,9 +2,9 @@ import type { FinanceType } from '@budget-planner/db'
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   type BalanceTrackingFilter,
-  BalanceTrackingWithTimeline,
-  ClientBalanceTracking,
-  ClientNewBalanceTracking,
+  type BalanceTrackingWithTimeline,
+  type ClientBalanceTracking,
+  type ClientNewBalanceTracking,
   annualContributionCents,
   debtOwedCents,
   filterBalanceTracking,
@@ -630,7 +630,7 @@ describe('Edge Case Handling - Validation', () => {
       const input: Partial<ClientNewBalanceTracking> = {
         type: 'investment',
         name: 'Test',
-        currentBalance: NaN,
+        currentBalance: Number.NaN,
         monthlyContribution: 50000,
       }
       const errors = validateBalanceTracking(input)
@@ -644,7 +644,7 @@ describe('Edge Case Handling - Validation', () => {
       const input: Partial<ClientNewBalanceTracking> = {
         type: 'investment',
         name: 'Test',
-        currentBalance: Infinity,
+        currentBalance: Number.POSITIVE_INFINITY,
         monthlyContribution: 50000,
       }
       const errors = validateBalanceTracking(input)

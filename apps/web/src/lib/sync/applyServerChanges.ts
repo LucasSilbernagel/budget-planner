@@ -194,7 +194,7 @@ export function stampSyncedOwner(
     }
     const binding = ENTITY_BINDINGS[entityType]
     // The plan's owner is written by the claim and the pull applier, never by a push.
-    if (!binding || binding.kind !== 'collection') {
+    if (binding?.kind !== 'collection') {
       continue
     }
     const { store, collection } = binding
@@ -291,7 +291,7 @@ const ORDERED_ENTITY_TYPES: ReadonlySet<SyncEntityType> = new Set<SyncEntityType
 /** applyOne removes then appends, so without this a pulled update moves the row to the bottom. */
 function resortCollection(entityType: SyncEntityType): void {
   const binding = ENTITY_BINDINGS[entityType]
-  if (!binding || binding.kind !== 'collection') {
+  if (binding?.kind !== 'collection') {
     return
   }
   const { store, collection } = binding

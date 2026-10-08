@@ -46,7 +46,7 @@ export function checkPaddleJs(source, pinned) {
     }
   }
   facts.push(`spinner <style> literals found: ${literals.length}`)
-  if (problems.length) {
+  if (problems.length > 0) {
     // An undecodable literal already explains itself; the count check below would repeat it.
   } else if (literals.length !== 1) {
     problems.push(

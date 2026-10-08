@@ -23,7 +23,8 @@ const PROCESS_REF = [
 const root = path.resolve(__dirname, '..')
 const args = process.argv.slice(2)
 const files = (
-  args.length
+  
+  args.length > 0
     ? args
     : execFileSync('git', ['ls-files', '-co', '--exclude-standard'], {
         cwd: root,
@@ -89,7 +90,7 @@ for (const file of files) {
   }
 }
 
-if (problems.length) {
+if (problems.length > 0) {
   console.error(problems.join('\n'))
   console.error(
     `\n${problems.length} comment problem(s). Delete comments the code already explains; keep only short notes on non-obvious behaviour, without story/epic/FR/AC or file:line references.`
