@@ -26,6 +26,7 @@ import {
   formatForInputDisplay,
   isValidForecastYears,
   isValidGrowthRate,
+  normalizeToMonthly,
   resolveDebtPaymentExpense,
   roundingDriftToleranceCents,
   solveAutomaticAllocations,
@@ -412,6 +413,28 @@ function formatPercentage(value: string | number): string {
 }
 
 /**
+ * Expense rows, highest monthly equivalent first (so $1,200/yr ranks as $100/mo).
+ * Applied only where rows LOAD (a saved forecast, or a fresh seed from the
+ * stores), never on edit: re-sorting live would move a row out from under the
+ * input being typed in. Stable, so equal amounts keep their stored order. A row
+ * `normalizeToMonthly` rejects (a corrupt saved frequency) ranks as 0 rather
+ * than throwing, so it can't stop the builder rendering.
+ */
+function sortByMonthlyDesc(items: LocalFinancialItem[]): LocalFinancialItem[] {
+  const monthly = (item: LocalFinancialItem): number => {
+    try {
+      return normalizeToMonthly(item.amount, item.frequency)
+    } catch {
+      return 0
+    }
+  }
+  return items
+    .map((item) => ({ item, monthly: monthly(item) }))
+    .sort((a, b) => b.monthly - a.monthly)
+    .map(({ item }) => item)
+}
+
+/**
  * Rebuild local (id-carrying) financial items from a saved scenario's items so a
  * loaded forecast can be edited. IDs are regenerated deterministically by index
  * (the persisted scenario stores no ids). Returns [] when the saved scenario had
@@ -792,11 +815,13 @@ export function rowsFromStores(stores: {
   }
   return {
     incomeItems: itemsFromStore(stores.income, 'income'),
-    expenseItems: itemsFromStore(
-      stores.expenses.filter((row) => !seeded.consumedExpenseIds.has(row.id)),
-      'expense'
+    expenseItems: sortByMonthlyDesc(
+      itemsFromStore(
+        stores.expenses.filter((row) => !seeded.consumedExpenseIds.has(row.id)),
+        'expense'
+      )
     ),
-    unfilteredExpenseItems: itemsFromStore(stores.expenses, 'expense'),
+    unfilteredExpenseItems: sortByMonthlyDesc(itemsFromStore(stores.expenses, 'expense')),
     savingsAccounts: savingsFromStore(stores.savingsGoals, allocations),
     balanceAccounts: seeded.rows,
     assetAccounts: assetsFromStore(stores.balanceEntries),
@@ -1044,7 +1069,9 @@ export function ScenarioBuilder({
     initialForecast ? itemsFromSaved(initialForecast.scenario.newIncome, 'income') : []
   )
   const [expenseItems, setExpenseItems] = useState<LocalFinancialItem[]>(() =>
-    initialForecast ? itemsFromSaved(initialForecast.scenario.newExpenses, 'expense') : []
+    initialForecast
+      ? sortByMonthlyDesc(itemsFromSaved(initialForecast.scenario.newExpenses, 'expense'))
+      : []
   )
 
   // State for scenario configuration
