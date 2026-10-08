@@ -18,82 +18,9 @@ export const Route = createFileRoute('/retirement')({
   component: RetirementPage,
 })
 
-/**
- * Retirement Calculator Page
- *
- * Main page for retirement planning calculations.
- * Uses TanStack Start file-based routing (route: /retirement)
- *
- * Story 29.1 consolidated this page from three tools into one. It previously
- * mounted an accumulation planner, a standalone Safe-Withdrawal form and a
- * timeline chart side by side — each collecting its own copy of the same figures
- * and producing its own answer, with two paragraphs of copy explaining that the
- * numbers were "independent of" one another. There is now a single planner that
- * collects each detail once, plus the explanations that survived de-duplication.
- *
- * Story 29.2 then stopped asking for two of those details altogether: current
- * amount saved and monthly savings are derived from the user's own investment
- * accounts, leaving four editable fields. (Story 47.2 re-pointed the monthly
- * figure at those accounts' contributions; before it, that half came from income
- * minus expenses.)
- */
 function RetirementPage() {
-  /**
-   * Story 35.2 (FR55, AC-5): the route stays registered and reachable — the
-   * preference gates the CONTENT, not the routing. Deliberately the same shape
-   * as `routes/forecasting.tsx`'s premium gate, and deliberately NOT a
-   * `beforeLoad`/`redirect()`: no route guard exists anywhere in this app, and
-   * bouncing the user would explain nothing and break the in-app doc link.
-   *
-   * The Settings toggle and this gate read the same store independently, so
-   * neither is the only thing standing between the user and the planner (the
-   * dual-gate discipline `settings/report-section.tsx` documents).
-   *
-   * ⚠️ KNOWN AND ACCEPTED: unlike the nav entry, this branch has no pre-paint
-   * equivalent. Every persisted store is `skipHydration: true`, so a direct
-   * visit here with the planner hidden renders the planner on the first frame
-   * and swaps to this notice after rehydration. Accepted on frequency: the nav
-   * renders on EVERY page load for a hidden-planner user, whereas this route is
-   * reached rarely and deliberately by someone who already knows they turned it
-   * off. Covering it too would mean rendering both trees and swapping them in
-   * CSS, which doubles the DOM and makes the planner do real work while hidden.
-   *
-   * ⚠️ EXTENDED BY STORY 44.1, and the reason is the same one. The plan itself
-   * is now persisted, so the same skipHydration window applies to the input
-   * VALUES: the server paints `RETIREMENT_PLAN_DEFAULTS` (age 35, life
-   * expectancy 90) and a saved plan replaces them at hydration. MEASURED, not
-   * assumed — `components/__tests__/retirement-plan-first-paint.dom.test.tsx`
-   * pins first paint `35` -> settled `42`, with no recoverable React error, so
-   * it is a value swap and not a hydration mismatch.
-   *
-   * Deliberately NOT gated behind `useStoresHydrated()` + a skeleton, which is
-   * what UX-DR43 asks of a data-bearing surface, for two reasons:
-   *   1. A default is not a false claim. UX-DR43 exists to stop a confident
-   *      `$0.00` standing where real money exists; `35` is the app's published
-   *      starting point, which FR71 put there on purpose. (Contestable: NFR9
-   *      says a pending state must never read as the wrong page, and for one
-   *      paint a returning user's `35` is the wrong figure. A judgement call.)
-   *   2. The cost lands on the wrong user. A nine-field form skeleton would show
-   *      to every FIRST-TIME visitor — who has no saved plan and nothing to wait
-   *      for — to spare returning users one paint. Both UX-DR43 primitives
-   *      skeleton read-only data surfaces; there is no precedent in this repo
-   *      for skeletoning a form.
-   *
-   * ⚠️ A THIRD REASON WAS OFFERED AND IS WITHDRAWN — recorded because the
-   * mistake is easy to repeat. It argued that the visibility swap above is a
-   * LARGER accepted swap on this same route, so a skeleton here would be
-   * incoherent. But that swap was ratified specifically on RARITY ("reached
-   * rarely and deliberately by someone who already knows they turned it off"),
-   * whereas this one hits every returning user with a saved plan on every visit.
-   * The precedent's own reasoning points the other way; it does not cover this.
-   * Reasons 1 and 2 stand on their own and are what this decision rests on.
-   *
-   * ✅ RATIFIED BY LUCAS 2026-08-28, on reasons 1 and 2. This is a product
-   * decision now, not an implementer's judgement call — do not silently reverse
-   * it by adding a skeleton here. If it is ever revisited, the measurement is
-   * already in place (`components/__tests__/retirement-plan-first-paint.dom.test.tsx`
-   * pins first paint `35` -> settled `42`), so the change is contained.
-   */
+  // Gates content rather than redirecting, deliberately. A saved plan lands after hydration,
+  // so defaults paint first; accepted product decision, do not add a skeleton.
   const showRetirementPlanner = useShowRetirementPlanner()
 
   if (!showRetirementPlanner) {
@@ -108,7 +35,6 @@ function RetirementPage() {
     <ErrorBoundary>
       <main className="min-h-screen surface-sunken py-6 sm:py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
-          {/* Header */}
           <header className="mb-8 sm:mb-12">
             <div>
               <h1 className="text-2xl sm:text-4xl font-bold text-heading mb-3 sm:mb-4">
@@ -122,8 +48,6 @@ function RetirementPage() {
             </div>
           </header>
 
-          {/* The planner: one shared input set driving the outlook, the required
-              nest egg and the growth chart. */}
           <section className="mb-8 sm:mb-12 surface rounded-2xl shadow-lg p-4 sm:p-6 lg:p-8">
             <h2 className="text-xl sm:text-2xl font-semibold text-subheading mb-2">
               When Can You Retire?
@@ -136,7 +60,6 @@ function RetirementPage() {
             <RetirementAccumulationPlanner />
           </section>
 
-          {/* Supporting explanation — one copy of each, after the merge. */}
           <div className="surface rounded-2xl shadow-lg p-4 sm:p-6 lg:p-8">
             <h2 className="text-xl sm:text-2xl font-semibold text-subheading mb-6">
               Understanding Your Retirement Numbers

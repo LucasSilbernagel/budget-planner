@@ -1,14 +1,3 @@
-/**
- * Sync per-user rate-limiter wiring tests (Story SEC-2, AC-4/AC-6 — review patch).
- *
- * `checkRateLimit` (sync.ts) delegates to the shared atomic primitive
- * `checkDbRateLimit` with the sync scope, and on a DB error degrades through the
- * bounded per-instance `syncInMemoryFallback`. Both were previously only mocked
- * away by the route tests, so neither was actually executed. Here `checkDbRateLimit`
- * is mocked so we (1) assert the exact wiring and (2) drive the real fallback
- * closure to prove its 100/60s boundary.
- */
-
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { checkDbRateLimit } = vi.hoisted(() => ({ checkDbRateLimit: vi.fn() }))
@@ -41,7 +30,6 @@ describe('sync checkRateLimit wiring (AC-4)', () => {
 
 describe('sync DB-error degrade — syncInMemoryFallback boundary (AC-6)', () => {
   it('enforces 100/60s per user in the bounded in-memory fallback (100 allowed, 101st blocked)', async () => {
-    // Simulate a DB error by routing every call through the caller's fallback.
     checkDbRateLimit.mockImplementation(
       async ({
         onDbError,

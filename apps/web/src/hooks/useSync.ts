@@ -1,18 +1,3 @@
-/**
- * useSync Hook
- *
- * Custom React hook for managing client-side synchronization state and operations.
- * Provides automatic sync, manual sync triggers, and sync status indicators.
- *
- * Features:
- * - Automatic sync on data changes with debouncing
- * - Manual sync trigger
- * - Sync status label/icon/colour helpers (exported below; no component renders
- *   sync STATUS — the only sync UI is the refused-edit notice, story 75.2)
- * - Zustand-based state management
- * - Error handling and retry logic
- */
-
 import type {
   FetchServerChangesFn,
   ProcessOperationFn,
@@ -52,186 +37,115 @@ import { setLastPullTimestamp } from '../lib/sync/sessionStatusStore'
 import { toServerPayload } from '../lib/sync/syncBridge'
 import { useProfileStore } from '../stores/profileStore'
 
-// ============================================================================
-// Types
-// ============================================================================
-
-/**
- * State managed by the sync store
- */
 interface SyncStoreState {
-  /** Current sync status */
   status: SyncStatus
 
-  /** Whether the device is online */
   isOnline: boolean
 
-  /** Number of pending operations */
   pendingCount: number
 
-  /** Number of failed operations */
   failedCount: number
 
-  /** Number of conflict operations */
   conflictCount: number
 
-  /** Last sync timestamp (null if never synced) */
   lastSyncTimestamp: number | null
 
-  /** Last pull timestamp (null if never pulled) — server → client cursor */
   lastPullTimestamp: number | null
 
-  /** Number of changes applied by the most recent pull */
   changesPulledCount: number
 
-  /** Last error message */
   lastError: string | undefined
 
-  /** Whether a sync is currently in progress */
   isSyncing: boolean
 
-  /** Retry count for failed operations */
   retryCount: number
 }
 
-/**
- * Actions available in the sync store
- */
 interface SyncStoreActions {
-  /** Update the sync state */
   setState: (state: Partial<SyncStoreState>) => void
 
-  /** Reset the store to initial state */
   reset: () => void
 }
 
-/**
- * Combined store type
- */
 type SyncStore = SyncStoreState & SyncStoreActions
 
-/**
- * Options for initializing the sync hook
- */
 export interface UseSyncOptions {
-  /** User ID for synchronization */
   userId: string
 
-  /** Whether to enable automatic sync */
   autoSync?: boolean
 
-  /** Debounce delay for automatic sync in milliseconds */
   debounceDelay?: number
 
-  /** Whether to enable automatic server → client pulls (default: true) */
   autoPull?: boolean
 
-  /** Interval between automatic pulls in milliseconds (default: 30000) */
   pullInterval?: number
 
-  /** Max changes requested per pull (server caps this; default: 100) */
   pullLimit?: number
 
-  /** Sync configuration overrides */
   syncConfig?: Partial<Parameters<typeof createSynchronizationService>[1]>
 }
 
-/**
- * Return value from useSync hook
- */
 export interface UseSyncReturn {
-  /** Current sync status */
   status: SyncStatus
 
-  /** Whether the device is online */
   isOnline: boolean
 
-  /** Number of pending operations */
   pendingCount: number
 
-  /** Number of failed operations */
   failedCount: number
 
-  /** Number of conflict operations */
   conflictCount: number
 
-  /** Last sync timestamp */
   lastSyncTimestamp: number | null
 
-  /** Last pull timestamp (server → client cursor) */
   lastPullTimestamp: number | null
 
-  /** Number of changes applied by the most recent pull */
   changesPulledCount: number
 
-  /** Last error message */
   lastError: string | undefined
 
-  /** Whether a sync is currently in progress */
   isSyncing: boolean
 
-  /** Retry count for failed operations */
   retryCount: number
 
-  /** Whether there are pending changes */
   hasPendingChanges: boolean
 
-  /** Whether there are conflicts to resolve */
   hasConflicts: boolean
 
-  /** Whether there are failed operations */
   hasFailures: boolean
 
-  /** Manual sync trigger */
   sync: () => Promise<SyncResult | undefined>
 
-  /** Force sync immediately (bypasses debounce) */
   forceSync: () => Promise<SyncResult | undefined>
 
-  /** Manually pull server → client changes and apply them (AC-5) */
   pull: () => Promise<PullResult | undefined>
 
-  /** Force an immediate pull (alias of pull, for symmetry with forceSync) */
   forcePull: () => Promise<PullResult | undefined>
 
-  /** Queue a create operation */
   queueCreate: (
     entityType: SyncEntityType,
     entityId: string | number,
     data: Record<string, unknown>
   ) => Promise<void>
 
-  /** Queue an update operation */
   queueUpdate: (
     entityType: SyncEntityType,
     entityId: string | number,
     data: Record<string, unknown>,
     version?: number,
-    /** Server `updatedAt` (ms) this edit was based on, for causal pull LWW (4-18 D1). */
     baseVersion?: number,
-    /** The op this one is dropped with if pull LWW drops it (story 76.2). */
     dependsOn?: SyncOperation['dependsOn']
   ) => Promise<void>
 
-  /** Queue a delete operation */
   queueDelete: (
     entityType: SyncEntityType,
     entityId: string | number,
-    /** Server `updatedAt` (ms) this delete was based on, for causal pull LWW (4-18 D1). */
     baseVersion?: number
   ) => Promise<void>
 
-  /** Reset the sync state */
   reset: () => void
 }
 
-// ============================================================================
-// Store
-// ============================================================================
-
-/**
- * Initial state for the sync store
- */
 const initialState: SyncStoreState = {
   status: SyncStatusEnum.PENDING,
   isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
@@ -246,9 +160,6 @@ const initialState: SyncStoreState = {
   retryCount: 0,
 }
 
-/**
- * Create the sync store
- */
 const createSyncStore = () =>
   create<SyncStore>()(
     subscribeWithSelector<SyncStore>((set) => ({
@@ -258,12 +169,8 @@ const createSyncStore = () =>
     }))
   )
 
-// Singleton store instance
 let syncStore: ReturnType<typeof createSyncStore> | null = null
 
-/**
- * Get or create the sync store
- */
 function getSyncStore(): ReturnType<typeof createSyncStore> {
   if (!syncStore) {
     syncStore = createSyncStore()
@@ -271,32 +178,16 @@ function getSyncStore(): ReturnType<typeof createSyncStore> {
   return syncStore
 }
 
-/**
- * Reset the sync store (for testing)
- */
 export function resetSyncStore(): void {
   syncStore = null
 }
 
 /**
- * Stable empty sync-config default (review P5). Using a module-level constant
- * (not an inline `= {}`) keeps the identity stable across renders so the init
- * effect — which lists `syncConfig` in its dependencies — does not tear down and
- * recreate the service on every render (which would reset the in-memory pull
- * cursor and force repeated full-snapshot pulls).
+ * Stable identity: the init effect depends on syncConfig, and recreating the service resets the
+ * pull cursor.
  */
 const EMPTY_SYNC_CONFIG: Partial<Parameters<typeof createSynchronizationService>[1]> = {}
 
-// ============================================================================
-// Hook
-// ============================================================================
-
-/**
- * Custom hook for managing synchronization state
- *
- * @param options - Configuration options for the sync hook
- * @returns Sync state and actions
- */
 export function useSync(options: UseSyncOptions): UseSyncReturn {
   const {
     userId,
@@ -309,34 +200,20 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
   } = options
 
   const store = getSyncStore()
-  // Active profile drives profile-scoped pulls; a switch must reset the pull
-  // cursor (review P7) so the newly-active profile gets a full snapshot rather
-  // than a delta from the previous profile's (higher) cursor.
   const activeProfileId = useProfileStore((s) => s.activeProfileId)
   const syncServiceRef = useRef<SynchronizationService | null>(null)
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Guards against overlapping pulls (auto-poll vs manual) — debounce/skip when
-  // a pull is already in flight.
   const pullInFlightRef = useRef(false)
-  // Set when a pull is requested while one is already in flight; the in-flight
-  // pull re-runs once on completion instead of silently dropping the request.
+  // A pull requested mid-pull re-runs once on completion instead of being dropped.
   const repullRequestedRef = useRef(false)
   const pullRef = useRef<() => Promise<PullResult | undefined>>(async () => undefined)
   const isFirstProfileEffectRef = useRef(true)
-  // The server's live profile ids from the most recent pull response (see
-  // `uploadMissingProfiles`). Written by the transport wrapper, consumed by pull().
   const lastLiveProfileIdsRef = useRef<string[] | undefined>(undefined)
   const syncSoonTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   /**
-   * Reset the pull cursor and pull a FULL snapshot, honouring a pull that is
-   * already in flight. The one copy of this rule (story 76.2), used by a profile
-   * switch, a refused edit (story 75.2) and a dropped dependent op (story 76.2).
-   *
-   * ⚠️ Calling `pull()` while one is in flight is a silent no-op (its in-flight
-   * guard), and the in-flight pull would then write a non-null cursor over the
-   * reset. So it asks for a re-pull instead, and the `finally` in `pull()`
-   * resets again and re-pulls. Reads refs only, so it is stable across renders.
+   * pull() is a no-op while one is in flight, and that pull would write a cursor over the reset, so
+   * ask for a re-pull instead.
    */
   const requestFullRepull = useCallback((): void => {
     const svc = syncServiceRef.current
@@ -353,24 +230,12 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     })
   }, [])
 
-  // Initialize sync service on first render
   useEffect(() => {
-    // Create the synchronization service with custom processOperation
-    // that calls the server sync function
     syncServiceRef.current = createSynchronizationService(userId, {
-      autoSync: false, // We'll handle auto-sync ourselves
-      // Push transport (Story 5-15): goes over HTTP to POST /api/sync/batch via
-      // sendSyncOperation. Replaces the old direct import of the server function,
-      // which dragged `@budget-planner/db` into the client graph (5-12 hazard).
+      autoSync: false,
       processOperation: sendSyncOperation as ProcessOperationFn,
-      // Stamp the active profile onto every queued op so profile-scoped entities
-      // satisfy the server's `profileId NOT NULL`. Read lazily at creation; a
-      // later profile switch updates it via updateConfig (see effect below) rather
-      // than recreating the service.
+      // Profile-scoped entities need `profileId NOT NULL` server-side; a switch updates it via updateConfig.
       profileId: useProfileStore.getState().activeProfileId ?? undefined,
-      // Pull transport (Story 4-18): goes over HTTP to /api/sync/changes. The
-      // active profile is read lazily at call time so a profile switch is
-      // reflected without re-creating the service. Never imports the server fn.
       fetchServerChanges: (async (since: number | null) => {
         const { changes, profileIds } = await fetchServerChangesWithMeta(
           since,
@@ -383,18 +248,8 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       ...syncConfig,
     })
 
-    // Initialize the service, then flush the PERSISTED push queue. Ops left over
-    // from an earlier session (offline edits, or pushes the server rejected) were
-    // otherwise only re-sent after a NEW local edit or a tab-visibility change,
-    // so a device could sit on unsynced data indefinitely across reloads. This
-    // must wait for `initialize()` — before it resolves the queue is not loaded
-    // and a sync sees nothing to send. Queued ops already carry their own
-    // profileId, so this does not depend on profile reconciliation.
+    // Flush the persisted queue only after initialize(): before it resolves the queue is not loaded.
     const service = syncServiceRef.current
-    // Story 86.1 (FR139): "Clear local data" and account deletion clear THIS
-    // service's queue, not just its storage key (see `lib/sync/purgeHandle.ts`).
-    // Registered with the service, not with the push bridge, which waits for
-    // profile reconciliation while this queue is already loaded.
     const unregisterPurgeHandle = registerSyncPurgeHandle({
       userId,
       clearQueue: () => service.clearQueue(),
@@ -415,7 +270,6 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
         console.error('Failed to initialize sync service:', error)
       })
 
-    // Subscribe to status changes
     const unsubscribe = syncServiceRef.current.onStatusChange((state) => {
       store.getState().setState({
         status: state.status,
@@ -426,18 +280,10 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
         lastSyncTimestamp: state.lastSyncTimestamp,
         lastPullTimestamp: state.lastPullTimestamp,
         lastError: state.lastError,
-        // Derived from the status (code review 79.2). This used to write `false`
-        // on EVERY notify, including the IN_PROGRESS one a push emits as it
-        // starts, so `isSyncing` was false for the whole push and "Try again"
-        // (disabled while syncing, D5) re-enabled at once. It also covers syncs
-        // this hook did not start (retry timer, `online`, tab focus).
+        // Derived from the status so it also covers syncs this hook did not start.
         isSyncing: state.status === SyncStatusEnum.IN_PROGRESS,
         retryCount: state.retryCount,
       })
-      // Story 79.2 (FR128): name each edit that keeps failing to sync, and clear
-      // the notice once the core stops reporting it (it landed, or left the queue
-      // another way). Reconciled on EVERY status change, because each way an op
-      // leaves the queue ends in one. The edit is kept, so nothing is reverted.
       try {
         reconcileNotSyncedNotices(describeNotSyncedRows(state.escalatedOperations, findLocalRow))
       } catch (error) {
@@ -445,13 +291,10 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       }
     })
 
-    // Story 99.2 (AC-4): the applier asks the LIVE queue before overwriting the
-    // retirement plan, so a still-queued plan edit is never clobbered by a pull.
+    // Asks the live queue so a pull never clobbers a still-queued retirement-plan edit.
     const hasPendingOperation = (entityType: SyncEntityType, entityId: string) =>
       service.getQueue().hasPendingOperations(entityType, entityId)
 
-    // Subscribe to pulled changes: write them into the UI stores (Story 4-18).
-    // The core emits applied changes; the web layer owns the store writes.
     const unsubscribeChanges = syncServiceRef.current.onChangesPulled((changes: ServerChange[]) => {
       applyServerChangesToStores(changes, userId, { hasPendingOperation })
       const svc = syncServiceRef.current
@@ -461,28 +304,16 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       })
     })
 
-    // Story 75.4 (FR123): rows core refused to apply because they failed their
-    // entity schema. The user's queued edit survived them; this only reports them
-    // (developer channel, no values — see `reportRefusedServerChanges`).
     const unsubscribeRefusedRows = syncServiceRef.current.onServerChangesRefused(
       reportRefusedServerChanges
     )
 
-    // Story 86.3: mark each row the server just accepted as this account's, so
-    // nothing this session pushed looks like a free-tier row to the next account
-    // that signs in here before a pull has brought it back.
+    // Stamp accepted rows as this account's, so they don't look like free-tier rows to the next account.
     const unsubscribeSynced = syncServiceRef.current.onOperationsSynced((operations) => {
       stampSyncedOwner(operations, userId)
     })
 
-    // Story 75.2 (FR119): an op the server PERMANENTLY refused has left the
-    // queue. Name the entry to the user and REVERT it on this device (decision,
-    // Lucas 2026-09-28) — see `lib/sync/refusedEdits.ts` for why each case
-    // reverts the way it does.
-    //
-    // The re-pull for a refused update/delete is `requestFullRepull`. Unlike the
-    // profile-switch effect it does NOT skip when `autoPull` is off — a revert
-    // has to happen either way.
+    // A refused update/delete re-pulls even when autoPull is off: the revert has to happen.
     const unsubscribeRejected = syncServiceRef.current.onOperationsRejected((operations) => {
       handleRejectedOperations(operations, {
         queue: service.getQueue(),
@@ -499,34 +330,24 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       })
     })
 
-    // Cleanup on unmount
     return () => {
-      // First, so a purge that runs from here on falls back to clearing storage
-      // directly instead of calling a service that is being destroyed (86.1).
+      // First, so a purge from here on clears storage directly instead of calling a dying service.
       unregisterPurgeHandle()
       unsubscribe()
       unsubscribeChanges()
       unsubscribeRefusedRows()
       unsubscribeSynced()
       unsubscribeRejected()
-      // Notices name THIS account's entries. The store is module-level, so
-      // without this a sign-out → sign-in as another paid user in the same tab
-      // would show the first account's entry names (code review 75.2). A RESET,
-      // not the user's "Dismiss all" (story 79.2): the dismissals of not-synced
-      // notices must go too, or the next session's own edits stay hidden.
+      // The notice store is module-level; reset it so the next account never sees this one's entries.
       resetRefusalNotices()
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current)
       }
-      // The unsubscribe order above does not matter (story 79.1): a sync still in
-      // flight on the destroyed service no longer touches the queue, so a refusal
-      // it gets is not lost — the next session sends the op again and names it.
       syncServiceRef.current?.destroy()
       syncServiceRef.current = null
     }
   }, [userId, syncConfig, store, pullLimit, autoSync, requestFullRepull])
 
-  // Sync state from store
   const {
     status,
     isOnline,
@@ -540,10 +361,8 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     isSyncing,
     retryCount,
   } = store(
-    // useShallow: the selector returns a fresh object each call; without a
-    // shallow comparator any repeated store write (Story 4-18 auto-poll fires
-    // setState on an interval) would drive an infinite re-render loop, since
-    // useSyncExternalStore sees a new snapshot reference on every notify.
+    // useShallow: the selector returns a fresh object, so without it every store write would
+    // re-render in a loop.
     useShallow((state) => ({
       status: state.status,
       isOnline: state.isOnline,
@@ -559,12 +378,10 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     }))
   )
 
-  // Derived state
   const hasPendingChanges = pendingCount > 0
   const hasConflicts = conflictCount > 0
   const hasFailures = failedCount > 0
 
-  // Handle sync status changes
   const handleStatusChange = useCallback(
     (isSyncingFlag: boolean) => {
       store.getState().setState({ isSyncing: isSyncingFlag })
@@ -572,7 +389,6 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     [store]
   )
 
-  // Manual sync
   const sync = useCallback(async (): Promise<SyncResult | undefined> => {
     if (!syncServiceRef.current) {
       return undefined
@@ -591,7 +407,6 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     }
   }, [handleStatusChange])
 
-  // Force sync (bypasses debounce)
   const forceSync = useCallback(async (): Promise<SyncResult | undefined> => {
     if (!syncServiceRef.current) {
       return undefined
@@ -610,9 +425,7 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     }
   }, [handleStatusChange])
 
-  // Push the queue soon, re-arming while another sync is still running: a
-  // `sync()` that finds one in progress returns immediately and nothing else
-  // would retry, leaving freshly queued ops unsent until an unrelated trigger.
+  // Re-arms while another sync runs: sync() returns immediately if one is already in progress.
   const syncSoon = useCallback((): void => {
     const schedule = (attempt: number): void => {
       if (syncSoonTimerRef.current) {
@@ -640,27 +453,8 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
   }, [debounceDelay])
 
   /**
-   * Upload every local profile the server does not have (user choice,
-   * 2026-09-15). A profile created while sync was not wired (e.g. on the
-   * Profiles page before the push bridge registered) was never enqueued, yet it
-   * can be the ACTIVE profile — so every row this device queues is stamped with
-   * it and the server rejects each one as "Profile not found", indefinitely.
-   * `profileIds` is the server's authoritative live list for this user; a
-   * profile with a pending op is already on its way and is skipped. The queue
-   * sends profile creates ahead of everything else, so the rows that depend on
-   * the profile succeed in the same sync.
-   *
-   * ⚠️ Never another account's profile (story 86.2, FR140). The profile store is
-   * shared by whoever uses this browser, so after A signs out and B signs in it
-   * still holds A's synced profiles, none of them in B's live list. They used to
-   * be uploaded into B's account. A profile made here before the bridge
-   * registered carries a placeholder (`'temp-user'`) or B's own id, and still
-   * uploads (`lib/sync/accountOwner.ts`).
-   *
-   * Story 86.3: a profile the previous account PUSHED carries its id from the
-   * moment the push was accepted (`stampSyncedOwner`), so it is never uploaded
-   * here; before, it kept `'temp-user'` until a pull, and its create hit the
-   * primary key A's row holds (23505, kept queued for ever).
+   * Uploads local profiles the server lacks (e.g. created before the push bridge registered), so their
+   * rows stop failing as "Profile not found". Never another account's profiles.
    */
   const uploadMissingProfiles = useCallback(
     async (profileIds: string[]): Promise<void> => {
@@ -694,8 +488,6 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     [userId, autoSync, syncSoon]
   )
 
-  // Pull server → client changes (AC-5 manual trigger; AC-4 auto-poll reuses it).
-  // Skips if a pull is already in flight so overlapping triggers debounce.
   const pull = useCallback(async (): Promise<PullResult | undefined> => {
     if (!syncServiceRef.current || pullInFlightRef.current) {
       return undefined
@@ -704,42 +496,24 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     const service = syncServiceRef.current
     try {
       const result = await service.pull()
-      // Torn down while the pull was in flight (story 79.1): the result belongs
-      // to an ended session. Writing it would put its error and its cursor into
-      // the module-level stores the NEXT session reads.
+      // Torn down mid-pull: don't write this ended session's result into module-level stores.
       if (service.isDestroyed()) {
         return result
       }
-      // Store writes happen via the onChangesPulled subscription; here we only
-      // surface pull status/counters for UI (success/failure indication).
       store.getState().setState({
         lastPullTimestamp: result.lastPullTimestamp,
         changesPulledCount: result.changesPulledCount,
         lastError: result.success ? undefined : result.error,
       })
-      // Mirror into the lightweight session-status store (Story 53.1 review)
-      // so `useIsInitialSyncPending` and other leaf consumers can read this
-      // WITHOUT importing this (heavy) module — see that store's own docblock.
       setLastPullTimestamp(result.lastPullTimestamp)
-      // Story 76.2 (D1 = A): core dropped an op because the op it depended on
-      // lost last-writer-wins — a promotion whose profile deletion lost. This
-      // device still shows the promoted profile as the default, beside the
-      // resurrected one. The revert is story 75.2's: a full re-pull, which
-      // re-applies the promoted profile's SERVER row (`isDefault: false`). Never a
-      // store action, which would queue a new op. We are inside a pull, so this
-      // only asks for one; the `finally` below runs it.
-      //
-      // ⚠️ The limit: a LATER queued update of that profile still carries
-      // `isDefault: true` (`syncBridge` sends the flag on every profile update),
-      // wins LWW over the re-pulled row and re-promotes it on push (76.1's "last
-      // promotion wins"). That ends at ONE default, not two.
+      // A dependent op was dropped because its parent lost last-writer-wins; a full re-pull restores the
+      // server rows (never a store action, which would queue a new op).
       if (result.success && result.droppedDependents.length > 0) {
         requestFullRepull()
       }
       const liveProfileIds = lastLiveProfileIdsRef.current
       lastLiveProfileIdsRef.current = undefined
-      // An empty list means the server has not even a default profile yet (its
-      // backfill failed) — nothing trustworthy to compare against.
+      // Empty means the server has no default profile yet: nothing trustworthy to compare against.
       if (result.success && liveProfileIds && liveProfileIds.length > 0) {
         await uploadMissingProfiles(liveProfileIds).catch((error) => {
           console.error('Uploading unsynced profiles failed:', error)
@@ -753,10 +527,7 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       pullInFlightRef.current = false
       if (repullRequestedRef.current) {
         repullRequestedRef.current = false
-        // A profile switch or a refused edit (story 75.2) requested a re-pull
-        // while this one was in flight, and this pull has just advanced the
-        // cursor, overwriting that request's reset. Reset again so this is a
-        // full snapshot.
+        // A re-pull was requested mid-pull and this pull just advanced the cursor; reset again.
         syncServiceRef.current?.resetPullCursor()
         pullRef.current().catch((error) => {
           console.error('Re-pull failed:', error)
@@ -766,12 +537,8 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
   }, [store, uploadMissingProfiles, requestFullRepull])
   pullRef.current = pull
 
-  // Force pull is an alias for pull (symmetry with forceSync).
   const forcePull = pull
 
-  // Automatic polling (AC-4): pull on an interval while online. SSR-safe — the
-  // effect (and timer) only run client-side after mount. The server enforces the
-  // paid-tier gate, so a non-paid poll simply errors and is ignored.
   useEffect(() => {
     if (!autoPull || pullInterval <= 0) {
       return
@@ -789,18 +556,8 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     }
   }, [autoPull, pullInterval, pull])
 
-  // React to an active-profile switch (review P7 + Story 5-15):
-  //  1. Re-stamp the PUSH config so subsequently-queued ops carry the new
-  //     profileId (profile-scoped entities require `profileId NOT NULL` server-side).
-  //  2. Reset the PULL cursor: the cursor is global but the delta is profile-scoped,
-  //     so a switch must force a full snapshot or the newly-active profile would
-  //     miss every row older than the previous profile's cursor.
-  //  3. Pull the newly-active profile NOW. The first pull on a new device is sent
-  //     with the local bootstrap profile, so it returns only the profile list;
-  //     reconciliation then switches to the server profile, and without this the
-  //     account's actual data would not arrive until the next poll (up to
-  //     `pullInterval`), showing a signed-in user an empty account meanwhile.
-  // No-op on first mount (cursor already null; ActiveSync does the initial pull).
+  // On a profile switch: re-stamp the push config, reset the global pull cursor (deltas are
+  // profile-scoped) and pull now rather than waiting for the next poll.
   useEffect(() => {
     syncServiceRef.current?.updateConfig({ profileId: activeProfileId ?? undefined })
     syncServiceRef.current?.resetPullCursor()
@@ -814,7 +571,6 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     requestFullRepull()
   }, [activeProfileId, autoPull, requestFullRepull])
 
-  // Queue operations
   const queueCreate = useCallback(
     async (
       entityType: SyncEntityType,
@@ -827,7 +583,6 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
 
       await syncServiceRef.current.queueCreate(entityType, entityId, data, userId)
 
-      // Trigger debounced sync if auto-sync is enabled
       if (autoSync && debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current)
       }
@@ -866,7 +621,6 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
         dependsOn
       )
 
-      // Trigger debounced sync if auto-sync is enabled
       if (autoSync && debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current)
       }
@@ -892,9 +646,7 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
         throw new Error('Sync service not initialized')
       }
 
-      // The server's delete validation requires `userId` inside the operation
-      // data payload, so pass it explicitly rather than relying on the default
-      // empty object (which would be rejected as "Delete operations require userId").
+      // Server delete validation requires `userId` inside the operation payload.
       await syncServiceRef.current.queueDelete(
         entityType,
         entityId,
@@ -903,7 +655,6 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
         baseVersion
       )
 
-      // Trigger debounced sync if auto-sync is enabled
       if (autoSync && debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current)
       }
@@ -919,12 +670,10 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
     [userId, autoSync, debounceDelay, forceSync]
   )
 
-  // Reset the sync state
   const reset = useCallback(() => {
     store.getState().reset()
   }, [store])
 
-  // Cleanup debounce timers on unmount
   useEffect(() => {
     return () => {
       if (debounceTimerRef.current) {
@@ -938,7 +687,6 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
 
   return useMemo(
     () => ({
-      // State
       status,
       isOnline,
       pendingCount,
@@ -951,12 +699,10 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
       isSyncing,
       retryCount,
 
-      // Derived state
       hasPendingChanges,
       hasConflicts,
       hasFailures,
 
-      // Actions
       sync,
       forceSync,
       pull,
@@ -993,18 +739,6 @@ export function useSync(options: UseSyncOptions): UseSyncReturn {
   )
 }
 
-// ============================================================================
-// Status Indicators
-// ============================================================================
-
-/**
- * ⚠️ `PARTIAL` was missing from all three maps below while
- * `server/api/sync.ts:1044` genuinely produces it ("completed with some conflicts
- * but no failures"). The getters' `|| 'Unknown'` fallbacks meant a
- * partially-successful sync displayed as "Unknown ❓" in grey — reading as an
- * error state for a sync that mostly worked. `Record<SyncStatus, string>` was
- * always the right type; it just could not be checked until the module resolved.
- */
 export const SYNC_STATUS_LABELS: Record<SyncStatus, string> = {
   [SyncStatusEnum.PENDING]: 'Pending',
   [SyncStatusEnum.IN_PROGRESS]: 'Syncing...',
@@ -1015,9 +749,6 @@ export const SYNC_STATUS_LABELS: Record<SyncStatus, string> = {
   [SyncStatusEnum.OFFLINE]: 'Offline',
 }
 
-/**
- * Sync status indicator icons (can be replaced with actual icons)
- */
 export const SYNC_STATUS_ICONS: Record<SyncStatus, string> = {
   [SyncStatusEnum.PENDING]: '⏳',
   [SyncStatusEnum.IN_PROGRESS]: '🔄',
@@ -1028,9 +759,6 @@ export const SYNC_STATUS_ICONS: Record<SyncStatus, string> = {
   [SyncStatusEnum.OFFLINE]: '📵',
 }
 
-/**
- * Sync status color classes for Tailwind CSS
- */
 export const SYNC_STATUS_COLORS: Record<SyncStatus, string> = {
   [SyncStatusEnum.PENDING]: 'text-yellow-500',
   [SyncStatusEnum.IN_PROGRESS]: 'text-blue-500',
@@ -1041,26 +769,16 @@ export const SYNC_STATUS_COLORS: Record<SyncStatus, string> = {
   [SyncStatusEnum.OFFLINE]: 'text-gray-500',
 }
 
-/**
- * Get sync status label
- */
 export function getSyncStatusLabel(status: SyncStatus): string {
   return SYNC_STATUS_LABELS[status] || 'Unknown'
 }
 
-/**
- * Get sync status icon
- */
 export function getSyncStatusIcon(status: SyncStatus): string {
   return SYNC_STATUS_ICONS[status] || '❓'
 }
 
-/**
- * Get sync status color class
- */
 export function getSyncStatusColor(status: SyncStatus): string {
   return SYNC_STATUS_COLORS[status] || 'text-gray-500'
 }
 
-// Re-export SyncStatus enum for convenience
 export { SyncStatusEnum as SyncStatus }

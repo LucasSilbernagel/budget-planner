@@ -1,9 +1,4 @@
-/**
- * Story 92.1 (code review): `apps/web/vitest.config.ts` pins every web test run
- * to UTC (`test.env.TZ`), so the PGlite harnesses' session TimeZone and JS local
- * time match CI and production. CI's runners are UTC anyway, so this only bites
- * on a dev box in another zone; it is the regression pin for that config line.
- */
+// PGlite's session TimeZone and JS local time must match CI and production (UTC).
 
 import { describe, expect, it } from 'vitest'
 

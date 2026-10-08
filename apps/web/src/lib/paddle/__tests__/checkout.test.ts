@@ -1,9 +1,3 @@
-/**
- * `getPaddleInstance` caching (Story 5-3 review follow-up).
- *
- * NFR8: `@paddle/paddle-js` is mocked — no real CDN load in tests.
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   getPaddleInstance,
@@ -42,7 +36,6 @@ describe('getPaddleInstance', () => {
 
     await expect(getPaddleInstance(CONFIG)).rejects.toThrow('cdn.paddle.com hiccup')
 
-    // A momentary failure must not poison every LATER checkout attempt.
     const paddleInstance = { Checkout: {}, PricePreview: vi.fn() }
     initializePaddle.mockResolvedValueOnce(paddleInstance)
     const retried = await getPaddleInstance(CONFIG)
@@ -52,9 +45,7 @@ describe('getPaddleInstance', () => {
   })
 
   it('does NOT permanently poison future calls when initializePaddle RESOLVES undefined (its real failure signal)', async () => {
-    // `initializePaddle` signals a bad token / CDN load failure by RESOLVING
-    // `undefined`, not by rejecting — a `.catch`-only fix never sees this,
-    // the far more common real-world failure shape than an outright throw.
+    // `initializePaddle` signals failure by resolving `undefined`, not by rejecting.
     initializePaddle.mockResolvedValueOnce(undefined)
 
     const first = await getPaddleInstance(CONFIG)
@@ -69,8 +60,6 @@ describe('getPaddleInstance', () => {
   })
 })
 
-// Story sec-4, D1 (AC-5): Paddle.js's `initPwSnippet()` skips ProfitWell only when
-// `window.profitwell?.isLoaded` is already truthy at `Paddle.Initialize()` time.
 describe('getPaddleInstance: the window.profitwell stub (sec-4 D1)', () => {
   type Host = { profitwell?: unknown }
   let host: Host
@@ -103,7 +92,6 @@ describe('getPaddleInstance: the window.profitwell stub (sec-4 D1)', () => {
     const stub = host.profitwell as (...args: unknown[]) => unknown
     expect(stub('start', { auth_token: 'x' })).toBeUndefined()
     expect(stub('cq_get_customer_email')).toBeUndefined()
-    // A no-op: it grows no queue (the real snippet's queue is `window.profitwell.q`).
     expect((stub as unknown as { q?: unknown }).q).toBeUndefined()
   })
 
@@ -123,8 +111,7 @@ describe('getPaddleInstance: the window.profitwell stub (sec-4 D1)', () => {
     expect((host.profitwell as { isLoaded: boolean }).isLoaded).toBe(false)
   })
 
-  // Paddle's guard is `window.profitwell?.isLoaded`: `null?.isLoaded` is `undefined`, so a
-  // `null` left in place would let the script load (sec-4 review).
+  // `null?.isLoaded` is undefined, so a null left in place would let the script load.
   it('treats a null window.profitwell as absent and replaces it', async () => {
     host.profitwell = null
     let seenAtInit: unknown

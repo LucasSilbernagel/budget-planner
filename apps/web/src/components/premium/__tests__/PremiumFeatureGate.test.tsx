@@ -1,17 +1,3 @@
-/**
- * PremiumFeatureGate tests (story 7-2, FR24).
- *
- * The gate's tier decision is the heart of the story:
- *   - loading (SSR + first client paint) → neutral skeleton, never children.
- *   - paid (hasAccess) → the unlocked children, no lock badge.
- *   - free / lapsed / unauthenticated / errored → locked button + badge, and
- *     activating it opens the upgrade prompt (CTA → /pricing).
- *
- * `usePremiumAccess` is mocked to drive each tier; `PremiumPrompt` is stubbed to
- * a marker so this test stays focused on the gating logic (and needs no router
- * context for the prompt's <Link>).
- */
-
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../../hooks/usePremiumAccess'
@@ -78,9 +64,7 @@ describe('PremiumFeatureGate', () => {
 
     const skeleton = screen.getByTestId('premium-gate-skeleton')
     expect(skeleton).toBeInTheDocument()
-    // The shared label is shown (settling content, not a blank box)...
     expect(skeleton).toHaveTextContent('Advanced Forecasting')
-    // ...but fail-closed: no unlocked children, no lock button, no upgrade prompt.
     expect(screen.queryByTestId('unlocked-link')).not.toBeInTheDocument()
     expect(screen.queryByTestId('premium-gate-locked')).not.toBeInTheDocument()
     expect(screen.queryByTestId('premium-prompt')).not.toBeInTheDocument()
@@ -147,15 +131,7 @@ describe('PremiumFeatureGate', () => {
   })
 })
 
-/**
- * Story 116.2 (FR184, A3): the locked control is named by what it SHOWS. It used
- * to carry `aria-label="<featureName> — premium, locked"`, which replaced its
- * content in the accessible name, so the visible description was never
- * announced and a voice-control user saying the visible title matched nothing
- * (axe `label-content-name-mismatch`).
- */
 describe('PremiumFeatureGate locked accessible name (story 116.2)', () => {
-  /** The name testing-library computes for `el` (handed to a `name` matcher). */
   function nameOf(el: HTMLElement): string {
     let name = ''
     screen.queryAllByRole('button', {
@@ -185,8 +161,7 @@ describe('PremiumFeatureGate locked accessible name (story 116.2)', () => {
   })
 
   it('takes its name from the visible content, not from `featureName` (AC-1, AC-5)', () => {
-    // A `featureName` that appears nowhere on screen: it must reach the dialog
-    // and NOT the button's name.
+    // Appears nowhere on screen, so it can only have reached the dialog.
     mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
     renderGate({ featureName: 'Dialog-only Name' })
     const locked = screen.getByTestId('premium-gate-locked')
@@ -202,7 +177,6 @@ describe('PremiumFeatureGate locked accessible name (story 116.2)', () => {
   it('the entitled and loading states carry no lock text (AC-3)', () => {
     mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
     const { unmount } = renderGate()
-    // Positive control first: the entitled branch rendered.
     expect(screen.getByTestId('unlocked-link')).toBeInTheDocument()
     expect(screen.queryByText(/locked/i)).toBeNull()
     expect(document.body.textContent).not.toMatch(/locked/i)

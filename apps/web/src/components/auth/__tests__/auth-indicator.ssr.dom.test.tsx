@@ -16,20 +16,8 @@ import {
 } from '../../../lib/session/verifiedSession'
 import { AuthIndicator } from '../auth-indicator'
 
-/**
- * The account cluster as the SERVER sends it (story 84.3, FR137).
- *
- * Replaces the e2e tests that loaded pages with JavaScript off
- * (`settings-route{,.paid}.spec.ts`) or read the raw response
- * (`account-menu.paid.spec.ts` › "the SSR seed paints the account trigger in
- * the first frame"). With JavaScript off, the chrome IS this HTML, so the
- * claim is that the route to `/settings` and the collapsed account trigger
- * are in it. How the server resolves the seed (the root loader) is the
- * server's half and is not claimed here.
- *
- * ⚠️ `router.load()` before `renderToString`, or the router emits an
- * unresolved Suspense boundary and every assertion passes on nothing.
- */
+// `router.load()` before `renderToString`, or the router emits an unresolved Suspense
+// boundary and every assertion passes on nothing.
 
 const SIGNED_OUT: SessionSeed = {
   isAuthenticated: false,
@@ -44,7 +32,7 @@ const ENTITLED: SessionSeed = {
   subscriptionStatus: 'active',
 }
 
-/** Renders differently on the server and the client: the designed-RED control. */
+/** Differs between server and client render: the designed-RED control. */
 let renderingOnClient = false
 function Mismatch() {
   return renderingOnClient ? <i>client</i> : <b>server</b>
@@ -101,10 +89,7 @@ describe('AuthIndicator — server HTML, signed out (story 69.2, JS off)', () =>
       expect(gear, `no server-rendered gear on ${path}`).toHaveLength(1)
       expect(gear[0]).toHaveAttribute('aria-label', 'Settings')
       expect(row.querySelector('[role="status"]')?.contains(gear[0] as Node)).toBe(false)
-      // Not wrapped in <noscript>: this is the live link, for every visitor.
       expect(gear[0]?.closest('noscript')).toBeNull()
-      // >= 640px only since story 96.3 (FR163): the nav's More sheet is the
-      // phone route, JS off included (`GlobalNav.ssr.dom.test.tsx`).
       expect([...(gear[0] as Element).classList]).toContain('max-sm:hidden')
     }
   )
@@ -128,19 +113,14 @@ describe('AuthIndicator — server HTML, signed in (stories 59.3, 69.3)', () => 
     const trigger = row.querySelector('button[aria-label="Account menu"]')
     expect(trigger, 'the trigger is not in the server HTML').not.toBeNull()
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
-    // No dangling IDREF while closed, and the panel is not rendered.
     expect(trigger).not.toHaveAttribute('aria-controls')
     expect(html).not.toContain('Sign out')
-    // The seeded identity is announced from the first frame.
     expect(row.querySelector('[role="status"]')?.textContent).toContain('e2e-paid@example.test')
   })
 
   /**
-   * React 19 renders `<noscript>` children on the SERVER only (measured at
-   * 69.3); a client render leaves it empty. So this server render is where the
-   * JS-off route lives. In a parsed DOM the `<noscript>` content is TEXT when
-   * scripting is enabled, so the check is on the HTML string, scoped to the
-   * `<noscript>` element.
+   * React 19 renders <noscript> children on the server only, and a parsed DOM holds them as
+   * text, so the check is on the HTML string.
    */
   it('serves a signed-in visitor’s JS-off Settings gear inside <noscript>', async () => {
     const { html } = await serverHtml(ENTITLED, '/income')
@@ -148,20 +128,13 @@ describe('AuthIndicator — server HTML, signed in (stories 59.3, 69.3)', () => 
     expect(noscripts, 'expected exactly one <noscript> in the cluster').toHaveLength(1)
     expect(noscripts[0]).toMatch(/<a [^>]*href="\/settings"/)
     expect(noscripts[0]).toMatch(/aria-label="Settings"/)
-    // Story 96.3 (FR163): >= 640px only, via the shared gear class. Token-
-    // bounded match on the anchor's class attribute (`max-sm:hidden`, never a
-    // bare substring hit inside another token).
+    // Token-bounded match on the anchor's class attribute, never a bare substring.
     const anchorClass = (noscripts[0] as string).match(/<a [^>]*class="([^"]*)"/)?.[1] ?? ''
     expect(anchorClass.split(/\s+/), 'the JS-off gear shows on a phone').toContain('max-sm:hidden')
-    // And no live /settings link outside it while the menu is closed.
     expect(html.replace(noscripts[0] as string, '')).not.toContain('href="/settings"')
   })
 })
 
-/**
- * Server-render the signed-in cluster, then hydrate it, collecting every
- * recoverable error and every console hydration report.
- */
 async function hydrateSignedIn(withMismatch: boolean) {
   renderingOnClient = false
   const container = document.createElement('div')
@@ -198,10 +171,8 @@ async function hydrateSignedIn(withMismatch: boolean) {
 
 describe('AuthIndicator — hydrating the signed-in cluster (story 69.3 review)', () => {
   /**
-   * ⚠️ DESIGNED RED (84.3 code review): the same harness, with one element
-   * that differs between server and client. Without it, "no recoverable
-   * error" below could mean this harness cannot see a mismatch at all (React 19
-   * tolerates extra nodes directly under the hydration root, MEASURED).
+   * Designed RED: React 19 tolerates extra nodes directly under the hydration root, so this
+   * proves the harness can see a mismatch at all.
    */
   it('reports a mismatch when the server and client trees differ (control)', async () => {
     const { recoverable, cleanup } = await hydrateSignedIn(true)
@@ -234,17 +205,8 @@ describe('AuthIndicator — hydrating the signed-in cluster (story 69.3 review)'
 })
 
 /**
- * `/login` hydrates cleanly with the strip's route-dependent branch (story
- * 41.3; moved below the browser by story 84.4, FR137, from
- * `e2e/hydration.spec.ts` › "/login hydrates cleanly now that the account
- * strip is route-dependent").
- *
- * On `/login` the signed-out strip renders NO "Sign in" link. That branch runs
- * on the server as well as the client, so both must agree about the route or
- * the subtree is discarded. Here the server render and the hydration each
- * read the location from their own router at `/login`, as the app's do.
- * Nested under a wrapper with a sibling, with a designed-RED control (84.3's
- * HIGH: a mismatch directly under the hydration root goes unreported).
+ * The /login branch runs on server and client, so both must agree on the route. Nested
+ * under a wrapper with a sibling: a mismatch directly under the root goes unreported.
  */
 async function hydrateSignedOutAt(path: string, withMismatch: boolean) {
   renderingOnClient = false
@@ -293,7 +255,6 @@ describe('AuthIndicator — hydrating the signed-out strip on /login (story 41.3
   it('hydrates with no mismatch and offers no "Sign in" link on /login', async () => {
     const { container, recoverable, cleanup } = await hydrateSignedOutAt('/login', false)
     try {
-      // Preconditions: the strip and its labelled region rendered.
       const row = container.querySelector('[data-auth-indicator]')
       expect(row, 'the account strip did not render').not.toBeNull()
       const region = row?.querySelector('[role="status"]')
@@ -324,10 +285,8 @@ describe('AuthIndicator — hydrating the signed-out strip on /login (story 41.3
 })
 
 /**
- * Story 99.1 (AC 5): the verified-session store is a module singleton. On the
- * server one instance serves EVERY request, so a write during a server render
- * would leak one user's tier into the next user's nav. `AuthIndicator` writes it
- * only from its post-mount effect, which `renderToString` never runs.
+ * The verified-session store is a module singleton: a write during a server render would
+ * leak one user's tier into the next request's nav.
  */
 describe('AuthIndicator — a server render never writes the verified session (story 99.1)', () => {
   afterEach(() => {

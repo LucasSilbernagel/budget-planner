@@ -1,16 +1,3 @@
-/**
- * Category-label resolution tests (story 30.4b, AC-3).
- *
- * AC-3's requirement is that a dangling `categoryId` degrades gracefully, and
- * that EACH of the three causes is covered — they arrive by different mechanisms
- * even though they must resolve identically, and a single "unknown id" test
- * would leave two of them unproven.
- *
- * ⚠️ Causes 1 and 2 are UNREACHABLE today (categories cannot reach the server at
- * all — see `deferred-work.md`), so they are proven here at the unit level by
- * reproducing the store state each cause produces, not end to end.
- */
-
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { type ClientCategory, useCategoryStore } from '../../stores/categoryStore'
@@ -41,9 +28,8 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  // Wrapped in `act` because this file's afterEach runs BEFORE testing-library's
-  // auto-cleanup, so hooks rendered by the test are still mounted and subscribed
-  // when the store is reset. Without it every test logs an act(...) warning.
+  // This afterEach runs before testing-library's auto-cleanup, so hooks are still mounted and
+  // subscribed; `act` avoids the warning.
   act(() => {
     useCategoryStore.setState({ categories: [] })
   })
@@ -99,11 +85,7 @@ describe('resolveCategoryLabel — the grouping key for the overview pies', () =
     expect(resolveCategoryLabel(null, 'Netflix', new Map())).toBe('Netflix')
   })
 
-  // ---- AC-3's three causes, each reproduced from the store state it produces --
-
   it('CAUSE 1 (pull pagination): an id this device has not received yet falls back', () => {
-    // The category landed in a later page than the row that references it, so
-    // the store simply has no such row.
     useCategoryStore.setState({ categories: [category({ id: 'cat-other', name: 'Rent' })] })
     const { result } = renderHook(() => useCategoryNameMap())
 
@@ -113,8 +95,7 @@ describe('resolveCategoryLabel — the grouping key for the overview pies', () =
   })
 
   it('CAUSE 2 (deleted on another device): a removed category falls back', () => {
-    // `applyServerChanges` REMOVES a tombstoned row outright rather than keeping
-    // the tombstone, so the local row is left pointing at nothing.
+    // `applyServerChanges` removes a tombstoned row outright, leaving the local row dangling.
     useCategoryStore.setState({ categories: [category({ id: 'cat-1', name: 'Groceries' })] })
     const { result, rerender } = renderHook(() => useCategoryNameMap())
     expect(resolveCategoryLabel('cat-1', 'Tesco run', result.current)).toBe('Groceries')
@@ -137,8 +118,7 @@ describe('resolveCategoryLabel — the grouping key for the overview pies', () =
   })
 
   it('never yields an empty label, which would render a blank slice and lose its colour', () => {
-    // Reachable without a bug here: `addCategory` rejects blank names, but a
-    // rehydrated or server-pulled row goes into the store unvalidated.
+    // `addCategory` rejects blank names, but rehydrated or pulled rows go in unvalidated.
     useCategoryStore.setState({ categories: [category({ id: 'cat-1', name: '   ' })] })
     const { result } = renderHook(() => useCategoryNameMap())
 
@@ -160,9 +140,6 @@ describe('resolveCategoryName — the table cell', () => {
 })
 
 describe('useCategoriesForActiveProfile (code review 30.4b)', () => {
-  // ⚠️ Reads must be scoped the way WRITES are: `isDuplicateName` scopes to the
-  // active profile, so two profiles each legitimately owning "Groceries" used to
-  // render as two indistinguishable rows and two identical picker options.
   const PROFILE_A = 'profile-a'
   const PROFILE_B = 'profile-b'
 
@@ -209,10 +186,7 @@ describe('useCategoriesForActiveProfile (code review 30.4b)', () => {
   })
 
   it('treats a NULL profileId as unscoped and shows it under every profile', () => {
-    // ⚠️ Load-bearing. `activeProfileId` defaults to DEFAULT_PROFILE.id and is
-    // essentially never null, so a strict `===` comparison would HIDE every
-    // null-profile category — and pulled rows carry the server's value verbatim.
-    // Hiding a user's categories is far worse than the duplicate list this fixes.
+    // `activeProfileId` is essentially never null, so a strict `===` would hide every null-profile category.
     act(() => {
       useProfileStore.setState({ activeProfileId: PROFILE_A })
       useCategoryStore.setState({
@@ -241,10 +215,6 @@ describe('useCategoriesForActiveProfile (code review 30.4b)', () => {
 
 describe('resolveCategoryLabel — the fallback is guarded too (code review 30.4b)', () => {
   it('falls back to a visible label when the row’s OWN name is blank', () => {
-    // The first version guarded the resolved name and returned `ownName` raw —
-    // one side of the same expression. A blank name reaches here through exactly
-    // the untrusted rehydration path the resolved-side guard exists for, and
-    // produces the `"expense:"` key, a blank slice and a lost colour.
     expect(resolveCategoryLabel(null, '   ', new Map())).toBe(UNNAMED_LABEL)
     expect(resolveCategoryLabel('missing', '', new Map())).toBe(UNNAMED_LABEL)
     expect(UNNAMED_LABEL.trim().length).toBeGreaterThan(0)

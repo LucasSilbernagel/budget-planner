@@ -13,46 +13,16 @@ import {
 } from './helpers/screenshot'
 import { seedFinanceRows } from './helpers/seed-finance-rows'
 
-/**
- * Screenshots of the key pages, FREE tier (story 84.1, FR137).
- *
- * These replace the layout-tagged measurement tests (story 84.2 deletes them): a
- * layout break at 320, 768 or 1280 px, or a dark surface left light, changes the
- * picture. The paid pages are in `nav.screenshot.paid.spec.ts`.
- *
- * ## ⚠️ Baselines are made in CI, never on a dev box
- *
- * CI resolves `system-ui` to DejaVu Sans, a dev box to Noto Sans, so a baseline
- * rendered locally fails in CI and the other way round. The committed PNGs in
- * `e2e/__screenshots__/` come ONLY from `.github/workflows/screenshots.yml`:
- *
- *   gh workflow run screenshots.yml --ref <branch> -f mode=update
- *   gh run download <run-id> -n screenshot-baselines -D apps/web/e2e/__screenshots__
- *
- * Re-run it after any deliberate visual change, a Playwright upgrade or a
- * runner image change, then look at every changed PNG before committing it.
- * `pnpm gates` does not run this project; CI's `ci.yml` e2e step runs it on
- * every PR to main and on every deploy (it has no plain push trigger).
- *
- * Determinism: fixed browser clock (the seed's own date; the footer's
- * server-rendered copyright year is MASKED instead, see `copyrightYear`), an
- * exact chart count before every shot (`chartsDrawn`),
- * `seedFinanceRows` (including its 138-character unbroken name, the fixture
- * the 320 px guards used), explicit light/dark via `emulateMedia`, and
- * `toHaveScreenshot`'s own wait for two identical frames, which is what lets
- * the Recharts JS animations settle (`animations: 'disabled'` only stops CSS).
- */
+// Baselines are made in CI only: CI renders system-ui as DejaVu Sans, a dev box as
+// Noto Sans. Regenerate them with the screenshots.yml workflow.
 
 interface Shot {
   name: string
   path: string
   width: number
-  /** Viewport height; 900 unless a shot is about a short screen. */
   height?: number
   dark?: boolean
-  /** How many Recharts charts the page draws (see `chartsDrawn`). */
   charts: number
-  /** `false` opens the page on EMPTY storage (the tallest-modal shot). */
   seed?: boolean
 }
 
@@ -66,16 +36,10 @@ const PAGE_SHOTS: Shot[] = [
   { name: 'income-1280-dark', path: '/income', width: 1280, dark: true, charts: 0 },
   { name: 'balance-768-light', path: '/balance', width: 768, charts: 0 },
   { name: 'balance-1280-light', path: '/balance', width: 1280, charts: 0 },
-  // Story 91.1 (D2): `/balance`'s row cards at 320, seeded. Its cells differ from
-  // Income's (Type badge, `CURRENT BALANCE/VALUE`, Contribution + cadence), and
-  // no shot showed them below `sm` (`modal-320x480` is `/balance` UNseeded).
   { name: 'balance-320-light', path: '/balance', width: 320, charts: 0 },
   { name: 'retirement-320-light', path: '/retirement', width: 320, charts: 1 },
   { name: 'retirement-1280-dark', path: '/retirement', width: 1280, dark: true, charts: 1 },
   { name: 'settings-320-light', path: '/settings', width: 320, charts: 0 },
-  // Story 88.4 (D3): the only width where /savings' `text-3xl` Total Savings
-  // figure overran its card (264 px vs 240 under CI's font) before it became a
-  // `GroupedAmount`. /savings draws no Recharts chart (none in `SavingsPage`).
   { name: 'savings-320-light', path: '/savings', width: 320, charts: 0 },
 ]
 
@@ -102,11 +66,6 @@ const FOOTER_LABELS = [
   'Contact',
 ]
 
-/**
- * Story 96.1 (FR156, D3 grid, D5 author link), in a real browser at 320px: the
- * six footer links are >= 44 x 44px cells of a two-column grid (three rows of
- * two, no two boxes overlapping), and the author link is >= 44px tall.
- */
 async function expectPhoneFooter(page: Page) {
   const footer = page.getByRole('contentinfo')
   const boxes: Box[] = []
@@ -142,9 +101,7 @@ for (const shot of PAGE_SHOTS) {
   test(shot.name, async ({ page }) => {
     await open(page, shot)
     if (shot.name === 'income-768-light') {
-      // Story 96.3: the header gear is hidden below 640px ONLY. At 768 it is
-      // the signed-out route to Settings (positive control for the `max-sm:`
-      // scope; the 320 shots assert it hidden).
+      // The header gear is hidden below 640px only; this is the positive control.
       await expect(page.locator('[data-auth-indicator] a[href="/settings"]')).toBeVisible()
     }
     if (shot.name === 'income-320-light') await expectPhoneFooter(page)
@@ -158,70 +115,49 @@ for (const shot of PAGE_SHOTS) {
 
 test('nav-more-sheet-320-light', async ({ page }) => {
   await open(page, { path: '/', width: 320, charts: 4 })
-  // Story 96.3 (FR163), in a real browser (jsdom sees every route at once):
-  // below 640px the header gear is hidden... `toHaveCount(1)` first: a
-  // `toBeHidden()` on a locator that matches NOTHING passes, so without it a
-  // deleted gear would read as a hidden one (story 96.3 review, measured).
+  // toHaveCount(1) first: toBeHidden() passes on a locator matching nothing.
   const gear = page.locator('[data-auth-indicator] a[href="/settings"]')
   await expect(gear).toHaveCount(1)
   await expect(gear).toBeHidden()
-  // ...positive control that the signed-out cluster rendered at all.
+  // Positive control: the signed-out cluster rendered at all.
   await expect(page.getByRole('link', { name: 'Sign in', exact: true })).toBeVisible()
-  // Story 96.1 (FR156, D1 + D2), real-browser sizes: Upgrade and Sign in are
-  // 44 x 44px targets, the strip is exactly 45px, nothing scrolls sideways,
-  // and the bottom bar's five visible cells are >= 44 x 44px.
   await expectTarget(page.getByRole('link', { name: 'Upgrade', exact: true }), 'Upgrade')
   await expectTarget(page.getByRole('link', { name: 'Sign in', exact: true }), 'Sign in')
   await expectPhoneStrip(page, 320)
   await expectBarCells(page, 5)
   await openMore(page)
-  // ...and the open sheet's LAST row is Settings, visible.
   const rows = page.locator('nav[aria-label="Primary"] details ul').getByRole('link')
   await expect(rows).toHaveCount(3)
-  // Story 96.1: every sheet row is a >= 44 x 44px target.
   for (let i = 0; i < 3; i++) await expectTarget(rows.nth(i), `sheet row ${i + 1}`)
   await expect(rows.last()).toHaveAccessibleName('Settings')
   await expect(rows.last()).toBeVisible()
-  // On SCREEN, not just rendered: `toBeVisible()` ignores clipping by the
-  // sheet's `max-h` scroll box (story 96.3 review, measured).
+  // `toBeVisible()` ignores clipping by the sheet's max-h scroll box.
   await expect(rows.last()).toBeInViewport({ ratio: 1 })
-  // Viewport, not full page (unlike D1's other shots): the sheet is a fixed
-  // overlay, and what matters is how it sits over the first screen.
+  // Viewport, not full page: the sheet is a fixed overlay.
   await expect(page).toHaveScreenshot('nav-more-sheet-320-light.png', {
     mask: await copyrightYear(page),
     timeout: SHOT_TIMEOUT,
   })
 })
 
-/** Short and fixed, so the avatar initial never moves (as in the paid spec). */
+/** Short and fixed, so the avatar initial never moves. */
 const SIGNED_IN_EMAIL = 'free@example.test'
 
 test('account-menu-320-open', async ({ page }) => {
-  // ⚠️ This server's SSR seed is signed OUT: without the mock (and the gate on
-  // the mocked identity) the "menu" would be the Sign in / Upgrade cluster.
+  // This server's SSR seed is signed out, so mock a signed-in session.
   await mockSignedIn(page, { email: SIGNED_IN_EMAIL, subscriptionStatus: 'free' })
   await open(page, { path: '/', width: 320, height: 640, charts: 4 })
   await expectSignedInAs(page, SIGNED_IN_EMAIL)
-  // Story 96.1 (FR156): signed in free, the trigger is a 44 x 44px target and
-  // the strip is exactly 45px, measured before opening.
   await expectTarget(accountTrigger(page), 'Account menu trigger')
   await expectPhoneStrip(page, 320)
   const panel = await openAccountMenu(page)
-  // The OPEN state, asserted: a shot of the closed menu would be a vacuous
-  // baseline. Sign out visible is the positive control that it is open.
+  // A shot of the closed menu would be a vacuous baseline; Sign out proves it's open.
   await expect(panel.getByRole('button', { name: 'Sign out' })).toBeVisible()
-  // Story 96.1: Sign out, the one visible panel row on a phone, is >= 44px
-  // tall (full width, so the height is the claim).
   await expectTarget(panel.getByRole('button', { name: 'Sign out' }), 'Sign out', {
     sides: 'height',
   })
-  // Story 96.3 (FR163): below 640px the panel's Settings row and its separator
-  // are hidden (the nav's More sheet is the phone route). Until 96.3 this
-  // asserted the Settings row VISIBLE here.
-  // CSS locators with `toHaveCount(1)` first, not `getByRole`: a role query
-  // already skips a `display:none` element, and `toBeHidden()` passes on zero
-  // matches, so the old form stayed green with the row and `<hr>` DELETED
-  // (story 96.3 review, measured).
+  // CSS locators with toHaveCount(1) first: a role query already skips display:none,
+  // and toBeHidden() passes on zero matches.
   const panelSettings = panel.locator('a[href="/settings"]')
   await expect(panelSettings).toHaveCount(1)
   await expect(panelSettings).toBeHidden()
@@ -236,16 +172,14 @@ test('account-menu-320-open', async ({ page }) => {
 })
 
 /**
- * Open `/balance`'s Add form (from the deleted `responsive-320.spec.ts`, story
- * 31.3). Checks BEFORE clicking: a retry after a first click that did open the
- * dialog would click a trigger now covered by the overlay.
+ * Checks before clicking: a retry after a click that did open the dialog would click
+ * a trigger now covered by the overlay.
  */
 async function openBalanceAddModal(page: Page): Promise<Locator> {
   const trigger = page.getByTestId('balance-add-button')
   const dialog = page.getByRole('dialog', { name: 'Add Balance Entry' })
   await expect(async () => {
-    // A bounded click: a trigger under the backdrop (the dialog opened between
-    // the check and the click) fails THIS attempt, not the whole test (review).
+    // Bounded: a trigger under the backdrop fails this attempt, not the whole test.
     if (!(await dialog.isVisible())) await trigger.click({ timeout: 1000 })
     await expect(dialog).toBeVisible({ timeout: 1000 })
   }).toPass({ timeout: SHOT_TIMEOUT })
@@ -253,14 +187,12 @@ async function openBalanceAddModal(page: Page): Promise<Locator> {
 }
 
 test('modal-320x480', async ({ page }) => {
-  // The tallest modal in the app: `/balance`'s Add form on EMPTY storage, where
-  // the type defaults to `investment`, the arm that shows every field (31.3's
-  // guard ran unseeded too). Asserted below, so a new default type fails here.
+  // The tallest modal: on empty storage the type defaults to `investment`, the arm
+  // that shows every field.
   await open(page, { path: '/balance', width: 320, height: 480, charts: 0, seed: false })
   const dialog = await openBalanceAddModal(page)
   await expect(dialog.getByLabel(/type/i)).toHaveValue('investment')
-  // The investment-ONLY control (`BalancePage.tsx`, `type === 'investment'`):
-  // a form that lost its tallest arm fails here with a name, not as a pixel diff.
+  // A form that lost its tallest arm fails here with a name, not as a pixel diff.
   await expect(
     dialog.getByRole('checkbox', { name: 'Not taken from the money left over' })
   ).toBeVisible()

@@ -1,21 +1,3 @@
-/**
- * Structured, PII-safe logger (story 5-5, AC-2)
- *
- * A thin, dependency-free structured logger that replaces ad-hoc `console.*` on
- * the server paths (auth, sync, webhooks, server functions). Two hard rules:
- *
- *  1. Output is structured (level / time / msg / context) so it is queryable in
- *     the platform log stream, and routed to the matching `console` method so
- *     the runtime maps log levels correctly.
- *  2. It NEVER emits PII, financial values, secrets, or session material. The
- *     `redact()` pass strips them by key name AND scrubs emails / bearer tokens
- *     embedded in free-text strings. This mirrors the no-tracking, EU-sovereign
- *     privacy posture (NFR1/NFR2) — scrubbing is a tested deliverable, not a
- *     default. `redact()` is exported so the error tracker reuses the same pass.
- *
- * No JWT/heavy logging dep, by the same lean ethos as session.ts.
- */
-
 import { getConfig } from '@budget-planner/config'
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
@@ -32,20 +14,8 @@ const REDACTED = '[REDACTED]'
 const MAX_DEPTH = 6
 
 /**
- * Keys whose VALUES must never be logged. Covers secrets/PII (email, tokens,
- * cookies, auth, secrets, DSNs, DATABASE_URL, session material) and financial
- * values (the app's crown jewels). Non-PII identifiers like `userId` are NOT
- * matched and survive — exactly the AC-2 contract (userId UUID OK, email not).
- *
- * Matching runs against the NORMALIZED key (camelCase/snake/kebab split into
- * space-separated words — see `normalizeKey`), so `\b`-anchored single words
- * (`card`, `ip`, `price`, `ssn`, `dsn`) catch compound forms like `cardNumber`
- * / `clientIp` / `unitPrice` while still NOT over-matching `recipient`/`script`.
- *
- * NOTE (documented limitation — see deferred-work.md): financial *values* are
- * protected by key NAME only. A numeric money value logged under a generic key
- * (`{ value: 4200 }`) is NOT redacted. Contract: name money-carrying keys with a
- * financial token (amount/balance/total/price/…).
+ * Matched against the normalized key, so `\b` words catch `cardNumber`/`clientIp` but not `recipient`.
+ * Money is redacted by key name only: name money-carrying keys with a financial token.
  */
 const REDACT_KEY_PATTERNS: RegExp[] = [
   /pass(word|phrase)?/i,
@@ -60,11 +30,9 @@ const REDACT_KEY_PATTERNS: RegExp[] = [
   /email/i,
   /\bssn\b/i,
   /\bcard\b/i,
-  // network identifiers that are personal data under GDPR
   /ip[\s_-]?address/i,
   /\bip\b/i,
   /user[\s_-]?agent/i,
-  // financial values
   /amount/i,
   /balance/i,
   /income/i,
@@ -79,7 +47,6 @@ const REDACT_KEY_PATTERNS: RegExp[] = [
 ]
 
 const EMAIL_RE = /[^\s@]+@[^\s@]+\.[^\s@]+/g
-// Bearer token — broadened to standard base64 chars (+ / =), not just base64url.
 const BEARER_RE = /\bBearer\s+[\w.\-+/=]+/gi
 // userinfo credentials embedded in a connection string / URL: scheme://user:pass@host
 const URL_CREDENTIALS_RE = /\/\/[^/\s:@]+:[^/\s:@]+@/g
@@ -89,7 +56,6 @@ const SECRET_PARAM_RE =
 // standalone JWT-shaped strings (header.payload.signature)
 const JWT_RE = /\beyJ[\w-]+\.[\w-]+\.[\w-]+/g
 
-/** Split camelCase / snake / kebab keys into lowercased space-separated words. */
 function normalizeKey(key: string): string {
   return key
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
@@ -111,12 +77,6 @@ function scrubString(value: string): string {
     .replace(BEARER_RE, `Bearer ${REDACTED}`)
 }
 
-/**
- * Deep-scrub an arbitrary value for safe logging/telemetry. Redacts the values
- * of sensitive keys, scrubs PII patterns out of strings, normalizes Errors to
- * `{ name, message }` (scrubbed), and caps depth so malformed/deeply-nested
- * input can never throw or run away.
- */
 export function redact(value: unknown, depth = 0): unknown {
   if (depth > MAX_DEPTH) return '[TRUNCATED]'
   if (value === null || value === undefined) return value
@@ -126,9 +86,8 @@ export function redact(value: unknown, depth = 0): unknown {
   if (value instanceof Error) {
     return { name: value.name, message: scrubString(value.message) }
   }
-  // Non-plain objects that Object.entries would silently mangle:
   if (value instanceof Date) return value.toISOString()
-  if (ArrayBuffer.isView(value)) return '[BINARY]' // Buffer / typed arrays / DataView
+  if (ArrayBuffer.isView(value)) return '[BINARY]'
   if (value instanceof Map) return redact(Object.fromEntries(value), depth + 1)
   if (value instanceof Set) return redact([...value], depth + 1)
   if (Array.isArray(value)) return value.map((item) => redact(item, depth + 1))
@@ -139,14 +98,9 @@ export function redact(value: unknown, depth = 0): unknown {
     }
     return out
   }
-  // functions, symbols, etc. are dropped from telemetry
   return undefined
 }
 
-/**
- * Minimum level to emit. Lean in production (info+), verbose in dev/test (debug+).
- * Config load is guarded so logging never crashes if env is unavailable.
- */
 function minLevel(): number {
   let nodeEnv = 'development'
   try {

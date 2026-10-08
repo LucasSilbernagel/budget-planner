@@ -1,20 +1,3 @@
-/**
- * Clearing local data clears the LIVE sync queue too (story 86.1, FR139).
- *
- * `purgeLocalFinancialData` used to clear `bp-sync-queue-<userId>` through a
- * FRESH `createSyncQueue(userId)`: storage was emptied, but the running sync
- * service kept its own in-memory queue, and every queue write is a whole-queue
- * write from memory. So the service's next write (a new edit, an in-flight push
- * finishing) put the purged ops back in storage.
- *
- * Everything here is real except the network: the real `useSync` hook, the
- * real core service and queue on jsdom storage, the real purge and the real
- * stores. A push is HELD on a deferred promise so the purge can land while it
- * is in flight (the story 79.1 teardown harness). Each test anchors on a
- * request that really went out, or on the op really being queued, before it
- * asserts that something did not happen.
- */
-
 import { render, renderHook, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -48,13 +31,11 @@ const REFUSED = { success: false, retryable: false, statusCode: 422, error: 'ref
 const RETRYABLE = { success: false, retryable: true, error: 'server busy' }
 const INCOME = { userId: USER, name: 'Side gig', amount: 1000, frequency: 'monthly' }
 
-/** Entity ids of the ops persisted under this user's queue key, in order. */
 function queuedIds(): string[] {
   const raw = localStorage.getItem(QUEUE_KEY)
   return raw ? (JSON.parse(raw) as { entityId: string }[]).map((op) => op.entityId) : []
 }
 
-/** Hold the next push on a deferred promise; returns its release. */
 function holdNextPush(): (value: unknown) => void {
   let release: (value: unknown) => void = () => {}
   send.mockImplementationOnce(
@@ -104,7 +85,6 @@ describe('purgeLocalFinancialData with a live sync service (story 86.1)', () => 
   it('a new edit after the purge does not write the purged ops back (AC 1 i)', async () => {
     const sync = mountSync()
     await sync.result.current.queueCreate('incomeSource', ROW_A, INCOME)
-    // Positive anchor: the op really is in the live queue AND in storage.
     expect(queuedIds()).toEqual([ROW_A])
 
     await purgeLocalFinancialData(USER)
@@ -119,9 +99,7 @@ describe('purgeLocalFinancialData with a live sync service (story 86.1)', () => 
     const sync = mountSync()
     await sync.result.current.queueCreate('incomeSource', ROW_A, INCOME)
     const inFlight = sync.result.current.forceSync()
-    // Positive anchor: the push really went out before the purge.
     await waitFor(() => expect(send).toHaveBeenCalledTimes(1))
-    // Queued while the push is held, so it is NOT part of the batch being sent.
     await sync.result.current.queueCreate('incomeSource', ROW_B, { ...INCOME, name: 'New' })
     expect(queuedIds()).toEqual([ROW_A, ROW_B])
 
@@ -144,11 +122,9 @@ describe('purgeLocalFinancialData with a live sync service (story 86.1)', () => 
     await purgeLocalFinancialData(USER)
     release(REFUSED)
     await inFlight
-    // Let any revert the refusal would trigger run before asserting it did not.
     await new Promise((resolve) => setTimeout(resolve, 50))
 
     expect(getRefusalNotices()).toEqual([])
-    // A refused UPDATE reverts through a full re-pull: none may be requested.
     expect(fetchMeta).not.toHaveBeenCalled()
     expect(useIncomeStore.getState().incomeSources).toEqual([])
     expect(queuedIds()).toEqual([])
@@ -160,7 +136,6 @@ describe('purgeLocalFinancialData with a live sync service (story 86.1)', () => 
     await sync.result.current.queueCreate('incomeSource', ROW_A, INCOME)
     send.mockResolvedValueOnce(RETRYABLE)
     await sync.result.current.forceSync()
-    // Positive anchor (code review P-2): the op is pending AND counted as failed.
     await waitFor(() => expect(sync.result.current.pendingCount).toBe(1))
     expect(sync.result.current.failedCount).toBe(1)
     send.mockClear()
@@ -169,7 +144,6 @@ describe('purgeLocalFinancialData with a live sync service (story 86.1)', () => 
     await waitFor(() => expect(sync.result.current.pendingCount).toBe(0))
     expect(sync.result.current.failedCount).toBe(0)
 
-    // Positive control: the service still works after the clear.
     await sync.result.current.queueCreate('incomeSource', ROW_B, { ...INCOME, name: 'New' })
     await sync.result.current.forceSync()
     expect(send.mock.calls.map(([op]) => (op as { entityId: string }).entityId)).toEqual([ROW_B])
@@ -187,7 +161,6 @@ describe('purgeLocalFinancialData with a live sync service (story 86.1)', () => 
     await purgeLocalFinancialData(OTHER)
 
     expect(localStorage.getItem(otherKey)).toBeNull()
-    // The live queue belongs to USER, not OTHER: its op is untouched.
     await sync.result.current.queueCreate('incomeSource', ROW_B, { ...INCOME, name: 'New' })
     expect(queuedIds()).toEqual([ROW_A, ROW_B])
     sync.unmount()
@@ -227,11 +200,9 @@ describe('account deletion with a live sync service (story 86.1, AC 2)', () => {
     render(<AccountSection />)
     await user.click(await screen.findByRole('button', { name: /^delete account$/i }))
     await user.click(await screen.findByTestId('delete-confirm-confirm'))
-    // Positive anchor: the deletion ran all the way to the exit navigation.
     await waitFor(() => expect(assign).toHaveBeenCalledWith('/'))
 
-    // jsdom does not unload: the live service can still write, as a real
-    // browser's can between the purge and the document load.
+    // jsdom does not unload: the live service can still write, as a real browser's can.
     await sync.result.current.queueCreate('incomeSource', ROW_B, { ...INCOME, name: 'New' })
 
     expect(queuedIds()).toEqual([ROW_B])

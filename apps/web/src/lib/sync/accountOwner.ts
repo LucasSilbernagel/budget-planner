@@ -1,46 +1,14 @@
 /**
- * Whose is a local row? (story 86.2, FR140)
- *
- * Every persisted store is shared by whoever uses the browser: signing out
- * resets none of them (`lib/account/sign-out.ts`). So when account B signs in
- * where account A synced before, the stores still hold A's profiles and rows,
- * and each one says whose it is in its `userId`:
- *
- *  - a row a PULL wrote carries its owner's server uuid (A's or B's);
- *  - a row never synced carries a PLACEHOLDER: `0` (financial rows, "free
- *    tier"), `''` (the bootstrap profile, `profileStore` `DEFAULT_PROFILE`),
- *    `'temp-user'` (a profile made on the Profiles page, `create-profile.tsx`)
- *    or nothing at all.
- *
- * A placeholder row is adoptable by whoever signs in (5-15 AC-2: free → paid
- * loses nothing). A row carrying a real id that is not the session's belongs to
- * another account and must never be uploaded into, shown in, or made active in
- * this one.
- *
- * A row this session PUSHES is stamped with the session's id as soon as the
- * server accepts it (story 86.3, `stampSyncedOwner` in `applyServerChanges.ts`),
- * not only by the next pull, so another account never sees it as a placeholder.
- *
- * ⚠️ The limit (86.2 D4, narrowed by 86.3): a row of A's still carries a
- * placeholder when it was never pushed (offline, bridge not registered, kept
- * queued) or when the server committed its push but this device never processed
- * the response (sign-out or teardown mid-request, a dropped connection). Such a
- * row is indistinguishable from a free-tier row, and so is a profile made on the
- * Profiles page (`'temp-user'`) in that state. That residual is recorded in
- * deferred-work.md, not fixed here.
- *
- * Imports nothing, so any module (stores included) may use it.
+ * Never-synced rows carry a placeholder owner and are adoptable by whoever signs in; a real id that isn't
+ * the session's belongs to another account. Imports nothing, so stores may use it.
  */
 
-/** The `userId` values a never-synced row carries, as strings. */
 const PLACEHOLDER_OWNERS: ReadonlySet<string> = new Set(['', '0', 'temp-user'])
 
-/** Whether `userId` is a never-synced placeholder (or absent): no account's yet. */
 export function isPlaceholderOwner(userId: unknown): boolean {
   return PLACEHOLDER_OWNERS.has(String(userId ?? ''))
 }
 
-/** Whether `userId` names a real account other than `sessionUserId`. */
 export function isOwnedByAnotherAccount(userId: unknown, sessionUserId: string): boolean {
   return !isPlaceholderOwner(userId) && String(userId) !== sessionUserId
 }

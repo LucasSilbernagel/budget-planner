@@ -15,18 +15,8 @@ import { useIncomeStore } from '../../stores/incomeStore'
 import { useProfileStore } from '../../stores/profileStore'
 import { Route } from '../forecasting'
 
-/**
- * A saved forecast is compared against TODAY (story 107.1, FR175, D2 + Q1).
- *
- * Its stored `result.baseline` was computed the old way (from the scenario's own
- * rows), so the page never shows it: My Forecasts' "vs. today" line and a
- * reopened forecast's Projections both use today's data projected flat over the
- * forecast's years. The stored baseline here is a deliberate marker (net worth 1
- * every year), so any figure derived from it reads wrong at once.
- *
- * Real page, builder, engine and stores; only the network, premium access and
- * `ResponsiveContainer` (0×0 in jsdom) are replaced.
- */
+// The stored baseline is a deliberate marker (net worth 1 every year), so any figure
+// derived from it reads wrong at once.
 
 vi.mock('recharts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('recharts')>()
@@ -37,8 +27,7 @@ vi.mock('recharts', async (importOriginal) => {
   }
 })
 
-// Holds the fresh-device "first pull still in flight" window open (AC-6), so a
-// forecast can be reopened before today's data is ready (code review 107.1).
+// Holds the first-pull window open so a forecast can be reopened before today's data is ready.
 const syncPending = vi.hoisted(() => ({ value: false }))
 vi.mock('../../hooks/useIsInitialSyncPending', () => ({
   useIsInitialSyncPending: () => syncPending.value,
@@ -63,12 +52,10 @@ const ForecastingPage = Route.options.component as () => React.ReactElement
 const ISO = '2026-09-28T00:00:00.000Z'
 const PROFILE = 'profile-test'
 const YEARS = 10
-/** The stored projection's ending net worth: 500,000.00. */
 const STORED_ENDING = 50_000_000
 
 const FLAT = { name: 'Today', incomeGrowthRate: 0, expenseGrowthRate: 0, oneTimeEvents: [] }
 
-/** Today: 6,000.00 a month in, 3,000.00 out, nothing saved or invested. */
 function seedToday(): void {
   useIncomeStore.setState({
     incomeSources: [
@@ -102,7 +89,6 @@ function seedToday(): void {
   })
 }
 
-/** Today's baseline ending, from the engine directly (the oracle). */
 function todayEnding(): number {
   const result = calculateFinancialForecast(
     {
@@ -127,7 +113,6 @@ function savedRow(inputs: Record<string, unknown> = {}): Record<string, unknown>
   const scenario = { name: 'Big plan', incomeGrowthRate: 0, expenseGrowthRate: 0 }
   const result: ForecastingResult = {
     scenario,
-    // The marker: never a figure the page may show.
     baseline: Array.from({ length: YEARS }, (_, i) => row(i + 1, 1)),
     projection: Array.from({ length: YEARS }, (_, i) =>
       row(i + 1, Math.round((STORED_ENDING * (i + 1)) / YEARS))
@@ -189,7 +174,6 @@ describe('a saved forecast is compared against today (story 107.1)', () => {
     renderWithRouter(<ForecastingPage />)
     fireEvent.click(await screen.findByRole('tab', { name: /my forecasts/i }))
     const format = formatter()
-    // Positive control: the row and its stored ending rendered.
     const ending = await screen.findByText(format(STORED_ENDING))
     const cell = ending.closest('td') as HTMLElement
     const expected = STORED_ENDING - todayEnding()
@@ -201,11 +185,9 @@ describe('a saved forecast is compared against today (story 107.1)', () => {
     renderWithRouter(<ForecastingPage />)
     fireEvent.click(await screen.findByRole('tab', { name: /my forecasts/i }))
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Big plan' }))
-    // Straight to Projections, inside the builder's 500 ms debounce: this is the
-    // page's own lifted result, the one that used to carry the stored baseline.
+    // Inside the builder's 500 ms debounce: this is the page's own lifted result.
     fireEvent.click(screen.getByRole('tab', { name: /projections/i }))
-    // Read SYNCHRONOUSLY, no waitFor: no timer can fire between the click and
-    // this line, so the 500 ms recompute cannot have replaced the page's result.
+    // Read synchronously: no timer can fire before this line, so the recompute has not replaced the result.
     // The builder stays mounted, CSS-hidden, with its own card: take the visible one.
     expect(screen.getAllByText('vs. today', { selector: 'dt' })).toHaveLength(2)
     const card = screen
@@ -215,18 +197,12 @@ describe('a saved forecast is compared against today (story 107.1)', () => {
     expect(card.nextElementSibling?.textContent).toBe(`+${format(STORED_ENDING - todayEnding())}`)
   })
 
-  // Story 116.1 (FR184, A5): both summaries (the builder's "Forecast Summary" and
-  // the Projections cards) are real description lists. Lighthouse flagged the
-  // builder's `<dt>`/`<dd>` for sitting outside a `<dl>` (axe `dlitem`); the
-  // Projections cards had the same bug plus a `<p>` change line beside the
-  // `<dd>`, which axe's `definition-list` rule rejects inside a `<dl>` group.
   it('both summaries are description lists: every term in a <dl>, groups hold only <dt>/<dd> (story 116.1)', async () => {
     renderWithRouter(<ForecastingPage />)
     fireEvent.click(await screen.findByRole('tab', { name: /my forecasts/i }))
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Big plan' }))
     fireEvent.click(screen.getByRole('tab', { name: /projections/i }))
 
-    // Positive control: both summaries rendered (builder, CSS-hidden, + Projections).
     const lists = Array.from(document.querySelectorAll('dl')).filter((dl) =>
       dl.textContent?.includes('Starting Net Worth')
     )
@@ -239,12 +215,10 @@ describe('a saved forecast is compared against today (story 107.1)', () => {
         expect(Array.from(group.children).map((child) => child.tagName)).toEqual(['DT', 'DD'])
       }
     }
-    // No term anywhere on the page sits outside a `<dl>` (the `dlitem` rule).
     const terms = Array.from(document.querySelectorAll('dt'))
     expect(terms.length).toBeGreaterThanOrEqual(10)
     expect(terms.filter((dt) => dt.closest('dl') === null)).toHaveLength(0)
 
-    // The Projections "Ending Net Worth" change line is still there, now in its `<dd>`.
     const ending = screen
       .getAllByText('Ending Net Worth', { selector: 'dt' })
       .find((dt) => dt.closest('.hidden') === null) as HTMLElement
@@ -253,9 +227,7 @@ describe('a saved forecast is compared against today (story 107.1)', () => {
   })
 
   it("a forecast reopened before today's data is ready shows on Projections once it is, even if it never recomputes (code review 107.1)", async () => {
-    // A saved rate outside -100%..100% is flagged on load, so the builder never
-    // recomputes until it is fixed (100.3 D9): only the "fill today's baseline"
-    // step can put this forecast on Projections.
+    // A saved rate outside -100%..100% blocks recompute, so only the baseline fill can reach Projections.
     fetchForecasts.mockResolvedValue({
       success: true,
       data: [
@@ -282,7 +254,6 @@ describe('a saved forecast is compared against today (story 107.1)', () => {
       screen.getByText('Build a scenario in the Scenario Builder to see its projection here.')
     ).toBeInTheDocument()
 
-    // The first pull lands: today's data is ready (a store write re-renders).
     syncPending.value = false
     act(() => seedToday())
     const format = formatter()

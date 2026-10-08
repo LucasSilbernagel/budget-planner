@@ -1,13 +1,3 @@
-/**
- * Tests for applyServerChangesToStores — uuid reconciliation (Story 5-14).
- *
- * The headline guarantee (AC-4): a row created on Device A with a client uuid,
- * then pulled on Device B, yields EXACTLY ONE row keyed by that shared uuid — no
- * duplicate. This is the whole reason entity PKs became client-generatable uuids:
- * the old serial-int PKs meant a pulled server row could never be matched to the
- * locally-created row, so it duplicated.
- */
-
 import type { ServerChange } from '@budget-planner/core/sync'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useBalanceStore } from '../../../stores/balanceStore'
@@ -26,24 +16,7 @@ import { applyServerChangesToStores, findLocalRow, stampSyncedOwner } from '../a
 const UUID_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const UUID_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 
-/**
- * ⚠️ The uuid the SERVER sends (story 66.2).
- *
- * The `ServerChange.data` fixtures below used to carry a `userId` that could
- * never have been on the wire: `0` on the income fixture, the string `'u-1'` on
- * `profileChange` and both Story-54.2 fixtures. (The story's header first said
- * "every fixture carried `userId: 0`"; its code review corrected that — two
- * different wrong shapes, not one.) `0` is the CLIENT STORE's type for the free
- * tier — `incomeSources.userId` is
- * `uuid(...).notNull()` and `getSyncChanges` emits `data: row` verbatim, so a
- * number was never on the wire. The fixtures were wrong about production, and
- * `tsconfig.app.json` excludes test files from the type-check, so no compiler
- * could ever have said so. Story 66.2's pull-path guard is what surfaced it.
- *
- * ⚠️ The `useXStore.setState(...)` fixtures further down still use `userId: 0`
- * ON PURPOSE: those are LOCAL rows the applier never validates, and 0 is the
- * correct client-store shape for them.
- */
+/** Server-shaped uuid; local store fixtures below use `userId: 0`, the client free-tier shape. */
 const SERVER_USER_ID = '11111111-1111-4111-8111-111111111111'
 
 function incomeChange(overrides: Partial<ServerChange> = {}): ServerChange {
@@ -72,8 +45,6 @@ describe('applyServerChangesToStores — uuid reconciliation (Story 5-14)', () =
   })
 
   it('AC-4: a client-created row pulled back yields exactly ONE row (no duplicate)', () => {
-    // Device A created this row locally with a client uuid, pushed it, and now the
-    // server pull returns the SAME uuid back (e.g. on Device B, or a re-pull on A).
     useIncomeStore.setState({
       incomeSources: [
         {
@@ -95,9 +66,7 @@ describe('applyServerChangesToStores — uuid reconciliation (Story 5-14)', () =
     )
 
     const rows = useIncomeStore.getState().incomeSources.filter((s) => s.id === UUID_A)
-    // Exactly one row — the server row REPLACED the local one (not appended).
     expect(rows).toHaveLength(1)
-    // And it is keyed by the shared uuid, carrying the authoritative server data.
     expect(rows[0].name).toBe('Salary (server)')
     expect(useIncomeStore.getState().incomeSources).toHaveLength(1)
   })
@@ -136,13 +105,10 @@ describe('applyServerChangesToStores — uuid reconciliation (Story 5-14)', () =
 
   it('P3: skips a change with a missing/empty entityId instead of inserting an orphan', () => {
     applyServerChangesToStores([incomeChange({ entityId: '' })], SERVER_USER_ID)
-    // No `{ id: '' }` orphan written — the store stays empty.
     expect(useIncomeStore.getState().incomeSources).toHaveLength(0)
   })
 
   it('reconciles each entity type by uuid into its own store/collection', () => {
-    // savingsGoal maps to a different store + collection ('savingsGoals'); prove the
-    // generic binding writes there too.
     applyServerChangesToStores(
       [
         {
@@ -154,7 +120,6 @@ describe('applyServerChangesToStores — uuid reconciliation (Story 5-14)', () =
             name: 'Emergency fund',
             targetAmount: 1000000,
             currentBalance: 250000,
-            // NOT NULL column; a pulled row always carries it (code review 66.2).
             allocationMode: 'automatic',
             createdAt: '2026-06-28T00:00:00.000Z',
             updatedAt: '2026-06-28T00:00:00.000Z',
@@ -194,8 +159,6 @@ function profileChange(id: string, isDefault: boolean, name: string): ServerChan
 describe('applyServerChangesToStores — active-profile reconciliation (Story 5-15)', () => {
   beforeEach(() => {
     useIncomeStore.setState({ incomeSources: [] })
-    // Start from the client default: a locally-generated profile id that does NOT
-    // exist server-side (the bootstrap gap 5-15 closes).
     useProfileStore.setState({
       profiles: [
         {
@@ -219,8 +182,6 @@ describe('applyServerChangesToStores — active-profile reconciliation (Story 5-
       SERVER_USER_ID
     )
 
-    // The locally-generated active id was not among the pulled profiles, so it is
-    // repointed to the server's default profile — not just the first one.
     expect(useProfileStore.getState().activeProfileId).toBe(SERVER_PROFILE_DEFAULT)
   })
 
@@ -245,8 +206,6 @@ describe('applyServerChangesToStores — active-profile reconciliation (Story 5-
 
     applyServerChangesToStores([profileChange(SERVER_PROFILE_OTHER, false, 'Side')], SERVER_USER_ID)
 
-    // The user's selection is still valid (it is in the set), so it is preserved
-    // even though another profile arrived.
     expect(useProfileStore.getState().activeProfileId).toBe(SERVER_PROFILE_DEFAULT)
   })
 
@@ -255,26 +214,11 @@ describe('applyServerChangesToStores — active-profile reconciliation (Story 5-
     expect(useProfileStore.getState().activeProfileId).toBe('local-default')
   })
 
-  /**
-   * Story 63.2 (AC-9): the SECOND device, after a default was deleted elsewhere.
-   *
-   * ⚠️ This is the consumer that story 63.2 could break without any local test
-   * noticing. `reconcileActiveProfile` resolves with
-   * `active ?? find(p => p.isDefault) ?? realProfiles[0]` — a fallback that
-   * yields the WRONG profile rather than an error, so an account left with zero
-   * defaults lands the user on whichever profile happens to be first. That is
-   * silent, and it is why the deleting device must queue the promotion rather
-   * than write the flag locally.
-   *
-   * The device here has a stale active id, so it falls through to the `isDefault`
-   * arm — which is the only way to observe the promotion at all, since a device
-   * sitting on a valid profile keeps its own selection by design.
-   */
+  /** The stale active id forces the isDefault arm, the only way to observe the promotion. */
   it('lands on the PROMOTED default after the old default was deleted elsewhere', () => {
     applyServerChangesToStores(
       [
-        // Array order puts the promoted profile SECOND on purpose: resolving by
-        // position rather than by the flag would pass with it first.
+        // Promoted profile second on purpose: resolving by position would pass with it first.
         profileChange(SERVER_PROFILE_OTHER, false, 'Side'),
         profileChange(SERVER_PROFILE_DEFAULT, true, 'Promoted'),
       ],
@@ -408,8 +352,7 @@ describe('applyServerChangesToStores — placeholder re-home on reconcile (Story
   })
 
   it('leaves a row stamped with a different REAL profile untouched', () => {
-    // The other real profile is IN the store (code review 54.4): a guard that
-    // compared profile objects by identity rather than id would re-home its rows.
+    // A guard comparing profile objects by identity rather than id would re-home this profile's rows.
     useProfileStore.setState({
       profiles: [
         {
@@ -449,8 +392,6 @@ describe('applyServerChangesToStores — placeholder re-home on reconcile (Story
 
     applyServerChangesToStores([profileChange(SERVER_PROFILE_OTHER, false, 'Side')], SERVER_USER_ID)
 
-    // 'local-default' is not a profile in the store at all, so it was not dropped
-    // by this reconcile and must not be rewritten.
     const income = useIncomeStore.getState().incomeSources
     expect(income.find((row) => row.id === 'stamped-placeholder')?.profileId).toBe('local-default')
   })
@@ -469,10 +410,8 @@ describe('applyServerChangesToStores — placeholder re-home on reconcile (Story
       useExpenseStore.setState = original
     }
 
-    // The failed reconcile must not have dropped the placeholder...
     expect(useProfileStore.getState().profiles.map((p) => p.id)).toContain('local-default')
 
-    // ...so the next pull that delivers profiles completes the re-home.
     applyServerChangesToStores(
       [profileChange(SERVER_PROFILE_DEFAULT, true, 'Main')],
       SERVER_USER_ID
@@ -482,14 +421,6 @@ describe('applyServerChangesToStores — placeholder re-home on reconcile (Story
   })
 })
 
-/**
- * Story 54.2 (FR78): the PULL half of the icon round trip.
- *
- * There is no per-field gate on this side — `getSyncChanges` selects whole rows
- * (`db.select()`) and `applyOne` spreads `change.data` — so what these assert is
- * that the structural path really is structural, and that a `null` icon survives
- * it rather than being dropped or coerced.
- */
 describe('applyServerChangesToStores — profile icon (Story 54.2)', () => {
   beforeEach(() => {
     useProfileStore.setState({ profiles: [], activeProfileId: null })
@@ -547,17 +478,6 @@ describe('applyServerChangesToStores — profile icon (Story 54.2)', () => {
   })
 })
 
-/**
- * A pulled profile tombstone destroys that profile's local rows (story 66.3,
- * AC-8).
- *
- * ⚠️⚠️ THIS IS THE SECOND-DEVICE ARM, and it is the layer the epic did not name.
- * `getSyncChanges` filters every child table by the client's ACTIVE profileId, so
- * a device on another profile pulls the profile tombstone and NONE of the child
- * tombstones — and once the profile row is gone it can never make that profile
- * active to ask for them. Pinned server-side by
- * `server/api/__tests__/sync-profile-cascade.db.test.ts`.
- */
 describe('a pulled userProfile tombstone cascades locally (story 66.3)', () => {
   const DOOMED = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 
@@ -633,18 +553,7 @@ describe('a pulled userProfile tombstone cascades locally (story 66.3)', () => {
     expect(useCategoryStore.getState().categories).toEqual([])
   })
 
-  /**
-   * ⚠️ NEGATIVE CONTROL for the arm above — mislabelled a POSITIVE control in the
-   * first version (code review). A tombstone for a DIFFERENT entity type must not
-   * cascade; without this, a cascade that fired on EVERY tombstone would still
-   * pass the test above.
-   *
-   * ⚠⚠ It also asserts the income tombstone was genuinely APPLIED. Without that
-   * line the test proves nothing about the `entityType === 'userProfile'`
-   * condition it exists to guard: if `applyOne` returned early for any unrelated
-   * reason, nothing would cascade, nothing would be removed, and every remaining
-   * assertion here would still pass. A control that cannot fail is not a control.
-   */
+  /** Negative control. It also asserts the income tombstone applied, or it could pass vacuously. */
   it('does NOT cascade on a tombstone for any other entity type', () => {
     applyServerChangesToStores(
       [
@@ -659,19 +568,12 @@ describe('a pulled userProfile tombstone cascades locally (story 66.3)', () => {
       SERVER_USER_ID
     )
 
-    // The tombstone under test really was applied — this is what makes the two
-    // assertions below meaningful rather than vacuous.
     expect(useIncomeStore.getState().incomeSources.map((r) => r.id)).not.toContain('i-keeper')
     expect(useCategoryStore.getState().categories.map((r) => r.id)).toEqual(['c-doomed'])
     expect(useProfileStore.getState().profiles).toHaveLength(2)
   })
 })
 
-/**
- * Story 99.2 (G12, AC-3, AC-4, D9): the retirement plan is a SINGLETON, applied
- * by plain `setState` (no store action, so no sync op), never through the
- * collection machinery.
- */
 describe('the retirement plan (story 99.2)', () => {
   const PLAN = {
     ...RETIREMENT_PLAN_DEFAULTS,
@@ -727,8 +629,7 @@ describe('the retirement plan (story 99.2)', () => {
   })
 
   it('D9 / AC-7: a plan TOMBSTONE is a store no-op', () => {
-    // A full row, as a pulled tombstone carries one: the no-op must not depend on
-    // the payload being empty.
+    // A full row: the no-op must not depend on an empty payload.
     applyServerChangesToStores([planChange({ isDeleted: true })], SERVER_USER_ID)
     applyServerChangesToStores([planChange({ isDeleted: true, data: {} })], SERVER_USER_ID)
     expect(useRetirementPlannerStore.getState().plan).toEqual(LOCAL)

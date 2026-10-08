@@ -1,19 +1,6 @@
 /**
- * POST /api/internal/retention-sweep — run the retention sweep (Story 73.2).
- *
- * Called daily by `.github/workflows/retention-sweep.yml`. Runs the sweep
- * SYNCHRONOUSLY (per-run caps keep it inside Rapids' 60s request timeout) and
- * returns its counts, so a failure is a red workflow run rather than a log line
- * nobody reads.
- *
- *  - `Authorization: Bearer <RETENTION_SWEEP_TOKEN>`, compared in constant time.
- *  - Token unset or too short → 503, nothing runs (FAILS CLOSED).
- *  - Wrong or missing header → 401, nothing runs.
- *  - `?dryRun=1` → counts only; writes nothing and sends nothing.
- *  - Any notice or purge failure → 500 with the counts, so `curl -f` fails.
- *  - Another run holding the lease → 200 `{ skipped: 'lease-held' }`.
- *
- * The response carries counts only — never an address or an id.
+ * Runs synchronously (per-run caps keep it under the 60s request timeout) so a failure
+ * fails the workflow. Fails closed (503) when the token is unset or short.
  */
 
 import crypto from 'crypto'
@@ -24,7 +11,6 @@ import { getRetentionSweepToken } from '@budget-planner/config'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 
-/** Constant-time compare; length-guarded so `timingSafeEqual` never throws. */
 function safeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a)
   const bb = Buffer.from(b)

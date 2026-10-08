@@ -1,38 +1,5 @@
-/**
- * Cross-device sync data-loss reproduction (Story 53.1, FR85, AC-1/AC-2/AC-5;
- * tightened in code review — see the story's Review Findings for what the
- * first version of this file overclaimed).
- *
- * Reproduces the confirmed root cause WITHOUT the jsdom `document.cookie`
- * write that `SyncProvider.test.tsx` (Story 5-15) uses to simulate an
- * authenticated browser. That write is not representative of a real browser:
- * jsdom's `document.cookie` has no `HttpOnly` enforcement, so a test that sets
- * `document.cookie = 'session=...'` directly can never fail the way a real
- * browser would, and it is exactly what let the original defect ship
- * undetected (the story's own investigation named this).
- *
- * This file instead:
- *  1. Drives the REAL `POST /api/auth/login/verify` route handler (same
- *     approach as `verify.route.test.ts`) to get the actual `Set-Cookie`
- *     headers production code emits.
- *  2. Asserts the ONE fact about PRODUCTION code that this whole story rests
- *     on: the `session` cookie is `HttpOnly` and the `has_session` marker is
- *     not — this is the single load-bearing check against real code.
- *  3. Derives what a real browser's `document.cookie` would then contain, per
- *     the standard (RFC 6265 / WHATWG Fetch): an `HttpOnly` cookie is stored
- *     by the browser and sent on requests, but never exposed to script via
- *     `document.cookie`. Applying that FIXED, cited rule to the fact proven
- *     in step 2 is what step 4 checks — it is a consequence of step 2, not an
- *     independent claim about production code, and the test below says so.
- *  4. Feeds that derived value into the REAL, exported
- *     `SyncProvider.hasProbableSession`.
- *
- * ⚠️ Do not read the `simulateDocumentCookie` filter itself as evidence about
- * production code — it encodes the browser's fixed HttpOnly rule, which is
- * not under test. The only assertions here that can fail because of a
- * production-code regression are the ones checking the RAW `Set-Cookie`
- * headers (step 2) and the final `hasProbableSession` call (step 4).
- */
+// Uses the real login route's Set-Cookie headers instead of writing document.cookie,
+// which jsdom exposes even for HttpOnly cookies.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -64,12 +31,7 @@ beforeEach(() => {
   buckets.clear()
 })
 
-/**
- * Apply the browser's own, FIXED rule for `document.cookie` visibility to a
- * set of real `Set-Cookie` response headers: every cookie EXCEPT one flagged
- * `HttpOnly`. This is not something under test — it models the browser's
- * behavior, not this codebase's.
- */
+// Models the browser's HttpOnly visibility rule; not under test.
 function simulateDocumentCookie(setCookieHeaders: string[]): string {
   return setCookieHeaders
     .filter((header) => !/;\s*HttpOnly/i.test(header))
@@ -117,8 +79,7 @@ describe('cross-device sync data-loss repro: real Set-Cookie -> simulated docume
     const setCookieHeaders = await signInAndGetSetCookieHeaders()
     const simulated = simulateDocumentCookie(setCookieHeaders)
 
-    // Anchored: `has_session=` itself contains the substring "session=", so a
-    // plain toContain check would pass for the wrong reason.
+    // Anchored: `has_session=` contains "session=", so a plain toContain would pass wrongly.
     expect(/(?:^|;\s*)session=/.test(simulated)).toBe(false)
     expect(simulated).toContain('has_session=1')
   })

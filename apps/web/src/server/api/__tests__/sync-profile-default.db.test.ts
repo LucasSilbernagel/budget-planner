@@ -1,21 +1,4 @@
 // @vitest-environment node
-/**
- * Profile deletion through the LIVE path: `processBatchSync`, against real
- * PostgreSQL (story 63.2 code review).
- *
- * ⚠️⚠️ WHY THIS FILE EXISTS. Story 63.2's own headline is that
- * `server/functions/profiles.ts:deleteProfile` had ZERO production callers (story
- * 93.1 deleted it, and its PGlite test with it) and that a real deletion travels
- * store -> `syncEntityDelete`/`syncEntityUpdate` -> the sync push. The story then
- * proved its promotion against (a) a fake bridge handle that only records calls,
- * and (b) a PGlite test of the function nothing called. **All three review layers pointed at the same hole: the path the story
- * says is the real one had no test against a real database.** That is the exact
- * shape of the `profileId`-stripping defect this repo already shipped green
- * once — a mocked suite agreeing with itself.
- *
- * Harness (PGlite + full migration chain via a `vi.hoisted` holder) copied from
- * `sync-push-pull-roundtrip.db.test.ts`.
- */
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -65,17 +48,13 @@ function op(overrides: Record<string, unknown>) {
     timestamp: Date.now(),
     deviceId: 'device-1',
     userId: USER,
-    // ⚠️ Even a DELETE needs `data: { userId }` ("Delete operations require
-    // userId in data"), and ONE operation that fails validation fails the
-    // ENTIRE batch — `processedCount: 0`, empty `failedOperationIds`, and a
-    // `status: 'FAILED'` whose cause is only in `error`. Getting this wrong made
-    // all four tests fail in a way that read as a defect in the code under test.
+    // Even a DELETE needs data.userId, and one invalid op fails the whole batch
+    // (processedCount 0, cause only in `error`).
     data: { userId: USER },
     ...overrides,
   }
 }
 
-/** The exact payload shape `syncBridge.toServerPayload` builds for a profile. */
 function profilePayload(name: string, isDefault: boolean) {
   return { name, isDefault, currency: 'NONE', userId: USER }
 }
@@ -148,19 +127,6 @@ describe('the delete + promote pair the store queues (story 63.2)', () => {
     expect(live.filter((p) => p.isDefault)).toHaveLength(1)
   })
 
-  /**
-   * ⚠️ ORDER NO LONGER MATTERS (story 76.1, decision D1 — Lucas, 2026-09-28).
-   *
-   * This test used to be "REJECTS the promotion if it arrives before the
-   * tombstone": `userProfiles_one_default_per_user` refused a promotion while the
-   * old default was still live, and the post-batch repair then picked a default.
-   * Story 76.1 measured what that cost on the LIVE path, where the client sends
-   * one op per request: the repair after the lone tombstone gives the seat to the
-   * OLDEST survivor, so the device's own promotion hit the index and stayed
-   * queued for ever. A promotion now DEMOTES the current default in the same
-   * transaction (`promoteProfile` in `sync.ts`), so the reversed batch applies in
-   * full and keeps the successor the device chose.
-   */
   it('applies the promotion even if it arrives before the tombstone — no op fails', async () => {
     const result = await push([
       op({
@@ -172,12 +138,9 @@ describe('the delete + promote pair the store queues (story 63.2)', () => {
       op({ type: 'delete', entityType: 'userProfile', entityId: P_DEFAULT }),
     ])
 
-    // The discriminating assertions: before story 76.1 the promotion failed here.
     expect(result.success).toBe(true)
     expect(result.failedOperationIds).toEqual([])
-    // ⚠️ Not discriminating with two profiles — P_OTHER is also the repair's
-    // pick. "Keeps the chosen successor" is proven where the survivor is NOT the
-    // oldest: `sync-delete-idempotent.db.test.ts`, the one-device promotion test.
+    // Not discriminating with two profiles: P_OTHER is also the repair's pick.
     const live = await liveProfiles()
     expect(live.map((p) => p.id)).toEqual([P_OTHER])
     expect(live.filter((p) => p.isDefault).map((p) => p.id)).toEqual([P_OTHER])
@@ -186,21 +149,10 @@ describe('the delete + promote pair the store queues (story 63.2)', () => {
 
 describe('a stale device cannot demote the only live default (code review HIGH)', () => {
   /**
-   * ⚠️⚠️ THE DEFECT THIS PINS, reproduced against real PostgreSQL before it was
-   * fixed. Device A deletes the default; the server promotes Business. Device B
-   * has NOT pulled — a push does not pull first — so its copy of Business still
-   * says `isDefault: false`. B renames Business. `syncBridge` sends `isDefault`
-   * on every profile update, `updateEntity` spreads it into `.set()`, and
-   * `checkConflict`'s update arm only tests existence. So an ordinary RENAME
-   * cleared the flag and the account was left with ZERO live defaults — with
-   * the push reporting success.
-   *
-   * That is silent corruption, not an error: every consumer resolves the
-   * default as `find(p => p.isDefault) ?? data[0]`, so each device then falls
-   * back to an arbitrary profile.
+   * syncBridge sends isDefault on every update, so a rename from a device that
+   * never pulled would otherwise clear the server-promoted default.
    */
   it('keeps the flag when a stale rename re-sends isDefault:false', async () => {
-    // Device A's deletion, already applied.
     await push([
       op({ type: 'delete', entityType: 'userProfile', entityId: P_DEFAULT }),
       op({
@@ -211,7 +163,6 @@ describe('a stale device cannot demote the only live default (code review HIGH)'
       }),
     ])
 
-    // Device B, which never pulled, renames the same profile.
     const stale = await push([
       op({
         type: 'update',
@@ -223,19 +174,11 @@ describe('a stale device cannot demote the only live default (code review HIGH)'
 
     expect(stale.success).toBe(true)
     const live = await liveProfiles()
-    // The rename landed...
     expect(live.map((p) => p.name)).toEqual(['Consulting'])
-    // ...and the account still has a default. Before the fix this was [].
     expect(live.filter((p) => p.isDefault).map((p) => p.id)).toEqual([P_OTHER])
   })
 
-  /**
-   * ⚠️ POSITIVE CONTROL. The guard must not weld the flag on: a demotion is
-   * still honoured whenever another live profile already carries it, which is
-   * what a genuine "make that other one the default" sequence looks like.
-   * Without this test the guard could be `if (isDefault === false) ignore it`
-   * and every assertion above would still pass.
-   */
+  /** Positive control: a demotion is still honoured when another live profile is default. */
   it('still honours a demotion when another live profile is already default', async () => {
     const result = await push([
       op({

@@ -1,17 +1,3 @@
-/**
- * B's sync removes A's data from this browser before it starts (story 86.2, D2).
- *
- * Account A synced on this browser and signed out (nothing resets the stores on
- * sign-out); account B signs in. Every persisted store still holds A's profiles
- * and rows. Before 86.2, B's session ran on A's active profile, showed A's rows,
- * uploaded A's profiles and seeded A's rows into B's account.
- *
- * Everything here is real except the network: the real `ActiveSync`, `useSync`,
- * core service, queue, seed and stores, and the real Income page beside them.
- * The test anchors on a request that really went out (the free-tier row's seed
- * create) before it asserts what did not.
- */
-
 import type { ServerChange } from '@budget-planner/core/sync'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -44,7 +30,6 @@ const A_EXPENSE = 'aaaaaaaa-4444-4444-8444-444444444444'
 const A_SAVINGS = 'aaaaaaaa-5555-4555-8555-555555555555'
 const A_BALANCE = 'aaaaaaaa-6666-4666-8666-666666666666'
 const A_CATEGORY = 'aaaaaaaa-7777-4777-8777-777777777777'
-/** Added on the free tier after A signed out, so stamped with A's active profile. */
 const FREE_INCOME = 'cccccccc-3333-4333-8333-333333333333'
 const A_IDS = [A_MAIN, A_SIDE, A_INCOME, A_EXPENSE, A_SAVINGS, A_BALANCE, A_CATEGORY]
 const A_QUEUE_KEY = `bp-sync-queue-${ACCOUNT_A}`
@@ -77,12 +62,10 @@ function income(id: string, userId: string | number, name: string) {
   }
 }
 
-/** A row of A's in a store whose row type this test does not need in full. */
 function aRow(id: string, extra: Record<string, unknown>) {
   return { id, userId: ACCOUNT_A, profileId: A_SIDE, createdAt: ISO, updatedAt: ISO, ...extra }
 }
 
-/** The ops that really went out, as `type entityType id profileId`. */
 function sent(): string[] {
   return send.mock.calls.map(([op]) => {
     const { type, entityType, entityId, profileId } = op as Record<string, string>
@@ -96,12 +79,9 @@ beforeEach(() => {
   resetSessionStatusStore()
   clearSyncBridge()
   localStorage.clear()
-  // A device that has synced before, so the Income page renders rows, not a
-  // first-pull loading state (`useIsInitialSyncPending`).
   localStorage.setItem('sync:hasCompletedInitialPull', '1')
   localStorage.setItem(A_QUEUE_KEY, A_QUEUE)
 
-  // A's profile was active when A signed out.
   useProfileStore.setState({
     profiles: [
       { id: A_MAIN, userId: ACCOUNT_A, name: 'Their main', isDefault: true, currency: 'NONE' },
@@ -146,8 +126,6 @@ describe("B's sync on a browser holding A's data (story 86.2, AC 4)", () => {
       </>
     )
 
-    // Positive anchor: B's session reconciled AND the free-tier row's seed
-    // create really went out (debounced by `useSync`), under B's profile.
     await waitFor(() => expect(sent()).toContain(`create incomeSource ${FREE_INCOME} ${B_MAIN}`), {
       timeout: 6000,
     })
@@ -162,7 +140,6 @@ describe("B's sync on a browser holding A's data (story 86.2, AC 4)", () => {
     expect(useCategoryStore.getState().categories).toEqual([])
     expect(localStorage.getItem(A_QUEUE_KEY)).toBe(A_QUEUE)
 
-    // The free-tier row is B's to adopt (D4) and shows; nothing of A's does.
     expect(screen.getByText('My salary')).toBeInTheDocument()
     expect(screen.queryByText('Their salary')).not.toBeInTheDocument()
   }, 10_000)

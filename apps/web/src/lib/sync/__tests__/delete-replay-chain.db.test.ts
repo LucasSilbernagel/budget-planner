@@ -1,22 +1,7 @@
 // @vitest-environment node
 /**
- * A replayed profile delete LEAVES THE QUEUE — proven through the route and
- * through the whole live chain (story 76.1, FR121, AC-6).
- *
- * Real core `SynchronizationService` → real `sendSyncOperation` → real
- * `/api/sync/batch` handler → real `processBatchSync` → real PostgreSQL (PGlite,
- * full migration chain). Only the session lookup and the rate limiter are stubbed.
- * Harness copied from `permanent-rejection-chain.db.test.ts`.
- *
- * ⚠️⚠️ WHY THE WHOLE CHAIN. The defect lived in a SEAM: the server reported the
- * replay as a `delete-update` conflict, the transport checks `conflictCount`
- * BEFORE `failedCount` and answers `{ conflict: true }`, and core files it in
- * `conflictOperations` — a bucket no `removeBatch` drains. A server-only test
- * shows the envelope; only this one shows the op staying queued.
- *
- * ⚠️ Every chain test asserts that a request REACHED the route (`served`). An
- * offline service sends nothing, and "the queue empties / stays" assertions are
- * decided by that alone.
+ * Whole chain: the defect lived in the seam where a delete-update conflict lands in a bucket nothing drains.
+ * Every test asserts a request reached the route, since an offline service sends nothing.
  */
 
 import { readFileSync } from 'node:fs'
@@ -150,7 +135,7 @@ beforeAll(async () => {
 
   dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://app.test/' })
   vi.stubGlobal('localStorage', dom.window.localStorage)
-  // ⚠️ Node's own `navigator` has no `onLine`, so the service would send nothing.
+  // Node's own `navigator` has no `onLine`, so the service would send nothing.
   vi.stubGlobal('navigator', dom.window.navigator)
   vi.stubGlobal('fetch', routeFetch)
 }, 60_000)
@@ -178,8 +163,7 @@ afterEach(() => {
 describe('a replayed profile delete (story 76.1)', () => {
   it('is answered 200 / processed both times through the route, leaving one live default', async () => {
     const first = await postBatch(profileDelete('op-first'))
-    // A FRESH op id (code review): the replay must be acknowledged because the
-    // row is tombstoned, not because some layer dedupes a repeated op id.
+    // A fresh op id: acknowledged because the row is tombstoned, not because of op-id dedupe.
     const replay = await postBatch(profileDelete('op-second'))
 
     expect([first.status, replay.status]).toEqual([200, 200])
@@ -187,15 +171,12 @@ describe('a replayed profile delete (story 76.1)', () => {
       processedCount: 1,
       conflictCount: 0,
     })
-    // RED at d54c1a8: `{ processedCount: 0, conflictCount: 1 }`.
     expect(JSON.parse(served[1]?.body ?? '{}')).toMatchObject({
       processedCount: 1,
       conflictCount: 0,
       failedCount: 0,
     })
-    // An INVARIANT check, not a discriminating one: SIDE was never the default,
-    // so this holds on either side of the fix. The two envelopes above are what
-    // tell the fix apart.
+    // Invariant check only; the envelopes above are what discriminate.
     expect(await liveDefaults()).toEqual([MAIN])
   })
 
@@ -215,12 +196,10 @@ describe('a replayed profile delete (story 76.1)', () => {
     await service.initialize()
     await service.forceSync()
 
-    // Positive anchor: the replay really reached the route.
     expect(served.map((r) => r.status)).toEqual([200])
-    // RED at d54c1a8: the op stays queued and lands in `conflictOperations`.
     expect(persistedQueueIds()).toEqual([])
     expect(service.getState().conflictOperations).toEqual([])
-    // Acknowledged — NOT refused: story 75.2's notice must not fire for it.
+    // Acknowledged, not refused: no refusal notice.
     expect(service.getState().rejectedOperations).toEqual([])
   })
 })

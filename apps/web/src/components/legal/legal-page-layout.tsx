@@ -1,21 +1,8 @@
 import type { ReactNode } from 'react'
 
-/**
- * Lean shell for a standalone legal/commercial page (story 5-13).
- *
- * Unlike `DocsLayout`, this has no sidebar/TOC — these pages (Pricing, Terms,
- * Privacy, Refund) are standalone documents, not a navigable section. It
- * provides the page header (the single `<h1>`), an optional one-line
- * description, and a `<main>` landmark containing the page body, so the heading
- * outline and landmarks stay accessible.
- */
-
 export interface LegalPageLayoutProps {
-  /** Page title, rendered as the page's single `<h1>`. */
   title: string
-  /** Optional one-line subtitle shown under the title. */
   description?: string
-  /** Page body. */
   children: ReactNode
 }
 

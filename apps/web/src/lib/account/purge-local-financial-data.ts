@@ -1,37 +1,6 @@
 /**
- * Purge locally persisted financial data (Story 10-5, AC-5; Story 17-2).
- *
- * Two callers share this one purge:
- *  - Story 10-5: after a successful server-side account erasure, so the browser
- *    does not keep showing (or retaining) the deleted user's numbers.
- *  - Story 17-2: the all-users "Clear local data" Settings control, letting any
- *    user (including free / unauthenticated) reset this device.
- *
- * It resets each financial Zustand store to empty (so the current view updates
- * immediately), clears its persisted localStorage entry (so a refresh does not
- * restore the data), AND — when a `userId` is supplied — clears the durable
- * offline sync queue keyed to that user. It also forgets the sync notices
- * (refused / not-synced edits and their dismissals, story 92.1), which can name
- * a row it just removed.
- *
- * It is deliberately **best-effort and never throws**: a failure clearing one
- * store (e.g. localStorage disabled / Safari private mode / SecurityError) must
- * not abort the others. For the 10-5 caller it also runs after the account is
- * already irreversibly deleted, so a local-cleanup failure must never be
- * surfaced as a deletion failure. See account-section.tsx / local-data-section.tsx.
- *
- * Functional preference stores are intentionally NOT purged — they are not
- * personal financial data: `budget-planner-currency-prefs-v1` (currencyStore).
- * Display preferences are left intact for both callers. The retirement PLAN is on
- * the other side of that line and IS purged — see the call below for why.
- *
- * ⚠️ This list also named `budget-planner-theme-prefs-v1` (themeStore) until story
- * 61.1 (FR93), which deleted that store: the theme follows the device's
- * `prefers-color-scheme` and nothing persists a preference. Any such key left in a
- * returning browser is inert and deliberately not cleaned up — see that story's
- * AC-9. Do not add a purge step for it: this helper runs only on account deletion
- * and local-data clearing, so it would not reach most browsers anyway, and the app
- * is pre-launch with no real users carrying one.
+ * Best-effort and never throws: one failing store must not abort the rest, and after account erasure
+ * a local failure must not surface as a deletion failure.
  */
 
 import { getSyncPurgeHandle } from '@/lib/sync/purgeHandle'
@@ -48,30 +17,15 @@ import {
 import { useSavingsStore } from '@/stores/savingsStore'
 import { createSyncQueue } from '@budget-planner/core/sync'
 
-/** Run a purge step, swallowing any failure (best-effort — see module doc). */
 function safely(step: () => void): void {
   try {
     step()
   } catch (error) {
-    // Best-effort: the server erasure already succeeded; a local-cleanup failure
-    // must not propagate. Logged for diagnostics only.
     console.error('purgeLocalFinancialData: a local cleanup step failed', error)
   }
 }
 
-/**
- * @param userId - the current user's id (from `/api/auth/me`), when there is a
- *   session. Used to clear the paid-tier durable sync queue keyed
- *   `bp-sync-queue-<userId>`, which holds raw financial `SyncOperation` payloads
- *   that would otherwise survive the purge. Omit it (or pass an empty string)
- *   for free / unauthenticated users: they have no sync queue, so the queue step
- *   is skipped rather than constructing a bogus `bp-sync-queue-undefined` key.
- */
 export async function purgeLocalFinancialData(userId?: string): Promise<void> {
-  // Income / expenses / savings have no reset action — reset the persisted slice
-  // directly, then drop the localStorage entry. Each is independently guarded so
-  // one failure does not leave later stores unpurged. Every profile's rows go —
-  // this is deliberately not profile-scoped (story 54.4).
   safely(() => {
     useIncomeStore.setState({ incomeSources: [] })
     useIncomeStore.persist.clearStorage()
@@ -84,28 +38,14 @@ export async function purgeLocalFinancialData(userId?: string): Promise<void> {
     useSavingsStore.setState({ savingsGoals: [] })
     useSavingsStore.persist.clearStorage()
   })
-  // Categories (Story 30.4a) are user-authored financial metadata — the names a
-  // user chose for their own spending — so they are purged alongside the rows
-  // they categorize, not treated as a display preference.
   safely(() => {
     useCategoryStore.getState().reset()
     useCategoryStore.persist.clearStorage()
   })
-  // The retirement plan (Story 44.1) IS purged, unlike the table sort below.
-  // The line this function draws is personal financial data vs display
-  // preference, and a plan holds the user's age, their life expectancy and the
-  // income they hope to retire on — the most personal figures in the app, and
-  // the only place two of them are recorded at all. It sits with categories as
-  // user-authored financial data, not with `theme` and `currency`. "Clear local
-  // data" that left someone's retirement income behind would not have cleared
-  // their local data.
   safely(() => {
     useRetirementPlannerStore.getState().resetPlan()
     useRetirementPlannerStore.persist.clearStorage()
   })
-  // Story 90.1 (D4): plans PARKED for other accounts that used this browser
-  // (`claimRetirementPlanFor`) go too. "Clear local data on this device" must not
-  // leave anyone's plan behind.
   safely(() => {
     const parked: string[] = []
     for (let index = 0; index < localStorage.length; index += 1) {
@@ -118,7 +58,6 @@ export async function purgeLocalFinancialData(userId?: string): Promise<void> {
       localStorage.removeItem(key)
     }
   })
-  // Profiles and balance expose reset() (back to their seeded/empty defaults).
   safely(() => {
     useProfileStore.getState().reset()
     useProfileStore.persist.clearStorage()
@@ -127,42 +66,14 @@ export async function purgeLocalFinancialData(userId?: string): Promise<void> {
     useBalanceStore.getState().reset()
     useBalanceStore.persist.clearStorage()
   })
-  // The sync notices (stories 75.2 / 79.2, story 92.1): a refusal notice names a
-  // row this purge just removed, and a not-synced dismissal would hide a later
-  // edit's notice. In memory only (no storage key). Importing it adds no cycle:
-  // `refusalNoticeStore` imports no store, and no store imports this file.
   safely(() => {
     resetRefusalNotices()
   })
 
-  // ⚠️ DELIBERATELY NOT PURGED: the persisted table sort
-  // (`stores/tableSortStore`, `budget-planner-table-sort-v1`, story 42.1).
-  //
-  // Raised in review as a possible omission. It is a DISPLAY PREFERENCE — which
-  // column a table is ordered by — and carries no financial value, no user-authored
-  // text and no row identity, so it sits with `overviewDuration`, `theme`,
-  // `currency` and `plannerVisibility`, none of which this function touches.
-  // Categories ARE purged because they are user-authored financial metadata; a
-  // sort key is not. A sort naming a column whose rows are gone degrades to
-  // manual order on its own (`useTableSort`'s `effectiveState`), so leaving it
-  // cannot resurface anything about the erased data.
-  //
-  // Recorded rather than left silent: the next person to read this list should
-  // find the reason here instead of assuming the store was forgotten.
+  // The table sort is deliberately not purged: it is a display preference, like currency.
 
-  // Durable offline push queue (paid tier): persisted in localStorage under
-  // `bp-sync-queue-<userId>` and holding raw financial payloads. Clearing the
-  // Zustand stores alone leaves these behind, so erase them too (AC-5). Free /
-  // unauthenticated users have no session and no queue, so skip this entirely
-  // when no userId is supplied (Story 17-2) — never key it on `undefined`.
-  //
-  // Story 86.1 (FR139): clear it THROUGH the live sync service when one is
-  // running for this user. A fresh `createSyncQueue(userId).clear()` empties
-  // storage only; the live service keeps its queue in memory and writes the
-  // whole of it back on its next write (a new edit, an in-flight push's removal),
-  // which put the cleared payloads back. The fresh queue remains the fallback:
-  // no live service (free user, sync not mounted), another user's service, or a
-  // service already torn down (its `clearQueue` rejects).
+  // Clear through the live sync service when one runs: it holds the queue in memory and would write
+  // the cleared ops back.
   if (userId) {
     const live = getSyncPurgeHandle(userId)
     let cleared = false

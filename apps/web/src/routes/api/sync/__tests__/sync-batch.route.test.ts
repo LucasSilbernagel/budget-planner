@@ -1,31 +1,10 @@
-/**
- * Sync Batch Push Route Boundary Tests (Story 5-15)
- *
- * Drives the actual served POST handler end-to-end: real Request → auth/premium
- * gate → body parse → processBatchSync → JSON Response with the correct HTTP
- * status and the BatchSyncResponse shape the client's sendSyncOperation consumes.
- *
- * The db layer is mocked out by mocking processBatchSync (which owns the Drizzle
- * writes); the assertions pin the security-critical contract: the batch is
- * processed under the SESSION user id mapped to `id` (never a client-supplied
- * one), the premium gate uses the REAL `hasPaidAccess` (active|past_due|lifetime
- * — the same function as pull, not the premium-features gate), and a rate-limit
- * rejection surfaces as 429.
- */
-
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mock the session lookup the route imports (resolved via the '@' alias).
 vi.mock('@/server/api/auth/paddle', () => ({
   getCurrentUserSession: vi.fn(),
 }))
 
-// Fully mock the sync module so the test needs no database (and does not load the
-// real sync.ts, which transitively imports db/zod). The paid-access gate is NOT
-// mocked: the route imports `hasPaidAccess` from `lib/premium/access-statuses`,
-// so these cases exercise the real rule. (Until Story 78.3 this mock carried its
-// own `['active', 'past_due']` "verbatim" copy — missing `lifetime`, so no route
-// test ever let a lifetime session through.)
+// `hasPaidAccess` is deliberately not mocked, so these cases exercise the real rule.
 vi.mock('@/server/api/sync', () => ({
   processBatchSync: vi.fn(),
 }))
@@ -179,10 +158,6 @@ describe('POST /api/sync/batch served boundary', () => {
     expect(processBatchSync).not.toHaveBeenCalled()
   })
 
-  // Story 79.3 (D1): the route stamps its OWN 413 with a refusal discriminant, so
-  // the client can tell it from a proxy's 413 (which proves nothing about the op).
-  // The limit is 512 KiB (code review 79.3, decision — Lucas): BELOW nginx's 1 MiB
-  // default, so the route's labelled 413 answers before a common ingress limit.
   const LIMIT = 512 * 1024
   it('refuses a body over 512 KiB with 413 + `refusal: too-large`, before reading it', async () => {
     mockSession(paidSession)
@@ -224,8 +199,6 @@ describe('POST /api/sync/batch served boundary', () => {
     const response = await POST({ request: postRequest(sampleBatch) })
 
     expect(response.status).toBe(200)
-    // SECURITY: processBatchSync receives { id: <session userId>, subscriptionStatus }.
-    // A client-supplied userId is never trusted as the authoritative identity.
     expect(processBatchSync).toHaveBeenCalledWith(sampleBatch, {
       id: SESSION_USER_ID,
       subscriptionStatus: 'active',
@@ -257,7 +230,6 @@ describe('POST /api/sync/batch served boundary', () => {
       serverTimestamp: 1700,
       status: 'FAILED',
       error: 'Rate limit exceeded',
-      // Story 75.1: the route keys statuses on this discriminant, not on `error`.
       refusal: 'rate-limit',
     })
     const response = await POST({ request: postRequest(sampleBatch) })
@@ -267,10 +239,6 @@ describe('POST /api/sync/batch served boundary', () => {
     expect(payload.error).toContain('Rate limit')
   })
 
-  // Story 75.1: request-level refusals get statuses core can classify. 400 is in
-  // core's PERMANENT_REJECT_STATUS_CODES (the op is dropped). Ownership is 401 —
-  // kept queued, because the op may be another account's pending edit (code
-  // review) — and deliberately not 403, which core files as tier-blocked.
   it.each([
     ['invalid-request', 400],
     ['ownership', 401],
@@ -295,8 +263,6 @@ describe('POST /api/sync/batch served boundary', () => {
   })
 
   it('does NOT pick a status from the error TEXT (story 75.1)', async () => {
-    // Before 75.1 the 429 arm string-matched 'Rate limit exceeded'. A message with
-    // no discriminant is an ordinary 200 envelope.
     mockSession(paidSession)
     mockBatchResult({
       success: false,
@@ -328,7 +294,6 @@ describe('POST /api/sync/batch served boundary', () => {
     const response = await POST({ request: postRequest(sampleBatch) })
     const payload = await response.json()
 
-    // Conflicts are a normal sync outcome conveyed in the body, not a transport error.
     expect(response.status).toBe(200)
     expect(payload.conflictCount).toBe(1)
   })

@@ -1,31 +1,5 @@
-/**
- * A torn-down sync service never touches the queue (story 79.1, FR129).
- *
- * `useSync` destroys its service on sign-out, account switch or any effect
- * re-run, and builds a new one for the next session. A sync (or pull) already
- * in flight used to run to completion on the DEAD service:
- *
- *  - a refused op left storage with no listener subscribed, so it was never
- *    reverted and never named;
- *  - its whole-queue write went to the SAME storage key (`bp-sync-queue-<userId>`)
- *    as the new instance's, and overwrote whatever the new instance had queued;
- *  - it could still arm a retry, drain or auto-sync timer and send again.
- *
- * DECISION: skip mutation. After `destroy()` the old service leaves the queue
- * exactly as persisted; the next session re-sends it and learns every outcome
- * again (a refused op is refused again, now with a listener; an accepted create
- * or delete is acknowledged as already applied by the server).
- *
- * Every test is a real interleave: the transport is held on a deferred promise,
- * `destroy()` runs while it is held, and only then is it resolved. Each anchors
- * on the request that really went out before `destroy()`.
- *
- * ⚠️ The services here are REAL and use the production storage key through the
- * per-test `localStorage` mock (`vitest.setup.ts`), so two instances for one
- * user genuinely share storage. `navigator.onLine` is stubbed true: in Node it
- * is undefined, the service would start offline, and every "not sent"
- * assertion would pass vacuously.
- */
+// A destroyed service leaves the queue exactly as persisted; the next session re-sends it.
+// `navigator.onLine` is stubbed true, else nothing sends and "not sent" checks are vacuous.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SynchronizationService } from '../synchronization'
@@ -90,7 +64,6 @@ function persistedIds(): string[] {
   return raw ? (JSON.parse(raw) as SyncOperation[]).map((o) => o.id) : []
 }
 
-/** A production-shaped, VALID pulled income row. */
 function incomeChange(updatedAt: number): ServerChange {
   return {
     entityType: 'incomeSource',
@@ -118,7 +91,6 @@ const VALID_INCOME = { userId: USER, name: 'Rent', amount: 50_000, frequency: 'm
 describe('a torn-down sync never touches the queue (story 79.1)', () => {
   const services: SynchronizationService[] = []
 
-  /** A real service for USER. Tracked so `afterEach` tears every one down. */
   async function makeService(
     processOperation: ProcessOperationFn,
     extra: {
@@ -168,20 +140,16 @@ describe('a torn-down sync never touches the queue (story 79.1)', () => {
       const service = await makeService(send)
 
       const inFlight = service.sync()
-      // Positive anchor: X really went out before the teardown.
       await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1))
       service.destroy()
       held.resolve(outcome)
       const result = await inFlight
 
-      // The destroyed early return ran — not a closed-queue rejection caught
-      // somewhere further down (code review 79.1).
+      // The destroyed early return ran, not a closed-queue rejection caught further down.
       expect(result.error).toBe('Sync service destroyed')
-      // Nothing after X: the rest of the batch is not sent by a dead service.
       expect(send.mock.calls.map(([sent]) => sent.id)).toEqual(['X'])
       expect(persistedIds()).toEqual(['X', 'Z'])
 
-      // No retry, drain or re-sync timer survives the teardown.
       await vi.advanceTimersByTimeAsync(120_000)
       expect(send).toHaveBeenCalledTimes(1)
       expect(vi.getTimerCount()).toBe(0)
@@ -203,7 +171,6 @@ describe('a torn-down sync never touches the queue (story 79.1)', () => {
       expect(lostByA).not.toHaveBeenCalled()
       expect(persistedIds()).toEqual(['X'])
 
-      // The next session for the same user.
       const sendB = vi.fn(async (_sent: SyncOperation) => REFUSED)
       const serviceB = await makeService(sendB)
       const reported: SyncOperation[][] = []
@@ -244,7 +211,6 @@ describe('a torn-down sync never touches the queue (story 79.1)', () => {
 
       expect(persistedIds()).toEqual(['X', 'Y'])
 
-      // B pushes both: X again (the server acknowledges a replayed op) and Y.
       await serviceB.sync()
       expect(sendB.mock.calls.map(([sent]) => sent.id)).toEqual(['X', 'Y'])
       expect(persistedIds()).toEqual([])
@@ -263,7 +229,7 @@ describe('a torn-down sync never touches the queue (story 79.1)', () => {
       const inFlight = service.pull()
       await vi.waitFor(() => expect(fetchServerChanges).toHaveBeenCalledTimes(1))
       service.destroy()
-      // Strictly newer than the queued op: a LIVE pull would drop X (LWW).
+      // Strictly newer than the queued op: a live pull would drop X (LWW).
       held.resolve([incomeChange(9_000)])
       await inFlight
 
@@ -373,8 +339,7 @@ describe('a torn-down sync never touches the queue (story 79.1)', () => {
       seed([op('P', { profileId: 'deleted-profile' })])
       const service = await makeService(async () => ACCEPTED)
 
-      // Called while live (past the entry check); the queue's work runs on a
-      // later microtask, after the teardown closed it.
+      // Called while live; the queue's work runs on a later microtask, after teardown closed it.
       const discarding = service.discardOperationsForDeletedProfile('deleted-profile')
       service.destroy()
 

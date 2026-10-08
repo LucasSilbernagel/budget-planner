@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { planLabel } from './plan-label'
 
-/**
- * Story 70.1 — D-LABEL, approved by Lucas 2026-09-25. Every status × every
- * interval state, so a change to any single cell goes red.
- */
 describe('planLabel', () => {
   it.each([
     ['lifetime', 'year', 'Lifetime Plan'],
@@ -12,12 +8,10 @@ describe('planLabel', () => {
     ['lifetime', null, 'Lifetime Plan'],
     ['active', 'year', 'Annual Plan'],
     ['active', 'month', 'Monthly Plan'],
-    // AC-6: a row that predates the column degrades to the pre-70.1 text.
     ['active', null, 'Active'],
     ['past_due', 'year', 'Annual Plan · payment overdue'],
     ['past_due', 'month', 'Monthly Plan · payment overdue'],
     ['past_due', null, 'Payment overdue'],
-    // Not plans: a stored interval must NOT surface a plan name.
     ['canceled', 'year', 'Cancelled'],
     ['canceled', 'month', 'Cancelled'],
     ['canceled', null, 'Cancelled'],
@@ -34,8 +28,7 @@ describe('planLabel', () => {
   })
 
   it('labels a status OUTSIDE the enum neutrally, never with the raw value (review)', () => {
-    // `/api/auth/me` is an unvalidated cast, so a newer server's sixth status
-    // can reach a client that does not know it.
+    // `/api/auth/me` is an unvalidated cast, so a newer server's status can reach this client.
     const label = planLabel('paused' as never, 'year')
     expect(label).toBe('Unknown plan')
     expect(label).not.toContain('paused')

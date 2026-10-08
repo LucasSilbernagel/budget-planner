@@ -1,13 +1,3 @@
-/**
- * purgeAppShellCache (story 101.1, AC 6).
- *
- * The purge runs on the way out of the app (sign-out, account deletion), so
- * its contract is "delete `app-shell` if you can, and never stop the user
- * leaving": it resolves, within a fixed bound, whatever Cache Storage does.
- * `lib/**` runs in the node environment, which has no `caches`, so every case
- * stubs it explicitly.
- */
-
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   APP_SHELL_CACHE_NAME,
@@ -18,7 +8,6 @@ import {
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
-  // The throwing-getter case defines a property rather than stubbing it.
   Reflect.deleteProperty(globalThis, 'caches')
 })
 

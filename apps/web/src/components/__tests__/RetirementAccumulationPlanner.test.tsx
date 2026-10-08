@@ -12,20 +12,6 @@ import {
   describeSolverError,
 } from '../RetirementAccumulationPlanner'
 
-/**
- * RetirementAccumulationPlanner tests (stories 26.7 / 28.1 / 29.1).
- *
- * Since 29.1 this component IS the retirement page: one shared input set feeding
- * the solver, the outputs and the growth chart. The suite therefore covers both
- * the original solver-driven behaviour and the assertions re-homed from the
- * deleted `RetirementForm` (money sanitization, the 100×-prefill guard, the WCAG
- * focus-ring pin) — those pinned real regressions and must not die with the file.
- *
- * Currency preferences are forced to the currency-less default (mode 'none') so
- * amounts render as plain grouped decimals (e.g. "1,000,000.00").
- */
-
-/** Reset every store this component reads. Zustand stores are not auto-reset. */
 function resetStores() {
   useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
   useBalanceStore.setState({ entries: [] })
@@ -35,17 +21,6 @@ function resetStores() {
 
 const ISO = '2026-08-06T00:00:00.000Z'
 
-// Fully-typed store fixtures.
-// ⚠️ `investmentRow` follows the REAL `ClientBalanceTracking` shape
-// (`packages/core/src/services/balanceTracking.ts:32-50`). The two fixtures this
-// file used before 29.2 were both wrong — one hid behind `as unknown as never`,
-// the other invented a `contributionFrequency` field that does not exist on the
-// type while omitting the required `frequency`/`createdAt`/`updatedAt`. They
-// compiled only because `tsconfig.app.json` excludes test files. Since story
-// 78.2 the web `type-check` also checks this file (`tsconfig.vitest.json`), and
-// it caught the next instance: `incomeRow`/`expenseRow` were missing the
-// required `categoryId`, and their `'monthly' as const` default typed
-// `frequency` as the literal 'monthly'.
 const incomeRow = (amount: number, frequency: Frequency = 'monthly', id = 'inc-1') => ({
   id,
   userId: 0,
@@ -68,14 +43,6 @@ const expenseRow = (amount: number, frequency: Frequency = 'monthly', id = 'exp-
   updatedAt: ISO,
 })
 
-/**
- * ⚠️ Story 47.2: `monthlyContribution` and `frequency` are no longer inert
- * padding on this fixture — they ARE the "Monthly Savings" figure now. Every
- * row built here defaulted to `monthlyContribution: 0`, so leaving the default
- * in place takes the derived figure to $0.00 and collapses every downstream
- * reachability expectation. Pass a contribution whenever the test cares about
- * that figure.
- */
 const investmentRow = (
   currentBalance: number,
   id = 'inv-1',
@@ -97,33 +64,7 @@ const debtRow = (currentBalance: number, id = 'debt-1') => ({
   name: 'Card',
 })
 
-/**
- * Seed the stores that now DRIVE the two derived figures, for the reachable
- * happy/toggle case: saved $1,000,000, $1,500/mo net.
- *
- * ⚠️ Since 29.2 these are no longer typed — they are derived, so the fixture has
- * to seed the sources instead. The income figure is doing double duty: it feeds
- * BOTH the derived monthly-savings figure AND the desired-income prefill
- * (`grossIncome × 12 × 0.5`). $2,000/mo gross → a $12,000/yr prefill, which is
- * exactly the desired income this fixture used to type by hand, so every
- * downstream expectation below is preserved and no `user.clear()` is needed.
- *
- *   saved                                          = $1,000,000.00
- *   monthly savings (the RRSP contribution)        = $1,500.00
- *   saved per year = $1,500 × 12                   = $18,000.00
- *   desired income prefill = $2,000 × 12 × 0.5     = $12,000.00 / yr
- *   deplete required = (85 − 40) × $12,000         = $540,000.00
- *   perpetual required = round($12,000/12)/0.05    = $240,000.00
- *
- * At month 0 the projected nest egg = the $1,000,000 principal, which already
- * clears both models' required nest egg → reachable immediately (age 40).
- */
 function seedReachableStores() {
-  // ⚠️ Story 47.2: the $1,500/mo now comes from the account's own contribution,
-  // not from income − expenses. The income and expense rows STAY: $2,000/mo gross
-  // still drives the desired-income prefill ($12,000/yr), which every expectation
-  // in the docblock above depends on. Dropping them because "income no longer
-  // feeds monthly savings" would break this fixture a second way.
   useBalanceStore.setState({
     entries: [investmentRow(1_000_000_00, 'inv-1', { amount: 150_000 })],
   })
@@ -131,29 +72,16 @@ function seedReachableStores() {
   useExpenseStore.setState({ expenses: [expenseRow(50_000)] })
 }
 
-/**
- * The rendered VALUE of a derived card, exactly — not its whole text content.
- *
- * ⚠️ Use this instead of `toHaveTextContent('0.00')` for any money assertion.
- * `toHaveTextContent` with a string is a SUBSTRING match, so `'-2,000.00'`
- * contains `'0.00'` and the obvious assertion passes on precisely the value it
- * was written to forbid.
- */
+// toHaveTextContent with a string is a substring match: '-2,000.00' contains '0.00'.
 function derivedValueOf(testId: string): string {
   return screen.getByTestId(testId).querySelector('dd > span')?.textContent ?? ''
 }
 
-/**
- * Parse a rendered money string to a number, PRESERVING the sign.
- *
- * ⚠️ The obvious `replace(/[^\d.]/g, '')` strips the minus, turning `-48,000.00`
- * into `48000` and erasing exactly the error a sign check exists to catch.
- */
+// Keeps the sign: stripping /[^\d.]/g would turn -48,000.00 into 48000.
 function toMoney(text: string | null | undefined): number {
   return Number((text ?? '').replace(/[^\d.-]/g, ''))
 }
 
-/** Seed the sources, then type the four fields that are still editable. */
 async function fillReachableCase(user: ReturnType<typeof userEvent.setup>) {
   act(seedReachableStores)
   await user.clear(screen.getByLabelText('Current Age'))
@@ -183,7 +111,6 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
     await fillReachableCase(user)
 
     const outputs = within(screen.getByTestId('accumulation-outputs'))
-    // Each output row: label followed by its value.
     expect(outputs.getByText('Saved per year').nextElementSibling).toHaveTextContent('18,000.00')
     expect(outputs.getByText('Total saved').nextElementSibling).toHaveTextContent('1,000,000.00')
     expect(outputs.getByText('Months to retirement').nextElementSibling).toHaveTextContent('0')
@@ -192,20 +119,11 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
     expect(outputs.getByText('Nest egg at retirement').nextElementSibling).toHaveTextContent(
       '1,000,000.00'
     )
-    // Deplete is the default model.
     expect(outputs.getByText('Required nest egg').nextElementSibling).toHaveTextContent(
       '540,000.00'
     )
   })
 
-  /**
-   * Story 88.2 (FR142): at 320 px under CI's font the seed's 10-digit outlook
-   * figures (`$1,511,148,001.20`, 169 px) could not fit their row beside the
-   * label, and "Still to accumulate" pushed the page to 324 px. Each value is
-   * now a `GroupedAmount`, so it can wrap after a group separator and nowhere
-   * else. jsdom has no layout: this pins the break opportunities and the exact
-   * text, not "it fits" (that is the `retirement-320-light` screenshot's job).
-   */
   it('every outlook value can break only after a group separator, with its text unchanged (story 88.2)', async () => {
     const user = userEvent.setup()
     renderWithProviders(<RetirementAccumulationPlanner />)
@@ -225,7 +143,6 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
     ])
     for (const dd of values) {
       const text = dd.textContent ?? ''
-      // One `<wbr>` per digit-flanked comma, each straight after that comma.
       const separators = text.match(/\d,(?=\d)/g)?.length ?? 0
       const breaks = [...dd.querySelectorAll('wbr')]
       expect(breaks, text).toHaveLength(separators)
@@ -236,13 +153,6 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
     }
   })
 
-  /**
-   * Story 88.4 (D7, the 88.2 review's "variant B"): the label gives up width
-   * first (`shrink-[1000]`) and the value is right-aligned (`text-right`), so a
-   * wrapped value takes fewer lines and its lines share a right edge. jsdom
-   * loads no Tailwind: this pins the class TOKENS on both sides of the row; the
-   * layout itself is the `retirement-320-light` screenshot's job.
-   */
   it('every outlook row lets the label shrink first and right-aligns the value (story 88.4, D7)', async () => {
     const user = userEvent.setup()
     renderWithProviders(<RetirementAccumulationPlanner />)
@@ -264,12 +174,6 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
     }
   })
 
-  /**
-   * Code review of 88.2: in EUR (de-DE) the group separator is `.`, so a plain
-   * `toFixed(1)` years value (`0.0`) would get a `<wbr>` at its DECIMAL point if
-   * it went through `GroupedAmount`. Only the money rows may carry breaks, and
-   * those break after the `.` group separator, not the `,` decimal one.
-   */
   it('in EUR only the money values get break opportunities, after the "." group separator (story 88.2 review)', async () => {
     useCurrencyStore.setState({ mode: 'symbol', currency: 'EUR' })
     const user = userEvent.setup()
@@ -306,10 +210,8 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
       within(screen.getByTestId('accumulation-outputs')).getByText('Required nest egg')
         .nextElementSibling
 
-    // Deplete (default) → $540,000.00.
     expect(requiredRow()).toHaveTextContent('540,000.00')
 
-    // Switch to perpetual → $240,000.00 (age-independent, income / rate).
     await user.click(screen.getByRole('radio', { name: /Perpetual safe-withdrawal/ }))
     expect(requiredRow()).toHaveTextContent('240,000.00')
   })
@@ -318,12 +220,6 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
     const user = userEvent.setup()
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // Tiny savings, short window, huge desired income → never reachable.
-    //   age 60, saved $1,000, $50/mo saved, 4%, desired $5,000,000/yr, life 65.
-    //   saved per year = $50 × 12 = $600.00 (still shown when not reachable).
-    // The amounts are unchanged from before 29.2 — only their SOURCE moved: to a
-    // seeded store in 29.2, and to the account's own CONTRIBUTION in 47.2. The
-    // income row stays because it prefills the desired-income field below.
     act(() => {
       useBalanceStore.setState({
         entries: [investmentRow(1_000_00, 'inv-1', { amount: 5_000 })],
@@ -335,7 +231,6 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
     await user.clear(screen.getByLabelText('Life Expectancy'))
     await user.type(screen.getByLabelText('Life Expectancy'), '65')
     const desired = screen.getByLabelText('Desired Retirement Income')
-    // Seeding income also prefills this field, so it must be cleared first.
     await user.clear(desired)
     await user.type(desired, '5000000')
     await user.clear(screen.getByLabelText('Expected Annual Return'))
@@ -345,37 +240,17 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
     expect(
       notReachable.getByText(/Retirement isn.t reachable with these numbers/)
     ).toBeInTheDocument()
-    // ⚠️ Since 29.2 the first lever names ANOTHER page: the savings figures are
-    // derived, so there is no "save more" control on this screen to act on.
-    // ⚠️ Story 47.2 re-pointed it. The old wording ("Raise your income or cut
-    // expenses on the Income and Expenses pages") named a lever that no longer
-    // moves this outcome at all — income and expenses stopped feeding the
-    // monthly figure — so it was advice that could not work.
     expect(
       notReachable.getByText('Put more into your investment accounts on the Balance Tracking page')
     ).toBeInTheDocument()
-    // The retired wording must be gone, not merely unreachable.
     expect(notReachable.queryByText(/Raise your income or cut expenses/)).not.toBeInTheDocument()
-    // ⚠️ Do NOT assert the retired 'Save more each month' string here: it exists
-    // nowhere in the repo, so that assertion could never fail. Pin a CURRENT
-    // string that must be absent instead — the no-data heading, which this
-    // branch must not borrow.
     expect(notReachable.queryByText(/We don.t have your savings data yet/)).not.toBeInTheDocument()
     expect(notReachable.getByText('Retire on a lower annual income')).toBeInTheDocument()
 
-    // ⚠️ The return-rate lever must name ONLY the post-retirement rate. Since
-    // story 35.3 the saving-phase rate also drives the deplete requirement's
-    // income-growth term, so raising it can push retirement FURTHER away —
-    // measured on the real solver at 27 → 48 → 63 months for 6% → 8% → 10%.
-    // Advising it in the panel that exists for users in shortfall would tell
-    // them to deepen the shortfall. Both halves are asserted: the safe lever is
-    // present, and the ambiguous phrasing is absent.
     expect(notReachable.getByText('Assume a higher return after you retire')).toBeInTheDocument()
     expect(notReachable.queryByText(/higher return while saving/)).not.toBeInTheDocument()
     expect(notReachable.queryByText(/higher annual return/)).not.toBeInTheDocument()
-    // Saved-per-year is always populated.
     expect(notReachable.getByText(/600\.00/)).toBeInTheDocument()
-    // No successful-outlook block leaked through.
     expect(screen.queryByTestId('accumulation-outputs')).not.toBeInTheDocument()
   })
 
@@ -383,8 +258,6 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
     const user = userEvent.setup()
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // currentAge >= lifeExpectancy → no retirement window; the blocker is the
-    // ages, not the savings, so the generic levers must not show.
     act(() => {
       useBalanceStore.setState({
         entries: [investmentRow(1_000_00, 'inv-1', { amount: 5_000 })],
@@ -405,9 +278,6 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
     expect(
       notReachable.getByText(/current age is at or past your life expectancy/)
     ).toBeInTheDocument()
-    // Saved-per-year still shown; generic savings-shortfall levers must NOT
-    // appear. Asserted against the CURRENT lever copy — pinning the retired
-    // "Save more each month" string would pass vacuously now that it is gone.
     expect(notReachable.getByText(/600\.00/)).toBeInTheDocument()
     expect(
       notReachable.queryByText(
@@ -420,10 +290,6 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
     const user = userEvent.setup()
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // Inputs parse cleanly, but a 10-digit life expectancy makes the deplete
-    // required nest egg (years × income) overflow MAX_SAFE_INTEGER, so the solver
-    // throws. The UI must render the failed-state message, never an empty results
-    // area (regression: the memo previously returned null → all gates false → blank).
     act(seedReachableStores)
     await user.clear(screen.getByLabelText('Current Age'))
     await user.type(screen.getByLabelText('Current Age'), '40')
@@ -434,33 +300,20 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
 
     expect(screen.getByTestId('accumulation-solve-failed')).toBeInTheDocument()
     expect(screen.getByText(/Those numbers are too large to compute/)).toBeInTheDocument()
-    // Neither results region leaked, and it is NOT a blank void.
     expect(screen.queryByTestId('accumulation-outputs')).not.toBeInTheDocument()
     expect(screen.queryByTestId('accumulation-not-reachable')).not.toBeInTheDocument()
   })
 
   it('derives current amount saved from investments only, never netting debts against them', () => {
-    // Same selector as the 26.5 "Total Investments" card: investments summed,
-    // debts excluded entirely (not subtracted). $5,000 + $2,500 = $7,500, and the
-    // $9,000 card balance must not pull it down to a net figure.
     useBalanceStore.setState({
       entries: [investmentRow(5_000_00), investmentRow(2_500_00, 'inv-2'), debtRow(9_000_00)],
     })
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // ⚠️ Pinned as the exact value node. A `not.toHaveTextContent('1,500.00')`
-    // guard would pass under the very mutation it targets: netting the debt
-    // gives -1,500.00, which floors to 0.00 and contains neither string.
     expect(derivedValueOf('derived-current-saved')).toBe('7,500.00')
   })
 })
 
-/**
- * The consolidation itself (story 29.1).
- *
- * AC-1: each shared input is collected exactly once. AC-2: the outputs and the
- * chart derive from that one set, with no contradictory duplicate figures.
- */
 describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', () => {
   beforeEach(resetStores)
   afterEach(resetStores)
@@ -471,8 +324,6 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
 
     await fillReachableCase(user)
 
-    // One field per concept — `getByLabelText` throws on a duplicate match, so
-    // these calls ARE the assertion that nothing collects them twice.
     for (const label of [
       'Current Age',
       'Life Expectancy',
@@ -482,15 +333,11 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
       expect(screen.getByLabelText(label)).toBeInTheDocument()
     }
 
-    // The two derived figures are shown exactly once each, as displays rather
-    // than controls. `getAllByText` would catch a second copy re-appearing (for
-    // instance if a future change re-added an input beside the display).
     for (const label of ['Current Amount Saved', 'Monthly Savings']) {
       expect(screen.getAllByText(label)).toHaveLength(1)
       expect(screen.queryByRole('textbox', { name: label })).not.toBeInTheDocument()
     }
 
-    // The retired duplicates must not come back under their old names.
     for (const gone of [
       'Current Savings',
       'Annual Contribution',
@@ -500,12 +347,7 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
       expect(screen.queryByLabelText(gone)).not.toBeInTheDocument()
     }
 
-    // Exactly one element may carry id="currentAge" — the planner and the chart
-    // both shipped one, which is invalid HTML and mis-binds the second <label>.
     expect(container.ownerDocument.querySelectorAll('#currentAge')).toHaveLength(1)
-    // The two rate fields must not share an id either — copying the first field's
-    // markup wholesale is the obvious way to add the second, and it would put
-    // both controls behind one <label>.
     expect(container.ownerDocument.querySelectorAll('#annualReturn')).toHaveLength(1)
     expect(container.ownerDocument.querySelectorAll('#postRetirementReturn')).toHaveLength(1)
   })
@@ -517,13 +359,8 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
     await fillReachableCase(user)
     await user.click(screen.getByRole('radio', { name: /Perpetual safe-withdrawal/ }))
 
-    // The Safe Withdrawal figure the deleted form computed separately IS this
-    // row: $12,000/yr at 5% → $240,000. It appears once.
     expect(screen.getAllByText(/^240,000\.00$/)).toHaveLength(1)
     expect(screen.queryByText('Required Retirement Assets')).not.toBeInTheDocument()
-    // ...and it is labelled as the Safe Withdrawal Model, so the explanation the
-    // standalone form carried is not lost. The FORMULA itself is deliberately not
-    // repeated here — it is stated once on the page, in the route's explainer.
     expect(screen.getByText(/uses the Safe Withdrawal Model/)).toBeInTheDocument()
     expect(screen.queryByText(/FV = Ir × \(12 \/ r\)/)).not.toBeInTheDocument()
   })
@@ -534,10 +371,6 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
 
     await fillReachableCase(user)
 
-    // The explanation lives beside its radio, where it helps you choose. It was
-    // also being echoed under the outputs, so the selected model's text appeared
-    // twice on one screen — in the story whose whole premise is saying each thing
-    // once. Both models' radio copy is present; neither is duplicated.
     for (const explanation of [
       /Draw your savings down to zero by your life expectancy/,
       /Live off the investment returns forever/,
@@ -550,10 +383,6 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
     const user = userEvent.setup()
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // age 40 → life 50, $100,000 saved, $1,000/mo saved, 6%, desired $12,000/yr.
-    // Amounts unchanged from before 29.2 — only the source moved (to the stores
-    // in 29.2, to the account's own contribution in 47.2), which is what keeps
-    // the cent-exact expectation below valid.
     act(() => {
       useBalanceStore.setState({
         entries: [investmentRow(100_000_00, 'inv-1', { amount: 100_000 })],
@@ -573,11 +402,6 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
     const summary = screen.getByText('Projection Summary:').closest('p')
     expect(summary).not.toBeNull()
 
-    // ⚠️ The previous version of this test asserted only prop echoes (age, year
-    // count, rate) and never touched a balance — it would have passed with the
-    // chart wired back onto annual compounding, the exact regression it claimed
-    // to prevent. The figure is now derived from core's own monthly-compounded
-    // function and matched exactly.
     const outputs = within(screen.getByTestId('accumulation-outputs'))
     const yearsToRetirement = Number(
       outputs.getByText('Years to retirement').nextElementSibling?.textContent
@@ -598,10 +422,6 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
     const user = userEvent.setup()
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // Deplete model: the plan is that the nest egg reaches ZERO by life
-    // expectancy. Charting accumulation all the way to 85 showed it peaking
-    // there instead — an order-of-magnitude figure contradicting the outputs
-    // directly above it.
     await fillReachableCase(user)
 
     const outputs = within(screen.getByTestId('accumulation-outputs'))
@@ -611,7 +431,6 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
     const summary = screen.getByText('Projection Summary:').closest('p')
 
     expect(summary?.textContent).toContain(`at age ${earliestAge}`)
-    // Life expectancy is 85 in this fixture; the curve must not run there.
     expect(summary?.textContent).not.toContain('at age 85')
   })
 
@@ -621,7 +440,6 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
 
     await fillReachableCase(user)
 
-    // $1,000,000 saved already clears the $540,000 deplete target.
     const outputs = within(screen.getByTestId('accumulation-outputs'))
     expect(outputs.getByText('Still to accumulate').nextElementSibling).toHaveTextContent(
       'Already covered'
@@ -629,13 +447,6 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
   })
 
   it('shows a placeholder instead of a chart when a field is missing, never a stale default curve', () => {
-    // ⚠️ RETARGETED BY STORY 44.1, and the reason matters. This used to seed the
-    // full `seedReachableStores` fixture and rely on age/life-expectancy being
-    // EMPTY by default to reach the "not filled in yet" state. FR71 gave those
-    // two fields real defaults (35 / 90), so that fixture now solves — see the
-    // test below. The guard this test actually carries is "an incomplete plan
-    // draws no curve", so it now uses a genuinely incomplete plan: no income
-    // rows means no desired-income prefill, and desired income has no default.
     act(() => {
       useBalanceStore.setState({ entries: [investmentRow(1_000_000_00)] })
       useExpenseStore.setState({ expenses: [expenseRow(50_000)] })
@@ -650,12 +461,6 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
   })
 
   it('opens on a solved plan for a user who already has income (story 44.1, FR71)', () => {
-    // The behaviour change FR71's defaults produce, recorded deliberately rather
-    // than discovered later: age and life expectancy now arrive filled, the
-    // return rate and model already had defaults, and desired income is seeded
-    // from the income store — so a user with data lands on an answer instead of
-    // an empty form. This is "opens on numbers a user can start from"; if it is
-    // ever unwanted, this is the test that says so out loud.
     act(seedReachableStores)
     renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -671,9 +476,6 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
     const user = userEvent.setup()
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // Every field IS filled; the solver overflows. Telling the user to "fill in
-    // the details above" beneath a "too large to compute" panel is two
-    // contradictory instructions on one screen.
     act(seedReachableStores)
     await user.clear(screen.getByLabelText('Current Age'))
     await user.type(screen.getByLabelText('Current Age'), '40')
@@ -695,10 +497,6 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
     const user = userEvent.setup()
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // The 10-digit life expectancy makes `calculateRequiredNestEgg` throw
-    // `Required nest egg exceeds safe integer limit.` — the one overflow §7
-    // documents as reachable, and the one the copy map originally omitted, so the
-    // detail line never rendered for the exact case it was added to explain.
     act(seedReachableStores)
     await user.clear(screen.getByLabelText('Current Age'))
     await user.type(screen.getByLabelText('Current Age'), '40')
@@ -712,25 +510,11 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
   })
 })
 
-/**
- * Desired-income prefill (re-homed from RetirementForm, UX review #6).
- *
- * The prefill divides cents back to display units: a regression guard against
- * re-introducing the 100×-too-large default. 29.1 additionally re-sources it from
- * the frequency-NORMALIZED gross income — the retired form summed raw cents, so a
- * weekly $500 counted as $500/month.
- *
- * ⚠️ Since 29.2 the income-store seeds in this block have a SECOND effect: they
- * also drive the derived Monthly Savings figure. These tests stay green because
- * they assert only the desired-income field, but a failure here can now have two
- * causes — check which figure actually moved before assuming the prefill broke.
- */
 describe('RetirementAccumulationPlanner — desired-income prefill', () => {
   beforeEach(resetStores)
   afterEach(resetStores)
 
   it('prefills half of annual income in whole units, not raw cents', () => {
-    // $10,000/mo income (1,000,000 cents) → annual $120,000 → half = $60,000.
     useIncomeStore.setState({
       incomeSources: [
         {
@@ -750,14 +534,11 @@ describe('RetirementAccumulationPlanner — desired-income prefill', () => {
 
     const income = screen.getByLabelText('Desired Retirement Income') as HTMLInputElement
     expect(income).toHaveValue('60,000.00')
-    // The pre-fix bug rendered the raw cents figure (100× too large).
     expect(income.value).not.toBe('6000000')
     expect(income).not.toHaveValue('6,000,000.00')
   })
 
   it('normalizes a weekly income instead of counting it as monthly', () => {
-    // $500/week = $2,166.50/mo normalized (×52/12) → annual $25,998 → half
-    // = $12,999. The retired form's raw-cents sum would have seeded from $500.
     useIncomeStore.setState({
       incomeSources: [
         {
@@ -776,12 +557,7 @@ describe('RetirementAccumulationPlanner — desired-income prefill', () => {
     renderWithProviders(<RetirementAccumulationPlanner />)
 
     const income = screen.getByLabelText('Desired Retirement Income') as HTMLInputElement
-    // ⚠️ Asserted EXACTLY, not as a `> 12,000` lower bound: a re-introduced
-    // raw-cents prefill renders 1,299,996.00, which clears any open lower bound
-    // and would have let the 100× bug back in through the weaker of the pair.
-    // $500/wk × (52/12) = $2,166.67/mo → × 12 × 0.5 = $13,000.02 annual.
     expect(income).toHaveValue('13,000.02')
-    // Not the un-normalized $500 × 12 × 0.5 = $3,000 the raw sum would give.
     expect(income).not.toHaveValue('3,000.00')
   })
 
@@ -789,9 +565,6 @@ describe('RetirementAccumulationPlanner — desired-income prefill', () => {
     const user = userEvent.setup()
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // ⚠️ The seed is derived as an ANNUAL figure. Writing it into a field the
-    // user has switched to Monthly makes the solver read 12× the intended
-    // income — a silent overstatement of the required nest egg with no cue.
     await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
 
     act(() => {
@@ -811,8 +584,6 @@ describe('RetirementAccumulationPlanner — desired-income prefill', () => {
       })
     })
 
-    // $10,000/mo → annual $120,000 → half = $60,000/yr → $5,000/mo under the
-    // selected basis. The pre-fix bug wrote 60,000.00 into a monthly field.
     const income = screen.getByLabelText('Desired Retirement Income') as HTMLInputElement
     expect(income).toHaveValue('5,000.00')
     expect(income).not.toHaveValue('60,000.00')
@@ -839,33 +610,14 @@ describe('RetirementAccumulationPlanner — desired-income prefill', () => {
     const income = screen.getByLabelText('Desired Retirement Income') as HTMLInputElement
     expect(income).toHaveValue('60,000.00')
 
-    // ⚠️ FIXTURE CORRECTED IN STORY 44.1's CODE REVIEW — the assertion is
-    // unchanged and the test is now STRONGER, not weaker. This test is titled
-    // "a TYPED number" and asserted the ratified rule that switching the basis
-    // changes only what a number means. But it never typed: `60,000.00` above is
-    // the income-derived SEED, so the test could not tell a typed value from a
-    // seeded one, and what it actually pinned was "a seeded value is left alone"
-    // — the behaviour review found does not round-trip a reload (a seeded annual
-    // figure left under a monthly basis is silently rewritten on the next load).
-    // Story 44.1 re-seeds UNAUTHORED values on a basis switch and leaves AUTHORED
-    // ones exactly as entered, so the rule this test names is intact; the value
-    // just has to be genuinely typed for the test to be about it.
     await user.clear(income)
     await user.type(income, '60000')
 
-    // Switching the basis changes only what the number MEANS — the basis-aware
-    // seed must not turn into a basis-driven rewrite of the field.
     await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
     expect(income).toHaveValue('60,000.00')
   })
 })
 
-/**
- * Income-period basis (re-homed from RetirementForm, story 15.2 / decision D2).
- *
- * Canonical storage is ANNUAL cents (the solver's unit); a monthly entry is
- * converted at the boundary. Switching the basis must not rewrite the number.
- */
 describe('RetirementAccumulationPlanner — income period basis', () => {
   beforeEach(resetStores)
   afterEach(resetStores)
@@ -875,13 +627,6 @@ describe('RetirementAccumulationPlanner — income period basis', () => {
     renderWithProviders(<RetirementAccumulationPlanner />)
 
     await fillReachableCase(user)
-    // ⚠️ TYPE the desired income rather than inheriting the seed (fixture
-    // corrected in story 44.1's code review — every assertion below is
-    // unchanged). `fillReachableCase` seeds income whose prefill happens to be
-    // 12,000.00, so this test read as "a typed number" while testing a seeded
-    // one. Since 44.1 an unauthored seed follows the basis (so that what is on
-    // screen survives a reload) and only an authored value is held fixed — which
-    // is the rule this test is actually about.
     const incomeField = screen.getByLabelText('Desired Retirement Income')
     await user.clear(incomeField)
     await user.type(incomeField, '12000')
@@ -891,14 +636,11 @@ describe('RetirementAccumulationPlanner — income period basis', () => {
       within(screen.getByTestId('accumulation-outputs')).getByText('Required nest egg')
         .nextElementSibling
 
-    // Annual (default): $12,000/yr → $1,000/mo at 5% → $240,000.
     expect(requiredRow()).toHaveTextContent('240,000.00')
 
-    // Monthly: the same "12,000" now means $12,000/mo → 12× the nest egg.
     await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
     expect(requiredRow()).toHaveTextContent('2,880,000.00')
 
-    // The typed number is left exactly as entered — only its meaning changed.
     expect(
       (screen.getByLabelText('Desired Retirement Income') as HTMLInputElement).value
     ).toContain('12,000')
@@ -906,25 +648,10 @@ describe('RetirementAccumulationPlanner — income period basis', () => {
   })
 })
 
-/**
- * Money-input sanitization (story 28-1, FR46).
- *
- * All money fields here share a single `currencyField` render helper, so one
- * onChange covers them; these prove the wiring reaches each field and that the
- * non-money numeric fields beside them were not swept up. ⚠️ There is no e2e net
- * on any money field since story 84.5 (FR137) retired
- * `e2e/money-input-sanitization.spec.ts`, which never covered /retirement anyway.
- * These are the only guard here.
- */
 describe('RetirementAccumulationPlanner money inputs reject non-numeric characters', () => {
   beforeEach(resetStores)
   afterEach(resetStores)
 
-  // ⚠️ Story 29.2 left exactly ONE money input on this page — the other two
-  // became derived displays. These guards were RETARGETED onto it rather than
-  // deleted: each pins a real shipped regression (the 28.1 caret bug, the 26.7
-  // remount-loses-focus bug) and, with no e2e net on this route, they remain the
-  // only protection the sanitizer wiring has.
   it('strips garbage pasted into "Desired Retirement Income"', () => {
     renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -949,8 +676,7 @@ describe('RetirementAccumulationPlanner money inputs reject non-numeric characte
     renderWithProviders(<RetirementAccumulationPlanner />)
 
     const input = screen.getByLabelText('Desired Retirement Income') as HTMLInputElement
-    // `setSelectionRange` throws on type="number", which would silently disable
-    // the caret correction in sanitizeMoneyChange (story 28-1).
+    // setSelectionRange throws on type="number", silently disabling the caret correction.
     expect(input.type).toBe('text')
     expect(input.inputMode).toBe('decimal')
   })
@@ -959,8 +685,6 @@ describe('RetirementAccumulationPlanner money inputs reject non-numeric characte
     const user = userEvent.setup()
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // The no-digit arm of the blur re-echo: sanitizeMoneyInput deliberately lets
-    // digit-free partials through, and they must stay visible.
     const input = screen.getByLabelText('Desired Retirement Income')
     await user.clear(input)
     await user.type(input, '-')
@@ -972,9 +696,6 @@ describe('RetirementAccumulationPlanner money inputs reject non-numeric characte
   it('leaves an untouched money field empty on blur, never "0.00"', () => {
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // The empty arm: blurring a never-filled field must not turn "not provided"
-    // into "entered zero", which would defeat the incomplete-input gate. With no
-    // income seeded there is no prefill, so the field really is untouched.
     const input = screen.getByLabelText('Desired Retirement Income')
     fireEvent.blur(input)
 
@@ -985,9 +706,8 @@ describe('RetirementAccumulationPlanner money inputs reject non-numeric characte
   })
 
   it('keeps focus in the field while typing (the render-helper guarantee)', async () => {
-    // `currencyField` must stay a called render helper, never a `<Component/>`
-    // defined in the render body — that would remount the input on every
-    // keystroke and drop focus (the story 26.7 regression).
+    // currencyField must stay a called helper, not a component defined in render, or
+    // the input remounts on every keystroke and loses focus.
     const user = userEvent.setup()
     renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -1000,14 +720,6 @@ describe('RetirementAccumulationPlanner money inputs reject non-numeric characte
   })
 })
 
-/**
- * Mobile a11y (re-homed from RetirementForm, story 24.1).
- *
- * The "Income period" <select> once shipped `focus:ring-blue-500` with no
- * `focus:ring-2` — a ring colour with zero width, i.e. an invisible focus
- * indicator (the Epic 15 WCAG lesson). ⚠️ Class-TOKEN membership, not substring:
- * `focus:ring-blue-500` contains "focus:ring-" but is not `focus:ring-2`.
- */
 describe('RetirementAccumulationPlanner — mobile a11y', () => {
   beforeEach(resetStores)
   afterEach(resetStores)
@@ -1027,11 +739,6 @@ describe('RetirementAccumulationPlanner — mobile a11y', () => {
     const fields = container.querySelectorAll<HTMLInputElement>(
       'input[type="text"], input[type="number"]'
     )
-    // Exactly four since 29.2 (age, life expectancy, desired income, return) —
-    // the other two became derived displays. Pinned EXACTLY rather than as a
-    // lower bound: an open bound would let a newly-added input slip in unringed
-    // as long as the total stayed high enough, which is the failure this test
-    // exists to catch.
     expect(fields).toHaveLength(5)
     for (const field of fields) {
       expect(field.classList.contains('focus:ring-2')).toBe(true)
@@ -1052,14 +759,6 @@ describe('RetirementAccumulationPlanner — mobile a11y', () => {
   })
 })
 
-/**
- * Locale switch mid-edit (story 28-1).
- *
- * The derived prefill rewrites the money field with the new locale's separators
- * whenever the currency changes. The sanitizer must accept whatever that effect
- * writes — otherwise the first keystroke after a currency switch would start
- * eating the field's own separators.
- */
 describe('RetirementAccumulationPlanner survives a currency switch mid-edit', () => {
   beforeEach(resetStores)
   afterEach(resetStores)
@@ -1068,36 +767,26 @@ describe('RetirementAccumulationPlanner survives a currency switch mid-edit', ()
     useBalanceStore.setState({ entries: [investmentRow(123456789)] })
 
     const { rerender } = renderWithProviders(<RetirementAccumulationPlanner />)
-    // en-US (currency-less) grouping.
     expect(screen.getByTestId('derived-current-saved')).toHaveTextContent('1,234,567.89')
 
-    // Switch to EUR, whose locale is de-DE: group '.', decimal ','.
     act(() => {
       useCurrencyStore.setState({ mode: 'symbol', currency: 'EUR' })
     })
     rerender(<RetirementAccumulationPlanner />)
 
-    // ⚠️ Substring, not an exact match: in symbol mode `formatCurrency` returns
-    // an Intl currency string ("1.234.567,89 €") whose space before the symbol is
-    // a narrow no-break space (U+202F), which an exact assertion would miss.
+    // Substring: Intl puts a narrow no-break space (U+202F) before the € symbol.
     expect(screen.getByTestId('derived-current-saved')).toHaveTextContent('1.234.567,89')
   })
 
   it('re-seeds the money field with the new locale separators and keeps typing working', async () => {
     const user = userEvent.setup()
-    // ⚠️ Income MUST be seeded. Without it `prefillDesiredIncomeCents` is null,
-    // the re-seed effect early-returns, and the test degenerates into a plain
-    // string append that would pass with the effect deleted outright — which is
-    // what happened when this guard was first retargeted. The effect depends on
-    // `locale`, so a currency switch is what makes it rewrite the field.
+    // Income must be seeded: without a prefill the re-seed effect early-returns and this passes vacuously.
     useIncomeStore.setState({ incomeSources: [incomeRow(1_000_000)] })
     const { rerender } = renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // $10,000/mo → annual $120,000 → half = $60,000, en-US grouping.
     const input = screen.getByLabelText('Desired Retirement Income')
     expect(input).toHaveValue('60,000.00')
 
-    // Switch to EUR, whose locale is de-DE: group '.', decimal ','.
     act(() => {
       useCurrencyStore.setState({ mode: 'symbol', currency: 'EUR' })
     })
@@ -1106,8 +795,6 @@ describe('RetirementAccumulationPlanner survives a currency switch mid-edit', ()
     const switched = screen.getByLabelText('Desired Retirement Income')
     expect(switched).toHaveValue('60.000,00')
 
-    // The next keystroke must append, not mangle the de-DE separators the effect
-    // just wrote — the blur-echo/idempotence guarantee reaching the UI (28-1).
     await user.type(switched, '1')
     expect(switched).toHaveValue('60.000,001')
   })
@@ -1117,30 +804,16 @@ describe('RetirementAccumulationPlanner survives a currency switch mid-edit', ()
     useBalanceStore.setState({ entries: [investmentRow(5_000_00)] })
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // One standalone adornment node, for the one remaining money INPUT. Before
-    // 29.2 there were three; the drop to one is the expected consequence of two
-    // fields becoming displays, not a regression.
     expect(screen.getAllByText('$')).toHaveLength(1)
 
-    // The derived displays are not left symbol-less by that change — they format
-    // through `formatCurrency`, so the symbol is part of the value text itself.
     expect(screen.getByTestId('derived-current-saved')).toHaveTextContent('$5,000.00')
   })
 })
 
-/**
- * Derived, non-editable figures (story 29.2, FR48 + FR49).
- *
- * "Current amount saved" and "monthly savings" are no longer inputs: they are
- * derived displays computed from data the user already entered elsewhere. The
- * user cannot correct them, which is exactly why the flooring behaviour has to be
- * both clamped at the binding boundary AND disclosed.
- */
 describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () => {
   beforeEach(resetStores)
   afterEach(resetStores)
 
-  /** Fill only the four fields that are still editable after 29.2. */
   async function fillEditableFields(
     user: ReturnType<typeof userEvent.setup>,
     { age = '40', life = '85', income = '12000', rate = '5' } = {}
@@ -1164,19 +837,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
   })
 
   it('derives monthly savings from investment CONTRIBUTIONS at mixed cadences (47.2 AC-1, AC-5)', () => {
-    // Four accounts, four cadences, normalized PER ROW and then summed:
-    //
-    //   $500.00 weekly    50000 × 52/12 = 216666.666… → round → 216667
-    //   $1,200.00 annually 120000 × 1/12 =  10000.0    → round →  10000
-    //   $250.00 biweekly   25000 × 26/12 =  54166.666… → round →  54167
-    //   $100.00 monthly    10000 × 1     =  10000      → round →  10000
-    //                                                    total = 290834c
-    //
-    // ⚠️ The fixture is chosen so per-item-then-sum and sum-then-round DISAGREE:
-    // summing the unrounded values first gives 290833.333… → 290833, one cent
-    // short. $2,908.34 is the pool's discipline (`savingsAllocation.ts:116-124`);
-    // $2,908.33 is the mutant. A fixture where every row normalized exactly would
-    // have passed against both.
+    // Per-row rounding then sum (290834c) differs from sum then round (290833c).
     useBalanceStore.setState({
       entries: [
         investmentRow(0, 'inv-1', { amount: 50_000, frequency: 'weekly' }),
@@ -1188,27 +849,11 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     renderWithProviders(<RetirementAccumulationPlanner />)
 
     expect(derivedValueOf('derived-monthly-savings')).toBe('2,908.34')
-    // ⚠️ Un-normalized (raw cents summed) would read $2,050.00 — the distortion
-    // the removed Net Worth projection page shipped and this page rejects.
     expect(screen.getByTestId('derived-monthly-savings')).not.toHaveTextContent('2,050.00')
   })
 
   it('clamps each ROW at zero, never the total (47.2 AC-1)', () => {
-    // ⚠️⚠️ THE FIXTURE THIS SUITE WAS MISSING, and its absence was found in
-    // review. Every other negative fixture here is a SINGLE negative row, for
-    // which per-row `Math.max(0, …)` and one clamp on the total are
-    // indistinguishable — both yield 0.00. Measured: rewriting the loop as
-    // `total += monthly` with a single `Math.max(0, total)` at the end left the
-    // ENTIRE suite green while a negative row silently ate a real contribution
-    // from another account.
-    //
-    //   +$1,500.00/mo  →  150000
-    //   −$400.00/mo    →  clamped to 0, NOT −40000
-    //                     per-row total = 150000 → $1,500.00
-    //                     total-clamped = 110000 → $1,100.00
-    //
-    // Per-row is the pool's discipline (`savingsAllocation.ts:116-124`), and the
-    // two surfaces reading the same rows must agree on it.
+    // Per-row clamping: one clamp on the total would let a negative row eat another account's contribution.
     useBalanceStore.setState({
       entries: [
         investmentRow(0, 'inv-1', { amount: 150_000 }),
@@ -1218,22 +863,12 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     renderWithProviders(<RetirementAccumulationPlanner />)
 
     expect(derivedValueOf('derived-monthly-savings')).toBe('1,500.00')
-    // The total-clamping mutant's answer, which this figure must never return.
     expect(screen.getByTestId('derived-monthly-savings')).not.toHaveTextContent('1,100.00')
   })
 
   it('discloses a clamped row WITHOUT claiming the figure was zeroed (47.2 AC-8)', async () => {
     const user = userEvent.setup()
-    // ⚠️ A state the old derivation could not reach: a positive figure that still
-    // hid a clamped row. Keying `flooredFromNegative` off the ROW rather than the
-    // FIGURE fired the results caveat here — copy that says the projection
-    // "treats it as zero" beside a card reading $1,500.00. Both clauses false.
-    //
-    // ⚠️⚠️ THE EDITABLE FIELDS MUST BE FILLED, and the first version of this test
-    // did not fill them. `resultsCaveat` renders only INSIDE a results branch, so
-    // asserting its absence without solving passes vacuously — measured: the
-    // row-keyed mutant came back GREEN. The warning was already written on the
-    // neighbouring test in this same file and it still did not propagate.
+    // Fill the editable fields: resultsCaveat renders only inside a results branch.
     useBalanceStore.setState({
       entries: [
         investmentRow(100_000_00, 'inv-1', { amount: 150_000 }),
@@ -1248,18 +883,11 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     expect(card).toHaveTextContent(
       'One or more accounts have a negative monthly contribution, which this plan counts as nothing.'
     )
-    // A results branch really is on screen, so the absence below is not vacuous.
     expect(screen.getByTestId('accumulation-outputs')).toBeInTheDocument()
-    // The figure was NOT floored, so the results-level caveat must stay off.
     expect(screen.queryByTestId('derived-floor-disclosure')).not.toBeInTheDocument()
   })
 
   it('tells a negative-only contributor the truth, not "add one" (47.2 AC-7, AC-8)', () => {
-    // ⚠️⚠️ THE TWO ZEROS, collapsed in the first implementation and caught in
-    // review. This user HAS set a contribution; it was clamped up from below
-    // zero. The no-contribution note tells them to do what they already did,
-    // while the results caveat beside it says a figure came out below zero —
-    // two contradictory sentences on one screen.
     useBalanceStore.setState({
       entries: [investmentRow(50_000_00, 'inv-1', { amount: -200_000 })],
     })
@@ -1274,17 +902,8 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
   })
 
   it('counts a contribution the user marked as already accounted for (47.2 AC-2)', () => {
-    // ⚠️⚠️ THE ARM THAT MATTERS. `contributionRecordedAsExpense` is a statement
-    // about the SAVINGS POOL — it stops `calculateDistributablePool` subtracting
-    // the same money twice (FR72, stories 45.1/47.1). It says nothing about
-    // whether the money is invested. It is. Filtering on it here — i.e. reusing
-    // `savingsAllocation`'s `sumMonthlyInvestmentContributions` — would silently
-    // import the pool's rule into the retirement plan and under-report every
-    // payroll-deducted saver's actual saving.
-    //
-    //   flagged   $400.00/mo → 40000
-    //   unflagged $600.00/mo → 60000
-    //                  total = 100000c = $1,000.00 (NOT $600.00)
+    // contributionRecordedAsExpense only affects the savings pool; the money is still
+    // invested, so it must count here.
     useBalanceStore.setState({
       entries: [
         { ...investmentRow(0, 'inv-1', { amount: 40_000 }), contributionRecordedAsExpense: true },
@@ -1294,13 +913,10 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     renderWithProviders(<RetirementAccumulationPlanner />)
 
     expect(derivedValueOf('derived-monthly-savings')).toBe('1,000.00')
-    // The pool's answer for the same rows, which this figure must NOT return.
     expect(screen.getByTestId('derived-monthly-savings')).not.toHaveTextContent('600.00')
   })
 
   it('no longer moves when income or expenses change (47.2 AC-4)', () => {
-    // The decoupling, asserted directly rather than inferred from the new
-    // derivation. Before 47.2 either mutation below moved this figure.
     useBalanceStore.setState({
       entries: [investmentRow(0, 'inv-1', { amount: 75_000 })],
     })
@@ -1313,7 +929,6 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     })
 
     expect(derivedValueOf('derived-monthly-savings')).toBe('750.00')
-    // The old derivation would now read $5,000.00.
     expect(screen.getByTestId('derived-monthly-savings')).not.toHaveTextContent('5,000.00')
   })
 
@@ -1324,8 +939,6 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // Positive anchors FIRST: without them this test passes if the component
-    // renders nothing at all, which is the opposite of what its name claims.
     expect(derivedValueOf('derived-current-saved')).toBe('5,000.00')
     expect(derivedValueOf('derived-monthly-savings')).toBe('3,000.00')
 
@@ -1334,8 +947,6 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
   })
 
   it('updates both figures live when the underlying store changes (AC-3)', () => {
-    // ⚠️ Since 47.2 that is ONE store, not three — both figures track the same
-    // balance rows, which is the coherence this change buys.
     renderWithProviders(<RetirementAccumulationPlanner />)
     expect(screen.getByTestId('derived-current-saved')).toHaveTextContent('0.00')
 
@@ -1350,17 +961,12 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
   })
 
   it('distinguishes no accounts from accounts with nothing going in (47.2 AC-6, AC-7)', () => {
-    // No investment rows at all → "add an account".
     const { unmount } = renderWithProviders(<RetirementAccumulationPlanner />)
     expect(screen.getByTestId('derived-monthly-savings')).toHaveTextContent(
       'Add an investment account on the Balance Tracking page, and say what you put in each month.'
     )
     unmount()
 
-    // ⚠️⚠️ The state the OLD source could NOT produce, and the main user-visible
-    // risk in story 47.2: the account exists, it just has no contribution set.
-    // Borrowing the note above would tell this user to do the thing they have
-    // already done, while the plan quietly reports they can never retire.
     useBalanceStore.setState({ entries: [investmentRow(50_000_00, 'inv-1')] })
     renderWithProviders(<RetirementAccumulationPlanner />)
     const derived = screen.getByTestId('derived-monthly-savings')
@@ -1371,10 +977,6 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
   })
 
   it('reports unreadable CONTRIBUTIONS, and names the page that holds them (47.2 AC-9)', () => {
-    // A non-finite `monthlyContribution` is reachable: the sync applier writes
-    // pulled rows into the store without validating them. Before 47.2 this same
-    // failure was reported as "We couldn't read your income data." and sent the
-    // user to a page that has nothing to do with it.
     useBalanceStore.setState({
       entries: [
         {
@@ -1387,18 +989,12 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 
     const derived = screen.getByTestId('derived-monthly-savings')
     expect(derived).toHaveTextContent("We couldn't read your investment account contributions.")
-    // Distinct from the BALANCE failure on the other card — the two cards read
-    // different fields of the same rows and must not blame each other's.
     expect(derived).not.toHaveTextContent('investment account balances')
-    // The planner still rendered — no ErrorBoundary fallback.
     expect(screen.getByLabelText('Current Age')).toBeInTheDocument()
   })
 
   it('COERCES a corrupt contribution cadence to monthly rather than failing (47.2 AC-9)', () => {
-    // ⚠️ Deliberately NOT the unreadable path. `monthlyContributionCents` coerces
-    // an unrecognised cadence to 'monthly' — the same degradation
-    // `SavingsPage`'s KNOWN_FREQUENCIES applies — so the savings pool and this
-    // figure can never disagree about a corrupt row. $300.00 is read as $300/mo.
+    // monthlyContributionCents coerces an unknown cadence to monthly, matching the savings pool.
     useBalanceStore.setState({
       entries: [
         {
@@ -1416,8 +1012,6 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
   })
 
   it('distinguishes investment accounts that hold nothing from having none at all', () => {
-    // `< 0` left exactly-zero in the `ok` state with no note, so a user with empty
-    // accounts saw a bare $0.00 indistinguishable from having no accounts.
     useBalanceStore.setState({ entries: [investmentRow(0)] })
     renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -1427,11 +1021,6 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
   })
 
   it('survives a corrupt persisted income row without reaching the ErrorBoundary (AC-6)', () => {
-    // ⚠️ Re-pointed by 47.2, not deleted. Income no longer feeds either derived
-    // figure, but it still feeds `prefillDesiredIncomeCents`, which calls
-    // `calculateNetIncomeResult` on the render path — the same throw that
-    // white-screens the HomePage dashboard (deferred-work.md:483). The guard now
-    // proves the PLANNER survives it and the derived figures are untouched by it.
     useBalanceStore.setState({
       entries: [investmentRow(0, 'inv-1', { amount: 120_000 })],
     })
@@ -1440,31 +1029,12 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     })
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // The planner still rendered — no ErrorBoundary fallback.
     expect(screen.getByLabelText('Current Age')).toBeInTheDocument()
-    // And the corrupt income row did not poison the contributions figure.
     expect(derivedValueOf('derived-monthly-savings')).toBe('1,200.00')
   })
 
   it('shows the FLOORED monthly savings, never a negative figure (AC-5)', async () => {
     const user = userEvent.setup()
-    // The contribution is −$2,000/mo. ⚠️ Since story 47.2 the negative comes from
-    // the CONTRIBUTION row; the income and expense rows below feed only the
-    // desired-income prefill and cannot move this figure at all.
-    //
-    // ⚠️ What this actually guards. Core is NOT the exposure here: the solver
-    // clamps `savedPerYearCents` (`retirement.ts:636`) AND
-    // `projectAccumulatedNestEgg` clamps both of its own inputs on arrival
-    // (`:449-450`), so an unclamped value cannot erode the projection. The
-    // exposure is the DISPLAY — without the flooring at the binding boundary the
-    // card would read "−$2,000.00" while every figure the solver produced was
-    // computed from 0. One input, two contradictory numbers, and since 29.2 no
-    // field for the user to correct. Mutation-proven: reverting the
-    // `Math.max(0, …)` makes the negative-value assertion below fail.
-    // ⚠️ Since 47.2 the negative must come from a CONTRIBUTION row. Seeding
-    // income < expenses no longer touches this figure at all, so the old fixture
-    // left the card at a trivially-zero value and the assertion below passed
-    // without ever exercising the clamp.
     useBalanceStore.setState({
       entries: [investmentRow(100_000_00, 'inv-1', { amount: -200_000 })],
     })
@@ -1473,22 +1043,13 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // ⚠️ Pinned EXACTLY, via the value node. `toHaveTextContent('0.00')` is a
-    // SUBSTRING match — '-2,000.00' contains '0.00' — so the obvious assertion
-    // passes on precisely the value it is meant to forbid.
     expect(derivedValueOf('derived-monthly-savings')).toBe('0.00')
 
     await fillEditableFields(user)
 
-    // The display and the solver agree: both are working from zero.
     const outputs = within(screen.getByTestId('accumulation-outputs'))
     expect(outputs.getByText('Saved per year').nextElementSibling?.textContent).toBe('0.00')
 
-    // And the projection grew from the assets rather than being drawn down.
-    // ⚠️ `toMoney` preserves the sign — stripping it (via /[^\d.]/g) turns
-    // '-48,000.00' into 48000 and erases the very error under test. The floor is
-    // CONCRETE, not a comparison between two unpinned quantities: $100,000 of
-    // assets compounding must end at or above the principal it started from.
     expect(toMoney(outputs.getByText('Total saved').nextElementSibling?.textContent)).toBe(100_000)
     expect(
       toMoney(outputs.getByText('Nest egg at retirement').nextElementSibling?.textContent)
@@ -1496,10 +1057,6 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
   })
 
   it('floors a NEGATIVE investment total the same way, and says so (AC-1, AC-5)', () => {
-    // ⚠️ The saved side had ZERO coverage: the clamp could be deleted outright
-    // and the whole suite stayed green. A negative total is reachable because the
-    // sync applier writes server rows without validation, and `currentBalance` is
-    // legal below zero everywhere except the entry form.
     useBalanceStore.setState({ entries: [investmentRow(-5_000_00)] })
     renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -1510,9 +1067,6 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
   })
 
   it('reports an unreadable balance instead of rendering a confident zero (AC-4, AC-6)', () => {
-    // A NaN balance formats as a plausible '0.00' and used to be classed `ok`,
-    // so the card claimed a healthy zero while the solver threw and the failure
-    // copy blamed the user's age — a field that is no longer even editable.
     useBalanceStore.setState({
       entries: [{ ...investmentRow(0), currentBalance: Number.NaN } as unknown as never],
     })
@@ -1524,8 +1078,6 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
   })
 
   it('treats a fractional-cent balance as unreadable rather than solving from it', () => {
-    // Sub-cent data makes the card and the solver disagree silently. The removed
-    // Net Worth projection page refused the identical row; this guard outlived it.
     useBalanceStore.setState({
       entries: [{ ...investmentRow(0), currentBalance: 500_050.5 } as unknown as never],
     })
@@ -1539,10 +1091,6 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 
   it('warns in the results when a figure could not be read at all (AC-4)', async () => {
     const user = userEvent.setup()
-    // `unreadable` feeds a FABRICATED zero to the solver. Excluding it from the
-    // caveat produced a complete, confident outlook built on invented data.
-    // ⚠️ Since 47.2 the unreadable source is a corrupt CONTRIBUTION, not a
-    // corrupt income row — income no longer reaches either derived figure.
     useBalanceStore.setState({
       entries: [
         {
@@ -1562,16 +1110,6 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 
   it('leaves the results caveat OFF when both figures are honestly zero', async () => {
     const user = userEvent.setup()
-    // Exactly-balanced income/expenses floors nothing, so claiming "your real
-    // position is worse than these numbers suggest" would simply be false.
-    //
-    // ⚠️ The editable fields MUST be filled. The caveat only renders inside a
-    // results branch, so asserting its absence without solving passes vacuously —
-    // mutation-checked: keying `flooredFromNegative` back off the state name is
-    // caught only once a results branch is on screen.
-    // ⚠️ Since 47.2 the honest zero is an account with NO contribution set:
-    // nothing was clamped, so claiming the position is worse than shown would be
-    // a plain lie.
     useBalanceStore.setState({ entries: [investmentRow(100_000_00, 'inv-1')] })
     useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
     useExpenseStore.setState({ expenses: [expenseRow(300_000)] })
@@ -1587,10 +1125,6 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 
   it('does not claim "no savings data" when the data exists but nets to zero (AC-7)', async () => {
     const user = userEvent.setup()
-    // ⚠️ The discriminating case for the no-data branch. Both floored figures are
-    // 0, but NEITHER source is empty — the user entered everything, it just nets
-    // negative. Gating on `cents === 0` (as this branch first did) tells them to
-    // add data they already added, while the caveat below contradicts it.
     useBalanceStore.setState({
       entries: [investmentRow(-5_000_00, 'inv-1', { amount: -200_000 })],
     })
@@ -1604,15 +1138,11 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     expect(
       notReachable.getByText(/Retirement isn.t reachable with these numbers/)
     ).toBeInTheDocument()
-    // Both figures really were floored from negatives, so the caveat belongs here.
     expect(screen.getByTestId('derived-floor-disclosure')).toBeInTheDocument()
   })
 
   it('draws no chart, and claims no figures, for a user with no source data at all', async () => {
     const user = userEvent.setup()
-    // The chart gate was newly satisfied for zero-data users, producing
-    // "your assets reach 0.00 in 55 years, at age 85" beneath a panel that had
-    // just said we have no data.
     renderWithProviders(<RetirementAccumulationPlanner />)
     await fillEditableFields(user, { age: '30', life: '85', income: '40000', rate: '6' })
 
@@ -1620,18 +1150,11 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
     expect(
       screen.getByText(/add your investment accounts to see how your savings grow/i)
     ).toBeInTheDocument()
-    // The retired wording named two pages that no longer feed anything here.
     expect(screen.queryByText(/income and expenses to see how your savings grow/i)).toBeNull()
   })
 
   it('gives a user with no data the add-your-data branch, not "unreachable" (AC-7)', async () => {
     const user = userEvent.setup()
-    // ⚠️ Regression guard for a state 29.2 CREATED. Before it, these two fields
-    // were empty inputs that held the incomplete gate shut, so this user saw the
-    // calm "enter your details" prompt. The gate no longer waits on them, so the
-    // solve now runs with 0 saved and 0 monthly — reaching the not-reachable
-    // branch and telling a brand-new user their retirement is unreachable and to
-    // "save more each month", a control this page no longer has.
     renderWithProviders(<RetirementAccumulationPlanner />)
     await fillEditableFields(user, { age: '30', life: '85', income: '40000', rate: '6' })
 
@@ -1653,15 +1176,6 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 
   it('does not show a confident all-zero outlook to a user with no data (47.2)', async () => {
     const user = userEvent.setup()
-    // ⚠️ Story 47.2 WIDENED the population that reaches this. `noSourceData` used
-    // to require BOTH sources empty; now that both figures read the investment
-    // rows it means "no investment accounts", which is the ordinary state of
-    // someone who has filled in income and expenses and nothing else.
-    //
-    // With a desired income of 0 the solve succeeds and reports `reachable`, so
-    // the outputs panel renders a green all-zero outlook — directly above the
-    // chart's "add your investment accounts" placeholder, which is gated on
-    // `noSourceData` and the outputs panel was not.
     useIncomeStore.setState({ incomeSources: [incomeRow(500_000)] })
     useExpenseStore.setState({ expenses: [expenseRow(200_000)] })
     renderWithProviders(<RetirementAccumulationPlanner />)
@@ -1677,9 +1191,6 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 
   it('discloses in the results that a floored figure was assumed to be zero (AC-4)', async () => {
     const user = userEvent.setup()
-    // ⚠️ Since 47.2 the floored figure is a NEGATIVE contribution. The old
-    // fixture (income < expenses) floors nothing here any more, so it would have
-    // asserted the caveat's presence while nothing was actually clamped.
     useBalanceStore.setState({
       entries: [investmentRow(100_000_00, 'inv-1', { amount: -200_000 })],
     })
@@ -1693,27 +1204,6 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
   })
 })
 
-/**
- * Story 35.3 — the post-retirement return rate.
- *
- * The rate a plan earns AFTER retirement is now separate from the one it earns
- * while saving. The field mirrors the accumulation rate until the user edits it,
- * which is what keeps an untouched planner numerically identical to its
- * pre-35.3 behaviour at every rate rather than only at the 6.0 default.
- */
-/**
- * Story 47.2 (FR74) — the copy fence.
- *
- * Five surfaces named income or expenses as the source of the monthly figure.
- * Each was true before this story and false after it, and NOT ONE of them was
- * covered: the whole set could have shipped unchanged while every test stayed
- * green, which is precisely what the epic warned would happen.
- *
- * ⚠️ The negatives here are scoped to the elements that must not mention income
- * or expenses, never to the page. The planner legitimately says "Desired
- * Retirement Income" and "Income period" — a page-wide ban would be red on
- * arrival, which is a guard that gets deleted rather than fixed.
- */
 describe('RetirementAccumulationPlanner — the monthly figure stops blaming income (story 47.2)', () => {
   beforeEach(resetStores)
   afterEach(resetStores)
@@ -1748,16 +1238,12 @@ describe('RetirementAccumulationPlanner — the monthly figure stops blaming inc
 
     for (const [label, seed] of states) {
       resetStores()
-      // ⚠️ Income and expenses are seeded in EVERY case on purpose. A card that
-      // still read them would have something to say about them; without this the
-      // absence below could just be the absence of data.
       useIncomeStore.setState({ incomeSources: [incomeRow(500_000)] })
       useExpenseStore.setState({ expenses: [expenseRow(200_000)] })
       seed()
 
       const { unmount } = renderWithProviders(<RetirementAccumulationPlanner />)
       const card = screen.getByTestId('derived-monthly-savings')
-      // Positive anchor first: the card really did render its own content.
       expect(card.textContent, label).toContain('Monthly Savings')
       expect(card.textContent, label).not.toMatch(/income|expense/i)
       unmount()
@@ -1765,9 +1251,6 @@ describe('RetirementAccumulationPlanner — the monthly figure stops blaming inc
   })
 
   it('sends an unreadable monthly figure to the page that holds it (AC-10)', () => {
-    // Defence in depth: the derived figures guard non-finite values before the
-    // solver sees them, so this copy is reachable only if that guard is bypassed.
-    // It was still telling the user to check two pages that no longer feed it.
     const copy = describeSolverError(new Error('Monthly savings must be a finite number'))
     expect(copy).toMatch(/monthly\s+contributions\s+on\s+your\s+Balance\s+Tracking\s+page/i)
     expect(copy).not.toMatch(/income|expenses/i)
@@ -1775,9 +1258,6 @@ describe('RetirementAccumulationPlanner — the monthly figure stops blaming inc
 
   it('offers a lever that can actually move the outcome (AC-10)', async () => {
     const user = userEvent.setup()
-    // ⚠️ The most damaging of the five. "Raise your income or cut expenses" was
-    // shown to a user in shortfall and, after this story, could not change their
-    // outlook by a cent.
     useBalanceStore.setState({
       entries: [investmentRow(1_000_00, 'inv-1', { amount: 5_000 })],
     })
@@ -1808,7 +1288,6 @@ describe('RetirementAccumulationPlanner — post-retirement return rate (story 3
   const accumulationField = () => screen.getByLabelText('Expected Annual Return')
   const postRetirementField = () => screen.getByLabelText('Post-Retirement Annual Return')
 
-  /** Replace an input's whole value. `user.type` APPENDS, and both fields ship pre-filled. */
   async function setField(
     user: ReturnType<typeof userEvent.setup>,
     field: HTMLElement,
@@ -1822,7 +1301,6 @@ describe('RetirementAccumulationPlanner — post-retirement return rate (story 3
     const user = userEvent.setup()
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // BEFORE: it starts showing the accumulation default, not an independent one.
     expect(postRetirementField()).toHaveValue('6.0')
 
     await setField(user, accumulationField(), '8')
@@ -1840,7 +1318,6 @@ describe('RetirementAccumulationPlanner — post-retirement return rate (story 3
     await setField(user, postRetirementField(), '3')
     expect(postRetirementField()).toHaveValue('3')
 
-    // Changing the accumulation rate must no longer drag the edited field with it.
     await setField(user, accumulationField(), '8')
     expect(accumulationField()).toHaveValue('8')
     expect(postRetirementField()).toHaveValue('3')
@@ -1850,10 +1327,6 @@ describe('RetirementAccumulationPlanner — post-retirement return rate (story 3
     const user = userEvent.setup()
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // ⚠️ The default seeded fixture is already over-funded ($1,000,000 saved
-    // against a $540,000 requirement), so it retires at month 0 and NOTHING
-    // moves for a small rate change. The rate has to drop far enough for the
-    // requirement to clear the balance before this assertion means anything.
     await fillReachableCase(user)
 
     const outputValue = (label: string): string =>
@@ -1869,10 +1342,6 @@ describe('RetirementAccumulationPlanner — post-retirement return rate (story 3
     const requiredAfter = toMoney(outputValue('Required nest egg'))
     expect(requiredAfter).toBeGreaterThan(requiredBefore)
 
-    // ⚠️ Assert the DIRECTION, not merely that the value moved. `not.toBe(before)`
-    // passes just as happily on an implementation that retires the user EARLIER,
-    // which is the opposite of what this test's name claims to protect — and this
-    // is the only UI-level check of the age effect.
     expect(Number(outputValue('Earliest retirement age'))).toBeGreaterThan(Number(ageBefore))
   })
 
@@ -1881,14 +1350,11 @@ describe('RetirementAccumulationPlanner — post-retirement return rate (story 3
     renderWithProviders(<RetirementAccumulationPlanner />)
     await fillReachableCase(user)
 
-    // BEFORE: a real result is on screen.
     expect(screen.getByTestId('accumulation-outputs')).toBeInTheDocument()
 
     await user.clear(postRetirementField())
 
-    // `parsePercentageToDecimal` returns 0 for an empty string rather than
-    // throwing, so without the emptiness gate this would render a confident
-    // 0%-return answer instead of asking for the missing value.
+    // parsePercentageToDecimal returns 0 for an empty string rather than throwing.
     expect(screen.queryByTestId('accumulation-outputs')).not.toBeInTheDocument()
     expect(
       screen.getByText('Enter all the details above to see your retirement outlook.')
@@ -1911,11 +1377,6 @@ describe('RetirementAccumulationPlanner — post-retirement return rate (story 3
   })
 
   it('drops the income-growth clause on the perpetual model, where it is false', async () => {
-    // The clause describes the deplete annuity's growth term. Perpetual sizes on
-    // income ÷ post-retirement rate and never reads this rate for anything but
-    // the growth curve — the core suite pins that a 0.12 accumulation rate does
-    // not move a perpetual target, so rendering the clause there states a
-    // mechanism the user's own calculation does not have.
     const user = userEvent.setup()
     renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -1937,8 +1398,6 @@ describe('RetirementAccumulationPlanner — post-retirement return rate (story 3
 
     await setField(user, postRetirementField(), '3')
 
-    // Nothing ever resets the touched flag, so the sentence would otherwise keep
-    // asserting a behaviour that has permanently ended.
     expect(screen.queryByText(/Follows the rate above until you change it/)).not.toBeInTheDocument()
     expect(
       screen.getByText(
@@ -1948,9 +1407,6 @@ describe('RetirementAccumulationPlanner — post-retirement return rate (story 3
   })
 
   it('names the real cause when the two rates overflow the requirement (AC-10)', async () => {
-    // The overflow throw used to need an absurd income; with two rates a long
-    // horizon plus a wide rate gap reaches it, so copy blaming the income alone
-    // points at the one field that is fine.
     const user = userEvent.setup()
     renderWithProviders(<RetirementAccumulationPlanner />)
     await fillReachableCase(user)
@@ -1972,8 +1428,6 @@ describe('RetirementAccumulationPlanner — post-retirement return rate (story 3
 
     await setField(user, postRetirementField(), '2')
 
-    // The curve describes the saving phase, so the post-retirement assumption
-    // must not appear in it.
     expect(summaryText()).toContain('5.0% return while saving')
   })
 })
@@ -1991,15 +1445,6 @@ describe('RetirementAccumulationPlanner — assets stay OUT of the nest egg (Sto
   })
 
   it('does not count an asset row toward the RENDERED nest-egg base', () => {
-    // ⚠️ This is the ONLY surviving projection in the app fed by balance entries:
-    // `RetirementTimelineChart` compounds this figure at the investment return
-    // rate. If an asset ever reached it, a condo would compound like a portfolio.
-    //
-    // ⚠️ The first version of this test re-implemented the investment filter IN
-    // THE TEST BODY and asserted on its own arithmetic. It never rendered the
-    // component, so widening `useTotalInvestmentBalance` to include assets — the
-    // exact defect D6 exists to prevent — would have left it GREEN. It was a
-    // guard that could not fail. It now reads the DISPLAYED figure.
     useBalanceStore.setState({
       entries: [
         balanceRow('inv-1', 'investment', 5_000_000),
@@ -2009,17 +1454,11 @@ describe('RetirementAccumulationPlanner — assets stay OUT of the nest egg (Sto
 
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // Hand-computed: the base is the INVESTMENT total alone, $50,000.00.
     expect(screen.getByTestId('derived-current-saved')).toHaveTextContent('50,000.00')
-    // And explicitly NOT the folded-in figure, $450,000.00, which is what
-    // including the condo would produce.
     expect(screen.getByTestId('derived-current-saved')).not.toHaveTextContent('450,000.00')
   })
 
   it('shows the nest-egg empty state for a user holding ONLY assets', () => {
-    // A user with balance entries but no investments must not be told to "add
-    // accounts on the Balance Tracking page" as if the page were empty — that is
-    // the copy D6 rewrote.
     useBalanceStore.setState({ entries: [balanceRow('asset-1', 'asset', 40_000_000)] })
 
     renderWithProviders(<RetirementAccumulationPlanner />)
@@ -2035,22 +1474,12 @@ describe('RetirementAccumulationPlanner — what not to count toward desired inc
   beforeEach(resetStores)
   afterEach(resetStores)
 
-  // Anchored at both ends so `toHaveTextContent` is an EQUALITY check on the
-  // element's own text. The bare-string form is a substring match, which is how
-  // an assertion like this goes quietly vacuous against a wrapper element.
   const NOTE = /^Don't include expenses that will no longer be relevant in retirement\.$/
   const PERIOD_HELP = /^The annual income you want in retirement$/
 
   it('tells the user to leave out costs that will have ended by retirement', () => {
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // ⚠️ Anchored on the DISTINGUISHING clause, not on "retirement" — that word
-    // appears dozens of times in this component, so a pin on it would survive a
-    // full rewrite of the sentence and guard nothing (Epic 23 record).
-    //
-    // ⚠️ Scoped to the note element rather than searched for over the whole
-    // page: an unscoped probe passes if the sentence appears ANYWHERE, attached
-    // to nothing.
     expect(screen.getByTestId('desiredIncome-note')).toHaveTextContent(NOTE)
   })
 
@@ -2058,15 +1487,9 @@ describe('RetirementAccumulationPlanner — what not to count toward desired inc
     renderWithProviders(<RetirementAccumulationPlanner />)
     const input = screen.getByLabelText('Desired Retirement Income')
 
-    // ⚠️ Before story 65.1 this attribute did not exist anywhere in the file:
-    // the help text was VISUALLY adjacent to the input but not associated with
-    // it, so the field's period never formed part of its description.
     const describedBy = input.getAttribute('aria-describedby')
     expect(describedBy).toBeTruthy()
 
-    // ⚠️ `aria-describedby` is an id LIST, and the attribute is worthless unless
-    // the ids RESOLVE. Asserting the string alone passes against a typo'd or
-    // stale id that announces nothing — the failure mode this test exists for.
     const described = (describedBy ?? '')
       .split(/\s+/)
       .filter(Boolean)
@@ -2077,23 +1500,11 @@ describe('RetirementAccumulationPlanner — what not to count toward desired inc
       expect(element).not.toBeNull()
     }
 
-    // ⚠️ Both ids must land on the PARAGRAPHS themselves, not on any ancestor.
-    // `toHaveTextContent` with a plain string is a SUBSTRING match, so without
-    // this the whole assertion is vacuous against a wrapper: an outer `<div>`
-    // containing both paragraphs "has" each expected string, length is still 2
-    // and neither is null, so the test stays green while the field's real
-    // description would include the Income period select. Caught in review.
     for (const element of described) {
       expect(element?.tagName).toBe('P')
     }
 
-    // Reading order: the period the figure is stated in, THEN what to leave out
-    // of it. A caveat announced before the unit it qualifies is the wrong way
-    // round. `incomeBasis` is reliably 'annual' here — the GLOBAL setup in
-    // `vitest.setup.ts` calls `resetPlan()` around every test (the file-local
-    // `resetStores` does NOT touch the planner store), so this is deterministic
-    // even though other tests in this file switch the basis to monthly.
-    //
+    // incomeBasis is annual here because the global setup resets the plan around every test.
     expect(described[0]).toHaveTextContent(PERIOD_HELP)
     expect(described[1]).toHaveTextContent(NOTE)
   })
@@ -2103,17 +1514,11 @@ describe('RetirementAccumulationPlanner — expenses that end before retirement 
   beforeEach(resetStores)
   afterEach(resetStores)
 
-  /** The marked-expenses hint, whitespace-normalized (JSX joins source lines). */
   const hint = (): string =>
     (screen.getByTestId('desired-income-ending-expenses').textContent ?? '')
       .replace(/\s+/g, ' ')
       .trim()
 
-  // ⚠️ The frequency parameter is typed explicitly rather than inferred from a
-  // `'monthly' as const` default. That default typed the parameter as the LITERAL
-  // 'monthly', making `marked(10_000, 'weekly')` below a type error (code review
-  // 65.2). The review fixed it here but not in `expenseRow`, which `marked`
-  // spreads, and the error survived until story 78.2 type-checked test files.
   const marked = (amount: number, frequency: Frequency = 'monthly', id = 'exp-m') => ({
     ...expenseRow(amount, frequency, id),
     endsBeforeRetirement: true,
@@ -2133,10 +1538,6 @@ describe('RetirementAccumulationPlanner — expenses that end before retirement 
     renderWithProviders(<RetirementAccumulationPlanner />)
     await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
 
-    // ⚠️ The adopt button is a child of this <p>, so its label is part of
-    // `textContent`. Pinned WHOLE rather than trimmed away: the sentence and the
-    // affordance it offers are one unit, and a suggestion whose action silently
-    // vanished would still pass a sentence-only assertion.
     expect(hint()).toBe(
       "Your expenses today are 4,200.00 a month. You've marked 1,800.00 a month as ending before retirement, leaving 2,400.00. Use this figure"
     )
@@ -2150,7 +1551,6 @@ describe('RetirementAccumulationPlanner — expenses that end before retirement 
     renderWithProviders(<RetirementAccumulationPlanner />)
     await user.selectOptions(screen.getByLabelText('Income period'), 'annual')
 
-    // x12 of the monthly figures, and the noun follows.
     expect(hint()).toBe(
       "Your expenses today are 50,400.00 a year. You've marked 21,600.00 a year as ending before retirement, leaving 28,800.00. Use this figure"
     )
@@ -2158,15 +1558,11 @@ describe('RetirementAccumulationPlanner — expenses that end before retirement 
 
   it('⚠️ NORMALIZES a non-monthly marked expense rather than counting it as monthly', async () => {
     const user = userEvent.setup()
-    // $100.00/week marked. MEASURED: core uses the EXACT fraction 52/12, not the
-    // rounded 4.333 in project-context.md — 10_000c x 52/12 = 43_333.33… ->
-    // round = 43_333c. The raw-sum answer (100.00) is pinned as wrong below.
+    // Core uses the exact 52/12 fraction: 10_000c weekly -> 43_333c monthly.
     useExpenseStore.setState({
       expenses: [marked(10_000, 'weekly'), expenseRow(56_667, 'monthly', 'exp-u')],
     })
     renderWithProviders(<RetirementAccumulationPlanner />)
-    // ⚠️ `incomeBasis` DEFAULTS to annual, so the monthly figure has to be
-    // selected before it can be asserted on.
     await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
 
     expect(hint()).toContain("You've marked 433.33 a month")
@@ -2174,25 +1570,15 @@ describe('RetirementAccumulationPlanner — expenses that end before retirement 
   })
 
   it('⚠️⚠️ renders the suggestion WITHOUT touching the desired-income field', async () => {
-    // The whole reason this control moved off the Balance Tracking page: a flag
-    // that silently rewrote the user's central figure would contradict
-    // `desiredIncomeTouched` and make the same tick produce different outcomes
-    // for two users, with nothing on screen to explain it (UX evaluation §b).
     const user = userEvent.setup()
     useIncomeStore.setState({ incomeSources: [incomeRow(1_000_000)] })
     useExpenseStore.setState({ expenses: [marked(180_000)] })
     renderWithProviders(<RetirementAccumulationPlanner />)
 
     const income = screen.getByLabelText('Desired Retirement Income') as HTMLInputElement
-    // Still the income-derived seed ($10,000/mo -> $120,000/yr -> half), NOT the
-    // expense-derived figure.
     expect(income).toHaveValue('60,000.00')
     expect(screen.getByTestId('desired-income-ending-expenses')).toBeInTheDocument()
-    // ⚠️ A real basis CHANGE, not a bare click — the second review round found the
-    // click exercised nothing, making this assertion identical to the one above.
     await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
-    // Still the income-derived seed (re-expressed by the seed effect, because the
-    // value is UNTOUCHED) — never the expense-derived figure.
     expect(income).toHaveValue('5,000.00')
     expect(income).not.toHaveValue('2,400.00')
   })
@@ -2222,10 +1608,8 @@ describe('RetirementAccumulationPlanner — expenses that end before retirement 
   })
 
   it('⚠️⚠️ adopting MARKS THE FIELD AUTHORED, so the income seed cannot overwrite it', async () => {
-    // Without `markDesiredIncomeAuthored`, the seeding effect at :730-746 re-fires
-    // whenever `prefillDesiredIncomeCents` changes (it goes null -> real on every
-    // hydration) and silently replaces the adopted number. That is the exact
-    // failure `desiredIncomeTouched` was added for in story 44.1.
+    // Without markDesiredIncomeAuthored the seed effect re-fires when the prefill
+    // changes (null -> real on hydration) and replaces the adopted number.
     const user = userEvent.setup()
     useExpenseStore.setState({
       expenses: [marked(180_000), expenseRow(240_000, 'monthly', 'exp-u')],
@@ -2235,40 +1619,23 @@ describe('RetirementAccumulationPlanner — expenses that end before retirement 
     await user.click(screen.getByRole('button', { name: 'Use this figure' }))
     expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('2,400.00')
 
-    // Now make the income prefill appear, exactly as hydration does.
     act(() => {
       useIncomeStore.setState({ incomeSources: [incomeRow(1_000_000)] })
     })
 
-    // ⚠️ Asserts the MECHANISM, not just the value: `desiredIncomeTouched` must be
-    // set, or this assertion could pass merely because the seed happened not to
-    // re-run in this harness.
     expect(useRetirementPlannerStore.getState().plan.desiredIncomeTouched).toBe(true)
     expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('2,400.00')
   })
 
   it('⚠️⚠️ REGRESSION (code review 65.2): a huge ticked expense does not crash the page', () => {
-    // A monthly amount that is a safe integer while its ×12 is not. The basis
-    // DEFAULTS to annual, so rendering put it through `toAnnualIncomeCents`, which
-    // THREW on the render path — taking all of `/retirement` to its ErrorBoundary,
-    // on every visit, until the row was edited from another page.
-    // ⚠️ Form-reachable: no `maxLength`, no digit cap, no bound in `parseFromInput`.
     useExpenseStore.setState({ expenses: [marked(800_000_000_000_000)] })
     renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // The page renders, and the figure REFUSES rather than crashing.
     expect(screen.getByLabelText('Desired Retirement Income')).toBeInTheDocument()
     expect(hint()).toBe("We can't total your expenses, so we can't suggest a figure.")
   })
 
   it('⚠️⚠️ REGRESSION (code review 65.2): an ADOPTED figure follows a later basis switch', async () => {
-    // Adopting marks the field authored (AC-10, so the income seed cannot reclaim
-    // it) — but `desiredIncomeTouched` is ALSO what stops the seed effect
-    // re-expressing on a basis change, so the adopted value was stranded in the
-    // basis it was adopted in. Adopt 28,800.00/yr, switch to Monthly, and the
-    // field still read 28,800.00 — now solved as MONTHLY, a 12x overstatement —
-    // while the sentence beneath it correctly said 2,400.00 a month. Exactly the
-    // (untouched + monthly + an annual figure) trio story 44.1 fixed for the seed.
     const user = userEvent.setup()
     useExpenseStore.setState({
       expenses: [marked(180_000), expenseRow(240_000, 'monthly', 'exp-u')],
@@ -2287,11 +1654,6 @@ describe('RetirementAccumulationPlanner — expenses that end before retirement 
   })
 
   it('⚠️⚠️ REGRESSION (second review round): the adopted figure still follows the basis AFTER A REMOUNT', async () => {
-    // THE case that defeated the first fix. `adoptedMonthlyCents` began as
-    // component state, so this closed the 12x defect only while the planner
-    // stayed MOUNTED — and `/retirement` unmounts on every route change, so one
-    // navigation brought the overstatement straight back. All three review layers
-    // found it independently and one measured it. The value is persisted now.
     const user = userEvent.setup()
     useExpenseStore.setState({
       expenses: [marked(180_000), expenseRow(240_000, 'monthly', 'exp-u')],
@@ -2300,28 +1662,17 @@ describe('RetirementAccumulationPlanner — expenses that end before retirement 
     await user.click(screen.getByRole('button', { name: 'Use this figure' }))
     expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('28,800.00')
 
-    // ⚠️ Assert the MECHANISM, not just the outcome. Two attempts to prove this
-    // by mutation both failed to mutate what mattered (one disabled the load
-    // coercion, which zustand's in-memory state makes irrelevant across a
-    // remount; the other broke hook order and failed the file for an unrelated
-    // reason). The property that actually makes the fix work is that the adopted
-    // figure lives in the PERSISTED plan rather than in component state — so
-    // assert exactly that. `remaining` here is 2,400.00/mo = 240_000 cents.
     expect(useRetirementPlannerStore.getState().plan.adoptedMonthlyCents).toBe(240_000)
 
-    // Leave the route and come back.
     first.unmount()
     renderWithProviders(<RetirementAccumulationPlanner />)
     expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('28,800.00')
 
     await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
-    // Pre-fix this still read 28,800.00 — now solved as MONTHLY, a 12x plan.
     expect(screen.getByLabelText('Desired Retirement Income')).toHaveValue('2,400.00')
   })
 
   it('⚠️ but a value the user TYPES is theirs — the adopted figure stops following', async () => {
-    // The other half of the fix: re-expressing must stop the moment the user
-    // authors their own number, or it would overwrite their edit on every switch.
     const user = userEvent.setup()
     useExpenseStore.setState({
       expenses: [marked(180_000), expenseRow(240_000, 'monthly', 'exp-u')],
@@ -2332,12 +1683,8 @@ describe('RetirementAccumulationPlanner — expenses that end before retirement 
     const field = screen.getByLabelText('Desired Retirement Income')
     await user.clear(field)
     await user.type(field, '5000')
-    // The same mechanism, cleared: typing disarms the re-expression.
     expect(useRetirementPlannerStore.getState().plan.adoptedMonthlyCents).toBeNull()
     await user.selectOptions(screen.getByLabelText('Income period'), 'monthly')
-    // Grouped by the blur re-echo, which is the existing money-field behaviour —
-    // the point is that it is still the USER'S number and was NOT replaced by the
-    // adopted figure when the basis changed.
     expect(field).toHaveValue('5,000.00')
     expect(field).not.toHaveValue('2,400.00')
   })
@@ -2346,40 +1693,21 @@ describe('RetirementAccumulationPlanner — expenses that end before retirement 
     useExpenseStore.setState({
       expenses: [
         marked(180_000),
-        // A persisted STRING amount: `+` becomes a CONCATENATION and yields a
-        // large, plausible, finite integer with no NaN to flag it
-        // (deferred-work.md:1001).
+        // A persisted string amount makes + concatenate into a plausible finite number.
         { ...expenseRow(0, 'monthly', 'exp-bad'), amount: '240000' as unknown as number },
       ],
     })
     renderWithProviders(<RetirementAccumulationPlanner />)
 
     expect(hint()).toBe("We can't total your expenses, so we can't suggest a figure.")
-    // No adopt control on the refusal arm — there is no figure to adopt.
     expect(screen.queryByRole('button', { name: 'Use this figure' })).not.toBeInTheDocument()
   })
 
   it('⚠️ the nest-egg figures are untouched by a marked expense (the epic’s boundary)', () => {
-    // Epic 65 forbids this story from reaching the nest-egg base, which is
-    // assets-only and load-bearing (:334-350, deferred-work.md:1000). Marking an
-    // expense must move the DESIRED INCOME side only.
     useBalanceStore.setState({ entries: [investmentRow(5_000_000, 'inv-1', { amount: 50_000 })] })
     useExpenseStore.setState({ expenses: [marked(180_000)] })
     const { container } = renderWithProviders(<RetirementAccumulationPlanner />)
 
-    // ⚠️ Read the FIGURES, not the whole page, and compare them across the flag.
-    // Code review 65.2 found the previous version captured `container.textContent`
-    // with the flag ON and then asserted only that a LABEL still existed — it never
-    // compared before to after, though its comment claimed to.
-    //
-    // ⚠️ WHICH ASSERTION DOES THE WORK, corrected in the second review round. The
-    // mutation `useTotalInvestmentBalance() + 180_000` is UNCONDITIONAL, so it
-    // shifts BOTH snapshots equally and `toBe(withFlag)` stays GREEN under it —
-    // what turns red is the `toContain('50,000.00')` pin. The earlier caption
-    // credited the comparison and was wrong. The three lines catch different
-    // mutations: the pin catches an unconditional change to the base, the
-    // comparison catches a FLAG-GATED one (the real AC-17 violation shape), and
-    // `not.toContain` catches the specific folded-in total.
     const savingsSection = (): string =>
       (container.querySelector('[data-testid="retirement-savings-position"]') ?? container)
         .textContent ?? ''
@@ -2391,22 +1719,12 @@ describe('RetirementAccumulationPlanner — expenses that end before retirement 
     })
 
     expect(screen.queryByTestId('desired-income-ending-expenses')).not.toBeInTheDocument()
-    // The nest-egg figures are IDENTICAL with and without the flag. This is the
-    // assertion the old comment promised and did not make.
     expect(savingsSection()).toBe(withFlag)
-    // …and the marked figure never reached the base in the first place.
     expect(withFlag).not.toContain('51,800.00')
   })
 })
 
-/**
- * Story 110.1 (FR178, D3): a single decimal comma is the decimal point. Both rate
- * fields are `type="text"` now: a number input drops the `,` keystroke, so a
- * user typing `2,5` saw `25` and the plan solved at 25% (MEASURED in Chromium,
- * story Dev Notes §2). The reachable fixture retires at once (0 months), where
- * the saving-phase rate moves nothing, so the desired income is raised until
- * retirement is years away and the whole outlook moves with either rate.
- */
+// A number input drops the ',' keystroke, so both rate fields are type="text".
 describe('a decimal comma in the rate fields (story 110.1)', () => {
   beforeEach(resetStores)
   afterEach(resetStores)
@@ -2437,8 +1755,6 @@ describe('a decimal comma in the rate fields (story 110.1)', () => {
 
       await setRate(user, label, '2.5')
       const atPoint = outlook()
-      // Positive control: the outlook moves with the rate, so equality below is
-      // not two readings of a rate-blind figure.
       await setRate(user, label, '25')
       expect(outlook()).not.toBe(atPoint)
 

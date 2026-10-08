@@ -14,13 +14,8 @@ import * as savings from '../../stores/savingsStore'
 import * as tableSort from '../../stores/tableSortStore'
 import { PERSISTED_STORES } from '../reload-chain'
 
-/**
- * Parity: the reload chain resets EVERY store `StoreHydration` rehydrates (84.5
- * code review). A registered store missing from `PERSISTED_STORES` keeps its
- * in-memory value across `reloadChain()`, so a test would see it "survive" a
- * reload without it ever reaching storage, the vacuity the chain exists to
- * remove.
- */
+// A registered store missing from `PERSISTED_STORES` keeps its in-memory value across
+// `reloadChain()`, so it would seem to survive a reload without reaching storage.
 const HYDRATION_SOURCE = readFileSync(
   resolve(__dirname, '..', '..', 'lib', 'store-hydration.tsx'),
   'utf-8'

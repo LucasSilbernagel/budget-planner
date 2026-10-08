@@ -4,15 +4,6 @@ import { useRef, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { ConfirmDialog } from '../ConfirmDialog'
 
-/**
- * ConfirmDialog tests (story 6-3).
- *
- * ConfirmDialog is a thin wrapper over the shared Modal primitive that renders a
- * themed destructive-confirmation `alertdialog` (replacing browser
- * `confirm()`/`alert()`). It inherits Modal's dismissal + focus behavior, so the
- * tests here focus on the confirm/cancel contract and the post-confirm focus
- * handoff (AC-5), not the overlay/Escape internals (covered by Modal.test.tsx).
- */
 describe('ConfirmDialog', () => {
   it('renders nothing when closed', () => {
     renderWithProviders(
@@ -85,7 +76,7 @@ describe('ConfirmDialog', () => {
     )
     expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Keep' })).toBeInTheDocument()
-    // Story 115.1: the confirm fill stays red-600 in dark (white on red-500 is 3.76:1).
+    // White on red-500 is 3.76:1, so the dark fill stays red-600.
     expectNoDarkFill(screen.getByRole('button', { name: 'Remove' }))
   })
 
@@ -98,11 +89,9 @@ describe('ConfirmDialog', () => {
       const anchorRef = useRef<HTMLButtonElement>(null)
       return (
         <>
-          {/* Stable element that survives the delete — focus should land here. */}
           <button type="button" ref={anchorRef}>
             Add
           </button>
-          {/* The triggering Delete button is removed when the item is deleted. */}
           {!deleted && (
             <button type="button" onClick={() => setOpen(true)}>
               Delete
@@ -126,7 +115,6 @@ describe('ConfirmDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Delete' }))
     await user.click(screen.getByTestId('delete-confirm-confirm'))
 
-    // The Delete trigger is gone; focus must NOT have fallen to <body>.
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add' })).toHaveFocus()
   })
@@ -134,9 +122,7 @@ describe('ConfirmDialog', () => {
   it('routes final focus to finalFocusRef even when the trigger is still mounted at confirm time (AC-5, async-safe)', async () => {
     const user = userEvent.setup()
 
-    // Simulates an async delete: the triggering button is NOT removed on
-    // confirm. The handoff must still land on finalFocusRef rather than letting
-    // Modal restore focus to the persistent trigger.
+    // Async delete: the trigger is not removed on confirm, yet focus must still go to finalFocusRef.
     function Harness() {
       const [open, setOpen] = useState(false)
       const anchorRef = useRef<HTMLButtonElement>(null)
@@ -163,7 +149,6 @@ describe('ConfirmDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Delete' }))
     await user.click(screen.getByTestId('delete-confirm-confirm'))
 
-    // Trigger persists, but focus must be on the stable anchor, not the trigger.
     expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add' })).toHaveFocus()
   })

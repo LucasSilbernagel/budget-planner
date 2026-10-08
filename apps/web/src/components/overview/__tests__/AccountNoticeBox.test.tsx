@@ -1,25 +1,5 @@
-/**
- * The dismissable Overview "No account needed" box (story 55.1, FR82).
- *
- * ⚠️ WHAT THIS FILE CAN AND CANNOT PROVE. jsdom has no layout and no cascade
- * beyond inline styles, so the PRE-PAINT half of this feature — the <head>
- * bootstrap plus the `[data-dismiss-account-notice='1']` rule in `global.css` —
- * is NOT testable here. Those are covered by
- * `lib/overview/__tests__/no-flash-account-notice-script.dom.test.ts` (the
- * bootstrap's behaviour) and `src/__tests__/pre-paint-suppression.dom.test.tsx`
- * (the `<head>` wiring and the CSS rule's selector; the real first frame is the
- * D2 loss of story 84.3). What this file owns is the
- * React half: the affordance, the write, the effect-gated render, and the
- * fail-open behaviour.
- *
- * ⚠️ THE BUTTON'S ACCESSIBLE NAME IS "Dismiss", EXACTLY. `getByRole`'s `name`
- * option is a FULL-STRING match, so if the label is ever changed, every probe
- * written against the old name stops matching and reports GREEN rather than
- * red — the failure shape recorded in project memory as
- * `icon-only-button-naming`. `DISMISS_NAME` below is the single source of truth
- * for these tests, and the "absence" probes deliberately use a name-free role
- * query so they cannot go vacuously green the same way.
- */
+// `getByRole`'s name is a full-string match, so absence probes use a name-free role query
+// that cannot go vacuously green after a rename.
 
 import { render, screen } from '@testing-library/react'
 import { act } from 'react'
@@ -31,7 +11,6 @@ import {
 } from '../../../lib/overview/account-notice-dismissal'
 import { AccountNoticeBox } from '../AccountNoticeBox'
 
-/** Exact accessible name of the close affordance (AC-1). */
 const DISMISS_NAME = 'Dismiss privacy notice'
 
 const PILLARS = 'No account needed · Optional sync is EU-hosted · No bank connection.'
@@ -39,8 +18,7 @@ const FRAMING = 'Intentional budgeting without bank sync or AI integrations.'
 
 beforeEach(() => {
   localStorage.clear()
-  // The component now marks <html> on dismiss, and a leaked attribute would
-  // make a later test's "not marked" assertion fail for an unrelated reason.
+  // The component marks <html> on dismiss; a leaked attribute would break later tests.
   document.documentElement.removeAttribute(ACCOUNT_NOTICE_DISMISSED_ATTRIBUTE)
 })
 
@@ -58,11 +36,6 @@ describe('AccountNoticeBox — not yet dismissed', () => {
     expect(screen.getByRole('button', { name: DISMISS_NAME })).toBeInTheDocument()
   })
 
-  /**
-   * AC-1: "not merely a decorative icon". The × glyph must be hidden from the
-   * accessibility tree so the button's name comes from the label alone — a
-   * screen reader must never announce "times" or "multiplication sign".
-   */
   it('exposes the label as the name and hides the glyph from assistive tech', () => {
     render(<AccountNoticeBox />)
 
@@ -73,39 +46,15 @@ describe('AccountNoticeBox — not yet dismissed', () => {
     const glyph = button.querySelector('[aria-hidden="true"]')
     expect(glyph).not.toBeNull()
     expect(glyph?.textContent).toBe('×')
-    // The accessible name must not be assembled from the glyph.
     expect(button).toHaveAccessibleName(DISMISS_NAME)
   })
 
-  /**
-   * The box's semantic theming (story 55.1 AC-5, extended by story 60.1 / FR91).
-   *
-   * ⚠️ THIS IS A RENAME FENCE, NOT PROOF THAT ANYTHING IS VISIBLE. jsdom loads
-   * no stylesheet, so `getComputedStyle` here cannot fail and a colour assertion
-   * in this file would be permanently green while describing nothing (project
-   * memory, `jsdom-computed-style-vacuous`). Worse, `styles/global.css:88-91`
-   * records that a class resolving to values something else already set is a
-   * silent no-op that "still passes lint, type-check and class-token
-   * assertions" — which is exactly what these assertions are. What actually
-   * proved the border renders, in both themes, was
-   * `e2e/overview-account-notice.spec.ts`'s "reads as its own block" block,
-   * dropped by story 84.2; the `overview-*` screenshots show it now.
-   *
-   * The WIDTH class and the COLOUR classes are all required and all pinned: a
-   * Tailwind colour utility sets no width, so `border-gray-300` alone renders
-   * nothing without the bare `border` — that zero-width state IS the defect
-   * story 60.1 closed.
-   *
-   * ⚠️ `border-gray-300`/`dark:border-gray-700` rather than the `border-default`
-   * token is deliberate (Lucas, 2026-09-22): gray-200 on this canvas measures
-   * 1.18:1, gray-300 1.41:1. See the component docblock.
-   */
+  /** Rename fence only: jsdom loads no stylesheet. Bare `border` supplies the width a colour class lacks. */
   it('keeps the surface-inset / border / border-gray-300 / text-body / text-muted theming', () => {
     render(<AccountNoticeBox />)
 
     const box = screen.getByText(PILLARS).closest('[data-account-notice]') as HTMLElement
     expect(box).not.toBeNull()
-    // Class TOKEN membership, not substring — `surface-inset-foo` must not pass.
     expect([...box.classList]).toContain('surface-inset')
     expect([...box.classList]).toContain('border')
     expect([...box.classList]).toContain('border-gray-300')
@@ -114,12 +63,6 @@ describe('AccountNoticeBox — not yet dismissed', () => {
     expect([...screen.getByText(FRAMING).classList]).toContain('text-muted')
   })
 
-  /**
-   * ⚠️ WCAG 2.2 SC 2.5.8. jsdom cannot measure a box, so this asserts the
-   * size FLOOR is declared; `e2e/overview-account-notice.spec.ts` measured the
-   * real rendered rect until story 84.2 dropped it (FR137). Story 51.2's review found a desktop target-size defect
-   * that every unit gate passed, which is why both layers exist.
-   */
   it('declares a >=24px pointer target on the close button (SC 2.5.8)', () => {
     render(<AccountNoticeBox />)
     const tokens = [...screen.getByRole('button', { name: DISMISS_NAME }).classList]
@@ -138,15 +81,10 @@ describe('AccountNoticeBox — dismissing', () => {
 
     expect(screen.queryByText(PILLARS)).toBeNull()
     expect(screen.queryByText(FRAMING)).toBeNull()
-    // Name-free role probe: cannot pass vacuously if the label ever changes.
     expect(screen.queryAllByRole('button')).toHaveLength(0)
     expect(localStorage.getItem(ACCOUNT_NOTICE_DISMISSED_STORAGE_KEY)).toBe('1')
   })
 
-  /**
-   * AC-3, the write half of fail-open. A blocked store must not break the
-   * click: the box still goes away for this visit, it just will not stay away.
-   */
   it('still hides the box when the store refuses the write (AC-3)', () => {
     vi.spyOn(globalThis.localStorage, 'setItem').mockImplementation(() => {
       throw new Error('QuotaExceededError')
@@ -174,25 +112,8 @@ describe('AccountNoticeBox — returning user', () => {
     expect(screen.queryAllByRole('button')).toHaveLength(0)
   })
 
-  /**
-   * ⚠️ AC-3's HYDRATION CONTRACT — asserted against the SERVER render, which is
-   * the only place the property actually lives. The server has no localStorage,
-   * so it must emit the box unconditionally; the first CLIENT render must agree
-   * with that HTML, and only the effect afterwards may remove it.
-   *
-   * The failure this catches: a lazy `useState(wasAccountNoticeDismissed())`
-   * initializer reads storage DURING render. Under `renderToString` in jsdom —
-   * where `localStorage` exists and the flag below is set — that returns null,
-   * the server HTML loses the box, and the real browser gets a hydration
-   * mismatch. Every other test in this file stays green through that bug.
-   *
-   * ⚠️ This also mirrors, at unit level, the SSR "SEO fence" in
-   * `src/__tests__/served-pages.served.test.ts` (was `e2e/loading-state.spec.ts`
-   * until story 84.4): the assertion is on the CLOSING TAG, not a
-   * bare phrase, because the pillars sentence also opens the page's
-   * `<meta name="description">` — a bare `toContain` would match the head while
-   * the body copy was gone. Do not relax it to a plain phrase.
-   */
+  // Against the server render: a lazy initializer would drop the box from it. Asserts the closing
+  // tag because the pillars sentence also opens the meta description.
   it('emits the box in the SERVER render even when already dismissed (AC-3 hydration contract)', () => {
     localStorage.setItem(ACCOUNT_NOTICE_DISMISSED_STORAGE_KEY, '1')
 
@@ -203,18 +124,8 @@ describe('AccountNoticeBox — returning user', () => {
     expect(html).toContain('data-account-notice')
   })
 
-  /**
-   * ⚠️ THE IN-SESSION FLASH GUARD (code review HIGH). The `<head>` bootstrap
-   * runs once per DOCUMENT load, so a dismissal that happens afterwards must
-   * mark `<html>` itself — otherwise a client-side navigation away from `/` and
-   * back remounts this component, which renders the box and only removes it in
-   * a post-paint effect. Reproduced in a real browser: the node re-attached
-   * with `display: "block"` while `<html>` carried no attribute.
-   *
-   * Its e2e twin (a real SPA navigation) was retired by story 84.3; the CSS
-   * rule that makes the mark hide the box is pinned in
-   * `src/__tests__/pre-paint-suppression.dom.test.tsx`.
-   */
+  // A dismissal after document load must mark <html>, or a client-side return renders the box
+  // until a post-paint effect removes it.
   it('marks <html> on dismiss so a later remount cannot paint the box (AC-4)', () => {
     render(<AccountNoticeBox />)
     expect(document.documentElement.hasAttribute(ACCOUNT_NOTICE_DISMISSED_ATTRIBUTE)).toBe(false)
@@ -237,11 +148,6 @@ describe('AccountNoticeBox — returning user', () => {
     expect(screen.getByRole('button', { name: DISMISS_NAME })).toBeInTheDocument()
   })
 
-  /**
-   * AC-6: per-browser only. A dismissal recorded under a DIFFERENT key — which
-   * is what another device/browser amounts to from this component's point of
-   * view, and also what `InstallPrompt`'s key is — must not hide this box.
-   */
   it('ignores an unrelated dismissal key (AC-6, and no key sharing with InstallPrompt)', () => {
     localStorage.setItem('bp-pwa-install-dismissed', Date.now().toString())
 

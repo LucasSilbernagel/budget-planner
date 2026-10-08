@@ -1,16 +1,6 @@
 // @vitest-environment node
-/**
- * Story 82.2: under the node environment there is no Web Storage, on every Node.
- *
- * Node 20 has no `localStorage` global. Node 25+ defines one, and on Node 26 it
- * is a getter that returns `undefined` (or, with `--localstorage-file`, a SQLite
- * store shared by every worker and every run). `src/test/webstorage.ts` removes
- * it, so a node-env test sees what CI's Node 20 sees.
- *
- * The shim's branches are also driven against a plain object carrying a
- * Node-style getter, so they are tested on Node 20 (CI) too, where the real
- * global has nothing to remove.
- */
+// Node 25+ defines `localStorage` (on 26 a getter returning undefined, or a SQLite store shared
+// across workers); the shim removes it so node-env tests match Node 20.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -50,9 +40,8 @@ describe('Web Storage under the node environment', () => {
 })
 
 describe('vitest.setup.ts evaluates the shim before any store', () => {
-  // zustand's persist binds storage when a store module is evaluated. Biome's
-  // import sort moves a side-effect import to the END of an import group, so the
-  // blank line after it (its own group) is load-bearing.
+  // persist binds storage at store-module evaluation, and Biome sorts a side-effect import
+  // to the END of its group, so the blank line after it is load-bearing.
   const lines = readFileSync(join(__dirname, '../../../vitest.setup.ts'), 'utf8').split('\n')
   const first = lines.findIndex((line) => line.startsWith('import '))
 

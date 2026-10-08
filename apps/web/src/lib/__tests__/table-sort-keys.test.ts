@@ -7,23 +7,7 @@ import {
   createSavingsSortExtractors,
 } from '../table-sort-keys'
 
-/**
- * The per-column sort KEYS for story 34.2 (FR61).
- *
- * Two properties are load-bearing and are asserted directly rather than through
- * a rendered table: a key is never `NaN` and never throws, and a key agrees with
- * what the cell displays.
- */
-
-/**
- * Narrows a PARTIAL extractor map for a key the test knows is present.
- *
- * The map is partial because a column can be unavailable in some states (Category
- * is Premium-only). A missing key here is a test-setup error, not a condition
- * under test, so it throws loudly rather than being silently optional-chained
- * into `undefined` — which would turn an assertion about ordering into an
- * assertion about nothing.
- */
+/** Throws so a missing extractor is a setup error, not an assertion about `undefined`. */
 function keyOf<Row, Key extends string>(
   extractorMap: SortKeyExtractors<Row, Key>,
   key: Key
@@ -46,9 +30,7 @@ describe('flow (Income / Expenses) sort keys', () => {
   const extractors = createFlowSortExtractors(new Map(), true)
 
   it('normalizes Amount by frequency rather than reading the raw number', () => {
-    // ⚠️ The fixture whose RAW and NORMALIZED orders disagree. Raw ascending is
-    // 500_00 (monthly) then 600_00 (annually); normalized ascending is the
-    // annual row first, because 600_00/12 = 5000 < 500_00.
+    // Raw and normalized orders disagree: 600_00/12 = 5000 < 500_00.
     const monthly = flowRow('monthly', 500_00, 'monthly')
     const annual = flowRow('annual', 600_00, 'annually')
     expect(keyOf(extractors, 'amount')(annual)).toBe(5000)
@@ -65,8 +47,6 @@ describe('flow (Income / Expenses) sort keys', () => {
       flowRow('m', 100, 'monthly'),
       flowRow('b', 100, 'biweekly'),
     ]
-    // Alphabetical would be annually, biweekly, monthly, weekly — i.e. exactly
-    // the reverse of the meaningful order for two of the four.
     expect(sortRowsBy(rows, keyOf(extractors, 'frequency'), 'asc').map((r) => r.name)).toEqual([
       'w',
       'b',
@@ -81,9 +61,7 @@ describe('flow (Income / Expenses) sort keys', () => {
       keyOf(extractors, 'amount')(flowRow('inf', Number.POSITIVE_INFINITY, 'monthly'))
     ).toBeNull()
     expect(keyOf(extractors, 'amount')(flowRow('bad-freq', 100, 'fortnightly'))).toBeNull()
-    // ⚠️ The Frequency key has its own guard: getNormalizationMultiplier does not
-    // throw on an unknown cadence, it returns undefined, so an unguarded key
-    // would yield NaN here and silently scramble the array.
+    // `getNormalizationMultiplier` returns undefined for an unknown cadence rather than throwing.
     expect(keyOf(extractors, 'frequency')(flowRow('bad-freq', 100, 'fortnightly'))).toBeNull()
   })
 
@@ -95,9 +73,7 @@ describe('flow (Income / Expenses) sort keys', () => {
     const names = new Map([
       ['cat-z', 'Zebra'],
       ['cat-a', 'Apple'],
-      // A blank name is what separates `resolveCategoryName` from a raw map
-      // lookup: the raw lookup returns '   ', which would sort FIRST, while the
-      // cell renders the uncategorized placeholder.
+      // A raw map lookup returns '   ' for a blank name, which would sort first.
       ['cat-blank', '   '],
     ])
     const withNames = createFlowSortExtractors(names, true)
@@ -116,11 +92,6 @@ describe('flow (Income / Expenses) sort keys', () => {
 })
 
 it('OMITS the Category key entirely when the column is not rendered', () => {
-  // ⚠️ Omitted, not merely unused. `useTableSort` degrades a sort whose key has
-  // no extractor back to manual order — that is what stops an entitled user's
-  // Category sort outliving the column when entitlement lapses, which would
-  // otherwise leave the table sorted by an invisible key with the move arrows
-  // disabled and no desktop control to clear it.
   const gated = createFlowSortExtractors(new Map([['cat-a', 'Apple']]), false)
   expect(gated.category).toBeUndefined()
   expect(gated.name).toBeTypeOf('function')
@@ -158,28 +129,19 @@ describe('savings sort keys', () => {
   })
 
   it('reads Monthly Allocation from the solver pool for AUTOMATIC rows only', () => {
-    // Membership in `allocations` is what discriminates automatic from manual
-    // (story 26.3) — an automatic row's stored `monthlyAllocation` is not what
-    // its row displays.
+    // Membership in `allocations` marks a row automatic; its stored `monthlyAllocation` is not what it displays.
     const extractors = createSavingsSortExtractors({ auto: 250_00 }, () => null)
     expect(keyOf(extractors, 'monthlyAllocation')(goal('auto', 500_00, 0, 999_00))).toBe(250_00)
     expect(keyOf(extractors, 'monthlyAllocation')(goal('manual', 500_00, 0, 30_00))).toBe(30_00)
-    // A corrupt negative manual amount is floored at 0, matching the cell.
     expect(keyOf(extractors, 'monthlyAllocation')(goal('manual-neg', 500_00, 0, -5))).toBe(0)
     expect(keyOf(extractors, 'monthlyAllocation')(goal('manual-null', 500_00, 0, null))).toBe(0)
   })
 
   it('⚠️ keys a target-less ACCOUNT by its displayed figure, exactly like a goal (72.1)', () => {
-    // Story 72.1 reverses 64.1 / FR98, which keyed every account as null because
-    // its cell rendered “—”. The cell now shows the account's real figure, so the
-    // key must follow it: manual ⇒ its floored stored amount, automatic ⇒ its
-    // share from `allocations`.
     const extractors = createSavingsSortExtractors({ 'acct-auto': 250_00 }, () => null)
     expect(keyOf(extractors, 'monthlyAllocation')(goal('acct-fixed', null, 0, 300_00))).toBe(300_00)
     expect(keyOf(extractors, 'monthlyAllocation')(goal('acct-clean', null, 0, null))).toBe(0)
     expect(keyOf(extractors, 'monthlyAllocation')(goal('acct-auto', null, 0, null))).toBe(250_00)
-    // Measured descending in 64.1: a 300.00 account and a 100.00 goal. Now both
-    // figures are visible, so the account sorts ABOVE the goal by the figure shown.
     const rows = [goal('goal-fixed', 500_00, 0, 100_00), goal('acct-fixed', null, 0, 300_00)]
     expect(
       sortRowsBy(rows, keyOf(extractors, 'monthlyAllocation'), 'desc').map((r) => r.id)
@@ -219,11 +181,7 @@ describe('balance sort keys', () => {
       entry('condo', 'asset', 0),
       entry('tfsa', 'investment', 0),
     ]
-    // ⚠️ Story 43.4: this key was BINARY (`type === 'investment' ? 0 : 1`), which
-    // would have tied every asset with every debt. `BalanceRow.type` is `string`,
-    // so nothing in the compiler could see that.
-    // ⚠️ Sorting by the DISPLAYED label would give Asset, Debt, Investment —
-    // assets adjacent to debts, the one grouping the page never shows.
+    // Sorting by the displayed label would give Asset, Debt, Investment.
     expect(sortRowsBy(rows, keyOf(extractors, 'type'), 'asc').map((r) => r.name)).toEqual([
       'tfsa',
       'condo',
@@ -237,11 +195,7 @@ describe('balance sort keys', () => {
   })
 
   it('sorts a prototype-named type LAST instead of reading Object.prototype', () => {
-    // ⚠️ A rank map keyed by a raw string is prototype-exposed: `RANK['constructor']`
-    // returns an inherited FUNCTION, which is not nullish, so a `?? FALLBACK` never
-    // fires and the comparator receives a function as a sort key. Unknown types are
-    // reachable — `balanceStore.dom.test.ts` pins that a hand-edited or
-    // newer-build row survives rehydrate untouched.
+    // `RANK['constructor']` is an inherited function, which is not nullish, so `??` never fires.
     const rows = [
       entry('weird', 'constructor', 0),
       entry('tfsa', 'investment', 0),
@@ -256,8 +210,7 @@ describe('balance sort keys', () => {
   })
 
   it('gives an asset row NO contribution sort key, matching its em-dash cell', () => {
-    // Rule 2: sort by what the CELL SHOWS. The Contribution cell is an em-dash for
-    // an asset, so keying it at 0 would sort it among real zero-contribution rows.
+    // An asset contribution shows an em-dash, so keying it at 0 would mix it with real zeroes.
     const asset = entry('condo', 'asset', 40_000_000, 50_000, 'monthly')
     expect(keyOf(extractors, 'contribution')(asset)).toBeNull()
   })
@@ -276,17 +229,7 @@ describe('balance sort keys', () => {
     ])
   })
 
-  /**
-   * Story 49.1 (FR75). This replaces 'treats a debt row as having NO contribution
-   * limit or room', which proved the `maxContribution` / `remainingRoom`
-   * extractors branched on `type`. Both extractors are gone with their columns.
-   *
-   * ⚠️ Asserted as an EXACT SET rather than two `toBeUndefined()` absence checks.
-   * An absence check on an extractor that is already gone can never fail again
-   * (48.1's vacuity trap); the exact set still reddens if either extractor is
-   * re-added AND if a surviving one is dropped — which is what keeps the
-   * `BalanceSortKey` union and the rendered header list in agreement.
-   */
+  /** Exact set: an absence check on a removed extractor could never fail again. */
   it('exposes exactly one extractor per rendered column, and no retired ones', () => {
     expect(Object.keys(extractors).sort()).toEqual(
       ['type', 'name', 'currentBalance', 'contribution'].sort()
@@ -310,11 +253,6 @@ describe('balance sort keys', () => {
     expect(keyOf(extractors, 'contribution')(corrupt)).toBeNull()
   })
 
-  /**
-   * Story 102.1 (FR169, AC-3): a debt's Contribution cell shows its LINKED
-   * EXPENSE's payment (or "Not linked"), never its own stored contribution, so
-   * the key reads the same thing (rule 2: sort by what the cell shows).
-   */
   describe('a debt sorts by its linked expense (story 102.1)', () => {
     const payments: Record<string, { amount: unknown; frequency: unknown }> = {
       'e-weekly': { amount: 100_00, frequency: 'weekly' },
@@ -341,7 +279,6 @@ describe('balance sort keys', () => {
     })
 
     it('⚠️ never keys a debt at its own stored contribution', () => {
-      // A pre-102.1 debt can still hold one; the cell no longer shows it.
       expect(keyOf(linked, 'contribution')(debt('old', null, 999_00))).toBeNull()
     })
 
@@ -360,9 +297,6 @@ describe('balance sort keys', () => {
     })
   })
 
-  // Story 103.1 (FR171): this test was "sorts a negative debt balance below
-  // every positive one". The cell now shows a debt as the amount OWED, so rule 2
-  // (sort by what the cell shows) keys a legacy −500 debt at 500, above 100.
   it('keys a legacy negative debt by the amount owed its cell shows (Story 103.1)', () => {
     const rows = [entry('tfsa', 'investment', 100_00), entry('loan', 'debt', -500_00)]
     expect(keyOf(extractors, 'currentBalance')(rows[1] as (typeof rows)[number])).toBe(500_00)

@@ -1,12 +1,3 @@
-/**
- * categoryStore + useCategoryManager (Story 30.4a, AC-3)
- *
- * `.dom.test.ts` because these exercise the persist middleware against a REAL
- * localStorage — vitest.config.ts's environmentMatchGlobs only puts `.dom.test`
- * files (and components/*) in jsdom; a plain `.test.ts` here would run in node,
- * where `localStorage` is undefined and the rehydrate assertions are meaningless.
- */
-
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useCategoryManager } from '../../hooks/useCategoryManager'
 import { useCategoryStore } from '../categoryStore'
@@ -15,14 +6,8 @@ import { useIncomeStore } from '../incomeStore'
 
 const CATEGORY_KEY = 'budget-planner-categories-v1'
 
-/** The manager's operations are module-level, so they work outside React. */
 const manager = () => useCategoryManager()
 
-/**
- * `addCategory` returns null when the store REJECTS a name (code review 30.4a
- * moved validation into the store). Tests that expect a successful create unwrap
- * here, so a regression surfaces as a clear failure rather than a null deref.
- */
 const addOk = (input: { name: string; kind: 'income' | 'expense' }) => {
   const created = useCategoryStore.getState().addCategory(input)
   if (!created) {
@@ -59,7 +44,7 @@ describe('categoryStore — CRUD', () => {
     const after = useCategoryStore.getState().getCategoryById(created.id)
 
     expect(after?.name).toBe('Groceries')
-    expect(after?.id).toBe(created.id) // renamed IN PLACE — not replaced
+    expect(after?.id).toBe(created.id)
     expect(Date.parse(after?.updatedAt ?? '')).toBeGreaterThan(Date.parse(before))
   })
 
@@ -68,10 +53,9 @@ describe('categoryStore — CRUD', () => {
 
     useCategoryStore.getState().deleteCategory(created.id)
 
-    // Still present (a hard delete could never be surfaced by a delta pull)...
+    // Still present: a hard delete could never be surfaced by a delta pull.
     expect(useCategoryStore.getState().categories).toHaveLength(1)
     expect(useCategoryStore.getState().getCategoryById(created.id)?.isDeleted).toBe(true)
-    // ...but gone from the pickable set.
     expect(useCategoryStore.getState().getCategoriesByKind('expense')).toHaveLength(0)
   })
 
@@ -110,9 +94,8 @@ describe('categoryStore — duplicate detection', () => {
   })
 
   it('ignores tombstoned rows — a deleted name becomes reusable', () => {
-    // This is the client-side half of the partial unique index (WHERE isDeleted =
-    // false). A plain unique constraint would 23505 here while the store kept the
-    // new row — silent client/server divergence.
+    // The client-side half of the partial unique index (WHERE NOT isDeleted); a plain unique
+    // constraint would reject this server-side while the store kept the row.
     const created = addOk({ name: 'Groceries', kind: 'expense' })
     useCategoryStore.getState().deleteCategory(created.id)
 
@@ -173,11 +156,8 @@ describe('useCategoryManager — delete cascade (AC-3)', () => {
 
     expect(affectedRowCount).toBe(2)
     const expenses = useExpenseStore.getState().expenses
-    // Concrete: the two referencing rows are now null, the untouched one stays null too,
-    // and NO row is left pointing at the tombstoned category.
     expect(expenses.filter((e) => e.categoryId === categoryId)).toHaveLength(0)
     expect(expenses.map((e) => e.categoryId)).toEqual([null, null, null])
-    // The rows themselves survive — un-categorized, not deleted.
     expect(expenses).toHaveLength(3)
   })
 
@@ -198,10 +178,8 @@ describe('useCategoryManager — delete cascade (AC-3)', () => {
   })
 
   it('the cascade goes through the store ACTIONS so each row re-syncs', () => {
-    // ⚠️ The point of routing the cascade through updateExpense rather than a bulk
-    // setState: each action enqueues a sync update, so the un-categorization
-    // propagates. A bulk write would fix this device and let another device push
-    // the stale categoryId back, silently re-attaching a deleted category.
+    // Routed through updateExpense so each change enqueues a sync update; a bulk setState would let
+    // another device push the stale categoryId back.
     const spy = vi.spyOn(useExpenseStore.getState(), 'updateExpense')
     const created = manager().createCategory('Groceries', 'expense')
     const categoryId = created.ok ? created.category.id : ''
@@ -255,14 +233,8 @@ describe('categoryStore — persistence', () => {
 })
 
 /**
- * Store-level write invariants (code review 30.4a).
- *
- * ⚠️ These live in the STORE, not just in useCategoryManager. The store is
- * exported through the `stores/index` barrel and Story 30.4b consumes it
- * directly, so a caller that skips the manager must not be able to create a row
- * the wire will refuse. Every rejection below previously produced a local row
- * that could NEVER sync, reported to the user as nothing at all — the queue
- * gate's ZodError is swallowed into a console line by `onQueueError`.
+ * Invariants live in the store: a caller skipping the manager must not create a row the wire
+ * refuses.
  */
 describe('categoryStore — write invariants', () => {
   it('rejects a whitespace-only name instead of creating an empty category', () => {
@@ -278,9 +250,6 @@ describe('categoryStore — write invariants', () => {
   })
 
   it('rejects a 256-character name — the varchar(255) / sync-gate boundary', () => {
-    // AC-3's `≤255` clause, which shipped unimplemented. Without this bound the
-    // row is created locally and then rejected by `syncOperationDataSchema`
-    // BEFORE it enters the queue, so it can never reach the server.
     expect(
       useCategoryStore.getState().addCategory({ name: 'a'.repeat(256), kind: 'expense' })
     ).toBeNull()
@@ -301,8 +270,7 @@ describe('categoryStore — write invariants', () => {
   })
 
   it('still allows the same name on the OTHER side of the ledger', () => {
-    // Negative control: proves the duplicate guard is scoped by `kind` and has
-    // not been widened into a blanket ban on repeated names.
+    // Negative control: the duplicate guard is scoped by kind.
     addOk({ name: 'Consulting', kind: 'expense' })
     expect(addOk({ name: 'Consulting', kind: 'income' }).kind).toBe('income')
   })
@@ -327,8 +295,7 @@ describe('categoryStore — write invariants', () => {
   })
 
   it('allows a rename that only changes case of its OWN name', () => {
-    // Negative control for the guard above: the duplicate check must exclude the
-    // row being renamed, or correcting capitalisation becomes impossible.
+    // The duplicate check must exclude the row being renamed.
     const created = addOk({ name: 'groceries', kind: 'expense' })
 
     useCategoryStore.getState().renameCategory(created.id, 'Groceries')
@@ -338,17 +305,8 @@ describe('categoryStore — write invariants', () => {
 })
 
 /**
- * Tombstone guards (code review 30.4a).
- *
- * ⚠️ This is the ONLY store that keeps soft-deleted rows in local state, so
- * unlike every sibling a mutation can still "find" a row the server has already
- * dropped. Server-side `entityExists` filters `isDeleted = false`, so an UPDATE
- * of such a row is an `update-delete` conflict, which the client never removes
- * from its queue: it is retried forever, pins the sync status at FAILED and
- * re-opens the circuit breaker every cycle — suppressing retries for EVERY
- * other entity, not just categories. (A second DELETE was the same trap until
- * story 76.1, which made the server acknowledge a delete of a row the user has
- * already tombstoned.)
+ * The only store keeping tombstones locally; an update to one is a server conflict retried
+ * forever.
  */
 describe('categoryStore — tombstoned rows are inert', () => {
   it('a second delete does not re-tombstone or re-enqueue', async () => {
@@ -362,7 +320,6 @@ describe('categoryStore — tombstoned rows are inert', () => {
     useCategoryStore.getState().deleteCategory(created.id)
     const afterSecond = useCategoryStore.getState().getCategoryById(created.id)?.updatedAt
 
-    // updatedAt untouched by the second call — nothing was re-written.
     expect(afterSecond).toBe(afterFirst)
     expect(useCategoryStore.getState().categories).toHaveLength(1)
     deleteSpy.mockRestore()
@@ -397,8 +354,7 @@ describe('categoryStore — tombstoned rows are inert', () => {
   })
 
   it('a tombstoned name is free to reuse — the guard does not outlive the row', () => {
-    // Negative control: tombstones must not permanently reserve their name, or
-    // deleting "Groceries" would make it uncreatable forever.
+    // Tombstones must not permanently reserve their name.
     const created = addOk({ name: 'Groceries', kind: 'expense' })
     useCategoryStore.getState().deleteCategory(created.id)
 

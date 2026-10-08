@@ -1,25 +1,3 @@
-/**
- * Paddle Billing webhook tests.
- *
- * Story 5-3 reconciled the handler from the invented Paddle Classic scheme
- * (`v1,{ts},{hmac}` over `ts.body`, `subscription_created` event names,
- * `data.user_id`) to Paddle Billing:
- *   - signature: `Paddle-Signature: ts=<unix>;h1=<hex>`, HMAC-SHA256 over `ts:rawBody`;
- *   - a timestamp-freshness window rejects replays;
- *   - events: any `subscription.*` (status-driven) + `transaction.completed`;
- *   - the buyer is `data.customer_id`; the email is resolved from the payload or,
- *     failing that, the Billing customer API.
- *
- * The 25-2 lifetime-entitlement guarantees are re-pinned under the new scheme:
- *   - a lifetime-priced transaction persists `subscriptionStatus: 'lifetime'`;
- *   - a transaction for any other price (annual renewal invoice) is ignored;
- *   - it fails closed when `PADDLE_LIFETIME_PRICE_ID` is unset;
- *   - a grant that persists nothing returns HTTP 500 (Paddle retries);
- *   - a currency-less payload does NOT clobber an existing user's currency;
- *   - `subscription.canceled` NEVER downgrades a `'lifetime'` buyer;
- *   - a forged / stale signature is rejected (401).
- */
-
 import crypto from 'crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -47,9 +25,7 @@ const {
 
 vi.mock('@budget-planner/config', () => ({ getPaddleConfig, assertPaddleProductionConfig }))
 vi.mock('@budget-planner/db', () => ({
-  // `select` backs the PRE-TRANSACTION existence check that decides whether the
-  // buyer's email needs resolving (Story 5-19 review moved that Paddle HTTP
-  // round trip out of the transaction). `dbHasUser` drives it.
+  // `select` backs the pre-transaction existence check that decides whether email needs resolving.
   db: {
     transaction,
     select: () => ({
@@ -76,17 +52,13 @@ vi.mock('@budget-planner/db/src/schema', () => ({
   },
   paddleWebhookEvents: { __table: 'paddleWebhookEvents', eventId: 'eventId' },
 }))
-// Story 70.1 review: the UPDATE paths now carry `entitlementWatermarkGuard`
-// (`and`/`or`/`isNull`/`lt`) in their WHERE. Stubbed like `eq` — `.where()` is a
-// no-op in this suite anyway; the predicate is exercised against PGlite in
-// `paddle-webhook.db.test.ts`.
+// `.where()` is a no-op here; the watermark predicate is exercised against PGlite.
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn(),
   and: vi.fn(),
   or: vi.fn(),
   isNull: vi.fn(),
   lt: vi.fn(),
-  // Story 73.2: the retention helpers build `IN (…)` lists with `sql.join`.
   sql: Object.assign(
     vi.fn(() => 'sql-fragment'),
     { join: vi.fn(() => 'sql-fragment') }
@@ -108,23 +80,8 @@ const ANNUAL_PRICE = 'pri_annual_39'
 const MONTHLY_PRICE = 'pri_monthly_599'
 
 /**
- * A stand-in transaction.
- *
- * ⚠️ This fixture proves ROUTING and PAYLOAD SHAPE only — which handler an
- * event reaches, and what it asks the DB to write. It cannot prove that a
- * `.where()` actually matches, because `drizzle-orm` is mocked above. The
- * guarantees that depend on real SQL — match-by-customer, the unique
- * constraints, dedup and ordering — are covered against real PostgreSQL in
- * `paddle-webhook.db.test.ts` (Story 5-19, AC-7). Do not add a guarantee of
- * that kind here and believe it.
- *
- * ⚠️ ONE GUARANTEE IS COVERED BY NEITHER SUITE, AND SAYING SO IS THE POINT: the
- * `setWhere` no-downgrade race guard on the `onConflictDoUpdate` path. That
- * branch only executes when a CONCURRENT insert wins the race, and PGlite is a
- * single in-process connection, so the db suite cannot reach it either.
- * Verified by positive control during code review: deleting `setWhere`
- * entirely leaves all 53 tests across both suites green. An earlier version of
- * this comment claimed the db suite covered it. It does not.
+ * Proves routing and payload shape only: drizzle-orm is mocked, so no `.where()` really matches.
+ * The setWhere race guard is covered by neither suite (PGlite has one connection).
  */
 function makeTx({
   existingStatus = 'free',
@@ -132,11 +89,7 @@ function makeTx({
   updateMatches = true,
 }: {
   existingStatus?: string | null
-  /**
-   * Story 73.2, AC-9: the row is present for the handler's first read, then
-   * gone — as if the retention purge committed between the read and the
-   * UPDATE. Every later read returns nothing and the UPDATE matches no row.
-   */
+  /** The row is read once, then gone before the UPDATE, as if the retention purge committed between. */
   vanishBeforeUpdate?: boolean
   /** False = the row exists but an in-statement guard suppressed the UPDATE. */
   updateMatches?: boolean
@@ -181,8 +134,6 @@ function makeTx({
           }
           insertValuesSpy(values)
           return {
-            // handleLifetimePurchase / handleSubscriptionStatusUpdate insert path:
-            // .values().onConflictDoUpdate().returning() → [{ id }]
             onConflictDoUpdate: () => ({
               returning: () => Promise.resolve([{ id: 'new-user-id' }]),
             }),
@@ -193,7 +144,6 @@ function makeTx({
   }
 }
 
-/** Build a POST Request carrying a VALID, FRESH Paddle Billing signature. */
 function signedRequest(payloadObj: unknown, opts: { ts?: number; secret?: string } = {}): Request {
   const body = JSON.stringify(payloadObj)
   const ts = opts.ts ?? Math.floor(Date.now() / 1000)
@@ -226,8 +176,6 @@ function config(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  // Default: the customer already exists, so the pre-transaction email lookup
-  // short-circuits. Tests exercising the first-seen-buyer path set this false.
   dbHasUser.value = true
   getPaddleConfig.mockReturnValue(config())
   fetchPaddleCustomerEmail.mockResolvedValue(undefined)
@@ -249,10 +197,7 @@ describe('POST /api/webhooks/paddle — signature verification (AC-4)', () => {
   })
 
   it('rejects a tampered h1 — same length as a real HMAC, wrong value (401)', async () => {
-    // A short (8-byte) h1 is rejected by the length pre-check before the HMAC
-    // ever runs, which would let a broken `verifyWebhookSignature` pass this
-    // test unnoticed. Use a full 64-hex-char (32-byte) WRONG value so the
-    // comparison actually reaches `crypto.timingSafeEqual`.
+    // Full-length wrong h1, so the comparison reaches timingSafeEqual past the length pre-check.
     const body = JSON.stringify({
       event_type: 'subscription.created',
       data: { customer_id: 'ctm_1', status: 'active' },
@@ -270,8 +215,6 @@ describe('POST /api/webhooks/paddle — signature verification (AC-4)', () => {
   })
 
   it('rejects a validly-formed signature computed over a DIFFERENT body', async () => {
-    // Proves the HMAC actually binds to the delivered body, not just to `ts`
-    // and a well-formed-looking `h1`.
     const signedForOtherBody = signedRequest({
       event_type: 'subscription.created',
       data: { customer_id: 'ctm_1', status: 'active' },
@@ -283,7 +226,6 @@ describe('POST /api/webhooks/paddle — signature verification (AC-4)', () => {
         'paddle-signature': signedForOtherBody.headers.get('paddle-signature') ?? '',
         'content-type': 'application/json',
       },
-      // Same ts/signature, but a body that was never signed.
       body: JSON.stringify({
         event_type: 'subscription.created',
         data: { customer_id: 'ctm_ATTACKER', status: 'active' },
@@ -353,22 +295,14 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
 
     expect(res.status).toBe(200)
     expect(transaction).toHaveBeenCalledTimes(1)
-    // ⚠️ `currency` is deliberately ABSENT (Story 5-19, AC-8). It used to be
-    // written here, which meant a renewal billed from another country silently
-    // flipped the user's chosen DISPLAY currency — the two are different
-    // things. It is insert-only now, asserted below.
+    // `currency` deliberately absent: billing currency must not overwrite the display currency.
     expect(setSpy).toHaveBeenCalledWith({
       subscriptionStatus: 'lifetime',
       entitlementUpdatedAt: expect.any(Number),
-      // Story 70.1: a lifetime grant has no recurring cadence.
       billingInterval: null,
-      // Story 73.2: access regained — the retention clock and notice clear.
       accessEndedAt: null,
       retentionNoticeSentAt: null,
       retentionNoticeAttemptedAt: null,
-      // Recorded at grant time so a later refund can be judged full vs partial
-      // (AC-1). A grant with no usable total is now REFUSED outright, so this
-      // field is always present on a successful lifetime write.
       lifetimeGrantTotal: 9900,
     })
   })
@@ -443,7 +377,6 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
     })
 
     expect(res.status).toBe(200)
-    // Stored email is normalized (lower-cased) — Story 5-3 shared canonicalization.
     expect(insertValuesSpy).toHaveBeenCalledWith(
       expect.objectContaining({ subscriptionStatus: 'lifetime', email: 'new@example.com' })
     )
@@ -490,15 +423,10 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
     expect(setSpy).toHaveBeenCalledWith({
       subscriptionStatus: 'lifetime',
       entitlementUpdatedAt: expect.any(Number),
-      // Story 70.1: a lifetime grant has no recurring cadence.
       billingInterval: null,
-      // Story 73.2: access regained — the retention clock and notice clear.
       accessEndedAt: null,
       retentionNoticeSentAt: null,
       retentionNoticeAttemptedAt: null,
-      // Recorded at grant time so a later refund can be judged full vs partial
-      // (AC-1). A grant with no usable total is now REFUSED outright, so this
-      // field is always present on a successful lifetime write.
       lifetimeGrantTotal: 9900,
     })
   })
@@ -559,19 +487,7 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
   })
 
   it('grants lifetime for an EXISTING subscriber without ever resolving email — the update path needs it for nothing', async () => {
-    // Regression: email validity used to be checked BEFORE the existing-user
-    // check, so a malformed API-returned address could 500-loop a real
-    // subscriber's status update forever, even though the update never
-    // touches email at all.
-    //
-    // A follow-up review pass (2026-09-15 #3) sharpened the fix further:
-    // email is now resolved LAZILY, only inside the no-existing-row branch —
-    // so an existing subscriber's update no longer even PAYS FOR the
-    // customer-API round trip, let alone gets blocked by its result. Setting
-    // the mock to a malformed value proves it: if it were called, the OLD
-    // (pre-laziness) validation-ordering fix would still have accepted it,
-    // so the only way this test can distinguish behavior is the call-count
-    // assertion below.
+    // Email resolves lazily, only for a new row: the malformed mock proves it via the call count.
     fetchPaddleCustomerEmail.mockResolvedValue('not-an-email')
     const res = await POST({
       request: signedRequest({
@@ -590,15 +506,10 @@ describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', (
     expect(setSpy).toHaveBeenCalledWith({
       subscriptionStatus: 'lifetime',
       entitlementUpdatedAt: expect.any(Number),
-      // Story 70.1: a lifetime grant has no recurring cadence.
       billingInterval: null,
-      // Story 73.2: access regained — the retention clock and notice clear.
       accessEndedAt: null,
       retentionNoticeSentAt: null,
       retentionNoticeAttemptedAt: null,
-      // Recorded at grant time so a later refund can be judged full vs partial
-      // (AC-1). A grant with no usable total is now REFUSED outright, so this
-      // field is always present on a successful lifetime write.
       lifetimeGrantTotal: 9900,
     })
     expect(fetchPaddleCustomerEmail).not.toHaveBeenCalled()
@@ -640,23 +551,8 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
     expect(setSpy).toHaveBeenCalledWith(expect.objectContaining({ subscriptionStatus: 'active' }))
   })
 
-  // ── Story 5-20, AC-1: the monthly plan flows the SUBSCRIPTION path ───────
-  //
-  // ⚠️ READ THE NAMES LITERALLY. Code review found the first drafts overclaimed:
-  // the `subscription.*` dispatch never reads `items[].price.id`, so the two
-  // subscription tests below would stay green with this whole story reverted, and
-  // substituting any string for MONTHLY_PRICE changes nothing. They pin that the
-  // path is price-AGNOSTIC — which is the property that makes monthly safe — not
-  // anything monthly-specific. The `transaction.completed` test is the one that
-  // carries real weight: it fails if the lifetime match ever widens.
-  //
-  // ⚠️ AC-1 is explicit that this must be PROVEN BY TEST, not reasoned through.
-  // The reasoning is sound — subscriptions resolve via
-  // `mapWebhookSubscriptionStatus` and never consult a price id, while the
-  // lifetime grant is a different event (`transaction.completed`) matched
-  // against `PADDLE_LIFETIME_PRICE_ID` — but "the two paths do not overlap" is
-  // exactly the kind of claim that is cheap to assert and expensive to be wrong
-  // about: being wrong means handing a €5.99/mo buyer a permanent entitlement.
+  // The subscription path is price-agnostic; only `transaction.completed` keys off the lifetime
+  // price, so these pin that a monthly buyer can never get a lifetime grant.
 
   it('routes a monthly-priced subscription.created down the price-AGNOSTIC subscription path', async () => {
     const res = await POST({
@@ -666,7 +562,6 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
           customer_id: 'ctm_monthly',
           status: 'active',
           email: 'monthly@example.com',
-          // A real Billing subscription payload carries its price on the items.
           items: [{ price: { id: MONTHLY_PRICE } }],
         },
       }),
@@ -674,28 +569,19 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
 
     expect(res.status).toBe(200)
     expect(setSpy).toHaveBeenCalledWith(expect.objectContaining({ subscriptionStatus: 'active' }))
-    // The mis-grant this guards: 'lifetime' must appear nowhere in what was written.
     expect(setSpy).not.toHaveBeenCalledWith(
       expect.objectContaining({ subscriptionStatus: 'lifetime' })
     )
   })
 
   it('does NOT treat a monthly transaction.completed as a lifetime purchase', async () => {
-    // The lifetime grant keys off the LIFETIME price id specifically. A monthly
-    // subscription's first invoice also arrives as `transaction.completed`, so
-    // this is the event where a sloppy "any completed transaction = lifetime"
-    // match would actually fire.
+    // A monthly subscription's first invoice also arrives as `transaction.completed`.
     const res = await POST({
       request: signedRequest({
         event_type: 'transaction.completed',
         data: {
-          // ⚠️ A REAL, POSITIVE grand_total (€5.99 in the lowest unit) is
-          // essential to this test's validity. Without it the handler refuses
-          // at the LATER AC-8 "no usable grand_total" guard, so the test would
-          // pass whether or not the price-id match works — which is exactly how
-          // the first draft of it came out vacuous. With a valid total, the
-          // price-id mismatch is the ONLY thing standing between this payload
-          // and a permanent entitlement.
+          // A real positive grand_total is essential: without it the later no-total guard refuses,
+          // and the test would pass whether or not the price-id match works.
           details: { totals: { grand_total: '599' } },
           customer_id: 'ctm_monthly',
           items: [{ price: { id: MONTHLY_PRICE } }],
@@ -704,21 +590,14 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
     })
 
     expect(res.status).toBe(200)
-    // ⚠️ Asserted as "never even opened a transaction", matching the sibling
-    // annual-renewal test above — NOT as "was not written with status
-    // 'lifetime'". The weaker form was VACUOUS: this story's positive control
-    // granted lifetime to every price id and the weak assertion stayed green,
-    // reproducing story 5.3's four-vacuous-webhook-tests finding exactly.
+    // Asserted as "never opened a transaction"; a not-written-as-lifetime check was vacuous.
     expect(transaction).not.toHaveBeenCalled()
     expect(setSpy).not.toHaveBeenCalled()
     expect(insertValuesSpy).not.toHaveBeenCalled()
   })
 
   it('downgrades on cancellation for any non-lifetime row, monthly included', async () => {
-    // The mirror of the no-downgrade guard: that guard protects `lifetime`
-    // rows specifically. A monthly subscriber who cancels must still lose
-    // access — if the guard were widened to everyone, cancellation would
-    // become a no-op and churned subscribers would keep Premium for free.
+    // The no-downgrade guard protects lifetime rows only; a monthly subscriber who cancels must lose access.
     const res = await POST({
       request: signedRequest({
         event_type: 'subscription.canceled',
@@ -763,7 +642,6 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
   })
 
   it('returns 500 (Paddle retries) when a first-seen subscriber has no resolvable email', async () => {
-    // Billing subscription payloads carry no inline email; the customer API is down.
     dbHasUser.value = false
     transaction.mockImplementation(async (cb: (tx: ReturnType<typeof makeTx>) => unknown) =>
       cb(makeTx({ existingStatus: null }))
@@ -781,15 +659,7 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
   })
 
   it('updates an EXISTING subscriber without ever resolving email — the update path needs it for nothing', async () => {
-    // Regression: email validity used to be checked BEFORE the existing-user
-    // check, so a malformed API-returned address could 500-loop a real
-    // subscriber's `subscription.canceled` forever — access never revoked.
-    //
-    // A follow-up review pass (2026-09-15 #3) sharpened the fix further:
-    // email is now resolved LAZILY, only inside the no-existing-row branch —
-    // an existing subscriber's status update no longer pays for the
-    // customer-API round trip at all, closing the "still calls it eagerly"
-    // finding from that same review.
+    // Email resolves lazily, only for a new row, so a malformed API address can't block a cancel.
     fetchPaddleCustomerEmail.mockResolvedValue('not-an-email')
     const res = await POST({
       request: signedRequest({
@@ -804,19 +674,14 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
     expect(setSpy).toHaveBeenCalledWith({
       subscriptionStatus: 'canceled',
       entitlementUpdatedAt: expect.any(Number),
-      // Story 73.2: the start-or-keep CASE (real SQL is proven in the db suite).
       accessEndedAt: 'sql-fragment',
     })
     expect(fetchPaddleCustomerEmail).not.toHaveBeenCalled()
   })
 
   it('writes the plan cadence in the SAME update as the status when the payload states one (Story 70.1)', async () => {
-    // This proves a PRESENT cycle rides in the one guarded UPDATE, and still
-    // that nothing else (email) is written. ⚠️ It does NOT prove the sibling
-    // above's absent-cycle case OMITS the key: `toHaveBeenCalledWith` equality
-    // ignores `undefined`-valued properties, so `billingInterval: undefined`
-    // would match there too. Absent-means-preserve is proven against a real
-    // database in `paddle-webhook.db.test.ts` ("leaves the stored cadence alone").
+    // `toHaveBeenCalledWith` ignores undefined-valued props, so this can't prove an absent cycle
+    // omits the key; the db suite proves that.
     const res = await POST({
       request: signedRequest({
         event_type: 'subscription.updated',
@@ -834,7 +699,6 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
       subscriptionStatus: 'active',
       entitlementUpdatedAt: expect.any(Number),
       billingInterval: 'year',
-      // Story 73.2: entitled — no retention clock, no pending notice.
       accessEndedAt: null,
       retentionNoticeSentAt: null,
       retentionNoticeAttemptedAt: null,
@@ -862,11 +726,7 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
   ])(
     'the %s carries the watermark IN its WHERE, not only as a pre-read (Story 70.1 review)',
     async (_, event) => {
-      // The pre-read (`isFresherThanWatermark`) never calls `lt`; only
-      // `entitlementWatermarkGuard` does. So `lt(…, occurredAt)` being built on this
-      // path is what shows the UPDATE is guarded in-statement. The race itself is
-      // not reproducible here or in PGlite; the predicate's SQL is exercised in
-      // `paddle-webhook.db.test.ts`.
+      // Only `entitlementWatermarkGuard` calls `lt`, so its presence shows the UPDATE is guarded in-statement.
       const occurredAt = '2026-09-25T12:00:00.000Z'
       const res = await POST({ request: signedRequest({ ...event, occurred_at: occurredAt }) })
 
@@ -954,10 +814,7 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
 })
 
 describe('Story 73.2, AC-9 — a row that vanishes between read and UPDATE is retried, not dropped', () => {
-  // ⚠️ The real interleaving (the retention purge committing between the
-  // handler's unlocked read and its UPDATE) needs two connections; PGlite has
-  // one. `makeTx({ vanishBeforeUpdate })` SIMULATES it: the first read sees the
-  // row, the UPDATE matches nothing, and the re-read finds it gone.
+  // The real interleaving needs two connections; `vanishBeforeUpdate` simulates it.
   function subscriptionActivated() {
     return POST({
       request: signedRequest({

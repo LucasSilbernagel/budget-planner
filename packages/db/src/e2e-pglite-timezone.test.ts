@@ -1,18 +1,5 @@
-/**
- * Story ops-2, AC-4 (decision D3): the e2e PGlite database behind `chromium-db`
- * runs in UTC whatever the host's zone is.
- *
- * PGlite inherits the host zone as a FIXED standard offset (EDT became
- * `Etc/GMT+5`, MEASURED while drafting), so a `DEFAULT now()` row was ~5 h off
- * an app-written `toISOString()` row on a dev box (87.2's "~5 h createdAt shift").
- *
- * This spawns the REAL `apps/web/e2e/helpers/pglite-server.mjs` with
- * `TZ=America/New_York` FORCED on the child, so it is RED without the pin on
- * every host, CI's UTC runners included. America/New_York is -4 or -5, never 0,
- * so the semantic check cannot sit on a zero-offset boundary.
- *
- * Lives in packages/db (not apps/web) because `pg` is a dependency here only.
- */
+// PGlite inherits the host zone as a fixed offset. TZ is forced to New York on the child so
+// this fails without the UTC pin on any host, UTC CI included.
 import { type ChildProcess, spawn } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import net from 'node:net'
@@ -108,7 +95,6 @@ describe('AC-4: the e2e PGlite server runs in UTC under a non-UTC host zone', ()
     const created = rows[0]?.created
     expect(created).toBeTruthy()
     const asUtc = Date.parse(`${created?.replace(' ', 'T')}Z`)
-    // The seed ran seconds ago; a 4-5 h zone shift is far outside this window.
     expect(Math.abs(Date.now() - asUtc)).toBeLessThan(120_000)
   })
 })
@@ -139,8 +125,7 @@ describe('AC-7(a): the migrate preflight logs the session TimeZone (log-only)', 
       })
       proc.on('close', () => resolve(text))
     })
-    // The harness has no drizzle journal, so the verdict is a refusal; only the
-    // log line matters here, and the verdict is unaffected by the new field.
+    // No drizzle journal, so the verdict is a refusal; only the log line matters here.
     expect(out).toMatch(/\[migrate-preflight\] host=127\.0\.0\.1 .* timezone=UTC -> /)
   }, 30_000)
 })

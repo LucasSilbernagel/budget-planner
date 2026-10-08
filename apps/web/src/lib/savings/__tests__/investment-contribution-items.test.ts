@@ -39,7 +39,6 @@ describe('investmentContributionItems: a non-finite stored contribution', () => 
   ])('%s: counts as 0 and is flagged unreadable', (_label, value) => {
     const [item] = investmentContributionItems([row(value)])
     expect(item).toMatchObject({ amount: 0, unreadable: true, frequency: 'weekly' })
-    // Exactly 0, not -0 or a string, so the solver's normalizer accepts it.
     expect(Object.is(item?.amount, 0)).toBe(true)
   })
 

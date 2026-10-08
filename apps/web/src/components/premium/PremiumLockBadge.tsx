@@ -1,23 +1,6 @@
-/**
- * PremiumLockBadge (story 7-2, FR24).
- *
- * Small presentational affordance that marks a feature as premium/locked. It
- * carries a lock icon plus a visible "Premium" label so the locked state is
- * discoverable rather than hidden (FR24). Purely presentational — it renders no
- * interactive elements and makes no tier decision; {@link PremiumFeatureGate}
- * owns the gating and the upgrade interaction.
- *
- * The lock icon is decorative (`aria-hidden`); the visible "Premium" text is the
- * announced signal when the badge is read on its own. Inside the gate's button
- * its "Premium" is part of the button's name, which the gate completes with a
- * hidden ", locked" (story 116.2); that text is in the gate, not here, because
- * `CategoryPicker` shows this badge outside any button.
- */
-
 import type React from 'react'
 
 export interface PremiumLockBadgeProps {
-  /** Extra layout classes for the badge container. */
   className?: string
 }
 
@@ -34,9 +17,6 @@ export function PremiumLockBadge({ className }: PremiumLockBadgeProps): React.Re
   )
 }
 
-/**
- * Lock Icon - decorative padlock marking the locked state.
- */
 function LockIcon({ className }: { className: string }): React.ReactElement {
   return (
     <svg

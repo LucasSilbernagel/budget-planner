@@ -1,32 +1,6 @@
 /**
- * Free→paid seeding (Story 5-15, Task 5).
- *
- * When a user upgrades to paid, the financial rows they accumulated while on the
- * free tier live ONLY in localStorage — nothing pushed them to the server (the
- * sync bridge only forwards edits made AFTER the paid session mounts). This
- * backfills that pre-upgrade data so AC-2's "zero data loss across the free→paid
- * transition" holds.
- *
- * APPROACH (idempotent, no bespoke upload endpoint): enqueue a `create` for every
- * existing local financial row through the SAME sync bridge the live edits use.
- * Because entity ids are client-generatable uuids shared across devices (5-14):
- *  - a row not yet on the server is created;
- *  - a row already on the server collides as a create-create CONFLICT, which the
- *    server ignores (no duplicate) — harmless.
- * Profiles are deliberately NOT seeded: the server auto-creates the user's default
- * profile at signup, and `applyServerChanges` reconciles the client to it. Every
- * seeded financial row is stamped (by the service) with the active *server*
- * profile id, so the caller MUST only invoke this once that profile is reconciled
- * (see SyncProvider's seeding gate).
- *
- * Re-seeding is avoided across sessions by a per-user localStorage marker so an
- * ordinary re-login does not replay creates and inflate the conflict count.
- *
- * ⚠️ Only rows that belong to NO account are seeded (story 86.2, FR140). The
- * stores are shared by whoever uses the browser, so when B signs in where A
- * synced before they still hold A's pulled rows, each carrying A's uuid. The
- * marker is per user, so B's first session on this device seeds, and it used to
- * upload A's whole history into B's account. See `lib/sync/accountOwner.ts`.
+ * Free-tier rows are re-sent as creates; rows already on the server conflict harmlessly.
+ * Only placeholder-owned rows are seeded, never another account's.
  */
 
 import { useBalanceStore } from '../../stores/balanceStore'
@@ -37,17 +11,11 @@ import { useSavingsStore } from '../../stores/savingsStore'
 import { isOwnedByAnotherAccount } from './accountOwner'
 import { enqueueCreate, isSyncActive } from './syncBridge'
 
-/** localStorage key marking that this user's free-tier backlog has been seeded. */
 export function seedMarkerKey(userId: string): string {
-  // `v2`: every seed before the server's profileId/id repair was set as done
-  // while the server rejected every row it sent, so the v1 marker certifies
-  // nothing. Bumping it re-seeds each device once. Safe: already-synced rows are
-  // skipped (`needsSeeding`) and a create the server already holds is
-  // acknowledged as applied, not duplicated.
+  // `v2`: v1 markers were set while the server rejected every row; bumping re-seeds each device once (safe).
   return `budget-planner:sync-seeded-v2:${userId}`
 }
 
-/** Whether this user's backlog has already been seeded on this device. */
 export function hasSeeded(userId: string): boolean {
   try {
     return (
@@ -62,25 +30,11 @@ function markSeeded(userId: string): void {
   try {
     localStorage.setItem(seedMarkerKey(userId), String(Date.now()))
   } catch {
-    // Best-effort: if storage is unavailable the seed still runs; the only cost is
-    // a possible (harmless, conflict-resolved) re-seed next session.
+    // Best-effort: the worst case is a harmless re-seed next session.
   }
 }
 
-/**
- * Whether a row still needs seeding: a row that has ALREADY been synced carries
- * the session user's uuid as its `userId` (a pull overwrote the local row with the
- * server's, Story 5-14), whereas a never-synced free-tier row carries the
- * placeholder (`0` / `''` / absent). Skipping already-server-backed rows is the
- * review fix (5-15 code review, Decision 1 option b) that prevents seeding from
- * re-creating server rows — which would produce `create-create` conflicts the
- * push queue never drains (→ circuit breaker). Race-free: it reads the merged
- * store state, no dependence on capturing the pull result.
- *
- * ⚠️ "Not the session user's" is NOT "never synced" (story 86.2). A row another
- * account synced on this browser carries THAT account's uuid, and is skipped too.
- * What is left is the placeholder-owned rows: this browser's free-tier backlog.
- */
+/** Already-synced rows carry a real owner uuid; re-creating them causes conflicts the queue never drains. */
 function needsSeeding(row: { userId?: unknown }, sessionUserId: string): boolean {
   return (
     String(row.userId ?? '') !== sessionUserId &&
@@ -88,11 +42,6 @@ function needsSeeding(row: { userId?: unknown }, sessionUserId: string): boolean
   )
 }
 
-/**
- * Enqueue a `create` for every local financial row that is NOT already on the
- * server, and AWAIT the durable enqueues. Returns the number of rows enqueued.
- * Rows already server-backed (their `userId` is the session uuid) are skipped.
- */
 export async function seedLocalDataToServer(sessionUserId: string): Promise<number> {
   const pending: Promise<void>[] = []
 
@@ -109,41 +58,15 @@ export async function seedLocalDataToServer(sessionUserId: string): Promise<numb
     }
   }
 
-  // ⚠️ ORDER IS NECESSARY BUT NOT SUFFICIENT — categories are seeded first
-  // (Story 30.4a; claim corrected by code review 30.4a).
-  //
-  // Each `consider(...)` enqueues immediately and the queue is drained in
-  // timestamp order (SyncQueue.getReadyOperations sorts ascending, and
-  // synchronization.ts stamps Date.now() at enqueue), so loop position here is
-  // wire order. `incomeSources.categoryId` / `expenses.categoryId` are real
-  // foreign keys to `categories`, so a cashflow row that reaches the server
-  // before its category is rejected on the FK and that operation fails.
-  //
-  // ⚠️ DO NOT READ THIS AS "ordering makes categorized rows sync correctly".
-  // It does not, and cannot, today: `toServerPayload` emits no `id` and
-  // `syncOperationDataSchema` declares none, so the server inserts every
-  // category under a fresh `defaultRandom()` uuid. The cashflow row that
-  // follows still carries the CLIENT's category uuid, which matches no server
-  // row — so it fails the FK (23503) no matter what order it arrives in.
-  // Ordering is a precondition for correctness once the sync-create repair
-  // lands (`profileId` AND `id` together — see deferred-work.md); on its own it
-  // protects nothing. Keep the order; do not trust it alone.
-  //
-  // Do not "tidy" this into alphabetical or store-declaration order.
-  //
-  // Tombstones are EXCLUDED (code review 30.4a). This is the only store that
-  // keeps soft-deleted rows locally, and `toServerPayload`'s category case does
-  // not forward `isDeleted` — so seeding one would insert it LIVE on the server
-  // (column default false) and the next pull would flip the user's own deletion
-  // back to visible on every device.
+  // Categories first: queue order is wire order and cashflow categoryId is an FK (necessary, not sufficient).
+  // Tombstones excluded: the category payload drops isDeleted, so seeding would resurrect them.
   for (const row of useCategoryStore.getState().categories) {
     if (row.isDeleted) {
       continue
     }
     consider('category', row)
   }
-  // Every local row, deliberately NOT profile-scoped (story 54.4): the seed
-  // uploads this device's whole free-tier backlog, not just what is on screen.
+  // Not profile-scoped: the whole device backlog is uploaded.
   for (const row of useIncomeStore.getState().incomeSources) {
     consider('incomeSource', row)
   }
@@ -157,22 +80,16 @@ export async function seedLocalDataToServer(sessionUserId: string): Promise<numb
     consider('balanceTracking', row)
   }
 
-  // Await the durable adds so the marker (set by the caller AFTER this resolves)
-  // truly reflects a persisted backlog.
+  // Await durable adds so the caller's marker reflects a persisted backlog.
   await Promise.all(pending)
   return pending.length
 }
 
-/**
- * Seed the user's free-tier backlog exactly once per device. The marker is set
- * ONLY AFTER the enqueues have durably persisted, so an interrupted or
- * bridge-inactive seed is retried next session rather than being silently lost.
- */
+/** The marker is set only after the enqueues persist, so an interrupted seed retries next session. */
 export async function seedOnce(userId: string): Promise<number> {
   if (hasSeeded(userId)) {
     return 0
   }
-  // Bridge not ready (no paid session wired yet) — do NOT mark; retry later.
   if (!isSyncActive()) {
     return 0
   }

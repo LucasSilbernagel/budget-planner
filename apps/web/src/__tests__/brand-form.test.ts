@@ -4,36 +4,8 @@ import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 
 /**
- * The product is called "Longhand Budget" wherever a user can see the name
- * (story brand-2). This reverses brand-1 AC-1's two-form rule, where "Longhand"
- * alone was used in prose after the first mention.
- *
- * WHY THE COMPILER, NOT A LINE GREP. Source comments legitimately say
- * "Longhand" (they explain the naming rule itself), and stripping comments with
- * a regex breaks on the `//` inside every URL. So code is parsed with the
- * TypeScript compiler and every JSX text node, string literal and
- * template-literal chunk is checked. Comments are never visited, by
- * construction. This is deliberately OVER-inclusive: an import specifier or a
- * log line is not user-visible, but checking every string costs nothing today
- * (no such string names the product) and saves deciding, per literal, whether
- * it can reach a user.
- *
- * Markdown bodies (docs + legal) and text assets are checked against the raw
- * source, with a lookahead that tolerates whitespace and emphasis markers — a
- * hard-wrap between "Longhand" and "Budget", or `**Longhand** Budget`, is the
- * full name, not the bare one. HTML comments are blanked first (keeping their
- * newlines, so reported line numbers stay true).
- *
- * CASE-SENSITIVE ON PURPOSE. "longhand" is an ordinary English word ("written
- * in longhand"); only the capitalised product name is policed.
- *
- * THE ONLY EXCEPTIONS (Lucas, 2026-09-27): the PWA manifest `short_name` and the
- * install prompt that names the icon the user is about to get. They must agree
- * with each other (`pwa-manifest.test.ts`). Each is matched by FILE, EXACT TEXT
- * AND EXACT COUNT — never by whole file, and never "at least one": a text-only
- * match would also absorb `name: 'Longhand'` in the manifest, and "at least
- * one" would let the visible install heading drift while the aria-label kept
- * the entry alive (both found in brand-2's code review).
+ * Parsed with the TypeScript compiler so comments are never checked (a regex stripper breaks on
+ * URLs). Exceptions match by file, exact text AND exact count.
  */
 
 const WEB_ROOT = resolve(__dirname, '..')
@@ -57,7 +29,6 @@ const EXCEPTIONS = [
 
 const CODE_EXT = /\.[cm]?[jt]sx?$/
 const NOT_SHIPPED = /__tests__\/|\.test\.[cm]?[jt]sx?$|\.spec\.[cm]?[jt]sx?$|\.d\.ts$/
-/** App-root files that configure the test harness, not the shipped app. */
 const HARNESS = new Set(['playwright.config.ts', 'vitest.config.ts', 'vitest.setup.ts'])
 
 interface Hit {
@@ -97,7 +68,6 @@ function scriptKind(file: string): ts.ScriptKind {
   return ts.ScriptKind.TS
 }
 
-/** Bare-form hits in the string and JSX text nodes of one source file. */
 function codeHits(file: string, source: string): Hit[] {
   const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, scriptKind(file))
   const hits: Hit[] = []
@@ -115,7 +85,6 @@ function codeHits(file: string, source: string): Hit[] {
   return hits
 }
 
-/** Bare-form hits in rendered prose (Markdown, or text assets minus comments). */
 function proseHits(file: string, source: string): Hit[] {
   const text = source.replace(/<!--[\s\S]*?-->/g, (c) => c.replace(/[^\n]/g, ' '))
   const lines = text.split('\n')
@@ -130,7 +99,6 @@ const isException = (hit: Hit) =>
 
 const CODE_FILES = [
   ...walk(WEB_ROOT, (f) => CODE_EXT.test(f) && !NOT_SHIPPED.test(f)),
-  // App entry points and build config (pwa.config.mjs, server-entry.mjs, vite.config.ts…).
   ...readdirSync(APP_ROOT)
     .filter((f) => CODE_EXT.test(f) && !HARNESS.has(f))
     .map((f) => join(APP_ROOT, f)),

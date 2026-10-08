@@ -1,14 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { sanitizeMoneyChange, sanitizeWithCaret } from '../sanitized-input'
 
-/**
- * Caret-preserving sanitization glue (story 28-1, FR46).
- *
- * The bug these exist for is invisible to a value-only assertion: the field ends
- * up holding the right string while the cursor silently jumps to the end, so
- * mid-string editing becomes impossible. Every case below therefore asserts the
- * SELECTION as well as the value.
- */
+/** Each case asserts the selection too: a value-only check misses the caret jumping to the end. */
 function inputWith(value: string, caret: number): HTMLInputElement {
   const input = document.createElement('input')
   input.value = value
@@ -22,7 +15,6 @@ describe('sanitizeWithCaret', () => {
     const result = sanitizeWithCaret(input, (raw) => raw)
 
     expect(result).toBe('1234')
-    // Untouched means React keeps its normal controlled-input behaviour here.
     expect(input.value).toBe('1234')
     expect(input.selectionStart).toBe(2)
   })
@@ -34,7 +26,6 @@ describe('sanitizeWithCaret', () => {
 
     expect(result).toBe('1,234.56')
     expect(input.value).toBe('1,234.56')
-    // The caret must sit where the rejected character was, NOT at the end (8).
     expect(input.selectionStart).toBe(3)
     expect(input.selectionEnd).toBe(3)
   })
@@ -49,10 +40,8 @@ describe('sanitizeWithCaret', () => {
   })
 
   it('does not throw on an input type that does not support selection', () => {
-    // Browsers report selectionStart === null for these types AND throw
-    // InvalidStateError from setSelectionRange (verified in Chromium for
-    // type="number"). Stub BOTH to match: a getter-only stub on a text input
-    // would leave setSelectionRange working and quietly miss the throw.
+    // Browsers report `selectionStart === null` for these types and throw from
+    // `setSelectionRange`; stub both.
     const input = document.createElement('input')
     input.value = 'abc123'
     Object.defineProperty(input, 'selectionStart', { value: null, configurable: true })
@@ -86,9 +75,7 @@ describe('sanitizeMoneyChange', () => {
   })
 
   it('keeps the caret in bounds when the exponent tail is truncated', () => {
-    // The exponent rule is a LOOKAHEAD (it needs the digit after the 'e'), so it
-    // is the one part of the filter that is not purely left-to-right. Verify the
-    // derived caret can never overshoot the sanitized string.
+    // The exponent rule is a lookahead, the only part of the filter that is not left-to-right.
     for (const caret of [0, 1, 2, 3, 4, 5, 6, 7]) {
       const input = inputWith('1.2E+09', Math.min(caret, 7))
       const result = sanitizeMoneyChange(input, 'en-US')

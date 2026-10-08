@@ -10,19 +10,16 @@ import {
 
 describe('savingsGoalCalculations', () => {
   describe('calculateProgress', () => {
-    // AC 5: Given targetAmount = $1000 and currentBalance = $600, returns 60%
     it('should return 60% when currentBalance is 60% of targetAmount', () => {
       const result = calculateProgress(100000, 60000)
       expect(result).toBe(60)
     })
 
-    // AC 6: Given targetAmount = $1000 and currentBalance = $0, returns 0%
     it('should return 0% when currentBalance is 0', () => {
       const result = calculateProgress(100000, 0)
       expect(result).toBe(0)
     })
 
-    // AC 7: Given targetAmount = $1000 and currentBalance = $1000, returns 100%
     it('should return 100% when currentBalance equals targetAmount', () => {
       const result = calculateProgress(100000, 100000)
       expect(result).toBe(100)
@@ -54,7 +51,6 @@ describe('savingsGoalCalculations', () => {
     })
 
     it('should handle currentBalance exceeding targetAmount', () => {
-      // When current exceeds target, progress is capped at 100%
       const result = calculateProgress(10000, 15000)
       expect(result).toBe(100)
     })
@@ -118,7 +114,7 @@ describe('savingsGoalCalculations', () => {
     })
 
     it('should round up to ensure target is reached', () => {
-      // Need 10001 over 3 months = 3333.666... per month, should round to 3334
+      // 3333.67 per month rounds up to 3334
       const result = calculateMonthlySavingsNeeded(10001, 0, 3)
       expect(result).toBe(3334)
     })

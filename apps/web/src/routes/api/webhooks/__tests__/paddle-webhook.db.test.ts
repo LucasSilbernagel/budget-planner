@@ -1,37 +1,6 @@
 // @vitest-environment node
-/**
- * Paddle webhook against REAL PostgreSQL (Story 5-19, AC-7).
- *
- * ⚠️ WHY THIS FILE EXISTS. The sibling `paddle.test.ts` does
- * `vi.mock('drizzle-orm', …)`, which makes every `.where()` in it a no-op. Two
- * load-bearing guarantees were therefore asserted NOWHERE: that an update
- * matches by `customer_id`, and that the `setWhere` race guard stops a lifetime
- * row being downgraded. A wrong conflict `target`, a missing `setWhere`, or a
- * `set` payload that downgrades a lifetime row left all 28 of those tests
- * green. (Match-by-customer and the unique constraints are covered here now;
- * the `setWhere` guard is NOT — see the warning below.)
- *
- * That is the same failure shape 5-3's review #3 found by positive control: its
- * four regression tests for the email-ordering HIGH were VACUOUS, because the
- * fixture could not produce the input the regression needed. A regression test
- * whose fixture cannot produce the failing input is a green light bolted to a
- * dead bulb.
- *
- * So everything here runs against PGlite with the full migration chain applied
- * — same harness as `server/api/__tests__/sync-push-pull-roundtrip.db.test.ts`.
- * `drizzle-orm` is NOT mocked. Every assertion below reads the row back.
- *
- * ⚠️ WHAT THIS FILE STILL CANNOT PROVE, stated so nobody infers otherwise: the
- * `setWhere` no-downgrade guard on the `onConflictDoUpdate` path. That branch
- * runs only when a CONCURRENT insert wins the race, and PGlite is a single
- * in-process connection — so no test here reaches it. Positive control during
- * code review: deleting `setWhere` leaves all 53 tests green. The guarantee
- * rests on the SQL predicate being read correctly, not on a test.
- *
- * POSITIVE CONTROLS — each recorded in the story's Dev Agent Record. For every
- * guard added by 5-19, the guard was deliberately broken and the test watched
- * go red before the guard was restored.
- */
+// Real PostgreSQL (PGlite): the sibling suite mocks drizzle-orm, so its `.where()`s are no-ops.
+// Not covered even here: the setWhere race guard, which needs two connections.
 
 import crypto from 'crypto'
 import { readFileSync } from 'node:fs'
@@ -53,11 +22,8 @@ const {
   assertPaddleProductionConfig: vi.fn(),
   fetchPaddleCustomerEmail: vi.fn(),
   captureError: vi.fn(),
-  // Story 68.1, AC-2: the lockout is only proven closed by driving
-  // `requestMagicLink` itself, so the mailer is the observation point.
   sendMagicLinkEmail: vi.fn(),
-  // Story 74.1: `deleteUserAccount` runs for real, but its best-effort Paddle
-  // cancel `fetch`es the live API — no real API calls in tests.
+  // deleteUserAccount's best-effort Paddle cancel would fetch the live API.
   cancelActiveSubscriptionsForCustomer: vi.fn(),
 }))
 
@@ -73,11 +39,7 @@ vi.mock('@budget-planner/db', async (importOriginal) => {
 vi.mock('@budget-planner/config', () => ({
   getPaddleConfig,
   assertPaddleProductionConfig,
-  // Story 70.1, AC-9: the label is proven through a REAL signed session, so
-  // `signSession` / `verifySession` need a secret.
   getSessionSecret: () => 'story-70-1-session-secret-at-least-32-chars',
-  // Story 74.2: the magic-link request route is driven for real, and an
-  // ALLOWED request builds its link from the site URL.
   getSiteUrl: () => 'https://app.test',
 }))
 vi.mock('@/server/paddle/customer-api', () => ({ fetchPaddleCustomerEmail }))
@@ -87,10 +49,8 @@ vi.mock('@/lib/logger', () => ({
 vi.mock('@/lib/error-tracking', () => ({ captureError }))
 vi.mock('@/server/email/mailer', () => ({ sendMagicLinkEmail }))
 vi.mock('@/server/paddle/subscription-api', () => ({ cancelActiveSubscriptionsForCustomer }))
-// Story 73.2: `checkDbRateLimit` (driven for real here) fires the retention
-// backstop on its success path. Left live, it would start a background sweep
-// on PGlite's ONE connection while a test runs — a query that can land inside
-// the test's own transaction. Its behaviour is covered in `sweep.db.test.ts`.
+// Left live, the retention backstop would start a sweep on PGlite's one connection
+// mid-test, possibly inside the test's own transaction.
 vi.mock('@/server/retention/backstop', () => ({ maybeRunRetentionBackstop: vi.fn() }))
 
 import { planLabel } from '@/lib/account/plan-label'
@@ -119,7 +79,6 @@ const MIGRATIONS = new URL('../../../../../../../packages/db/migrations/', impor
 const SECRET = 'pdl_ntfset_test_secret'
 const LIFETIME_PRICE = 'pri_lifetime_99'
 const ANNUAL_PRICE = 'pri_annual_39'
-/** The €99 lifetime price in the currency's lowest unit, as Paddle sends it. */
 const LIFETIME_TOTAL = '9900'
 
 let pg: PGlite
@@ -131,7 +90,6 @@ function nextEventId(): string {
   return `evt_${eventCounter}`
 }
 
-/** An ISO timestamp `minutesFromBase` minutes after a fixed base. */
 const BASE_TIME = Date.parse('2026-09-16T12:00:00.000Z')
 function at(minutesFromBase: number): string {
   return new Date(BASE_TIME + minutesFromBase * 60_000).toISOString()
@@ -148,7 +106,6 @@ function signedRequest(payloadObj: unknown): Request {
   })
 }
 
-/** POST a signed event, defaulting the envelope fields 5-19 depends on. */
 function post(event: {
   event_type: string
   occurred_at?: string
@@ -194,9 +151,6 @@ function adjustmentEvent(overrides: Record<string, unknown> = {}) {
       customer_id: 'ctm_1',
       action: 'refund',
       transaction_id: 'txn_lifetime_1',
-      // Story 94.1 (AC 6): Paddle's real adjustments carry `status`, and a
-      // refund now counts only once `approved` (D-A). This hand-built shape had
-      // none. Pending/rejected cases live in the sandbox-payloads suite.
       status: 'approved',
       totals: { total: LIFETIME_TOTAL },
       ...overrides,
@@ -257,20 +211,15 @@ beforeEach(async () => {
   await db.delete(userProfiles)
   await db.delete(paddleWebhookEvents)
   await db.delete(paddleAdjustments)
-  // Story 68.1: BEFORE `users` — `loginTokens.userId` references it.
+  // Before `users`: `loginTokens.userId` references it.
   await db.delete(loginTokens)
-  // Story 74.2: BEFORE `users` — `sync`-scope rows reference `users.id`, and
-  // email buckets written by one case must not throttle the next.
+  // Before `users`: `sync`-scope rows reference `users.id`.
   await db.delete(rateLimits)
   await db.delete(users)
 })
 
 describe('webhook against real PostgreSQL — the guarantees the mocked suite cannot prove', () => {
   it('matches the UPDATE by customer_id, touching only that user (AC-7)', async () => {
-    // POSITIVE CONTROL: dropping `.where(eq(users.paddleId, customerId))` from
-    // the update in `handleSubscriptionStatusUpdate` turns the OTHER user's
-    // status to 'active' and this test goes red. Under the mocked suite the
-    // same break stays green, because `.where()` there is a no-op.
     await seedUser({ paddleId: 'ctm_1', email: 'one@example.test' })
     await seedUser({ paddleId: 'ctm_2', email: 'two@example.test' })
 
@@ -318,16 +267,12 @@ describe('AC-2 — idempotency and ordering', () => {
 
     expect(replay.status).toBe(200)
     expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('active')
-    // Exactly one row in the event log — the claim is the dedup mechanism.
     const logged = await db.select().from(paddleWebhookEvents)
     expect(logged).toHaveLength(1)
   })
 
   it('a LATE retry of an older event does not overwrite a newer entitlement state', async () => {
-    // The concrete failure from deferred-work review #2: `subscription.updated
-    // {active}` hits a DB blip and 500s; Paddle retries it minutes later, after
-    // `subscription.canceled` has already been processed; the cancelled user is
-    // silently re-granted Premium.
+    // A retried older `updated {active}` landing after `canceled` must not re-grant Premium.
     await seedUser({ subscriptionStatus: 'active' })
 
     const cancel = await post({
@@ -348,12 +293,7 @@ describe('AC-2 — idempotency and ordering', () => {
   })
 
   it('a late retry of the ORIGINAL purchase does not re-grant lifetime after a refund', async () => {
-    // ⚠️ Added because a positive control found the lifetime path's ordering
-    // guard was covered by NOTHING: disabling it left the whole suite green.
-    // This is the case that makes gating the GRANT matter — before AC-1 there
-    // was no way to lose lifetime, so re-applying a grant was harmless. Now a
-    // refunded buyer whose original `transaction.completed` is retried would
-    // silently get their permanent entitlement back.
+    // A refunded buyer whose original `transaction.completed` is retried must not regain lifetime.
     await seedUser({ subscriptionStatus: 'free' })
 
     await post({ ...lifetimeEvent({}), event_id: 'evt_grant', occurred_at: at(1) })
@@ -378,9 +318,6 @@ describe('AC-2 — idempotency and ordering', () => {
   })
 
   it('applies events that genuinely are newer', async () => {
-    // The complement of the test above: proves the ordering guard is not
-    // simply refusing everything, which would make the assertion above pass
-    // for the wrong reason.
     await seedUser({ subscriptionStatus: 'free' })
 
     await post(subscriptionEvent({ status: 'active' }))
@@ -406,17 +343,13 @@ describe('AC-3 — identity reconciliation', () => {
     const [row] = await readUser('ctm_new')
     expect(row.subscriptionStatus).toBe('active')
     expect(row.email).toBe('buyer@example.test')
-    // Re-keyed, NOT duplicated.
     const all = await db.select().from(users)
     expect(all).toHaveLength(1)
   })
 
   it('REFUSES to adopt an entitled account, with a terminal 200 rather than a 500 retry storm', async () => {
-    // Before 5-19 this raised `users_email_unique`, the catch returned
-    // ok:false, the route 500'd, and Paddle retried its full schedule forever
-    // — the entitlement never granted and the log filling up. The refusal is
-    // deliberate: Paddle verifies payment, not email ownership, so adopting
-    // here would let a €39 checkout take over someone else's live account.
+    // Refused deliberately: Paddle verifies payment, not email ownership, so adopting here would
+    // let a checkout take over someone else's account.
     await seedUser({
       paddleId: 'ctm_victim',
       email: 'buyer@example.test',
@@ -428,11 +361,9 @@ describe('AC-3 — identity reconciliation', () => {
 
     // Terminal: Paddle must STOP retrying.
     expect(res.status).toBe(200)
-    // The victim's row is untouched and still theirs.
     const [victim] = await readUser('ctm_victim')
     expect(victim.subscriptionStatus).toBe('active')
     expect(victim.email).toBe('buyer@example.test')
-    // No account was created for the new customer id.
     expect(await readUser('ctm_attacker')).toHaveLength(0)
     expect(captureError).toHaveBeenCalled()
   })
@@ -520,9 +451,6 @@ describe('AC-1 — refunds, chargebacks and disputes', () => {
   it.each([7, 0, false])(
     'an adjustment whose action is not a string (%s): 200, not applied, flagged (94.1 review follow-up)',
     async (action) => {
-      // Before the guard, `action.toLowerCase()` threw into the outer catch: a 500
-      // that Paddle retries until exhausted, with no alert. Same shape as the
-      // non-string `status` above.
       await grantLifetime()
 
       const res = await post({
@@ -588,7 +516,6 @@ describe('AC-1 — refunds, chargebacks and disputes', () => {
     expect(res.status).toBe(200)
     const [row] = await readUser('ctm_1')
     expect(row.subscriptionStatus).toBe('lifetime')
-    // The partial is recorded in the ledger, so repeated partials can add up.
     const ledger = await db.select().from(paddleAdjustments)
     expect(ledger).toHaveLength(1)
     expect(ledger[0].total).toBe(500)
@@ -647,10 +574,7 @@ describe('AC-1 — refunds, chargebacks and disputes', () => {
   })
 
   it('revocation PIERCES the no-downgrade guard that used to block it', async () => {
-    // The guard at `handleSubscriptionStatusUpdate` refuses to move a lifetime
-    // row by any subscription path — which is exactly why a refund could never
-    // be corrected before this story. Proving revocation still lands on a
-    // lifetime row is the point.
+    // Subscription paths refuse to move a lifetime row, so prove revocation still lands on one.
     await grantLifetime()
     await post({ ...adjustmentEvent({ action: 'chargeback' }), occurred_at: at(5) })
     expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('canceled')
@@ -659,15 +583,7 @@ describe('AC-1 — refunds, chargebacks and disputes', () => {
 
 describe('AC-4 — exactly one default profile', () => {
   it('THE DATABASE refuses a second default profile — this is the AC-4 guarantee', async () => {
-    // AC-4 asks for a DB-level guarantee, "not a read-then-write check", and
-    // this is the test that proves it. It inserts directly, bypassing the
-    // application entirely, so it fails if and only if the partial unique index
-    // from migration 0017 is absent.
-    //
-    // POSITIVE CONTROL (recorded in the story): `DROP INDEX
-    // "userProfiles_one_default_per_user"` before the second insert and this
-    // test goes green-to-red — the duplicate is accepted, which is precisely
-    // the production state that made a new buyer's data appear to vanish.
+    // Inserts directly, bypassing the app, so it fails only if the partial unique index is absent.
     const user = await seedUser({ subscriptionStatus: 'lifetime' })
     await db
       .insert(userProfiles)
@@ -681,18 +597,8 @@ describe('AC-4 — exactly one default profile', () => {
   })
 
   it('two deliveries for one new buyer leave exactly ONE default profile', async () => {
-    // One lifetime purchase emits BOTH `transaction.paid` and
-    // `transaction.completed`, and the handler accepts both.
-    //
-    // ⚠️ THIS TEST DOES NOT PROVE THE RACE IS CLOSED, AND MUST NOT BE READ AS
-    // DOING SO. PGlite is a single in-process connection, so `Promise.all` here
-    // SERIALIZES: the second delivery finds the user already created and
-    // returns before `ensureDefaultProfile` is ever reached. A positive control
-    // confirmed exactly that — removing `onConflictDoNothing()` from
-    // `createDefaultProfileForUser` left an earlier version of this test GREEN.
-    // It was a green light bolted to a dead bulb, and it is kept only as an
-    // end-to-end shape check. The actual concurrency guarantee is the unique
-    // index, proven by the test above.
+    // PGlite serializes these, so this is a shape check only; the unique index test above
+    // is the real concurrency guarantee.
     fetchPaddleCustomerEmail.mockResolvedValue('buyer@example.test')
 
     await Promise.all([
@@ -714,8 +620,6 @@ describe('AC-4 — exactly one default profile', () => {
   })
 
   it('createDefaultProfileForUser provisions exactly one profile, and is idempotent', async () => {
-    // Calls the REAL function — an earlier version of this test only NAMED it in
-    // the title and re-issued a raw insert instead, which code review caught.
     const user = await seedUser({ subscriptionStatus: 'lifetime' })
 
     const first = await createDefaultProfileForUser(user.id)
@@ -730,9 +634,8 @@ describe('AC-4 — exactly one default profile', () => {
   })
 
   it('the race-loser read-back never returns a tombstoned profile', async () => {
-    // The `onConflictDoNothing` fallback reads the winner's row back. The
-    // partial index excludes tombstones, so the read-back must too — otherwise
-    // a soft-deleted default can be handed back as the live one.
+    // The partial index excludes tombstones, so the race-loser read-back must too,
+    // or a soft-deleted default is handed back as the live one.
     const user = await seedUser({ subscriptionStatus: 'lifetime' })
     await db.insert(userProfiles).values({
       userId: user.id,
@@ -767,10 +670,8 @@ describe('AC-4 — exactly one default profile', () => {
 
 describe('AC-8 — lower-severity correctness', () => {
   it('does NOT overwrite a chosen display currency with the billing currency on renewal', async () => {
-    // `users.currency` is a DISPLAY preference that seeds new profiles; Paddle's
-    // `currency_code` is the BILLING currency, IP-detected at checkout. A user
-    // who deliberately chose EUR must not be flipped to USD by paying from a
-    // trip abroad.
+    // `users.currency` is a display preference; Paddle's `currency_code` is the IP-detected
+    // billing currency and must not overwrite it.
     await seedUser({ subscriptionStatus: 'active', currency: 'EUR' })
 
     await post(subscriptionEvent({ status: 'active', currency_code: 'USD' }))
@@ -779,7 +680,6 @@ describe('AC-8 — lower-severity correctness', () => {
   })
 
   it('DOES set the currency when first creating the user', async () => {
-    // The complement: insert-only must still mean "on insert".
     fetchPaddleCustomerEmail.mockResolvedValue('new@example.test')
 
     await post(
@@ -790,9 +690,7 @@ describe('AC-8 — lower-severity correctness', () => {
   })
 
   it('refuses to grant lifetime on a ZERO-VALUE transaction with NO discount', async () => {
-    // A zero total nothing explains (a misconfigured price) must not mint a
-    // permanent €99 entitlement. Story 74.1 narrowed this: a zero total that a
-    // 100% coupon produced DOES grant — see the next test.
+    // A zero total nothing explains (a misconfigured price) must not mint a permanent entitlement.
     await seedUser({ subscriptionStatus: 'free' })
 
     const res = await post(lifetimeEvent({ details: { totals: { grand_total: '0' } } }))
@@ -819,9 +717,8 @@ describe('AC-8 — lower-severity correctness', () => {
   })
 
   it('a chargeback adjustment on a coupon grant takes the revoke path (code-path guard only)', async () => {
-    // ⚠️ Not a real-world scenario: a €0 transaction moves no money, so Paddle
-    // cannot raise a chargeback against it — a coupon grant is revocable only by
-    // hand. This pins that a 0 grant total does not break `handleAdjustment`.
+    // Not a real-world scenario (a €0 transaction can't be charged back); pins that a 0 total
+    // doesn't break `handleAdjustment`.
     await seedUser({ subscriptionStatus: 'free' })
     await post({
       ...lifetimeEvent({
@@ -911,17 +808,12 @@ describe('AC-8 — lower-severity correctness', () => {
 
 describe('review fixes — retry, duplicate adjustments and unrelated chargebacks', () => {
   it('a delivery that FAILS releases its event claim, so the retry still grants', async () => {
-    // ⚠️ THE REGRESSION THIS FILE MOST NEEDED AND DID NOT HAVE. `runGuarded`
-    // rolled back only on a THROW, but every handled failure RETURNS
-    // `{ok:false}` — so the transaction committed, the claim persisted, the
-    // route returned 500 for Paddle to retry, and the retry was then dismissed
-    // as a duplicate. Measured before the fix: claim rows 1, retry 200, users 0
-    // — the buyer paid and never got an account.
+    // A handled failure returns {ok:false} rather than throwing; the claim must still roll back
+    // or Paddle's retry is dismissed as a duplicate.
     fetchPaddleCustomerEmail.mockResolvedValue(undefined) // Paddle API blip
 
     const first = await post({ ...lifetimeEvent({}), event_id: 'evt_grant', occurred_at: at(1) })
     expect(first.status).toBe(500)
-    // The claim must NOT have survived the rollback.
     expect(await db.select().from(paddleWebhookEvents)).toHaveLength(0)
     expect(await db.select().from(users)).toHaveLength(0)
 
@@ -934,7 +826,6 @@ describe('review fixes — retry, duplicate adjustments and unrelated chargeback
   })
 
   it('a genuinely duplicate delivery still keeps its claim', async () => {
-    // The complement: rollback-on-failure must not have weakened dedup.
     await seedUser({ subscriptionStatus: 'free' })
     await post({
       ...subscriptionEvent({ status: 'active' }),
@@ -955,9 +846,8 @@ describe('review fixes — retry, duplicate adjustments and unrelated chargeback
   })
 
   it('`adjustment.created` + `adjustment.updated` for ONE adjustment count ONCE', async () => {
-    // Two deliveries, two event ids, one adjustment. Delivery-level dedup does
-    // not collapse them, so an accumulator keyed on the customer counted a €50
-    // partial twice and revoked a half-refunded €99 grant.
+    // Two deliveries, two event ids, one adjustment: delivery dedup doesn't collapse them,
+    // so the ledger must.
     await seedUser({ subscriptionStatus: 'free' })
     await post({ ...lifetimeEvent({}), event_id: 'evt_g', occurred_at: at(1) })
 
@@ -980,7 +870,6 @@ describe('review fixes — retry, duplicate adjustments and unrelated chargeback
       occurred_at: at(6),
     })
 
-    // Half refunded, so access is RETAINED.
     expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('lifetime')
     expect(await db.select().from(paddleAdjustments)).toHaveLength(1)
   })
@@ -1007,9 +896,7 @@ describe('review fixes — retry, duplicate adjustments and unrelated chargeback
   })
 
   it('an adjustment for an unknown customer RETRIES rather than being swallowed', async () => {
-    // Returning a terminal 200 erased the refund permanently: the grant would
-    // then land, pass the (absent) watermark, and mint permanent Premium for a
-    // customer who had already been refunded.
+    // A terminal 200 would erase the refund, and the later grant would then mint Premium.
     const res = await post({
       ...adjustmentEvent({ customer_id: 'ctm_unknown' }),
       occurred_at: at(5),
@@ -1020,9 +907,7 @@ describe('review fixes — retry, duplicate adjustments and unrelated chargeback
   })
 
   it('refuses to grant lifetime when the transaction carries NO usable total', async () => {
-    // Previously the zero-value guard was skipped when the total was absent, so
-    // the grant landed with a NULL grant total — and every refund path then
-    // treats that as unjudgeable, making the entitlement irrevocable.
+    // A NULL grant total makes every refund path unjudgeable, so the entitlement would be irrevocable.
     await seedUser({ subscriptionStatus: 'free' })
 
     const res = await post(lifetimeEvent({ details: { totals: {} } }))
@@ -1032,8 +917,7 @@ describe('review fixes — retry, duplicate adjustments and unrelated chargeback
   })
 
   it('a re-purchase does not inherit the previous grant refunds', async () => {
-    // The old in-place counter survived across grants, so a €1 refund on a
-    // fresh €99 purchase revoked it. The ledger is keyed per transaction.
+    // The ledger is keyed per transaction, so an old refund can't count against a new purchase.
     await seedUser({ subscriptionStatus: 'free' })
     await post({ ...lifetimeEvent({}), event_id: 'evt_g3', occurred_at: at(1) })
     await post({
@@ -1042,7 +926,6 @@ describe('review fixes — retry, duplicate adjustments and unrelated chargeback
     })
     expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('canceled')
 
-    // Buys again, new transaction id.
     await post({
       ...lifetimeEvent({ id: 'txn_lifetime_2' }),
       event_id: 'evt_g4',
@@ -1050,7 +933,6 @@ describe('review fixes — retry, duplicate adjustments and unrelated chargeback
     })
     expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('lifetime')
 
-    // A €1 goodwill refund against the NEW transaction must not revoke.
     await post({
       ...adjustmentEvent({
         id: 'adj_small',
@@ -1065,31 +947,15 @@ describe('review fixes — retry, duplicate adjustments and unrelated chargeback
 })
 
 /**
- * Story 68.1 — a Paddle email change propagates to the account (FR107).
- *
- * ⚠️ WHY THESE LIVE HERE AND NOT IN `paddle.test.ts`: that file mocks
- * `drizzle-orm`, which makes every `.where()` a no-op. Every assertion below
- * depends on a `where` clause selecting the right row — the collision lookup,
- * the watermark read, the update target — so written there they would pass
- * against code that matched the wrong row, or every row.
- *
- * Decisions this pins, both taken by the product owner on 2026-09-25:
- *  - D1: a collision REFUSES UNCONDITIONALLY. Story 5-19's
- *    `reconcileEmailCollision` re-keys an UNENTITLED colliding row, which is
- *    correct there (a first-seen customer is being INSERTED, so exactly one row
- *    survives) and wrong here (both rows already exist, so freeing the address
- *    means destroying a second ledger).
- *  - D2: ordering runs on a SEPARATE `users.emailUpdatedAt` watermark.
+ * A collision refuses unconditionally: both rows already exist, so freeing the address
+ * would destroy a second ledger. Ordering uses the separate `emailUpdatedAt` watermark.
  */
 describe('Story 68.1 — customer.updated moves the login email', () => {
   function customerUpdatedEvent(overrides: Record<string, unknown> = {}) {
     return {
       event_type: 'customer.updated',
       data: {
-        // ⚠️ The customer id is `data.id` on this event family. There is NO
-        // `data.customer_id` on a `customer.*` payload — verified against
-        // Paddle's published schema, which pins `data.id` to `^ctm_[a-z\d]{26}$`
-        // and lists it as required.
+        // The customer id is `data.id` here; `customer.*` payloads have no `data.customer_id`.
         id: 'ctm_1',
         name: 'Jo Brown-Anderson',
         email: 'new@example.test',
@@ -1113,15 +979,7 @@ describe('Story 68.1 — customer.updated moves the login email', () => {
   })
 
   it('moves ONLY that user, leaving every bystander untouched (AC-1)', async () => {
-    // ⚠️ ADDED AFTER A POSITIVE CONTROL CAUGHT ITS ABSENCE. Deleting the
-    // UPDATE's row predicate — which would rewrite EVERY user's email to the
-    // incoming address — left every other test in this FILE green (49 of them
-    // at the time; this story contributes 17). Every successful-update case had
-    // exactly one user, and every case with two users refused before reaching
-    // the UPDATE, so the suite could not see it. The sibling subscription test
-    // one describe block up ('matches the UPDATE by customer_id, touching only
-    // that user') is the same guard for the same reason; this story needed its
-    // own and did not have one.
+    // Two users, so a missing row predicate on the UPDATE (rewriting every email) goes red.
     await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
     await seedUser({ paddleId: 'ctm_2', email: 'bystander@example.test' })
 
@@ -1137,9 +995,7 @@ describe('Story 68.1 — customer.updated moves the login email', () => {
   it('normalizes the incoming address before storing it (AC-1)', async () => {
     await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
 
-    // Whitespace-padded and mixed case. `normalizeEmail` runs BEFORE
-    // `isValidEmail` (the email.ts contract), so this must be ACCEPTED and
-    // stored canonically — not rejected for its untrimmed shape.
+    // `normalizeEmail` runs before `isValidEmail`, so padded mixed case is accepted and stored canonically.
     await post({
       ...customerUpdatedEvent({ email: '  NEW@Example.TEST  ' }),
       occurred_at: at(5),
@@ -1149,11 +1005,7 @@ describe('Story 68.1 — customer.updated moves the login email', () => {
   })
 
   it('closes the lockout: a magic link works at the NEW address and NOT the old (AC-2)', async () => {
-    // ⚠️ The assertion that actually matters. Reading the row back proves the
-    // column changed; it does NOT prove the user can get in, because
-    // `requestMagicLink` matches on `lower(email)` AND `isDeleted = false` and
-    // is a SILENT no-op for a miss. So this drives the real function against the
-    // same database the webhook just wrote.
+    // `requestMagicLink` silently no-ops on a miss, so drive it to prove the user can still get in.
     await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
     await post({ ...customerUpdatedEvent(), occurred_at: at(5) })
 
@@ -1185,11 +1037,7 @@ describe('Story 68.1 — customer.updated moves the login email', () => {
   })
 
   it('REFUSES when the address belongs to a FREE account too — D1 is unconditional (AC-3)', async () => {
-    // ⚠️ THIS is the test that distinguishes D1 from story 5-19's asymmetric
-    // rule. Under 5-19's policy an unentitled colliding row is ADOPTABLE, so a
-    // suite that only covered the entitled case would pass against the wrong
-    // behaviour. Here the refusal must hold whatever the other row's status is,
-    // because freeing the address would mean destroying that account's ledger.
+    // Refusal must hold whatever the other row's status: an unentitled row isn't adoptable here.
     await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
     await seedUser({
       paddleId: 'ctm_other',
@@ -1206,15 +1054,7 @@ describe('Story 68.1 — customer.updated moves the login email', () => {
   })
 
   it('REFUSES when the colliding row is soft-deleted — the tombstone is not a licence (AC-6)', async () => {
-    // ⚠️ MEASURED AND RECORDED: nothing in this product sets
-    // `users.isDeleted = true`. Every write to `users` is
-    // `webhooks/paddle.ts:277/362/514/772` plus `auth/paddle.ts:114`; none sets
-    // it true, and `:277` CLEARS it. Account erasure is a HARD DELETE, and the
-    // sync tombstones target profile-child tables, never `users`. So this
-    // fixture builds the row DIRECTLY because no code path produces it. This is
-    // a guard over an unreachable state, not a scenario a user reaches — it
-    // exists because four readers filter on the column and a future writer must
-    // not find a hole here.
+    // Built directly: no code path sets `users.isDeleted`, but readers filter on it.
     await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
     await seedUser({ paddleId: 'ctm_other', email: 'new@example.test', isDeleted: true })
 
@@ -1226,11 +1066,7 @@ describe('Story 68.1 — customer.updated moves the login email', () => {
   })
 
   it('a repeat of an address we already hold is not read as a collision (AC-3, AC-7)', async () => {
-    // ⚠️ RENAMED AFTER A POSITIVE CONTROL. This does NOT exercise the
-    // `collision.id !== ours.id` conjunct: the already-equal early return fires
-    // before the collision lookup runs, so what is proven here is that early
-    // return. The conjunct is covered instead by the legacy mixed-case test
-    // above, which became reachable once the lookup moved to `lower(email)`.
+    // The already-equal early return fires before the collision lookup; this proves only that return.
     await seedUser({ paddleId: 'ctm_1', email: 'new@example.test' })
 
     const res = await post({ ...customerUpdatedEvent(), occurred_at: at(5) })
@@ -1277,13 +1113,8 @@ describe('Story 68.1 — customer.updated moves the login email', () => {
   })
 
   it('⚠️ does NOT advance entitlementUpdatedAt, so a later billing event still applies (D2)', async () => {
-    // ⚠️⚠️ THE MOST IMPORTANT TEST IN THIS STORY. If the handler wrote
-    // `entitlementUpdatedAt` instead of (or as well as) `emailUpdatedAt`, the
-    // email change would raise the entitlement watermark, and the
-    // `subscription.updated` below — which carries an EARLIER `occurred_at`,
-    // as a real retry easily can — would be judged stale and DROPPED. The user
-    // would change their email and silently lose the entitlement they pay for.
-    // Nothing that exercises the email path alone can see this.
+    // Writing `entitlementUpdatedAt` here would make an older-stamped subscription retry look stale
+    // and drop it, silently losing the entitlement.
     await seedUser({ paddleId: 'ctm_1', email: 'old@example.test', subscriptionStatus: 'free' })
 
     await post({ ...customerUpdatedEvent(), event_id: 'evt_email', occurred_at: at(50) })
@@ -1326,13 +1157,8 @@ describe('Story 68.1 — customer.updated moves the login email', () => {
   })
 
   it('leaves the address alone but STILL ADVANCES the watermark (AC-7, AC-5)', async () => {
-    // ⚠️ THIS TEST PINNED A REAL DEFECT AND WAS REWRITTEN AT REVIEW. It used to
-    // assert `emailUpdatedAt` **toBeNull** — "don't churn the row" — which is
-    // the wrong contract and made the suite defend the bug. A no-op event
-    // (name / locale / marketing_consent, by far the commonest
-    // `customer.updated`) must still record that we have SEEN it, or a
-    // genuinely older event delivered afterwards is judged fresher than NULL.
-    // See the regression test below for the sequence that broke.
+    // A no-op event must still stamp `emailUpdatedAt`, or an older event delivered afterwards
+    // is judged fresher than NULL.
     await seedUser({ paddleId: 'ctm_1', email: 'new@example.test' })
 
     const res = await post({ ...customerUpdatedEvent(), occurred_at: at(5) })
@@ -1344,16 +1170,8 @@ describe('Story 68.1 — customer.updated moves the login email', () => {
   })
 
   it('⚠️ REGRESSION: a no-op event must not let a later OLDER event resurrect a dead address', async () => {
-    // ⚠️⚠️ THE DEFECT THE REVIEW FOUND, and the 49 tests written before it could
-    // not see. Paddle's history: t=10 → `b@`, t=15 → `a@`, t=20 a name-only
-    // change (email still `a@`). Delivery order 20, 15, 10 — arrival order is
-    // precisely what this whole mechanism exists to distrust.
-    //
-    // Before the fix the two no-op events returned without stamping, so the
-    // watermark stayed NULL, the t=10 event was judged "fresher than nothing",
-    // and the row ended on `b@` — an address Paddle had ABANDONED. The user
-    // types `a@`, matches nothing, and is locked out: the exact failure this
-    // story exists to close, reintroduced by the story itself.
+    // History t=10 b@, t=15 a@, t=20 name-only; delivered 20, 15, 10. Unstamped no-ops would let
+    // t=10 win and strand the account on an address Paddle abandoned.
     await seedUser({ paddleId: 'ctm_1', email: 'a@example.test' })
 
     await post({
@@ -1378,13 +1196,8 @@ describe('Story 68.1 — customer.updated moves the login email', () => {
   })
 
   it('normalizes a LEGACY mixed-case row of our own instead of refusing it (AC-3)', async () => {
-    // ⚠️ ADDED AT REVIEW, and it only became reachable at review. Once the
-    // collision lookup moved to `lower(email)` to match the login predicate,
-    // our OWN legacy un-normalized row starts matching it: the equality early
-    // return does not fire (the strings differ by case), so the
-    // `collision.id !== ours.id` conjunct is what stops us refusing the
-    // account's own self-normalization. That conjunct was provably INERT under
-    // the old exact-match lookup.
+    // Our own legacy mixed-case row matches the `lower(email)` lookup, so the
+    // `collision.id !== ours.id` conjunct is what stops a self-refusal.
     await seedUser({ paddleId: 'ctm_1', email: 'New@Example.test' })
 
     const res = await post({ ...customerUpdatedEvent(), occurred_at: at(5) })
@@ -1395,16 +1208,8 @@ describe('Story 68.1 — customer.updated moves the login email', () => {
   })
 
   it('REFUSES a collision with another account stored in a DIFFERENT CASE (AC-3)', async () => {
-    // ⚠️ ADDED AFTER CONTROL C10 STAYED GREEN. The legacy-normalization test
-    // above does NOT discriminate the `lower(email)` lookup — it uses our OWN
-    // row, which passes under an exact match too. This is the case that bites:
-    // the colliding row belongs to SOMEONE ELSE and is stored mixed-case.
-    //
-    // Under the old exact `eq(email)` the collision is invisible, the UPDATE
-    // succeeds, and `users_email_unique` allows it because varchar equality is
-    // case-sensitive — leaving two rows that differ only by case. Login matches
-    // on `lower(email)` with `.limit(1)` and NO `ORDER BY`, so it would then
-    // mint a magic link for an arbitrary one of two accounts.
+    // An exact `eq(email)` misses a mixed-case collision; the unique index is case-sensitive, so two
+    // rows would differ only by case and login would pick one arbitrarily.
     await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
     await seedUser({ paddleId: 'ctm_other', email: 'New@Example.test' })
 
@@ -1417,10 +1222,7 @@ describe('Story 68.1 — customer.updated moves the login email', () => {
   })
 
   it('invalidates pending magic links when the address moves', async () => {
-    // A link minted for the OLD mailbox is keyed on `userId`, so it would still
-    // sign into this account after the move. Decided 2026-09-25 to close that
-    // window; `loginTokens` are not sessions, so D3's "do not revoke" does not
-    // cover them.
+    // Login tokens are keyed on userId, so a link minted for the old mailbox would still sign in.
     await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
     await requestMagicLink('old@example.test', 'https://app.test')
     expect(await db.select().from(loginTokens)).toHaveLength(1)
@@ -1431,9 +1233,7 @@ describe('Story 68.1 — customer.updated moves the login email', () => {
   })
 
   it('stamps the watermark even when it REFUSES, so an older address cannot follow', async () => {
-    // Without this, a refused NEWER event leaves no trace and an older
-    // intermediate address is applied afterwards — stranding the account on an
-    // address Paddle no longer holds.
+    // A refused newer event must still stamp, or an older intermediate address is applied afterwards.
     await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
     await seedUser({ paddleId: 'ctm_other', email: 'taken@example.test' })
 
@@ -1454,8 +1254,7 @@ describe('Story 68.1 — customer.updated moves the login email', () => {
   })
 
   it('does not create an account for a customer we have never seen (AC-7)', async () => {
-    // ADR-003: the subscription and transaction paths are the ONLY
-    // account-creation paths. A `customer.*` event must never mint a user.
+    // Only subscription and transaction paths create accounts; a `customer.*` event must never mint a user.
     const res = await post({
       ...customerUpdatedEvent({ id: 'ctm_unknown' }),
       occurred_at: at(5),
@@ -1479,12 +1278,8 @@ describe('Story 68.1 — customer.updated moves the login email', () => {
   })
 
   it('does not poison dedup when the envelope carries no event_id (AC-8)', async () => {
-    // ⚠️ `eventId = event.event_id ?? data.id` (paddle.ts). On `customer.*`,
-    // `data.id` is the `ctm_…` CUSTOMER id — the same value on every customer
-    // event for that customer, forever — and `paddleWebhookEvents.eventId` is
-    // the PRIMARY KEY. Letting the fallback through would claim `ctm_1` once
-    // and then dismiss every later customer event for that customer as a
-    // duplicate, permanently.
+    // On `customer.*`, the `data.id` fallback is the constant customer id; claiming it as the event
+    // id would dismiss every later customer event as a duplicate.
     await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
 
     const first = await POST({
@@ -1510,12 +1305,7 @@ describe('Story 68.1 — customer.updated moves the login email', () => {
   })
 
   it('answers 200, not a 500, when the address is unusable (AC-9)', async () => {
-    // Retrying an identical payload can never make it valid, so this is the
-    // opposite of the subscription path's `{ok:false}` → 500, which retries
-    // because the email may yet resolve via the customer API.
-    // ⚠️ RENAMED AT REVIEW: this proves "200, not 500". It CANNOT observe
-    // `terminal: true` — nothing in the codebase reads that field (13 write
-    // sites, zero readers), so a plain `{ ok: true }` is indistinguishable here.
+    // Proves 200 not 500: retrying an identical payload can never make it valid.
     await seedUser({ paddleId: 'ctm_1', email: 'old@example.test' })
 
     const unusable = ['', 'not-an-email', `${'a'.repeat(250)}@example.test`]
@@ -1543,13 +1333,7 @@ describe('Story 68.1 — customer.updated moves the login email', () => {
 })
 
 describe('Story 70.1 — Settings names the plan the user bought', () => {
-  /**
-   * A `subscription.created` shaped as Paddle sends it: the TOP-LEVEL
-   * `billing_cycle` (required on the subscription entity — the field the
-   * webhook reads) AND a line item whose price carries its own. The item-level
-   * one is present so a handler that read `items[0].price.billing_cycle`
-   * instead would still see a cycle — the top-level one is the contract.
-   */
+  /** The top-level `billing_cycle` is the contract; the item-level one is present as a decoy. */
   function subscriptionCreated(
     customerId: string,
     email: string,
@@ -1579,7 +1363,6 @@ describe('Story 70.1 — Settings names the plan the user bought', () => {
     }
   }
 
-  /** Resolve the user's session exactly as `/api/auth/me` does, from a signed cookie. */
   async function sessionFor(paddleId: string) {
     const [row] = await readUser(paddleId)
     const token = signSession({ userId: row.id, paddleId: row.paddleId, email: row.email })
@@ -1593,8 +1376,7 @@ describe('Story 70.1 — Settings names the plan the user bought', () => {
   }
 
   function labelOf(session: Awaited<ReturnType<typeof sessionFor>>): string {
-    // Read through a widened view so this file still RUNS against a server that
-    // predates the field (the RED leg of AC-9): absent reads as unknown.
+    // Widened view so this still runs against a server that predates the field.
     const { billingInterval } = session as { billingInterval?: 'month' | 'year' | null }
     return planLabel(session.subscriptionStatus, billingInterval)
   }
@@ -1673,12 +1455,8 @@ describe('Story 70.1 — Settings names the plan the user bought', () => {
     expect(planLabel(row.subscriptionStatus, row.billingInterval)).toBe('Active')
   })
 
-  // ⚠️ HONEST SCOPE (Story 70.1 review). The two first-seen tests below pin the
-  // OUTCOME, not the INSERT's `?? null`: the column is nullable with no default,
-  // so deleting that expression leaves both green. What they do catch is a
-  // first-seen row being given a WRONG cadence (a guessed or a leaked one).
-  // The first uses a payload Paddle cannot send (`billing_cycle` is required),
-  // kept as the defensive case; the second is the reachable one.
+  // These pin the outcome, not the INSERT's `?? null` (the column has no default, so removing
+  // it stays green).
   it('stores NULL for a first-seen subscriber whose payload states no cycle', async () => {
     await post({
       ...subscriptionCreated('ctm_1', 'buyer@example.test', undefined),
@@ -1717,10 +1495,7 @@ describe('Story 70.1 — Settings names the plan the user bought', () => {
   })
 
   describe('entitlementWatermarkGuard — the in-statement ordering predicate (review)', () => {
-    // The route cannot reach the race this closes: PGlite is one connection, so
-    // two deliveries never interleave between the pre-read and the UPDATE. This
-    // drives the predicate itself against the real schema, which is what makes
-    // the loser of such a race match no row.
+    // The route can't reach this race on one connection, so drive the predicate directly.
     async function guardedUpdate(occurredAtMinutes: number) {
       const occurredAt = BASE_TIME + occurredAtMinutes * 60_000
       return db
@@ -1863,14 +1638,6 @@ describe('Story 70.1 — Settings names the plan the user bought', () => {
 })
 
 describe('Story 74.1 — erase then repurchase at the same address', () => {
-  // The reported sequence, driven end to end: buy, erase through the REAL
-  // `deleteUserAccount` (a real signed session), buy again at the same address,
-  // request a sign-in link. The observation point is the mocked mailer.
-  //
-  // ⚠️ AC-8: nothing here asserts how many `users` rows exist after a
-  // post-erasure `subscription.canceled`. That event RESURRECTS the erased row
-  // (probe P1, a separate defect recorded in deferred-work.md); pinning the row
-  // count would make this suite defend it.
   const ADDRESS = 'returning@example.test'
 
   beforeEach(() => {
@@ -1879,7 +1646,6 @@ describe('Story 74.1 — erase then repurchase at the same address', () => {
     sendMagicLinkEmail.mockResolvedValue(undefined)
   })
 
-  /** Erase the account exactly as the Settings "Delete account" button does. */
   async function eraseThroughTheRealDeletion(paddleId: string) {
     const [row] = await readUser(paddleId)
     const token = signSession({ userId: row.id, paddleId: row.paddleId, email: row.email })
@@ -1939,10 +1705,8 @@ describe('Story 74.1 — erase then repurchase at the same address', () => {
   })
 
   describe('story 86.2, AC 5 — a re-created account gets a NEW users.id', () => {
-    // MEASURED, not assumed: the client tells another account's local rows from
-    // its own by `userId` alone (`lib/sync/accountOwner.ts`). If a re-created
-    // account got its old id back, the old account's rows left on a browser
-    // would read as the new account's own and be adopted into it.
+    // The client tells accounts' local rows apart by `userId` alone, so a re-created account must
+    // not get its old id back.
     it('same customer id', async () => {
       await post({ ...lifetimeEvent({}), occurred_at: at(0) })
       const [erased] = await readUser('ctm_1')
@@ -2018,19 +1782,12 @@ describe('Story 74.1 — erase then repurchase at the same address', () => {
 describe('Story 74.2 — erasure clears the email-scoped throttle', () => {
   // What a user types into the sign-in form, and what the throttle keys on.
   const TYPED = 'returning@example.test'
-  // ⚠️ THE DISCRIMINATING SEED. The webhook stores addresses already normalized
-  // (Story 5-3), so for an ordinary row the raw stored email EQUALS the throttle
-  // key and a delete that forgot to normalize would pass. A legacy row stored in
-  // mixed case is the only shape where "keyed on the raw email" and "keyed on
-  // the normalized email" differ — so it is the only shape that can go RED for
-  // that mistake. `magic-link.ts` still `lower()`s its lookup for such rows.
+  // Legacy mixed-case row: the only shape where keying on raw vs normalized email differs.
   const STORED = 'Returning@Example.Test'
   const PADDLE_ID = 'ctm_legacy'
 
-  // One instant mid-way through the CURRENT real 15-min window, so every call
-  // lands in one fixed bucket (`db-window.ts:199`) and the reaper's 1h cutoff
-  // cannot touch it. Not pinned across webhook `post()`s, which sign with the
-  // real clock.
+  // Mid-way through the current 15-min window, so every call lands in one bucket the reaper
+  // can't touch.
   const NOW =
     Math.floor(Date.now() / EMAIL_LIMIT.windowMs) * EMAIL_LIMIT.windowMs + EMAIL_LIMIT.windowMs / 2
 
@@ -2083,8 +1840,7 @@ describe('Story 74.2 — erasure clears the email-scoped throttle', () => {
 
     await eraseThroughTheRealDeletion()
 
-    // Row-level first: on `main` the surviving bucket is visible here, which is
-    // the mechanism — not just its symptom below.
+    // Row-level first: the surviving bucket is the mechanism, not just its symptom below.
     expect(await emailBuckets()).toEqual([])
     expect((await attempt()).allowed).toBe(true)
   })
@@ -2094,9 +1850,7 @@ describe('Story 74.2 — erasure clears the email-scoped throttle', () => {
     await exhaustTheThrottle()
     const bystander = { scope: 'email' as const, subject: 'someone-else@example.test' }
     const ip = { scope: 'ip' as const, subject: '203.0.113.7' }
-    // SYNTHETIC — no real caller keys a non-email scope by an address. It exists
-    // so the `scope = 'email'` conjunct is load-bearing: a delete keyed on the
-    // subject alone would take this row too (review 74.2).
+    // Synthetic: makes the `scope = 'email'` conjunct load-bearing.
     const sameSubjectOtherScope = {
       scope: 'login-verify' as const,
       subject: normalizeEmail(TYPED),
@@ -2166,8 +1920,7 @@ describe('Story 73.2 — the retention clock moves with the status, in the same 
   })
 
   it('does NOT restart the clock on a later event that leaves the row lapsed (why the column exists)', async () => {
-    // `entitlementUpdatedAt` DOES advance here — that is the 73.1-deferred
-    // defect: reading it as the lapse date would restart the 12 months.
+    // `entitlementUpdatedAt` advances here; reading it as the lapse date would restart the 12 months.
     await seedUser({ subscriptionStatus: 'active' })
     await post({
       event_type: 'subscription.canceled',
@@ -2249,8 +2002,7 @@ describe('Story 73.2 — the retention clock moves with the status, in the same 
   })
 
   it('a first-seen customer with a LAPSED status creates no account (review decision, Lucas 2026-09-28)', async () => {
-    // Before the 73.2 review this INSERTED a `canceled` row with a fresh clock:
-    // the path by which an erased or purged account came back.
+    // Must not insert a `canceled` row: that resurrected erased or purged accounts.
     fetchPaddleCustomerEmail.mockResolvedValue('never-paid@example.test')
 
     const res = await post({
@@ -2276,10 +2028,7 @@ describe('Story 73.2 — the retention clock moves with the status, in the same 
   })
 
   it('erasure is NOT undone by Paddle’s own cancellation webhook (closes 74.1’s resurrection defect)', async () => {
-    // The 74.1 probe P1 sequence: erase, then Paddle delivers the
-    // `subscription.canceled` that erasure's own cancel call triggered.
-    // Erasure removes the row (the `eraseAccountRows` path is proven in the
-    // Story 74.1/74.2 suites below); here only its absence matters.
+    // Erase, then Paddle delivers the `subscription.canceled` that erasure's own cancel triggered.
     const user = await seedUser({
       paddleId: 'ctm_erased',
       email: 'erased@example.test',

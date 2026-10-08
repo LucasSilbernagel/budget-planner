@@ -1,18 +1,5 @@
-/**
- * Live database smoke check (Story 4.17, AC-5).
- *
- *   DATABASE_URL=... NODE_ENV=production \
- *     pnpm --filter @budget-planner/db db:smoke
- *
- * Validates the connection posture (see `db-smoke.ts`), then asserts a real
- * `SELECT 1` through the application's own pool via `testDbConnection()` — so a
- * pass means the app itself can reach the database, not merely that some socket
- * opened.
- *
- * NOT wired into any CI job, by design: it requires a real `DATABASE_URL`, and a
- * smoke that skips itself into a green tick when unconfigured is a false signal.
- * Missing configuration is therefore an ERROR here, and CI never invokes it.
- */
+// Not wired into CI by design: it needs a real DATABASE_URL, and missing config is an error
+// rather than a skipped green tick.
 
 import process from 'node:process'
 import { normalizeCaCert } from './ca-cert'

@@ -1,27 +1,5 @@
-/**
- * Profiles Page
- *
- * Manage custom financial profiles. Custom profiles is a **Premium** feature
- * (Story 13-3): the route stays reachable, but for a non-active subscription it
- * renders a discoverable, locked upgrade surface instead of the management UI,
- * and the profile server functions independently reject non-active callers. An
- * active (paid) user gets the full create / list / switch experience, synced to
- * DanubeData (Germany - EU) via the existing profile store → sync bridge.
- *
- * Rendered by: `routes/profiles.tsx` (`/profiles`).
- *
- * Architecture: TanStack Start; gated via `usePremiumAccess` (the single tier
- * signal shared with ads / PremiumFeatureGate / the forecasting route), so ads,
- * routes, and gates never disagree. Fail-closed: unknown/loading/errored tier is
- * treated as NOT premium.
- *
- * This component lives here rather than in the route file so the router's code
- * splitter can split it out. While it was exported from `routes/profiles.tsx` it
- * was the route's ONLY split-eligible property, so the splitter bailed out
- * before emitting anything and the whole route module stayed in the eager
- * bundle — silently, with no dev-server warning to show for it (BUG-C, story
- * 39-1).
- */
+// Lives outside the route file so the router's code splitter can split it; as the route's
+// only split-eligible export it silently kept the route in the eager bundle.
 
 import { PremiumPrompt } from '@/components/auth/premium-prompt'
 import { CreateProfileDialog } from '@/components/profiles/create-profile'
@@ -33,15 +11,10 @@ export function ProfilesPage() {
   const { status } = usePremiumAccess()
   const [showCreateDialog, setShowCreateDialog] = useState(false)
 
-  // Tier not yet known (SSR + first client paint): a neutral loading state.
-  // Identical on server and first client render → hydration-safe, and never
-  // leaks the management UI to a not-yet-verified user (fail-closed).
+  // Tier unknown (SSR + first paint): neutral and hydration-safe; never leaks the UI (fail-closed).
   if (status.isLoading) {
-    // ⚠️ Each branch's outer element has its OWN `key` (story 117.2, FR185):
-    // without them React reused the spinner's <div> as the resolved page's
-    // container, and Chrome counted the 32 px node growing into the page as a
-    // layout shift (CLS 0.0779 on /profiles desktop, MEASURED). Keys make React replace
-    // the loading subtree. Do not tidy them away.
+    // Each branch's outer element has its own key so React replaces the loading subtree
+    // rather than growing the spinner's div (a layout shift). Do not remove.
     return (
       <main
         key="premium-loading"
@@ -56,9 +29,7 @@ export function ProfilesPage() {
     )
   }
 
-  // Non-active (free / lapsed / unauthenticated / errored) → discoverable but
-  // locked: a full-page upgrade surface instead of the management UI. The server
-  // functions enforce the same boundary independently (Story 13-3, AC-1/AC-2).
+  // The server functions enforce the same boundary independently.
   if (!status.hasAccess) {
     return (
       <main
@@ -74,11 +45,9 @@ export function ProfilesPage() {
     )
   }
 
-  // Active premium: the full management experience (unchanged behavior, AC-3).
   return (
     <main key="premium-content" className="min-h-screen bg-gray-50 p-4 md:p-8 dark:bg-gray-900">
       <div className="max-w-4xl mx-auto">
-        {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Profiles</h1>
@@ -87,12 +56,6 @@ export function ProfilesPage() {
             </p>
           </div>
 
-          {/* ⚠️ No switcher control here since story 63.1 (FR96): the profile
-              CARDS below are the switcher. `SwitchProfileDropdown` sat beside this
-              button and is deleted — FR80's "exactly one control lets a user
-              switch the active profile" still holds, the card is now that control.
-              The wrapper is kept because "+ New Profile" is a header action and
-              63.2 adds no second one; it is a layout slot, not a leftover. */}
           <div className="flex items-center gap-4">
             <button
               type="button"
@@ -104,15 +67,12 @@ export function ProfilesPage() {
           </div>
         </div>
 
-        {/* Profile list */}
         <div className="bg-white rounded-xl shadow-md p-6 dark:bg-gray-800">
           <ProfileList onCreateNewProfile={() => setShowCreateDialog(true)} />
         </div>
 
-        {/* Create profile dialog */}
         {showCreateDialog && <CreateProfileDialog onClose={() => setShowCreateDialog(false)} />}
 
-        {/* Info section */}
         <div className="mt-8 bg-blue-50 rounded-xl p-6 dark:bg-blue-950/40">
           <h2 className="text-lg font-semibold text-blue-800 mb-2 dark:text-blue-200">
             About Profiles

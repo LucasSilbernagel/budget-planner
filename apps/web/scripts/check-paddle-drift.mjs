@@ -1,11 +1,4 @@
-// Weekly Paddle.js drift check (story sec-4, D2 (b)); run by .github/workflows/paddle-drift.yml.
-//
-//   node apps/web/scripts/check-paddle-drift.mjs            # fetches the live paddle.js
-//   node apps/web/scripts/check-paddle-drift.mjs <file>     # checks a local copy
-//
-// Fetches ONE public static file (no Paddle API, no token, no secret) and exits 1, with a
-// message saying what to update, when an internal the app relies on has changed. Needs
-// Node >= 22.18 / 23.6 (it imports the pinned values from a .ts leaf by type stripping).
+// Needs Node >= 22.18 / 23.6: it imports the pinned values from a .ts file by type stripping.
 
 import { readFileSync } from 'node:fs'
 import {
@@ -14,8 +7,7 @@ import {
 } from '../src/lib/paddle/paddle-js-internals.ts'
 import { PADDLE_JS_URL, checkPaddleJs } from './paddle-drift-lib.mjs'
 
-// Exit 2 = the check could not run (no file, no network); exit 1 = drift. Kept apart so a
-// red run's first line says which (sec-4 review).
+// Exit 2 = the check could not run; exit 1 = drift. Kept apart so a red run says which.
 const FETCH_TIMEOUT_MS = 30_000
 
 const file = process.argv[2]

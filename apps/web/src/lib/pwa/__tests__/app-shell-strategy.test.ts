@@ -1,31 +1,6 @@
 /**
- * The app-shell route's caching BEHAVIOUR, run on the real Workbox strategy
- * (story 101.1, AC 3, FR167).
- *
- * The production service worker serves every same-origin document through one
- * `NetworkFirst` route (`pwa.config.mjs`). Before 101.1 it had
- * `networkTimeoutSeconds: 3`: a network slower than 3 s got the CACHED
- * document instead, which could belong to another session (99.1 evidence
- * `c1-run.txt`). The rule now: the cache is used ONLY when the network request
- * FAILS (offline). These cases run `workbox-strategies@7.4.1`'s `NetworkFirst`
- * built from the route options this app ships, so putting the timeout back in
- * `pwa.config.mjs` turns the slow-network case RED.
- *
- * How the strategy is built: the way `workbox-build` turns the options into
- * code (`runtime-caching-converter.js`): every plain option (`cacheName`,
- * `networkTimeoutSeconds`, ...) passes straight through, and
- * `cacheableResponse` becomes a `CacheableResponsePlugin`. `expiration`
- * (`ExpirationPlugin`) is LEFT OUT: it needs IndexedDB, and it only trims old
- * entries, which none of these cases is about.
- *
- * Shims (Node has no service-worker globals): `self`, a Map-backed
- * `caches`, `ExtendableEvent`/`FetchEvent` classes (Workbox's dev-mode
- * asserts check the event's class) and a stubbed `fetch`. The requests are
- * not `mode: 'navigate'` (undici refuses that mode); Workbox treats a
- * navigation differently only for navigation preload, which this app does
- * not enable. These shims are a model of the browser, not the browser: the
- * real-browser witness is F8 (`e2e/pwa-offline.prod.spec.ts`) and the story's
- * prod-build evidence.
+ * Runs the real Workbox NetworkFirst with the shipped route options: the cache may serve only when the network fails,
+ * never on a slow network. ExpirationPlugin is left out (needs IndexedDB, irrelevant here).
  */
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -111,11 +86,8 @@ beforeAll(async () => {
   const { CacheableResponsePlugin } = await import('workbox-cacheable-response')
   expect(pwaRuntimeCaching).toHaveLength(1)
   expect(pwaRuntimeCaching[0].handler).toBe('NetworkFirst')
-  // The model below translates ONLY these options. Any other one `workbox-build`
-  // accepts (`plugins`, `precacheFallback`, `broadcastUpdate`, `backgroundSync`,
-  // `rangeRequests`) becomes a plugin in the real service worker, and the spread
-  // below would silently drop it (or pass it to the constructor, which ignores
-  // it), so this test would vouch for a route it never ran. Model it here first.
+  // Any other workbox-build option becomes a plugin in the real SW and would be silently dropped here.
+  // Model it here first.
   const modelled = [
     'cacheName',
     'networkTimeoutSeconds',
@@ -198,7 +170,6 @@ describe('app-shell route: the cache answers only when the network fails', () =>
   })
 
   it('a FAILED network (offline) gets the cached document', async () => {
-    // Positive control for the shims: the cache path works at all.
     await seedCachedDocument('cached document')
     globalThis.fetch = vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))) as typeof fetch
 

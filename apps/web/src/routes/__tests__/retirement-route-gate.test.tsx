@@ -1,18 +1,3 @@
-/**
- * The `/retirement` route's on/off branch (story 35.2, AC-5 / AC-6).
- *
- * ⚠️ THIS FILE EXISTS BECAUSE ITS TASK CHECKBOX WAS TICKED WITHOUT IT. The dev
- * record claimed a unit test for "the route's on/off branch"; the Acceptance
- * Auditor grepped and found none — the branch had e2e coverage only. AC-5 was
- * genuinely met, but the task claim was not, which is this project's documented
- * failure mode: gate NUMBERS stay honest because they are measured, AC verdicts
- * inflate because they are judged.
- *
- * The route component is reached through `Route.options.component` rather than a
- * separate export, so the assertion covers the gate exactly as the router will
- * invoke it — not a re-implementation of it.
- */
-
 import { renderWithRouter, screen } from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { usePlannerVisibilityStore } from '../../stores/plannerVisibilityStore'
@@ -45,13 +30,10 @@ describe('the /retirement route gate', () => {
     expect(
       await screen.findByRole('heading', { name: /retirement planner is turned off/i })
     ).toBeInTheDocument()
-    // The planner itself must be GONE, not merely visually displaced — the
-    // whole point of gating at the component rather than hiding with CSS.
+    // Gone, not visually displaced: the gate is at the component, not CSS.
     expect(screen.queryByRole('heading', { name: /when can you retire\?/i })).toBeNull()
   })
 
-  // Story 116.1 (FR184, A4): both branches are ONE `<main>` landmark. The
-  // hidden-planner branch was never audited by Lighthouse.
   it.each([
     ['planner on', true, /when can you retire\?/i],
     ['planner hidden', false, /retirement planner is turned off/i],

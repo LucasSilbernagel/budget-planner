@@ -30,58 +30,8 @@ import {
 import { AuthIndicator } from '../../auth/auth-indicator'
 import { GlobalNav, PREMIUM_NAV_ROUTES } from '../GlobalNav'
 
-/**
- * Nav + account row composition (story 19-3; updated for the 31.4 CSS switch).
- *
- * On desktop the primary nav (`GlobalNav`) and the account/sign-in indicator
- * (`AuthIndicator`) share one visual bar, laid out by the `__root.tsx` wrapper
- * (nav leading, indicator trailing); below `sm` `GlobalNav` becomes a fixed
- * bottom tab bar while `AuthIndicator` stays a top strip. This test co-renders
- * the two — the way `__root` does — and locks the STRUCTURAL invariant that
- * composition must never break: the "Sign in" affordance is NEVER a descendant
- * of the single `<nav aria-label="Primary">` landmark, so the nav always holds
- * exactly its six section links (seven until story 69.2 moved Settings into
- * the account cluster).
- *
- * Why it matters: the GlobalNav suite asserts the nav holds exactly six links.
- * A future refactor could nest `AuthIndicator`'s `<Link to="/login">` inside
- * `<nav>` to co-locate sign-in — and the most tempting place to do that is the
- * *mobile* bottom bar (the exact "don't crowd the 320px tab bar" trade-off Story
- * 13-2 guards).
- *
- * ⚠️ Story 31.5 makes that temptation strictly WORSE, and adds a second place to
- * yield to it. The bar now has only FIVE slots — four destinations and a "More"
- * trigger — so "there is no room, put Sign in behind More" is the natural next
- * thought. The sheet is a nav descendant like any other, so folding sign-in into
- * it would break this same invariant just as thoroughly as folding it into the
- * bar. Both are asserted below.
- *
- * ⚠️ The link counts here are 9 since story 96.3 (6 destinations + the two
- * promoted row copies, `hidden lg:block`, story 69.3, + the phone-only
- * Settings sheet row, `sm:hidden`; 8 until 96.3), and they count DOM PRESENCE, not
- * reachability. Since story 59.2 the More destinations sit inside a native
- * `<details>` at EVERY width, and a closed `<details>` hides them from a real
- * browser's accessibility tree. jsdom does not: its default stylesheet has no
- * closed-details rule, so `getAllByRole('link')` still resolves all six.
- * Before 59.2 the reason was that jsdom applies no media queries. The number is
- * the same and the reason is not. "Fixing" these to 4 would turn correct tests
- * red. Which destinations a user can actually reach is a rendered fact; since
- * stories 84.2/84.3 only the screenshots and the server HTML
- * (`GlobalNav.ssr.dom.test.tsx`) pin it. (It was
- * EIGHT until story 43.3 removed `/net-worth-projection`; the count tracks the
- * nav.)
- *
- * ⚠️ Since 31.4 there is no `useIsNarrowViewport` branch to mock: one DOM
- * subtree carries both layouts, switched by `max-sm:` utilities. Mocking the
- * hook here would select nothing, and re-asserting the link count on a second
- * render would be a byte-for-byte duplicate of the two tests above it. The third
- * test therefore pins the mobile claim the other two cannot make — that the nav
- * excluding Sign-in is the SAME element that becomes the fixed bottom bar.
- *
- * The signed-out state is seeded (SSR seed, story UX-1) so "Sign in" paints
- * synchronously without waiting on the post-mount `/api/auth/me` fetch, which is
- * stubbed to the signed-out shape for good measure.
- */
+// Link counts are DOM presence, not reachability: jsdom has no closed-<details> rule and no
+// stylesheet, so it sees every anchor. Don't "fix" them to the visible count.
 
 const originalFetch = global.fetch
 
@@ -97,12 +47,10 @@ beforeEach(() => {
 afterEach(() => {
   global.fetch = originalFetch
   vi.restoreAllMocks()
-  // Story 99.1: `AuthIndicator` writes its verified answer to a module store
-  // the nav reads; without this a paid answer leaks into the next test's nav.
+  // `AuthIndicator` writes a module store the nav reads; reset it or a paid answer leaks.
   resetVerifiedSessionForTests()
 })
 
-/** Mirror the `__root.tsx` desktop row: nav leading, account indicator trailing. */
 function NavAccountRow() {
   return (
     <SessionSeedProvider
@@ -124,22 +72,9 @@ describe('Nav + account row (story 19-3)', () => {
 
     const navs = await screen.findAllByRole('navigation', { name: /primary/i })
     expect(navs).toHaveLength(1)
-    // The Sign-in link must not inflate the nav's link set (story 11-1 / 19-2).
-    // Nine DOM anchors: six destinations + the two promoted row copies (story
-    // 69.3) + the phone-only Settings row (story 96.3; eight until then), which
-    // jsdom sees because it applies no stylesheet.
     expect(within(navs[0]).getAllByRole('link')).toHaveLength(9)
   })
 
-  // Story 69.2 (FR109). The same invariant, the other way round: Settings moved
-  // OUT of the nav into this row. A signed-out visitor's route to it is the
-  // gear link beside "Sign in", which is a sibling of the live region (it is
-  // navigation), not inside it and not inside <nav>.
-  // ⚠️ AMENDED by story 96.3 (FR163): that is the >= 640px route. Below 640px
-  // the nav's More sheet holds Settings (last, `sm:hidden`) and the gear is
-  // `max-sm:hidden`. The nav's /settings link is therefore expected, and must be
-  // exactly that phone-only sheet row (the per-width rule: see the complement
-  // test at the bottom of this file).
   it('puts the signed-out Settings gear in the account row, outside the nav and the live region', async () => {
     const { container } = renderWithRouter(<NavAccountRow />)
 
@@ -172,7 +107,6 @@ describe('Nav + account row (story 19-3)', () => {
     const signIn = await screen.findByRole('link', { name: /sign in/i })
 
     expect(signIn).toHaveAttribute('href', '/login')
-    // The invariant: Sign-in lives in the account `status` region, never in <nav>.
     expect(nav.contains(signIn)).toBe(false)
     const status = screen.getByRole('status', { name: /account status/i })
     expect(status.contains(signIn)).toBe(true)
@@ -184,18 +118,10 @@ describe('Nav + account row (story 19-3)', () => {
     const nav = await screen.findByRole('navigation', { name: /primary/i })
     const signIn = await screen.findByRole('link', { name: /sign in/i })
 
-    // The claim the two tests above cannot make: the landmark that excludes
-    // Sign-in is the SAME element that becomes the fixed bottom tab bar below
-    // `sm` — the layout a future dev is most tempted to fold sign-in into, which
-    // would push the primary landmark to nine links. Before 31.4 this was a
-    // separate `useIsNarrowViewport` branch reached by mocking the hook; now the
-    // bottom bar IS this element, so pinning `max-sm:fixed` on it is what keeps
-    // the guard about mobile rather than a duplicate of the desktop assertions.
+    // Pins `max-sm:fixed`: the landmark excluding Sign-in is the same element as the mobile bar.
     expect(nav.className.split(/\s+/), 'this nav is not the mobile bottom bar').toContain(
       'max-sm:fixed'
     )
-    // 6 destinations + 2 promoted row copies (story 69.3) + the Settings row
-    // (story 96.3; 8 until then).
     expect(within(nav).getAllByRole('link')).toHaveLength(9)
     expect(nav.contains(signIn)).toBe(false)
     const status = screen.getByRole('status', { name: /account status/i })
@@ -208,11 +134,6 @@ describe('Nav + account row (story 19-3)', () => {
     const nav = await screen.findByRole('navigation', { name: /primary/i })
     const signIn = await screen.findByRole('link', { name: /sign in/i })
 
-    // The 31.5 shape: an outer bar list plus a nested sheet list inside its
-    // fifth <li> (inside that cell's `<details>` since story 59.2, at every
-    // width). With only five bar slots, the sheet is the new tempting place
-    // to fold sign-in into — and it is a nav descendant, so doing so would push
-    // the primary landmark to nine links exactly as the bar would.
     const lists = nav.querySelectorAll('ul')
     expect(lists, 'expected the outer bar list and the nested sheet list').toHaveLength(2)
     const sheet = [...lists][1]
@@ -221,23 +142,10 @@ describe('Nav + account row (story 19-3)', () => {
     expect(
       [...sheet.querySelectorAll('a')].map((a) => a.getAttribute('href')),
       'the More sheet holds something other than its two destinations and Settings'
-      // + the phone-only Settings row, last (story 96.3).
     ).toEqual(['/balance', '/retirement', '/settings'])
   })
 })
 
-/**
- * The signed-in row (story 59.3). The account menu is the newest temptation to
- * fold an account affordance into the nav: it is a disclosure, like More, and
- * sits in the same bar. It must stay OUTSIDE `<nav>` (so the landmark still
- * holds exactly its section links) and OUTSIDE the More sheet, and its Sign out
- * must never become a nav row (UX record 2026-09-21, §3: "Do not put Sign out
- * in the More sheet").
- *
- * A FREE signed-in user, so the nav's link count is the same six as above:
- * an entitled seed would add the four premium destinations and change the
- * number for a reason unrelated to this invariant.
- */
 describe('Nav + account row, signed in (story 59.3)', () => {
   const USER = { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'free' as const }
 
@@ -262,41 +170,26 @@ describe('Nav + account row, signed in (story 59.3)', () => {
     const trigger = await screen.findByRole('button', { name: 'Account menu' })
     await user.click(trigger)
     const signOut = screen.getByRole('button', { name: 'Sign out' })
-    // Story 69.2: the panel's Settings link is the signed-in route to /settings
-    // (at >= 640px since story 96.3). Scoped to the panel: the nav's phone-only
-    // Settings sheet row has the same name.
+    // Scoped to the panel: the nav's phone-only Settings row has the same name.
     const accountPanel = signOut.parentElement as HTMLElement
     const settings = within(accountPanel).getByRole('link', { name: 'Settings' })
 
     expect(nav.contains(trigger), 'the account menu trigger was folded into <nav>').toBe(false)
     expect(nav.contains(settings), 'the menu’s Settings link was folded into <nav>').toBe(false)
     expect(nav.contains(signOut), 'Sign out was folded into <nav>').toBe(false)
-    // The sheet is a nav descendant, so `nav.contains` above already covers it;
-    // this pins the tempting SPECIFIC place (story 31.5's sheet) and fails
-    // loudly rather than throwing if the sheet stops being the second <ul>.
     const lists = [...nav.querySelectorAll('ul')]
     expect(lists, 'expected the bar list and the nested More sheet').toHaveLength(2)
     expect(lists[1].contains(signOut), 'Sign out was folded into the More sheet').toBe(false)
-    // 6 destinations + 2 promoted row copies (story 69.3) + the Settings row
-    // (story 96.3; 8 until then).
     expect(within(nav).getAllByRole('link')).toHaveLength(9)
-    // ZERO, and that is the right number. The nav's only control, More, is a
-    // `<summary>`, which has NO role in testing-library (story 59.2, measured),
-    // so it is not counted. Both account-menu controls are real `<button>`s, so
-    // either one inside the nav would make this 1 or 2.
+    // Zero: More is a <summary>, which has no role in testing-library.
     expect(within(nav).queryAllByRole('button')).toHaveLength(0)
 
-    // And outside the live region: an interactive control there announces
-    // spuriously on every navigation.
+    // And outside the live region: a control there announces spuriously on every navigation.
     const status = screen.getByRole('status', { name: /account status/i })
     expect(status.contains(trigger)).toBe(false)
     expect(status.contains(signOut)).toBe(false)
     expect(status.contains(settings)).toBe(false)
-    // No gear for a signed-in user: the menu is their route, so the cluster
-    // holds exactly one link to /settings (the one inside the open panel).
-    // ⚠️ TWO in the document since story 96.3 (was exactly one): that panel row,
-    // `max-sm:hidden`, and the nav's phone-only sheet row, `sm:hidden`. A
-    // real browser renders exactly one of them at any width.
+    // Two in the document: the panel row (`max-sm:hidden`) and the nav's sheet row (`sm:hidden`).
     const all = [...document.querySelectorAll('a[href="/settings"]')]
     expect(all).toHaveLength(2)
     expect(all).toContain(settings)
@@ -307,14 +200,6 @@ describe('Nav + account row, signed in (story 59.3)', () => {
   })
 })
 
-/**
- * Two disclosures, one bar (UX record 2026-09-21, §5.4; story 84.3 moved this
- * here from `e2e/account-menu{,.paid}.spec.ts`). Each closes the other when the
- * user PRESSES the other's trigger, in both orders, and focus lands on what was
- * pressed. Each disclosure's own outside-press rule is what does it: the other
- * trigger is outside it. Width was a variable only in the browser (which
- * trigger is visible); the rule below is the same at every width.
- */
 describe('Nav + account row, two disclosures (story 59.3)', () => {
   const FREE_USER = { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'free' }
 
@@ -337,11 +222,8 @@ describe('Nav + account row, two disclosures (story 59.3)', () => {
   }
 
   /**
-   * A mouse press on the More `<summary>`, as a browser delivers it.
-   * ⚠️ user-event does not move focus to a `<summary>` on mousedown (its
-   * focusable set omits it; a browser focuses it), so `user.click(summary)`
-   * leaves focus where it was and the press is not the one a user makes. The
-   * browser order is reproduced by hand: pointerdown, focus, pointerup, click.
+   * user-event doesn't focus a <summary> on mousedown (a browser does), so the browser order
+   * is reproduced by hand.
    */
   const pressSummary = async () => {
     const { summary } = more()
@@ -369,7 +251,6 @@ describe('Nav + account row, two disclosures (story 59.3)', () => {
     const user = userEvent.setup()
     const trigger = await screen.findByRole('button', { name: 'Account menu' })
 
-    // Nav More open -> press the account trigger.
     await pressSummary()
     await waitFor(() => expect(more().details.open).toBe(true))
     await user.click(trigger)
@@ -377,7 +258,6 @@ describe('Nav + account row, two disclosures (story 59.3)', () => {
     expect(trigger).toHaveAttribute('aria-expanded', 'true')
     expect(trigger).toHaveFocus()
 
-    // Account menu open -> press More.
     await pressSummary()
     await waitFor(() =>
       expect(trigger, 'the account menu stayed open').toHaveAttribute('aria-expanded', 'false')
@@ -387,13 +267,7 @@ describe('Nav + account row, two disclosures (story 59.3)', () => {
     expect(more().summary).toHaveFocus()
   })
 
-  /**
-   * Accepted, not a defect (story 59.2 review): a keyboard user can Tab past the
-   * open nav panel, so no pointer event tells the nav the account menu opened.
-   * Both are then open, and ONE Escape must close both without a focus fight.
-   * No pointer events here: `fireEvent.click` and Enter on a button are what a
-   * keyboard produces.
-   */
+  /** A keyboard user can Tab past the open nav panel, so both can be open; one Escape closes both. */
   it('by keyboard both can be open at once, and ONE Escape closes both with focus on the account trigger', async () => {
     renderSignedIn('free')
     const user = userEvent.setup()
@@ -436,21 +310,8 @@ describe('Nav + account row, two disclosures (story 59.3)', () => {
   })
 })
 
-/**
- * Story 96.3 (FR163): per width, a visitor has ONE place for Settings.
- *
- * Below 640px it is the nav's More sheet (last row, `sm:hidden` on its `<li>`);
- * at 640px and up it is the account cluster (the gear, the `<noscript>` gear,
- * the account menu's row, each `max-sm:hidden`). jsdom applies no stylesheet,
- * so it sees every route at once: the rule can only be pinned here as
- * COMPLEMENTARY TOKENS, by `classList` membership (`max-sm:hidden` contains
- * `sm:hidden` as a substring). Which one a browser actually paints is asserted
- * in the 320px screenshot tests before their shots.
- *
- * The `<noscript>` gear is collected from the SERVER HTML: React 19 renders
- * `<noscript>` children on the server only (measured at 69.3), so a client
- * render leaves it empty.
- */
+// jsdom sees every route at once, so the per-width rule is pinned as complementary tokens.
+// React 19 renders <noscript> children on the server only, so that gear comes from server HTML.
 describe('Nav + account row, the per-width Settings route (story 96.3)', () => {
   const FREE = { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'free' as const }
   const PAID = { ...FREE, subscriptionStatus: 'active' as const }
@@ -477,7 +338,6 @@ describe('Nav + account row, the per-width Settings route (story 96.3)', () => {
     )
   }
 
-  /** The `/settings` anchors inside the SERVER HTML's `<noscript>` elements. */
   async function serverNoscriptRoutes(seed: SessionSeed | null, path: string) {
     const router = createRouter({
       routeTree: createRootRoute({ component: () => <Row seed={seed} /> }),
@@ -497,7 +357,6 @@ describe('Nav + account row, the per-width Settings route (story 96.3)', () => {
     return routes
   }
 
-  /** Where a route's width classes live: the nav row's `<li>`, else the link itself. */
   const widthScope = (a: Element): Element => a.closest('li[data-nav-settings]') ?? a
   const has = (el: Element, token: string) => el.classList.contains(token)
 
@@ -517,7 +376,6 @@ describe('Nav + account row, the per-width Settings route (story 96.3)', () => {
       openPanel: false,
       desktopRoute: true,
     },
-    // /login keeps its empty strip (69.2 D3): no >= 640px route there.
     {
       name: 'signed out on /login',
       seed: SIGNED_OUT_SEED,
@@ -542,7 +400,6 @@ describe('Nav + account row, the per-width Settings route (story 96.3)', () => {
       openPanel: true,
       desktopRoute: true,
     },
-    // Unverified seed, session still loading: the cluster renders no route.
     {
       name: 'a null seed, loading',
       seed: null,
@@ -561,10 +418,8 @@ describe('Nav + account row, the per-width Settings route (story 96.3)', () => {
       const nav = await screen.findByRole('navigation', { name: /primary/i })
       if (openPanel) {
         await userEvent.setup().click(await screen.findByRole('button', { name: 'Account menu' }))
-        // Positive control: the panel really opened (Sign out is in it).
         expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
       } else if (me === null && path === '/') {
-        // Positive control: the signed-out cluster really rendered.
         await screen.findByRole('link', { name: /sign in/i })
       } else {
         await screen.findByRole('status', { name: /account status/i })
@@ -577,10 +432,8 @@ describe('Nav + account row, the per-width Settings route (story 96.3)', () => {
       const phone = routes.filter((a) => has(widthScope(a), 'sm:hidden'))
       const desktop = routes.filter((a) => has(widthScope(a), 'max-sm:hidden'))
 
-      // Neither, or both, is the defect. Exactly one phone route...
       expect(phone, 'a phone has no Settings route, or more than one').toHaveLength(1)
       expect(nav.contains(phone[0] as Node), 'the phone route is not the nav row').toBe(true)
-      // ...and every other route is a >= 640px one, never shown on a phone.
       for (const a of routes) {
         if (a === phone[0]) continue
         expect(
@@ -593,33 +446,16 @@ describe('Nav + account row, the per-width Settings route (story 96.3)', () => {
         desktopRoute
       )
       if (seed?.isAuthenticated) {
-        // Both signed-in >= 640px routes: the open panel's row and the JS-off gear.
         expect(desktop).toHaveLength(2)
       }
     }
   )
 })
 
-/**
- * Story 99.1 (FR160): the nav follows the SAME client-verified answer that puts
- * the Premium marker in the account row.
- *
- * The reported defect: a new buyer signs in and the header shows "Premium" while
- * the nav has no premium destinations until a manual reload. The two read the
- * tier differently: `AuthIndicator` re-asks `/api/auth/me` on mount and on
- * every navigation, `GlobalNav` read the SSR seed once. Any document whose seed
- * is signed-out (or null) under a premium session cookie therefore showed the
- * split: a service-worker-cached signed-out document (story 99.1's C1), a tab
- * left open from before sign-in (C2), or a resolver error (C3).
- *
- * Asserted on hrefs inside the Primary landmark (anchor presence, not CSS
- * visibility: jsdom applies no stylesheet and a closed `<details>` still counts).
- */
 describe('Nav + account row, the nav follows the verified session (story 99.1)', () => {
   const PAID = { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'active' }
   type Me = typeof PAID
 
-  /** `/api/auth/me` answers per call; `delayMs` puts the answer on a real timer. */
   function stubMe(answer: () => Response | Promise<Response>, delayMs = 0) {
     const me = vi.fn(answer)
     global.fetch = vi.fn((input: RequestInfo | URL) => {
@@ -633,11 +469,7 @@ describe('Nav + account row, the nav follows the verified session (story 99.1)',
   }
   const meIs = (user: Me | null) => () => new Response(JSON.stringify({ user }), { status: 200 })
 
-  /**
-   * An answer held back until `release()`, so a test can assert the FIRST paint
-   * (the seed's) before the answer lands. Without it a zero-delay stub can
-   * resolve before `findByRole` returns, and the "first paint" read is racy.
-   */
+  /** Held so the first paint can be asserted: a zero-delay stub can resolve before `findByRole` returns. */
   function held(answer: () => Response) {
     let release: () => void = () => {}
     const gate = new Promise<void>((resolve) => {
@@ -661,7 +493,6 @@ describe('Nav + account row, the nav follows the verified session (story 99.1)',
     )
   }
 
-  /** A router with real child routes, so a client navigation changes `pathname`. */
   function renderNavigable(seed: SessionSeed | null, path = '/') {
     const rootRoute = createRootRoute({ component: () => <Row seed={seed} /> })
     const router = createRouter({
@@ -704,19 +535,14 @@ describe('Nav + account row, the nav follows the verified session (story 99.1)',
       renderNavigable(seed)
 
       await screen.findByRole('navigation', { name: /primary/i })
-      // First paint is the seed's answer: free. (The answer is held until here.)
       expect(premiumHrefsInNav()).toEqual([])
       answer.release()
-      // Wait for the POST-fetch state: the marker only appears once the answer lands.
       await waitFor(() => expect(premiumMarker()).not.toBeNull())
       expect(premiumHrefsInNav()).toEqual([...PREMIUM_NAV_ROUTES])
     }
   )
 
-  // AC 3: the marker and the destinations come from the SAME answer, with no
-  // observable state in between. A MutationObserver callback runs at every
-  // microtask checkpoint after a DOM change, so a state "marker shown, nav still
-  // free" that survived even one checkpoint (let alone a paint) is recorded.
+  // A MutationObserver callback runs at every microtask checkpoint, so any in-between state is recorded.
   it.each([
     { name: 'signed-out seed', seed: SIGNED_OUT_SEED },
     { name: 'null seed', seed: null },
@@ -753,8 +579,6 @@ describe('Nav + account row, the nav follows the verified session (story 99.1)',
     await waitFor(() => expect(me).toHaveBeenCalledTimes(1))
     expect(premiumHrefsInNav()).toEqual([])
 
-    // The session cookie now exists (signed in from another tab); this tab
-    // navigates on the client, so its document and seed stay signed out.
     signedIn = true
     await act(async () => {
       await router.navigate({ to: '/income' })
@@ -764,12 +588,10 @@ describe('Nav + account row, the nav follows the verified session (story 99.1)',
     expect(premiumHrefsInNav()).toEqual([...PREMIUM_NAV_ROUTES])
   })
 
-  /** Let the indicator's fetch chain (fetch → json → setState) run to the end. */
   const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve, 30)))
 
   const ENTITLED_SEED: SessionSeed = { isAuthenticated: true, ...PAID } as SessionSeed
 
-  // AC 4 (decision D2): only a 200 with a parseable body is an answer.
   it.each([
     { name: 'a 503', answer: () => new Response('{}', { status: 503 }) },
     {
@@ -796,7 +618,6 @@ describe('Nav + account row, the nav follows the verified session (story 99.1)',
         const { unmount } = renderNavigable(seed)
         await waitFor(() => expect(me).toHaveBeenCalledTimes(1))
         await settle()
-        // Positive control: the answer really landed (the strip shows it as signed out).
         await screen.findByRole('link', { name: /sign in/i })
         expect(getVerifiedSession(), 'an unknown answer was recorded').toBeUndefined()
         expect(premiumHrefsInNav()).toEqual(expected)
@@ -806,7 +627,6 @@ describe('Nav + account row, the nav follows the verified session (story 99.1)',
     }
   )
 
-  // AC 4: a definitive answer that is not premium never entitles.
   it.each(['free', 'past_due', 'canceled'])(
     'a definitive %s answer over a signed-out seed never shows the premium destinations',
     async (status) => {
@@ -820,8 +640,6 @@ describe('Nav + account row, the nav follows the verified session (story 99.1)',
     }
   )
 
-  // Decision D1 (Lucas 2026-10-05): symmetric. A definitive not-entitled answer
-  // over an entitled seed drops the premium destinations.
   it.each([
     { name: 'signed out', user: null },
     { name: 'free', user: { ...PAID, subscriptionStatus: 'free' } },
@@ -839,10 +657,7 @@ describe('Nav + account row, the nav follows the verified session (story 99.1)',
     }
   )
 
-  // Review 99.1: an unknown answer AFTER a definitive one keeps the last
-  // definitive answer (the store is not cleared), so the nav stays premium while
-  // the strip collapses the unknown to "Sign in". Pins the shipped behaviour;
-  // whether unknown should clear the store instead is a decision for Lucas.
+  // An unknown answer after a definitive one keeps the last definitive answer (store not cleared).
   it('a definitive premium answer, then a 503 on the next navigation: the nav keeps the last answer', async () => {
     let fail = false
     const me = stubMe(() => (fail ? new Response('{}', { status: 503 }) : meIs(PAID)()))
@@ -869,9 +684,6 @@ describe('Nav + account row, the nav follows the verified session (story 99.1)',
     expect(premiumHrefsInNav()).toEqual([])
   })
 
-  // AC 5: when seed and answer AGREE (every normal page load) the nav's anchors
-  // never change. A MutationObserver records every anchor added or removed
-  // inside the nav from the first commit until after the answer has landed.
   it.each([
     { name: 'paid seed + paid answer', seed: ENTITLED_SEED, user: PAID, premium: 4 },
     {
@@ -905,7 +717,6 @@ describe('Nav + account row, the nav follows the verified session (story 99.1)',
       answer.release()
       await waitFor(() => expect(me).toHaveBeenCalledTimes(1))
       await settle()
-      // Positive control: the answer really landed and was recorded.
       expect(getVerifiedSession(), 'the answer never reached the store').toBeDefined()
       observer.disconnect()
 

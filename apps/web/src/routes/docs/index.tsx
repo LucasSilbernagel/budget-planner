@@ -2,9 +2,6 @@ import { createFileRoute } from '@tanstack/react-router'
 import { DocsIndex } from '../../components/docs/docs-index'
 import { DocsLayout } from '../../components/docs/docs-layout'
 
-/**
- * Documentation index route — `/docs` (story 4-10, AC-1).
- */
 export const Route = createFileRoute('/docs/')({
   head: () => ({
     meta: [

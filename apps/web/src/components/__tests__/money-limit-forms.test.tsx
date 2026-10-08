@@ -1,17 +1,4 @@
 import { renderWithProviders, screen, userEvent, within } from '@/test/utils'
-/**
- * Story 106.1 (FR174): a money amount too large to sync is refused where it is
- * typed.
- *
- * Every synced money column is a Postgres `integer` (int32 cents), and core's
- * `syncOperationDataSchema` bounds each money field to 2,147,483,647. Before this
- * story no form capped the value, so 21,474,836.48 was SAVED on this device and
- * then refused at enqueue (`validateOperationData` throws, `syncBridge`'s
- * `onQueueError` only logs it): the row never reached the server, silently.
- *
- * Each page's form is the only production writer of its store (grep in the
- * story record), so refusing here means nothing over the limit is ever queued.
- */
 import { MAX_MONEY_CENTS } from '@budget-planner/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
@@ -37,11 +24,8 @@ vi.mock('../../hooks/usePremiumAccess', () => ({
   }),
 }))
 
-/** One cent over the limit, typed the way a user would. */
 const OVER = '21474836.48'
-/** Exactly the limit: accepted. */
 const AT = '21474836.47'
-/** The message in the default currency (USD, symbol mode). */
 const USD_MESSAGE = 'Enter an amount up to $21,474,836.47'
 
 function resetStores(): void {
@@ -93,15 +77,13 @@ describe('/income', () => {
   it('names the limit in the user currency (JPY: a mortgage-sized yen amount)', async () => {
     useCurrencyStore.setState({ mode: 'symbol', currency: 'JPY' })
     await submitIncome('21474837')
-    // The page formats yen in its yen locale, which renders the FULLWIDTH yen
-    // sign (U+FFE5); measured, not assumed.
+    // The yen locale renders the fullwidth yen sign (U+FFE5).
     expect(screen.getByTestId('income-amount-error')).toHaveTextContent(
       'Enter an amount up to \uffe521,474,836'
     )
     expect(useIncomeStore.getState().incomeSources).toHaveLength(0)
   })
 
-  // Code review 106.1: the EDIT path runs the same check (same `computeErrors`).
   it('refuses an edit to one cent over the limit, and keeps the saved amount', async () => {
     useIncomeStore
       .getState()
@@ -182,7 +164,6 @@ describe('/savings', () => {
     expect(useSavingsStore.getState().savingsGoals).toHaveLength(0)
   })
 
-  // Code review 106.1: exactly the limit is accepted on every savings field.
   it('accepts exactly the limit as target, current balance and manual allocation', async () => {
     const user = await openSavingsForm()
     await typeInto(user, 'savings-target-amount-input', AT)

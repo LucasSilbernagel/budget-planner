@@ -1,11 +1,3 @@
-/**
- * PremiumCheckoutButton tests (Story 5-3, Task 2a).
- *
- * NFR8: all Paddle calls are mocked — `@paddle/paddle-js`'s `initializePaddle`
- * never runs for real, and `/api/paddle/checkout-config` is a stubbed
- * `fetch`, not a live network call.
- */
-
 import { SessionSeedProvider } from '@/context/session-seed'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -23,13 +15,7 @@ vi.mock('@paddle/paddle-js', () => ({
 
 const originalFetch = global.fetch
 
-/**
- * ⚠️ Deliberately has NO `monthlyPriceId`. Story 5-20 added a third plan whose
- * price id is OPTIONAL in production, so "annual + lifetime, no monthly" is a
- * real supported build — and keeping it as the default fixture means every
- * pre-existing assertion here goes on measuring that state. The monthly-enabled
- * fixture is {@link CONFIGURED_WITH_MONTHLY}.
- */
+/** No `monthlyPriceId` on purpose: annual + lifetime only is a real supported build. */
 const CONFIGURED = {
   isConfigured: true,
   environment: 'sandbox' as const,
@@ -39,21 +25,12 @@ const CONFIGURED = {
   lifetimePriceId: 'pri_lifetime_test',
 }
 
-/** A fully-configured build — all three plans available (story 5-20). */
 const CONFIGURED_WITH_MONTHLY = {
   ...CONFIGURED,
   monthlyPriceId: 'pri_monthly_test',
 }
 
-/**
- * A realistic-shaped `Paddle.PricePreview()` response.
- *
- * It carries a monthly line item as well, even though the DEFAULT fixture does
- * not request one: Paddle returns what it was asked for, and a response holding
- * an id the component never requested is exactly the case where a naive
- * "read lineItems[0]" implementation would mis-attribute a price. The component
- * looks each id up by `price.id`, so the extra line is correctly ignored.
- */
+/** Carries a monthly line the default fixture never requests: ids must be looked up, not indexed. */
 const PRICE_PREVIEW_RESPONSE = {
   data: {
     details: {
@@ -85,11 +62,8 @@ function stubConfigFetch(config: unknown) {
 }
 
 /**
- * Both radios render from the very first paint but stay `disabled` until
- * `/api/paddle/checkout-config` settles, so `findByRole` alone resolves
- * against the PRE-config render. Any assertion about `disabled`, focus or
- * selection is a coin flip on fetch timing unless it waits for the
- * post-config state first (this is what failed in CI on 2026-09-16).
+ * Radios render disabled until checkout-config settles, so `findByRole` alone resolves
+ * against the pre-config render.
  */
 async function findEnabledRadio(name: RegExp): Promise<HTMLElement> {
   const radio = await screen.findByRole('radio', { name })
@@ -122,19 +96,12 @@ describe('PremiumCheckoutButton — price preview (auth-independent)', () => {
       </SessionSeedProvider>
     )
 
-    // Static fallback first (before the config fetch + PricePreview resolve) —
-    // and no breakdown yet, since the fallback isn't a real quoted price.
     expect(screen.getByRole('radio', { name: 'Annual · €39/yr' })).toBeInTheDocument()
     expect(screen.queryByText(/tax/i)).not.toBeInTheDocument()
-    // …then Paddle's own formatted total once PricePreview resolves, plus the
-    // subtotal+tax=total breakdown for the SELECTED (annual, default) plan —
-    // this is what turns "why is this €44.07, not €39" (the report that
-    // prompted it) into a visible fact instead of a bare reassurance.
     expect(await screen.findByRole('radio', { name: 'Annual · €44.07' })).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: 'Lifetime · €111.87' })).toBeInTheDocument()
     expect(screen.getByText('€39.00 + €5.07 tax = €44.07')).toBeInTheDocument()
 
-    // No country/address is passed — Paddle auto-detects from the visitor IP.
     expect(pricePreview).toHaveBeenCalledWith({
       items: [
         { priceId: 'pri_annual_test', quantity: 1 },
@@ -178,12 +145,9 @@ describe('PremiumCheckoutButton — the monthly plan (story 5-20, AC-1)', () => 
       </SessionSeedProvider>
     )
 
-    // Static fallback first…
     expect(screen.getByRole('radio', { name: 'Monthly · €5.99/mo' })).toBeInTheDocument()
-    // …then Paddle's own formatted total.
     expect(await screen.findByRole('radio', { name: 'Monthly · €6.77' })).toBeInTheDocument()
 
-    // All three plans are requested in ONE PricePreview call, monthly included.
     expect(pricePreview).toHaveBeenCalledWith({
       items: [
         { priceId: 'pri_monthly_test', quantity: 1 },
@@ -201,13 +165,7 @@ describe('PremiumCheckoutButton — the monthly plan (story 5-20, AC-1)', () => 
       </SessionSeedProvider>
     )
 
-    // ⚠️ Wait on the BREAKDOWN, not just an enabled radio. `findEnabledRadio`
-    // settles as soon as `/api/paddle/checkout-config` resolves, which is one
-    // await EARLIER than PricePreview — asserting the breakdown right after it
-    // is a coin flip on fetch ordering. (Caught by this story's own positive
-    // control, where the assertion failed for timing reasons rather than for
-    // the mutation under test. Same shape as the recorded findByRole
-    // pre-config race.)
+    // Wait on the breakdown: the config resolves one await earlier than PricePreview.
     await screen.findByText('€39.00 + €5.07 tax = €44.07')
 
     expect(screen.getByRole('radio', { name: /^Annual/ })).toHaveAttribute('aria-checked', 'true')
@@ -224,8 +182,6 @@ describe('PremiumCheckoutButton — the monthly plan (story 5-20, AC-1)', () => 
     )
 
     await user.click(await findEnabledRadio(/^Monthly/))
-    // Same pre-config race as above: await the breakdown rather than assuming
-    // PricePreview has already resolved by the time the click lands.
     await screen.findByText('€5.99 + €0.78 tax = €6.77')
 
     await user.click(screen.getByRole('button', { name: /get premium/i }))
@@ -233,20 +189,12 @@ describe('PremiumCheckoutButton — the monthly plan (story 5-20, AC-1)', () => 
     await waitFor(() => expect(checkoutOpen).toHaveBeenCalledTimes(1))
     const call = checkoutOpen.mock.calls[0]?.[0] as { items: Array<{ priceId: string }> }
     expect(call.items).toEqual([{ priceId: 'pri_monthly_test', quantity: 1 }])
-    // ⚠️ The specific mis-route this guards: a three-plan selection collapsed
-    // into a two-branch ternary sends monthly to the LIFETIME price — a €99
-    // one-time charge for someone who asked to pay €5.99 a month.
+    // A two-branch ternary would send monthly to the lifetime price.
     expect(JSON.stringify(call.items)).not.toContain('pri_lifetime_test')
   })
 
   it('DISABLES monthly when its price id is unset, WITHOUT breaking the other two plans', async () => {
-    // A dev/sandbox build without the monthly id. (Production cannot reach this
-    // state since code review made the id required.) The plan must render
-    // DISABLED rather than vanish — the test name said "hides" while the code
-    // disabled, which review flagged as a mismatch between name and behaviour —
-    // and must not take annual/lifetime down with it:
-    // in particular the PricePreview call must not send an undefined line item,
-    // which would fail the whole call and strand every plan on static labels.
+    // PricePreview must not send an undefined line item, which would fail every plan.
     stubConfigFetch(CONFIGURED)
     render(
       <SessionSeedProvider seed={ANON_SEED}>
@@ -259,7 +207,6 @@ describe('PremiumCheckoutButton — the monthly plan (story 5-20, AC-1)', () => 
 
     const monthly = screen.getByRole('radio', { name: /^Monthly/ })
     expect(monthly).toBeDisabled()
-    // It still shows the static fallback, never a resolved total it cannot have.
     expect(monthly).toHaveAccessibleName('Monthly · €5.99/mo')
 
     expect(pricePreview).toHaveBeenCalledWith({
@@ -273,10 +220,6 @@ describe('PremiumCheckoutButton — the monthly plan (story 5-20, AC-1)', () => 
 
 describe('PremiumCheckoutButton — signed out', () => {
   it('opens checkout directly with no pre-filled email — NOT gated behind sign-in', async () => {
-    // Regression test: checkout used to require isAuthenticated, which made it
-    // impossible for a brand-new customer to ever reach it (magic-link login
-    // only re-authenticates an EXISTING account; account creation happens at
-    // the Paddle webhook, on a COMPLETED checkout — a circular dependency).
     stubConfigFetch(CONFIGURED)
     const user = userEvent.setup()
     render(
@@ -287,8 +230,6 @@ describe('PremiumCheckoutButton — signed out', () => {
       </SessionSeedProvider>
     )
 
-    // Checkout can only open once the config fetch has landed, so wait for
-    // the configured (enabled) radiogroup before clicking.
     await findEnabledRadio(/^Annual/)
     const button = await screen.findByRole('button', { name: 'Get Premium' })
     await user.click(button)
@@ -322,8 +263,6 @@ describe('PremiumCheckoutButton — signed in', () => {
       </SessionSeedProvider>
     )
 
-    // Checkout can only open once the config fetch has landed, so wait for
-    // the configured (enabled) radiogroup before clicking.
     await findEnabledRadio(/^Annual/)
     const button = await screen.findByRole('button', { name: 'Get Premium' })
     await user.click(button)
@@ -496,10 +435,6 @@ describe('PremiumCheckoutButton — plan toggle a11y', () => {
   })
 
   it('auto-selects an enabled plan when the DEFAULT selection (annual) is the disabled one — the radiogroup is never entirely keyboard-unreachable', async () => {
-    // Regression: `plan` defaults to 'annual'. If ONLY the annual price ID is
-    // missing, the old logic left `tabIndex={0}` on the disabled annual radio
-    // and -1 on the enabled lifetime radio — no radio in the group was ever
-    // Tab-reachable at all.
     stubConfigFetch({
       isConfigured: true,
       environment: 'sandbox',
@@ -515,10 +450,6 @@ describe('PremiumCheckoutButton — plan toggle a11y', () => {
       </SessionSeedProvider>
     )
 
-    // The Lifetime radio is present from the very first render (both options
-    // always render; only `disabled` depends on config), so `findByRole`
-    // alone would resolve before the config fetch settles and the
-    // auto-correction effect runs. Wait for the corrected state explicitly.
     const lifetime = await screen.findByRole('radio', { name: /^Lifetime/, checked: true })
     expect(lifetime).toHaveAttribute('tabindex', '0')
     expect(screen.getByRole('radio', { name: /^Annual/ })).toHaveAttribute('tabindex', '-1')
@@ -581,13 +512,7 @@ describe('PremiumCheckoutButton — plan toggle a11y', () => {
   })
 
   it('ArrowRight skips a disabled (unconfigured-price) plan — proven by NEVER focusing it, not just by landing back on the start', async () => {
-    // With only two plans, "skips the disabled one and wraps back to the
-    // start" is indistinguishable from "the handler did nothing at all" by
-    // outcome alone — deleting the keydown handler entirely would leave this
-    // exact assertion green (caught by the 2026-09-15 #3 review). Spy on
-    // `focus` directly to prove `handleRadioKeyDown`'s logic actually ran
-    // and specifically chose the enabled option, rather than merely never
-    // having moved.
+    // With two plans, wrapping back is indistinguishable from doing nothing, so spy on `focus`.
     stubConfigFetch({
       isConfigured: true,
       environment: 'sandbox',
@@ -615,25 +540,12 @@ describe('PremiumCheckoutButton — plan toggle a11y', () => {
 
     expect(annual).toHaveAttribute('aria-checked', 'true')
     expect(annual).toHaveFocus()
-    // The handler DID run and DID choose a target — it just landed back on
-    // the only enabled option, since Lifetime is disabled.
     expect(annualFocusSpy).toHaveBeenCalled()
     expect(lifetimeFocusSpy).not.toHaveBeenCalled()
   })
 })
 
-/**
- * Story 5-19, AC-5 — the client half of the already-Premium guard.
- *
- * A `null` seed does NOT mean "signed out": `getSessionSeed` returns an
- * authoritative signed-out seed for that, and `null` ONLY when it could not
- * verify the session at all. The old guard read `seed?.subscriptionStatus`
- * directly, so an unverified seed belonging to an `active` or `lifetime`
- * subscriber fell straight through to a live "Get Premium" button — a guard
- * against a real duplicate charge that defaulted to offering the purchase.
- */
 describe('PremiumCheckoutButton — unverified session seed (5-19 AC-5)', () => {
-  /** `/api/auth/me` answers with `user`; checkout-config stays configured. */
   function stubAuthMe(user: unknown, opts: { neverResolves?: boolean } = {}) {
     global.fetch = vi.fn((input: RequestInfo | URL) => {
       if (String(input).includes('/api/paddle/checkout-config')) {
@@ -648,8 +560,6 @@ describe('PremiumCheckoutButton — unverified session seed (5-19 AC-5)', () => 
   }
 
   it('does NOT offer checkout to a lifetime holder whose seed failed to resolve', async () => {
-    // The exact fall-through this AC closes: rendered with NO provider (seed
-    // null), the pre-5-19 component showed a live "Get Premium" to this user.
     stubAuthMe({ subscriptionStatus: 'lifetime' })
 
     render(<PremiumCheckoutButton />)
@@ -673,8 +583,6 @@ describe('PremiumCheckoutButton — unverified session seed (5-19 AC-5)', () => 
   })
 
   it('offers no checkout WHILE the probe is still in flight', async () => {
-    // The fail-open direction mattered most here: an unresolved probe used to
-    // render the live CTA immediately.
     stubAuthMe(null, { neverResolves: true })
 
     render(<PremiumCheckoutButton />)
@@ -685,8 +593,6 @@ describe('PremiumCheckoutButton — unverified session seed (5-19 AC-5)', () => 
   })
 
   it('DOES offer checkout once the probe says the visitor is not entitled', async () => {
-    // The complement: a brand-new customer must never be locked out of buying
-    // by this guard, or it would be a worse bug than the one it fixes.
     stubAuthMe(null)
 
     render(<PremiumCheckoutButton />)
@@ -696,9 +602,6 @@ describe('PremiumCheckoutButton — unverified session seed (5-19 AC-5)', () => 
   })
 
   it('falls back to offering checkout when the probe itself fails', async () => {
-    // A failed probe must not permanently block purchases — the SERVER guard
-    // in `/api/paddle/checkout-config` is the authoritative one and refuses an
-    // entitled session regardless of what the client believes.
     global.fetch = vi.fn((input: RequestInfo | URL) => {
       if (String(input).includes('/api/paddle/checkout-config')) {
         return Promise.resolve(new Response(JSON.stringify(CONFIGURED), { status: 200 }))

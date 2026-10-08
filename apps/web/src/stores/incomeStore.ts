@@ -12,51 +12,30 @@ import { generateUUID, withUuidIds } from '../lib/uuid'
 import { INCOME_STORAGE_KEY } from './overview-data-storage-keys'
 import { useProfileStore } from './profileStore'
 
-// Client-side type for income source (with string timestamps for localStorage)
-// For free tier without auth, userId defaults to 0
 interface ClientIncomeSource {
-  // Client-generatable uuid PK (Story 5-14): the row carries the SAME id on every
-  // device, so a server pull reconciles by this id with no duplicates. Replaces
-  // the old negative-integer temp id.
   id: string
-  // Owning profile (Story 54.4, FR79). Stamped by the STORE on create with the
-  // active profile; a pulled row carries the server's value. Null/ABSENT means
-  // unscoped — rows persisted before 54.4 have no key at all — and is visible
-  // under every profile (see apps/web/src/lib/profile-scope.ts). Deliberately not
-  // on the `ClientNew*` input: an edit form must never re-home a row.
+  // Null/absent means unscoped (visible under every profile). Not on the input type: an edit must
+  // never re-home a row.
   profileId?: string | null
-  // `0` on a free-tier row created here; the server's uuid on a pulled row
-  // (see `lib/sync/applyServerChanges.ts`). Story 78.2 widened it from `number`.
   userId: number | string
   name: string
   amount: number
   frequency: Frequency
-  // User-defined category (Story 30.4a, FR54). NULL/absent = uncategorized,
-  // which is a permanently valid state — no form gains a required field.
   categoryId: string | null
-  // Explicit display order (Story 34.1a, FR60). Zero-based integer assigned by the
-  // store as max+1 on insert; the server never computes or reshuffles it. NOT
-  // contiguous — deletes leave gaps on purpose, so this is an ORDER, not an index.
-  //
-  // ⚠️ OPTIONAL for the same structural reason as core's ClientSavingsGoal: the
-  // `toClientIncomeSource` factory below is a pure function of its input with no
-  // access to the list, so it cannot compute a position (story 34.1a §2). A store
-  // that forgot to stamp it is therefore NOT a compile error — the store tests pin
-  // insert-at-bottom for each of the four lists individually instead.
+  // An order, not an index: deletes leave gaps on purpose.
   sortOrder?: number
-  createdAt: string // ISO string for localStorage serialization
-  updatedAt: string // ISO string for localStorage serialization
+  createdAt: string
+  updatedAt: string
 }
 
 interface ClientNewIncomeSource {
-  userId?: number // Optional for free tier (no auth yet)
+  userId?: number
   name: string
   amount: number
   frequency: Frequency
   categoryId?: string | null
 }
 
-// Define the type for our store state
 interface IncomeState {
   incomeSources: ClientIncomeSource[]
   addIncomeSource: (incomeSource: ClientNewIncomeSource) => void
@@ -64,55 +43,24 @@ interface IncomeState {
   deleteIncomeSource: (id: string) => void
   getIncomeSourceById: (id: string) => ClientIncomeSource | undefined
   getIncomeSourcesByFrequency: (frequency: Frequency) => ClientIncomeSource[]
-  /** Monthly-normalized cents (story 32.1) — denormalize for display. */
+  /** Monthly-normalized cents; denormalize for display. */
   getTotalIncome: () => number
-  /** Rows excluded from `getTotalIncome` because core could not read them. */
   getUnreadableIncomeCount: () => number
 }
 
-// Convert ClientNewIncomeSource to ClientIncomeSource (add id, userId, and timestamps as ISO strings)
-// For free tier without auth, userId defaults to 0. The id is a client-generated
-// uuid (Story 5-14) so an offline-created row keeps the SAME id once synced.
 const toClientIncomeSource = (newSource: ClientNewIncomeSource): ClientIncomeSource => ({
   ...newSource,
-  // Explicitly null rather than undefined so the persisted shape matches the
-  // v2 migration's backfill and the sync payload never carries `undefined`.
+  // Explicit null so the sync payload never carries undefined.
   categoryId: newSource.categoryId ?? null,
-  userId: newSource.userId ?? 0, // Default to 0 for free tier (no auth)
+  userId: newSource.userId ?? 0,
   id: generateUUID(),
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
 })
 
 /**
- * ⚠️ PURE DERIVATIONS — READ BEFORE ADDING A SELECTOR HOOK BELOW (story 38.1, BUG-F).
- *
- * These take the rows array as an ARGUMENT and are shared by the store methods and
- * the selector hooks, so the two can never drift.
- *
- * A selector hook must call one of these with `state.incomeSources`. It must NOT call the
- * equivalent store METHOD. React hands a selector the server snapshot during
- * hydration (zustand passes `getInitialState` as `getServerSnapshot`), but that
- * snapshot's methods still close over `get()` and return LIVE state — so a
- * `useStore((s) => s.getTotalIncome())` selector reads rehydrated data while the server
- * rendered the default, and React discards the tree. Measured on six routes, in dev
- * and in a production build (React #418).
- *
- * The methods stay: `getState().getTotalIncome()` callers outside React are unaffected by
- * hydration and read live state on purpose.
- *
- * ⚠️ `totalIncomeFrom` MUST return a `number`. It is called inside a zustand
- * selector, and a selector returning a fresh object or array fails v4's `Object.is`
- * check on every store update.
- *
- * ⚠️ CORRECTED IN CODE REVIEW: the sentence this replaces (inherited from the
- * pre-existing `getTotalIncome` docblock) said such a return would "spin an
- * infinite re-render loop". That is **not** true of zustand 4.5.7, which builds on
- * `useSyncExternalStoreWithSelector` (`zustand/esm/index.mjs:4,7,17`) and memoises
- * the selection per snapshot — the real cost is one extra re-render per update.
- * The infinite-loop failure mode belongs to a bare `useSyncExternalStore` with an
- * uncached `getSnapshot`. Kept accurate rather than scary, because a maintainer
- * upgrading to v5 needs to know where the hazard actually lives.
+ * Selector hooks must call these with the state rows, never the equivalent store METHOD: methods
+ * close over get() and read live state during hydration, causing a mismatch. Must return a number.
  */
 function totalIncomeFrom(rows: readonly ClientIncomeSource[]): number {
   return calculateTotalMonthlyNormalized(toNormalizableItems(rows))
@@ -131,28 +79,20 @@ function unreadableIncomeCountFrom(rows: readonly ClientIncomeSource[]): number 
 export const useIncomeStore = create<IncomeState>()(
   persist(
     (set, get) => ({
-      // Initial state
       incomeSources: [],
 
-      // Add a new income source
       addIncomeSource: (newIncomeSource) => {
-        // Story 34.1a: the position is max+1 over the CURRENT list, so it must be
-        // computed here (the factory has no list access) and BEFORE the set().
         const incomeSource: ClientIncomeSource = {
           ...toClientIncomeSource(newIncomeSource),
           sortOrder: nextSortOrder(get().incomeSources),
-          // Story 54.4 (FR79): stamp the owning profile, or the row would show under
-          // every profile. Read at call time, like `categoryStore`'s create path.
           profileId: useProfileStore.getState().activeProfileId ?? null,
         }
         set((state) => ({
           incomeSources: sortByDisplayOrder([...state.incomeSources, incomeSource]),
         }))
-        // Paid tier: also push to the server (no-op for the free tier).
         syncEntityCreate('incomeSource', incomeSource)
       },
 
-      // Update an existing income source
       updateIncomeSource: (id, updates) => {
         const previous = get().incomeSources.find((source) => source.id === id)
         if (!previous) {
@@ -160,158 +100,55 @@ export const useIncomeStore = create<IncomeState>()(
         }
         const updated = { ...previous, ...updates, updatedAt: new Date().toISOString() }
         set((state) => ({
-          // Story 34.1a (AC-7): re-sort on update too, so `sortOrder` is the single
-          // ordering authority at every write path. An in-place map would preserve
-          // position anyway — `updates` cannot carry `sortOrder` — so this is about
-          // keeping the collection canonically sorted, not about repositioning.
-          // (It once also served 34.1b's reorder, which story 48.2 removed.)
-          //
-          // ⚠️ DEFENSIVE, AND MEASURED TO BE UNOBSERVABLE. Story 48.2's mutation
-          // arm M6 deleted this `sortByDisplayOrder` wrapper and the whole suite
-          // stayed green. That is correct, not a coverage hole: `updates` is a
-          // `Partial<ClientNew*>`, which has no `sortOrder`, so an update cannot
-          // move a row — and since 48.2 nothing else can either. Kept because a
-          // canonical collection is cheap and the invariant is worth stating;
-          // do not add a contrived test to make it fail.
           incomeSources: sortByDisplayOrder(
             state.incomeSources.map((source) => (source.id === id ? updated : source))
           ),
         }))
-        // Paid tier: queue the update with the pre-edit row as the baseVersion.
         syncEntityUpdate('incomeSource', updated, previous)
       },
 
-      // Delete an income source
       deleteIncomeSource: (id) => {
         const existing = get().incomeSources.find((source) => source.id === id)
         set((state) => ({
           incomeSources: state.incomeSources.filter((source) => source.id !== id),
         }))
-        // Paid tier: queue a tombstone so the delete propagates to other devices.
         if (existing) {
           syncEntityDelete('incomeSource', existing)
         }
       },
 
-      // Get income source by ID
       getIncomeSourceById: (id) => {
         return get().incomeSources.find((source) => source.id === id)
       },
 
-      // Get income sources filtered by frequency
       getIncomeSourcesByFrequency: (frequency) => {
         return incomeSourcesByFrequencyFrom(get().incomeSources, frequency)
       },
 
-      /**
-       * Total income as MONTHLY-NORMALIZED cents (story 32.1, FR58).
-       *
-       * ⚠️ This used to raw-`reduce` `amount` across mixed frequencies, adding a
-       * weekly $200 to a monthly $1,500 as if the units matched — the FR58
-       * defect. It now delegates to core, which is what makes it equal to the
-       * Overview's figure BY CONSTRUCTION rather than by coincidence:
-       * `calculateGrossPeriodIncome` (behind `calculateNetIncomeResult`) is a
-       * thin wrapper over this same function.
-       *
-       * ⚠️ Callers must denormalize for display —
-       * `denormalizeFromMonthly(total, duration)`. Never re-derive the
-       * multipliers; they are core-private on purpose.
-       *
-       * ⚠️ MUST return a `number`. `useTotalIncome` below calls this INSIDE a
-       * zustand selector, so an object return would fail v4's `Object.is`
-       * equality every render and spin an infinite re-render loop.
-       *
-       * Rows core cannot read are excluded, never coerced — see
-       * `lib/readable-rows` for why, and `getUnreadableIncomeCount` for the
-       * count the UI discloses.
-       */
+      /** Rows core cannot read are excluded, never coerced; getUnreadableIncomeCount discloses them. */
       getTotalIncome: () => {
         return totalIncomeFrom(get().incomeSources)
       },
 
-      /**
-       * How many persisted rows `getTotalIncome` had to exclude because core
-       * could not read them (corrupt frequency or non-finite amount).
-       *
-       * Exists so the page can DISCLOSE the omission instead of silently
-       * under-reporting the user's money.
-       */
       getUnreadableIncomeCount: () => {
         return unreadableIncomeCountFrom(get().incomeSources)
       },
     }),
     {
       name: INCOME_STORAGE_KEY,
-      // SSR-safe: defer the localStorage read until client-side rehydration (see lib/store-hydration)
       skipHydration: true,
-      // v1 (Story 5-14): entity ids became uuid strings — convert any legacy
-      // negative-integer ids persisted under v0 to fresh uuids so they don't
-      // break sync push (uuid column) / pull reconciliation.
-      // v2 (Story 30.4a): backfill `categoryId: null` so a row written before
-      // categories existed is explicitly uncategorized rather than carrying an
-      // absent key. Both steps run for a v0/v1 payload.
-      //
-      // ⚠️ `migrate` runs on ANY version MISMATCH, not only on an upgrade
-      // (correction by code review 30.4a — the previous comment claimed
-      // "only ... BELOW version", which is false). zustand 4.5.7 gates on
-      // `deserializedStorageValue.version !== options.version`, so a payload
-      // written by a NEWER build (a downgrade) is put through this same function.
-      // Both steps here are idempotent, which is the only reason that is safe
-      // today — a future v3 must not assume it is only ever called upward.
-      // Note also that when `version` is absent or non-numeric zustand skips
-      // `migrate` entirely and uses the raw state, so `categoryId` stays
-      // undefined rather than null on such a payload.
-      //
-      // ⚠️ The persist KEY is unchanged. The `-v1` suffix in the name is part of
-      // the storage key, NOT the numeric `version` — renaming it would orphan
-      // every existing row instead of migrating it (see profileStore's note).
-      // v3 (Story 34.1a, FR60): backfill an explicit `sortOrder` — dense 0..n-1
-      // assigned by createdAt ASC with id ASC as the tiebreaker.
-      //
-      // ⚠️ SCOPE OF THE "same rule as the SQL" CLAIM, narrowed by code review 34.1a.
-      // The SQL in migrations/0013_purple_retro_girl.sql numbers
-      // `PARTITION BY "userId","profileId"`; this backfill numbers the whole
-      // persisted array with NO partition. The two therefore agree only for a
-      // SINGLE-PROFILE array — which is the only coherent state, since this array is
-      // rendered as one list and a multi-profile array would already be showing the
-      // user two profiles' rows interleaved.
-      //
-      // That multi-profile state IS currently reachable: pulled rows carry
-      // `profileId` (getSyncChanges sends whole rows) and `switchProfile` does not
-      // clear these arrays. That is a PRE-EXISTING defect, logged in
-      // deferred-work.md; fixing it makes every array single-profile by
-      // construction and makes the two rules identical without any partition logic
-      // here. Do not add partitioning to this function — it would encode agreement
-      // with the SQL for a state in which the list is already wrong on screen.
-      //
-      // ⚠️ SUPERSEDED BY STORY 54.4 (FR79) — the paragraph above is history. The
-      // fix did NOT make these arrays single-profile: FR79 chose to FILTER READS by
-      // the active profile rather than clear the arrays on a switch, so a
-      // multi-profile array is now the normal, correct state and the list on screen
-      // is scoped (`lib/profile-scope`). The conclusion still holds for a different
-      // reason: numbering the whole array by createdAt/id gives every profile's rows
-      // the SAME RELATIVE order as the SQL's per-partition numbering (a subset of a
-      // sorted sequence stays sorted), and `sortOrder` is an order, not an index —
-      // only the values differ, never the order. Still do not add partitioning.
+      // migrate runs on ANY version mismatch, including a downgrade, so every step must be idempotent.
+      // The `-v1` in the storage key is part of the key, not this version.
       version: 3,
       migrate: (persisted) => {
         const state = persisted as { incomeSources?: unknown }
-        // ⚠️ Sanitize BEFORE anything dereferences a row (code review 30.4a).
-        // The persisted array is untrusted JSON, not `ClientIncomeSource[]` — the
-        // cast asserts a shape nobody verified. A single null/non-object entry
-        // (truncated write, hand-edited storage, an older bug) made both
-        // `withUuidIds`' `item.id` and the `categoryId` backfill throw, and a
-        // throwing `migrate` fails rehydration entirely: the store keeps its
-        // empty default and the user's whole income list silently disappears.
-        // `withUuidIds` must therefore receive an already-clean array.
+        // Sanitize before dereferencing rows: a throwing migrate fails rehydration and silently empties the list.
         const raw = Array.isArray(state?.incomeSources) ? state.incomeSources : []
         const rows = raw.filter(
           (row): row is ClientIncomeSource => typeof row === 'object' && row !== null
         )
         return {
-          // v3 backfill runs LAST, over rows that already have their uuid ids —
-          // the `id` tiebreaker must see the final ids, not the legacy ones it
-          // would otherwise sort by and then discard.
+          // Backfill runs last so the id tiebreaker sees the final uuids, not the legacy ids.
           incomeSources: backfillSortOrder(
             withUuidIds(rows).map((row) => ({
               ...row,
@@ -327,18 +164,9 @@ export const useIncomeStore = create<IncomeState>()(
   )
 )
 
-// Selector hooks for better performance
 /**
- * ⚠️ PROFILE-SCOPED (story 54.4, FR79). The array holds rows from every profile
- * this device has seen, and a profile switch does not clear it (FR79's decision),
- * so EVERY hook below that derives from rows must read `activeProfileId` and scope
- * through `lib/profile-scope`. A new hook that reads the raw array puts another
- * profile's money back on screen — the exact defect 54.4 closed.
- *
- * Array hooks scope in `useMemo` (a stable identity across renders); number hooks
- * may scope inside the selector, since a number passes `Object.is`. `getState()`
- * store METHODS are deliberately NOT scoped — their callers (sync seeding, account
- * purge, category usage) operate on every local row on purpose.
+ * Holds every profile's rows: each hook deriving from them must scope to the active profile.
+ * Store methods are deliberately unscoped (sync seeding, purge operate on every row).
  */
 export const useIncomeSources = (): ClientIncomeSource[] => {
   const rows = useIncomeStore((state) => state.incomeSources)
@@ -346,7 +174,6 @@ export const useIncomeSources = (): ClientIncomeSource[] => {
   return useMemo(() => scopeToActiveProfile(rows, activeProfileId), [rows, activeProfileId])
 }
 
-/** Monthly-normalized cents (story 32.1) — denormalize before display. */
 export const useTotalIncome = () => {
   const activeProfileId = useProfileStore((state) => state.activeProfileId)
   return useIncomeStore((state) =>
@@ -361,23 +188,10 @@ export const useUnreadableIncomeCount = () => {
   )
 }
 
-/**
- * Derived in `useMemo` over the profile-scoped rows (story 54.4). It used to build
- * a NEW array inside the zustand selector, failing v4's `Object.is` check and
- * costing one extra re-render per store update; it has no consumers today, and
- * scoping it was the moment to stop carrying that hazard.
- */
 export const useIncomeByFrequency = (frequency: Frequency): ClientIncomeSource[] => {
   const rows = useIncomeSources()
   return useMemo(() => incomeSourcesByFrequencyFrom(rows, frequency), [rows, frequency])
 }
 
-// Client-side persistence enabled via Zustand persist middleware
-// Data persists in localStorage across page refreshes
-// Uses string timestamps for proper serialization
-// Note: These types are for client-side storage; db package types are for database
-
-// Declare this collection to the profile cascade (story 66.3, FR104). Deleting a
-// profile destroys the rows STRICTLY stamped with it; see `lib/profile-cascade.ts`
-// for why the stores register themselves instead of that module importing them.
+// Stores register themselves: the cascade importing them would create an import cycle.
 registerProfileScopedCollection(useIncomeStore, 'incomeSources')

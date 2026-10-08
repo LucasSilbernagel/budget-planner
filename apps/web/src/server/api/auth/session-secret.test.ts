@@ -1,12 +1,3 @@
-/**
- * getSessionSecret hardening tests (Story 5.8 — AC group C / AC-12)
- *
- * Production (and any non-development NODE_ENV) must fail closed on
- * whitespace-only, trivially-padded, or low-entropy SESSION_SECRET values; a
- * strong secret is trimmed and returned. Lives in apps/web because the config
- * package has no test harness but is imported here.
- */
-
 import { getSessionSecret, resetConfig } from '@budget-planner/config'
 import { afterEach, describe, expect, it } from 'vitest'
 

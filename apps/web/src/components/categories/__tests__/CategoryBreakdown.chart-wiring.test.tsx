@@ -1,22 +1,5 @@
-/**
- * CategoryBreakdown → Recharts wiring (story 30.5, added at code review).
- *
- * ⚠️ WHY THIS FILE EXISTS. The AC-6 test in `CategoryBreakdown.test.tsx` called
- * `barDomainTicks` directly on two hand-written arrays and compared the results.
- * That asserts the shared helper is deterministic — which was never in doubt —
- * and never involves the component at all, so the regression it is named for
- * (pooling both sides' amounts into one axis, story UX-2's defect) would leave
- * it green. This repo's own rule, stated three times in story 30.5: asserting a
- * chart RENDERED is not asserting WHAT it plotted.
- *
- * jsdom cannot help — `ResponsiveContainer` measures 0×0, so no axis, tick or
- * bar ever reaches the DOM. So Recharts is replaced with prop-capturing stubs
- * and the assertions are made on what each chart was HANDED.
- *
- * ⚠️ Kept in its own file because `vi.mock('recharts')` is module-scoped: doing
- * it in the main suite would silently convert every test there into a
- * mocked-chart test.
- */
+// jsdom measures ResponsiveContainer at 0x0, so Recharts is stubbed to capture the props each chart gets.
+// Separate file because vi.mock(recharts) is module-scoped.
 
 import { render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
@@ -45,9 +28,7 @@ vi.mock('recharts', () => {
   const Wrapper = ({ children }: { children?: ReactNode }) => <div>{children}</div>
   return {
     ResponsiveContainer: Wrapper,
-    // React renders depth-first in tree order, so a BarChart is always followed
-    // by its own XAxis before the next BarChart begins — which is what lets the
-    // axis props be attributed to the chart pushed immediately before them.
+    // Depth-first render order puts each BarChart's XAxis right after it, which attributes axis props to their chart.
     BarChart: ({ children, data }: { children?: ReactNode; data: CapturedDatum[] }) => {
       captured.charts.push({ data, ticks: [], domain: [0, 0] })
       return <div>{children}</div>
@@ -108,9 +89,7 @@ beforeEach(() => {
 
 describe('CategoryBreakdown chart wiring', () => {
   it('hands each side a chart built from ONLY its own rows, with its own domain (AC-6)', () => {
-    // Income ~$9,000 against expenses ~$150: pooling the two would lift the
-    // expense ceiling to the income maximum and crush every expense bar to a
-    // sliver — story UX-2's defect, and the reason each chart derives its own.
+    // Pooling would lift the expense ceiling to the income maximum and crush every expense bar.
     useCategoryStore.setState({
       categories: [
         category({ id: 'cat-inc', name: 'Salary', kind: 'income' }),
@@ -128,15 +107,11 @@ describe('CategoryBreakdown chart wiring', () => {
     const income = captured.charts[0] as CapturedChart
     const expense = captured.charts[1] as CapturedChart
 
-    // Each chart plots its own side's amounts, and NEITHER can see the other's.
     expect(income.data.map((datum) => datum.amount)).toEqual([900000])
     expect(expense.data.map((datum) => datum.amount)).toEqual([10000, 5000])
     expect(income.data.map((datum) => datum.amount)).not.toContain(10000)
     expect(expense.data.map((datum) => datum.amount)).not.toContain(900000)
 
-    // And the axes are derived independently. Literal-pinned via the helper on
-    // each side's own amounts — the pooled domain is asserted to differ, which
-    // is what would change if the two were ever merged.
     const incomeTicks = barDomainTicks([900000])
     const expenseTicks = barDomainTicks([10000, 5000])
     const pooledTicks = barDomainTicks([900000, 10000, 5000])
@@ -160,11 +135,7 @@ describe('CategoryBreakdown chart wiring', () => {
   })
 
   it('keeps a category bar the SAME colour when the ordering changes around it', () => {
-    // ⚠️ `generateColorMap` assigns palette entries BY ARRAY INDEX, so feeding
-    // it the magnitude-sorted rows would rebind colours on every reorder: edit
-    // one expense so Housing overtakes Groceries and untouched categories
-    // change colour. The component sorts the KEYS before generating for exactly
-    // this reason.
+    // generateColorMap assigns by array index, so the component must sort keys to survive reorders.
     useCategoryStore.setState({
       categories: [
         category({ id: 'cat-a', name: 'Groceries' }),
@@ -180,7 +151,6 @@ describe('CategoryBreakdown chart wiring', () => {
     )
     first.unmount()
 
-    // Housing now outranks Groceries — the ROWS reorder, the DATA does not.
     captured.charts.length = 0
     useExpenseStore.setState({
       expenses: [row('e1', 'Shop', 50000, 'cat-a'), row('e2', 'Rent', 90000, 'cat-b')],
@@ -190,12 +160,10 @@ describe('CategoryBreakdown chart wiring', () => {
       (captured.charts[0] as CapturedChart).data.map((datum) => [datum.key, datum.fill])
     )
 
-    // The reorder actually happened...
     expect((captured.charts[0] as CapturedChart).data.map((datum) => datum.key)).toEqual([
       'cat-b',
       'cat-a',
     ])
-    // ...and neither category changed colour.
     expect(after.get('cat-a')).toBe(before.get('cat-a'))
     expect(after.get('cat-b')).toBe(before.get('cat-b'))
     expect(after.get('cat-a')).not.toBe(after.get('cat-b'))

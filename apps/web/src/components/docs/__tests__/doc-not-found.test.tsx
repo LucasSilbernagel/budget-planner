@@ -1,20 +1,3 @@
-/**
- * `DocNotFound` theming guard (story 31-1 review, AC-1/AC-9).
- *
- * AC-1 names the `DocNotFound` branch explicitly and AC-9 requires a guard for
- * every changed component, but the dev pass shipped this branch with THREE
- * changed colour classes and zero coverage at any layer: no unit test rendered
- * it, and `theme-page-coverage.spec.ts` visits only valid slugs so no e2e ever
- * reaches it. Reverting any of the three turned nothing red — the mutation pass
- * could not catch that, because a missing guard has no mutation to run against.
- *
- * The component used to be exported from `routes/docs/$docId.tsx` purely so this
- * suite could reach it. Story 39-1 moved it into `components/docs/` — a non-route
- * export in a route file is left un-code-split and warned about at every
- * `pnpm dev` (BUG-C) — so the import below is now an ordinary component import.
- * The assertions are unchanged by that move.
- */
-
 import { render } from '@/test/utils'
 import { describe, expect, it } from 'vitest'
 import { DocNotFound } from '../doc-not-found'
@@ -27,7 +10,6 @@ describe('DocNotFound theming', () => {
     if (!card) throw new Error('missing not-found card')
     expect([...card.classList]).toContain('surface')
     expect([...card.classList]).not.toContain('bg-white')
-    // Colour-only tokens compose with the layout utilities.
     expect([...card.classList]).toContain('rounded-lg')
     expect([...card.classList]).toContain('shadow-md')
 
@@ -40,8 +22,7 @@ describe('DocNotFound theming', () => {
     if (!(backLink instanceof HTMLElement)) throw new Error('missing docs index link')
     expect([...backLink.classList]).toContain('text-accent')
     expect([...backLink.classList]).not.toContain('text-blue-600')
-    // Story 115.2: a link inside the sentence is underlined at rest (its colour is
-    // 1.13:1 against the body text; WCAG 1.4.1 wants 3:1 or a non-colour cue).
+    // Link colour is 1.13:1 against body text, so it needs a non-colour cue (underline).
     expect([...backLink.classList]).toContain('underline')
     expect([...backLink.classList]).not.toContain('hover:underline')
   })
@@ -52,8 +33,6 @@ describe('DocNotFound theming', () => {
     if (!(root instanceof HTMLElement)) throw new Error('missing layout root')
     expect([...root.classList]).toContain('surface-sunken')
 
-    // The docs 404 is the twin of `NotFoundPage.tsx`, which was already fully
-    // dark-aware — the two were divergent before this story.
     const classes = [root, ...root.querySelectorAll('*')].flatMap((element) => [
       ...element.classList,
     ])
@@ -63,12 +42,6 @@ describe('DocNotFound theming', () => {
   })
 })
 
-/**
- * Shared with the other subtree sweeps in this story. A code review found the
- * three sweeps had each grown their OWN list, so the same claim ("no light-only
- * token survives") carried different guarantees per file and the weakest list
- * defined the real protection.
- */
 const RETIRED_LIGHT_ONLY_TOKENS = [
   'bg-white',
   'bg-gray-50',

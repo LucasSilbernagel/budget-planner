@@ -17,68 +17,14 @@ import { formatCompactAxisTick } from '../lib/chart-axis'
 import type { useChartColors } from '../lib/chartTheme'
 import type { useCurrencyPreferences } from '../stores/currencyStore'
 
-/**
- * The Overview's two Recharts CANVASES, and nothing else (story 38.3, AC-6).
- *
- * ## Why this file exists — it is a performance boundary, not a refactor
- *
- * `@tanstack/react-start`'s `hydrateStart.js:28` AWAITS `router.loadRouteChunk`
- * for every match before hydration begins, so the Overview's route chunk and its
- * whole STATIC import graph sit on the critical path to the figures appearing.
- * `HomePage.tsx` used to `import { Bar, BarChart, … } from 'recharts'` at module
- * scope, which put the Recharts vendor chunk — **104.0 KB gzipped, 36.1% of the
- * measured critical path** — in front of a user who is waiting to see a number.
- *
- * `HomePage` now pulls this module through `React.lazy`, so Recharts is fetched
- * only once the charts are actually about to render, and never at all for a
- * visitor who has no data.
- *
- * ## ⚠️ What makes this deferral hydration-safe, and the fence around it
- *
- * The charts render inside `HomePage`'s `hasData` branch, which is itself inside
- * the `!hydrated` mount gate story 38.2 added. On the server `hydrated` is
- * `false` by construction, so **no chart markup reaches the SSR HTML or the first
- * client render** — there is no server output for a lazy boundary to diverge
- * from. That is the whole reason this is safe. Verified by `curl` at the time of
- * the change: the `/` response contains zero `recharts` occurrences.
- *
- * ⚠️ **Move a `<Suspense>` boundary for this module OUTSIDE the `!hydrated` gate
- * and the chart library is back in the SSR response** — and, measured, NOTHING in
- * the hydration suite will tell you. Story 38.3's mutation M9 did exactly that
- * hoist and `e2e/hydration.spec.ts` stayed GREEN 9/9: React treats a `Suspense`
- * boundary that resolves differently on the server and on the client as ordinary
- * Suspense behaviour, not as a hydration mismatch, so no `pageerror` fires. The
- * detector that DOES catch it is the SSR-response fence, added because M9
- * refuted the story's own prediction: since story 84.5 it is
- * `src/__tests__/served-pages.served.test.ts` › "/ serves no "recharts" anywhere
- * in the document" (it was `e2e/refresh-to-figures.spec.ts`).
- *
- * ## ⚠️ Footprint: the box belongs to the CALLER, deliberately
- *
- * Neither canvas draws its own height. `HomePage` keeps the sized wrapper —
- * `style={{ height: categoryChartHeight(data.length) }}` for the bars and
- * `className="h-[240px]"` for the pies — so the `Suspense` fallback can be
- * `null` and the box is provably identical before and after the chunk lands.
- * Story 38.2 measured a real 8px footprint bug caused by guessing at a
- * placeholder's height; this design removes the guess instead of repeating it.
- * **Do not move the height in here.**
- *
- * ## ⚠️ Do not add a non-chart export to this file
- *
- * Anything exported here is downloaded only when the charts are. A hook, a
- * helper or a type-carrying value that `HomePage` needs synchronously would
- * either pull the whole Recharts chunk back onto the critical path or force a
- * second copy of itself into it. Types are fine — they are erased.
- */
+// Lazy-loaded by HomePage to keep Recharts off the critical path: export chart components only. Safe only because
+// HomePage renders these inside its `hydrated` gate; the caller owns the height so the Suspense fallback can be null.
 
 type CategoryBarDatum = { category: string; amount: number; fill: string }
 
 interface CategoryBarCanvasProps {
-  /** Bars to plot (amounts in cents), rendered in Recharts' vertical layout. */
   data: CategoryBarDatum[]
-  /** Round tick values (cents) spanning this chart's OWN diverging domain. */
   ticks: number[]
-  /** Narrow viewport: shrink the Y-axis label gutter and tick size for 320px. */
   isNarrow: boolean
   chartColors: ReturnType<typeof useChartColors>
   formatAmount: (cents: number) => string
@@ -86,15 +32,6 @@ interface CategoryBarCanvasProps {
   currency: ReturnType<typeof useCurrencyPreferences>['currency']
 }
 
-/**
- * The plot for one Financial Category Summary sub-chart — flows OR balances
- * (story UX-2). Each instance owns its axis domain (`ticks`); the CALLER owns the
- * height, scaled to the bar count via `categoryChartHeight`, so the two
- * sub-charts stay legible independently instead of sharing one axis a large
- * annual flow can dominate. Axis/grid/tooltip strokes are routed through the
- * shared chartTheme so the chart reads on the dark `.surface` card too (story
- * 11-2 / 12-4 AC-2 dark-mode constraint).
- */
 export function CategoryBarCanvas({
   data,
   ticks,
@@ -104,13 +41,7 @@ export function CategoryBarCanvas({
   mode,
   currency,
 }: CategoryBarCanvasProps): React.ReactElement {
-  // `barDomainTicks` -> `niceAxisTicks` can never return an empty array — its
-  // `min === max` branch returns a single tick and its loop always pushes `start`
-  // (`lib/chart-axis.ts:63-85`) — but `noUncheckedIndexedAccess` cannot see that, so
-  // `ticks[0]` is `number | undefined` and the pair is not a valid `AxisDomain`.
-  // Narrowing rather than casting keeps the impossible case handled: `undefined`
-  // hands Recharts its own auto-domain, which is the right degradation for an input
-  // that cannot occur.
+  // niceAxisTicks never returns [], but the type allows undefined; undefined falls back to Recharts' auto domain.
   const first = ticks[0]
   const last = ticks[ticks.length - 1]
   const domain: [number, number] | undefined =
@@ -120,9 +51,6 @@ export function CategoryBarCanvas({
     <ResponsiveContainer width="100%" height="100%">
       <BarChart data={data} layout="vertical">
         <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
-        {/* Round ticks (amounts are cents) with a compact, cents-dropping
-            label — the full formatAmount value carries ".00" the narrow axis
-            has no room for. */}
         <XAxis
           type="number"
           domain={domain}
@@ -159,36 +87,13 @@ export function CategoryBarCanvas({
 }
 
 interface BreakdownPieCanvasProps {
-  /** Pie slices for a SINGLE type, already period-scaled. Never empty here. */
   data: RechartsDataItem[]
-  /** Sum of `data` values — the pie's own 100% denominator. */
   total: number
-  /**
-   * Narrow viewport: shrink the donut's radii so the plot stays inside its box
-   * at 320px. Since story 36.2 the in-plot slice labels are gone at every
-   * width, so the radii are all this flag drives here.
-   */
   isNarrow: boolean
   formatAmount: (cents: number) => string
 }
 
-/**
- * The plot for one category-breakdown pie (income OR expense), with its own
- * correct 100% denominator (UX review #4).
- *
- * ⚠️ The colour-keyed list BELOW the plot is not here — it stays in `HomePage`
- * on purpose. It doubles as the legend and carries the per-category amounts as
- * plain text, which the period-control test asserts precisely because Recharts'
- * SVG is not laid out under jsdom. Moving it behind the lazy boundary would put
- * a `await`-shaped hole in a test that has nothing to do with charts.
- *
- * ⚠️ NO accessible name, on purpose (story 116.1, FR184, D4): `HomePage` hides
- * this whole plot from screen readers (`aria-hidden` on its sized wrapper)
- * because the list below already reads out every slice. Recharts gives every
- * slice `role="img"` with no name (`Sector.js`), which Lighthouse flagged
- * (`svg-img-alt`), and the old `role="img"` + `aria-label` on `<PieChart>` was
- * dead once hidden.
- */
+// No accessible name on purpose: HomePage hides the plot, and the list below it reads every slice.
 export function BreakdownPieCanvas({
   data,
   total,
@@ -199,10 +104,7 @@ export function BreakdownPieCanvas({
     <ResponsiveContainer width="100%" height="100%">
       <PieChart>
         <Pie
-          // ⚠️ Not a tab stop (story 116.1, D2). Recharts' pie layer defaults to
-          // `tabIndex={0}` (`Pie.js`, `rootTabIndex`); inside an `aria-hidden`
-          // wrapper that is a keyboard stop a screen reader cannot see (axe
-          // `aria-hidden-focus`). Mouse hover still shows the tooltip.
+          // Recharts' pie defaults to tabIndex 0; inside an aria-hidden wrapper that is an invisible tab stop.
           rootTabIndex={-1}
           data={data}
           cx="50%"
@@ -213,19 +115,8 @@ export function BreakdownPieCanvas({
           fill="#8884d8"
           dataKey="value"
           nameKey="name"
-          // No in-plot slice labels, at ANY width (story 36.2 / UX-DR41). With
-          // many categories the coloured labels collide into an unreadable
-          // tangle on desktop; below 640px they overflowed the container
-          // outright (story 6-1). The list below names every slice, and the
-          // hover tooltip carries the per-slice figure and share — so nothing is
-          // lost. The plot is hidden from the accessibility tree (see above), so
-          // the labels never reached it in the first place.
-          //
-          // ⚠️ `labelLine` above is now INERT: Recharts guards with
-          // `label && this.renderLabels(sectors)`, and `labelLine` is read only
-          // inside `renderLabels`. It is kept so that restoring `label` cannot
-          // silently also restore the leader lines. Both props are pinned in
-          // `__tests__/HomePage.pie-labels.chart-wiring.test.tsx`.
+          // No in-plot labels: the list names every slice. `labelLine` is inert without `label`; kept false so
+          // restoring `label` does not also restore leader lines.
           label={false}
         >
           {data.map((entry, index) => (

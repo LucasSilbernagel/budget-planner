@@ -1,17 +1,3 @@
-/**
- * Magic-link orchestration tests (Story 5-16, Tasks 2 & 3 — AC-1, AC-2, AC-3)
- *
- * Covers the security-critical behaviours that sit between the routes and the
- * token/mailer/DB layers:
- *  - request: unknown / soft-deleted / invalid emails create NO token and send
- *    NO email (no account enumeration, no signup);
- *  - request: a known user gets a token + an email whose link carries only the
- *    opaque token (built from SITE_URL, fixed target — no open redirect);
- *  - verify: a good token resolves the EXACT { userId, paddleId, email } claims
- *    signSession needs; a bad token or a soft-deleted owner resolves null
- *    (fail-closed).
- */
-
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
@@ -194,7 +180,7 @@ describe('verifyMagicLink (single-use → identity claims, fail-closed)', () => 
 
   it('returns null when the token owner is soft-deleted / missing (fail-closed)', async () => {
     consumeLoginToken.mockResolvedValueOnce('u1')
-    selectLimit.mockResolvedValueOnce([]) // isDeleted filter excludes the row
+    selectLimit.mockResolvedValueOnce([])
     const result = await verifyMagicLink('raw-tok')
     expect(result).toBeNull()
   })
@@ -208,7 +194,6 @@ describe('peekMagicLink (read-only, drives the confirm interstitial)', () => {
     const result = await peekMagicLink('raw-tok')
 
     expect(result).toEqual({ email: 'user@example.com' })
-    // Peek must not consume.
     expect(consumeLoginToken).not.toHaveBeenCalled()
   })
 

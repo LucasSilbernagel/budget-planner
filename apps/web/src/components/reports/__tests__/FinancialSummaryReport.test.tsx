@@ -1,17 +1,5 @@
-/**
- * FinancialSummaryReport tests (story 30-3, FR53).
- *
- * ⚠️ These assert the HYDRATED client render. Every persisted store is
- * `skipHydration: true` and rehydrates on mount via `StoreHydration`, so the
- * server render and the first client paint both see EMPTY stores — an SSR or
- * raw-HTML smoke would pass against a report containing nothing at all. The
- * stores are therefore seeded directly with `setState`, exactly as the finance
- * page suites do.
- *
- * ⚠️ `vitest.setup.ts` resets the currency store to `{ mode: 'none', currency:
- * 'NONE' }` before every jsdom test, so the DEFAULT here is currency-less mode,
- * not $/USD. The symbols path is covered by setting the mode explicitly.
- */
+// Stores use skipHydration, so assert the hydrated render with stores seeded via setState.
+// The jsdom setup defaults currency to 'NONE', not $/USD.
 
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -44,9 +32,6 @@ const incomeRow = (id: string, name: string, amount: number, frequency: string) 
   updatedAt: ISO,
 })
 
-// Story 43.4: widened from `'investment' | 'debt'`. A hand-written union in a
-// test factory is exactly the kind of two-value assumption the compiler cannot
-// connect back to the enum.
 const balanceRow = (
   id: string,
   name: string,
@@ -72,15 +57,7 @@ const savingsRow = (id: string, name: string, target: number | null, current: nu
   updatedAt: ISO,
 })
 
-/**
- * The `<dd>` paired with a totals `<dt>`.
- *
- * Totals are queried this way rather than by their text because a figure is
- * legitimately repeated on the page — a single monthly row's entered amount, its
- * normalized amount and the section total are all the same number — so a
- * page-wide `getByText` for the figure is ambiguous by construction and would
- * have to be weakened to `getAllByText`, which asserts far less.
- */
+// Totals are queried via their <dt> because the same figure legitimately repeats on the page.
 function totalFor(label: string): HTMLElement {
   // Scoped to `dt` because a label can legitimately also be a section heading —
   // "Net worth" is both the <h2> and the total's term.
@@ -88,29 +65,9 @@ function totalFor(label: string): HTMLElement {
   return term.nextElementSibling as HTMLElement
 }
 
-/**
- * The print button's accessible name.
- *
- * ⚠️ A REGEX, not a string: `getByRole`'s `name` is a FULL-STRING match when
- * given a string, so a later label change would turn these queries into throws
- * rather than silent passes — and the repo's standing lesson is the mirror case
- * (an absence probe against a renamed label going quietly green).
- */
 const PRINT_BUTTON_NAME = /print \/ save as pdf/i
 
-/**
- * The print buttons, and each one addressed by WHERE IT LIVES (story 56.4).
- *
- * Since 56.4 there are TWO buttons carrying this name — one above the document
- * and one at the end of it — so the singular `getByRole` these tests used
- * throws on multiple matches.
- *
- * ⚠️ They are distinguished by article containment, NEVER by array index.
- * `getAllByRole(...)[0]` binds the assertion to DOM order and reads as an
- * arbitrary number at the call site; `closest('#financial-summary-report')`
- * states the actual distinction — the top button sits outside the printed
- * subtree, the bottom one inside it.
- */
+// Distinguished by article containment, never by array index.
 function printButtons(): HTMLElement[] {
   return screen.getAllByRole('button', { name: PRINT_BUTTON_NAME })
 }
@@ -118,9 +75,7 @@ function printButtons(): HTMLElement[] {
 function topPrintButton(): HTMLElement {
   const button = printButtons().find((element) => !element.closest('#financial-summary-report'))
   if (!button) {
-    // An explicit throw, because `find` returns `undefined` and the failure
-    // would otherwise surface as a type error on `.click()` — illegible, and
-    // indistinguishable from the button having moved.
+    // Explicit throw: `find` returns undefined, which would otherwise surface as an illegible type error.
     throw new Error('No print button outside #financial-summary-report')
   }
   return button
@@ -134,36 +89,15 @@ function bottomPrintButton(): HTMLElement {
   return button
 }
 
-/**
- * An element's class attribute as TOKENS.
- *
- * Membership is asserted against this array, never as a substring of the raw
- * string — a substring match on class names is how a rename turns a real
- * assertion into a silent pass.
- */
+// Tokens, never substring matches, so a rename cannot turn into a silent pass.
 function tokensOf(element: Element): string[] {
   return element.className.split(/\s+/)
 }
 
-/** Every Tailwind text-align utility. */
 const ALIGNMENT_TOKEN = /^text-(left|center|right|justify|start|end)$/
 
-/**
- * The alignment utilities on an element, in class-attribute order.
- *
- * ⚠️ Alignment must be asserted as an EXCLUSIVE set, never as membership.
- * Tailwind emits `.text-left` before `.text-center` before `.text-right` at
- * equal specificity (all single-class), so the LAST one in the stylesheet wins
- * regardless of class-attribute order — a class string that *contains*
- * `text-left` can still render centered or right-aligned.
- *
- * This file contains the existence proof: `TH_NUMERIC_CLASS` is
- * `` `${TH_CLASS} text-right` `` and therefore carries the `text-left` token
- * while rendering right-aligned. A `toContain('text-left')` check would pass on
- * it. Verified by mutation: hoisting `text-center` into `TD_CLASS` re-centers
- * every row header — the exact UX-DR63 defect — and left a membership-based
- * guard at 28/28 green.
- */
+// Assert alignment as an exclusive set: Tailwind's last-emitted utility wins at equal
+// specificity, so a class string containing text-left can still render centred.
 function alignmentTokensOf(element: Element): string[] {
   return tokensOf(element).filter((token) => ALIGNMENT_TOKEN.test(token))
 }
@@ -175,7 +109,6 @@ function clearStores(): void {
   useSavingsStore.setState({ savingsGoals: [] })
 }
 
-/** A representative, fully-populated set of figures used by several tests. */
 function seedTypicalData(): void {
   useIncomeStore.setState({
     incomeSources: [
@@ -249,14 +182,10 @@ describe('FinancialSummaryReport — content', () => {
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
     expect(totalFor('Total investments')).toHaveTextContent('8,000.00')
-    // The contributing savings figure is printed in the net-worth section too, so
-    // the arithmetic on the page reconciles without flipping back to the savings
-    // section for the number.
     expect(totalFor('Total savings')).toHaveTextContent('3,000.00')
     expect(totalFor('Total debts')).toHaveTextContent('150,000.00')
     // 800000 + 300000 − 15000000 = −13900000 cents. Savings ADD, debts SUBTRACT.
     expect(totalFor('Net worth')).toHaveTextContent('-139,000.00')
-    // The pre-32.2 figure, which omitted savings.
     expect(totalFor('Net worth')).not.toHaveTextContent('-142,000.00')
   })
 
@@ -266,8 +195,6 @@ describe('FinancialSummaryReport — content', () => {
     })
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
-    // Previously this section keyed emptiness on balance rows alone, so a real
-    // +2,500.00 net worth was replaced by "there is no net worth to summarize".
     expect(totalFor('Net worth')).toHaveTextContent('2,500.00')
     expect(screen.queryByText(/there is no net worth to summarize/i)).not.toBeInTheDocument()
   })
@@ -287,37 +214,16 @@ describe('FinancialSummaryReport — content', () => {
     expect(totalFor('Total saved')).toHaveTextContent('3,000.00')
   })
 
-  /**
-   * Story 56.1 (UX-DR61, UX-DR62 as amended): the report renders the user's
-   * figures and their date, but no currency note and no privacy disclaimer.
-   *
-   * The disclaimer lived inside the `data-print-hide` row, so it only ever
-   * appeared ON SCREEN — removing it changes the screen, not the printout. The
-   * currency note was inside the article and did print.
-   *
-   * ⚠️ The removals are ABSENCE assertions, and absence is vacuous on its own:
-   * with unseeded stores the component renders the "There is nothing to report
-   * yet" branch, which satisfies every `not.toMatch` below while proving
-   * nothing. So each one seeds real data and anchors on the report having
-   * actually rendered — the <h1> plus a figure — before asserting what is gone.
-   *
-   * ⚠️ The absence regexes are deliberately BROADER than the exact copy that
-   * was deleted. Pinning the old sentence verbatim would let the note return
-   * under any rewording ("Amounts in $", "No currency symbol shown") while
-   * staying green. Verified safe: the word "currency" appears in no remaining
-   * rendered string, and the symbols-mode figures render as `$5,433.33` with no
-   * `USD` anywhere.
-   */
+  // Absence checks are vacuous on the empty branch, so seed data and anchor on the rendered report first.
+  // The regexes are broader than the deleted copy so a reworded note cannot return.
   it('renders the generated-at stamp but no currency note or privacy disclaimer', () => {
     seedTypicalData()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
-    // Positive anchor: the report really did render its figures.
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Financial Summary$/)
     expect(totalFor('Monthly income')).toHaveTextContent('5,433.33')
 
-    // UX-DR62 as amended: the date is RETAINED — a filed printout has to be
-    // datable. It is asserted inside the article, which is what prints.
+    // The date stays: a filed printout must be datable. Asserted inside the article, which prints.
     const article = document.querySelector('#financial-summary-report') as HTMLElement
     expect(within(article).getByText(/generated 2026-08-08/i)).toBeInTheDocument()
 
@@ -333,9 +239,6 @@ describe('FinancialSummaryReport — content', () => {
 
     expect(totalFor('Monthly income')).toHaveTextContent('$5,433.33')
 
-    // Story 56.1: the currency note is gone in SYMBOLS mode too — the branch
-    // the currency-less test above cannot reach — while the date survives in
-    // both modes.
     expect(document.body.textContent).not.toMatch(/currency/i)
     expect(document.body.textContent).not.toMatch(/amounts\b/i)
     expect(document.body.textContent).not.toMatch(/\bUSD\b/i)
@@ -347,7 +250,6 @@ describe('FinancialSummaryReport — degenerate data states', () => {
   it('states plainly that there is nothing to report when every store is empty', () => {
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
     expect(screen.getByText(/there is nothing to report yet/i)).toBeInTheDocument()
-    // No bare headings over a wall of zeros.
     expect(screen.queryByRole('heading', { name: 'Budget' })).not.toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
@@ -390,10 +292,6 @@ describe('FinancialSummaryReport — degenerate data states', () => {
 
 describe('FinancialSummaryReport — unreadable data is disclosed, not hidden', () => {
   it('does NOT claim there is nothing to report when every row is merely unreadable', () => {
-    // The worst state this report can be in: real data exists but none of it can
-    // be read. The user used to be told "There is nothing to report yet. Add your
-    // income…" with no hint anything was dropped, because the disclosure lived in
-    // the branch the empty-state check skipped.
     useIncomeStore.setState({
       incomeSources: [incomeRow('i1', 'Salary', 500_000, 'fortnightly')],
     })
@@ -405,8 +303,6 @@ describe('FinancialSummaryReport — unreadable data is disclosed, not hidden', 
   })
 
   it('says a section could not be read, rather than that nothing was added', () => {
-    // These two lines used to contradict each other on the same page: "No income
-    // or expenses have been added" directly above "1 entry could not be read".
     useIncomeStore.setState({
       incomeSources: [incomeRow('i1', 'Salary', 500_000, 'fortnightly')],
     })
@@ -418,8 +314,6 @@ describe('FinancialSummaryReport — unreadable data is disclosed, not hidden', 
   })
 
   it('renders a large multi-page data set without crashing or dropping rows', () => {
-    // AC-4 names "large" as a state the RENDERED report must be coherent at; the
-    // 120-row case previously existed only at the pure-model layer.
     useIncomeStore.setState({
       incomeSources: Array.from({ length: 120 }, (_, i) =>
         incomeRow(`i${i}`, `Source ${i}`, 1_000, 'monthly')
@@ -434,65 +328,26 @@ describe('FinancialSummaryReport — unreadable data is disclosed, not hidden', 
   })
 })
 
-/**
- * Row-header alignment (story 56.2, UX-DR63).
- *
- * `TH_CLASS` gives every COLUMN header `text-left`, but the row-header cells
- * (`<th scope="row">`) carried only `${TD_CLASS} font-normal`. Neither
- * Tailwind's Preflight (zero `text-align` declarations, no `th` reset — unlike
- * Bootstrap) nor `global.css` resets the UA default, so those cells rendered
- * CENTERED beneath a left-aligned header. The defect was at all three
- * `scope="row"` call sites: `CashflowTable`, the savings goals table and
- * `BalanceTable`.
- *
- * ⚠️ THIS IS A CLASS-TOKEN PIN, NOT A LAYOUT PROOF — the repo's accepted idiom
- * (see the print-row guard above). jsdom computes no layout, and here it is
- * worse than that: measured, jsdom returns `textAlign: ""` for BOTH a column
- * `<th>` and a row `<th>` (it models `th { font-weight: bold }` but not the
- * centering), and `vitest.config.ts` sets no `css` option while
- * `vitest.setup.ts` never imports `global.css`, so no Tailwind utility exists
- * in this environment at all. A `getComputedStyle(th).textAlign` assertion
- * would read `""` before AND after the fix — a guard that cannot fail. The
- * computed-style proof lived in `e2e/report-print.spec.ts`, where the real
- * stylesheet loads; story 84.5 replaced it with the rule pins in
- * `src/__tests__/print-rules.dom.test.tsx`, and the painted result is unpinned.
- *
- * ⚠️ Pins BOTH SIDES to `text-left`, not just the rows. A rows-only check would
- * stay green if a later edit centered the COLUMN header instead — the same
- * misalignment, mirrored. (It pins each side to the literal rather than
- * comparing them to each other: two cells that agree on `text-center` would be
- * mutually aligned but still wrong against `TH_CLASS`'s documented intent.)
- *
- * ⚠️ EXCLUSIVITY, not membership — see `alignmentTokensOf`. Asserting merely
- * that `text-left` is present accepts a class string that also carries
- * `text-center`, which renders centered because Tailwind emits the competing
- * utility later at equal specificity. That hole was real in this guard's first
- * version and is now covered by arm M5.
- */
+// Class-token pin, not a layout proof: jsdom has no Tailwind and returns textAlign '' for every <th>.
+// Pins both sides to text-left, exclusively (see alignmentTokensOf).
 describe('FinancialSummaryReport — table column alignment (story 56.2, UX-DR63)', () => {
   it('left-aligns every row-header cell to match its column header', () => {
     seedTypicalData()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
     const tables = screen.getAllByRole('table')
-    // ⚠️ Non-vacuity. `getAllByRole` throws on zero matches, but a loop over a
-    // one-table render would silently assert far less than this claims to.
-    // `seedTypicalData()` yields exactly five: Income, Expenses (CashflowTable),
-    // Investments, Debts (BalanceTable) and Goals and accounts.
+    // seedTypicalData() yields exactly five tables; a one-table render would assert far less.
     expect(tables).toHaveLength(5)
 
     for (const table of tables) {
       const caption = table.querySelector('caption')?.textContent ?? '(no caption)'
 
-      // The Name column is first in all three renderers.
       const columnHeader = within(table).getAllByRole('columnheader')[0]
       expect(alignmentTokensOf(columnHeader), `${caption}: first column header`).toEqual([
         'text-left',
       ])
 
-      // ⚠️ `queryAllByRole`, not `getAllByRole`: the getter THROWS on zero
-      // matches, which would make the count assertion below unreachable —
-      // a non-vacuity check that could itself never fail.
+      // queryAllByRole: getAllByRole throws on zero, making the count check unreachable.
       const rowHeaders = within(table).queryAllByRole('rowheader')
       expect(rowHeaders.length, `${caption}: row header count`).toBeGreaterThan(0)
       for (const cell of rowHeaders) {
@@ -517,9 +372,7 @@ describe('FinancialSummaryReport — printing and privacy', () => {
   })
 
   it('makes NO network request to build or print the report (AC-3, NFR1/NFR2)', () => {
-    // The whole privacy claim rests on this: the report is assembled from local
-    // stores and printed by the browser, so nothing is transmitted. Asserted,
-    // not merely commented.
+    // The privacy claim rests on this: nothing is transmitted.
     const fetchSpy = vi.fn(() => Promise.resolve(new Response('{}', { status: 200 })))
     global.fetch = fetchSpy as unknown as typeof global.fetch
     const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
@@ -536,41 +389,15 @@ describe('FinancialSummaryReport — printing and privacy', () => {
     seedTypicalData()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
-    // The print stylesheet hides `[data-print-hide]`; the button must carry it,
-    // or the report prints its own button.
     const button = topPrintButton()
     expect(button.closest('[data-print-hide]')).not.toBeNull()
-    // …and this one must sit OUTSIDE the report article, which is what gets
-    // printed.
-    //
-    // ⚠️ Scoped to the TOP button since story 56.4. "Print controls live
-    // outside the printed subtree" was true of the only control that existed
-    // when this was written; the bottom button deliberately sits inside the
-    // article and relies on `data-print-hide` alone, exactly as 56.3's period
-    // control does. The invariant is now per-button — see the 56.4 block below,
-    // which asserts the other half rather than leaving it unstated.
+    // Only the top button sits outside the article; the bottom one relies on data-print-hide alone.
     expect(button.closest('#financial-summary-report')).toBeNull()
   })
 
   it('keeps the print control at the end of its row now that it stands alone', () => {
-    // Story 56.1 removed the disclaimer that used to sit opposite this button.
-    // `justify-between` on a single child silently left-aligns it, so the row
-    // was switched to `justify-end`. Nothing else pins button placement.
-    //
-    // ⚠️ The row is addressed DIRECTLY, not via the button's `parentElement`.
-    // Story 56.4 has since added the second "Print / Save as PDF" button this
-    // anticipated: `getByRole(..., { name })` now throws on multiple matches,
-    // and the obvious repair (`getAllByRole(...)[0]`) would have quietly handed
-    // the placement assertion to whoever wrote it. Querying the row directly is
-    // child-count-agnostic, so this guard survived that story untouched — and
-    // it still resolves to the TOP row, because `querySelector` returns the
-    // first `[data-print-hide]` in document order and 56.4's row comes last.
-    // The bottom row has its own guard in the 56.4 block below.
-    //
-    // ⚠️ This is a class-TOKEN pin, not a layout proof — jsdom computes no
-    // layout. `flex` is asserted alongside `justify-end` because `justify-*` is
-    // inert outside a flex/grid container, and `justify-between` is asserted
-    // absent so the exact regression this replaced cannot come back.
+    // Row addressed directly (first [data-print-hide] in document order), not via the button,
+    // so a second print button cannot hijack this placement assertion.
     seedTypicalData()
     const { container } = render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
@@ -597,25 +424,10 @@ describe('FinancialSummaryReport — bottom print button (story 56.4, FR83)', ()
     seedTypicalData()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
-    // Exactly two: a third would mean a stray copy, and one would mean the
-    // feature is gone. Both halves matter, so the count is asserted rather
-    // than merely "more than one".
     expect(printButtons()).toHaveLength(2)
 
-    // The bottom one comes AFTER the Savings section in document order — it is
-    // the end-of-document affordance, not a duplicate of the top control.
-    // `compareDocumentPosition` reads the real DOM order rather than trusting
-    // the order `getAllByRole` happened to return.
-    //
-    // ⚠️ `& DOCUMENT_POSITION_FOLLOWING` ALONE IS NOT ENOUGH, and that is the
-    // whole reason for the second assertion. The DOM returns
-    // `CONTAINED_BY | FOLLOWING` (20) for a DESCENDANT, so the FOLLOWING bit is
-    // set for a button nested INSIDE the Savings section too — which would put
-    // it on a `.surface` card mid-document, `dark:bg-gray-800` on
-    // `dark:bg-gray-800`. Found independently by all three review layers,
-    // 2026-09-17. Asserting `closest('section')` is null is what makes this a
-    // claim about the end of the document rather than "somewhere after the
-    // Savings heading".
+    // FOLLOWING is also set for a descendant (CONTAINED_BY | FOLLOWING), so closest('section')
+    // must be null to prove the button is at the end of the document.
     const savings = screen.getByRole('heading', { name: 'Savings' }).closest('section')
     expect(savings).not.toBeNull()
     const button = bottomPrintButton()
@@ -629,28 +441,15 @@ describe('FinancialSummaryReport — bottom print button (story 56.4, FR83)', ()
     seedTypicalData()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
-    // ⚠️ 56.1's placement guard does NOT cover this row: it reaches the row via
-    // `container.querySelector('[data-print-hide]')`, which is the FIRST match
-    // in document order — always the top row. Without this test, dropping
-    // `${PRINT_ROW_CLASS}` from the bottom wrapper leaves all other guards
-    // green while the button silently left-aligns, which is exactly the
-    // UX-DR61 regression 56.1 fixed on the top row.
+    // The top-row guard uses querySelector's first match, so this row needs its own.
     const row = bottomPrintButton().closest('[data-print-hide]') as HTMLElement
     expect(row).not.toBeNull()
     const tokens = tokensOf(row)
     expect(tokens).toEqual(expect.arrayContaining(['flex', 'justify-end']))
-    // `justify-*` is inert outside a flex/grid container, so `flex` above is
-    // load-bearing; and the container the disclaimer once needed must not come
-    // back here either.
     expect(tokens).not.toContain('justify-between')
   })
 
   it('renders the bottom button in the all-unreadable branch too (AC-5)', () => {
-    // The third state of the gating ternary: rows EXIST but none can be read,
-    // so `isEmpty` is true while `totalUnreadableCount > 0` — the document
-    // still renders its sections, so it still ends with a print control.
-    // Without this the gate could be narrowed to "the budget has rows" and
-    // nothing would go red.
     useIncomeStore.setState({
       incomeSources: [incomeRow('i1', 'Corrupt', 100_000, 'fortnightly')],
     })
@@ -665,9 +464,6 @@ describe('FinancialSummaryReport — bottom print button (story 56.4, FR83)', ()
     seedTypicalData()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
-    // ⚠️ The BOTTOM button specifically. The existing guard above proves only
-    // the top one calls `print()`; a bottom button wired to nothing would sail
-    // through it.
     bottomPrintButton().click()
 
     expect(printSpy).toHaveBeenCalledTimes(1)
@@ -679,21 +475,11 @@ describe('FinancialSummaryReport — bottom print button (story 56.4, FR83)', ()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
     const button = bottomPrintButton()
-    // `global.css` hides `[data-print-hide]` under `@media print`, and that
-    // rule is global — it applies inside the printed subtree too, which is
-    // what 56.3's period control already relies on. Without the attribute this
-    // button prints itself onto the user's own report.
     expect(button.closest('[data-print-hide]')).not.toBeNull()
-    // Non-vacuity: this really is the in-article one, so the assertion above
-    // is about the new button and not a second reading of the top row.
     expect(button.closest('#financial-summary-report')).not.toBeNull()
   })
 
   it('does not repeat itself on a report with nothing to print (AC-5)', () => {
-    // Every store empty → "There is nothing to report yet". There is nothing
-    // to scroll past, so a second print button would sit centimetres below the
-    // first. `queryAllByRole` because the getter throws on zero matches, which
-    // would fail for the wrong reason if the count ever hit 0.
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
     expect(screen.getByText(/there is nothing to report yet/i)).toBeInTheDocument()
@@ -701,10 +487,6 @@ describe('FinancialSummaryReport — bottom print button (story 56.4, FR83)', ()
   })
 
   it('still offers both buttons when the sections exist but hold no figures (AC-5)', () => {
-    // The other branch: a report whose every section renders its own empty
-    // copy still renders the document, so the end-of-document button belongs
-    // there. Without this, "gated on content" could have shipped as "gated on
-    // the budget having rows".
     useBalanceStore.setState({ entries: [balanceRow('b1', 'ISA', 'investment', 100_000)] })
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
@@ -716,34 +498,16 @@ describe('FinancialSummaryReport — bottom print button (story 56.4, FR83)', ()
     seedTypicalData()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
-    // Non-vacuity first: two EMPTY class attributes would also compare equal,
-    // and a failure here should read as "the classes vanished", not as a
-    // divergence.
+    // Non-vacuity: two empty class attributes would also compare equal.
     expect(topPrintButton().className).toMatch(/\S/)
-    // Equality, not a token spot-check: focus ring, dark-mode variants, border
-    // and padding all have to match, and enumerating them would pin some while
-    // leaving the rest free to drift.
-    //
-    // ⚠️ What this observes is EQUALITY, not a single source. Two byte-identical
-    // literals pass it just as well; `PRINT_BUTTON_CLASS` is what keeps them
-    // equal, and only the component can state that. The title says what the
-    // assertion sees.
+    // Equality, not a token spot-check, so no class is left free to drift.
     expect(bottomPrintButton().className).toBe(topPrintButton().className)
   })
 })
 
 describe('FinancialSummaryReport — scope (story 30-3, Decision 1)', () => {
   it('does not claim a retirement outlook or a forward projection', () => {
-    // Both are driven entirely by ephemeral component state, so a report opened
-    // from /settings has no data for them. Claiming either would be inventing
-    // the user's assumptions — this pins the exclusion so a later edit cannot
-    // reintroduce the claim without failing here.
-    //
-    // ⚠️ Guards the CLAIM, not the token. The net-worth section legitimately
-    // says "This is not a projection" — a bare `not.toMatch(/projection/)`
-    // would fail against correct, honest copy, and the instinct would be to
-    // delete the disclaimer to make the test pass. So: no section may be ABOUT
-    // these things, and no forward-looking figure may be asserted.
+    // Guards the claim, not the token: the net-worth section legitimately says 'This is not a projection'.
     seedTypicalData()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
@@ -752,35 +516,22 @@ describe('FinancialSummaryReport — scope (story 30-3, Decision 1)', () => {
     ).not.toBeInTheDocument()
 
     const text = document.body.textContent ?? ''
-    // "retirement" has no honest use anywhere in this report.
     expect(text).not.toMatch(/retirement/i)
     expect(text).not.toMatch(/\bforecast/i)
-    // No forward-looking claim: nothing is projected, estimated or predicted.
     expect(text).not.toMatch(/\bprojected\b/i)
     expect(text).not.toMatch(/\byears? from now\b/i)
-    // And the disclaimer that makes the net-worth figure unambiguous is present.
     expect(screen.getByText(/this is not a projection/i)).toBeInTheDocument()
   })
 })
 
-/**
- * Net-worth section copy and disclosure (code review 32.2).
- *
- * The empty-state sentence was rewritten by story 32.2 but pinned by nothing —
- * reverting it to the pre-32.2 wording failed zero tests. And a user whose only
- * savings rows are corrupt was told, as fact, that nothing had been added.
- */
 describe('FinancialSummaryReport — net worth copy and savings disclosure (32.2 review)', () => {
   it('names savings in the empty-state sentence', () => {
-    // Seed an unrelated section so the report renders its sections at all — with
-    // every store empty it shows the whole-document "nothing to report" state and
-    // this copy never appears.
+    // Seed an unrelated section; with every store empty the whole-document empty state shows instead.
     useIncomeStore.setState({ incomeSources: [incomeRow('i1', 'Salary', 500_000, 'monthly')] })
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
     expect(
       screen.getByText(/no investments, savings, assets or debts have been added/i)
     ).toBeInTheDocument()
-    // The superseded wording, which omitted savings from the definition.
     expect(
       screen.queryByText(
         'No investments or debts have been added, so there is no net worth to summarize.'
@@ -815,13 +566,6 @@ describe('FinancialSummaryReport — net worth copy and savings disclosure (32.2
   })
 })
 
-/**
- * Corrupt-target disclosure in the savings section (32.2 review, decision fix).
- *
- * A row kept for its balance but stripped of an unreadable target renders "—" for
- * both target and progress — visually identical to a genuine no-target account.
- * Without this note the document cannot tell the two apart.
- */
 describe('FinancialSummaryReport — corrupt savings targets are disclosed (32.2 review)', () => {
   it('explains that a balance counted but its target could not be read', () => {
     useSavingsStore.setState({
@@ -829,9 +573,7 @@ describe('FinancialSummaryReport — corrupt savings targets are disclosed (32.2
     })
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
-    // The money is on the page...
     expect(totalFor('Total saved')).toHaveTextContent('1,000.00')
-    // ...and the reason it shows no progress is stated, not left to look like an account.
     expect(
       screen.getByText(
         /target could not be read, so its balance is included but its progress is not shown/i
@@ -854,12 +596,6 @@ describe('FinancialSummaryReport — corrupt savings targets are disclosed (32.2
 
 describe('FinancialSummaryReport — assets are printed, not just counted (Story 43.4, FR70)', () => {
   it('renders an Assets table and a Total assets row that reconcile with net worth', () => {
-    // ⚠️ This test exists because the rendered Assets table and Total assets row
-    // could be DELETED with the whole suite staying green: the model-level tests
-    // in `build-financial-summary.test.ts` pin `totalAssetsCents`, not the render.
-    // On a printed page the user keeps, that would show component rows that do not
-    // add up to the net-worth figure beneath them — the exact reconciliation
-    // failure the surrounding code comments say those rows exist to prevent.
     useBalanceStore.setState({
       entries: [
         balanceRow('b1', 'ISA', 'investment', 5_000_000),
@@ -870,17 +606,12 @@ describe('FinancialSummaryReport — assets are printed, not just counted (Story
 
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
-    // The asset appears BY NAME in its own captioned table...
     expect(screen.getByText('Assets')).toBeInTheDocument()
     expect(screen.getByText('Condo')).toBeInTheDocument()
 
-    // ...and as its own total line. Hand-computed: 5,000,000 + 0 savings
-    // + 40,000,000 − 30,000,000 = 15,000,000.
+    // 5,000,000 + 0 savings + 40,000,000 − 30,000,000 = 15,000,000.
     const totalAssets = screen.getByText('Total assets')
     expect(totalAssets.parentElement).toHaveTextContent('400,000.00')
-    // `Net worth` appears more than once on the page (section heading + total
-    // row), so match the row that carries the figure rather than using a bare
-    // getByText — an ambiguous selector fails for the wrong reason.
     const netWorthRows = screen.getAllByText('Net worth')
     expect(netWorthRows.some((el) => el.parentElement?.textContent?.includes('150,000.00'))).toBe(
       true
@@ -888,9 +619,6 @@ describe('FinancialSummaryReport — assets are printed, not just counted (Story
   })
 
   it('does not report a valid asset row as unreadable', () => {
-    // Before FR70 widened `KNOWN_FINANCE_TYPES`, an asset failed `isReadableBalance`
-    // — excluded from net worth AND counted into the "could not be read" disclosure,
-    // so the report accused the user's own freshly-entered condo of being corrupt.
     useBalanceStore.setState({ entries: [balanceRow('b1', 'Condo', 'asset', 40_000_000)] })
 
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
@@ -903,68 +631,28 @@ describe('FinancialSummaryReport — assets are printed, not just counted (Story
   })
 })
 
-/**
- * Budget period toggle (story 56.3, FR84).
- *
- * The Budget section can be read as monthly or annual figures. Only the
- * DERIVED column and the three section totals respond; the entered Amount and
- * Frequency columns, and the Net Worth and Savings sections, do not.
- *
- * ⚠️ EVERY ASSERTION HERE MUST CROSS A STATE CHANGE. The default is monthly —
- * today's only behaviour — so a render-only test passes against a component
- * that has no toggle at all, and against one whose toggle is wired to nothing.
- * The switch is driven through `user.selectOptions` on the real control rather
- * than by reaching for a setter, so the control and the conversion are proven
- * wired to each other.
- *
- * ⚠️ NON-VACUITY. A switch that threw would unmount the figures and leave a
- * page on which most `queryBy`/absence-shaped checks still pass. Each test
- * therefore re-anchors on the report having actually rendered — the <h1> plus
- * one concrete figure — AFTER the switch, not just before it.
- *
- * ⚠️ The annual expectations are LITERALS, hand-computed from
- * `seedTypicalData()`'s known monthly figures (×12), never recomputed in the
- * test the same way the component computes them. Figures render currency-less
- * (the jsdom default, see the file header), so grouped digits and no symbol.
- */
+// Every assertion must cross a state change (monthly is the default) and re-anchor on rendered
+// figures after the switch. Annual expectations are hand-computed literals.
 describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', () => {
-  /**
-   * ⚠️ A REGEX, not a string. `getByRole`'s `name` option is a FULL-STRING
-   * match when given a string, so a later label rename would turn every query
-   * here into a throw rather than a silent pass — but the repo's standing
-   * lesson is the mirror case (an absence probe against a renamed label going
-   * silently green), and a regex keeps this robust to trailing punctuation.
-   */
   function periodControl(): HTMLSelectElement {
     return screen.getByRole('combobox', { name: /show the budget per/i }) as HTMLSelectElement
   }
 
-  /** The Nth `columnheader` of the named table. */
   function columnHeaders(tableName: RegExp): HTMLElement[] {
     return within(screen.getByRole('table', { name: tableName })).getAllByRole('columnheader')
   }
 
-  /** The data cells of the row whose row-header is `name`. */
   function cellsOfRow(name: string): HTMLElement[] {
     const row = screen.getByRole('rowheader', { name }).closest('tr')
     expect(row).not.toBeNull()
     return within(row as HTMLElement).getAllByRole('cell')
   }
 
-  /** Re-anchor after a switch: the report really is still rendering figures. */
   function expectReportStillRendered(): void {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Financial Summary$/)
     expect(screen.getAllByRole('table').length).toBeGreaterThan(0)
   }
 
-  /**
-   * ⚠️ Title says "figures and labels", NOT "byte-for-byte" — the default
-   * render is NOT byte-identical to the pre-56.3 document: it gained a heading
-   * wrapper, a `data-print-hide` div, a `<label>`, an `sr-only` span and a
-   * `<select>`. The original title claimed an identity these assertions do not
-   * and cannot make (code review 2026-09-17, raised independently by two
-   * layers). What IS unchanged, and what this pins, is every figure and label.
-   */
   it('defaults to monthly, leaving the figures and labels unchanged (AC-1)', () => {
     seedTypicalData()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
@@ -974,18 +662,11 @@ describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', (
     expect(totalFor('Monthly income')).toHaveTextContent('5,433.33')
     expect(totalFor('Monthly expenses')).toHaveTextContent('1,500.00')
     expect(totalFor('Monthly surplus')).toHaveTextContent('3,933.33')
-    // The normalization note keeps 56.1's exact monthly wording by default.
     expect(
       screen.getByText(/every entry is converted to a monthly figure so the totals are comparable/i)
     ).toBeInTheDocument()
   })
 
-  /**
-   * The section's explanatory note must not contradict the column above it.
-   * Under Annual it used to read "converted to a monthly figure" beside a
-   * column headed "Annual" — and it PRINTS, while the control explaining it is
-   * `data-print-hide`, so the paper offered no cue.
-   */
   it('re-words the conversion note so the printed page cannot contradict itself', async () => {
     const user = userEvent.setup()
     seedTypicalData()
@@ -998,8 +679,7 @@ describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', (
     expect(within(article).getByText(/converted to a yearly figure/i)).toBeInTheDocument()
     expect(within(article).queryByText(/converted to a monthly figure/i)).not.toBeInTheDocument()
 
-    // ⚠️ The new copy must still clear 56.1's reserved words, in this branch
-    // too — the existing guards only ever render the MONTHLY wording.
+    // The existing reserved-word guards only render the monthly wording.
     expect(document.body.textContent).not.toMatch(/currency/i)
     expect(document.body.textContent).not.toMatch(/amounts\b/i)
   })
@@ -1027,7 +707,6 @@ describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', (
     expect(totalFor('Annual expenses')).toHaveTextContent('18,000.00')
     expect(totalFor('Annual surplus')).toHaveTextContent('47,199.96')
 
-    // The monthly labels are GONE, not merely joined by annual ones.
     expect(screen.queryByText('Monthly income', { selector: 'dt' })).not.toBeInTheDocument()
   })
 
@@ -1036,18 +715,14 @@ describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', (
     seedTypicalData()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
-    // Entered weekly 100.00, which is NOT what the derived column shows.
     expect(cellsOfRow('Freelance')[0]).toHaveTextContent('100.00')
     expect(cellsOfRow('Freelance')[1]).toHaveTextContent('Weekly')
 
     await user.selectOptions(periodControl(), 'annually')
     expectReportStillRendered()
 
-    // Unchanged — these state what the user typed, at the cadence they typed it.
     expect(cellsOfRow('Freelance')[0]).toHaveTextContent('100.00')
     expect(cellsOfRow('Freelance')[1]).toHaveTextContent('Weekly')
-    // …while the derived column beside them DID move, so this is not a test of
-    // a component that ignored the switch entirely.
     expect(cellsOfRow('Freelance')[2]).toHaveTextContent('5,199.96')
   })
 
@@ -1062,8 +737,6 @@ describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', (
     await user.selectOptions(periodControl(), 'annually')
     expectReportStillRendered()
 
-    // Only the PERIOD word changes. A story that rebuilt this label from
-    // scratch would most likely drop the "(break-even)" qualifier.
     expect(screen.getByText('Annual net (break-even)')).toBeInTheDocument()
     expect(screen.queryByText('Annual shortfall')).not.toBeInTheDocument()
     expect(screen.queryByText('Annual surplus')).not.toBeInTheDocument()
@@ -1096,13 +769,11 @@ describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', (
       saved: totalFor('Total saved').textContent,
       progress: totalFor('Overall progress').textContent,
     }
-    // Non-vacuity: these are real figures, not empty strings being compared.
     expect(before.netWorth).toMatch(/-139,000\.00/)
     expect(before.saved).toMatch(/3,000\.00/)
 
     await user.selectOptions(periodControl(), 'annually')
     expectReportStillRendered()
-    // The Budget section really did respond, so this is not a no-op switch.
     expect(totalFor('Annual income')).toHaveTextContent('65,199.96')
 
     expect(totalFor('Net worth').textContent).toBe(before.netWorth)
@@ -1115,39 +786,21 @@ describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', (
     seedTypicalData()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
-    // ⚠️ Reached via the CONTROL, not `querySelector('[data-print-hide]')` —
-    // that returns the print-button row (first in document order) and would
-    // assert nothing whatsoever about this element.
+    // Reached via the control: querySelector('[data-print-hide]') returns the print-button row.
     const hidden = periodControl().closest('[data-print-hide]')
     expect(hidden).not.toBeNull()
 
-    // …and unlike the print button, the control lives INSIDE the article, so
-    // the section it governs still prints with the selected figures.
     expect(periodControl().closest('#financial-summary-report')).not.toBeNull()
   })
 
-  /**
-   * Round-trip fidelity (code review 2026-09-17, Blind Hunter HIGH).
-   *
-   * `monthlyCents` is a ROUNDED intermediate, so re-expressing it at the row's
-   * OWN entered cadence is lossy whenever the entered cents are not divisible
-   * by 12. Before the fix this rendered "100.00 | Annually | 99.96" — one row
-   * disagreeing with itself by four cents, on a document users print and file.
-   *
-   * ⚠️ THE FIXTURE IS THE WHOLE TEST. Round numbers hide this completely:
-   * 1,200.00/Annually round-trips exactly (÷12 = 10,000c, ×12 = 1,200.00), and
-   * a suite seeded only with round figures — as this file's `seedTypicalData`
-   * is — passes against the defect. Both amounts below are chosen because they
-   * do NOT survive the round trip: 10,000c → 833c → 9,996c (−4), and
-   * 100,001c → 8,333c → 99,996c (−5).
-   */
+  // The fixture is the whole test: round figures round-trip exactly. Here 10,000c → 833c → 9,996c
+  // and 100,001c → 8,333c → 99,996c.
   it('shows the entered figure when the period IS the row’s own cadence', async () => {
     const user = userEvent.setup()
     useIncomeStore.setState({
       incomeSources: [
         incomeRow('i1', 'Insurance', 10_000, 'annually'),
         incomeRow('i2', 'Bonus', 100_001, 'annually'),
-        // A control on a DIFFERENT cadence: this one must still convert.
         incomeRow('i3', 'Freelance', 10_000, 'weekly'),
       ],
     })
@@ -1156,27 +809,21 @@ describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', (
     await user.selectOptions(periodControl(), 'annually')
     expectReportStillRendered()
 
-    // The user typed these exact annual figures; the Annual column must agree.
     expect(cellsOfRow('Insurance')[2]).toHaveTextContent('100.00')
     expect(cellsOfRow('Bonus')[2]).toHaveTextContent('1,000.01')
-    // …and the pre-fix values must NOT come back.
     expect(cellsOfRow('Insurance')[2]).not.toHaveTextContent('99.96')
     expect(cellsOfRow('Bonus')[2]).not.toHaveTextContent('999.96')
 
-    // ⚠️ NON-VACUITY / SCOPE: a weekly row has no entered annual figure, so it
-    // still converts. Without this the fix could have been "never convert".
+    // A weekly row has no entered annual figure, so it still converts.
     expect(cellsOfRow('Freelance')[2]).toHaveTextContent('5,199.96')
 
-    // And in the MONTHLY view nothing changed for any of them.
     await user.selectOptions(periodControl(), 'monthly')
     expect(cellsOfRow('Insurance')[2]).toHaveTextContent('8.33')
     expect(cellsOfRow('Freelance')[2]).toHaveTextContent('433.33')
   })
 
   it('is absent when the budget has no figures to re-express', () => {
-    // A period control over "No income or expenses have been added" is an
-    // affordance that does nothing. Only a seeded balance here, so the Budget
-    // section renders its empty branch while other sections still show.
+    // Only a seeded balance, so the Budget section renders its empty branch.
     useBalanceStore.setState({ entries: [balanceRow('b1', 'ISA', 'investment', 100_000)] })
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
@@ -1186,16 +833,8 @@ describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', (
   })
 })
 
-/**
- * Story 88.4 (FR142, decision D2): every section total renders through
- * `GroupedAmount`, so a money total can break only straight after a group
- * separator. The percent and the dash have no separator and render unchanged.
- *
- * ⚠️ jsdom computes no layout: this pins the WIRING, never "it fits". The
- * Chromium measurement under CI's font is in the 88.4 Dev Agent Record.
- */
+// jsdom computes no layout: this pins the wiring, not that it fits.
 describe('section totals break only between digit groups (story 88.4)', () => {
-  /** The text runs between `<wbr>`s; a plain string comes back as ONE run. */
   function runsOf(el: Element): string[] {
     const out = ['']
     for (const node of Array.from(el.childNodes)) {
@@ -1220,7 +859,6 @@ describe('section totals break only between digit groups (story 88.4)', () => {
     useBalanceStore.setState({
       entries: [balanceRow('b1', 'Brokerage', 'investment', 1_234_567_890)],
     })
-    // No target: "Total target" is the dash, "Overall progress" the dash too.
     useSavingsStore.setState({ savingsGoals: [savingsRow('s1', 'Rainy day', null, 1_322_222_190)] })
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
@@ -1234,8 +872,7 @@ describe('section totals break only between digit groups (story 88.4)', () => {
   })
 
   it('every total row: the label shrinks first and the value is right-aligned (D7, 88.4 review)', () => {
-    // jsdom has no layout or Tailwind: this pins the class tokens only; the
-    // behaviour is the D7 one measured on Retirement's OutputRow.
+    // jsdom has no layout or Tailwind: this pins the class tokens only.
     useIncomeStore.setState({ incomeSources: [incomeRow('i1', 'Salary', 100_00, 'monthly')] })
     useBalanceStore.setState({ entries: [balanceRow('b1', 'Brokerage', 'investment', 100_00)] })
     useSavingsStore.setState({ savingsGoals: [savingsRow('s1', 'Rainy day', null, 100_00)] })
@@ -1271,25 +908,12 @@ describe('section totals break only between digit groups (story 88.4)', () => {
   })
 })
 
-/**
- * Story 91.2 (FR145): the report fits the window on screen; the printed page
- * keeps every column.
- *
- * MEASURED under CI's font at the baseline (`91-2-evidence/`): the page column
- * (`mx-auto` in the root's column flexbox) took its widest table's width, and a
- * long unbroken name made that table ~1490 px wide, so the page scrolled
- * sideways at EVERY width (1206 px @320 … 510 px @1280), and the printed PDF lost
- * every figure column of four tables past the paper edge.
- *
- * ⚠️ jsdom computes no layout: these pin the WIRING (tokens, attributes,
- * structure). The geometry is pinned by the `report-*` CI screenshots.
- */
+// jsdom computes no layout: these pin the wiring; geometry is pinned by the report CI screenshots.
 describe('the report fits the screen and keeps its columns in print (story 91.2)', () => {
   afterEach(() => {
     restoreRegionWidths()
   })
 
-  /** Every table kind: Income, Expenses, Investments, Assets, Debts, Savings. */
   function seedEveryTable(): void {
     seedTypicalData()
     useBalanceStore.setState({
@@ -1301,16 +925,13 @@ describe('the report fits the screen and keeps its columns in print (story 91.2)
     })
   }
 
-  /** The direct parent of each table, which must be its own scroll region. */
   function regionsOf(): HTMLElement[] {
     return screen.getAllByRole('table').map((table) => table.parentElement as HTMLElement)
   }
 
   it('wraps each of the six tables in its own signposted, keyboard-reachable scroll region', () => {
     seedEveryTable()
-    // Story 93.1 (FR149): a region is a Tab stop only while it scrolls. jsdom
-    // reports every width as 0 ("fits"), so stub the widths: here every table
-    // scrolls, as on a phone; the next case is the desktop, where none does.
+    // A region is a Tab stop only while it scrolls; jsdom reports every width as 0, so stub them.
     stubRegionWidths()
     setRegionOverflows()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
@@ -1322,7 +943,6 @@ describe('the report fits the screen and keeps its columns in print (story 91.2)
       const caption = region.querySelector('caption')?.textContent ?? '(no caption)'
       expect(region.tagName, caption).toBe('DIV')
       expect(region.querySelectorAll('table'), caption).toHaveLength(1)
-      // The app's table-region pattern (`IncomePage.tsx`), reused, not copied.
       for (const token of [
         ...RESPONSIVE_WRAPPER_CLASS.split(/\s+/),
         ...RESPONSIVE_SCROLL_SHADOW_CLASS.split(/\s+/),
@@ -1333,7 +953,7 @@ describe('the report fits the screen and keeps its columns in print (story 91.2)
       expect(region, caption).toHaveAttribute('role', 'region')
       const label = region.getAttribute('aria-label') ?? ''
       expect(label, caption).toMatch(/\S/)
-      // 56.1's guards forbid these words on this page (`BUDGET_PERIOD_LABEL_TEXT`).
+      // Page-wide guards forbid these words (see BUDGET_PERIOD_LABEL_TEXT).
       expect(label, caption).not.toMatch(/currency|amounts\b/i)
       labels.add(label)
       // The gap above the table moved to the region: on the table it would sit
@@ -1373,13 +993,10 @@ describe('the report fits the screen and keeps its columns in print (story 91.2)
     seedEveryTable()
     render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
     const rowHeaders = screen.getAllByRole('rowheader')
-    // Salary, Freelance, Rent, ISA, Car, Mortgage, Emergency fund, Rainy day.
     expect(rowHeaders).toHaveLength(8)
     for (const cell of rowHeaders) {
       expect(tokensOf(cell), cell.textContent ?? '').toContain('[overflow-wrap:anywhere]')
-      // The phone floor that keeps ordinary names breaking between words.
       expect(tokensOf(cell), cell.textContent ?? '').toContain('max-sm:min-w-[8rem]')
-      // Not screen-only: the baseline PDF lost four tables' figure columns.
       expect(
         tokensOf(cell).filter((t) => t.startsWith('print:')),
         cell.textContent ?? ''

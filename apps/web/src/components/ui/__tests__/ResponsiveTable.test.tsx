@@ -21,28 +21,12 @@ import {
 import { render, screen } from '@/test/utils'
 import { describe, expect, it } from 'vitest'
 
-/**
- * Shared responsive-table class layer (story 31.2).
- *
- * Every assertion here is on class TOKEN membership, never on a substring of
- * the joined class string: `-` and `:` are substring boundaries, so
- * `toContain('block')` would false-match `max-sm:block` and `toContain('hidden')`
- * would false-match `overflow-hidden`. jsdom computes no layout, so these
- * constants can only be proven structurally here: these cases assert that the
- * module DECLARES the right classes, never that anything fits, stacks or hides.
- * Those are geometry claims: `e2e/responsive-320.spec.ts` made them until
- * stories 84.2/84.5 (FR137) deleted it. Read an AC number in a title below as "the class this AC needs is
- * present", not "this AC holds".
- */
+// Class TOKEN membership, never substrings (`toContain('hidden')` matches `overflow-hidden`).
+// jsdom has no layout: these prove declarations only.
 
 const tokens = (value: string): string[] => value.split(/\s+/).filter(Boolean)
 
-/** Class tokens with every variant prefix removed, so a negative assertion
- * cannot be evaded by shipping the same utility under `max-sm:` / `sm:` / etc.
- * ⚠️ Strips variants ONLY — non-greedy and bracket-aware — because a greedy
- * `replace(/^.*:/, '')` mangles arbitrary-property tokens like
- * `[padding-left:1rem]` into `1rem]`, which then matches nothing. Code review
- * found exactly that hole in this file. */
+/** Strips variant prefixes only, bracket-aware, so `[padding-left:1rem]` stays intact. */
 const bareUtilities = (list: string[]): string[] =>
   list.map((token) => {
     const bracket = token.indexOf('[')
@@ -53,20 +37,8 @@ const bareUtilities = (list: string[]): string[] =>
 
 describe('ResponsiveTable class layer', () => {
   describe('desktop classes are preserved verbatim (AC-2)', () => {
-    // Each entry: the constant, and the exact classes it carries at `lg` and
-    // above. Nothing in this column may change value, and nothing may be added
-    // that is not breakpoint-scoped below `lg`.
-    //
-    // ⚠️ `max-lg:px-4` IS LISTED EXPLICITLY RATHER THAN FILTERED OUT, and that
-    // is the whole point of the shape below. It is the width budget that keeps
-    // the four-column `/income` and `/expenses` tables inside their scroll
-    // wrapper between `sm` and `lg` on the CI font (see the block above
-    // `RESPONSIVE_HEADER_CELL_CLASS` for the measurements). Widening the filter
-    // to skip every `max-*` token instead would have made this suite silent
-    // about the one class that a future "simplify the padding" edit is most
-    // likely to delete — and a local run cannot catch that deletion, because
-    // dev fonts are narrow enough to fit either way. Pinned exactly, deleting
-    // it fails HERE, in milliseconds, instead of on the runner.
+    // `max-lg:px-4` is listed explicitly: it is the 640-1024px width budget, and dev fonts are
+    // narrow enough that deleting it would only fail on CI.
     const cases: [string, string, string[]][] = [
       ['wrapper', RESPONSIVE_WRAPPER_CLASS, ['overflow-x-auto']],
       [
@@ -75,11 +47,7 @@ describe('ResponsiveTable class layer', () => {
         ['min-w-full', 'divide-y', 'divide-gray-200', 'dark:divide-gray-700'],
       ],
       ['thead', RESPONSIVE_THEAD_CLASS, ['surface-inset']],
-      // ⚠️ `surface` is ABSENT here since story 42.2, and that is the change, not
-      // an omission. An opaque <tbody> spans the table's full SCROLL width and
-      // paints over the wrapper's scroll shadows, making the affordance
-      // invisible in light mode while every assertion in this file stays green.
-      // The colour moved to the wrapper. See the dedicated case below.
+      // No `surface`: an opaque <tbody> would paint over the wrapper's scroll shadows.
       ['tbody', RESPONSIVE_TBODY_CLASS, ['divide-y', 'divide-gray-200', 'dark:divide-gray-700']],
       ['row', RESPONSIVE_ROW_CLASS, ['hover:bg-gray-50', 'dark:hover:bg-gray-700/40']],
       ['cell', RESPONSIVE_CELL_CLASS, ['px-6', 'max-lg:px-4', 'py-4', 'whitespace-nowrap']],
@@ -102,9 +70,6 @@ describe('ResponsiveTable class layer', () => {
       })
     }
 
-    // The `px-6` half of each pair above is what renders at `lg` and up, so the
-    // pre-31.2 desktop claim in this block's title still holds literally: no
-    // constant lost `px-6`, and `max-lg:px-4` cannot apply at >= 1024px.
     it('every padded constant keeps px-6 as its >= lg base alongside the max-lg override', () => {
       for (const value of [
         RESPONSIVE_CELL_CLASS,
@@ -119,7 +84,6 @@ describe('ResponsiveTable class layer', () => {
     })
 
     it('the mobile-only constants add no unprefixed class that could reach desktop', () => {
-      // These exist ONLY below `sm`. Every token must be breakpoint-scoped.
       for (const value of [RESPONSIVE_ACTIONS_GROUP_CLASS, RESPONSIVE_ACTION_BUTTON_CLASS]) {
         expect(tokens(value).every((t) => t.startsWith('max-sm:'))).toBe(true)
       }
@@ -128,10 +92,6 @@ describe('ResponsiveTable class layer', () => {
 
   describe('mobile card switching (AC-1)', () => {
     it('the table declares block display and drops its min width', () => {
-      // Defensive, not the mechanism — measured at 320px, removing either of
-      // these changes no geometry, because `max-sm:flex` on every <td> already
-      // takes the cells out of table formatting. Pinned here so the explicit
-      // display chain cannot be dropped in favour of anonymous-box generation.
       expect(tokens(RESPONSIVE_TABLE_CLASS)).toContain('max-sm:block')
       expect(tokens(RESPONSIVE_TABLE_CLASS)).toContain('max-sm:min-w-0')
     })
@@ -157,15 +117,12 @@ describe('ResponsiveTable class layer', () => {
       expect(rowTokens).toContain('max-sm:mb-3')
       expect(rowTokens).toContain('max-sm:rounded-lg')
       expect(rowTokens).toContain('max-sm:border')
-      // Token, not a hand-rolled `dark:border-*` pair (AC-7).
       expect(rowTokens).toContain('max-sm:border-default')
       expect(rowTokens.some((t) => t.startsWith('max-sm:dark:'))).toBe(false)
     })
 
     it('the row card does not stack two background tokens on one element', () => {
-      // `.surface-inset` and `.surface-interactive` both set background-color
-      // in @layer components, where declaration order in global.css wins over
-      // className order. Never both on one element.
+      // Both set background-color in @layer components, where global.css order wins over className order.
       const rowTokens = tokens(RESPONSIVE_ROW_CLASS)
       expect(rowTokens).not.toContain('max-sm:surface-inset')
       expect(rowTokens).not.toContain('max-sm:surface-interactive')
@@ -182,13 +139,9 @@ describe('ResponsiveTable class layer', () => {
       it(`${name} declares nowrap relief and a min-content-reducing wrap below sm`, () => {
         const cellTokens = tokens(value)
         expect(cellTokens).toContain('max-sm:whitespace-normal')
-        // `break-words` (overflow-wrap: break-word) does NOT reduce an
-        // element's min-content width — measured at 1097px inside a 320px
-        // viewport. Only `anywhere` does. Tailwind v3.4 has no
-        // `wrap-anywhere` utility, hence the arbitrary property.
+        // `break-words` doesn't reduce min-content width; only `anywhere` does (no Tailwind v3.4 utility).
         expect(cellTokens).toContain('max-sm:[overflow-wrap:anywhere]')
         expect(cellTokens).not.toContain('max-sm:break-words')
-        // px-6 (24px each side) is 15% of a 320px viewport per cell.
         expect(cellTokens).toContain('max-sm:px-3')
       })
     }
@@ -201,28 +154,12 @@ describe('ResponsiveTable class layer', () => {
     })
 
     it('the actions cell stacks its label above the button group below sm (34.1b)', () => {
-      // Four 44px tap targets (move up, move down, Edit, Delete) do not fit
-      // beside the "Actions" label in the ~200px a 320px row leaves for the
-      // cell. `flex-col` puts the label on its own line and hands the full
-      // width to the buttons. Reverting this is what `e2e/responsive-320.spec.ts`
-      // caught as an overflow until story 84.2/84.5; this token pin is what is left.
       expect(tokens(RESPONSIVE_ACTIONS_CELL_CLASS)).toContain('max-sm:flex-col')
     })
 
     it('the actions group separates and wraps its two buttons below sm (34.1b, 48.2)', () => {
       const groupTokens = tokens(RESPONSIVE_ACTIONS_GROUP_CLASS)
-      // ⚠️ STALE FROM 48.2 UNTIL 50.1: this said "four buttons" and
-      // "4 x 44px + 3 x 4px gap = 188px". Story 48.2 deleted the two move
-      // chevrons and left the count behind in the title and the arithmetic.
-      // ⚠️ THE REAL TWO-BUTTON TOTAL IS 108px, NOT 92px. `2 x 44 + 1 x 4` forgets
-      // the Edit button's UNPREFIXED `mr-4`, which applies below `sm` as well.
-      // Measured at 320px on /income: 44 + 16 + 4 + 44 = 108px, inside the ~200px
-      // available. Computed from the `max-sm:` floor and that margin, not from
-      // label width, so story 50.1's icons do not move it either.
       expect(groupTokens).toContain('max-sm:gap-1')
-      // Wrapping is graceful degradation at a larger root font size, not the
-      // expected layout — story 31.5's lesson that a reserve computed at the
-      // 16px default drifts with the root font size.
       expect(groupTokens).toContain('max-sm:flex-wrap')
     })
 
@@ -236,106 +173,46 @@ describe('ResponsiveTable class layer', () => {
     })
 
     it('the wrapper stays a scroll container at every width', () => {
-      // Deliberate, and reconsidered once. Making it `overflow-x-visible` below
-      // `sm` would let a regression reach `documentElement` and trip the
-      // document-level check — but the per-wrapper check catches the same
-      // regression either way (measured both ways), so the only real effect is
-      // that a phone user would get a sideways-scrolling DOCUMENT instead of
-      // one sideways-scrolling table. Containment wins.
       expect(tokens(RESPONSIVE_WRAPPER_CLASS)).toEqual(['overflow-x-auto'])
       expect(tokens(RESPONSIVE_WRAPPER_CLASS)).not.toContain('max-sm:overflow-x-visible')
     })
   })
 
   describe('value/tag pairs (story 42.3, UX-DR47)', () => {
-    // ⚠️ Declaration only. jsdom computes no layout and Tailwind never loads,
-    // so nothing here can prove a line count. `e2e/value-tag-one-line.spec.ts`
-    // made that claim until stories 84.2/84.5 deleted it; the CI screenshot
-    // `savings-320-light` is the only layout guard on these pairs now (story
-    // 91.1). Read each title as "the class this AC needs is present".
-
     it('the pair is a non-wrapping flex row, aligned to the first line below sm', () => {
       const pairTokens = tokens(RESPONSIVE_VALUE_TAG_CLASS)
       expect(pairTokens).toContain('flex')
       expect(pairTokens).toContain('items-center')
-      // ⚠️ Partitioned by breakpoint, per the module's own composition rule:
-      // desktop keeps `items-center` byte-identical, and only below `sm` does
-      // the tag anchor to the name's FIRST line. Measured at 320px with the
-      // 138-character seeded name: `items-center` floated the intact badge 88px
-      // down the block, detached from any line of text; `max-sm:items-start`
-      // puts it at -2px. Measured at 1280px: computed `center`, unchanged, and
-      // the allocation pair's top delta stays 0 at BOTH widths.
       expect(pairTokens).toContain('max-sm:items-start')
-      // `flex-wrap` would let the tag drop to its own line — the defect wearing
-      // a different shape. Variant-stripped: `max-sm:flex-wrap` is the form that
-      // would actually ship, since max-sm IS the regime where the defect lives.
       expect(bareUtilities(pairTokens)).not.toContain('flex-wrap')
     })
 
     it('the tag resists mid-word breaking, and does NOT carry shrink-0', () => {
       const tagTokens = tokens(RESPONSIVE_TAG_CLASS)
-      // The cell's inherited `overflow-wrap: anywhere` drops the tag's
-      // min-content width to ~1 character. Measured pre-fix at 320px: the
-      // four-letter "Goal" badge rendered 25px wide across FOUR lines.
-      // `whitespace-nowrap` restores the floor to the full string.
       expect(tagTokens).toContain('whitespace-nowrap')
-      // ⚠️ NOT an omission. Measured: `shrink-0` is a no-op alongside nowrap,
-      // and ON ITS OWN it overflows the wrapper (242 vs 240 at 320px) by
-      // pinning the tag at max-content while its text can still break. See the
-      // constant's docblock. Re-adding it needs a failing test first.
-      // Variant-stripped: `max-sm:shrink-0` is the only regime where shrink
-      // would matter, so an un-stripped check would miss the real revert.
+      // `shrink-0` is deliberately absent: on its own it overflows the wrapper. Variant-stripped.
       expect(bareUtilities(tagTokens)).not.toContain('shrink-0')
     })
 
     it('the amount class turns the inherited `anywhere` off and reserves no width (story 91.1)', () => {
-      // Applied to a formatted currency figure (a `GroupedAmount`) only.
-      // `overflow-wrap: normal` leaves the `<wbr>`s after each group separator
-      // as the figure's ONLY break opportunities, so a group wider than its
-      // space overflows rather than splitting. It is a floor, not load-bearing
-      // at today's widths (measured, 91.1 arm A1): read the constant's docblock.
       const valueTokens = tokens(RESPONSIVE_AMOUNT_CLASS)
       expect(valueTokens).toContain('[overflow-wrap:normal]')
-      // Unprefixed: the child's own value must beat the INHERITED one.
       expect(valueTokens.some((t) => t.startsWith('max-sm:'))).toBe(false)
-      // ⚠️ LOAD-BEARING FOR DESKTOP. Chromium breaks at `<wbr>` even under the
-      // cell's `nowrap` at >= sm: measured without this token, every row figure
-      // wrapped at its groups at 640/768/1280px and the tables narrowed.
+      // Load-bearing on desktop: Chromium breaks at `<wbr>` even under the cell's `nowrap`.
       expect(valueTokens).toContain('sm:[&_wbr]:hidden')
-      // ⚠️ NOT nowrap any more (91.1 D3): a figure that does not fit must wrap
-      // at a group boundary, never overflow its cell. Variant-stripped.
       expect(bareUtilities(valueTokens)).not.toContain('whitespace-nowrap')
-      // Anything that adds horizontal box size here would spend width the
-      // 640-1024px budget does not have (see the block above
-      // RESPONSIVE_SCROLL_SHADOW_CLASS).
       for (const utility of bareUtilities(valueTokens)) {
         expect(utility).not.toMatch(/^(p|px|py|ps|pe|pl|pr|m|mx|ms|me|ml|mr|gap|w|min-w)-/)
-        // ⚠️ A greedy `replace(/^.*:/, '')` would turn `[padding-left:1rem]`
-        // into `1rem]` and sail straight through the check above — the guard
-        // evading itself. `bareUtilities` strips variants only, so an arbitrary
-        // PROPERTY that reserves width is caught here instead.
+        // A greedy `replace(/^.*:/, '')` would turn `[padding-left:1rem]` into `1rem]` and evade this check.
         expect(utility).not.toMatch(/^\[(padding|margin|width|min-width|gap|inline-size)/)
       }
     })
 
-    // ⚠️ Titled for what it CHECKS. It pins the two load-bearing tokens and the
-    // absence of a nowrap revert — it is NOT a byte-for-byte pin of the whole
-    // constant, and an earlier title claiming "byte-identical" over-promised.
-    // The byte-level guarantee for this story comes from the diff (no hunk
-    // touches these constants), not from this case.
     it('⚠️ the cell wrapping contract survives this story (AC-2)', () => {
-      // The tempting fix — putting `whitespace-nowrap` back on the CELL —
-      // reverts the 320px card layout. `ResponsiveTable.tsx` records that
-      // swapping out either token was measured at ~1134px inside a 320px
-      // viewport. The fix belongs on the pair, one level in.
       for (const value of [RESPONSIVE_CELL_CLASS, RESPONSIVE_STACKED_CELL_CLASS]) {
         const cellTokens = tokens(value)
         expect(cellTokens).toContain('max-sm:whitespace-normal')
         expect(cellTokens).toContain('max-sm:[overflow-wrap:anywhere]')
-        // Variant-stripped: catches `whitespace-nowrap`, `max-sm:whitespace-nowrap`
-        // and `sm:whitespace-nowrap` alike. The unprefixed base token is
-        // EXPECTED on these constants (desktop), so exclude it from the check
-        // by looking only at what the max-sm regime would add.
         expect(
           cellTokens.filter((t) => t.startsWith('max-sm:')).map((t) => t.replace(/^max-sm:/, ''))
         ).not.toContain('whitespace-nowrap')
@@ -344,27 +221,15 @@ describe('ResponsiveTable class layer', () => {
   })
 
   describe('scroll affordance (story 42.2, UX-DR46)', () => {
-    // ⚠️ EVERY case here is structural. Whether the shadow is actually PAINTED,
-    // and whether it correctly disappears on a table that fits, are geometry
-    // claims that jsdom cannot make — `e2e/table-scroll-affordance.spec.ts`
-    // samples real pixels for those. Read these as "the declaration the AC
-    // needs is present".
-
     it('is a separate constant, so the wrapper pin is untouched', () => {
-      // The wrapper is pinned by exact equality above, deliberately (story
-      // 31.2). Merging the affordance into it would force that pin to be
-      // loosened, which deletes the guard rather than satisfying it.
+      // The wrapper is pinned by exact equality; merging the affordance into it would loosen that pin.
       expect(tokens(RESPONSIVE_WRAPPER_CLASS)).not.toContain('surface')
       expect(tokens(RESPONSIVE_SCROLL_SHADOW_CLASS).length).toBeGreaterThan(0)
       expect(tokens(RESPONSIVE_WRAPPER_CLASS)).toEqual(['overflow-x-auto'])
     })
 
     it('declares four background layers pinned local, local, scroll, scroll', () => {
-      // The two covers travel with the content (`local`); the two shadows stay
-      // pinned to the box (`scroll`). That asymmetry IS the self-hiding
-      // mechanism — with all four `local` the shadows travel away and the
-      // affordance never appears; with all four `scroll` it is painted
-      // permanently, including on tables that fit (an AC-6 defect).
+      // Covers `local`, shadows `scroll`: that asymmetry is the self-hiding mechanism.
       expect(tokens(RESPONSIVE_SCROLL_SHADOW_CLASS)).toContain(
         '[background-attachment:local,local,scroll,scroll]'
       )
@@ -372,9 +237,7 @@ describe('ResponsiveTable class layer', () => {
     })
 
     it('sets attachment via an arbitrary PROPERTY, never bg-local/bg-scroll', () => {
-      // Tailwind v3.4's `backgroundAttachment` plugin takes no arbitrary value,
-      // so `bg-local` would set ONE value for ALL FOUR layers and silently
-      // break the mechanism while looking correct in a diff.
+      // `bg-local` would set one value for all four layers and silently break the mechanism.
       const t = tokens(RESPONSIVE_SCROLL_SHADOW_CLASS)
       expect(t).not.toContain('bg-local')
       expect(t).not.toContain('bg-scroll')
@@ -382,9 +245,6 @@ describe('ResponsiveTable class layer', () => {
     })
 
     it('carries the surface colour and a dark cover pair', () => {
-      // The covers must match the surface behind the table or they smear. The
-      // colour lives here rather than on the <tbody> precisely so it does not
-      // occlude the shadows.
       const t = tokens(RESPONSIVE_SCROLL_SHADOW_CLASS)
       expect(t).toContain('surface')
       expect(t.some((c) => c.startsWith('dark:bg-['))).toBe(true)
@@ -392,14 +252,7 @@ describe('ResponsiveTable class layer', () => {
     })
 
     it('the tbody declares no background at any variant, so it cannot occlude the shadows', () => {
-      // Restoring `surface` here is the one edit that reintroduces the original
-      // defect: the affordance stops being visible and nothing else changes.
-      //
-      // ⚠️ VARIANTS COUNT. An earlier version of this case tested only bare
-      // `bg-`/`surface` prefixes, so `dark:bg-gray-800` would have slipped
-      // through and re-occluded the shadow in DARK MODE ONLY — where, before
-      // review, no test asserted the affordance was painted at all. Strip every
-      // variant prefix before judging the utility.
+      // Variants count: `dark:bg-gray-800` would re-occlude the shadow in dark mode only.
       const bare = (c: string) => c.slice(c.lastIndexOf(':') + 1)
       for (const c of tokens(RESPONSIVE_TBODY_CLASS)) {
         const u = bare(c)
@@ -414,14 +267,7 @@ describe('ResponsiveTable class layer', () => {
     })
 
     it('reserves no layout width (AC-8)', () => {
-      // The 640-1024px budget has zero slack: the free-tier four-column table
-      // measures 656 against a 656px wrapper on the CI font. Backgrounds do not
-      // affect box size; padding, borders and margins do. A width-reserving
-      // token here would fail on the runner and pass on a dev box.
-      // ⚠️ Strip ANY variant prefix first — `max-lg:px-4` and `dark:p-2` reserve
-      // width just as surely as `px-4`, and an earlier version of this pattern
-      // only anticipated `dark:`. Logical properties (`ps-`/`pe-`/`ms-`/`me-`),
-      // `gap-`, `indent-` and arbitrary `[padding-left:…]` all count too.
+      // Zero width slack between 640 and 1024px: strip variants, then reject anything that reserves width.
       const bare = (c: string) => c.slice(c.lastIndexOf(':') + 1)
       const RESERVES_WIDTH =
         /^(p|px|py|pt|pr|pb|pl|ps|pe|m|mx|my|mt|mr|mb|ml|ms|me|border|w|min-w|max-w|gap|gap-x|indent|basis|size)(-|$)/
@@ -440,15 +286,6 @@ describe('ResponsiveTable class layer', () => {
       const buttonTokens = tokens(RESPONSIVE_ACTION_BUTTON_CLASS)
       expect(buttonTokens).toContain('max-sm:min-h-[44px]')
       expect(buttonTokens).toContain('max-sm:min-w-[44px]')
-      // Centres the button's CONTENT inside the enlarged box. It is NOT what
-      // produces the 44px rect — a <button> is inline-block by default, so
-      // min-h/min-w already apply.
-      // ⚠️ The parenthesised "measured: dropping this keeps the 44px hit area"
-      // that used to close this comment was taken with a TEXT child. Story 50.1
-      // made the child an SVG, which makes the centring load-bearing in a way it
-      // was not, and nobody has re-measured the drop-`inline-flex` case since.
-      // The source docblock carries the same correction; this was its fourth
-      // copy and AC-14 had named only three.
       expect(buttonTokens).toContain('max-sm:inline-flex')
     })
 
@@ -486,10 +323,6 @@ describe('ResponsiveTable class layer', () => {
     })
 
     it('breaks only between words, not mid-word (story 91.1, AC 1)', () => {
-      // The cell's `overflow-wrap: anywhere` inherits into the label and made
-      // its min-content one character: `N/A/M/E`, `MONT/HLY/ALLO/CATIO/N`
-      // (measured at 320px under DejaVu Sans before 91.1). The label's own
-      // `normal` floors it at its longest word.
       const labelTokens = tokens(FIELD_LABEL_CLASS)
       expect(labelTokens).toContain('[overflow-wrap:normal]')
       // Never nowrap: a one-line `MONTHLY ALLOCATION` would starve the value.
@@ -497,11 +330,7 @@ describe('ResponsiveTable class layer', () => {
     })
 
     it('takes only the width the value leaves (basis-0 grow), never a shrink factor (story 91.1)', () => {
-      // `basis-0 grow`: the value keeps its one-line width whenever it fits.
-      // ⚠️ `shrink-[1000]` was measured and REJECTED: proportional shrinking
-      // still took ~0.02px from the value, past Chromium's 1/64px layout unit,
-      // so a figure that fitted exactly wrapped at its `<wbr>` anyway. See the
-      // constant's docblock.
+      // `shrink-[1000]` was rejected: it still takes sub-pixels from the value, wrapping an exact fit.
       const labelTokens = tokens(FIELD_LABEL_CLASS)
       expect(labelTokens).toContain('basis-0')
       expect(labelTokens).toContain('grow')

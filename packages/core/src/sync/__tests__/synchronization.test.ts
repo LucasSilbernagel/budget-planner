@@ -7,12 +7,10 @@ import {
 } from '../index'
 import type { SyncOperation } from '../types'
 
-// Monotonic counter so each generated operation gets a unique id even when
-// fake timers freeze Date.now(). Two operations sharing an id are treated as
-// the same operation by conflict detection, which would mask real conflicts.
+// Unique ids even when fake timers freeze Date.now(): ops sharing an id are the same
+// op to conflict detection, which would mask real conflicts.
 let opCounter = 0
 
-// Helper to generate a local test operation (originates on this device)
 function createTestOperation(overrides: Partial<SyncOperation> = {}): SyncOperation {
   return {
     id: `test-op-${Date.now()}-${++opCounter}`,
@@ -27,9 +25,7 @@ function createTestOperation(overrides: Partial<SyncOperation> = {}): SyncOperat
   }
 }
 
-// Helper to generate a server-side operation (originates on a *different*
-// device). Conflicts only arise between operations from different devices, so
-// cross-device fixtures are required to exercise conflict detection/resolution.
+// Conflicts only arise between operations from different devices.
 function createServerOperation(overrides: Partial<SyncOperation> = {}): SyncOperation {
   return createTestOperation({ deviceId: 'server-device', ...overrides })
 }
@@ -43,8 +39,7 @@ describe('Synchronization Service', () => {
     service = createSynchronizationService(testUserId, {
       autoSync: false,
       debug: false,
-      // A transport must be provided: the default processOperation now throws
-      // (rather than silently faking success) to avoid silent data loss.
+      // The default processOperation throws rather than faking success.
       processOperation: async () => ({ success: true }),
     })
   })
@@ -71,8 +66,6 @@ describe('Synchronization Service', () => {
 
     it('should generate a cryptographic (crypto.randomUUID) device ID, not Math.random (Story 5.8)', () => {
       const deviceId = service.getDeviceId()
-      // device-<uuid>: the suffix must be a crypto.randomUUID() v4 value, not the
-      // old non-cryptographic `Math.random().toString(36)` slug.
       const uuidV4 = /^device-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
       expect(deviceId).toMatch(uuidV4)
     })
@@ -127,10 +120,8 @@ describe('Synchronization Service', () => {
       expect(state.pendingOperations).toHaveLength(1)
     })
 
-    // Story 16-1: a goal-less savings account carries targetAmount: null. The
-    // queue-time validation (syncOperationDataSchema) must accept null, else a
-    // paid-tier account create/update ZodError-fails at the gate and silently
-    // never syncs.
+    // A goal-less savings account has targetAmount null; the queue-time schema must
+    // accept it or the op never syncs.
     it('should queue a savings account with a null targetAmount (create)', async () => {
       const operation = await service.queueCreate(
         'savingsGoal',

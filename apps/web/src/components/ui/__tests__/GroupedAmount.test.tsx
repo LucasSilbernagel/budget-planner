@@ -9,15 +9,6 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { useCurrencyStore } from '../../../stores/currencyStore'
 import { GroupedAmount, groupSeparator, splitAtGroupSeparators } from '../GroupedAmount'
 
-/**
- * Story 88.1 (FR142, D1): a headline figure may wrap ONLY between digit groups.
- *
- * ⚠️ Everything here is STRUCTURE: where the `<wbr>`s sit and what text the
- * element carries. jsdom computes no layout, so nothing in this file can say a
- * figure FITS its card. That was measured in a real browser under CI's font
- * (story 88.1 Dev Agent Record) and is held by the CI screenshots.
- */
-
 /** The element's children as a token list: text runs, and `|` for each `<wbr>`. */
 function tokens(el: Element): string[] {
   return Array.from(el.childNodes).map((n) =>
@@ -131,8 +122,7 @@ describe('GroupedAmount', () => {
 
 describe('groupSeparator', () => {
   it('reads the CURRENCY-style separator when given a currency (de-AT differs by style)', () => {
-    // Measured on Node 20 and 26 (ICU 78): de-AT groups decimals with a
-    // no-break space but currency amounts with `.` (`-€ 1.234.567,89`).
+    // de-AT groups decimals with a no-break space but currency amounts with `.` (ICU 78).
     expect(groupSeparator('de-AT')).toBe('\u00a0')
     expect(groupSeparator('de-AT', 'EUR')).toBe('.')
   })
@@ -146,7 +136,6 @@ describe('splitAtGroupSeparators', () => {
   it('splits only after a separator with a digit on both sides', () => {
     expect(splitAtGroupSeparators('1,234,567.89', ',')).toEqual(['1,', '234,', '567.89'])
     expect(splitAtGroupSeparators('a, b,1', ',')).toEqual(['a, b,1'])
-    // Native (non-ASCII) digits count as digits.
     expect(splitAtGroupSeparators('١٬٢٣٤', '٬')).toEqual(['١٬', '٢٣٤'])
   })
 

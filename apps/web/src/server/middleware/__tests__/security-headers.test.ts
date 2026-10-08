@@ -1,7 +1,3 @@
-/**
- * Security headers tests (Story 5.8 — AC-14; extended by story sec-1)
- */
-
 import { createHash } from 'node:crypto'
 import { getPaddleConfig, resetConfig } from '@budget-planner/config'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -28,25 +24,14 @@ import {
   paddleStyleHosts,
 } from '../security-headers'
 
-/**
- * The hash Chrome printed on the LIVE site when it refused Paddle.js's overlay spinner
- * <style> (story sec-4, M2). Typed here ON PURPOSE, as the one external witness: the
- * constant under test is derived from a committed copy of the text, and this proves the
- * copy is byte-exact.
- */
+/** Typed on purpose: the external witness that the committed copy of Paddle's <style> text is byte-exact. */
 const CHROME_REPORTED_LOADER_STYLE_HASH = 'sha256-DZJGI9GW1KarnkjWFGQEtAWrfY4TQZwE9gIsAtq6sTk='
 
 const TEST_NONCE = 'dGVzdC1ub25jZS0xMjM='
 
 /**
- * Parse a CSP header string into a directive-name → source-list map.
- *
- * ⚠️ THROWS on a repeated directive name, and that is load-bearing (story 39.2 review).
- * Browsers enforce the FIRST occurrence of a directive and ignore later duplicates; a
- * naive last-wins map does the opposite. So a policy like
- * `script-src <loose>; …; script-src <strict>` would be ENFORCED loose while every
- * `toBe` assertion in this file read the strict copy and passed. Rather than silently
- * pick a winner, refuse to parse — a duplicated directive is never intentional here.
+ * Throws on a repeated directive: browsers enforce the first occurrence, so a
+ * last-wins map would let a loose duplicate pass every assertion.
  */
 function parseCsp(csp: string): Record<string, string> {
   const map: Record<string, string> = {}
@@ -97,7 +82,6 @@ describe('applySecurityHeaders', () => {
       paddleEnvironment: 'production',
     })
     expect(headers.get('Access-Control-Allow-Origin')).toBe('*')
-    // Security headers are still present in dev.
     expect(headers.get('X-Frame-Options')).toBe('DENY')
     expect(headers.get('Content-Security-Policy')).toBe(
       buildContentSecurityPolicy(TEST_NONCE, 'production', true)
@@ -121,9 +105,8 @@ describe('applySecurityHeaders', () => {
       expect(d['frame-ancestors']).toBe(`'none'`)
       expect(d['base-uri']).toBe(`'self'`)
       expect(d['form-action']).toBe(`'self'`)
-      // worker-src MUST be explicit 'self': it falls back to child-src (set for
-      // Paddle frames, no 'self'), not default-src, so the same-origin PWA
-      // service worker would otherwise be blocked (story 7-1).
+      // worker-src must be explicit: it falls back to child-src (no 'self'), not
+      // default-src, so the service worker would otherwise be blocked.
       expect(d['worker-src']).toBe(`'self'`)
       expect(d['manifest-src']).toBe(`'self'`)
     })
@@ -138,21 +121,8 @@ describe('applySecurityHeaders', () => {
       expect(d['script-src']).not.toContain(`'unsafe-inline'`)
     })
 
-    // Story 39.2 review finding (all three review layers, independently). The
-    // `script-src` pin below is necessary and NOT sufficient: `script-src-elem`
-    // OVERRIDES `script-src` for every <script> ELEMENT load, so adding
-    // `script-src-elem 'self' 'unsafe-inline' https://anything` fully reopens inline
-    // element scripts while leaving `script-src` — and therefore that pin — untouched.
-    // Measured: with that directive added, the entire suite passed 26/26, and the e2e
-    // guards missed it too (their regexes need a literal `script-src ` with a trailing
-    // space, which `script-src-elem` does not match).
-    //
-    // `script-src-elem` is also the exact directive named in the dev-console error
-    // story 39.2 investigated, which makes "just add a script-src-elem exception" the
-    // most probable dev-convenience edit anyone will reach for here.
-    //
-    // Pinned as a SET, not an ordered list: CSP attaches no meaning to directive order,
-    // so reordering must not fail, while adding or removing a directive must.
+    // Pinned as a set: `script-src-elem` would override the `script-src` pin for every
+    // <script> element, so adding any directive must fail. Order carries no meaning.
     it('closes the DIRECTIVE SET, so no new script directive can be added alongside script-src (39.2 review)', () => {
       const names = Object.keys(parseCsp(csp ?? '')).sort()
       expect(names).toEqual(
@@ -170,9 +140,7 @@ describe('applySecurityHeaders', () => {
           'object-src',
           'script-src',
           'style-src',
-          // Story 89.1 (D2 (c′)): added deliberately. `style-src-elem` OVERRIDES
-          // `style-src` for <style>/stylesheet loads, so its value is pinned
-          // exactly below, the same discipline as `script-src`.
+          // style-src-elem overrides style-src for <style>/stylesheets, so its value is pinned exactly.
           'style-src-attr',
           'style-src-elem',
           'worker-src',
@@ -180,22 +148,13 @@ describe('applySecurityHeaders', () => {
       )
     })
 
-    // Story 39.2 review finding. `child-src` was the ONE directive with no assertion of
-    // any kind — 14 emitted, 13 pinned, this one mentioned only in a comment. A new
-    // frame/worker host could be added to it unnoticed. The set pin above proves the
-    // NAME is present; only this proves its VALUE.
     it('pins child-src (39.2 review — it was the one directive asserted nowhere)', () => {
       const d = parseCsp(csp ?? '')
       expect(d['child-src']).toBe('https://*.paddle.com')
     })
 
-    // Story 39.2 review finding. The nonce is format-checked before interpolation
-    // (`security-headers.ts:94`); these two hashes are NOT. Because the pin below is
-    // built from the same exported constants, it is tautological over their CONTENT:
-    // a constant carrying `sha256-<real>' https://evil.example 'sha256-<real>` would
-    // authorize an extra host while the pin passes (same string on both sides) and both
-    // drift guards pass (their `toContain` substring is still present). This is the one
-    // assertion here computed independently of what the constants happen to contain.
+    // The pin below is built from the same constants, so only this checks that the
+    // hashes themselves smuggle no extra sources.
     it('constrains every CSP hash constant to a bare sha256 token (39.2 review)', () => {
       const bareSha256 = /^sha256-[A-Za-z0-9+/]{43}=$/
       expect(PLANNER_SCRIPT_CSP_HASH).toMatch(bareSha256)
@@ -204,8 +163,7 @@ describe('applySecurityHeaders', () => {
       expect(PADDLE_LOADER_STYLE_CSP_HASH).toMatch(bareSha256)
     })
 
-    // Story sec-4, D2 (a). Guards a typo or an edited copy of the spinner text; it CANNOT
-    // see Paddle changing its own text (the weekly paddle-drift.yml workflow does).
+    // Guards an edited copy of the spinner text, not Paddle changing its own.
     it("derives the Paddle spinner <style> hash from the committed text, equal to Chrome's live report (sec-4 D2)", () => {
       expect(PADDLE_LOADER_STYLE_TEXT).toHaveLength(270)
       expect(PADDLE_LOADER_STYLE_CSP_HASH).toBe(
@@ -214,34 +172,8 @@ describe('applySecurityHeaders', () => {
       expect(PADDLE_LOADER_STYLE_CSP_HASH).toBe(CHROME_REPORTED_LOADER_STYLE_HASH)
     })
 
-    // Story 39.2, AC-5. Before this, `script-src` was asserted only with
-    // `toContain` / `not.toContain`, so ADDING a source could not fail it: appending
-    // `'unsafe-eval'` to the policy leaves the assertions above green (measured — the
-    // arm is recorded in the story). The only loosening they caught was the literal
-    // string `'unsafe-inline'`.
-    //
-    // Built from the three EXPORTED hash constants, never from pasted base64, so it
-    // tracks the bootstraps instead of stranding when one is edited. Division of
-    // labour: the drift guards below own "the hash matches the script"; the format
-    // guard owns "the hash is a bare sha256 and smuggles nothing"; this one owns
-    // "the source LIST is exactly this and nothing else".
-    //
-    // ⚠️ SCOPE: this pins ONE directive. It is the "closes the DIRECTIVE SET" test
-    // above that stops a NEW script directive (`script-src-elem`, which overrides this
-    // one for element loads) being added alongside it. Neither is sufficient alone — the
-    // first version of this test shipped without the set pin and a
-    // `script-src-elem 'unsafe-inline'` addition passed the whole suite.
-    //
-    // Deliberately brittle: it fails when any script source is added or removed. That
-    // is the intent — adding one is a security decision, and this is where it gets
-    // made rather than noticed later. (Note `https://cdn.paddle.com` is ALREADY
-    // present, so story 5-3 turning Paddle billing on does not by itself trip this.)
-    //
-    // Story 55.1 added the THIRD hash (`ACCOUNT_NOTICE_SCRIPT_CSP_HASH`) and this
-    // test failed until it was listed here — which is the test working as designed,
-    // not an obstacle: a new inline script is exactly the "security decision" the
-    // comment above says must be made at this line. Story 117.2 made the same
-    // decision for the Overview pending-block bootstrap (`OVERVIEW_DATA_SCRIPT_CSP_HASH`).
+    // Deliberately brittle: adding or removing a script source is a security decision
+    // made here. Built from the exported hash constants, never pasted base64.
     it('pins the ENTIRE production script-src, so no source can be added unnoticed (39.2 AC-5)', () => {
       const d = parseCsp(csp ?? '')
       expect(d['script-src']).toBe(
@@ -249,20 +181,8 @@ describe('applySecurityHeaders', () => {
       )
     })
 
-    // Story 89.1 (D2 (c′), Lucas 2026-10-02). MEASURED on the production build
-    // (`89-1-evidence/violations.md`): the app needs no inline style; Paddle.js's
-    // checkout overlay needs inline style ATTRIBUTES (its iframe collapses to a
-    // static 300×150 without them) and its stylesheet from the Paddle CDN. So
-    // attributes keep 'unsafe-inline', and <style> elements / stylesheets are
-    // locked to 'self' + the production Paddle CDN. The base `style-src` is
-    // 'self' 'unsafe-inline' as a LEGACY FALLBACK only (89.1 review, Lucas
-    // 2026-10-02): CSP3 §6.8.3/§6.8.4 run it only when the sub-directive is absent.
-    // All three pinned EXACTLY: adding a source to any of them is a security
-    // decision made here.
-    //
-    // Story sec-4 (AC-3) adds exactly ONE source to `style-src-elem`: the hash of
-    // Paddle.js's overlay spinner <style>. The base `style-src` is UNCHANGED: a hash
-    // there would switch its 'unsafe-inline' off (CSP3 §6.7.3.2).
+    // Pinned exactly. A hash in the base style-src would switch its 'unsafe-inline' off,
+    // so the spinner hash lives only in style-src-elem.
     it('splits styles: elements locked to self + the Paddle spinner hash + the production Paddle CDN, attributes inline (89.1 D2, sec-4)', () => {
       const d = parseCsp(csp ?? '')
       expect(d['style-src']).toBe(`'self' 'unsafe-inline' https://cdn.paddle.com`)
@@ -272,11 +192,8 @@ describe('applySecurityHeaders', () => {
       expect(d['style-src-attr']).toBe(`'unsafe-inline'`)
     })
 
-    // The <style>-element restriction lives in `style-src-elem` ALONE now: the base
-    // `style-src` carries 'unsafe-inline', so a policy that dropped (or emptied)
-    // `style-src-elem` would silently hand <style> elements to the fallback and
-    // REOPEN injected <style> in every CSP3 browser. Pinned in both environments.
-    // Story sec-4: the ONE hash allowed is the Paddle spinner's, exactly once.
+    // Dropping style-src-elem would hand <style> elements to the 'unsafe-inline'
+    // fallback, reopening injected <style> in every CSP3 browser.
     it.each(['production', 'sandbox'] as const)(
       "in %s, <style> elements are refused: style-src-elem is present, has no 'unsafe-inline', nonce, wildcard or other hash (89.1 review, sec-4)",
       (env) => {
@@ -291,8 +208,7 @@ describe('applySecurityHeaders', () => {
         )
         // A hash must never reach the base fallback (it would disable its 'unsafe-inline').
         expect(d['style-src']).not.toMatch(/'sha(256|384|512)-|'nonce-/)
-        // The attribute directive must also be present, or attributes fall back to
-        // the base 'unsafe-inline' (harmless today, but no longer a deliberate pin).
+        // Without style-src-attr, attributes would fall back to the base 'unsafe-inline'.
         expect(d['style-src-attr']).toBe(`'unsafe-inline'`)
       }
     )
@@ -309,19 +225,10 @@ describe('applySecurityHeaders', () => {
       expect(d['frame-src']).toBe('https://*.paddle.com')
       expect(d['img-src']).toBe(`'self' data:`)
       expect(d['font-src']).toBe(`'self' data:`)
-      // Story 25-1 removed all advertising — no ad-network origin survives anywhere.
       expect(csp ?? '').not.toContain('ethicalads')
     })
 
-    // Story 61.1 removed what used to be the FIRST drift guard here, for the
-    // no-flash THEME bootstrap: that script is deleted and the theme is now pure
-    // CSS (`prefers-color-scheme`), so there is nothing left to authorize. The
-    // absence guard below replaces it — a retired hash is silent, not red.
-
-    // Story 35.2 — an inline bootstrap authorized by HASH. Drift guard, recomputed
-    // independently: a future edit to NO_FLASH_PLANNER_SCRIPT that forgets the
-    // policy blocks the script, and a blocked script means the Retirement entry
-    // paints on the first frame for a user who turned it off.
+    // Drift guard, recomputed independently: a blocked bootstrap paints hidden UI on the first frame.
     it('pins the sha256 of the EXACT inline planner-visibility script in script-src (35.2 AC-10)', () => {
       const expectedHash = `sha256-${createHash('sha256')
         .update(NO_FLASH_PLANNER_SCRIPT, 'utf8')
@@ -330,10 +237,6 @@ describe('applySecurityHeaders', () => {
       expect(d['script-src']).toContain(`'${expectedHash}'`)
     })
 
-    // Story 55.1 — the other inline bootstrap. Same drift guard, recomputed
-    // independently: a future edit to NO_FLASH_ACCOUNT_NOTICE_SCRIPT that forgets
-    // the policy blocks the script, and a blocked script means the dismissed
-    // "No account needed" box paints on the first frame for a user who closed it.
     it('pins the sha256 of the EXACT inline account-notice script in script-src (55.1 AC-4)', () => {
       const expectedHash = `sha256-${createHash('sha256')
         .update(NO_FLASH_ACCOUNT_NOTICE_SCRIPT, 'utf8')
@@ -342,9 +245,6 @@ describe('applySecurityHeaders', () => {
       expect(d['script-src']).toContain(`'${expectedHash}'`)
     })
 
-    // Story 117.2 — the Overview pending-block bootstrap. Same drift guard,
-    // recomputed independently: a blocked script means a returning user's
-    // Overview jumps on load again (FR185), in production only.
     it('pins the sha256 of the EXACT inline Overview pending-block script in script-src (117.2)', () => {
       const expectedHash = `sha256-${createHash('sha256')
         .update(NO_FLASH_OVERVIEW_DATA_SCRIPT, 'utf8')
@@ -353,11 +253,7 @@ describe('applySecurityHeaders', () => {
       expect(d['script-src']).toContain(`'${expectedHash}'`)
     })
 
-    // Anti-vacuity: the hashes must be DIFFERENT sources, not one hash asserted
-    // twice. If two scripts were ever collapsed into one constant, their guards
-    // above would both pass while only one bootstrap actually shipped. (Story
-    // 61.1 took this from three to two with the theme bootstrap; story 117.2
-    // back to three with the Overview pending-block bootstrap.)
+    // Anti-vacuity: collapsing two scripts into one constant would pass both guards above.
     it('authorizes three distinct inline script hashes', () => {
       const hashes = [
         NO_FLASH_PLANNER_SCRIPT,
@@ -368,24 +264,12 @@ describe('applySecurityHeaders', () => {
     })
 
     /**
-     * Story 61.1, AC-5 — the RETIRED theme-bootstrap hash must be gone.
-     *
-     * ⚠️ This is the one assertion in this file that exists because its subject
-     * does NOT exist. Deleting a script and leaving its hash in `script-src`
-     * produces no error anywhere: the policy simply authorizes an inline script
-     * nobody ships, which is a standing permission for anyone who can reproduce
-     * that exact body. Nothing else here would notice — the exact-pin test above
-     * would have been "fixed" by pasting the stale hash back in.
-     *
-     * The hash is a LITERAL because its source is deleted; it cannot be
-     * recomputed from a constant that no longer exists. It is the sha256 of the
-     * script body as it shipped at `40cbb08`, verified against that git blob.
+     * A retired hash is a standing, silent permission. Literal because its source script
+     * is deleted and cannot be recomputed.
      */
     it('no longer authorizes the RETIRED theme bootstrap hash (61.1, AC-5)', () => {
       const RETIRED_THEME_HASH = 'sha256-DzWHJTkK2Y+TrJj6ZKlur4j1LNH8wBr/KvpudOrBoWY='
-      // Asserted on the RAW header, not the parsed directive: a stale hash that
-      // somehow landed in a different directive is just as wrong, and this is the
-      // strictly broader check.
+      // Asserted on the raw header: a stale hash in any directive is just as wrong.
       expect(csp ?? '').not.toContain(RETIRED_THEME_HASH)
     })
   })
@@ -400,8 +284,6 @@ describe('applySecurityHeaders', () => {
       expect(production['style-src-elem']).toBe(
         `'self' '${CHROME_REPORTED_LOADER_STYLE_HASH}' https://cdn.paddle.com`
       )
-      // The legacy fallback and the attribute directive, pinned in BOTH environments.
-      // The legacy fallback carries the same Paddle hosts (89.1 review, Lucas).
       expect(sandbox['style-src']).toBe(
         `'self' 'unsafe-inline' https://cdn.paddle.com https://sandbox-cdn.paddle.com`
       )
@@ -409,7 +291,6 @@ describe('applySecurityHeaders', () => {
       for (const d of [sandbox, production]) {
         expect(d['style-src-attr']).toBe(`'unsafe-inline'`)
       }
-      // Every other directive is identical between the two branches.
       const { 'style-src-elem': _s, 'style-src': _sb, ...sandboxRest } = sandbox
       const { 'style-src-elem': _p, 'style-src': _pb, ...productionRest } = production
       expect(sandboxRest).toEqual(productionRest)
@@ -457,12 +338,8 @@ describe('applySecurityHeaders', () => {
     })
   })
 
-  // 89.1 review (Lucas 2026-10-02, option (a)): Vite's error-overlay <style> and HMR
-  // <style> need inline <style> in DEV. A nonce does not work (Vite reads the meta's
-  // `.nonce`, TanStack writes `content`; measured). A PRODUCTION policy never gets it.
-  //
-  // Story sec-4 (AC-3): the DEV list carries NO hash. A hash there would switch its
-  // 'unsafe-inline' off (CSP3 §6.7.3.2) and re-break Vite's <style> elements.
+  // Vite's overlay/HMR <style> needs inline style in dev; a nonce fails (Vite reads the
+  // meta's `.nonce`, TanStack writes `content`). No hash: it would disable 'unsafe-inline'.
   describe("style-src-elem 'unsafe-inline': dev only (89.1 review)", () => {
     it.each(['production', 'sandbox'] as const)(
       "in %s, the DEV policy has 'unsafe-inline' and NO hash in style-src-elem (sec-4)",
@@ -476,7 +353,6 @@ describe('applySecurityHeaders', () => {
         expect(prod['style-src-elem']).toBe(
           `'self' '${PADDLE_LOADER_STYLE_CSP_HASH}' ${paddleStyleHosts(env).join(' ')}`
         )
-        // Nothing else differs between dev and production.
         const { 'style-src-elem': _d, ...devRest } = dev
         const { 'style-src-elem': _p, ...prodRest } = prod
         expect(devRest).toEqual(prodRest)
@@ -497,9 +373,8 @@ describe('applySecurityHeaders', () => {
     })
   })
 
-  // 89.1 review: the start.ts wiring, against the REAL config schema (no stub
-  // resolver). The schema DEFAULTS an unset PADDLE_ENVIRONMENT to 'sandbox', so the
-  // unset case is the one that proves the explicit-env gate is actually wired.
+  // The schema defaults an unset PADDLE_ENVIRONMENT to 'sandbox', so the unset case
+  // proves the explicit-env gate is wired.
   describe('paddleEnvironmentFromProcessEnv (the start.ts wiring, real config)', () => {
     const saved = process.env['PADDLE_ENVIRONMENT']
     const setEnv = (v: string | undefined) => {
@@ -548,7 +423,6 @@ describe('applySecurityHeaders', () => {
     })
 
     it('rejects a non-base64 nonce (CSP-injection guard)', () => {
-      // A `'` would break out of the 'nonce-…' token and inject directives.
       expect(() => buildContentSecurityPolicy(`x' ; script-src *`, 'production', false)).toThrow(
         /base64/
       )
@@ -592,7 +466,6 @@ describe('applySecurityHeaders', () => {
       expect(isCanonicalHttpsRequest('evil.example', SITE)).toBe(false)
       expect(isCanonicalHttpsRequest('longhandbudget.com', SITE)).toBe(false)
       expect(isCanonicalHttpsRequest('www.longhandbudget.com.evil.example', SITE)).toBe(false)
-      // A non-default port is a different origin, so it must not match.
       expect(isCanonicalHttpsRequest('www.longhandbudget.com:8080', SITE)).toBe(false)
     })
 
@@ -619,7 +492,6 @@ describe('applySecurityHeaders', () => {
       })
       expect(headers.get('Strict-Transport-Security')).toBe(STRICT_TRANSPORT_SECURITY)
       expect(STRICT_TRANSPORT_SECURITY).toBe('max-age=31536000; includeSubDomains')
-      // preload intentionally omitted (Lucas's decision — near-irreversible commitment).
       expect(headers.get('Strict-Transport-Security')).not.toContain('preload')
     })
 
@@ -659,9 +531,8 @@ describe('applySecurityHeaders', () => {
       expect(REFERRER_POLICY).toBe('strict-origin-when-cross-origin')
     })
 
-    // Story sec-4 (AC-4, D3). Typed out in full: a change to any feature is a decision
-    // made at this line. `self` is REQUIRED (Permissions Policy §9.7 step 2), and the
-    // frame origin is what Paddle.js's checkout <iframe allow="payment"> loads.
+    // Typed out in full: changing any feature is a decision made here. `self` is
+    // required for the checkout frame to inherit `payment`.
     it('production: payment for self + the production Paddle checkout frame only; the rest denied (sec-4)', () => {
       const headers = new Headers()
       applySecurityHeaders(headers, {
@@ -718,7 +589,6 @@ describe('applyHeadersToNextResult (middleware path)', () => {
     )
     expect(result.response.headers.get('Strict-Transport-Security')).toBe(STRICT_TRANSPORT_SECURITY)
     expect(result.response.headers.get('Access-Control-Allow-Origin')).toBeNull()
-    // Body/result identity is preserved.
     expect(await result.response.text()).toBe('ok')
   })
 

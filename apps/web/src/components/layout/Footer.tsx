@@ -1,55 +1,8 @@
 import { Link } from '@tanstack/react-router'
 
-/**
- * Global application footer (story 4-8; story 9-1, FR27; story 5-13 compliance
- * links; story 21-1 chrome polish).
- *
- * Renders once at the root layout so the in-app "Documentation" link (story
- * 4-10), the in-app "Contact" link (story 9-1, which replaced the old GitHub
- * feedback link from story 4-9), AND the Paddle-required compliance pages
- * (Pricing, Terms, Privacy, Refund — story 5-13) are available on every page.
- *
- * Story 21-1: the developer build version was removed from the footer (it was
- * the only in-UI surface of `APP_VERSION`; the product decision is to drop the
- * in-UI version, superseding the original FR13 / UX-DR5 requirement — the
- * `utils/version` module is retained but no longer rendered). The internal
- * links are TanStack Router `<Link>`s so the current footer page is marked
- * `aria-current="page"` and visually distinguished (UX-DR28). The `aria-current`
- * value and the active-link styling mirror `GlobalNav`; since story 60.2 the
- * MATCHING RULE does not — see below.
- *
- * Story 60.2 (FR92): every link here matches by PREFIX, which is TanStack
- * Router's default when `activeOptions` is omitted. This reverses story 21-1's
- * `activeOptions={{ exact: true }}` on `/docs`, which left the Documentation
- * link unmarked while an individual `/docs/$docId` article was open. The footer
- * reports the SECTION the reader is in, not the exact route: a reader inside an
- * article is in the documentation, and a wayfinding link that will only admit
- * that on the index page tells them where they are not.
- *
- * ⚠️ Do NOT hand-roll a `pathname.startsWith('/docs')` equivalent if this is
- * ever revisited. The router's non-exact test is SEGMENT-AWARE: it requires an
- * exact length match or a `/` at the boundary, so `/docs` matches `/docs/foo`
- * but NOT `/docsomething`. A bare `startsWith` would match both, which is a
- * defect and not merely duplicated logic. That boundary is pinned by a test
- * (`Footer.test.tsx`, "does not mark Documentation current on a path that
- * merely starts with the same characters") rather than trusted to this comment.
- *
- * The rule lives in `@tanstack/react-router` (verified against 1.170.17) in TWO
- * places with identical logic — an SSR branch and a post-hydration client branch
- * in `dist/esm/link.js`. Deliberately no line numbers: the dependency spec is
- * `^1.170.16`, so any range cited here rots on the next install. Search the file
- * for `activeOptions?.exact ?? false` to find them.
- *
- * ⚠️ GlobalNav's root `/` link still needs `exact` and must keep it: every path
- * starts with `/`, so prefix matching would mark Overview active on every page.
- * That is why the flag survives there and not here.
- *
- * Kept deliberately minimal and unobtrusive: small, muted text in a semantic
- * `<footer>` (an implicit `contentinfo` landmark when it is a direct child of
- * the document body).
- */
+// Links match by PREFIX (the router's segment-aware default). Don't hand-roll
+// `startsWith`: it would also match `/docsomething`.
 
-/** Registered route paths the footer links to — a subset of the app's route tree. */
 type FooterPath = '/pricing' | '/docs' | '/terms' | '/privacy' | '/refund' | '/contact'
 
 interface FooterLink {
@@ -66,63 +19,25 @@ const FOOTER_LINKS: readonly FooterLink[] = [
   { label: 'Contact', to: '/contact' },
 ]
 
-// Inactive link style (unchanged from before story 21-1): muted, underlined.
-// Story 96.1 (FR156, D1 44px, D3 grid): below 640px each link fills its grid
-// cell as a 44px-tall flex box with the label centred, so the whole cell is the
-// target (an inline `<a>` ignores `min-height`; as a grid item it is
-// blockified, and `flex` centres the label). All `max-sm:`, so the >= 640px
-// inline links are unchanged. `ACTIVE_LINK_CLASS` (below) sets colour and
-// underline only, so it does not conflict with these box tokens.
+// An inline `<a>` ignores min-height; as a grid item it is blockified.
 const LINK_CLASS =
   'text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 max-sm:flex max-sm:min-h-[44px] max-sm:items-center max-sm:justify-center'
 
-// Active (current-page) style. Reuses the app's green accent (as GlobalNav does)
-// and drops the underline so the current page reads as distinct without the
-// heavier full-background pill — in keeping with the deliberately minimal footer.
-// NB (Tailwind merge order): `activeProps.className` is applied ON TOP of
-// LINK_CLASS, and conflicting utilities resolve by CSS source order, not string
-// order. `green` is emitted after `gray`, so `text-green-*` overrides the base
-// `text-gray-*` in BOTH light and dark; `no-underline` is emitted after
-// `underline`, so it wins. (An intra-`gray` override, e.g. gray-900 over
-// gray-400, would NOT reliably win in dark mode — hence the green accent.)
+// `green` beats the base `gray` by CSS source order, not class order; an
+// intra-gray override would not reliably win in dark mode.
 const ACTIVE_LINK_CLASS =
   'font-medium text-green-700 no-underline hover:text-green-800 dark:text-green-400 dark:hover:text-green-300'
 
 export function Footer() {
   return (
-    // `data-print-hide` (story 30-3): app chrome must not reach paper. Marked on
-    // THIS element rather than matching the bare `footer` tag in the print
-    // stylesheet, because `<footer>` is also used for in-page content elsewhere
-    // (e.g. the forecasting page's data-location disclosure), which a tag
-    // selector would suppress too.
+    // Not a `footer` tag selector in print CSS: `<footer>` is also used for in-page content.
     <footer
       data-print-hide
       className="mt-auto border-t border-gray-200 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400"
     >
-      {/* The dark-mode toggle moved to the consolidated /settings surface
-          (story 11-6). It remains a single global instance there, per story 7-3
-          DECISION 2. */}
-      {/* At 320px this stacks vertically (story 18-2): the base `gap-3` gives the
-          three groups — brand, the legal-link cluster, and copyright —
-          comfortable vertical rhythm. At >=640px `sm:flex-row sm:flex-wrap
-          sm:gap-x-3 sm:gap-y-1` restores the single wrapping row.
-          Story 96.1: the legal links inside are a two-column grid of 44px
-          cells below 640px; the >= 640px row is unchanged. */}
       <div className="flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap sm:gap-x-3 sm:gap-y-1">
-        {/* Brand text node (story 21-1 dropped the trailing build version).
-            Formal form "Longhand Budget" rather than the short "Longhand"
-            (story brand-1, AC-1): this node sits in the footer's legal cluster
-            beside the copyright and the six legal links. */}
         <span>Longhand Budget</span>
-        {/* Legal/nav links grouped as a comfortably-spaced cluster on the 320px
-            stacked layout (story 18-2). `sm:contents` dissolves this wrapper at
-            >=640px (display: contents) so the six links rejoin the outer wrapping
-            row exactly as before — the desktop footer layout is unchanged.
-            Story 96.1 (FR156, D3): below 640px this is a two-column grid,
-            three rows of 44px cells (was a column of 16px links at a 24px
-            pitch). `w-full` because the outer column is `items-center` and
-            would shrink the grid to its content. Under `sm:contents` the box
-            tokens are inert, so >= 640px is unaffected. */}
+        {/* `w-full`: the outer column is `items-center` and would shrink the grid. */}
         <div className="grid w-full grid-cols-2 gap-x-2 sm:contents">
           {FOOTER_LINKS.map((link) => (
             <Link
@@ -135,22 +50,7 @@ export function Footer() {
             </Link>
           ))}
         </div>
-        {/* Copyright notice (story 6-9). The year is computed at render time so
-            it stays correct year over year rather than being hardcoded. Story
-            21-1: `mt-2 sm:mt-0 sm:ml-3` gives it clear separation from the
-            legal-link cluster beyond the uniform inter-group gap — extra top
-            space in the stacked mobile column (UX-DR33) and extra left space in
-            the desktop wrapping row (UX-DR27) — so the copyright reads as a
-            distinct group. The `sm:mt-0` resets the mobile top margin at >=640px
-            so a top-only margin does not nudge the copyright below its siblings'
-            centre in the `items-center` row (kept baseline-aligned).
-            The external author link follows the app's new-tab link convention
-            (target/rel + an aria-label ending in "(opens in a new tab)").
-            suppressHydrationWarning covers the negligible case where an SSR
-            render and client hydration straddle New Year midnight and the year
-            differs — the value still updates, this just silences the warning.
-            Story 96.1 (D5): the author link gets the 44px phone floor too
-            (`max-sm:inline-flex` so `min-height` applies to an inline link). */}
+        {/* suppressHydrationWarning: SSR and hydration can straddle New Year. */}
         <span className="mt-2 sm:ml-3 sm:mt-0" suppressHydrationWarning>
           Copyright {new Date().getFullYear()}{' '}
           <a

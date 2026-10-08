@@ -1,6 +1,3 @@
-/**
- * Story 106.1 (FR174): the limit message names the limit in the user's format.
- */
 import { MAX_MONEY_CENTS } from '@budget-planner/core'
 import { describe, expect, it } from 'vitest'
 import { exceedsMoneyLimit, moneyLimitMessage } from '../money-limit'

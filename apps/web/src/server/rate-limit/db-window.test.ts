@@ -1,16 +1,6 @@
-/**
- * Atomic DB-backed rate limiter tests (Story SEC-2 — AC-3, AC-4, AC-6).
- *
- * The Drizzle `db` is mocked to a controllable fake insert-chain (no database,
- * per project testing rules). The fake captures the values / conflict-target it
- * is handed so the atomic-upsert SHAPE is asserted, and can either return a fixed
- * count, act as a serialised atomic counter (concurrency), or throw (degrade).
- */
-
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 type Mode = 'fixed' | 'atomic' | 'throw' | 'empty'
-/** How the mocked `db.execute` (the sweep) behaves — Story sec-3. */
 type ExecuteMode = 'ok' | 'reject' | 'throwSync' | 'pending'
 
 const state = vi.hoisted(() => ({
@@ -33,8 +23,7 @@ vi.mock('@budget-planner/db', () => {
     subject: 'col:subject',
     windowStart: 'col:windowStart',
     requestCount: 'col:requestCount',
-    // Present so the AC-6 "no userId term" assertion has something to detect.
-    // Without this key `rateLimits.userId` is `undefined` and the guard is vacuous.
+    // Present so the "no userId term" assertion is not vacuous.
     userId: 'col:userId',
   }
   const db = {
@@ -95,12 +84,7 @@ beforeEach(() => {
   __resetReapGateForTests()
 })
 
-/**
- * Flatten a drizzle `SQL` into readable text + its interpolated params.
- *
- * Shape MEASURED, not assumed: `queryChunks` holds StringChunk objects (which
- * carry `value: string[]`) interleaved with the raw interpolated values.
- */
+/** Flatten a drizzle SQL into text + params; queryChunks interleaves StringChunks with raw values. */
 function renderSql(query: unknown): { text: string; params: unknown[] } {
   const chunks = (query as { queryChunks?: unknown[] }).queryChunks ?? []
   let text = ''
@@ -184,7 +168,7 @@ describe('checkDbRateLimit — decision boundary on the returned count (AC-4)', 
 
   it('under a serialised atomic counter, exactly maxAttempts of N concurrent requests pass', async () => {
     // Simulates Postgres serialising the conflicting upserts: each call gets a
-    // unique incremented total. This is what defeats the read-then-write race.
+    // unique incremented total.
     state.mode = 'atomic'
     const maxAttempts = 5
     const results = await Promise.all(
@@ -269,10 +253,9 @@ describe('checkDbRateLimit — DB-error degrade (AC-6)', () => {
   })
 })
 
-// ── Story sec-3: the expired-window reaper (AC-4, AC-5, AC-6) ────────────────
 describe('expired-window reaper', () => {
   const ONE_HOUR_MS = 60 * 60 * 1000
-  const LONGEST_CONFIGURED_WINDOW_MS = 15 * 60 * 1000 // EMAIL_LIMIT, request.ts:32
+  const LONGEST_CONFIGURED_WINDOW_MS = 15 * 60 * 1000 // EMAIL_LIMIT
   const call = (now: number) =>
     checkDbRateLimit({ scope: 'ip', subject: '203.0.113.5', windowMs: 60_000, maxAttempts: 5, now })
 
@@ -283,32 +266,22 @@ describe('expired-window reaper', () => {
     expect(state.captured.executed).toHaveLength(1)
     const { params } = renderSql(state.captured.executed[0])
 
-    // ⚠️ The cutoff must reach the driver as an explicit UTC STRING. A raw
-    // `Date` here bypasses drizzle's column encoder and `pg` serializes it as
-    // LOCAL time with an offset, which PostgreSQL then discards for a
-    // `timestamp without time zone` column — MEASURED to delete every LIVE
-    // bucket under Europe/Berlin (production's region). Asserting on a `Date`
-    // object, as this test first did, is blind to that: the bug lives in the
-    // serialization, not in the value.
+    // Must reach the driver as a UTC string: a raw Date is serialized as local time,
+    // and the timestamp-without-tz column drops the offset.
     const cutoff = params.find((p): p is string => typeof p === 'string' && p.endsWith('Z'))
     expect(cutoff, 'cutoff must be an ISO-8601 UTC string, not a Date').toBeDefined()
     expect(new Date(cutoff as string).getTime()).toBe(now - ONE_HOUR_MS)
     expect(params.some((p) => p instanceof Date)).toBe(false)
 
-    // The invariant that actually matters: a cutoff INSIDE the longest window
-    // would delete live buckets and hand the subject a fresh budget. Note this
-    // compares against a constant copied from `request.ts` — the REAL guard is
-    // the runtime check in `checkDbRateLimit` (see "DISABLES the sweep..."),
-    // because a copy asserted against itself cannot notice the original moving.
+    // A cutoff inside the longest window would delete live buckets. The real guard is
+    // the runtime check in checkDbRateLimit; this constant is a copy.
     expect(now - new Date(cutoff as string).getTime()).toBeGreaterThan(LONGEST_CONFIGURED_WINDOW_MS)
   })
 
   it('compares with a STRICT < so a row exactly AT the cutoff survives (AC-4 boundary)', async () => {
     await call(1_800_000_000_000)
     const { text } = renderSql(state.captured.executed[0])
-    // `<=` would reap a row on the boundary. `<` errs toward keeping a row one
-    // sweep longer, which is the safe direction: over-keeping costs a row,
-    // over-deleting costs a subject its spent budget.
+    // `<` errs toward keeping a boundary row one sweep longer, the safe direction.
     expect(text).toContain('<')
     expect(text).not.toContain('<=')
   })
@@ -317,13 +290,8 @@ describe('expired-window reaper', () => {
     await call(1_800_000_000_000)
     const { params } = renderSql(state.captured.executed[0])
 
-    // ⚠️ MUST assert on `params`, not on the rendered text. Every interpolated
-    // column arrives as a chunk that `renderSql` turns into `$n`, so a column
-    // NAME never appears in the text at all — an assertion like
-    // `expect(text).not.toContain('userId')` passes even with
-    // `AND ${rateLimits.userId} = ...` in the predicate. Review caught this:
-    // the earlier version of this test was vacuous and 20/20 stayed green
-    // against exactly the mutation it claimed to guard.
+    // Assert on params, not text: interpolated columns render as `$n`, so a column
+    // name never appears in the text.
     expect(params).toContain('col:windowStart')
     expect(params).not.toContain('col:userId')
   })
@@ -331,10 +299,8 @@ describe('expired-window reaper', () => {
   it('uses FOR UPDATE SKIP LOCKED so it can never deadlock with erasure (AC-6)', async () => {
     await call(1_800_000_000_000)
     const { text } = renderSql(state.captured.executed[0])
-    // Load-bearing, not an optimisation: `sync` rows carry BOTH a userId and a
-    // windowStart, so the reaper and account.ts's userId delete DO select overlapping rows.
-    // SKIP LOCKED makes the sweep step over rows erasure holds rather than wait
-    // on them, so PostgreSQL can never pick erasure as a deadlock victim.
+    // SKIP LOCKED is load-bearing: sync rows have both userId and windowStart, so the
+    // reaper overlaps erasure's delete and could otherwise deadlock it.
     expect(text).toContain('FOR UPDATE SKIP LOCKED')
   })
 
@@ -345,7 +311,6 @@ describe('expired-window reaper', () => {
     }
     expect(state.captured.executed).toHaveLength(1)
 
-    // ...and sweeps again once the interval has elapsed.
     await call(now + 15 * 60 * 1000 + 1)
     expect(state.captured.executed).toHaveLength(2)
   })
@@ -374,8 +339,7 @@ describe('expired-window reaper', () => {
   it('does not AWAIT the sweep — a sweep that never settles does not delay it (AC-5a)', async () => {
     state.executeMode = 'pending'
     state.fixedCount = 1
-    // If the decision awaited the sweep this would hang and the test would time
-    // out rather than fail — which is itself the signal.
+    // If the decision awaited the sweep this would hang and time out.
     await expect(call(1_800_000_000_000)).resolves.toEqual({ allowed: true, remaining: 4 })
   })
 
@@ -392,7 +356,6 @@ describe('expired-window reaper', () => {
   })
 })
 
-// ── Review round 1: bounds and the self-enforcing cutoff invariant ───────────
 describe('reaper bounds and invariants', () => {
   const call = (now: number, windowMs = 60_000) =>
     checkDbRateLimit({ scope: 'ip', subject: '203.0.113.5', windowMs, maxAttempts: 5, now })
@@ -407,9 +370,8 @@ describe('reaper bounds and invariants', () => {
   })
 
   it('DISABLES the sweep for a caller whose window is longer than the cutoff (AC-4)', async () => {
-    // Otherwise the reaper would delete that caller's LIVE buckets and hand the
-    // subject a fresh budget. Enforced in code, not by a constant copied into a
-    // test — a copy asserted against itself cannot catch a change to the real limit.
+    // Otherwise the reaper would delete that caller's live buckets; enforced in code,
+    // not by a constant copied into a test.
     await call(1_800_000_000_000, 2 * 60 * 60 * 1000)
     expect(state.captured.executed).toHaveLength(0)
     expect(logger.error).toHaveBeenCalledWith(

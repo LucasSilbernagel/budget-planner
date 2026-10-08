@@ -1,26 +1,3 @@
-/**
- * `calculateFinancialForecast` refuses a growth rate outside −100%..+100% and a
- * non-finite starting balance (story 81.1, FR132).
- *
- * ⚠️ The messages are asserted as LITERALS, not through the exported constants,
- * so these tests state the rule independently of the code under test — and so a
- * RED against the pre-81.1 engine reads as "did not throw" / "wrong message",
- * never as "X is not exported" (red for the wrong reason).
- *
- * MEASURED against the pre-81.1 engine (`65ba8fc`), which is what these pin:
- *   - an emptied (NaN) growth rate threw `Amount must be a finite number` when rows
- *     of that kind existed — naming an AMOUNT the user never touched — and was
- *     SILENTLY ACCEPTED when there were none;
- *   - `-1.5` made a row's amount alternate sign year by year (`(1 + rate) ** year`
- *     with a negative base);
- *   - a NaN / ±Infinity starting `savings` or `investments` threw
- *     `Forecast amounts are too large to project` from the running-balance check,
- *     which misdescribes the cause.
- *
- * All of these are safe to run in-process: `years` is guarded before any loop
- * (77.1), and none of these inputs changes the iteration count.
- */
-
 import { describe, expect, it } from 'vitest'
 import {
   type ForecastingScenario,
@@ -99,8 +76,7 @@ describe('the engine refuses an out-of-range or non-numeric growth rate (AC-3)',
     })
   }
 
-  // Fact 2: `[].map(...)` never evaluates the rate, so before 81.1 a NaN rate with
-  // no rows of that kind produced a clean result and a Save that persisted `null`.
+  // `[].map(...)` never evaluates the rate, so a NaN rate with no rows needs its own check.
   it('a NaN income growth rate is refused even with NO income rows', () => {
     expect(
       () => calculateFinancialForecast({ ...DATA, income: [] }, scenario(Number.NaN, 0), 10),
@@ -114,7 +90,6 @@ describe('the engine refuses an out-of-range or non-numeric growth rate (AC-3)',
     ).toThrow(GROWTH_MESSAGE)
   })
 
-  // Every refused value, not only NaN, with NO rows of that kind (81.1 review, P8).
   for (const [label, rate] of bad) {
     it(`income growth ${label} is refused with NO income rows`, () => {
       expect(() =>

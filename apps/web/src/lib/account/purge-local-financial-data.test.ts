@@ -1,25 +1,6 @@
 /**
- * purgeLocalFinancialData tests (Story 10-5, AC-5 — code-review patch)
- *
- * Verifies the on-erasure local cleanup:
- *  - all SEVEN financial Zustand stores are reset + their persisted storage cleared
- *    (categories joined the set in Story 30.4a; the retirement plan in Story 44.1);
- *
- *    ⚠️ EVERY STORE THE UTIL TOUCHES MUST BE MOCKED HERE, and not only for
- *    isolation: an unmocked import runs the REAL store inside an otherwise fully
- *    mocked suite, and — worse — nothing then asserts it was purged at all. Story
- *    44.1 added the retirement plan to the util and this file was not updated, so
- *    deleting that purge left every suite green (found in code review);
- *  - the durable paid-tier sync queue (`bp-sync-queue-<userId>`) is cleared too —
- *    it holds raw financial SyncOperation payloads that would otherwise survive
- *    erasure (the review's HIGH finding);
- *  - the util is best-effort: a throw in one store does NOT abort the rest or the
- *    queue clear, and the util never rejects (it runs after the server already
- *    irreversibly deleted the account).
- *  - story 86.1: when a live sync service is registered for that user, the queue
- *    is cleared THROUGH it (its in-memory queue would otherwise write the cleared
- *    ops back); the fresh `createSyncQueue` is only the fallback. The end-to-end
- *    proof with a real service is `__tests__/purge-live-queue.test.tsx`.
+ * Every store the util touches must be mocked: an unmocked store runs for real and nothing asserts
+ * it was purged.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -116,21 +97,13 @@ describe('purgeLocalFinancialData', () => {
     expect(h.savingsClear).toHaveBeenCalledTimes(1)
     expect(h.profileReset).toHaveBeenCalledTimes(1)
     expect(h.profileClear).toHaveBeenCalledTimes(1)
-    // Story 30.4a: categories are user-authored financial metadata, so they are
-    // purged with the rows they categorize — not kept like a display preference.
     expect(h.categoryReset).toHaveBeenCalledTimes(1)
     expect(h.categoryClear).toHaveBeenCalledTimes(1)
     expect(h.balanceReset).toHaveBeenCalledTimes(1)
     expect(h.balanceClear).toHaveBeenCalledTimes(1)
-    // Story 44.1: the retirement plan holds the user's age, life expectancy and
-    // the income they hope to retire on — personal financial data, so it is
-    // purged, unlike the table sort (a display preference) which deliberately is
-    // not. "Clear local data" that left someone's retirement income behind would
-    // not have cleared their local data.
     expect(h.retirementPlanReset).toHaveBeenCalledTimes(1)
     expect(h.retirementPlanClear).toHaveBeenCalledTimes(1)
 
-    // The durable financial queue must be cleared for THIS user (AC-5 gap fix).
     expect(h.createSyncQueue).toHaveBeenCalledWith('user-9')
     expect(h.queueClear).toHaveBeenCalledTimes(1)
   })
@@ -142,10 +115,8 @@ describe('purgeLocalFinancialData', () => {
 
     await expect(purgeLocalFinancialData('user-9')).resolves.toBeUndefined()
 
-    // Later stores still cleared despite the early throw.
     expect(h.balanceReset).toHaveBeenCalledTimes(1)
     expect(h.balanceClear).toHaveBeenCalledTimes(1)
-    // And the queue clear still ran.
     expect(h.queueClear).toHaveBeenCalledTimes(1)
   })
 
@@ -154,9 +125,6 @@ describe('purgeLocalFinancialData', () => {
     await expect(purgeLocalFinancialData('user-9')).resolves.toBeUndefined()
   })
 
-  // Story 17-2: the same purge now backs the all-users "Clear local data" control.
-  // Free / unauthenticated users have NO userId and NO sync queue, so the queue
-  // step must be skipped rather than build a bogus `bp-sync-queue-undefined` key.
   it('with no userId resets all five stores but does NOT touch the sync queue', async () => {
     await purgeLocalFinancialData()
 
@@ -171,12 +139,10 @@ describe('purgeLocalFinancialData', () => {
     expect(h.balanceReset).toHaveBeenCalledTimes(1)
     expect(h.balanceClear).toHaveBeenCalledTimes(1)
 
-    // No session → no per-user queue → createSyncQueue must never be called.
     expect(h.createSyncQueue).not.toHaveBeenCalled()
     expect(h.queueClear).not.toHaveBeenCalled()
   })
 
-  // Story 86.1 (FR139): the live service's own queue, with the fresh queue as fallback.
   describe('with a live sync service registered (story 86.1)', () => {
     it('clears the queue THROUGH the live service for that user, not a fresh queue', async () => {
       const clearQueue = vi.fn().mockResolvedValue(undefined)
@@ -235,8 +201,6 @@ describe('purgeLocalFinancialData', () => {
   })
 
   it('removes the retirement plans parked for other accounts, and nothing else (story 90.1, D4)', async () => {
-    // This file runs in node (no DOM): a Map-backed stand-in with the Storage
-    // methods the purge uses, including index-based `key()` iteration.
     const items = new Map<string, string>([
       ['budget-planner-retirement-planner-v1:aaaa', '{}'],
       ['budget-planner-retirement-planner-v1:bbbb', '{}'],
@@ -266,11 +230,7 @@ describe('purgeLocalFinancialData', () => {
     expect(h.createSyncQueue).not.toHaveBeenCalled()
   })
 
-  // Story 92.1 (deferred-work, code review of 86-1, LOW #3). The REAL notice store
-  // (not mocked): it is in-memory only, and mocking it would let a missing reset
-  // pass. A dismissal has no getter, so it is observed by behaviour: a dismissed
-  // not-synced notice stays hidden on the next reconcile until the dismissal is
-  // forgotten.
+  // The real notice store: mocking it would let a missing reset pass.
   describe('refusal notices (story 92.1)', () => {
     const refused: RefusalNotice = {
       key: 'incomeSource:gone',
@@ -305,7 +265,6 @@ describe('purgeLocalFinancialData', () => {
       await purgeLocalFinancialData(userId)
 
       expect(getRefusalNotices()).toEqual([])
-      // The dismissal is gone too: the same escalated edit is shown again.
       reconcileNotSyncedNotices([notSynced])
       expect(getRefusalNotices().map((n) => n.key)).toEqual([notSynced.key])
     })

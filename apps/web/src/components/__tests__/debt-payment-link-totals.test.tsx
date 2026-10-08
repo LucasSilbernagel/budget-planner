@@ -1,16 +1,3 @@
-/**
- * Linking a debt to its payment changes no expense figure anywhere (Story 102.1,
- * FR169, AC-9).
- *
- * The link is a pointer stored on the DEBT. The expense it points at stays an
- * ordinary expense: Expenses, net income, the /savings leftover, the Overview and
- * the Report must read exactly the same with the link set or not. Each page is
- * rendered twice over the same data, unlinked then linked, and its whole text is
- * compared, so any figure that moved fails here.
- *
- * (`/balance` is deliberately not in the list: its debt cell is MEANT to change.)
- */
-
 import { renderWithProviders } from '@/test/utils'
 import type React from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -126,10 +113,8 @@ describe('a debt payment link changes no expense figure (Story 102.1, AC-9)', ()
   afterEach(resetStores)
 
   const generatedAt = new Date('2026-10-06T12:00:00.000Z')
-  // Each page's own expense-derived figure, MEASURED from a probe run (code
-  // review: a bare `length > 0` would pass on an empty state or a gate):
-  // 450.00 + 1,500.00 a month = 1,950.00 = 23,400.00 a year, and the /savings
-  // leftover is 5,000.00 − 1,950.00 − 200.00 (the Pension contribution) = 2,850.00.
+  // 450.00 + 1,500.00 a month = 1,950.00 = 23,400.00 a year; the /savings leftover is
+  // 5,000.00 − 1,950.00 − 200.00 (Pension contribution) = 2,850.00.
   it.each([
     ['Expenses', () => <ExpensesPage />, '23,400.00'],
     ['Savings', () => <SavingsPage />, '2,850.00'],

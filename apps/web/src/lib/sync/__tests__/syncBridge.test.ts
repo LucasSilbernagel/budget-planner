@@ -1,14 +1,3 @@
-/**
- * Sync Bridge Tests (Story 5-15)
- *
- * Pins the store ↔ push-queue seam:
- *  - FREE tier (no registered handle) → every helper is a silent no-op, so the
- *    free path makes zero queue/network calls (AC-6).
- *  - PAID tier (registered handle) → create/update/delete enqueue ops with the
- *    server-shaped payload, the SESSION userId (never the local free-tier one),
- *    and a baseVersion derived from the pre-edit `updatedAt` (AC-5 / 4-18 D1).
- */
-
 import type { SyncEntityType } from '@budget-planner/core/sync'
 import {
   RETIREMENT_PLAN_STRING_MAX,
@@ -28,9 +17,7 @@ import {
 
 const SESSION_USER_ID = '550e8400-e29b-41d4-a716-446655440000'
 
-// Each mock takes the REAL handle signature, so `mock.calls[i]` is typed by it.
-// Untyped, `vi.fn(async () => {})` records zero parameters and every read of a
-// call's argument was a type error hidden behind a cast (story 78.2).
+// Typed with the real handle signature so `mock.calls[i]` is typed.
 function makeHandle() {
   return {
     userId: SESSION_USER_ID,
@@ -41,11 +28,8 @@ function makeHandle() {
 }
 
 /**
- * A store row as the bridge receives it. `ClientEntity` declares only `id` and
- * `updatedAt` on purpose (the bridge reads domain fields through a record view),
- * so a fresh literal carrying domain fields trips the excess-property check.
- * Stores hand the bridge typed rows, never literals; passing the fixture
- * through this generic mirrors that and keeps every field's own type.
+ * `ClientEntity` declares only `id` and `updatedAt`, so a fresh literal trips the
+ * excess-property check; this generic keeps each field's own type.
  */
 const row = <T extends { id: string; updatedAt?: string }>(entity: T): T => entity
 
@@ -65,7 +49,6 @@ describe('syncBridge — free tier (no handle registered)', () => {
     expect(isSyncActive()).toBe(false)
 
     const income = { id: 'inc-1', userId: 0, name: 'Salary', amount: 1000, frequency: 'monthly' }
-    // Must not throw and must not attempt to queue anything.
     expect(() => syncEntityCreate('incomeSource', income)).not.toThrow()
     expect(() => syncEntityUpdate('incomeSource', income)).not.toThrow()
     expect(() => syncEntityDelete('incomeSource', income)).not.toThrow()
@@ -99,9 +82,7 @@ describe('syncBridge — paid tier (handle registered)', () => {
       name: 'Salary',
       amount: 500000,
       frequency: 'monthly',
-      // Story 30.4a: forwarded ALWAYS, including null — updateEntity does a
-      // partial .set(), so omitting the key would leave a stale server-side
-      // category and un-categorizing would never propagate.
+      // Forwarded always, including null: a partial `.set()` would otherwise keep a stale category.
       categoryId: null,
       userId: SESSION_USER_ID,
     })
@@ -127,8 +108,6 @@ describe('syncBridge — paid tier (handle registered)', () => {
           name: 'Car',
           targetAmount: 200000,
           currentBalance: 5000,
-          // Story 26.1: the allocation mode is always forwarded; a manual amount
-          // is forwarded when present.
           allocationMode: 'manual',
           monthlyAllocation: 30000,
           userId: SESSION_USER_ID,
@@ -149,16 +128,11 @@ describe('syncBridge — paid tier (handle registered)', () => {
           name: 'Brokerage',
           currentBalance: 10000,
           monthlyContribution: 500,
-          // Story 16-2: the contribution cadence MUST be forwarded, else the server
-          // defaults every synced entry to 'monthly' and non-monthly picks are lost.
+          // Must be forwarded, else the server defaults every synced entry to 'monthly'.
           frequency: 'biweekly',
-          // Story 45.1 (FR72): stamped false when the row omits it. The server's
-          // `.default(false)` does NOT reach the stored row — `syncOperationSchema`
-          // validates `data` in a superRefine that DISCARDS its parse result — so
-          // the wire value is whatever the bridge sends and nothing else.
+          // The server's `.default(false)` never reaches the row: the superRefine discards its parse result.
           contributionRecordedAsExpense: false,
-          // Story 102.1 (FR169): the debt-payment link, emitted as an explicit
-          // null when unlinked so an unlink lands (partial `.set()`).
+          // Explicit null when unlinked so an unlink lands through the partial `.set()`.
           paymentExpenseId: null,
           userId: SESSION_USER_ID,
         },
@@ -169,13 +143,8 @@ describe('syncBridge — paid tier (handle registered)', () => {
         expected: { name: 'Main', isDefault: true, currency: 'EUR', userId: SESSION_USER_ID },
       },
       {
-        // Story 30.4a. `kind` separates the income and expense namespaces —
-        // without it a synced category is unplaceable server-side. Note this
-        // case ALSO guards the switch shape: `userProfile` used to be the bare
-        // `default:` arm, so a new entity type silently inherited its payload
-        // (shipping `isDefault`/`currency`, both of which survive the strip
-        // gate). If this expectation ever starts matching userProfile's shape,
-        // the named case has been lost.
+        // `kind` separates the income and expense category namespaces. Also guards that
+        // `userProfile` keeps its own case rather than inheriting this payload.
         type: 'category',
         entity: { id: 'cat-1', name: 'Groceries', kind: 'expense', isDeleted: false },
         expected: { name: 'Groceries', kind: 'expense', userId: SESSION_USER_ID },
@@ -198,17 +167,12 @@ describe('syncBridge — paid tier (handle registered)', () => {
     } as { id: string })
     const payload = handle.queueCreate.mock.calls[0][2]
     expect(payload.allocationMode).toBe('automatic')
-    // An automatic account has no manual amount — the nullable column is forwarded
-    // as an EXPLICIT null (not omitted) so a manual→automatic switch resets it on
-    // the server + other devices (review 26-1 P1). Both gates are .nullable().
     expect('monthlyAllocation' in payload).toBe(true)
     expect(payload.monthlyAllocation).toBeNull()
   })
 
   it('a manual→automatic UPDATE forwards monthlyAllocation: null so the server clears the stale amount (Story 26.1, review P1)', () => {
-    // The account was manual with 30000¢; the user switched it to automatic, which
-    // sets the local monthlyAllocation to null. The UPDATE payload MUST carry the
-    // explicit null, or updateEntity's partial `.set()` leaves the stale 30000¢.
+    // The UPDATE must carry the explicit null, or the partial `.set()` leaves the stale 30000¢.
     syncEntityUpdate(
       'savingsGoal',
       {
@@ -236,18 +200,7 @@ describe('syncBridge — paid tier (handle registered)', () => {
     expect(payload.monthlyAllocation).toBeNull()
   })
 
-  /**
-   * Story 49.1 (FR75). Replaces 'omits an absent optional maxContributionLimit',
-   * which proved the bridge's one conditional forwarding rule. The field is gone
-   * from all five gates, so that rule is gone with it and the branch it guarded
-   * no longer exists.
-   *
-   * ⚠️ Asserted as the EXACT key set, not as `'maxContributionLimit' in payload
-   * === false`. That absence check would now pass against ANY payload forever —
-   * including one that silently stopped forwarding `frequency` or `sortOrder`.
-   * The exact set reddens on a re-added key AND on a dropped one, which is the
-   * property the partial-`.set()` hazard in `syncBridge.ts` actually needs.
-   */
+  /** Exact key set: an absence check would pass forever, even if a field stopped being forwarded. */
   it('puts exactly the balanceTracking columns on the wire, and no retired ones', () => {
     syncEntityCreate(
       'balanceTracking',
@@ -267,7 +220,6 @@ describe('syncBridge — paid tier (handle registered)', () => {
         'currentBalance',
         'monthlyContribution',
         'contributionRecordedAsExpense',
-        // Story 102.1 (FR169): always on the wire (null when unlinked).
         'paymentExpenseId',
         'frequency',
         'sortOrder',
@@ -348,7 +300,6 @@ describe('syncBridge — paid tier (handle registered)', () => {
         })
       )
     ).not.toThrow()
-    // Allow the rejected promise's .catch to settle.
     await Promise.resolve()
   })
 })
@@ -362,13 +313,8 @@ describe('syncBridge — an asset row reaches the queue (Story 43.4, gate 2 fals
   })
 
   it('forwards an asset balanceTracking row to queueCreate without dropping it', () => {
-    // ⚠️ THE DIRECT FALSIFIER for the silent-drop path. If any gate rejected
-    // `type: 'asset'`, `syncOperationDataSchema.parse` would throw inside
-    // `queueCreate` BEFORE `queue.add`, and `onQueueError` would swallow it into a
-    // bare console.error — the row persists locally and never leaves the device,
-    // with no toast, no error state and nothing in the sync UI. Parsing the schema
-    // directly (as `finance-type-gates.test.ts` does) proves the SCHEMA; this
-    // proves the BRIDGE actually hands the row on.
+    // If any gate rejected `type: 'asset'`, `onQueueError` would swallow it and the row
+    // would silently never leave the device.
     syncEntityCreate(
       'balanceTracking',
       row({
@@ -388,16 +334,13 @@ describe('syncBridge — an asset row reaches the queue (Story 43.4, gate 2 fals
       currentBalance: 40_000_000,
       monthlyContribution: 0,
       frequency: 'monthly',
-      // Story 45.1 (FR72): stamped false rather than omitted — see below.
       contributionRecordedAsExpense: false,
-      // Story 102.1: an asset is never linked, so the explicit null.
       paymentExpenseId: null,
       sortOrder: 0,
       userId: SESSION_USER_ID,
     })
   })
 
-  // --- Story 45.1 (FR72), AC-10 gate 3: the bridge payload ------------------
   it('forwards contributionRecordedAsExpense: true on an investment row', () => {
     syncEntityCreate(
       'balanceTracking',
@@ -421,12 +364,8 @@ describe('syncBridge — an asset row reaches the queue (Story 43.4, gate 2 fals
   })
 
   it('STAMPS the flag false when the row omits it, so the key is always on the wire', () => {
-    // ⚠️ This is the assertion that makes `?? false` load-bearing rather than
-    // defensive noise. `JSON.stringify` DROPS an `undefined`-valued key and
-    // `updateEntity` does a PARTIAL `.set()`, so an unstamped row would leave the
-    // previous server value in place — a user unticking the box on one device
-    // would see the change never land anywhere else. `toHaveProperty` is the
-    // point here: asserting `toBe(false)` alone passes on an absent key too.
+    // `JSON.stringify` drops undefined keys and `updateEntity` is partial, so the key must be
+    // present; `toBe(false)` alone passes on an absent key.
     syncEntityCreate(
       'balanceTracking',
       row({
@@ -447,11 +386,6 @@ describe('syncBridge — an asset row reaches the queue (Story 43.4, gate 2 fals
   })
 })
 
-/**
- * Story 99.2 (G11): the retirement plan's payload. DORMANT in 99.2 (no app code
- * queues one; story 99.3 adds the push), but compile-forced by the `never`
- * default, and pinned here so the case cannot ship wrong.
- */
 describe('toServerPayload — retirementPlan (story 99.2)', () => {
   const PLAN = {
     currentAgeInput: '',
@@ -501,9 +435,8 @@ describe('toServerPayload — retirementPlan (story 99.2)', () => {
   })
 
   it('an over-long string is clamped to the push gate’s bound, so the payload is always pushable (99.2 review)', () => {
-    // The plan's inputs have no maxLength and localStorage is user-editable, so a
-    // string past RETIREMENT_PLAN_STRING_MAX is reachable. Unclamped, core's G2
-    // gate throws a ZodError on every push of that plan, and it never syncs.
+    // The inputs have no maxLength and localStorage is user-editable; an unclamped string
+    // would fail core's gate on every push.
     const long = '9'.repeat(RETIREMENT_PLAN_STRING_MAX + 45)
     const payload = toServerPayload(
       'retirementPlan',
@@ -519,9 +452,8 @@ describe('toServerPayload — retirementPlan (story 99.2)', () => {
   })
 
   it('a NUL, a lone surrogate, or a clamp through a surrogate pair still yields a pushable payload (99.2 review)', () => {
-    // jsonb refuses a NUL and a lone surrogate, so the gate refuses them too; the
-    // bridge must therefore never PRODUCE one, including by cutting an emoji in two
-    // at the length bound (255 is odd, so 200 pairs are cut mid-pair).
+    // jsonb refuses a NUL and a lone surrogate. 255 is odd, so 200 pairs are cut mid-pair
+    // at the length bound.
     const emoji = '😀'.repeat(200)
     const payload = toServerPayload(
       'retirementPlan',

@@ -1,11 +1,5 @@
 import { DOC_PAGES } from '../../content/docs'
 
-/**
- * Documentation index listing (story 4-10, AC-1).
- *
- * Shows a card for every documentation page so readers can navigate to any
- * section from `/docs`.
- */
 export function DocsIndex() {
   return (
     <section className="rounded-lg surface p-6 shadow-md">
@@ -13,9 +7,7 @@ export function DocsIndex() {
       <ul className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {DOC_PAGES.map((page) => (
           <li key={page.slug}>
-            {/* `.surface-interactive` bakes its own hover in — writing
-                `hover:surface-inset` here would compile, lint and type-check
-                cleanly and be a silent no-op (`global.css:82-97`). */}
+            {/* .surface-interactive has its own hover; a hover:surface-inset here would be a silent no-op. */}
             <a
               href={`/docs/${page.slug}`}
               className="block h-full rounded-lg surface-interactive p-4 transition-colors"

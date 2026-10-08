@@ -11,23 +11,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, renderWithRouter, screen, userEvent, waitFor } from '@/test/utils'
 import { GlobalNav } from '../GlobalNav'
 
-/**
- * GlobalNav behaviour below the browser (story 84.3, FR137).
- *
- * These tests replace the e2e specs that drove the More disclosure's dismissal
- * rules, its route-change close, its `lg` close and the row copies' "you are
- * here" in Chromium (`global-nav`, `nav-more-disclosure`, `nav-lg-row`). Each
- * was proven by ONE mutation that turned the old e2e test AND its replacement
- * here RED (`84-3-evidence/mutations.log`).
- *
- * ⚠️ What jsdom cannot show, and so is NOT claimed here: whether the panel is
- * painted (no stylesheet), real hit-testing (`elementFromPoint`), and native
- * `<summary>` keyboard activation (D4 of 84.3: platform behaviour).
- *
- * ⚠️ jsdom 24 has no `PointerEvent`. `fireEvent.pointerDown/Up/Cancel` then
- * dispatch a plain `Event` of that type, which is enough: the nav's document
- * handlers read only `event.target`.
- */
+// jsdom has no PointerEvent; fireEvent dispatches a plain Event, which is enough because
+// the nav's handlers read only `event.target`.
 
 const NAV = 'nav[aria-label="Primary"]'
 
@@ -42,12 +27,7 @@ function parts() {
   return { nav, details, summary, panel }
 }
 
-/**
- * GlobalNav in a router with REAL child routes, so a navigation changes the
- * pathname. `renderWithRouter` builds a root-only tree that can only seed a
- * first location. Page content outside the nav: a focusable button and an
- * inert paragraph.
- */
+// Real child routes so a navigation changes the pathname; `renderWithRouter` only seeds one.
 function renderNavInApp(path = '/') {
   // jsdom has no `window.scrollTo`; TanStack's scroll restoration calls it.
   window.scrollTo = (() => {}) as typeof window.scrollTo
@@ -126,7 +106,6 @@ describe('GlobalNav — light dismiss (stories 31.5, 59.2)', () => {
     fireEvent.pointerDown(screen.getByTestId('inert'))
     fireEvent.pointerUp(panel)
 
-    // Give a wrong close every chance to land before asserting it did not.
     await act(async () => {})
     expect(details.open, 'a release inside the nav dismissed the panel').toBe(true)
   })
@@ -154,19 +133,14 @@ describe('GlobalNav — light dismiss (stories 31.5, 59.2)', () => {
     // A touch that turned into a scroll: pointerdown, pointercancel, no pointerup.
     fireEvent.pointerDown(outside)
     fireEvent.pointerCancel(outside)
-    // A later stray release must not complete that gesture.
     fireEvent.pointerUp(outside)
 
     await act(async () => {})
     expect(details.open, 'a cancelled gesture left the outside-press flag armed').toBe(true)
   })
 
-  /**
-   * The controlled `onClick` exists so the listeners are armed by the time the
-   * user's next input can arrive. Left native, the DOM opens at once but state
-   * follows only on the async `toggle` task, and a press in between is lost.
-   * One microtask checkpoint and no task boundary, as in the old e2e test.
-   */
+  // Left native, the DOM opens at once but state follows only on the async `toggle` task,
+  // so a press in between is lost.
   it('an outside press in the SAME task as the opening click still dismisses', async () => {
     renderNavInApp()
     await screen.findByRole('navigation', { name: /primary/i })
@@ -208,7 +182,7 @@ describe('GlobalNav — closes on any navigation (story 31.5 review)', () => {
 })
 
 describe('GlobalNav — the free More closes when the window widens into lg (story 69.3)', () => {
-  /** A controllable `matchMedia`; jsdom has none, and the nav skips its listener without one. */
+  /** jsdom has no `matchMedia`, and the nav skips its listener without one. */
   function stubMatchMedia() {
     const listeners = new Set<(event: { matches: boolean }) => void>()
     const mql = {
@@ -234,10 +208,9 @@ describe('GlobalNav — the free More closes when the window widens into lg (sto
     const media = stubMatchMedia()
     renderWithRouter(<GlobalNav />)
     await screen.findByRole('navigation', { name: /primary/i })
-    // Anti-vacuity: the nav really subscribed (an unstubbed run would skip it).
+    // Anti-vacuity: the nav really subscribed.
     expect(media.listenerCount(), 'the nav never listened for lg').toBe(1)
-    // The stub answers any query, so the query itself is pinned: `lg` is 1024px
-    // (the old e2e crossed 1023 → 1024).
+    // The stub answers any query, so pin the query itself.
     expect(media.matchMedia).toHaveBeenCalledWith('(min-width: 1024px)')
     await openWithClick()
 
@@ -263,8 +236,7 @@ describe('GlobalNav — the lg row copies mark "you are here" (story 69.3)', () 
     expect(row, `no ${label} row copy`).not.toBeNull()
     await waitFor(() => expect(row).toHaveAttribute('aria-current', 'page'))
     expect(row).toHaveAttribute('href', path)
-    // BOTH copies are current (a browser renders one of them per width), and
-    // nothing else is: the sheet copy carries the cue below lg.
+    // Both copies are current: a browser renders only one of them per width.
     const current = [...nav.querySelectorAll('a[aria-current="page"]')].map((a) =>
       a.getAttribute('href')
     )

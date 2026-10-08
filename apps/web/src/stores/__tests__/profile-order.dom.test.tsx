@@ -1,17 +1,6 @@
 /**
- * Profiles read oldest → newest through the REAL store (story 98.1, FR159, AC 4-5).
- *
- * ⚠️ WHY THROUGH THE STORE, NOT JUST THE COMPARATOR. The store ARRAY reorders on
- * several paths: `applyOne` merges a pulled row by REMOVE-THEN-APPEND (profiles
- * are not in `ORDERED_ENTITY_TYPES`, so nothing re-sorts them), a fresh device's
- * pull arrives in `updatedAt` order, `addProfile` appends, and a rehydrated blob
- * keeps whatever order it was saved in. The fix sorts at the READ boundary
- * (`useProfiles`), so these tests drive each path and then assert what a CONSUMER
- * reads, via `renderHook(useProfiles)` and one `ProfileList` render (card order).
- *
- * Each pulled-path test also asserts the raw store ARRAY is out of order first:
- * that is the positive control proving the path really reorders, so a green
- * consumer assertion is not vacuous.
+ * The store array reorders on several paths (remove-then-append pull, append, rehydrate), so these
+ * assert what a consumer reads, after first asserting the raw array really is out of order.
  */
 
 import { ProfileList } from '@/components/profiles/profile-list'
@@ -95,7 +84,6 @@ describe('profiles read oldest → newest through the real store (story 98.1)', 
   })
 
   it('a fresh device pulling in updatedAt order reads by createdAt', () => {
-    // Store starts at the bootstrap placeholder; the pull replaces it.
     applyServerChangesToStores(
       [
         pulled(NEWEST, '2026-04-01T00:00:00.000Z'),

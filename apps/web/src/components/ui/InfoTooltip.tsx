@@ -1,28 +1,8 @@
-/**
- * Extracted from `HomePage` by story 32.1: the Income and Expenses pages show
- * the same normalization disclosure, and this was about to become its third
- * copy. Behaviour is unchanged from the dashboard's hardened version.
- */
-
 import React, { useState, useId, useRef, useEffect } from 'react'
 
 /**
- * Small accessible info affordance (story 11-4). Reveals a plain-language
- * explanation on hover or keyboard focus — progressive disclosure — instead of
- * leading the card with a bare, jargon-y sub-line.
- *
- * Accessibility (hardened in code review):
- * - Hover and focus are tracked independently (`open = hovered || focused`) so a
- *   mouse-leave never hides a tooltip the keyboard user still has focused, and a
- *   blur never hides one the mouse is still over. Escape dismisses without moving
- *   focus.
- * - A short close delay plus hover handlers on the bubble let the pointer travel
- *   from the trigger onto the bubble without it vanishing, so the content stays
- *   hoverable (WCAG 1.4.13).
- * - The bubble is rendered only while open and positioned `fixed` with its left
- *   clamped to the viewport, so it can neither contribute to horizontal overflow
- *   nor clip off-screen at 320px regardless of which card edge the icon sits near.
- * - `aria-describedby` is wired only while the bubble exists.
+ * Hover and focus are tracked independently so neither hides a tooltip the other still holds.
+ * Rendered only while open, `fixed` and clamped to the viewport so it never causes overflow at 320px.
  */
 export function InfoTooltip({ label, text }: { label: string; text: string }): React.ReactElement {
   const [hovered, setHovered] = useState(false)
@@ -44,8 +24,6 @@ export function InfoTooltip({ label, text }: { label: string; text: string }): R
     closeTimer.current = setTimeout(() => setHovered(false), 120)
   }
 
-  // Position the bubble in viewport space, clamped so it never overflows either
-  // edge. Runs after the trigger is laid out and whenever the tooltip opens.
   useEffect(() => {
     if (!open || !triggerRef.current) return
     const rect = triggerRef.current.getBoundingClientRect()

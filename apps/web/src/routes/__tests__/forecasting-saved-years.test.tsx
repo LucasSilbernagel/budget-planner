@@ -7,21 +7,8 @@ import { useIncomeStore } from '../../stores/incomeStore'
 import { useProfileStore } from '../../stores/profileStore'
 import { Route } from '../forecasting'
 
-/**
- * Reopening a saved forecast whose `years` is out of range (story 77.1, FR124).
- *
- * ⚠️⚠️ THE DEFECT: `mapToSavedForecast` accepted any finite `years >= 1`, with no
- * upper bound and no integer check. A saved `years` of 1e9 seeded the builder,
- * whose mount-time debounced recompute then ran the engine for a billion years and
- * froze the tab ON OPEN. A field guard cannot see this path: nobody typed anything.
- *
- * ⚠️ THE ENGINE IS MOCKED, and it has to be. On a build without the fix, the real
- * engine called with 1e9 would hang THIS test run, not fail it (a sync loop blocks
- * vitest's own timeout). The fake below records every `years` it receives and only
- * runs the real engine for a value it can finish; the assertion is on the RECORD.
- * The in-range test is written with a plain integer check rather than core's
- * `isValidForecastYears`, so it states the rule independently of the code under test.
- */
+// The engine is mocked: on a build without the fix, a real 1e9-year run would hang
+// the test run (a sync loop blocks vitest's timeout) rather than fail it.
 
 const engineYears = vi.hoisted(() => [] as unknown[])
 const engineSavings = vi.hoisted(() => [] as unknown[])
@@ -114,20 +101,15 @@ describe('a saved forecast with an out-of-range years reopens at the default per
 
       fireEvent.click(await screen.findByRole('tab', { name: /my forecasts/i }))
       const loadButton = await screen.findByRole('button', { name: 'Edit Long plan' })
-      // Only calls made AFTER the load count (review P4): the builder mounted on
-      // first render may already have computed its own default period.
+      // Only calls after the load count: the builder may have computed its default on mount.
       const callsBeforeLoad = engineYears.length
       fireEvent.click(loadButton)
 
-      // The mechanism first (review P4): the reopened field must show the
-      // default, so a filter regression reads "expected 1000000000 to be 10".
-      // Re-queried inside waitFor so a pre-load element cannot answer.
       await waitFor(() =>
         expect(screen.getByLabelText('Projection Period (years)')).toHaveValue(10)
       )
       expect(screen.getByDisplayValue('Long plan')).toBeInTheDocument()
-      // The loaded builder's mount-time debounced recompute (500 ms) must have
-      // run, or the record below proves nothing.
+      // The mount-time debounced recompute must have run, or the record below proves nothing.
       await waitFor(() => expect(engineYears.length).toBeGreaterThan(callsBeforeLoad), {
         timeout: 3000,
       })
@@ -139,8 +121,6 @@ describe('a saved forecast with an out-of-range years reopens at the default per
         ),
         'every years the engine was called with must be a whole number 1-30'
       ).toEqual([])
-      // Review P1: only `years` is replaced. The row's own savings must survive,
-      // or the reopened forecast silently re-baselines to 0.
       expect(engineSavings.slice(callsBeforeLoad).at(-1), 'saved savings kept').toBe(123_400)
       const field = screen.getByLabelText('Projection Period (years)')
       expect(
@@ -157,8 +137,6 @@ describe('a saved forecast with an out-of-range years reopens at the default per
     fireEvent.click(await screen.findByRole('button', { name: 'Edit Long plan' }))
 
     expect(await screen.findByLabelText('Projection Period (years)')).toHaveValue(25)
-    // Story 120.2 (AC 3): Edit switches back to the builder, and the tab selection
-    // and roving tabIndex follow the programmatic switch.
     const builderTab = screen.getByRole('tab', { name: /scenario builder/i })
     expect(builderTab).toHaveAttribute('aria-selected', 'true')
     expect(builderTab.tabIndex).toBe(0)

@@ -1,20 +1,5 @@
-/**
- * Migration preflight CLI (Story 5-4, AC-4) — the abort-before-migrate gate.
- *
- * Run immediately before `drizzle-kit migrate` in the production deploy
- * pipeline:
- *
- *   pnpm --filter @budget-planner/db db:migrate:preflight
- *
- * Exits 0 only when `assessMigrateSafety` proves the target is either a clean
- * slate or a journal-tracked database. Any other shape — most importantly a
- * `drizzle-kit push`-built database (deferred-work:643) — exits 1, which aborts
- * the deploy before a single migration statement runs.
- *
- * The database URL is validated by the SAME sovereignty and TLS policy the app
- * uses (`isEuSovereignDbHost` / `buildDbSsl` from ./client), so the preflight
- * can never reach a host the application itself would refuse (NFR1, NFR2).
- */
+// Exits 0 only for a clean slate or a journal-tracked database; anything else (e.g. a
+// `drizzle-kit push`-built one) aborts the deploy before any migration runs.
 
 import process from 'node:process'
 import { Pool } from 'pg'
@@ -25,24 +10,12 @@ import {
   isInClusterDbHost,
   isRelaxedDbEnv,
 } from './client'
-// The preflight runs in the same place, against the same endpoint, as the
-// migration it gates — so it shares one TLS posture with it by construction.
-// Since Story 5.18 that place is INSIDE the cluster, so the posture is plain
-// verify-full: the 5.17 hostname waiver existed only for the public endpoint and
-// went away with it. `migrate-preflight.ts` and its classification logic are
-// untouched by either story.
 import { buildMigrationCredentials } from './migrate-credentials'
 import { type DbShape, assessMigrateSafety } from './migrate-preflight'
 
-/** Postgres journal written by drizzle-kit: schema `drizzle`, table `__drizzle_migrations`. */
 const JOURNAL = 'drizzle.__drizzle_migrations'
 
-/**
- * `count(*)` comes back from `pg` as a string (bigint is not JS-safe by
- * default), so parse explicitly. Anything unparseable becomes NaN and is
- * rejected downstream by `assessMigrateSafety`'s fail-closed sanity check
- * rather than being coerced to a plausible-looking 0.
- */
+/** `count(*)` arrives as a string; unparseable becomes NaN and fails closed downstream. */
 function toCount(value: unknown): number {
   if (typeof value === 'number') {
     return value
@@ -65,11 +38,7 @@ async function probe(pool: Pool): Promise<DbShape> {
     ? toCount((await pool.query<{ n: string }>(`select count(*) as n from ${JOURNAL}`)).rows[0]?.n)
     : 0
 
-  // Count real tables in EVERY non-system schema, not just `public`. Code review
-  // 2026-09-03: a database whose tables live in another schema reported 0 and was
-  // classified `empty` / safe — the exact hazard this guard exists to catch, just
-  // outside its field of view. `drizzle` is excluded because it holds the journal
-  // itself; counting it would make a genuinely clean slate look populated.
+  // Count every non-system schema, not just `public`; `drizzle` holds the journal itself.
   const userTables = await pool.query<{ n: string }>(
     `select count(*) as n from information_schema.tables
       where table_type = 'BASE TABLE'
@@ -85,13 +54,7 @@ async function probe(pool: Pool): Promise<DbShape> {
   }
 }
 
-/**
- * ops-2, AC-7(a): the session TimeZone this (pinned) connection runs with, for the
- * log line only. It is the production witness that the startup-parameter pin took
- * effect on the real server. LOG-ONLY, never part of the verdict: a failure to
- * read it prints `unknown` and changes nothing (a DB setting must not become a
- * migration gate).
- */
+/** Log-only witness that the UTC pin took effect; never part of the verdict. */
 async function readSessionTimeZone(pool: Pool): Promise<string> {
   try {
     const result = await pool.query<{ tz: string }>("select current_setting('TimeZone') as tz")
@@ -117,8 +80,6 @@ async function main(): Promise<number> {
     return 1
   }
 
-  // Same fail-closed rule as the application's pool: only an explicit
-  // development/test NODE_ENV may point at a non-DanubeData host.
   if (!isRelaxedDbEnv(nodeEnv)) {
     if (!isEuSovereignDbHost(host)) {
       console.error(
@@ -127,9 +88,7 @@ async function main(): Promise<number> {
       return 1
     }
 
-    // Story 5.18: migrations are in-cluster only. `buildMigrationCredentials`
-    // enforces this too and is the real gate; checking it here as well is what
-    // turns an opaque constructor throw into a message that names the problem.
+    // `buildMigrationCredentials` enforces this too; checking here gives a readable message.
     if (!isInClusterDbHost(host)) {
       console.error(
         `[migrate-preflight] Refusing to migrate over the public endpoint "${host}". Migrations run in-cluster only, over internal DNS (ADR-001; public-DNS window retired by Story 5.18).`
@@ -138,34 +97,18 @@ async function main(): Promise<number> {
     }
   }
 
-  // ⚠️⚠️ DECOMPOSED credentials, never `connectionString`. Passing the raw URL
-  // here let a `?sslmode=` parameter in it OVERRIDE the `ssl` option built
-  // below — silently discarding the CA. Observed in a
-  // real run on 2026-09-08: a `?sslmode=require` URL failed with "self-signed
-  // certificate in certificate chain" while DATABASE_CA_CERT was correctly set,
-  // because `pg-connection-string` now maps 'require' to VERIFY-FULL and that
-  // parsed value wins over the explicit object.
-  //
-  // `buildMigrationCredentials` splits the URL into discrete fields and attaches
-  // exactly one `ssl`, so no query parameter can reach the driver's TLS
-  // decision. It is the same function `drizzle.config.ts` uses (5.17 AC-4), so
-  // the preflight and the migration it guards now share one TLS posture rather
-  // than two that can disagree — the previous arrangement could pass the
-  // preflight and migrate on different terms.
+  // Decomposed credentials, never `connectionString`: a `?sslmode=` would override `ssl` and
+  // drop the CA.
   const pool = new Pool({
     ...buildMigrationCredentials(
       nodeEnv,
       databaseUrl,
       normalizeCaCert(process.env['DATABASE_CA_CERT'])
     ),
-    // ops-2: session TimeZone=UTC, like every other connection (DB_SESSION_OPTIONS).
     options: DB_SESSION_OPTIONS,
     max: 1,
     connectionTimeoutMillis: 10_000,
-    // Connecting is not the only way this can hang: a probe query blocked on a
-    // lock held by another session would wait forever, and because the deploy
-    // workflow serialises on a non-cancelling concurrency group, one stuck run
-    // silently queues every later deploy behind it. Cap the queries too.
+    // A probe blocked on another session's lock would hang, and later deploys queue behind it.
     statement_timeout: 15_000,
     query_timeout: 15_000,
   })
@@ -189,7 +132,6 @@ async function main(): Promise<number> {
     console.log(`[migrate-preflight] OK: ${verdict.reason}`)
     return 0
   } catch (error) {
-    // An unreachable or unreadable database is a refusal, not a pass.
     console.error(
       '[migrate-preflight] Could not establish the database shape; refusing to migrate.',
       error instanceof Error ? error.message : error

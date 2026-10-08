@@ -22,14 +22,13 @@ describe('withUuidIds (Story 5-14 review P2 — legacy localStorage migration)',
     expect(migrated[0].id).toMatch(UUID_RE)
     expect(migrated[1].id).toMatch(UUID_RE)
     expect(migrated[0].id).not.toBe(migrated[1].id)
-    // Non-id fields are preserved.
     expect(migrated[0].name).toBe('old income')
   })
 
   it('leaves items that already have a string uuid id untouched (same reference)', () => {
     const item = { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: 'new income' }
     const migrated = withUuidIds([item])
-    expect(migrated[0]).toBe(item) // unchanged reference — no needless rewrite
+    expect(migrated[0]).toBe(item)
   })
 
   it('handles undefined / empty input', () => {

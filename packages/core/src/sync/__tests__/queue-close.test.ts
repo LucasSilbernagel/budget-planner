@@ -1,14 +1,5 @@
-/**
- * `SyncQueue.close()` (story 79.1, FR129).
- *
- * `SynchronizationService.destroy()` closes its queue. A new service for the same
- * user writes the SAME storage key, and every queue write is a whole-queue write
- * from memory, so a closed queue must never write again — whoever calls it,
- * including the web layer, which reaches the raw queue through `getQueue()`.
- *
- * New API: these tests cannot be RED on `main` (there is no `close()` there).
- * Each closed-queue assertion has an OPEN control showing the same call writes.
- */
+// Every queue write is a whole-queue write to a key a new service also uses,
+// so a closed queue must never write again.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SyncQueue, SyncQueueClosedError } from '../queue'
@@ -19,10 +10,8 @@ const USER = 'user-79-1'
 type TestStorage = SyncQueueStorage & {
   writes: number
   persistedIds: () => string[]
-  /** When set, the next `saveQueue` waits until `releaseSave()` is called. */
   holdNextSave: boolean
   releaseSave: () => void
-  /** True while a held `saveQueue` is waiting. */
   saveHeld: boolean
 }
 
@@ -71,7 +60,6 @@ function op(id: string): SyncOperation {
   }
 }
 
-/** Every mutator, called with arguments that WOULD change an open queue holding a and b. */
 const MUTATORS: [string, (queue: SyncQueue) => Promise<unknown>][] = [
   ['add', (q) => q.add(op('c'))],
   ['addBatch', (q) => q.addBatch([op('c'), op('d')])],
@@ -113,19 +101,16 @@ describe('SyncQueue.close() (story 79.1)', () => {
 
   it('refuses a mutation that was called BEFORE close() but had not run yet', async () => {
     storage.holdNextSave = true
-    // The first add reaches `saveQueue` and is held there; the second waits
-    // behind it in the serialize chain.
     const first = queue.add(op('c'))
     const second = queue.removeBatch(['a'])
-    // The chain starts work on a microtask, so wait until the write is REALLY held.
+    // The chain starts work on a microtask, so wait until the write is really held.
     await vi.waitFor(() => expect(storage.saveHeld).toBe(true))
 
     queue.close()
     storage.releaseSave()
 
-    // The first was already inside `saveQueue`: it completes (the stated limit).
+    // Already inside `saveQueue` when closed, so it completes.
     await expect(first).resolves.toBeUndefined()
-    // The second ran after close(): refused, nothing written.
     await expect(second).rejects.toBeInstanceOf(SyncQueueClosedError)
     expect(storage.writes).toBe(1)
     expect(storage.persistedIds()).toEqual(['a', 'b', 'c'])
@@ -139,7 +124,6 @@ describe('SyncQueue.close() (story 79.1)', () => {
     await expect(fresh.initialize()).resolves.toBeUndefined()
 
     expect(fresh.getAll()).toEqual([])
-    // Control: the same storage does hold ops, so an open queue loads them.
     const open = new SyncQueue(USER, storage)
     await open.initialize()
     expect(open.getAll().map((o) => o.id)).toEqual(['a', 'b'])

@@ -1,13 +1,6 @@
 /**
- * PADDLE_WEBHOOK_MAX_AGE_SECONDS invalid-value guard (Story 5-3 review follow-up).
- *
- * A bare `z.coerce.number()` throws inside `getConfig()` — and 500s EVERY
- * route, not just billing — for ANY value that isn't a positive integer, not
- * only `''`: `' '`, `'abc'`, `'0'`, `'-1'`, and `'1.5'` all reach
- * `.positive()`/`.int()` and throw too (caught by the 2026-09-15 #3 review
- * after the first pass only handled the empty-string case). The schema
- * instead falls back to the 300s default on anything that isn't a positive
- * integer, and never throws.
+ * Any value that is not a positive integer must fall back to the default:
+ * a throw inside getConfig() 500s every route.
  */
 
 import { getPaddleConfig, resetConfig } from '@budget-planner/config'

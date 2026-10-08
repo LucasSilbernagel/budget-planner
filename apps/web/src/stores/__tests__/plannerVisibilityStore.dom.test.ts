@@ -1,19 +1,6 @@
 /**
- * plannerVisibilityStore tests (story 35.2, FR55).
- *
- * The store is the single source of truth for whether the Retirement planner is
- * surfaced. Two independent readers depend on the persisted shape:
- *   - `lib/store-hydration` → the React tree (nav + route);
- *   - `lib/nav/no-flash-planner-visibility-script` → a pre-paint `<head>` script
- *     that hard-parses the same blob before any module can load.
- *
- * So these tests pin the *storage contract*, not just the in-memory behavior:
- * the key, the partialized shape, and — load-bearing — that anything other than
- * a literal `false` means SHOW. The script implements that same rule separately;
- * if the two ever disagree, a corrupt blob hides the planner on the first frame
- * and reveals it after hydration.
- *
- * Runs in jsdom (`.dom.test.ts`) for a real `localStorage`.
+ * The pre-paint <head> script parses this blob separately, so these pin the storage contract:
+ * the key, the shape, and that only a literal `false` hides.
  */
 
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -23,15 +10,12 @@ import {
 } from '../plannerVisibilityStore'
 
 beforeEach(() => {
-  // ⚠️ Order matters. `setState` on a persisted store hits the WRITE path even
-  // under `skipHydration`, so clearing first and resetting second leaves a blob
-  // behind — and any test asserting "nothing is persisted yet" would then fail
-  // against correct code. Reset the singleton first, wipe storage second.
+  // Order matters: setState writes through persist even under skipHydration. Reset the singleton
+  // first, wipe storage second.
   usePlannerVisibilityStore.setState({ showRetirementPlanner: true })
   localStorage.clear()
 })
 
-/** Seed a raw persisted blob and rehydrate, the way a page load would. */
 async function rehydrateWith(state: unknown): Promise<boolean> {
   localStorage.setItem(PLANNER_VISIBILITY_STORAGE_KEY, JSON.stringify({ state, version: 0 }))
   await usePlannerVisibilityStore.persist.rehydrate()
@@ -67,8 +51,6 @@ describe('plannerVisibilityStore', () => {
 
     const parsed = JSON.parse(raw as string)
     expect(parsed.state.showRetirementPlanner).toBe(false)
-    // partialize keeps the persisted payload to just the one field — the
-    // pre-paint script parses this exact shape.
     expect(Object.keys(parsed.state)).toEqual(['showRetirementPlanner'])
   })
 
@@ -82,13 +64,8 @@ describe('plannerVisibilityStore', () => {
   })
 
   /**
-   * ⚠️ Only a literal `false` hides the planner.
-   *
-   * `'false'`, `0` and `null` are all falsy, so a coercion written as
-   * `!value` or `value === false ? … : …` on an untyped blob would hide the
-   * planner for a user who never asked — and, worse, would disagree with the
-   * pre-paint script if only one of the two readers were written that way.
-   * Every one of these must resolve to SHOW.
+   * `'false'`, `0` and `null` are falsy; a `!value` coercion would hide the planner for a user who
+   * never asked.
    */
   it.each([
     ['the string "false"', 'false'],
@@ -106,12 +83,8 @@ describe('plannerVisibilityStore', () => {
   })
 
   /**
-   * A first-ever visit: nothing persisted at all.
-   *
-   * ⚠️ `merge` does NOT run when storage holds no blob — zustand's rehydrate is
-   * a no-op, so this asserts the *deterministic default* survives, not the
-   * sanitizer. Pre-setting `false` here (as a first draft of this test did)
-   * would assert a state no load path can produce and fail against correct code.
+   * merge does not run when storage is empty, so this asserts the deterministic default, not the
+   * sanitizer.
    */
   it('leaves the default visible when nothing is persisted', async () => {
     expect(localStorage.getItem(PLANNER_VISIBILITY_STORAGE_KEY)).toBeNull()

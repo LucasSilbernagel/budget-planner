@@ -1,22 +1,3 @@
-/**
- * Every headline figure wraps only between digit groups (story 88.1, FR142).
- *
- * The nine figures (the Overview's three, /balance's five, and PeriodTotal on
- * /income and /expenses) render through `GroupedAmount`. This file pins the
- * WIRING: each figure carries one `<wbr>` per group separator and its text is
- * exactly the formatted amount. `GroupedAmount.test.tsx` pins the component's
- * rule per locale.
- *
- * ⚠️ jsdom computes no layout, so nothing here says a figure FITS its card. That
- * was measured in Chromium under CI's font (story 88.1 Dev Agent Record) and is
- * held by the CI screenshots (`overview-320-*`, `balance-1280-light`,
- * `paid-header-768-light`, …).
- *
- * Harness as in `net-worth-cross-page.test.tsx`: the Overview needs
- * `usePremiumAccess` mocked (its premium section reaches the network), the
- * other pages render with `renderWithProviders`.
- */
-
 import { renderWithProviders, screen } from '@/test/utils'
 import { cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -64,11 +45,6 @@ const balance = (id: string, type: 'investment' | 'debt' | 'asset', currentBalan
   updatedAt: TS,
 })
 
-/**
- * Figures in the seed's 10-digit class, every one DISTINCT, all monthly so the
- * Overview's monthly figures equal the entered amounts. Symbol mode (USD), the
- * widest rendering.
- */
 function seed(): void {
   useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
   useOverviewDurationStore.setState({ duration: 'monthly' })
@@ -95,10 +71,6 @@ function seed(): void {
   })
 }
 
-/**
- * The text runs between `<wbr>`s. Built from the DOM, so a figure rendered as a
- * plain string comes back as ONE run.
- */
 function runs(testId: string): string[] {
   return runsOf(screen.getByTestId(testId))
 }
@@ -140,7 +112,6 @@ describe('headline figures break only between digit groups (story 88.1)', () => 
     render(<HomePage />)
     expect(runs('overview-total-income')).toEqual(['$12,', '345,', '678.90'])
     expect(runs('overview-total-expenses')).toEqual(['$9,', '876,', '543.21'])
-    // 11,111,111.11 + 3,333,333.33 + 22,222,222.22 − 987,654,321.00
     expect(runs('overview-net-worth')).toEqual(['-$950,', '987,', '654.34'])
   })
 
@@ -162,17 +133,9 @@ describe('headline figures break only between digit groups (story 88.1)', () => 
   })
 })
 
-/**
- * Story 88.4 (FR142): the figures 88.1 left out. Same wiring rule. Measured
- * under CI's font in Chromium (story 88.4 Dev Agent Record): /savings' `text-3xl`
- * total overran its card by 23.8 px at 320; Retirement's two derived figures fit
- * at every width but take the same treatment by decision. The forecasting stat
- * cards and the report totals are pinned in their own folders' suites.
- */
 describe('the remaining headline figures break only between digit groups (story 88.4)', () => {
   it('/savings: the Total Savings figure', () => {
     renderWithProviders(<SavingsPage />)
-    // 3,333,333.33: the seed's one savings goal.
     expect(runs('savings-total')).toEqual(['$3,', '333,', '333.33'])
   })
 
@@ -186,7 +149,6 @@ describe('the remaining headline figures break only between digit groups (story 
     const figure = (id: string) => screen.getByTestId(id).querySelector('dd > span') as HTMLElement
     expect(runsOf(figure('derived-current-saved'))).toEqual(['$11,', '111,', '111.11'])
     expect(runsOf(figure('derived-monthly-savings'))).toEqual(['$1,', '234,', '567.89'])
-    // The live region reads the WHOLE figure, not just the group that changed.
     for (const id of ['derived-current-saved', 'derived-monthly-savings']) {
       const dd = screen.getByTestId(id).querySelector('dd') as HTMLElement
       expect(dd.getAttribute('aria-live'), id).toBe('polite')

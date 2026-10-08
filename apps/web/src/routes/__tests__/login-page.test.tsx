@@ -1,18 +1,5 @@
-/**
- * The /login page's own card, beside the account strip (stories 21-2, 41.3;
- * moved below the browser by story 84.3 from `e2e/auth-indicator.spec.ts`).
- *
- * The page keeps its card affordances: the "Sign in" heading, Terms and
- * Privacy inside the consent line, "Continue without account", and NOT the
- * redundant page-level "All rights reserved" line story 21-2 removed (the
- * global Footer's copyright reads differently). The strip renders WITH the
- * card, as it does on the real page, so the 41.3 contrast is measured here:
- * the strip offers "Sign in" on `/` and drops it on `/login`.
- *
- * The page is reached through `Route.options.component`, as the router invokes
- * it. Its `Route.useSearch()` needs the file route's match, which a throwaway
- * router cannot give it, so that one hook is stubbed to the no-error search.
- */
+// `Route.useSearch()` needs the file route's match, which a throwaway router cannot give,
+// so that one hook is stubbed.
 
 import { SessionSeedProvider } from '@/context/session-seed'
 import { renderWithRouter, screen, waitFor, within } from '@/test/utils'
@@ -51,12 +38,8 @@ describe('/login — the sign-in card beside the strip', () => {
   it('keeps its heading, consent links and "Continue without account", and no "All rights reserved"', async () => {
     renderChrome('/login', true)
 
-    // The sign-in card rendered. Scoped to the card's <h2> by ROLE deliberately
-    // (carried over from the e2e original, story 21-2). Story 41.3
-    // removed the AuthIndicator's "Sign in" link FROM THIS ROUTE, so an
-    // unscoped /^sign in$/i text match would succeed on the heading alone and
-    // stop distinguishing the card from the strip. The role scope keeps this
-    // assertion saying what it always said: the CARD is here.
+    // Scoped by role: the strip has no Sign in link here, so an unscoped text match would hit
+    // the heading alone and stop distinguishing the card from the strip.
     expect(await screen.findByRole('heading', { name: /^sign in$/i })).toBeInTheDocument()
 
     const consent = screen.getByText(/by signing in, you agree to our/i)
@@ -68,9 +51,7 @@ describe('/login — the sign-in card beside the strip', () => {
       'href',
       '/privacy'
     )
-    // Story 115.2: links INSIDE the sentence are underlined at rest. Their colour
-    // alone is 1.39:1 against the text around them; WCAG 1.4.1 wants 3:1 or a
-    // non-colour cue, and hover does not exist on touch.
+    // Link colour alone is below 3:1 against the text; WCAG 1.4.1 needs a non-colour cue.
     for (const link of within(consent).getAllByRole('link')) {
       expect([...link.classList]).toContain('underline')
       expect([...link.classList]).not.toContain('hover:underline')
@@ -83,12 +64,7 @@ describe('/login — the sign-in card beside the strip', () => {
     expect(screen.queryByText(/all rights reserved/i)).toBeNull()
   })
 
-  /**
-   * The contrast, in one test (story 41.3): the strip offers "Sign in" on `/`
-   * and, on `/login`, keeps its region but drops the link, while the page's
-   * own card is untouched. A bare absence on `/login` alone could not tell a
-   * dropped link from a strip that never rendered.
-   */
+  // A bare absence on /login could not tell a dropped link from a strip that never rendered.
   it('drops the strip’s "Sign in" on /login while the Overview keeps it, and the card stays', async () => {
     const home = renderChrome('/', false)
     expect(await within(await strip()).findByRole('link', { name: /sign in/i })).toHaveAttribute(
@@ -99,7 +75,6 @@ describe('/login — the sign-in card beside the strip', () => {
 
     renderChrome('/login', true)
     expect(await screen.findByRole('heading', { name: /^sign in$/i })).toBeInTheDocument()
-    // Resolved (no loading placeholder), and still no link in the region.
     const region = await strip()
     await waitFor(() => expect(region.children).toHaveLength(0))
     expect(within(region).queryByRole('link', { name: /sign in/i })).toBeNull()

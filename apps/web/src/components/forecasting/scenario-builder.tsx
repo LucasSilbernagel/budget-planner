@@ -1,14 +1,3 @@
-/**
- * Scenario Builder Component
- *
- * Allows users to create and configure financial forecasting scenarios.
- * Includes income, expense, growth rate, and one-time event configuration.
- *
- * Architecture: React Component with Recharts for visualization
- * Data Sovereignty: Client-side input and calculation; saved forecasts stored in
- * the EU.
- */
-
 import {
   type CurrencyOptions,
   DEFAULT_FORECAST_YEARS,
@@ -61,38 +50,14 @@ import { useIncomeSources } from '../../stores/incomeStore'
 import { useSavingsGoals } from '../../stores/savingsStore'
 import { GroupedAmount } from '../ui/GroupedAmount'
 
-// ============================================================================
-// Constants
-// ============================================================================
-
 const DEBOUNCE_DELAY_MS = 500
 
-// ============================================================================
-// Type Definitions
-// ============================================================================
-
-/**
- * Local financial item with ID for UI management
- */
 export interface LocalFinancialItem extends NormalizableFinancialItem {
   id: string
-  /**
-   * ⚠️ Was missing, and every value of this type has carried it all along —
-   * `itemsFromSaved` and `itemsFromStore` both coerce it defensively and the row
-   * editor reads and writes it. (This cited `DEFAULT_INCOME`/`DEFAULT_EXPENSES`,
-   * deleted by story 62.1, and `toLocalItems`, which has not existed for longer
-   * than that — corrected in code review 62.1.)
-   * `NormalizableFinancialItem` (core) is deliberately just `{amount, frequency}`,
-   * so the label belongs here, on the UI-local extension.
-   */
   name: string
 }
 
-/**
- * One savings account or goal as a what-if row (story 100.1, FR164). Money in
- * cents. Never written back to the savings store (D0): the row is the scenario's
- * own copy, seeded from the store once.
- */
+// Never written back to the savings store: the row is the scenario's own copy.
 interface LocalSavingsAccount {
   id: string
   name: string
@@ -100,17 +65,7 @@ interface LocalSavingsAccount {
   monthlyContribution: number
 }
 
-/**
- * One investment or debt as a what-if row (story 100.2, FR165). Money in cents;
- * `balance` is a positive MAGNITUDE for both types. `contribution` is the amount at
- * `frequency` cadence, as `/balance` shows it (the engine normalises it). Never
- * written back to the balance store (D0).
- *
- * `annualReturn` (story 100.3, FR166) is a decimal (0.06 = 6%), what-if only:
- * `/balance` has no rate. Every row holds one, seeded at `DEFAULT_INVESTMENT_RETURN`;
- * it is shown, sent to the engine and saved on INVESTMENT rows only. A debt row
- * keeps it hidden, so switching back to Investment shows it again (D8).
- */
+// balance is a positive magnitude for both types; contribution is at frequency cadence (the engine normalises).
 interface LocalBalanceAccount {
   id: string
   name: string
@@ -118,39 +73,19 @@ interface LocalBalanceAccount {
   balance: number
   contribution: number
   frequency: Frequency
-  /**
-   * The money is already counted in Expenses, so the engine does not take it
-   * from cash again. Investment row: "Not taken from the money left over" (story
-   * 45.1). Debt row (story 102.2, D1/D2): "Payment already in Expenses", which
-   * keeps the 100.2 D4 math; off, the row's payment is cash out while the debt
-   * is owed. Off on every seeded, new or type-switched row (D8); on for every
-   * debt of a forecast saved before version 5.
-   */
+  // Already counted in Expenses, so the engine does not take it from cash again.
   contributionRecordedAsExpense: boolean
-  /** Story 100.3: the row's annual return; only investment rows use it. */
   annualReturn: number
-  /**
-   * Story 102.2 (D6): the name of the Expenses row a seeded debt's payment came
-   * from, shown as "from Expenses: <name>" on debt rows only. Saved in version 5.
-   * Absent when the row has no source (unlinked, added here, older forecasts).
-   */
   paidByExpenseName?: string
 }
 
-/**
- * One asset (a house, a car) as a what-if row (story 114.1, FR182). Money in
- * cents. A CONSTANT (D7): no growth, no contribution, so the row is only a name
- * and a value. Never written back to the balance store (D0).
- */
+// A constant: no growth and no contribution.
 interface LocalAssetAccount {
   id: string
   name: string
   balance: number
 }
 
-/**
- * One-time event for forecasting
- */
 interface OneTimeEvent {
   id: string
   year: number
@@ -158,17 +93,7 @@ interface OneTimeEvent {
   name: string
 }
 
-/**
- * Props for ScenarioBuilder component
- */
 export interface ScenarioBuilderProps {
-  /**
-   * Callback when user saves a forecast. May return a result so the builder can
-   * surface a save failure (e.g. duplicate name) back to the user. `inputs`
-   * carries the savings/investments/years (and, since story 100.1, the savings
-   * rows) that are NOT part of ForecastingScenario so a saved forecast can be
-   * reopened faithfully (story bug-3).
-   */
   onSave: (data: {
     name: string
     description?: string
@@ -179,63 +104,22 @@ export interface ScenarioBuilderProps {
     | { success: boolean; error?: string }
     | undefined
     | Promise<{ success: boolean; error?: string } | undefined>
-  /**
-   * Emits the latest computed forecast (or null while none/invalid) so the page
-   * can feed the Projections tab with the user's real scenario instead of sample
-   * data (story bug-3).
-   */
   onResultChange?: (result: ForecastingResult | null) => void
-  /**
-   * When provided, seeds every field from a saved forecast so "My Forecasts" →
-   * Load reopens it into the builder (story bug-3). The parent remounts the
-   * builder (via `key`) when the loaded forecast changes, so these are read once
-   * in the state initializers.
-   */
+  // Read once in state initializers; the parent remounts the builder via key when it changes.
   initialForecast?: SavedForecast | null
-  /**
-   * Whether a save can work at all, resolved by the PAGE (story 62.2, FR95).
-   *
-   * ⚠️ The builder must never resolve this itself. `routes/forecasting.tsx` owns
-   * the profile lookup; a second fetch from here would double the request and
-   * could disagree with the answer the save path actually uses.
-   *
-   * ⚠️ Optional, defaulting to `ready`, and that default is load-bearing: the
-   * `none` arm renders a `<Link>`, which needs a router in context. Every test in
-   * `scenario-builder.test.tsx` and `scenario-builder.seeding.dom.test.tsx` uses a
-   * bare `render()` with no router and omits this prop. Change the default and
-   * ~40 tests fail on a missing router, which looks like anything but the cause.
-   */
+  // Defaults to ready deliberately: the none arm renders a <Link>, and most tests render without a router.
   saveAvailability?: SaveAvailability
-  /**
-   * Reports whether a save is in flight so the PAGE can lock its tab strip
-   * (code review 62.2). Switching tabs CSS-hides this component, and the failure
-   * alert lives inside it — hidden, it is neither focusable nor announced.
-   *
-   * ⚠️ Driven from the same `finally` that clears `isSaving`, so it can never
-   * latch `true` and leave the user's navigation permanently disabled.
-   */
+  // Lets the page lock its tabs mid-save: a CSS-hidden builder would hide the failure alert.
   onSavingChange?: (isSaving: boolean) => void
 }
 
-/**
- * Why a save may or may not be possible right now.
- *
- * ⚠️⚠️ These four arms exist because `defaultProfileId` used to be a bare
- * `string | null`, and `null` meant FIVE different things: the effect had not run
- * yet, the account had zero profiles, the session had expired, premium was denied
- * at the server boundary, or the fetch threw. Only ONE of those is "go and create
- * a profile". Collapsing them again reintroduces two defects at once — a prompt
- * that flashes on every page load, and wrong advice for anyone whose fetch failed.
- */
+// Separate arms because a bare null conflated not-yet-loaded, no profiles, expired session, denied and failed.
 type SaveAvailability =
   | { kind: 'loading' }
   | { kind: 'ready' }
   | { kind: 'none' }
   | { kind: 'error' }
 
-/**
- * Form data for scenario configuration
- */
 interface ScenarioFormData {
   name: string
   description: string
@@ -244,39 +128,17 @@ interface ScenarioFormData {
   years: number
 }
 
-// ============================================================================
-// Constants
-// ============================================================================
-
-/**
- * ⚠️ There are deliberately NO `DEFAULT_INCOME` / `DEFAULT_EXPENSES` /
- * `DEFAULT_SAVINGS` / `DEFAULT_INVESTMENTS` constants any more (story 62.1,
- * FR94). A fresh builder seeds from the user's own stores, and a user with
- * nothing recorded gets an EMPTY builder — never a demo row.
- *
- * Do not reintroduce a `rows.length === 0 ? DEMO_ROWS : rows` fallback. It would
- * restore the defect for exactly the users least able to recognise that the
- * salary on screen is not theirs.
- */
+// No demo rows: a user with nothing recorded gets an empty builder.
 const DEFAULT_FORM: ScenarioFormData = {
   name: 'My Financial Forecast',
   description: 'Projecting my financial situation over the next 10 years',
-  // ⚠️ Both ZERO since story 62.1 (FR94). The builder projects the user's real
-  // position by default and invents no growth; a rate is something the user opts
-  // into, not an assumption baked into every scenario they open.
+  // Zero: the builder invents no growth by default.
   incomeGrowthRate: 0,
   expenseGrowthRate: 0,
   years: DEFAULT_FORECAST_YEARS,
 }
 
-/**
- * Copy for the blocked-save states (story 62.2, FR95).
- *
- * ⚠️ `NO_PROFILE_*` and `PROFILE_ERROR_*` must stay distinguishable. Telling a
- * user whose profile fetch merely failed to "create a profile" is wrong advice
- * about their own account, and it is indistinguishable from the real empty case
- * unless the wording differs.
- */
+// NO_PROFILE and PROFILE_ERROR copy must stay distinct: a failed fetch does not mean "create a profile".
 const NO_PROFILE_NOTICE =
   'Saving a forecast needs a financial profile, and this account does not have one yet.'
 const NO_PROFILE_SHORT = 'Needs a financial profile'
@@ -285,95 +147,45 @@ const PROFILE_ERROR_NOTICE =
 const PROFILE_ERROR_SHORT = 'Profile check failed'
 const FALLBACK_SAVE_ERROR = 'Failed to save forecast'
 
-/**
- * Copy for an out-of-range Projection Period (story 77.1, FR124). The range is
- * core's, so the message cannot drift from the rule the engine enforces.
- */
 const YEARS_INVALID_MESSAGE = `Enter a whole number of years from ${MIN_FORECAST_YEARS} to ${MAX_FORECAST_YEARS}.`
 const YEARS_INVALID_SHORT = 'Fix the projection period to save'
 
-/**
- * Copy for the other fields a scenario can hold a bad value in (story 81.1,
- * FR132). Each is shown on ITS field, never as the engine's banner: before 81.1 an
- * emptied growth rate surfaced as "Amount must be a finite number" — an amount the
- * user never touched — and, with no rows of that kind, as nothing at all.
- *
- * The growth range is core's, so the message cannot drift from the engine's rule.
- */
 const GROWTH_INVALID_MESSAGE = `Enter a growth rate from ${MIN_GROWTH_RATE * 100}% to ${
   MAX_GROWTH_RATE * 100
 }%.`
-/**
- * The Annual return field's message (story 100.3, D7), from the same core bounds
- * as `GROWTH_INVALID_MESSAGE`, so it cannot drift from the engine's rule.
- */
 const RETURN_INVALID_MESSAGE = `Enter an annual return from ${MIN_GROWTH_RATE * 100}% to ${
   MAX_GROWTH_RATE * 100
 }%.`
 const AMOUNT_NEGATIVE_MESSAGE = 'Enter an amount of 0 or more.'
-/**
- * The Save reason for any invalid field OTHER than the period alone. When the
- * period is the only bad field it keeps `YEARS_INVALID_SHORT` (77.1's copy);
- * once anything else is also wrong, this general reason is the accurate one.
- */
 const FIELDS_INVALID_SHORT = 'Fix the highlighted fields to save'
 
-/**
- * Copy for the Savings Accounts section (story 100.1). The note is Lucas's to
- * tweak (AC-9); a copy test pins it.
- */
 const SAVINGS_WHAT_IF_NOTE = "What-if only: changes here don't change your Savings page."
 const NO_SAVINGS_ACCOUNTS = 'No savings accounts in this scenario'
 
-/**
- * Copy for the Investments & Debts section (story 100.2, AC-11). Lucas may tweak
- * it; a copy test pins it. The last sentence says debts count against the
- * starting net worth. (Until story 114.1 a third one said assets were not
- * included; they have their own section now.)
- */
 const BALANCE_WHAT_IF_NOTE =
   "What-if only: changes here don't change your Balance Tracking page. Debts count against your starting net worth."
 const NO_BALANCE_ACCOUNTS = 'No investments or debts in this scenario'
-/**
- * Copy for the Assets section (story 114.1, AC-5). Lucas may tweak it; a copy
- * test pins it. The second sentence is D7: an asset does not grow.
- */
 export const ASSET_WHAT_IF_NOTE =
   "What-if only: changes here don't change your Balance Tracking page. An asset keeps the value you enter every year."
 export const NO_ASSET_ACCOUNTS = 'No assets in this scenario'
-/** The same label `/balance` gives the flag (story 45.1). */
 const NOT_FROM_LEFT_OVER_LABEL = 'Not taken from the money left over'
-/** The same flag on a debt row (story 102.2, D2): the payment is already an Expenses line. */
 const PAYMENT_IN_EXPENSES_LABEL = 'Payment already in Expenses'
 const BALANCE_TYPE_OPTIONS = [
   { value: 'investment' as const, label: 'Investment' },
   { value: 'debt' as const, label: 'Debt' },
 ]
 
-/** `1 year` / `N years`, for the per-row outcome lines. */
 function yearsLabel(years: number): string {
   return `${years} ${years === 1 ? 'year' : 'years'}`
 }
 
-/**
- * A saved growth rate as the builder should hold it (story 81.1, D3). JSON has no
- * NaN, so a rate saved while its field was empty comes back as `null`; the engine
- * ran it as 0 (`1 + null === 1`), and the field would display `formatPercentage(null)`
- * = "0.00%" beside a field error. Load it as 0. A FINITE rate outside the range is
- * kept: the field shows why, and the user fixes it (refuse, not clamp).
- */
+// JSON has no NaN, so an emptied rate comes back null; load it as 0.
+// An out-of-range finite rate is kept so the field can flag it (refuse, not clamp).
 function growthRateFromSaved(rate: unknown): number {
   return typeof rate === 'number' && Number.isFinite(rate) ? rate : 0
 }
 
-/**
- * A saved investment row's annual return as the builder should hold it (story
- * 100.3, D3/D9). Absent (a v1-v3 forecast), `null` (JSON's NaN) or any other
- * non-finite value reloads at `DEFAULT_INVESTMENT_RETURN` (6%). A FINITE rate
- * outside −100%..100% is kept: its field flags it from the first render and holds
- * Save and the recompute until it is fixed (refuse, not clamp, as
- * `growthRateFromSaved` and `useMoneyDraft` do).
- */
+// Absent, null or non-finite reloads at the default; an out-of-range finite rate is kept and flagged.
 function annualReturnFromSaved(rate: unknown): number {
   return typeof rate === 'number' && Number.isFinite(rate) ? rate : DEFAULT_INVESTMENT_RETURN
 }
@@ -385,41 +197,20 @@ const FREQUENCY_OPTIONS = [
   { value: 'annually' as const, label: 'Annually' },
 ]
 
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Generate unique ID
- */
 function generateId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`
 }
 
-/**
- * Convert local financial items to normalizable items
- */
 function toNormalizableItems(items: LocalFinancialItem[]): NormalizableFinancialItem[] {
   return items.map(({ id: _id, ...rest }) => rest)
 }
 
-/**
- * Format percentage for display
- */
 function formatPercentage(value: string | number): string {
-  // `string | number` to match `InputFieldProps.formatValue`, which is what this is
-  // for. Both call sites pass a number, and `Number()` is identity on one.
   return `${(Number(value) * 100).toFixed(2)}%`
 }
 
-/**
- * Expense rows, highest monthly equivalent first (so $1,200/yr ranks as $100/mo).
- * Applied only where rows LOAD (a saved forecast, or a fresh seed from the
- * stores), never on edit: re-sorting live would move a row out from under the
- * input being typed in. Stable, so equal amounts keep their stored order. A row
- * `normalizeToMonthly` rejects (a corrupt saved frequency) ranks as 0 rather
- * than throwing, so it can't stop the builder rendering.
- */
+// Sorted only on load, never on edit: a live re-sort would move the row being typed in.
+// Stable, and a corrupt frequency ranks as 0 instead of throwing.
 function sortByMonthlyDesc(items: LocalFinancialItem[]): LocalFinancialItem[] {
   const monthly = (item: LocalFinancialItem): number => {
     try {
@@ -434,17 +225,7 @@ function sortByMonthlyDesc(items: LocalFinancialItem[]): LocalFinancialItem[] {
     .map(({ item }) => item)
 }
 
-/**
- * Rebuild local (id-carrying) financial items from a saved scenario's items so a
- * loaded forecast can be edited. IDs are regenerated deterministically by index
- * (the persisted scenario stores no ids). Returns [] when the saved scenario had
- * no items of that kind.
- */
 function itemsFromSaved(
-  // Saved items carry a label that `NormalizableFinancialItem` deliberately does
-  // not model (core keeps it to `{amount, frequency}`). Optional because a
-  // corrupt or older saved scenario may lack it — which the `?? ''` below already
-  // handled, before the type admitted it was possible.
   items: (NormalizableFinancialItem & { name?: string })[] | undefined,
   prefix: string
 ): LocalFinancialItem[] {
@@ -452,43 +233,15 @@ function itemsFromSaved(
   return items.map((item, index) => ({
     ...item,
     id: `${prefix}-loaded-${index}`,
-    // Coerce label/numerics defensively so a corrupt saved item can't seed a NaN
-    // amount or an uncontrolled input (review bug-3).
+    // Coerce defensively so a corrupt saved item can't seed NaN or an uncontrolled input.
     name: item.name ?? '',
     amount: Number.isFinite(item.amount) ? item.amount : 0,
     frequency: item.frequency ?? 'monthly',
   }))
 }
 
-/**
- * Build local (id-carrying) financial items from the user's own store rows, for
- * a FRESH scenario (story 62.1, FR94).
- *
- * ⚠️ Fields are mapped EXPLICITLY rather than spread. `toNormalizableItems`
- * above strips only `id`, so a spread would carry `profileId`, `userId`,
- * `categoryId` and `position` into the scenario — and from there into the saved
- * `newIncome`/`newExpenses` JSON, silently changing the save format.
- *
- * ⚠️ `amount`/`frequency` are passed through as the RAW pair the row carries.
- * They are not monthly-normalized (`useTotalIncome` is the normalized hook and
- * is deliberately not used here) — the engine normalizes downstream, so
- * pre-normalizing would count every non-monthly row twice over.
- *
- * Ids are re-keyed rather than reused: store ids are uuids, while this component
- * mints its own with `generateId`. The deterministic `-seeded-<index>` form
- * matches `itemsFromSaved` and cannot collide with a later `generateId` row.
- *
- * ⚠️ Values are validated, not merely null-coalesced (corrected in code review
- * 62.1). The parameter type says these fields are present and well-typed, but
- * the rows come from localStorage and from the sync applier, neither of which
- * validates — `lib/readable-rows.ts:7-15` records that hazard as live. So a `??`
- * chain was parity with `itemsFromSaved` AND a gap: it catches `null`/`undefined`
- * but waves through `'Monthly'`, `'quarterly'` or `''`, which then reach
- * `validateFrequency` and throw, killing the whole forecast with an "Invalid
- * frequency" banner and no indication of WHICH row is at fault — while the row's
- * own `<select>` renders the corrupt value as "Weekly", so it is invisible.
- * `isKnownFrequency` is the house predicate for this.
- */
+// Fields mapped explicitly (a spread leaks store fields into saved JSON); amounts stay raw since the engine normalizes.
+// Frequencies are validated: unvalidated store rows can hold one that throws for the whole forecast.
 function itemsFromStore(
   rows: readonly { name: string; amount: number; frequency: Frequency }[],
   prefix: string
@@ -501,29 +254,13 @@ function itemsFromStore(
   }))
 }
 
-/**
- * A persisted money value as a row may hold it: finite and at least 0, else 0
- * (story 100.1). The same coercion as core's `sumManualAllocations`, so a manual
- * row seeds exactly the figure /savings counts for it.
- */
+// Same coercion as core's sumManualAllocations, so a manual row seeds exactly what /savings counts.
 function nonNegativeCents(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0
 }
 
-/**
- * Build what-if savings rows from the active profile's savings rows, for a FRESH
- * scenario (story 100.1, AC-1, AC-3).
- *
- * A manual row seeds its `monthlyAllocation`. An automatic row (an absent or
- * unrecognised mode, as core's `resolveAllocationMode` reads it) seeds its share
- * from `allocations`, the solver's output for the SAME inputs /savings uses, so
- * every seeded contribution equals the figure /savings shows. `allocations` is
- * `null` when the solver threw: automatic rows then seed 0 and the builder still
- * renders.
- *
- * ⚠️ Fields mapped explicitly, as in `itemsFromStore`: a spread would carry
- * `profileId`, `targetAmount` and friends into the saved JSON.
- */
+// Automatic rows seed from allocations, the solver output /savings shows; null (solver threw) seeds 0.
+// Fields mapped explicitly so store fields stay out of the saved JSON.
 function savingsFromStore(
   goals: readonly ClientSavingsGoal[],
   allocations: Readonly<Record<string, number>> | null
@@ -539,18 +276,9 @@ function savingsFromStore(
   }))
 }
 
-/**
- * Rebuild what-if savings rows from a saved forecast's inputs (story 100.1).
- *
- * A v2 forecast carries its rows. A v1 forecast carries only the `savings` total,
- * which reloads as ONE row named `Savings` with no contribution (AC-12), or as no
- * row at all when the total is 0. A forecast saved before persisted inputs
- * (pre-bug-3) has neither, so it starts at 0, as before.
- */
+// A v1 forecast has only a savings total, reloaded as one Savings row (none when 0).
 function savingsFromSaved(inputs: ScenarioInputs | undefined): LocalSavingsAccount[] {
-  // Defensive on its own (code review 100.1): `mapToSavedForecast` already
-  // coerces, but this is the builder's boundary, so a caller that skips the route
-  // (a test, a future caller) cannot crash it with a `null` entry or a non-array.
+  // Defensive: this is the builder's boundary, so a caller skipping the route can't crash it.
   const saved: unknown = inputs?.savingsAccounts
   if (Array.isArray(saved)) {
     return saved.map((entry: unknown, index) => {
@@ -564,10 +292,7 @@ function savingsFromSaved(inputs: ScenarioInputs | undefined): LocalSavingsAccou
       }
     })
   }
-  // ⚠️ A NEGATIVE v1 total is kept as it is, not clamped (Lucas, code review
-  // 100.1): the old field accepted `-5`. The row's field then flags it from the
-  // start (`useMoneyDraft`), which holds Save and the recompute until the user
-  // fixes it, so the starting figure never changes behind their back.
+  // A negative v1 total is kept, not clamped: its field flags it and holds Save until fixed.
   if (inputs && Number.isFinite(inputs.savings) && inputs.savings !== 0) {
     return [
       { id: 'savings-loaded-0', name: 'Savings', balance: inputs.savings, monthlyContribution: 0 },
@@ -576,28 +301,13 @@ function savingsFromSaved(inputs: ScenarioInputs | undefined): LocalSavingsAccou
   return []
 }
 
-/**
- * A balance row's type, or `null` for anything else: corrupt values, and assets,
- * which have their own rows (story 114.1, `assetsFromStore`).
- */
+// Assets have their own rows, so they map to null too.
 function balanceRowType(type: unknown): LocalBalanceAccount['type'] | null {
   return type === 'investment' || type === 'debt' ? type : null
 }
 
-/**
- * Build what-if asset rows from the active profile's balance entries of type
- * `asset`, in store order, for a FRESH scenario (story 114.1, AC-3, D7).
- *
- * - `balance` is the stored value as a non-negative amount: negative or
- *   non-finite seeds 0, the same coercion as an investment or savings row.
- *   ⚠️ Known, CLOSED by decision (103.1 D3 residual, 2026-10-06): the Overview
- *   sums a stored-negative asset RAW (`balanceStore.ts` `totalBalanceOfType`), so
- *   for such a row the two starting net worths differ. Every write path refuses
- *   a negative balance since story 103.1, so only a legacy or hand-edited row can.
- *
- * ⚠️ Fields mapped explicitly, as in `itemsFromStore`: a spread would carry
- * `profileId` and friends into the saved JSON.
- */
+// Negative or non-finite seeds 0 (the Overview sums a legacy negative asset raw, so the two can differ).
+// Fields mapped explicitly so store fields stay out of the saved JSON.
 function assetsFromStore(entries: readonly ClientBalanceTracking[]): LocalAssetAccount[] {
   return entries
     .filter((entry) => entry.type === 'asset')
@@ -608,35 +318,8 @@ function assetsFromStore(entries: readonly ClientBalanceTracking[]): LocalAssetA
     }))
 }
 
-/**
- * Build what-if investment/debt rows from the active profile's balance entries,
- * for a FRESH scenario (story 100.2, AC-6). Assets are not balance rows (D1);
- * since story 114.1 they are asset rows (`assetsFromStore`).
- *
- * - `contribution` is the entry's RAW `monthlyContribution` at its own
- *   `frequency`, so the row shows what `/balance` shows; the engine normalises it.
- * - A DEBT's contribution (story 102.1, FR169, D5) is its LINKED EXPENSE's amount
- *   at that expense's frequency, never its own stored contribution, which
- *   `/balance` no longer shows or writes. No link (or one that does not resolve
- *   in `expenses`, the active profile's) seeds 0.
- * - Story 102.2 (FR170, D5): the linked expense MOVES into the debt row. The row
- *   carries its name (`paidByExpenseName`) and its flag starts off, so the engine
- *   takes the payment from cash while the debt is owed; `consumedExpenseIds`
- *   names the expenses the caller must leave OUT of the seeded Expenses rows, so
- *   the payment is one cash line, not two. One expense pays at most ONE debt row,
- *   the first in store order: a later debt linked to the same expense (102.1's
- *   deferred two-device race) seeds as unlinked, so it is never counted twice.
- * - Balance sign (D6): a debt seeds `|balance|`, because a debt can be stored
- *   negative (the screenshot seed's mortgage, sync-applied rows) while the row
- *   holds a positive magnitude. A negative or non-finite investment seeds 0, as a
- *   savings row does.
- * - The flag is kept for an investment only (`/balance` enforces the same).
- * - Every row starts at `DEFAULT_INVESTMENT_RETURN` (story 100.3, D2): `/balance`
- *   has no rate to seed from.
- *
- * ⚠️ Fields mapped explicitly, as in `itemsFromStore`: a spread would carry
- * `profileId` and friends into the saved JSON.
- */
+// A debt's contribution is its linked expense, which moves into the first debt linked to it (consumedExpenseIds),
+// so a payment is never counted twice. Debts seed |balance|; fields are mapped explicitly.
 function balanceFromStore(
   entries: readonly ClientBalanceTracking[],
   expenses: readonly { id: string; name: unknown; amount: unknown; frequency: unknown }[]
@@ -650,17 +333,13 @@ function balanceFromStore(
     const balance =
       type === 'debt'
         ? typeof raw === 'number' && Number.isFinite(raw)
-          ? debtOwedCents(raw) // Story 103.1: the one reading every surface uses
+          ? debtOwedCents(raw)
           : 0
         : nonNegativeCents(raw)
     let linked: (typeof expenses)[number] | null = null
     if (type === 'debt') {
       const resolved = resolveDebtPaymentExpense(entry, expenses)
-      // Code review 102.2: the expense moves only when the move keeps the money.
-      // A debt at 0 (paid off, or corrupt and seeded 0 by D6) would pay nothing,
-      // and an amount that is not a finite number above 0 would seed 0 (a
-      // negative one lowers expenses today); either way the payment would vanish
-      // from the scenario, so such a debt seeds as unlinked and the expense stays.
+      // The expense moves only if the debt can carry it: a 0 debt or non-positive amount would drop the payment.
       const amount = resolved?.amount
       if (
         resolved !== null &&
@@ -686,7 +365,7 @@ function balanceFromStore(
             contribution: nonNegativeCents(entry.monthlyContribution),
             frequency: isKnownFrequency(entry.frequency) ? entry.frequency : 'monthly',
           }),
-      // A debt starts OFF (102.2, D2): its payment left the Expenses rows with it.
+      // Starts off: its payment left the Expenses rows with it.
       contributionRecordedAsExpense:
         type === 'investment' && entry.contributionRecordedAsExpense === true,
       annualReturn: DEFAULT_INVESTMENT_RETURN,
@@ -696,11 +375,7 @@ function balanceFromStore(
   return { rows, consumedExpenseIds }
 }
 
-/**
- * A debt row's seeded payment from its linked expense (story 102.1): the same
- * coercion as every other seeded money value (finite and >= 0, else 0; an
- * unknown frequency reads monthly). No expense: 0, monthly.
- */
+// Same coercion as other seeded money (finite and >= 0, else 0); an unknown frequency reads monthly.
 function debtPaymentFromExpense(expense: { amount: unknown; frequency: unknown } | null): {
   contribution: number
   frequency: Frequency
@@ -712,34 +387,16 @@ function debtPaymentFromExpense(expense: { amount: unknown; frequency: unknown }
   }
 }
 
-/** The five kinds of what-if row a scenario holds. */
 export interface ForecastRows {
   incomeItems: LocalFinancialItem[]
   expenseItems: LocalFinancialItem[]
   savingsAccounts: LocalSavingsAccount[]
   balanceAccounts: LocalBalanceAccount[]
-  /** Story 114.1. */
   assetAccounts: LocalAssetAccount[]
 }
 
-/**
- * The engine input for a set of rows (story 107.1: one conversion for the
- * scenario's rows AND today's, so an unedited scenario reaches the engine exactly
- * as today's data does; AC-5).
- *
- * - `savings` / `investments` are the rows' sums, never stored separately, so
- *   the totals and the rows cannot disagree (the engine refuses a mismatch:
- *   `SAVINGS_ROWS_MISMATCH`, `BALANCE_ROWS_MISMATCH`).
- * - Story 100.1: the savings rows split `savings`. They change no total, only
- *   the per-row figures.
- * - Story 100.2: investment and debt rows DO move totals: contributions move
- *   money from savings into investments, debts lower net worth and fall by their
- *   payment. Story 100.3: each investment row's own rate; a debt row's hidden
- *   rate is not sent (the engine would ignore it anyway).
- * - Story 114.1: `assets` is the asset rows' sum, ALWAYS sent (0 with no rows),
- *   so the scenario and today's baseline carry the same keys (107.1 AC-5). The
- *   engine adds it to every year's net worth; nothing grows (D7).
- */
+// Totals are the rows' sums, so they can't disagree (the engine refuses a mismatch).
+// One conversion for scenario and today's data, so an unedited scenario equals the baseline.
 function forecastInputFromRows(rows: ForecastRows): ForecastInputData {
   return {
     income: toNormalizableItems(rows.incomeItems),
@@ -774,26 +431,8 @@ function forecastInputFromRows(rows: ForecastRows): ForecastInputData {
   }
 }
 
-/**
- * The user's own finances as what-if rows (story 62.1, FR94; split out by story
- * 107.1 so the builder's SEED and the forecast's BASELINE are the same mapping).
- *
- * - Investment/debt rows (story 100.2). Each balance is coerced per row in
- *   `balanceFromStore` (a corrupt one seeds 0), which also closes the 62.1 review
- *   hazard of one non-finite row turning the old single total into NaN. Story
- *   102.1: debts seed their payment from the linked expense.
- * - Story 102.2 (D5): that expense MOVES into the debt row, so it leaves the
- *   Expenses rows (`expenseItems`). `unfilteredExpenseItems` keeps every expense,
- *   for a seed whose balance rows were touched first: then no debt row carries
- *   the payment, and removing it would make it vanish from the scenario. Ids are
- *   by index, so filter before mapping.
- * - Savings rows (story 100.1): the solver throws on a corrupt persisted amount
- *   (`normalizeToMonthly`). It keeps the FULL expenses (story 102.2): it mirrors
- *   /savings, where the linked expense is still an ordinary expense. Automatic
- *   rows then seed 0; the builder must still render (AC-3).
- * - Asset rows (story 114.1): HERE, not beside this mapping, so today's baseline
- *   carries the assets too and an unedited scenario still equals it (107.1 AC-5).
- */
+// The builder seed and the forecast baseline share this mapping. Linked expenses move into debt rows;
+// unfilteredExpenseItems keeps them for when balance rows were edited first and carry no payment.
 export function rowsFromStores(stores: {
   income: ReturnType<typeof useIncomeSources>
   expenses: ReturnType<typeof useExpenses>
@@ -828,30 +467,8 @@ export function rowsFromStores(stores: {
   }
 }
 
-/**
- * Today's data for the forecast (story 107.1, FR175): the active profile's
- * stores as what-if rows (`rows`, which seed a fresh builder) and as engine input
- * (`data`, the BASELINE of every forecast, D1). Both are `null` until `ready`.
- * "Today" includes the assets (story 114.1), so its net worth is the Overview's.
- *
- * ⚠️⚠️ WHY `ready` WAITS (story 62.1, and its code review). All four store hooks
- * are zustand selectors, and zustand passes `getInitialState` to React as
- * `getServerSnapshot`. React uses that snapshot for the WHOLE hydration pass, so
- * they report empty/zero on the first client render however full localStorage
- * already is — the BUG-F distinction story 38.1 turned on, measured in
- * `hooks/useStoresHydrated.ts`'s docblock. `useStoresHydrated()` is the house
- * gate for "has the client taken over yet".
- *
- * ⚠️ A PAID USER ON A FRESH DEVICE (code review 62.1). `useStoresHydrated()`
- * resolves off localStorage alone, which on a new browser is EMPTY while
- * `ActiveSync`'s first-ever pull is still in flight over the network. Without
- * the second gate the builder would seed `[]`/`0` and the baseline would be
- * zeros, landing the user in a state indistinguishable from the legitimate
- * empty-user one. `useIsInitialSyncPending` is the house hook for this window
- * and all five data pages already use it in the same `hydrated && !pending`
- * shape. It takes the CALLER's own emptiness so a device with anything to seed is
- * never gated.
- */
+// ready waits for store hydration (zustand reports the empty server snapshot while hydrating) and, on a
+// fresh device, for the first sync pull; otherwise the seed and baseline would be zeros.
 export function useCurrentForecastData(): {
   ready: boolean
   rows: (ForecastRows & { unfilteredExpenseItems: LocalFinancialItem[] }) | null
@@ -861,10 +478,7 @@ export function useCurrentForecastData(): {
   const storeIncome = useIncomeSources()
   const storeExpenses = useExpenses()
   const storeSavingsGoals = useSavingsGoals()
-  // Profile-scoped (`balanceStore.ts` selector docblock); never `state.entries`.
   const storeBalanceEntries = useBalanceEntries()
-  // The in-scope rows: investments and debts (story 100.2, D1), and since story
-  // 114.1 assets, which seed rows of their own.
   const storeBalanceRowCount = useMemo(
     () =>
       storeBalanceEntries.filter(
@@ -872,7 +486,6 @@ export function useCurrentForecastData(): {
       ).length,
     [storeBalanceEntries]
   )
-  // The solver inputs /savings uses, built by the SAME mapping (story 100.1, AC-3).
   const storeInvestmentEntries = useInvestmentEntries()
   const storeContributionItems = useMemo(
     () => investmentContributionItems(storeInvestmentEntries),
@@ -881,11 +494,9 @@ export function useCurrentForecastData(): {
   const nothingToSeed =
     storeIncome.length === 0 &&
     storeExpenses.length === 0 &&
-    // ROWS, not the total (story 100.1): a goal with a 0 balance is still a row
-    // to seed.
+    // Rows, not the total: a goal with a 0 balance still seeds a row.
     storeSavingsGoals.length === 0 &&
-    // ROWS again (story 100.2), not the investment total: a debt-only user, or an
-    // investment at 0, is still something to seed. So is an asset-only user (114.1).
+    // Rows again: a debt-only user, an investment at 0 or an asset-only user still seeds.
     storeBalanceRowCount === 0
   const isInitialSyncPending = useIsInitialSyncPending(nothingToSeed)
   const ready = storesHydrated && !isInitialSyncPending
@@ -914,32 +525,8 @@ export function useCurrentForecastData(): {
   return { ready, rows, data }
 }
 
-/**
- * Rebuild what-if investment/debt rows from a saved forecast's inputs (story
- * 100.2, AC-13).
- *
- * A v3 forecast carries its rows. A v1/v2 forecast carries only the
- * `investments` total, which reloads as ONE `Investments` row with no
- * contribution (or no row at all when it is 0), so it projects exactly as before.
- * A negative v1/v2 total is kept, not clamped: the row's field flags it from the
- * start (`useMoneyDraft`), as 100.1 decided for savings.
- *
- * Defensive on its own (100.1 review): a caller that skips `mapToSavedForecast`
- * cannot crash it with a non-array or a `null` entry. An entry that is neither an
- * investment nor a debt is dropped (its sign is unknowable).
- *
- * Rates (story 100.3): an investment row's saved `annualReturn` goes through
- * `annualReturnFromSaved` (no usable rate → 6%, D3; finite out-of-range kept and
- * flagged, D9). A debt row's saved rate is ignored (debts are saved without one,
- * D8) and the row starts at the default, like a seeded debt.
- *
- * Debt flag (story 102.2, D1): a forecast saved before version 5 (`version`
- * absent or below 5) computed its debts under 100.2 D4, with the payment still an
- * Expenses row among its `newExpenses`. Each of its debt rows therefore reloads
- * FLAGGED ("Payment already in Expenses"), so it projects exactly as saved and
- * the payment is not counted twice. A v5 debt keeps its saved flag (`=== true`).
- * `paidByExpenseName` (D6) is kept when it is a non-empty string, on debts only.
- */
+// Older versions reload their investments total as one row. Pre-v5 debts reload flagged, since their payment
+// is still among the saved expenses. A debt's saved rate is ignored.
 function balanceFromSaved(
   inputs: ScenarioInputs | undefined,
   version: unknown
@@ -957,9 +544,7 @@ function balanceFromSaved(
       const paidBy = account['paidByExpenseName']
       const flagged =
         (type === 'debt' && legacyDebts) || account['contributionRecordedAsExpense'] === true
-      // A labelled debt row never shows its flag (code review 102.2), so a row
-      // that is flagged (legacy, or a corrupt save) drops the label instead of
-      // hiding a ticked box: the label means "the payment is this row's own".
+      // A labelled debt row never shows its flag, so a flagged row drops the label instead of hiding a ticked box.
       const paidByName =
         type === 'debt' && !flagged && typeof paidBy === 'string' ? paidBy.trim() : ''
       rows.push({
@@ -989,8 +574,7 @@ function balanceFromSaved(
         contribution: 0,
         frequency: 'monthly',
         contributionRecordedAsExpense: false,
-        // A v1/v2 forecast saved no rate: it reloads at 6% (D3), not the 7% it
-        // was computed at, so it reopens LOWER than it was saved (accepted).
+        // Older forecasts saved no rate and reopen at 6%, not the 7% they were computed at (accepted).
         annualReturn: DEFAULT_INVESTMENT_RETURN,
       },
     ]
@@ -998,13 +582,7 @@ function balanceFromSaved(
   return []
 }
 
-/**
- * Rebuild what-if asset rows from a saved forecast's inputs (story 114.1,
- * AC-10). A forecast saved before version 6 has no `assetAccounts` and reloads
- * with NO asset rows. Defensive on its own, as `balanceFromSaved` is: a
- * non-array is ignored, a non-object entry becomes a blank row at 0, a
- * non-string name blank, and a non-finite or negative value 0.
- */
+// Pre-v6 forecasts have no assetAccounts. Defensive: bad entries become blank rows at 0.
 function assetsFromSaved(inputs: ScenarioInputs | undefined): LocalAssetAccount[] {
   const saved: unknown = inputs?.assetAccounts
   if (!Array.isArray(saved)) return []
@@ -1019,37 +597,18 @@ function assetsFromSaved(inputs: ScenarioInputs | undefined): LocalAssetAccount[
   })
 }
 
-/**
- * Rebuild local one-time events from a saved scenario. The persisted events may
- * carry a `name` (the builder writes one) even though `ForecastingScenario` types
- * `oneTimeEvents` as `{ year, amount }`; default the name when absent (e.g. an
- * older saved row).
- */
+// Saved events may carry a name the type omits; default it when absent.
 function eventsFromSaved(events: ForecastingScenario['oneTimeEvents']): OneTimeEvent[] {
   if (!events || events.length === 0) return []
   return events.map((event, index) => ({
     id: `event-loaded-${index}`,
     year: event.year,
-    // Coerced like `itemsFromSaved` (story 77.1). JSON has no NaN/Infinity, so a
-    // saved non-finite amount comes back as `null`. The engine used to add `null`
-    // as 0; it now REFUSES any non-finite amount, so without this a forecast that
-    // opened fine before 77.1 would open to an error banner. A fraction is rounded,
-    // which is exactly what the engine does to it.
+    // JSON turns non-finite into null, which the engine refuses; coerce so older forecasts still open.
     amount: Number.isFinite(event.amount) ? Math.round(event.amount) : 0,
     name: (event as { name?: string }).name ?? 'One-time event',
   }))
 }
 
-// ============================================================================
-// Main Component
-// ============================================================================
-
-/**
- * Scenario Builder Component
- *
- * Allows users to build and configure financial forecasting scenarios.
- * Calculates projections based on user input.
- */
 export function ScenarioBuilder({
   onSave,
   onResultChange,
@@ -1057,14 +616,8 @@ export function ScenarioBuilder({
   saveAvailability = { kind: 'ready' },
   onSavingChange,
 }: ScenarioBuilderProps): React.ReactElement {
-  // Display amounts respect the user's currency mode (currency-less vs symbols).
   const formatCurrency = useFormattedAmount()
-  // (Since story 109.1 every money field is a `type="text"` field that shows the
-  // amount grouped in the user's locale, as on the other pages; each row reads
-  // the locale itself and parses with `parseMoneyDraft`.)
-  // State for financial items. When a saved forecast is loaded, seed every field
-  // from it (the parent remounts this component via `key` on load, so these lazy
-  // initializers run once per load); a fresh builder falls back to the defaults.
+  // Lazy initializers run once per load: the parent remounts this component via key.
   const [incomeItems, setIncomeItems] = useState<LocalFinancialItem[]>(() =>
     initialForecast ? itemsFromSaved(initialForecast.scenario.newIncome, 'income') : []
   )
@@ -1074,7 +627,6 @@ export function ScenarioBuilder({
       : []
   )
 
-  // State for scenario configuration
   const [formData, setFormData] = useState<ScenarioFormData>(() =>
     initialForecast
       ? {
@@ -1086,32 +638,17 @@ export function ScenarioBuilder({
         }
       : DEFAULT_FORM
   )
-  /**
-   * The projection period the builder last saw that the ENGINE accepts (story
-   * 77.1). `formData.years` keeps exactly what the user typed, so they can see
-   * and fix it; this is what everything downstream of the field reads while the
-   * typed value is out of range. Today that is only the one-time event rows'
-   * `maxYear`, which would otherwise clamp every event year against 0 or 1e9.
-   */
+  // The last period the engine accepts; formData.years keeps what the user typed so they can fix it.
   const [lastValidYears, setLastValidYears] = useState<number>(() =>
     isValidForecastYears(formData.years) ? formData.years : DEFAULT_FORM.years
   )
   const yearsValid = isValidForecastYears(formData.years)
-  // The growth-rate fields keep what the user TYPED (InputField's own display
-  // string); what the builder validates is the parsed value (story 81.1, D8).
+  // The growth fields keep the typed text; validation uses the parsed value.
   const incomeGrowthValid = isValidGrowthRate(formData.incomeGrowthRate)
   const expenseGrowthValid = isValidGrowthRate(formData.expenseGrowthRate)
 
-  /**
-   * The fields currently holding a value that was NOT written to state (story
-   * 81.1, D4): income, expense and event amounts keyed by row id, and the what-if
-   * rows' fields keyed `<rowId>:<field>` (balance, contribution, since story
-   * 100.3 an investment row's `annualReturn`, and since story 114.1 an asset
-   * row's `value`). Each row reports
-   * from its own change handler — synchronously, in the same batch as any write —
-   * so the debounced recompute below never runs with a bad value it cannot see.
-   * A row that unmounts (removed, or re-keyed by a load) withdraws its key.
-   */
+  // Fields holding a value not written to state. Rows report synchronously from their change handlers,
+  // so the debounced recompute never runs with a bad value it cannot see.
   const [invalidAmountRows, setInvalidAmountRows] = useState<ReadonlySet<string>>(() => new Set())
   const setAmountRowValidity = useCallback((rowId: string, valid: boolean) => {
     setInvalidAmountRows((prev) => {
@@ -1122,36 +659,14 @@ export function ScenarioBuilder({
       return next
     })
   }, [])
-  // Any invalid field other than the period. Kept apart from `yearsValid` only for
-  // the Save reason's wording (see FIELDS_INVALID_SHORT).
   const otherFieldInvalid = !incomeGrowthValid || !expenseGrowthValid || invalidAmountRows.size > 0
 
-  // ⚠️ DECISION REVERSED by story 62.1 (FR94), replacing the story 32.2 / FR59
-  // audit note that stood here.
-  //
-  // 32.2 examined these two fields and deliberately left them on hard-coded demo
-  // constants, reasoning that they are what-if SCENARIO inputs the user types
-  // rather than reads of the savings or balance stores. That reasoning was not
-  // wrong — it was OUTRANKED. A builder that opens on a stranger's $5,000 asks
-  // the user to correct three rows before they can start, and the downstream
-  // "Starting/Ending Net Worth" wording still describes the scenario, so nothing
-  // 32.2 was protecting is lost by starting that scenario from the user's own
-  // position.
-  //
-  // A fresh builder therefore seeds from the savings ROWS (story 100.1, which
-  // replaced the single `useTotalSavings()` figure) and from the investment/debt
-  // ROWS (story 100.2, which replaced `useTotalInvestmentBalance()`) in the
-  // hydration effect below. Empty / `0` here
-  // is the pre-seed value, and it is also the final value for a LOADED forecast
-  // whose saved row predates persisted `inputs` — reading the live stores in that
-  // case would silently re-baseline a forecast saved months ago, which is exactly
-  // what AC-7 forbids.
+  // Empty/0 is the pre-seed value, and final for a loaded forecast without saved inputs:
+  // reading the live stores there would silently re-baseline an old forecast.
   const [savingsAccounts, setSavingsAccounts] = useState<LocalSavingsAccount[]>(() =>
     initialForecast ? savingsFromSaved(initialForecast.inputs) : []
   )
-  // The starting savings is the rows' sum (story 100.1, AC-2). Derived, never
-  // stored, so the total and the rows cannot disagree; the engine also refuses a
-  // mismatch (`SAVINGS_ROWS_MISMATCH`).
+  // Derived, never stored, so the total and the rows cannot disagree.
   const savings = useMemo(
     () => savingsAccounts.reduce((sum, account) => sum + account.balance, 0),
     [savingsAccounts]
@@ -1159,8 +674,6 @@ export function ScenarioBuilder({
   const [balanceAccounts, setBalanceAccounts] = useState<LocalBalanceAccount[]>(() =>
     initialForecast ? balanceFromSaved(initialForecast.inputs, initialForecast.version) : []
   )
-  // The starting investments are the investment rows' sum (story 100.2, AC-2),
-  // derived like `savings`; the engine refuses a mismatch (`BALANCE_ROWS_MISMATCH`).
   const investments = useMemo(
     () =>
       balanceAccounts.reduce(
@@ -1169,8 +682,6 @@ export function ScenarioBuilder({
       ),
     [balanceAccounts]
   )
-  // Asset rows (story 114.1). Their sum is computed where the engine input is
-  // built (`forecastInputFromRows`), like every other total.
   const [assetAccounts, setAssetAccounts] = useState<LocalAssetAccount[]>(() =>
     initialForecast ? assetsFromSaved(initialForecast.inputs) : []
   )
@@ -1178,60 +689,25 @@ export function ScenarioBuilder({
     initialForecast ? eventsFromSaved(initialForecast.scenario.oneTimeEvents) : []
   )
 
-  // ── Seeding a FRESH scenario from the user's own finances (story 62.1, FR94) ──
-  //
-  // ⚠️⚠️ WHY THIS IS AN EFFECT AND NOT A LAZY `useState` INITIALIZER.
-  //
-  // The stores' hooks are zustand selectors, which report the EMPTY server
-  // snapshot for the whole hydration pass (`useCurrentForecastData`'s docblock
-  // has the full story). A lazy initializer runs exactly once, during that
-  // render. It would capture the empty snapshot and NEVER RECOVER — and an empty
-  // builder is indistinguishable from the legitimate empty-user state, so the
-  // failure would be silent. `today.ready` is `useStoresHydrated()` plus the
-  // fresh-device initial-sync gate (code review 62.1).
-  //
-  // ⚠️ `hasSeeded` starts TRUE for a loaded forecast, so this is a no-op on that
-  // path and cannot re-baseline a saved scenario (AC-7). It flips on the first
-  // seed, so this cannot run twice or overwrite the user's own edits.
-  //
-  // ⚠️ Known, accepted: the builder paints one commit with empty rows before the
-  // seed lands. That is a transient, not a hydration mismatch, and the 500 ms
-  // debounce means the chart never flickers.
-  //
-  // Story 107.1 (FR175): the SAME data, through the SAME mapping, is every
-  // forecast's baseline (`today.data`), so an unedited scenario equals it (AC-5).
+  // An effect, not a lazy initializer: while hydrating the stores report the empty server snapshot, and a
+  // one-shot initializer would keep it. hasSeeded starts true for a loaded forecast so it is never re-baselined.
   const today = useCurrentForecastData()
   const readyToSeed = today.ready
 
   const [hasSeeded, setHasSeeded] = useState<boolean>(() => Boolean(initialForecast))
-  // Whether the user has edited each seeded part. The seed waits for
-  // `!isInitialSyncPending`, which on a paid user's first device can land
-  // seconds after hydration, and anything the user did in that window must
-  // survive it: a typed money value is neither replaced nor remounted (which
-  // would drop focus mid-edit), and income/expense rows they added, edited or
-  // deleted are not swapped for the store's. Set by the user-facing handlers
-  // only, never by the seed. (Story 100.2 removed the last money `InputField`,
-  // Current Investments: every money field is now a keyed row, so there is no
-  // money typed BEFORE hydration to adopt or refuse.)
+  // The seed can land seconds after hydration on a fresh device; anything the user edited by then must survive it.
   const incomeRowsTouched = useRef(false)
   const expenseRowsTouched = useRef(false)
-  // Savings rows (story 100.1): any row edit, add or remove marks the list, so the
-  // seed leaves it alone, exactly as for income/expense rows (D8). Rows are keyed
-  // by id, so the seed remounts them and they need no seed key.
   const savingsRowsTouched = useRef(false)
-  // Investment/debt rows (story 100.2): the same rule, through `editBalanceAccounts`.
   const balanceRowsTouched = useRef(false)
-  // Asset rows (story 114.1): the same rule, through `editAssetAccounts`.
   const assetRowsTouched = useRef(false)
 
   useEffect(() => {
     const seeded = today.rows
     if (hasSeeded || !readyToSeed || !seeded) return
     if (!incomeRowsTouched.current) setIncomeItems(seeded.incomeItems)
-    // Story 102.2 (D5): a linked expense MOVES into its debt row, so it leaves the
-    // Expenses rows, but ONLY when the balance rows are seeded in this same pass:
-    // when they were touched first no debt row carries it, and removing it would
-    // make the payment vanish from the scenario (`rowsFromStores`).
+    // A linked expense leaves the Expenses rows only when balance rows are seeded in this same pass,
+    // or the payment would vanish.
     if (!balanceRowsTouched.current) setBalanceAccounts(seeded.balanceAccounts)
     if (!expenseRowsTouched.current) {
       setExpenseItems(
@@ -1243,15 +719,8 @@ export function ScenarioBuilder({
     setHasSeeded(true)
   }, [hasSeeded, readyToSeed, today.rows])
 
-  // State for results — seed from the loaded forecast so its summary shows
-  // immediately, before the debounced recompute runs.
-  //
-  // ⚠️ Story 107.1 (D2, AC-7): with its baseline replaced by TODAY's. The stored
-  // one was computed from the scenario's own rows, so it is never shown. Until
-  // today's data is ready the baseline is EMPTY (no "vs. today" card), not the
-  // stored one; the effect below fills it. The result itself must still show:
-  // the Save button lives in the summary, and a loaded forecast with a field
-  // flagged from the start never recomputes until it is fixed (100.1 review).
+  // Shown with today's baseline, not the stored one, which stays empty until today's data is ready.
+  // The result must still show: Save lives in the summary.
   const [result, setResult] = useState<ForecastingResult | null>(() =>
     initialForecast?.result
       ? withTodayBaseline(initialForecast.result, today.data) ?? {
@@ -1260,16 +729,7 @@ export function ScenarioBuilder({
         }
       : null
   )
-  // Fill the loaded result's empty baseline once today's data is ready. A
-  // recomputed result always carries a full baseline (years >= 1), so an empty
-  // one can only be that placeholder.
-  //
-  // ⚠️ It is LIFTED too (code review 107.1). The page shows a reopened forecast
-  // on Projections only when today's data was ready at the click; otherwise it
-  // waits for this builder's first recompute, which a forecast with a field
-  // flagged on load never runs. Without the lift that forecast's Projections
-  // stayed empty until the field was fixed (MEASURED: RED in
-  // `routes/__tests__/forecasting-vs-today.test.tsx`).
+  // Lifted too: a forecast with a field flagged on load never recomputes, so Projections would stay empty.
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on today's data alone — `result` is read only to find the placeholder, and re-running on every recompute would be wasted work (a recomputed baseline is never empty).
   useEffect(() => {
     if (!today.data || !result || result.baseline.length > 0) return
@@ -1278,27 +738,14 @@ export function ScenarioBuilder({
     setResult(filled)
     onResultChangeRef.current?.(filled)
   }, [today.data])
-  /**
-   * The savings row ids the current `result` was computed for, in engine input
-   * order (story 100.1). The engine reports per-row balances by INDEX; mapping
-   * them back by id means a row removed or added since the last recompute can
-   * never show another row's figure while the debounce is pending.
-   */
-  //
-  // A loaded forecast whose SAVED result already covers its rows (same count)
-  // starts mapped, so its per-row lines show before the first recompute (code
-  // review 100.1). `savingsFromSaved` ids are deterministic, so they match.
+  // The engine reports per-row balances by index; mapping back by id stops a stale row showing another's figure.
+  // A loaded forecast whose saved result covers its rows starts mapped, so per-row lines show immediately.
   const [resultSavingsRowIds, setResultSavingsRowIds] = useState<readonly string[]>(() => {
     if (!initialForecast) return []
     const rows = savingsFromSaved(initialForecast.inputs)
     const saved = initialForecast.result?.projection?.at(-1)?.savingsAccounts
     return Array.isArray(saved) && saved.length === rows.length ? rows.map((row) => row.id) : []
   })
-  /**
-   * The investment/debt row ids the current `result` was computed for (story
-   * 100.2), mapped back by id for the same reason as `resultSavingsRowIds`, and
-   * seeded the same way from a loaded forecast whose saved result covers its rows.
-   */
   const [resultBalanceRowIds, setResultBalanceRowIds] = useState<readonly string[]>(() => {
     if (!initialForecast) return []
     const rows = balanceFromSaved(initialForecast.inputs, initialForecast.version)
@@ -1308,25 +755,8 @@ export function ScenarioBuilder({
   const [isCalculating, setIsCalculating] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  /**
-   * The outcome of the last SAVE attempt — a separate slot from `error`, which
-   * belongs to the calculation (story 62.2, AC-9).
-   *
-   * ⚠️ They cannot share one slot. `calculateForecast` runs `setError(null)` on
-   * every debounced recompute, 500 ms after any input change — and 62.1's seeding
-   * effect fires one such recompute at hydration. A save outcome parked in `error`
-   * would be erased by the user's next keystroke, at the moment they most need it.
-   *
-   * Cleared alongside `error` in `calculateForecast` so a fresh calculation error
-   * can never sit beside a stale save error and contradict it. Editing a field
-   * after a failed save therefore dismisses the failure, which is correct: the
-   * user is acting on it.
-   *
-   * ⚠️ Failures only. A SUCCESS confirmation does not belong here — the page
-   * switches to the "saved" tab on success, which CSS-hides this whole component
-   * (`routes/forecasting.tsx:534`), so a success message rendered here would be
-   * invisible exactly when it is needed while still being findable in jsdom.
-   */
+  // Separate from error, which every debounced recompute clears. Failures only: a successful save switches
+  // tabs, which CSS-hides this component.
   const [saveOutcome, setSaveOutcome] = useState<string | null>(null)
   const saveOutcomeRef = useRef<HTMLDivElement>(null)
   const savingsHeadingId = useId()
@@ -1334,59 +764,22 @@ export function ScenarioBuilder({
   const assetHeadingId = useId()
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  /**
-   * Move focus onto the failure message once it mounts.
-   *
-   * ⚠️ `role="alert"` announces on INSERTION, not on content change. This node is
-   * NOT keyed, so React reuses it and swaps its text — which is exactly why
-   * `handleSave` clears `saveOutcome` before each attempt: that unmounts the alert
-   * in the "saving" commit so the post-await set REMOUNTS it, re-firing both the
-   * announcement and this effect.
-   *
-   * ⚠️⚠️ An earlier revision of this docblock claimed the node "is mounted fresh
-   * rather than having its text swapped". That was FALSE on both the same-text and
-   * changed-text paths, and without the clear-on-attempt a retry failing with the
-   * IDENTICAL message was an `Object.is` bail-out: no re-render, no re-insertion,
-   * no focus move — measured twice in code review 62.2, silent for screen readers.
-   *
-   * The focus move is what a keyboard user gets: the message sits immediately
-   * BEFORE the Save button in DOM order, so one Tab returns them to Save to retry.
-   */
+  // role=alert announces on insertion only, so handleSave clears saveOutcome before each attempt to remount it.
+  // Focus lands just before Save, so one Tab returns to retry.
   useEffect(() => {
     if (saveOutcome) {
       saveOutcomeRef.current?.focus()
     }
   }, [saveOutcome])
 
-  /**
-   * A change of availability retires any save outcome (code review 62.2).
-   * Clicking Save during `loading` parks "Still checking your financial
-   * profiles. Try again in a moment." in `saveOutcome`; when the arm then
-   * resolves to `none`/`error` that message would otherwise sit there forever,
-   * telling the user to retry beside a permanently disabled button.
-   */
+  // A change of availability retires any outcome, or a stale "try again" sits beside a disabled button.
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed deliberately on the arm alone — re-running when `saveOutcome` changes would erase the outcome the moment it is set.
   useEffect(() => {
     setSaveOutcome(null)
   }, [saveAvailability.kind])
 
-  /**
-   * `none` and `error` both mean a save cannot succeed, so the affordance is
-   * disabled and says why. `loading` deliberately does NOT block: the window is a
-   * few hundred milliseconds, a disabled control with no explanation is worse than
-   * none, and the page's own save guard still refuses with an accurate message.
-   */
-  //
-  // ⚠️ An invalid Projection Period blocks too (story 77.1). The on-screen
-  // `result` is the last VALID one, so saving now would persist an out-of-range
-  // `inputs.years` beside a result computed for a different period — and a saved
-  // row with such a `years` has its inputs dropped to the defaults by
-  // `mapToSavedForecast` on load.
-  //
-  // ⚠️ So does ANY other invalid field (story 81.1, D4), for the same reason: the
-  // bad value never reached the engine, so the result on screen does not describe
-  // what the form shows. The period alone keeps its own reason; any other bad
-  // field, with or without the period, gets the general one.
+  // loading does not block: the window is brief, and the page's save guard still refuses accurately.
+  // Invalid fields block too: the on-screen result is the last valid one, so it would not match the saved inputs.
   const saveBlockedReason =
     saveAvailability.kind === 'none'
       ? NO_PROFILE_SHORT
@@ -1398,28 +791,22 @@ export function ScenarioBuilder({
             ? YEARS_INVALID_SHORT
             : null
 
-  // Keep the latest onResultChange in a ref so the debounced recompute stays
-  // correct even if a caller passes a non-memoized callback (review bug-3):
-  // calculateForecast then needn't depend on the callback's identity.
+  // A ref, so a non-memoized callback doesn't change calculateForecast's identity.
   const onResultChangeRef = useRef(onResultChange)
   useEffect(() => {
     onResultChangeRef.current = onResultChange
   }, [onResultChange])
 
-  // Calculate scenario whenever inputs change (with debounce)
   // biome-ignore lint/correctness/useExhaustiveDependencies: these are exactly the inputs the debounced calculateForecast (declared below) depends on; depending on calculateForecast itself would reference it before initialization (TDZ).
   useEffect(() => {
-    // Clear any existing timer
     if (debounceTimer.current) {
       clearTimeout(debounceTimer.current)
     }
 
-    // Set new timer
     debounceTimer.current = setTimeout(() => {
       calculateForecast()
     }, DEBOUNCE_DELAY_MS)
 
-    // Cleanup on unmount
     return () => {
       if (debounceTimer.current) {
         clearTimeout(debounceTimer.current)
@@ -1434,30 +821,13 @@ export function ScenarioBuilder({
     assetAccounts,
     oneTimeEvents,
     invalidAmountRows,
-    // Story 107.1 (D1): the baseline is today, so a store change recomputes.
+    // The baseline is today, so a store change recomputes.
     today.data,
   ])
 
-  /**
-   * Calculate forecast based on current inputs
-   */
   const calculateForecast = useCallback(async () => {
-    // ⚠️ The field's guard (story 77.1, FR124). An out-of-range `years` never
-    // reaches the engine: `1e9` would freeze the tab (the engine now refuses it,
-    // but the builder must not rely on that throw to report a typing mistake).
-    // The last valid RESULT stays on screen and the inline message under the
-    // field says why it is not updating.
-    //
-    // ⚠️ But a calculation ERROR is cleared (77.1 code review, P3): it described
-    // a computation of inputs that have since changed, and leaving it up would
-    // show a banner whose cause may already be fixed. If the cause remains, the
-    // next valid period recomputes and raises it again. `saveOutcome` is left
-    // alone — Save is blocked with its own reason while the period is invalid.
-    //
-    // ⚠️ The same holds for every other field that can hold a bad value (story
-    // 81.1, FR132): either growth rate, and any amount a row has reported invalid.
-    // Each shows its own message; the engine's banner is not the place to learn
-    // which field is wrong.
+    // An invalid field never reaches the engine: the last valid result stays and the field says why.
+    // A stale calculation error is cleared; saveOutcome is left alone.
     if (
       !isValidForecastYears(formData.years) ||
       !isValidGrowthRate(formData.incomeGrowthRate) ||
@@ -1467,15 +837,12 @@ export function ScenarioBuilder({
       setError(null)
       return
     }
-    // ⚠️ Story 107.1 (AC-6): no baseline until today's data is ready (hydrated,
-    // and on a paid user's fresh device the first pull landed). Calculating now
-    // would compare the scenario against zeros; the effect re-runs when it lands.
+    // No baseline until today's data is ready, or the scenario is compared against zeros.
     const baselineData = today.data
     if (!baselineData) return
     setIsCalculating(true)
     setError(null)
-    // AC-9: a recompute retires the previous save outcome, so the user never sees
-    // a stale save error beside a fresh calculation error.
+    // A recompute retires the previous save outcome so it never sits beside a fresh calculation error.
     setSaveOutcome(null)
 
     try {
@@ -1489,8 +856,6 @@ export function ScenarioBuilder({
         oneTimeEvents: oneTimeEvents.map(({ id: _id, ...rest }) => rest),
       }
 
-      // The scenario's own (edited) rows. `forecastInputFromRows` documents what
-      // each row kind does to the totals (stories 100.1-100.3).
       const currentData = forecastInputFromRows({
         incomeItems,
         expenseItems,
@@ -1499,8 +864,6 @@ export function ScenarioBuilder({
         assetAccounts,
       })
 
-      // Story 107.1 (FR175, D1): the baseline is TODAY's data (`today.data`), so
-      // an edited row moves only the projection.
       const newResult = calculateFinancialForecast(
         currentData,
         scenario,
@@ -1510,10 +873,7 @@ export function ScenarioBuilder({
       setResult(newResult)
       setResultSavingsRowIds(savingsAccounts.map((account) => account.id))
       setResultBalanceRowIds(balanceAccounts.map((account) => account.id))
-      // Lift the fresh result to the page so the Projections tab reflects THIS
-      // scenario instead of sample data (story bug-3). Keep the last good result
-      // on error rather than blanking the chart. Read via ref so this callback's
-      // identity doesn't depend on the caller passing a stable onResultChange.
+      // Keep the last good result on error rather than blanking the chart.
       onResultChangeRef.current?.(newResult)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to calculate forecast')
@@ -1532,9 +892,6 @@ export function ScenarioBuilder({
     today.data,
   ])
 
-  /**
-   * Handle form input change
-   */
   const handleFormChange = useCallback((field: keyof ScenarioFormData, value: string | number) => {
     setFormData((prev) => ({
       ...prev,
@@ -1542,11 +899,6 @@ export function ScenarioBuilder({
     }))
   }, [])
 
-  /**
-   * Handle a Projection Period change (story 77.1). The typed value is stored
-   * as-is — the field must show what the user typed — and remembered as the last
-   * valid period only when the engine would accept it.
-   */
   const handleYearsChange = useCallback(
     (value: string | number) => {
       const years = Number(value)
@@ -1556,11 +908,7 @@ export function ScenarioBuilder({
     [handleFormChange]
   )
 
-  /**
-   * Add new income item
-   */
-  // The user-facing row setters: same as the raw ones, but they record that the
-  // user changed the list, so the store seed leaves it alone.
+  // These record that the user changed the list, so the store seed leaves it alone.
   const editIncomeItems: React.Dispatch<React.SetStateAction<LocalFinancialItem[]>> = useCallback(
     (update) => {
       incomeRowsTouched.current = true
@@ -1588,9 +936,6 @@ export function ScenarioBuilder({
     ])
   }, [editIncomeItems])
 
-  /**
-   * Add new expense item
-   */
   const addExpenseItem = useCallback(() => {
     editExpenseItems((prev) => [
       ...prev,
@@ -1603,9 +948,6 @@ export function ScenarioBuilder({
     ])
   }, [editExpenseItems])
 
-  /**
-   * Update financial item
-   */
   const updateFinancialItem = useCallback(
     (
       _items: LocalFinancialItem[],
@@ -1628,9 +970,6 @@ export function ScenarioBuilder({
     []
   )
 
-  /**
-   * Delete financial item
-   */
   const deleteFinancialItem = useCallback(
     (
       items: LocalFinancialItem[],
@@ -1646,9 +985,7 @@ export function ScenarioBuilder({
     []
   )
 
-  // Savings rows (story 100.1). Every handler goes through this setter, so any
-  // edit, add or remove marks the list touched and the seed leaves it alone.
-  // None of them touches the savings store (D0): the rows are what-if only.
+  // None of these touch the savings store: the rows are what-if only.
   const editSavingsAccounts: React.Dispatch<React.SetStateAction<LocalSavingsAccount[]>> =
     useCallback((update) => {
       savingsRowsTouched.current = true
@@ -1671,8 +1008,7 @@ export function ScenarioBuilder({
     [editSavingsAccounts]
   )
 
-  // No "at least one item" rule, unlike income/expenses (AC-5): a scenario with
-  // no savings accounts is legitimate.
+  // No at-least-one rule: a scenario with no savings accounts is legitimate.
   const deleteSavingsAccount = useCallback(
     (id: string) => {
       editSavingsAccounts((prev) => prev.filter((account) => account.id !== id))
@@ -1680,8 +1016,6 @@ export function ScenarioBuilder({
     [editSavingsAccounts]
   )
 
-  // Investment/debt rows (story 100.2): the same single setter, so every edit,
-  // add and remove marks the list touched. None touches the balance store (D0).
   const editBalanceAccounts: React.Dispatch<React.SetStateAction<LocalBalanceAccount[]>> =
     useCallback((update) => {
       balanceRowsTouched.current = true
@@ -1714,12 +1048,8 @@ export function ScenarioBuilder({
         prev.map((account) => {
           if (account.id !== id) return account
           const next = { ...account, [field]: value }
-          // Any type change clears the flag, both ways (story 102.2, D8; was
-          // "switching to Debt clears it", 100.2 AC-8): "is this money already in
-          // Expenses" means something different for each type and must be
-          // answered again. Its annual return is KEPT, hidden (story 100.3, D8):
-          // back to Investment shows it again. So is `paidByExpenseName` (shown
-          // on debt rows only).
+          // Any type change clears the flag: "already in Expenses" means something different per type.
+          // The annual return and paidByExpenseName are kept, hidden.
           if (next.type !== account.type) next.contributionRecordedAsExpense = false
           return next
         })
@@ -1728,7 +1058,6 @@ export function ScenarioBuilder({
     [editBalanceAccounts]
   )
 
-  // No "at least one item" rule: a scenario with no investments or debts is fine.
   const deleteBalanceAccount = useCallback(
     (id: string) => {
       editBalanceAccounts((prev) => prev.filter((account) => account.id !== id))
@@ -1736,8 +1065,6 @@ export function ScenarioBuilder({
     [editBalanceAccounts]
   )
 
-  // Asset rows (story 114.1): the same single setter, so every edit, add and
-  // remove marks the list touched. None touches the balance store (D0).
   const editAssetAccounts: React.Dispatch<React.SetStateAction<LocalAssetAccount[]>> = useCallback(
     (update) => {
       assetRowsTouched.current = true
@@ -1762,7 +1089,6 @@ export function ScenarioBuilder({
     [editAssetAccounts]
   )
 
-  // The list may be emptied: a scenario with no assets is fine.
   const deleteAssetAccount = useCallback(
     (id: string) => {
       editAssetAccounts((prev) => prev.filter((account) => account.id !== id))
@@ -1770,9 +1096,6 @@ export function ScenarioBuilder({
     [editAssetAccounts]
   )
 
-  /**
-   * Add one-time event
-   */
   const addOneTimeEvent = useCallback(() => {
     setOneTimeEvents((prev) => [
       ...prev,
@@ -1785,9 +1108,6 @@ export function ScenarioBuilder({
     ])
   }, [])
 
-  /**
-   * Update one-time event
-   */
   const updateOneTimeEvent = useCallback(
     (id: string, field: keyof OneTimeEvent, value: string | number) => {
       setOneTimeEvents((prev) =>
@@ -1804,16 +1124,10 @@ export function ScenarioBuilder({
     []
   )
 
-  /**
-   * Delete one-time event
-   */
   const deleteOneTimeEvent = useCallback((id: string) => {
     setOneTimeEvents((prev) => prev.filter((event) => event.id !== id))
   }, [])
 
-  /**
-   * Handle save
-   */
   const handleSave = useCallback(async () => {
     if (!result) {
       setError('No forecast calculated yet')
@@ -1824,8 +1138,7 @@ export function ScenarioBuilder({
     if (isSaving) {
       return
     }
-    // The button is already disabled in this state; this is the belt to that
-    // braces, so a programmatic click cannot fire a save that is known to fail.
+    // Belt and braces: the button is already disabled in this state.
     if (saveBlockedReason) {
       return
     }
@@ -1847,11 +1160,7 @@ export function ScenarioBuilder({
       scenario.oneTimeEvents = oneTimeEvents.map(({ id: _id, ...rest }) => rest)
     }
 
-    // ⚠️ Clear BEFORE the attempt (code review 62.2). Without this, a retry that
-    // fails with the identical message is an `Object.is` bail-out: the alert node
-    // is reused, nothing re-mounts, and neither the announcement nor the focus
-    // effect fires. Clearing here unmounts it for the "saving" commit so the
-    // post-await set is a genuine re-insertion.
+    // Clear before the attempt, so a retry failing with the same message remounts the alert and re-announces.
     setSaveOutcome(null)
     setIsSaving(true)
     onSavingChange?.(true)
@@ -1861,12 +1170,7 @@ export function ScenarioBuilder({
         description: formData.description || undefined,
         scenario,
         result,
-        // Persist the inputs that ForecastingScenario does not carry, so the
-        // forecast can be reopened faithfully (story bug-3).
-        // `savings` stays alongside the rows (story 100.1, D4): an older cached
-        // client that reads only `inputs.savings` still reopens the forecast at
-        // the right starting figure. `investments` likewise stays beside the
-        // investment/debt rows (story 100.2), as the investment rows' sum.
+        // savings and investments stay beside the rows so an older client reading only the totals still reopens it.
         inputs: {
           savings,
           investments,
@@ -1876,10 +1180,7 @@ export function ScenarioBuilder({
             balance,
             monthlyContribution,
           })),
-          // `annualReturn` on investment rows only (story 100.3, D8): a debt is
-          // saved without one, so a later debt-interest story owns its own field.
-          // Story 102.2 (version 5): a debt's flag is saved as it stands, and its
-          // `paidByExpenseName` when it has one (D6).
+          // annualReturn on investment rows only: debts are saved without one.
           balanceAccounts: balanceAccounts.map(
             ({
               name,
@@ -1901,24 +1202,14 @@ export function ScenarioBuilder({
               ...(type === 'debt' && paidByExpenseName ? { paidByExpenseName } : {}),
             })
           ),
-          // Story 114.1 (version 6): always present, possibly `[]`.
           assetAccounts: assetAccounts.map(({ name, balance }) => ({ name, balance })),
         },
       })
-      // Failures land in `saveOutcome`, beside the button. Successes are reported
-      // by the PAGE, outside this component, because the page hides this component
-      // on success — see the `saveOutcome` docblock.
       setSaveOutcome(
         saveResult && !saveResult.success ? saveResult.error || FALLBACK_SAVE_ERROR : null
       )
     } catch (err) {
-      // `onSave` is a caller-supplied async function. Before this story a rejection
-      // propagated out of the click handler as an unhandled rejection and the user
-      // saw nothing at all — the page's own catch only covers ITS implementation,
-      // not a caller that throws before returning a result.
-      // ⚠️ `|| FALLBACK_SAVE_ERROR` covers an Error with an EMPTY message, which
-      // would otherwise be falsy and render no alert at all — the resolved-result
-      // arm above already guards this; the catch arm did not (code review 62.2).
+      // || FALLBACK_SAVE_ERROR: an Error with an empty message would otherwise render no alert.
       setSaveOutcome((err instanceof Error && err.message) || FALLBACK_SAVE_ERROR)
     } finally {
       setIsSaving(false)
@@ -1943,12 +1234,7 @@ export function ScenarioBuilder({
     onSave,
   ])
 
-  /**
-   * Per-row outcome lines (story 100.1, D5): each row's closing balance in the
-   * last projection year, keyed by row id, plus the unassigned remainder. Empty
-   * for a result computed without rows (a v1 forecast's saved result, before its
-   * first recompute).
-   */
+  // Empty for a result computed without rows (a v1 forecast's saved result).
   const savingsOutcome = useMemo(() => {
     if (!result) return null
     const last = result.projection.at(-1)
@@ -1958,21 +1244,13 @@ export function ScenarioBuilder({
       const balance = last.savingsAccounts?.[index]
       if (balance !== undefined) byRowId.set(id, balance)
     })
-    // The section-level line describes the WHOLE list, so it shows only while the
-    // result was computed for exactly the rows on screen (code review 100.1):
-    // never with a stale result, e.g. a stale year count while a debounced
-    // recompute for an added/removed row is pending. The empty list is matched
-    // like any other (story 112.1): the amber line needs no rows, the neutral
-    // "Not assigned …" line does (`hasRows`).
+    // Shown only while the result was computed for exactly the rows on screen, never a stale one.
     const currentIds = savingsAccounts.map((account) => account.id)
     const matchesRows =
       currentIds.length === resultSavingsRowIds.length &&
       currentIds.every((id, index) => id === resultSavingsRowIds.at(index))
     const hasRows = currentIds.length > 0
-    // Contributions are what the amber line blames, so it needs some (code
-    // review 100.1): a negative remainder with nothing contributed is a deficit
-    // in the income itself, not over-contribution. Since story 100.2 a COUNTED
-    // investment contribution reduces the left-over too, so it counts here.
+    // A negative remainder with nothing contributed is an income deficit, not over-contribution.
     const contributing =
       savingsAccounts.some((account) => account.monthlyContribution > 0) ||
       balanceAccounts.some(
@@ -1981,11 +1259,8 @@ export function ScenarioBuilder({
           !account.contributionRecordedAsExpense &&
           account.contribution > 0
       )
-    // Story 111.1 review (D1, Lucas 2026-10-07): automatic rows are seeded from a
-    // MONTHLY-canonical left-over, but the forecast annualises exactly, so the
-    // remainder can dip a few cents below 0 from rounding alone (MEASURED: 5,000.00/mo
-    // in, 100.00/wk out, one automatic row: -0.40 by year 10). A shortfall within
-    // the worst-case drift is not over-contribution: no amber line, and 0.00 shown.
+    // Automatic rows seed from a monthly left-over but the forecast annualises exactly, so rounding can dip
+    // a few cents below 0; a shortfall within that drift is not over-contribution.
     const roundingTolerance = roundingDriftToleranceCents(
       [
         ...incomeItems.map((item) => item.frequency),
@@ -2008,10 +1283,6 @@ export function ScenarioBuilder({
     }
   }, [result, resultSavingsRowIds, savingsAccounts, balanceAccounts, incomeItems, expenseItems])
 
-  /**
-   * Per-row outcome lines for the investment/debt rows (story 100.2, D9): each
-   * row's closing balance in the last projection year, keyed by row id.
-   */
   const balanceOutcome = useMemo(() => {
     if (!result) return null
     const closing = result.projection.at(-1)?.balanceAccounts
@@ -2024,7 +1295,6 @@ export function ScenarioBuilder({
     return { years: result.projection.length, byRowId }
   }, [result, resultBalanceRowIds])
 
-  // Calculate summary statistics
   const summary = useMemo(() => {
     if (!result) return null
     return {
@@ -2038,19 +1308,12 @@ export function ScenarioBuilder({
 
   return (
     <div className="space-y-8">
-      {/* Header */}
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-subheading">Scenario Builder</h2>
         <p className="text-muted mt-1">Create and configure your financial forecasting scenario</p>
       </div>
 
-      {/* Saving is impossible before the user starts — say so here, not on submit.
-          ⚠️ This is the point of story 62.2: the condition is known at mount, and
-          reporting it only when the user presses Save (after building a whole
-          scenario) is the defect. The remedy is one click away on the `none` arm.
-          ⚠️ The `error` arm must NOT offer "create a profile" — an account whose
-          fetch merely failed already has profiles, and sending it to make another
-          is wrong advice about the user's own data. */}
+      {/* The error arm must not offer "create a profile": a failed fetch says nothing about having profiles. */}
       {saveAvailability.kind === 'none' || saveAvailability.kind === 'error' ? (
         <div
           data-testid="save-blocked-notice"
@@ -2069,10 +1332,7 @@ export function ScenarioBuilder({
         </div>
       ) : null}
 
-      {/* Calculation Error Message.
-          ⚠️ THIS SLOT IS THE CALCULATION'S, NOT THE SAVE'S (story 62.2, AC-9). A
-          save failure renders beside the Save button instead — roughly 250 lines
-          further down the form, which is exactly why it could not stay here. */}
+      {/* This slot is the calculation's; save failures render beside the Save button. */}
       {error && (
         <div
           data-testid="calculation-error"
@@ -2082,12 +1342,10 @@ export function ScenarioBuilder({
         </div>
       )}
 
-      {/* Scenario Configuration */}
       <section className="surface-inset rounded-xl p-6 space-y-6">
         <h3 className="text-lg font-semibold text-subheading">Scenario Settings</h3>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {/* Scenario Name */}
           <InputField
             label="Scenario Name"
             value={formData.name}
@@ -2096,7 +1354,6 @@ export function ScenarioBuilder({
             placeholder="My Financial Forecast"
           />
 
-          {/* Description */}
           <InputField
             label="Description"
             value={formData.description}
@@ -2105,7 +1362,6 @@ export function ScenarioBuilder({
             placeholder="Optional description"
           />
 
-          {/* Projection Years */}
           <InputField
             label="Projection Period (years)"
             value={formData.years}
@@ -2116,37 +1372,9 @@ export function ScenarioBuilder({
             step={1}
             error={yearsValid ? undefined : YEARS_INVALID_MESSAGE}
           />
-          {/* ⚠️ `min`/`max` are HTML hints: they gate the spinner and form
-              validation, never a typed value. The guard is `isValidForecastYears`
-              in `calculateForecast` and in the engine (story 77.1).
-              MEASURED in Chromium (throwaway Playwright probe on a bare
-              `<input type="number" min=1 max=30 step=1>`, 77.1): typing
-              `1e999` gives `value=""`, `badInput=true`, so it reaches the parent
-              as 0 (InputField maps a NaN parse to 0), never as Infinity. `1e9`,
-              `2.5`, `-3` and `31` all arrive verbatim, and `1e9` is the one the
-              engine could not finish (the bounded harness timed out on it). jsdom also reports `1e999` as `""`. */}
+          {/* min/max are HTML hints only; isValidForecastYears is the real guard (1e9 would hang the engine). */}
 
-          {/* Income Growth Rate */}
-          {/* ⚠️ `type="text"`, NOT `type="number"` (code review 62.1). These fields
-              display through `formatPercentage`, i.e. the string "0.00%" — and a
-              number input REJECTS that outright, so `.value` was `''` and the
-              field rendered BLANK. Measured in jsdom and in Chromium:
-              `.value=[]` while `getAttribute('value')=[0.00%]`.
-              That was true before this story too, with 3%/2% silently applied
-              behind an empty box. `inputMode="decimal"` keeps the numeric
-              keypad on mobile; `min`/`max`/`step` are dropped because they are
-              inert on a text input and implying otherwise is worse than
-              omitting them.
-              ⚠️ This comment first claimed "clamping already lives in
-              `handleFormChange`". It does NOT — that handler is a pass-through,
-              and nothing CLAMPS a growth rate. Nothing is LOST by dropping
-              `min`/`max` (they never clamped a typed value on a number input
-              either; they gate the spinner and form validation only). Caught
-              re-reading my own comment during code review 62.1.
-              ⚠️ Since story 81.1 the rate is BOUNDED, though still not clamped:
-              `isValidGrowthRate` (−100%..+100%) marks the field invalid, the
-              recompute and Save are held, and the engine refuses it too. The
-              field keeps what was typed so it can be fixed. */}
+          {/* type="text": a number input rejects the formatted "0.00%" and renders blank. */}
           <InputField
             label="Income Growth Rate"
             value={formData.incomeGrowthRate}
@@ -2158,27 +1386,7 @@ export function ScenarioBuilder({
             error={incomeGrowthValid ? undefined : GROWTH_INVALID_MESSAGE}
           />
 
-          {/* Expense Growth Rate */}
-          {/* ⚠️ `type="text"`, NOT `type="number"` (code review 62.1). These fields
-              display through `formatPercentage`, i.e. the string "0.00%" — and a
-              number input REJECTS that outright, so `.value` was `''` and the
-              field rendered BLANK. Measured in jsdom and in Chromium:
-              `.value=[]` while `getAttribute('value')=[0.00%]`.
-              That was true before this story too, with 3%/2% silently applied
-              behind an empty box. `inputMode="decimal"` keeps the numeric
-              keypad on mobile; `min`/`max`/`step` are dropped because they are
-              inert on a text input and implying otherwise is worse than
-              omitting them.
-              ⚠️ This comment first claimed "clamping already lives in
-              `handleFormChange`". It does NOT — that handler is a pass-through,
-              and nothing CLAMPS a growth rate. Nothing is LOST by dropping
-              `min`/`max` (they never clamped a typed value on a number input
-              either; they gate the spinner and form validation only). Caught
-              re-reading my own comment during code review 62.1.
-              ⚠️ Since story 81.1 the rate is BOUNDED, though still not clamped:
-              `isValidGrowthRate` (−100%..+100%) marks the field invalid, the
-              recompute and Save are held, and the engine refuses it too. The
-              field keeps what was typed so it can be fixed. */}
+          {/* type="text": a number input rejects the formatted "0.00%" and renders blank. */}
           <InputField
             label="Expense Growth Rate"
             value={formData.expenseGrowthRate}
@@ -2189,21 +1397,14 @@ export function ScenarioBuilder({
             parseValue={parsePercentText}
             error={expenseGrowthValid ? undefined : GROWTH_INVALID_MESSAGE}
           />
-          {/* Story 100.2 replaced Current Investments (the last money
-              `InputField`, with its seed-key remount and pre-hydration refusal)
-              with the Investments & Debts rows below. Rows are keyed by id, so the
-              seed remounts them, and no money field is server-rendered any more. */}
         </div>
       </section>
 
-      {/* Savings Accounts (story 100.1, FR164) */}
       <section
         className="surface-inset rounded-xl p-6 space-y-4"
         aria-labelledby={savingsHeadingId}
       >
-        {/* The note sits BELOW the heading row, at full width: beside the
-            heading it squeezed the row at 320px and pushed the button past the
-            section's edge (CI screenshot, story 100.1). */}
+        {/* Below the heading row: beside it, the row overflowed at 320px. */}
         <div className="flex items-center justify-between">
           <h3 id={savingsHeadingId} className="text-lg font-semibold text-subheading">
             Savings Accounts
@@ -2266,12 +1467,10 @@ export function ScenarioBuilder({
           ))}
       </section>
 
-      {/* Investments & Debts (story 100.2, FR165) */}
       <section
         className="surface-inset rounded-xl p-6 space-y-4"
         aria-labelledby={balanceHeadingId}
       >
-        {/* The note sits below the heading row, at full width (100.1's 320px lesson). */}
         <div className="flex items-center justify-between">
           <h3 id={balanceHeadingId} className="text-lg font-semibold text-subheading">
             Investments &amp; Debts
@@ -2302,8 +1501,7 @@ export function ScenarioBuilder({
                   onValidityChange={setAmountRowValidity}
                   outcome={
                     balanceOutcome && closing !== undefined
-                      ? // A debt that STARTS at 0 was never owed, so it is not
-                        // "paid off" (code review 100.2): it reads After N years: 0.
+                      ? // A debt starting at 0 was never owed, so it reads After N years: 0, not "paid off".
                         account.type === 'debt' && closing === 0 && account.balance > 0
                         ? { label: `Paid off within ${yearsLabel(balanceOutcome.years)}` }
                         : {
@@ -2319,7 +1517,6 @@ export function ScenarioBuilder({
         )}
       </section>
 
-      {/* Assets (story 114.1, FR182): a name and a value each, no growth (D7). */}
       <section className="surface-inset rounded-xl p-6 space-y-4" aria-labelledby={assetHeadingId}>
         <div className="flex items-center justify-between">
           <h3 id={assetHeadingId} className="text-lg font-semibold text-subheading">
@@ -2353,7 +1550,6 @@ export function ScenarioBuilder({
         )}
       </section>
 
-      {/* Income Items */}
       <section className="surface-inset rounded-xl p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold text-subheading">Income Sources</h3>
@@ -2382,7 +1578,6 @@ export function ScenarioBuilder({
         </div>
       </section>
 
-      {/* Expense Items */}
       <section className="surface-inset rounded-xl p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold text-subheading">Expense Categories</h3>
@@ -2411,7 +1606,6 @@ export function ScenarioBuilder({
         </div>
       </section>
 
-      {/* One-Time Events */}
       <section className="surface-inset rounded-xl p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold text-subheading">One-Time Events</h3>
@@ -2442,7 +1636,6 @@ export function ScenarioBuilder({
         )}
       </section>
 
-      {/* Results Summary */}
       {result && (
         <section className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-6">
           <h3 className="text-lg font-semibold text-subheading mb-4">Forecast Summary</h3>
@@ -2465,18 +1658,12 @@ export function ScenarioBuilder({
               label="Avg Annual Growth"
               value={formatCurrency(Math.round(summary?.averageAnnualGrowth || 0))}
             />
-            {/* Story 107.1 (FR175, Q1): ending net worth against TODAY's data
-                projected flat (the baseline), signed. */}
             {vsToday !== null && (
               <StatCard label="vs. today" value={signedAmount(vsToday, formatCurrency)} />
             )}
           </dl>
 
-          {/* The save outcome renders HERE, not at the top of the form.
-              ⚠️ Adjacency is structural, not cosmetic: the message shares this
-              immediate parent with the Save button, so a user who just pressed
-              Save cannot miss it, and it sits BEFORE the button in DOM order so a
-              single Tab from the focused message returns to Save to retry. */}
+          {/* Before the Save button in the same parent, so one Tab from the focused message returns to Save. */}
           <div className="mt-6 space-y-3">
             {saveOutcome && (
               <div
@@ -2511,7 +1698,6 @@ export function ScenarioBuilder({
         </section>
       )}
 
-      {/* Calculation Status */}
       {isCalculating && (
         <div className="flex items-center justify-center py-4">
           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
@@ -2522,13 +1708,6 @@ export function ScenarioBuilder({
   )
 }
 
-// ============================================================================
-// Subcomponents
-// ============================================================================
-
-/**
- * Input Field Component
- */
 interface InputFieldProps {
   label: string
   value: string | number
@@ -2541,29 +1720,10 @@ interface InputFieldProps {
   inputMode?: 'decimal' | 'numeric'
   formatValue?: (value: string | number) => string
   parseValue?: (value: string) => string | number
-  /**
-   * Optional on-input character filter (story 28-1, FR46).
-   *
-   * Opt-in per call site rather than inferred from `inputMode`/`type`, because
-   * this component is shared by money and non-money fields alike — a scenario
-   * name must keep accepting letters. Only the two money fields passed it; since
-   * story 100.2 neither exists (savings and investments are rows), so no call
-   * site passes it today. Kept, not deleted, for the next text money field.
-   */
+  // Opt-in per call site: this component also serves non-money fields like the scenario name.
   sanitize?: (raw: string) => string
-  /**
-   * A validation message for this field (story 77.1). When set, it renders under
-   * the input, which gets `aria-invalid` and an `aria-describedby` pointing at it.
-   * When unset, NEITHER attribute is rendered, so the other call sites stay
-   * byte-identical.
-   */
   error?: string
-  /**
-   * Adopt text typed into the server-rendered input before hydration (default
-   * true). A money field must opt out (the hydration render parses with the
-   * default locale, so a de-DE `1234,56` would be saved 100x; decided 2026-10-05).
-   * No money `InputField` exists since story 100.2.
-   */
+  // Money fields must opt out: the hydration render parses with the default locale, so de-DE 1234,56 saves 100x.
   adoptPreHydrationValue?: boolean
   autoComplete?: 'off'
 }
@@ -2586,10 +1746,7 @@ function InputField({
   autoComplete,
 }: InputFieldProps): React.ReactElement {
   const [internalValue, setInternalValue] = useState<string>(() => {
-    // `formatValue` here is the symbol-bearing display formatter, so a money field
-    // would otherwise mount holding "$5,000.00" and lose the symbol the instant the
-    // user types. Seed through the same filter the field enforces, so what mounts
-    // is already a legal value for it.
+    // formatValue includes the symbol, so seed through the field's filter to mount a legal value.
     const seeded = formatValue ? formatValue(value) : String(value)
     return sanitize ? sanitize(seeded) : seeded
   })
@@ -2603,10 +1760,7 @@ function InputField({
       onChange(parseValue(rawValue))
     } else if (type === 'number') {
       const numValue = parseFloat(rawValue)
-      // `isFinite`, not `isNaN` (story 81.1, D7): no raw Infinity is ever lifted to
-      // the parent. Only the Projection Period uses this arm, and it already refuses
-      // 0 and Infinity alike, so no user sees a difference; the parent simply never
-      // receives a value no field means.
+      // isFinite, not isNaN, so no raw Infinity reaches the parent.
       onChange(Number.isFinite(numValue) ? numValue : 0)
     } else {
       onChange(rawValue)
@@ -2614,23 +1768,12 @@ function InputField({
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Filter first, so the displayed value and the value lifted to the parent are
-    // derived from the same string. There is no blur re-formatter on this surface,
-    // which makes onChange the only filter point. `sanitizeWithCaret` also keeps
-    // the cursor in place when a character is rejected mid-string.
+    // Filter first so displayed and lifted values come from the same string; sanitizeWithCaret keeps the cursor.
     commit(sanitize ? sanitizeWithCaret(e.target, sanitize) : e.target.value)
   }
 
-  // Keep what the user typed BEFORE hydration. The server-rendered input is live
-  // as soon as it paints, and on a cold load that can be seconds before React
-  // takes over. Hydration leaves the typed DOM value in place but fires no
-  // onChange, so state still holds the server value, and the next re-render of
-  // this field (the store seed is one) writes that back over the user's text.
-  // Adopting the DOM value on mount closes that window. On an ordinary client
-  // mount the two are equal and this does nothing.
-  // Compare AFTER filtering: text the filter rejects outright (`0.00a` -> `0.00`)
-  // is no edit, so it only cleans the DOM and fires no `onChange`. (Today the only
-  // filtered fields, the money ones, opt out of adoption entirely.)
+  // Adopt text typed before hydration: hydration fires no onChange, so the next re-render would overwrite it.
+  // Compare after filtering, so rejected characters only clean the DOM.
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only by design
   useLayoutEffect(() => {
     const input = inputRef.current
@@ -2643,8 +1786,6 @@ function InputField({
     }
   }, [])
 
-  // Associate the label with its control (story `forecast-2`). `useId` keeps the
-  // pairing unique across the seven call sites without threading an id prop.
   const inputId = useId()
   const errorId = `${inputId}-error`
 
@@ -2678,32 +1819,15 @@ function InputField({
   )
 }
 
-/**
- * Financial Item Row Component
- */
 interface FinancialItemRowProps {
   item: LocalFinancialItem
   frequencyOptions: { value: string; label: string }[]
   onUpdate: (field: keyof LocalFinancialItem, value: string | number) => void
   onDelete: () => void
-  /** Reports whether this row's amount field holds a usable value (story 81.1). */
   onValidityChange: (rowId: string, valid: boolean) => void
 }
 
-/**
- * Why an entry in an amount field cannot be used, or `null` when it can (story
- * 81.1, FR132). Shared by every builder money field.
- *
- * Since story 109.1 the fields are text, read by `parseMoneyDraft`: text it cannot
- * read is "Enter a number." (a text input never reports `badInput`, which is how
- * the old `type="number"` fields learned of it). An amount above the money limit
- * every other money form refuses (story 106.1, Q1) is refused here too, which
- * also keeps it far from overflowing the engine; that limit replaces 81.1's
- * "Enter a smaller amount.", which only caught a non-finite amount.
- *
- * `allowNegative` is for the one-time event row, whose field holds a magnitude
- * (a typed minus selects "Money out"), so the limit applies to the magnitude.
- */
+// allowNegative is for the event row, whose field holds a magnitude (a typed minus selects Money out).
 function amountProblem(
   draft: MoneyDraft,
   preferences: Pick<CurrencyOptions, 'mode' | 'currency' | 'locale'>,
@@ -2715,11 +1839,7 @@ function amountProblem(
   return null
 }
 
-/**
- * The builder's blur re-echo (story 109.1): the shared one, except that text the
- * field refused stays as typed. Re-echoing `1.2.3` would show `0.00` beside
- * "Enter a number.", replacing what the user typed (81.1 D5: the draft keeps it).
- */
+// Refused text stays as typed instead of re-echoing as 0.00 beside the error.
 function reechoAmountOnBlur(
   value: string,
   locale: string | undefined,
@@ -2729,11 +1849,7 @@ function reechoAmountOnBlur(
   reformatAmountOnBlur(value, locale, setter)
 }
 
-/**
- * Withdraws a row's invalid-amount report when the row unmounts (removed, or
- * re-keyed by a load or the store seed), so a row that no longer exists can never
- * keep Save blocked (story 81.1, D4).
- */
+// Withdraws the report on unmount, so a removed row can never keep Save blocked.
 function useWithdrawValidityOnUnmount(
   rowId: string,
   onValidityChange: (rowId: string, valid: boolean) => void
@@ -2748,44 +1864,20 @@ function FinancialItemRow({
   onDelete,
   onValidityChange,
 }: FinancialItemRowProps): React.ReactElement {
-  // The amount prefix follows the user's currency mode: the selected currency's
-  // symbol in symbol mode, nothing in currency-less mode (a hard-coded `$` was
-  // wrong in neutral mode and for non-USD currencies).
   const preferences = useCurrencyPreferences()
   const { mode, currency, locale } = preferences
 
-  // Associate each label with its control (story `forecast-2`). The event row has
-  // been associated since `forecast-1`; this story closed the rest — the FOUR
-  // default financial-item rows (1 income + 3 expenses) here, and the seven
-  // `InputField` call sites above, which include Current Savings and Current
-  // Investments. Before this story none of those were named to assistive tech.
   const nameId = useId()
   const amountId = useId()
   const frequencyId = useId()
 
-  /**
-   * ⚠️ The field shows a DRAFT string, not `item.amount / 100` (story 81.1, D5).
-   * A bad entry is no longer written to state, so a controlled `value` would
-   * reconcile the input back to the last good amount on the very re-render that
-   * shows the message — the user would lose what they typed at the moment they
-   * are told it is wrong. The draft keeps it on screen until they fix it.
-   * Nothing outside this input changes `item.amount` while the row is mounted:
-   * seeding and loading re-key the row, which remounts it with a fresh draft.
-   * The draft opens grouped in the user's locale (`42,000.00`, story 109.1).
-   */
+  // A draft string, not item.amount: a refused entry isn't written, so a controlled value would snap back
+  // to the last good amount and erase what the user typed.
   const [draft, setDraft] = useState<string>(() => formatForInputDisplay(item.amount, locale))
   const [amountError, setAmountError] = useState<string | null>(null)
   useWithdrawValidityOnUnmount(item.id, onValidityChange)
 
-  /**
-   * Before story 81.1 this wrote `0` for anything it could not use — a negative,
-   * text the browser rejected — and passed `Infinity` for `1e308`, which the
-   * engine refused with a banner naming no field. Now a bad entry is reported
-   * HERE and nothing is written, so the last good amount stays in the forecast.
-   * An EMPTY field is still 0: a cleared amount means nothing, not a mistake.
-   * Since story 109.1 each keystroke is sanitized (a letter is dropped, the
-   * caret kept) and read in the user's locale, as on /income.
-   */
+  // A bad entry is reported and not written; an empty field is still 0.
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = sanitizeMoneyChange(e.target, locale)
     setDraft(raw)
@@ -2800,7 +1892,6 @@ function FinancialItemRow({
   return (
     <div className="surface rounded-lg p-4 shadow-sm border border-default">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-        {/* Name */}
         <div>
           <label htmlFor={nameId} className="block text-sm font-medium text-label mb-1">
             Name
@@ -2815,7 +1906,6 @@ function FinancialItemRow({
           />
         </div>
 
-        {/* Amount */}
         <div>
           <label htmlFor={amountId} className="block text-sm font-medium text-label mb-1">
             Amount
@@ -2848,7 +1938,6 @@ function FinancialItemRow({
           )}
         </div>
 
-        {/* Frequency */}
         <div>
           <label htmlFor={frequencyId} className="block text-sm font-medium text-label mb-1">
             Frequency
@@ -2867,7 +1956,6 @@ function FinancialItemRow({
           </select>
         </div>
 
-        {/* Delete */}
         <div className="flex justify-end">
           <button
             type="button"
@@ -2882,15 +1970,11 @@ function FinancialItemRow({
   )
 }
 
-/**
- * One-Time Event Row Component
- */
 interface OneTimeEventRowProps {
   event: OneTimeEvent
   onUpdate: (id: string, field: keyof OneTimeEvent, value: string | number) => void
   onDelete: (id: string) => void
   maxYear: number
-  /** Reports whether this row's amount field holds a usable value (story 81.1). */
   onValidityChange: (rowId: string, valid: boolean) => void
 }
 
@@ -2901,52 +1985,22 @@ function OneTimeEventRow({
   maxYear,
   onValidityChange,
 }: OneTimeEventRowProps): React.ReactElement {
-  // Currency-mode-aware amount prefix (see FinancialItemRow) — never a literal `$`.
   const preferences = useCurrencyPreferences()
   const { mode, currency, locale } = preferences
 
-  /**
-   * Direction is held locally and the stored `amount` stays SIGNED (story
-   * `forecast-1`): negative is money out. Keeping the sign on the wire means the
-   * engine (`calculateFinancialForecast` already sums signed amounts) and the
-   * saved `scenarioData` JSON both need no change.
-   *
-   * ⚠️ The sign is authoritative WHENEVER THE AMOUNT IS NON-ZERO, so direction is
-   * derived from it and cannot drift out of step with what the engine will do.
-   * State is needed only for `amount: 0`, where the sign carries no information —
-   * a new event starts there, and without a remembered choice, picking "Money
-   * out" and then typing would silently produce an inflow.
-   *
-   * (An earlier revision held direction purely in state and claimed it "cannot be
-   * derived from the sign on every render". That was overstated — it is
-   * underivable only at zero — and it left a second source of truth that the
-   * zero case could genuinely desynchronise across a reload.)
-   */
+  // The stored amount stays signed; direction is derived from it when non-zero.
+  // State only remembers the choice at 0, where the sign carries nothing.
   const [pendingDirection, setPendingDirection] = useState<'in' | 'out'>(
     event.amount < 0 ? 'out' : 'in'
   )
   const direction: 'in' | 'out' =
     event.amount !== 0 ? (event.amount < 0 ? 'out' : 'in') : pendingDirection
 
-  /**
-   * The input holds a MAGNITUDE — a minus sign never has to be typed into a
-   * money field (a typed one selects "Money out", below).
-   *
-   * ⚠️ `cents === 0` is returned unnegated on purpose: `-0` is not `< 0`, so a
-   * stored `-0` would reload as "Money in", and `JSON.stringify` flattens it to
-   * `0` anyway. Normalising here keeps sign and direction in agreement.
-   */
+  // cents === 0 is returned unnegated: a stored -0 would reload as Money in.
   const signed = (cents: number, dir: 'in' | 'out') =>
     dir === 'out' && cents !== 0 ? -cents : cents
 
-  /**
-   * The field shows a DRAFT magnitude string (story 81.1, D6), for the reason
-   * `FinancialItemRow` gives: a refused entry is not written to state, and a
-   * controlled `value` would snap the input back to the last good amount on the
-   * re-render that shows the message. Flipping direction re-signs the stored
-   * amount without changing its magnitude, so the draft stays correct. It opens
-   * grouped in the user's locale (story 109.1).
-   */
+  // A draft magnitude string, for the same reason as FinancialItemRow's draft.
   const [draft, setDraft] = useState<string>(() =>
     formatForInputDisplay(Math.abs(event.amount), locale)
   )
@@ -2954,73 +2008,37 @@ function OneTimeEventRow({
   useWithdrawValidityOnUnmount(event.id, onValidityChange)
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Sanitized as on /income (story 109.1): a letter is dropped, the caret kept,
-    // and a minus survives only in front.
     const raw = sanitizeMoneyChange(e.target, locale)
     const typedMinus = raw.startsWith('-')
     const hasDigit = /\d/.test(raw)
-    // A typed minus selects "Money out" (below) and the field shows the magnitude.
-    // A lone "-" stays visible until a digit follows it.
+    // A typed minus selects Money out; a lone - stays visible until a digit follows.
     setDraft(typedMinus && hasDigit ? raw.slice(1) : raw)
 
     if (!hasDigit) {
       setAmountError(null)
       onValidityChange(event.id, true)
       if (raw === '') {
-        /**
-         * An EMPTIED field writes 0, as an income/expense row does (81.1 code
-         * review R1). Keep the chosen direction through the zero, where the sign
-         * cannot hold it.
-         */
+        // Keep the chosen direction through zero, where the sign cannot hold it.
         if (pendingDirection !== direction) setPendingDirection(direction)
         onUpdate(event.id, 'amount', 0)
         return
       }
-      /**
-       * Mid-edit: a digit-free partial (`-`, `.`). Nothing is written, so the
-       * row keeps its amount until the next keystroke makes the entry readable.
-       *
-       * Story 109.1: the field is `type="text"`, so a lone "-" arrives as `"-"`
-       * and THIS arm is how the minus selects "Money out" on its first keystroke.
-       * (While the field was `type="number"`, Chromium reported a lone minus as
-       * `""` with `badInput` — MEASURED in story `forecast-2` — and the minus
-       * only arrived on the second keystroke, as a parseable negative.)
-       */
+      // A digit-free partial (-, .) writes nothing; a lone - is how the minus selects Money out on the first keystroke.
       if (typedMinus && direction !== 'out') setPendingDirection('out')
       return
     }
 
-    /**
-     * ⚠️ A TYPED MINUS SELECTS "Money out" — it does not erase the entry
-     * (story `forecast-2`).
-     *
-     * This field holds a magnitude, so the old handler clamped any negative to 0
-     * and silently discarded the digits. With a Money in / Money out control
-     * sitting beside it, reaching for the familiar accounting convention
-     * (`-500` for an outflow) became the natural wrong guess — and the punishment
-     * was losing what you typed. Interpret it as the intent it obviously is.
-     *
-     * The minus is honoured BEFORE the entry is checked (81.1 code review, P2): a
-     * refused `-1.2.3` or an over-limit `-30000000` must keep its "Money out"
-     * intent for the corrected entry, or `5` would be stored as money in.
-     */
+    // A typed minus selects Money out rather than erasing the entry, and is honoured before validation
+    // so a refused entry keeps that intent.
     const nextDirection = typedMinus ? 'out' : direction
     if (nextDirection !== direction) setPendingDirection(nextDirection)
     const parsed = parseMoneyDraft(raw, locale)
-    /**
-     * Refused: text that cannot be read, or a magnitude above the money limit
-     * (story 109.1, Q1; it replaces 77.1's non-finite check, which `1e308` hit
-     * once scaled to cents). Since story 81.1 (FR132) the refusal is REPORTED on
-     * this field and nothing is written, so the last good amount stays.
-     */
+    // Refused (unreadable or above the money limit): reported on this field, nothing written.
     const problem = amountProblem(parsed, preferences, true)
     setAmountError(problem)
     onValidityChange(event.id, problem === null)
     if (problem !== null || !('cents' in parsed)) {
-      // A NON-zero amount's sign IS the direction (see `direction` above), so
-      // `pendingDirection` alone would be ignored: re-sign the kept amount, as the
-      // direction control does. The magnitude is unchanged, and the row is invalid,
-      // so nothing is recomputed until the entry is fixed.
+      // A non-zero amount's sign is the direction, so re-sign the kept amount; pendingDirection alone would be ignored.
       if (nextDirection !== direction && event.amount !== 0) {
         onUpdate(event.id, 'amount', signed(Math.abs(event.amount), nextDirection))
       }
@@ -3032,8 +2050,6 @@ function OneTimeEventRow({
   const handleDirectionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const next = e.target.value === 'out' ? 'out' : 'in'
     setPendingDirection(next)
-    // Re-sign whatever is already entered, so flipping direction after typing
-    // does not require re-typing the amount.
     onUpdate(event.id, 'amount', signed(Math.abs(event.amount), next))
   }
 
@@ -3043,10 +2059,7 @@ function OneTimeEventRow({
   const nameId = `event-name-${event.id}`
   const yearCalendarId = `${yearId}-calendar`
   const yearHelpId = `${yearId}-help`
-  // The calendar year the value lands in (story 108.1, D6): year 1 is the first
-  // projected year, so in 2026 it is 2027. Read at render: an event row only
-  // exists after a client-side add or load (a fresh builder SSRs with no
-  // events), so this never renders on the server and cannot mismatch hydration.
+  // Year 1 is the first projected year. Read at render: event rows only exist client-side, so no hydration mismatch.
   const calendarYear = new Date().getFullYear() + event.year
 
   const handleYearChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -3056,11 +2069,8 @@ function OneTimeEventRow({
 
   return (
     <div className="surface rounded-lg p-4 shadow-sm border border-default">
-      {/* `items-start` since story 108.1: the year cell carries two lines under its
-          input, and `items-end` would have pushed every other input up out of
-          line with it. Labels are one line at md+, so tops align the inputs. */}
+      {/* items-start: the year cell has two lines under its input. */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-start">
-        {/* Name */}
         <div>
           <label htmlFor={nameId} className="block text-sm font-medium text-label mb-1">
             Event Name
@@ -3071,13 +2081,10 @@ function OneTimeEventRow({
             value={event.name}
             onChange={(e) => onUpdate(event.id, 'name', e.target.value)}
             className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
-            // Direction-neutral since story `forecast-1`: this row models money
-            // out as well as in, so an inflow-only example would misdescribe it.
             placeholder="Bonus, house deposit, etc."
           />
         </div>
 
-        {/* Direction (story `forecast-1`) */}
         <div>
           <label htmlFor={directionId} className="block text-sm font-medium text-label mb-1">
             Direction
@@ -3093,7 +2100,6 @@ function OneTimeEventRow({
           </select>
         </div>
 
-        {/* Amount */}
         <div>
           <label htmlFor={amountId} className="block text-sm font-medium text-label mb-1">
             Amount
@@ -3108,8 +2114,7 @@ function OneTimeEventRow({
               id={amountId}
               type="text"
               inputMode="decimal"
-              // Magnitude only — `direction` carries the sign, and the draft never
-              // holds a minus once a digit follows it, so the re-echo is unsigned.
+              // Magnitude only: direction carries the sign.
               value={draft}
               onChange={handleAmountChange}
               onBlur={(e) => reechoAmountOnBlur(e.target.value, locale, setDraft)}
@@ -3128,18 +2133,9 @@ function OneTimeEventRow({
           )}
         </div>
 
-        {/* Year (story 108.1, FR176, D6). It was labelled just "Year", which
-            reads as a calendar year (2027) as easily as a count. It is a count
-            from the start of the forecast — the engine applies the event in
-            loop year `event.year` — so the label says so, the help line says
-            where counting starts, and the calendar year sits beside the value.
-            The stored value and its clamp are unchanged (1..`maxYear`). */}
+        {/* A count from the forecast start, not a calendar year; the calendar year shows beside it. */}
         <div>
-          {/* `whitespace-nowrap` (108.1 review): under DejaVu Sans (CI, many Linux
-              desktops) this label is 107.3 px, wider than a column at 768-776 px
-              (105 px), so it wrapped to two lines and dropped this input 20 px
-              below the others in a top-aligned row. MEASURED; unwrapped it
-              overhangs ≤ 3 px into the 12 px gap. */}
+          {/* whitespace-nowrap: under CI's DejaVu Sans this label wraps near 768px and drops the input. */}
           <label
             htmlFor={yearId}
             className="block whitespace-nowrap text-sm font-medium text-label mb-1"
@@ -3167,8 +2163,6 @@ function OneTimeEventRow({
           </p>
         </div>
 
-        {/* Delete. `md:pt-6` (the label's line + margin) lines it up with the
-            inputs now that the row aligns to the top (108.1). */}
         <div className="flex justify-end md:pt-6">
           <button
             type="button"
@@ -3183,12 +2177,8 @@ function OneTimeEventRow({
   )
 }
 
-/**
- * Savings Account Row Component (story 100.1, FR164)
- */
 interface SavingsAccountRowProps {
   account: LocalSavingsAccount
-  /** 1-based place in the list, so the name field is told apart even when two rows share a name. */
   position: number
   onUpdate: (
     id: string,
@@ -3196,28 +2186,12 @@ interface SavingsAccountRowProps {
     value: string | number
   ) => void
   onDelete: (id: string) => void
-  /**
-   * Reports whether ONE money field holds a usable value (story 81.1). Each field
-   * reports under its own key (`<rowId>:balance`, `<rowId>:contribution`), so two
-   * bad fields in a row both block Save and fixing one cannot unblock the other.
-   */
+  // One key per field, so fixing one bad field cannot unblock another.
   onValidityChange: (key: string, valid: boolean) => void
-  /** The `After N years: <amount>` line, or `null` while there is no result for this row. */
   outcome: { label: string; amount: string } | null
 }
 
-/**
- * One money field of a what-if row (savings rows, story 100.1; investment/debt
- * rows, story 100.2): a DRAFT string, validated on every change
- * with the 81.1 rules, and written as cents only when usable — the same contract
- * as `FinancialItemRow`'s amount (see its docblock for why the draft exists).
- *
- * ⚠️ Deliberately NOT `InputField` (story 100.1): rows remount by key when the
- * seed lands, so the `InputField` seed-key / pre-hydration machinery is not
- * needed. Since story 109.1 it reads and shows the amount in the user's locale
- * (`parseMoneyDraft`, `formatForInputDisplay`), like every builder money field,
- * so a de-DE user sees one number format across the builder.
- */
+// Not InputField: rows remount by key when the seed lands, so its pre-hydration machinery isn't needed.
 function useMoneyDraft(
   cents: number,
   validityKey: string,
@@ -3227,10 +2201,7 @@ function useMoneyDraft(
   const preferences = useCurrencyPreferences()
   const { locale } = preferences
   const [draft, setDraft] = useState<string>(() => formatForInputDisplay(cents, locale))
-  // A negative value can ARRIVE, not only be typed: a forecast saved when the old
-  // Current Savings field accepted `-5` (Lucas, code review 100.1). Flag it from
-  // the first render and report it, exactly as if typed, so Save and the
-  // recompute are held until it is fixed.
+  // A negative can arrive from an old saved forecast; flag it from the first render as if typed.
   const [error, setError] = useState<string | null>(() =>
     cents < 0 ? AMOUNT_NEGATIVE_MESSAGE : null
   )
@@ -3253,32 +2224,11 @@ function useMoneyDraft(
   return { draft, error, onChange, onBlur }
 }
 
-/**
- * The Annual return field of an investment row (story 100.3, D6), modelled on
- * `useMoneyDraft`: a DRAFT string, and the parsed rate written to the row only
- * when usable. Parsed like the growth-rate fields (`parseFloat(raw) / 100`, so
- * `7`, `7%` and `7.00%` all mean 0.07), but only when the WHOLE text is a number
- * (`PERCENT_TEXT`), and bounded by the same rule (`isValidGrowthRate`). A single
- * decimal comma reads as the point (`2,5` = 2.5%, story 110.1). Empty, not a
- * number (`abc`, `5abc`, `2,5,1`, `1.000,5`, `1e2`) or outside −100%..100% shows
- * `RETURN_INVALID_MESSAGE`, is NOT written, and reports invalid under its own key,
- * which holds the recompute and Save. A finite out-of-range rate can ARRIVE from a
- * saved forecast (D9): flagged from the first render, as `useMoneyDraft` flags a
- * negative amount. The draft opens as `formatPercentage(rate)` (`6.00%`).
- */
-/** A plain decimal, optionally signed, optionally ending in `%` (story 100.3 review). */
+// A plain decimal, optionally signed, optionally ending in %.
 const PERCENT_TEXT = /^\s*[-+]?(?:\d+\.?\d*|\.\d+)\s*%?\s*$/
 
-/**
- * A typed percentage as a decimal rate (`5`, `5%`, `5.00%` → 0.05), or NaN when the
- * WHOLE text is not a plain number with an optional `%`. `parseFloat` alone reads a
- * PREFIX: `5abc` → 5, `2,5` → 2 (a decimal comma silently dropped), `1e2` → 100.
- * A single decimal comma is converted to a point FIRST (story 110.1, D3:
- * `decimalCommaToPoint`), so `2,5` → 0.025; an ambiguous comma form keeps its
- * comma and fails `PERCENT_TEXT`. Shared by the Annual return field and both
- * growth-rate fields; the caller's `isValidGrowthRate` turns the NaN into the
- * field's message.
- */
+// parseFloat alone reads a prefix (5abc -> 5, 2,5 -> 2, 1e2 -> 100), so the whole text must match.
+// A single decimal comma converts to a point first.
 function parsePercentText(raw: string): number {
   const text = decimalCommaToPoint(raw)
   return PERCENT_TEXT.test(text) ? parseFloat(text) / 100 : Number.NaN
@@ -3302,8 +2252,6 @@ function usePercentDraft(
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value
     setDraft(raw)
-    // The whole text must be a plain number with an optional `%` (code review
-    // 100.3), else it is refused, never written.
     const parsed = parsePercentText(raw)
     const problem = isValidGrowthRate(parsed) ? null : RETURN_INVALID_MESSAGE
     if (problem === null) write(parsed)
@@ -3313,11 +2261,6 @@ function usePercentDraft(
   return { draft, error, onChange }
 }
 
-/**
- * The Annual return field (story 100.3), the percent twin of `RowMoneyField`:
- * same label, error markup and `<label> for <row>` accessible name. `type="text"`
- * with `inputMode="decimal"`, like the growth-rate fields, because it shows `%`.
- */
 function RowPercentField({
   label,
   rowLabel,
@@ -3354,11 +2297,6 @@ function RowPercentField({
   )
 }
 
-/**
- * One money field of a what-if row (savings rows, story 100.1; balance rows,
- * story 100.2), driven by `useMoneyDraft`. The visible label is the same on
- * every row, so the accessible name adds the row (`<label> for <row>`).
- */
 function RowMoneyField({
   label,
   rowLabel,
@@ -3425,15 +2363,13 @@ function SavingsAccountRow({
     onValidityChange,
     (c) => onUpdate(account.id, 'monthlyContribution', c)
   )
-  // Every row has the same three visible labels, so each control's accessible
-  // name also carries the row's name, or a screen reader hears "Balance" N times.
+  // Each accessible name carries the row's name, or a screen reader hears "Balance" N times.
   const rowName = account.name.trim()
   const rowLabel = rowName === '' ? 'account' : rowName
 
   return (
     <div className="surface rounded-lg p-4 shadow-sm border border-default">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-        {/* Name */}
         <div className="min-w-0">
           <label htmlFor={nameId} className="block text-sm font-medium text-label mb-1">
             Account Name
@@ -3443,9 +2379,7 @@ function SavingsAccountRow({
             type="text"
             value={account.name}
             onChange={(e) => onUpdate(account.id, 'name', e.target.value)}
-            // The visible label is the same on every row; its position tells
-            // them apart (AC-16, code review 100.1). Not the row name itself:
-            // this field IS the name, so it would rename itself while typed in.
+            // Labelled by position, not the row name: this field is the name and would rename itself while typed in.
             aria-label={`Account Name, row ${position}`}
             autoComplete="off"
             className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
@@ -3456,13 +2390,11 @@ function SavingsAccountRow({
         <RowMoneyField label="Balance" rowLabel={rowLabel} field={balance} />
         <RowMoneyField label="Monthly Contribution" rowLabel={rowLabel} field={contribution} />
 
-        {/* Delete */}
         <div className="flex justify-end">
           <button
             type="button"
             onClick={() => onDelete(account.id)}
-            // Unique per row (AC-5): "Remove" alone would name every row's button
-            // the same, and `getByRole` names are full-string.
+            // Unique per row, or every row's button has the same name.
             aria-label={rowName === '' ? 'Remove account' : `Remove ${rowName}`}
             className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 hover:text-red-800 dark:hover:bg-red-900/60 dark:hover:text-red-300 transition-colors"
           >
@@ -3470,7 +2402,7 @@ function SavingsAccountRow({
           </button>
         </div>
       </div>
-      {/* Plain text, not a live region (AC-16): it changes on every recompute. */}
+      {/* Plain text, not a live region: it changes on every recompute. */}
       {outcome && (
         <p className="mt-3 text-sm text-body">
           {outcome.label} <GroupedAmount text={outcome.amount} />
@@ -3480,12 +2412,8 @@ function SavingsAccountRow({
   )
 }
 
-/**
- * Investment/debt Row Component (story 100.2, FR165)
- */
 interface BalanceAccountRowProps {
   account: LocalBalanceAccount
-  /** 1-based place in the list, so the name field is told apart even when two rows share a name. */
   position: number
   onUpdate: <K extends Exclude<keyof LocalBalanceAccount, 'id'>>(
     id: string,
@@ -3493,15 +2421,7 @@ interface BalanceAccountRowProps {
     value: LocalBalanceAccount[K]
   ) => void
   onDelete: (id: string) => void
-  /**
-   * Per field, under `<rowId>:balance` / `<rowId>:contribution` (100.2 AC-9) and
-   * `<rowId>:annualReturn` (story 100.3).
-   */
   onValidityChange: (key: string, valid: boolean) => void
-  /**
-   * `After N years: <amount>`, `Paid off within N years` (a debt at 0, no
-   * amount), or `null` while there is no result for this row.
-   */
   outcome: { label: string; amount?: string } | null
 }
 
@@ -3526,7 +2446,6 @@ function BalanceAccountRow({
     onValidityChange,
     (c) => onUpdate(account.id, 'contribution', c)
   )
-  // Each control's accessible name carries the row, as on the savings rows.
   const rowName = account.name.trim()
   const rowLabel = rowName === '' ? 'unnamed balance' : rowName
   const isInvestment = account.type === 'investment'
@@ -3538,7 +2457,6 @@ function BalanceAccountRow({
   return (
     <div className="surface rounded-lg p-4 shadow-sm border border-default">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-        {/* Name */}
         <div className="min-w-0">
           <label htmlFor={nameId} className="block text-sm font-medium text-label mb-1">
             Name
@@ -3548,7 +2466,6 @@ function BalanceAccountRow({
             type="text"
             value={account.name}
             onChange={(e) => onUpdate(account.id, 'name', e.target.value)}
-            // By position, not by name: this field IS the name (100.1 review).
             aria-label={`Balance Name, row ${position}`}
             autoComplete="off"
             className={selectClass}
@@ -3556,7 +2473,6 @@ function BalanceAccountRow({
           />
         </div>
 
-        {/* Type */}
         <div>
           <label htmlFor={typeId} className="block text-sm font-medium text-label mb-1">
             Type
@@ -3582,7 +2498,6 @@ function BalanceAccountRow({
         <RowMoneyField label="Balance" rowLabel={rowLabel} field={balance} />
         <RowMoneyField label="Contribution" rowLabel={rowLabel} field={contribution} />
 
-        {/* Frequency */}
         <div>
           <label htmlFor={frequencyId} className="block text-sm font-medium text-label mb-1">
             Frequency
@@ -3609,8 +2524,7 @@ function BalanceAccountRow({
           </select>
         </div>
 
-        {/* Annual return (story 100.3): investment rows only. Its own component,
-            so switching to Debt UNMOUNTS it and withdraws its validity key (AC-10). */}
+        {/* Its own component, so switching to Debt unmounts it and withdraws its validity key. */}
         {isInvestment && (
           <AnnualReturnField
             account={account}
@@ -3620,13 +2534,11 @@ function BalanceAccountRow({
           />
         )}
 
-        {/* Delete. `md:col-start-3` keeps it in the last column when an investment
-            row's seventh field (Annual return) pushes it onto a row of its own. */}
+        {/* md:col-start-3 keeps it in the last column when Annual return wraps it onto its own row. */}
         <div className="flex justify-end md:col-start-3">
           <button
             type="button"
             onClick={() => onDelete(account.id)}
-            // Unique per row (AC-8): `getByRole` names are full-string.
             aria-label={rowName === '' ? 'Remove balance' : `Remove ${rowName}`}
             className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 hover:text-red-800 dark:hover:bg-red-900/60 dark:hover:text-red-300 transition-colors"
           >
@@ -3634,22 +2546,14 @@ function BalanceAccountRow({
           </button>
         </div>
       </div>
-      {/* Story 102.2 (D6): where a seeded debt's payment came from. Debt rows
-          only; kept in state while the row is an investment. `break-words` so a
-          long expense name wraps at 320 px instead of scrolling. */}
+      {/* break-words so a long expense name wraps at 320px. */}
       {!isInvestment && account.paidByExpenseName && (
         <p className="mt-3 text-sm text-faint break-words min-w-0">
           from Expenses: {account.paidByExpenseName}
         </p>
       )}
-      {/* The one flag, labelled per type. Hidden on a debt row that carries a
-          "from Expenses" label (code review 102.2, Lucas): its payment visibly is
-          the row's own, and ticking it would count that payment NOWHERE (the
-          expense left the Expenses rows when the row was seeded). Investment (story 45.1, as on
-          `/balance`): the contribution is already out of take-home pay or an
-          Expenses line, so the forecast does not take it from the money left over
-          a second time. Debt (story 102.2, D2): the payment is already an
-          Expenses line, so the row takes nothing from cash (100.2 D4 math). */}
+      {/* Hidden on a debt row with a from-Expenses label: its payment is the row's own, and ticking it would
+count that payment nowhere. */}
       {showFlag && (
         <div className="mt-3 flex items-start gap-2">
           <input
@@ -3684,14 +2588,7 @@ function BalanceAccountRow({
   )
 }
 
-/**
- * The Annual return field of one investment row (story 100.3). A component of its
- * own, not a hook call in `BalanceAccountRow`, so it mounts and unmounts with the
- * row's type: a Debt row has no field, and leaving Investment withdraws the
- * field's validity report (`useWithdrawValidityOnUnmount`), so a bad rate typed
- * before the switch never keeps Save blocked. The row keeps its last VALID rate
- * in state (D8); remounting shows it.
- */
+// Its own component so it unmounts with the type, withdrawing its validity report.
 function AnnualReturnField({
   account,
   rowLabel,
@@ -3712,17 +2609,11 @@ function AnnualReturnField({
   return <RowPercentField label="Annual return" rowLabel={rowLabel} field={rate} />
 }
 
-/**
- * Asset Row Component (story 114.1, FR182): a name and a value. No contribution,
- * frequency, return, flag or per-row outcome: the value never changes (D7).
- */
 interface AssetAccountRowProps {
   account: LocalAssetAccount
-  /** 1-based place in the list, so the name field is told apart even when two rows share a name. */
   position: number
   onUpdate: (id: string, field: 'name' | 'balance', value: string | number) => void
   onDelete: (id: string) => void
-  /** Under `<rowId>:value`. */
   onValidityChange: (key: string, valid: boolean) => void
 }
 
@@ -3734,7 +2625,6 @@ function AssetAccountRow({
   onValidityChange,
 }: AssetAccountRowProps): React.ReactElement {
   const nameId = useId()
-  // The same money field and hook as the balance rows (story 109.1's format).
   const value = useMoneyDraft(account.balance, `${account.id}:value`, onValidityChange, (c) =>
     onUpdate(account.id, 'balance', c)
   )
@@ -3744,7 +2634,6 @@ function AssetAccountRow({
   return (
     <div className="surface rounded-lg p-4 shadow-sm border border-default">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-        {/* Name */}
         <div className="min-w-0">
           <label htmlFor={nameId} className="block text-sm font-medium text-label mb-1">
             Name
@@ -3754,7 +2643,6 @@ function AssetAccountRow({
             type="text"
             value={account.name}
             onChange={(e) => onUpdate(account.id, 'name', e.target.value)}
-            // By position, not by name: this field IS the name (100.1 review).
             aria-label={`Asset Name, row ${position}`}
             autoComplete="off"
             className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
@@ -3765,12 +2653,10 @@ function AssetAccountRow({
         {/* "Value", not "Balance", so it is never named like a balance row's field. */}
         <RowMoneyField label="Value" rowLabel={rowLabel} field={value} />
 
-        {/* Delete */}
         <div className="flex justify-end">
           <button
             type="button"
             onClick={() => onDelete(account.id)}
-            // Unique per row: `getByRole` names are full-string.
             aria-label={rowName === '' ? 'Remove asset' : `Remove ${rowName}`}
             className="px-2 py-1.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded text-xs font-medium hover:bg-red-200 hover:text-red-800 dark:hover:bg-red-900/60 dark:hover:text-red-300 transition-colors"
           >
@@ -3782,16 +2668,7 @@ function AssetAccountRow({
   )
 }
 
-/**
- * Stat Card Component
- *
- * `value` is a `formatCurrency` string and renders as a `GroupedAmount` (story
- * 88.4, FR142, D1): in the four-column grid under CI's font the seed's
- * `$310,100,483.69` (171 px at `text-lg` semibold) overran its card by 63 px
- * at 768 and 3 px at 1024, so it may break after a group separator and
- * nowhere else. Before the first forecast computes, every card shows `$0.00`
- * (no separator), so server and first client render agree.
- */
+// GroupedAmount: large amounts overrun these cards, so they may break only after a group separator.
 interface StatCardProps {
   label: string
   value: string

@@ -1,14 +1,3 @@
-/**
- * Currency Formatting Tests
- *
- * Validates the currency control system (FR9 / story 4-6):
- * - AC-1: currency-less mode is the default and renders raw numeric entries
- * - AC-2: explicit symbols mode formats via Intl.NumberFormat
- *
- * Note: AC-3 (persistence across navigation) is exercised by the Zustand
- * store in apps/web; this suite covers the pure formatting core.
- */
-
 import { describe, expect, it } from 'vitest'
 import { localeForCurrency } from '../currency-locale.js'
 import {
@@ -27,11 +16,7 @@ import {
   sanitizeMoneyInput,
 } from '../currency.js'
 
-/**
- * The only four group/decimal separator shapes reachable from the supported
- * currency set (see currency-locale.ts). Testing these beats testing four
- * arbitrary locales — every supported currency lands in one of them.
- */
+// The only four separator shapes reachable from the supported currencies.
 const SEPARATOR_SHAPES = [
   { shape: 'A (group "," decimal ".")', locale: 'en-US', decimalSep: '.' },
   { shape: 'B (group "." decimal ",")', locale: 'de-DE', decimalSep: ',' },
@@ -51,9 +36,6 @@ describe('Currency Formatting', () => {
   })
 
   describe('formatCurrency - currency-less mode (AC-1)', () => {
-    // Story 14-2: currency-less mode now groups via Intl.NumberFormat (decimal
-    // style), so 4+ digit magnitudes carry the locale's thousands separator.
-    // Sub-1000 values, zero, and negatives are unaffected by grouping.
     it('renders grouped numeric value with no symbol when mode is none', () => {
       expect(formatCurrency(123456, { mode: 'none' })).toBe('1,234.56')
     })
@@ -63,7 +45,6 @@ describe('Currency Formatting', () => {
     })
 
     it('uses currency-less behaviour with no options (default)', () => {
-      // No options => DEFAULT mode 'none' => grouped raw number (sub-1000, no separator)
       expect(formatCurrency(99900)).toBe('999.00')
     })
 
@@ -82,9 +63,7 @@ describe('Currency Formatting', () => {
   })
 
   describe('formatCurrency - currency-less grouping (story 14-2, AC-2/AC-3)', () => {
-    // ICU may emit a narrow-NBSP (U+202F) or NBSP (U+00A0) group separator for
-    // some locales (e.g. de-DE / fr-FR); normalize to a plain space so the
-    // assertions express the human-visible result.
+    // ICU may emit U+202F or U+00A0 as a separator; normalize to a plain space.
     const normalizeSpaces = (value: string) => value.replace(/[  ]/g, ' ')
 
     it('groups a large currency-less value in the default (en-US) locale', () => {
@@ -102,12 +81,8 @@ describe('Currency Formatting', () => {
     })
 
     it('groups a very large near-MAX_SAFE_INTEGER value with no NaN/Infinity', () => {
-      // Number.MAX_SAFE_INTEGER / 100 is exactly 90071992547409.90625 as an
-      // IEEE-754 double; Intl.NumberFormat renders it to 2 digits as ...409.90.
-      // (`toFixed(2)` would give ...409.91 — an engine-dependent last-cent
-      // divergence that only appears at ~$90T magnitudes, far beyond any real
-      // budget figure.) The point of the test is that it groups cleanly with no
-      // NaN/Infinity, not the trailing cent.
+      // MAX_SAFE_INTEGER / 100 is ...409.90625 as a double; Intl renders .90 where toFixed
+      // gives .91. The point is clean grouping, not the last cent.
       const result = formatCurrency(Number.MAX_SAFE_INTEGER, { mode: 'none' })
       expect(result).not.toMatch(/NaN|Infinity|undefined/)
       expect(result).toBe('90,071,992,547,409.90')
@@ -121,9 +96,7 @@ describe('Currency Formatting', () => {
     })
 
     it('falls back to ungrouped toFixed(2) when the locale is invalid (never throws)', () => {
-      // An exotic/invalid locale must not crash a render; the catch path returns
-      // the plain fixed-decimal string. `not-a-locale!!` throws RangeError inside
-      // Intl.NumberFormat, so this exercises the catch and asserts its output.
+      // `not-a-locale!!` makes Intl.NumberFormat throw RangeError, exercising the catch.
       expect(() => formatCurrency(123456, { mode: 'none', locale: 'not-a-locale!!' })).not.toThrow()
       expect(formatCurrency(123456, { mode: 'none', locale: 'not-a-locale!!' })).toBe('1234.56')
     })
@@ -177,9 +150,7 @@ describe('Currency Formatting', () => {
   })
 
   describe('locale-aware formatting (story 4-7: AC-1, AC-2, AC-3)', () => {
-    // de-DE uses U+00A0 (NBSP) before the symbol; fr-FR uses U+202F
-    // (narrow NBSP) as the grouping separator. Normalize both to a regular
-    // space so the assertions express the human-visible result.
+    // de-DE uses U+00A0 before the symbol, fr-FR U+202F for grouping; normalize to a space.
     const normalizeSpaces = (value: string) => value.replace(/[  ]/g, ' ')
 
     it('AC-1: en-US formats 1000 USD as $1,000.00', () => {
@@ -204,7 +175,6 @@ describe('Currency Formatting', () => {
       expect(us).not.toBe(de)
     })
 
-    // Story 14-2: lock large-value grouping in symbols mode against regressions.
     it('groups a large USD value as $1,234,567.89', () => {
       expect(formatCurrency(123456789, { mode: 'symbol', currency: 'USD', locale: 'en-US' })).toBe(
         '$1,234,567.89'
@@ -266,16 +236,7 @@ describe('Currency Formatting', () => {
       expect(parseFromInput('')).toBe(0)
     })
 
-    /**
-     * Regression lock for the Epic-6 "Infinity into store" HIGH (story 6-8),
-     * incidentally fixed by story 14-3 when the money inputs were routed through
-     * parseFromInput on both the validation guard and the store-write path. An
-     * overflowing/non-finite amount must coerce to 0 *before* any page guard sees it,
-     * so a positive-amount field shows its "valid positive amount" error and a balance
-     * field stores a finite 0 — never Infinity. This test pins that contract so a
-     * future refactor away from parseFromInput on the four entry pages (Income,
-     * Expenses, Savings, Balance) cannot silently reintroduce the 6-8 leak.
-     */
+    // Non-finite amounts must coerce to 0 so entry pages never store Infinity.
     it('coerces overflowing / non-finite amounts to 0 (regression: story 6-8 leak, fixed by 14-3)', () => {
       expect(parseFromInput('1e309')).toBe(0) // parses to Infinity via exponent
       expect(parseFromInput('1e999')).toBe(0)
@@ -425,18 +386,14 @@ describe('Currency Formatting', () => {
     })
 
     it('never presents a selectable currency by its bare ISO code', () => {
-      // The whole point of UX-DR16: the picker must not read as US-centric codes.
-      // CHF is the one sanctioned exception (its ISO code IS its conventional
-      // symbol), asserted explicitly by the dedicated test below, so it is
-      // excluded here rather than dressed up with a meaningless sentinel.
+      // CHF is the sanctioned exception (its code is its symbol), tested separately.
       for (const code of getSupportedCurrencies().filter((c) => c !== 'NONE' && c !== 'CHF')) {
         expect(currencyDisplayLabel(code)).not.toBe(code)
       }
     })
 
     it('disambiguates the shared ¥ glyph (JPY vs CNY) with the ISO code', () => {
-      // JPY and CNY were deliberately NOT consolidated (they format differently),
-      // yet currencySymbol() maps both to ¥ — so the label must distinguish them.
+      // JPY and CNY format differently but share ¥, so the label must distinguish them.
       const jpy = currencyDisplayLabel('JPY')
       const cny = currencyDisplayLabel('CNY')
       expect(jpy).toContain('¥')
@@ -483,7 +440,6 @@ describe('Currency Formatting', () => {
     })
 
     it('passes non-consolidated / unknown codes through unchanged', () => {
-      // Distinct-render codes that are not part of the dollar cluster, plus garbage.
       expect(canonicalizeCurrency('SEK')).toBe('SEK')
       expect(canonicalizeCurrency('NZD')).toBe('NZD')
       expect(canonicalizeCurrency('XYZ')).toBe('XYZ')
@@ -507,10 +463,7 @@ describe('Currency Formatting', () => {
     })
 
     it('equivalence-drift guard: no two selectable codes render identically', () => {
-      // The whole point of consolidation — after it, every remaining selectable
-      // currency must produce a distinct rendered string via the app's real
-      // formatting path. Adding a future currency that duplicates an existing
-      // render fails loudly here.
+      // Every remaining selectable currency must render distinctly through the real format path.
       const seen = new Map<string, string>()
       for (const code of getSupportedCurrencies()) {
         const output = formatCurrency(100000, {
@@ -572,37 +525,32 @@ describe('Currency Formatting', () => {
       })
 
       it('falls back to en-US assumptions on an exotic/invalid locale', () => {
-        // Mirrors parseFromInput's try/catch fallthrough — a bad locale must never throw.
+        // A bad locale must never throw.
         expect(sanitizeMoneyInput('1,234.56', 'not-a-locale!!')).toBe('1,234.56')
       })
     })
 
     describe("never alters a value's magnitude (code-review regressions)", () => {
-      // Each case below is a real silent-corruption path the first implementation
-      // shipped. The rule that kills all three: this function removes noise
-      // characters and NOTHING else — malformed structure is parseFromInput's to
-      // reject (it returns 0, which the callers' `<= 0` validators block).
+      // Each case was a real silent-corruption path: the function removes noise only and
+      // leaves malformed structure for parseFromInput to reject.
 
       it('keeps every separator, so a stray leading decimal cannot rescale the value', () => {
-        // Field holds "1,000.00", caret at 0, user fumbles a '.'. De-duplicating
-        // to the FIRST separator produced ".1,00000" -> 10 cents: $1,000 -> $0.10.
+        // Fumbled '.' at caret 0 in "1,000.00": de-duplicating gave ".1,00000" → $0.10.
         expect(sanitizeMoneyInput('.1,000.00', 'en-US')).toBe('.1,000.00')
         expect(parseFromInput(sanitizeMoneyInput('.1,000.00', 'en-US'), 'en-US')).toBe(0)
         expect(sanitizeMoneyInput(',1.234,56', 'de-DE')).toBe(',1.234,56')
       })
 
       it('keeps a "." even where it is neither separator (en-ZA 100x regression)', () => {
-        // en-ZA groups with U+00A0 and decimalises with ',', so '.' is neither —
-        // but parseFromInput's `[^\d.-]` strip still reads it as the decimal point.
-        // Stripping it turned R1 234,56 into R123 456,00.
+        // en-ZA: '.' is neither separator, but parseFromInput still reads it as decimal;
+        // stripping it turned R1 234,56 into R123 456,00.
         expect(sanitizeMoneyInput('1234.56', 'en-ZA')).toBe('1234.56')
         expect(parseFromInput(sanitizeMoneyInput('1234.56', 'en-ZA'), 'en-ZA')).toBe(123456)
         expect(parseFromInput(sanitizeMoneyInput('0.99', 'en-ZA'), 'en-ZA')).toBe(99)
       })
 
       it('leaves a multi-separator value for the parser to reject, not to repair', () => {
-        // Previously '1.2.3' -> '1.23' -> 123 cents, i.e. a value the parser had
-        // rejected became saveable. It must stay rejected (0 → validators block).
+        // '1.2.3' must stay rejected by the parser, not become '1.23'.
         expect(sanitizeMoneyInput('1.2.3', 'en-US')).toBe('1.2.3')
         expect(parseFromInput(sanitizeMoneyInput('1.2.3', 'en-US'), 'en-US')).toBe(0)
         expect(parseFromInput(sanitizeMoneyInput('1.234.56', 'en-US'), 'en-US')).toBe(0)
@@ -616,7 +564,7 @@ describe('Currency Formatting', () => {
       })
 
       it('drops a scientific-notation exponent whole, never splicing its digits', () => {
-        // "1.2E+09" -> "1.209" -> $1.20 was a value the validator used to block.
+        // "1.2E+09" must not become "1.209" ($1.20).
         expect(sanitizeMoneyInput('1.2E+09', 'en-US')).toBe('1.2')
         expect(sanitizeMoneyInput('2.5e6', 'en-US')).toBe('2.5')
         expect(sanitizeMoneyInput('1e10', 'en-US')).toBe('1')
@@ -625,9 +573,7 @@ describe('Currency Formatting', () => {
       })
 
       it('round-trips every parseable value through sanitize unchanged, all 12 locales', () => {
-        // The blanket magnitude guarantee: for anything parseFromInput accepts,
-        // sanitizing must not move the cents. Covers the full supported-currency
-        // locale set, not just the four separator shapes.
+        // For anything parseFromInput accepts, sanitizing must not move the cents.
         const LOCALES = [
           'en-US',
           'de-DE',
@@ -717,9 +663,8 @@ describe('Currency Formatting', () => {
     describe('blur-echo tolerance (the field must survive its own re-format)', () => {
       for (const { shape, locale } of SEPARATOR_SHAPES) {
         it(`leaves formatForInputDisplay output untouched in shape ${shape}`, () => {
-          // Derive the expected string by CALLING formatForInputDisplay rather than
-          // hard-coding a literal: de-CH's apostrophe is ICU-version-dependent, so a
-          // literal would break on a Node/ICU bump rather than on a real regression.
+          // Expected from formatForInputDisplay, not a literal: de-CH's apostrophe varies by
+          // ICU version.
           for (const cents of [0, 100, 123456, 123456789, -123456]) {
             const echoed = formatForInputDisplay(cents, locale)
             expect(sanitizeMoneyInput(echoed, locale), `${cents} in ${locale}`).toBe(echoed)
@@ -731,8 +676,6 @@ describe('Currency Formatting', () => {
     describe('round-trip with parseFromInput (the AC-2 guarantee)', () => {
       for (const { shape, locale, decimalSep } of SEPARATOR_SHAPES) {
         it(`sanitizing never changes the parsed value in shape ${shape}`, () => {
-          // Scoped to inputs parseFromInput accepts, expressed in each shape's OWN
-          // separators; the documented divergences are pinned separately below.
           const accepted = [
             '0',
             '100',
@@ -761,9 +704,8 @@ describe('Currency Formatting', () => {
 
     describe('deliberate divergences from parseFromInput (decisions, not accidents)', () => {
       it('truncates at a scientific-notation exponent (the one divergence)', () => {
-        // parseFromInput rejects "1e10" outright (returns 0). AC-1 forbids leaving
-        // the letter in the field, so the exponent tail goes whole — never just the
-        // 'e', which would splice the exponent digits into the mantissa.
+        // The exponent tail goes whole; dropping only 'e' would splice its digits into the
+        // mantissa.
         expect(parseFromInput('1e10')).toBe(0)
         expect(sanitizeMoneyInput('1e10')).toBe('1')
         expect(parseFromInput(sanitizeMoneyInput('1e10'))).toBe(100)

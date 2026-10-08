@@ -1,25 +1,7 @@
 name: Container image (PR check)
 
-# Story ops-1, D5. Builds the production image on every pull request, measures it
-# against the registry budget, and proves it serves AND migrates — the same
-# three checks deploy.yml's `build-image` runs, through the same scripts
-# (.github/scripts/image_size.py, verify-image.sh), so a Dockerfile change is
-# measured BEFORE it reaches main, where it would otherwise first meet the
-# 500 MB registry at the push.
-#
-# ⚠️ PUSHES NOTHING. No registry, no secrets, no `production` environment (the
-# VITE_* build args are left empty: they only change a few bytes of the client
-# bundle, and reading them would need the environment). Validated by
-# scripts/validate-deploy-workflow.py.
-#
-# Not a required check: it adds ~1 minute of runner time (1m05s on PR #28, run
-# 37090558542) and no wall time (it runs alongside ci.yml). It is its own workflow, not a job in ci.yml, because
-# deploy.yml reuses ci.yml as its gate and builds the image itself — a job there
-# would build every image twice on main.
-#
-# `workflow_dispatch` with `ref` builds ANOTHER commit with this commit's
-# scripts — e.g. `ref: 913ab34` for the pre-slim baseline breakdown — and only
-# reports the size, never fails on it.
+# Runs the same size budget and serve + migrate checks as deploy.yml's build-image,
+# on PRs. Pushes nothing and reads no secrets.
 
 on:
   pull_request:

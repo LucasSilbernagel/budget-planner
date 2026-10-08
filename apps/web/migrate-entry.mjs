@@ -1,30 +1,8 @@
 // @ts-check
-/**
- * Production MIGRATE entrypoint (Story 5-18, AC-1..AC-4).
- *
- * Replaces the ADR-001 time-boxed exception: instead of opening the database's
- * public DNS so a GitHub runner can reach it, the app image is started as a
- * Rapids container in the same cluster and namespace, where the database's
- * in-cluster name resolves and its certificate actually matches — so the
- * migration runs over `verify-full` TLS with no public endpoint at any point.
- *
- * Shape of this process (story D3/D4/D7):
- *   1. Bind `$PORT` FIRST and answer the health path, so Knative marks the
- *      revision Ready promptly. Readiness means "the container booted" — never
- *      "the migration succeeded".
- *   2. Run preflight → `drizzle-kit migrate` and record a terminal verdict.
- *   3. Keep serving `/migrate-status` so the pipeline can read that verdict.
- *      Do NOT exit: Knative Serving treats a container that runs and exits as a
- *      failed revision, which would be indistinguishable from a crash-loop. The
- *      pipeline deletes the container in an `if: always()` step instead.
- *
- * Re-entrancy: if Knative restarts the pod anyway, the preflight re-runs and
- * `drizzle-kit migrate` is journal-driven, so the restart re-verifies and
- * applies nothing.
- *
- * ⚠️ This module must never import the built application server. The migrate
- * process owns no routes at all — see `src/server/entrypoint.mjs`.
- */
+// Binds $PORT first so Knative marks the revision Ready, then keeps serving
+// /migrate-status: Knative treats an exiting container as a failed revision.
+
+// Must never import the built application server.
 
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
@@ -39,19 +17,13 @@ import {
 } from './src/server/migrate-status.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
-/** Both steps run here: `drizzle.config.ts` and `migrations/` live in this package. */
 const dbPackageDir = join(here, '..', '..', 'packages', 'db')
 
 const DEFAULT_PORT = 8080
 const SHUTDOWN_TIMEOUT_MS = 10_000
 
+// A bad $PORT makes listen() throw synchronously, past the `error` handler.
 /**
- * Parse `$PORT` to a valid TCP port, falling back to 8080. Same guard
- * `serve-entry.mjs` carries, and for the same reason: a non-numeric value or an
- * out-of-range one makes `listen()` throw SYNCHRONOUSLY — past the `error`
- * handler, which only catches asynchronous bind failures — so the container
- * crash-loops with an unhelpful stack instead of a stated reason.
- *
  * @param {string | undefined} raw
  * @returns {number}
  */
@@ -72,16 +44,11 @@ const status = {
   startedAt: new Date().toISOString(),
 }
 
-/** The spawned step, so shutdown can signal it rather than orphan it against production. */
+/** Signalled on shutdown rather than orphaned against production. */
 let activeChild = null
 
+// Resolved by path: the image runs node with no pnpm shim, so PATH can't find these.
 /**
- * Spawn one step from the db package's own `node_modules/.bin`.
- *
- * Resolved by path rather than by relying on `PATH`: the image runs `node`
- * directly with no pnpm shim in scope, so the bin directory is the only place
- * these binaries are reachable from.
- *
  * @param {{ name: string, bin: string, args: string[] }} step
  * @returns {Promise<number | null>}
  */
@@ -92,9 +59,6 @@ function runStep(step) {
   return new Promise((resolve, reject) => {
     const child = spawn(bin, step.args, {
       cwd: dbPackageDir,
-      // Inherited so the step's own output lands in `danube rapids logs`, where
-      // it is the diagnostic record for a failure. The verdict itself travels
-      // over /migrate-status, not through these logs.
       stdio: 'inherit',
       env: process.env,
     })
@@ -120,27 +84,9 @@ function readEnv(/** @type {string} */ name) {
   return typeof value === 'string' && value.trim() !== '' ? value : undefined
 }
 
+// The pipeline parses this line. Logs aggregate across revisions, unlike the URL
+// Knative may route to a successor. Never put a credential in it.
 /**
- * Print the verdict as a single machine-readable line, tagged with this run's id.
- *
- * ⚠️ THE PIPELINE PARSES THIS. Do not reword it without updating
- * `.github/scripts/rapids_verdict.py` and its tests.
- *
- * Why the logs carry the verdict at all, when there is already an HTTP endpoint:
- * the endpoint is reached through the container's public URL, and Knative routes
- * that URL to whatever revision is currently READY — not necessarily the revision
- * that ran the migration. Live run 35042874267-1 proved the difference: revision
- * `budget-planner-migrator-00001` completed the migration and reported
- * `succeeded`, was then replaced, and every subsequent poll got 401 from a
- * successor carrying a different token. The migration had worked; the pipeline
- * simply could not reach the pod that knew it.
- *
- * Logs have the property the URL lacks: they aggregate across revisions. So the
- * verdict now travels both ways, and the run id is what makes a log line
- * attributable to THIS release rather than a previous one.
- *
- * The line contains an id and a state — never a credential.
- *
  * @param {{ state: string, failedStep?: string, exitCode?: number | null }} result
  */
 function emitVerdict(result) {
@@ -151,21 +97,8 @@ function emitVerdict(result) {
   console.log(`[migrate-entry] VERDICT ${parts.join(' ')}`)
 }
 
-// ⚠️ MISSING CONFIGURATION IS "NOTHING TO DO", NOT A CRASH. Changed 2026-09-16.
-//
-// This used to `process.exit(1)` on a missing variable. That is right for a
-// container whose job is to migrate NOW, and wrong for this one: the container is
-// permanent, and between releases the pipeline deliberately strips its credentials
-// while leaving `APP_ENTRYPOINT=migrate` set. Knative then started it, it exited 1
-// four times, and the platform reported `CrashLoopBackOff` and emailed a
-// provisioning failure (revision `budget-planner-migrator-00005`). Nothing was
-// wrong — the container simply had no way to say "idle".
-//
-// `MIGRATE_RUN_ID` is what binds this process to the pipeline run that started it:
-// the pipeline accepts a verdict only when the id matches the one it minted, so a
-// container carrying a stale but well-formed `succeeded` can never be mistaken for
-// the current run's. All three are required TOGETHER — a partial set is not a
-// configuration, it is a mistake, and migrating on it would be worse than idling.
+// Missing configuration means idle, not a crash: between releases the pipeline strips
+// the credentials but leaves the container running. All three are required together.
 const token = readEnv('MIGRATE_STATUS_TOKEN')
 const databaseUrl = readEnv('DATABASE_URL')
 const runId = readEnv('MIGRATE_RUN_ID')
@@ -174,8 +107,7 @@ const port = parsePort(process.env['PORT'])
 const healthPath = process.env['MIGRATE_HEALTH_PATH'] || '/healthz'
 
 if (!token || !databaseUrl || !runId) {
-  // IDLE. Serve health, nothing else, and never migrate. Everything below this
-  // branch is the configured path and is deliberately not reached.
+  // Idle: serve health only, never migrate.
   const missing = [
     !token && 'MIGRATE_STATUS_TOKEN',
     !databaseUrl && 'DATABASE_URL',
@@ -228,10 +160,8 @@ if (!token || !databaseUrl || !runId) {
         }
       },
       (error) => {
-        // Defence in depth: runMigration already converts a thrown step into a
-        // verdict, so reaching here means something outside the steps failed. The
-        // verdict must still become terminal, or the pipeline would poll `running`
-        // until its deadline and report a timeout instead of a failure.
+        // Defence in depth: the verdict must become terminal, or the pipeline polls
+        // `running` until its deadline and reports a timeout.
         Object.assign(status, {
           state: 'failed',
           failedStep: 'unknown',
@@ -245,13 +175,8 @@ if (!token || !databaseUrl || !runId) {
     )
   })
 
-  // The pipeline scales this container down; SIGTERM is that arriving.
-  //
-  // Mirrors `serve-entry.mjs`'s drain rather than a bare `close()`: Knative's
-  // queue-proxy holds keep-alive sockets open, so `close()`'s callback would never
-  // fire and the process would sit until SIGKILL. The running step is signalled
-  // too — an orphaned `drizzle-kit` would otherwise keep issuing DDL against
-  // production after the container it belongs to has been told to go away.
+  // Drain rather than close(): queue-proxy holds keep-alive sockets open. Signal the
+  // running step too, or an orphaned drizzle-kit keeps issuing DDL against production.
   let shuttingDown = false
   for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
     process.on(signal, () => {

@@ -1,33 +1,16 @@
-# Weekly early warning for Paddle.js changes the app depends on (story sec-4, D2 (b)).
-#
-# Paddle.js is loaded from an UNVERSIONED URL (https://cdn.paddle.com/paddle/v2/paddle.js),
-# so Paddle can change it on any day. Three of its internals are copied into this repo
-# (apps/web/src/lib/paddle/paddle-js-internals.ts): the overlay spinner <style> text that
-# production style-src-elem allows by hash, the `window.profitwell?.isLoaded` skip the
-# ProfitWell stub relies on, and the checkout frame's allow="payment" + origins that
-# Permissions-Policy names. When one changes, /pricing quietly logs console errors again
-# (checkout itself keeps working).
-#
-# It fetches ONE public static file. No Paddle API, no token, no secret, no install.
-# A red run here is not an incident; it is the reminder, and the failure output says
-# exactly what to update (same stance as ca-expiry.yml). Exit 2 = the check could not
-# run (no network); exit 1 = drift.
-#
-# ⚠️ GitHub disables this schedule after 60 idle days in a public repository (see
-# DEPLOY_RUNBOOK.md, "GitHub switches this schedule off"); a silent stop is not a green run.
+# Weekly check that the Paddle.js internals copied into paddle-js-internals.ts still
+# match the unversioned CDN file. Exit 2 = could not run; exit 1 = drift.
 name: Paddle.js drift
 
 on:
   schedule:
-    # Mondays 08:00 UTC, the same slot as ca-expiry.yml.
     - cron: '0 8 * * 1'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Kept in lockstep with deploy.yml's NODE_VERSION. The script imports a .ts leaf by
-# Node's type stripping (Node >= 22.18 / 23.6).
+# The script imports a .ts file via Node's type stripping (Node >= 22.18).
 env:
   NODE_VERSION: '24'
 

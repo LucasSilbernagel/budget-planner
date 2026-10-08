@@ -1,41 +1,8 @@
-/**
- * Profile form contract shared by the create and edit dialogs (story 54.1).
- *
- * The two dialogs collect the same fields under the same rules; the only
- * difference is which profile the name-uniqueness check ignores:
- * - `CreateProfileDialog` passes `null`. A new profile has no id, so EVERY
- *   existing profile's name counts. (It used to exclude the ACTIVE profile, which
- *   let a new profile take the active profile's name.)
- * - `EditProfileDialog` passes the id of the profile being edited, so a profile
- *   can be saved under its own name. Not the active id: the profile being edited
- *   is not necessarily the active one.
- *
- * ⚠️ Currency is deliberately NOT a form field (Lucas, 2026-09-16). A profile's
- * currency is read for display nowhere but the profile card row story 54.5
- * removes, so an editable field would have no effect. The data model and sync
- * schema keep the column; new profiles are created with `'NONE'`.
- */
-
 import type { ClientProfile } from '@/hooks/useActiveProfile'
 
 export interface ProfileFormState {
   name: string
   description: string
-  /**
-   * The chosen avatar emoji (story 54.2). Always one of `PROFILE_ICONS`.
-   *
-   * ⚠️ The EDIT dialog seeds this with the profile's CURRENTLY DISPLAYED icon —
-   * its stored one, or the hash fallback when it has never chosen one — so the
-   * avatar does not appear to change the moment the dialog opens. It follows that
-   * a non-empty value here does NOT mean the user picked anything, which is why
-   * the dialog sends `icon` only when it differs from the value captured at open.
-   *
-   * The CREATE dialog renders the same picker since story 98.1 (FR159) and opens
-   * on 🏠 (`DEFAULT_PROFILE_ICON`), so every created profile stores an explicit
-   * icon. `EMPTY_PROFILE_FORM.icon` stays `''` (validation tests use it for
-   * name/description cases); the create dialog seeds its own initial form with 🏠
-   * and guards the submitted value, so `''` never reaches `createProfile`.
-   */
   icon: string
 }
 
@@ -45,15 +12,7 @@ export const EMPTY_PROFILE_FORM: ProfileFormState = {
   icon: '',
 }
 
-/**
- * Returns a field → message map; an empty object means the form is valid.
- *
- * ⚠️ There is deliberately NO rule for `icon`: the picker is a closed set of eight
- * radio options, so it cannot produce an invalid value the way a free-text field
- * can. The defence against a bad value is at the RENDER boundary
- * (`resolveProfileIcon`, which falls back to the hash), because that is where an
- * untrusted value actually arrives — from a pulled row, not from this form.
- */
+// No icon rule: the picker is a closed set; untrusted values are handled at render by resolveProfileIcon.
 export function validateProfileForm(
   form: ProfileFormState,
   profiles: readonly ClientProfile[],

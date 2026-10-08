@@ -1,12 +1,4 @@
-/**
- * Stubbed widths for table scroll regions (story 93.1).
- *
- * jsdom computes no layout: `scrollWidth` and `clientWidth` are always 0, so
- * every `TableScrollRegion` measures "fits" and drops its `tabindex`. A test
- * that wants to see the overflow rule calls {@link stubRegionWidths} and sets
- * the widths it needs; only elements with `role="region"` report them, every
- * other element keeps jsdom's 0. {@link restoreRegionWidths} undoes it.
- */
+/** jsdom has no layout (widths are always 0); only `role="region"` elements report the stubbed widths. */
 
 const widths = { scroll: 0, client: 0 }
 
@@ -46,7 +38,6 @@ export function setRegionFits(): void {
   widths.client = 656
 }
 
-/** Content 1 px wider than the box: scrolls. */
 export function setRegionOverflows(): void {
   widths.scroll = 657
   widths.client = 656

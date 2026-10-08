@@ -1,45 +1,11 @@
 import { Link } from '@tanstack/react-router'
 
-/**
- * Branded 404 / not-found page (story 6-4, UX-DR12).
- *
- * Registered as the router-level `defaultNotFoundComponent` (see
- * `src/router.tsx`), so any unmatched route renders it. It is rendered inside
- * the root route's `<Outlet>` (`routes/__root.tsx`), which already supplies the
- * global `<Footer>`, ad slot, and `flex min-h-screen flex-col` shell — this
- * component therefore renders only the page's own content and must NOT re-mount
- * the footer or a second document shell.
- *
- * Branding matches the app's per-page idiom: the "Longhand Budget" wordmark plus
- * the `bg-gray-50` / `p-4 sm:p-8` / `max-w-6xl` shell used by every page header
- * (e.g. `HomePage`). There is no shared layout component to import, so the
- * idiom is reproduced here rather than abstracted.
- *
- * Theme: this page is part of story 7.3's guaranteed dark-mode surface set (AC-2)
- * and carries `dark:` variants. Since story 61.1 (FR93) those compile to
- * `prefers-color-scheme` media queries (`tailwind.config.js` is
- * `darkMode: 'media'`), so the page follows the DEVICE — correct on the first
- * paint with no script, which matters here because this component renders on
- * routes the router could not match. It previously followed an in-app toggle via
- * a `.dark` class set by a `<head>` bootstrap; that whole chain is deleted.
- *
- * Scope note: the docs section keeps its own contextual not-found (`DocNotFound`
- * in `components/docs/doc-not-found.tsx`, wired as the `notFoundComponent` of
- * `routes/docs/$docId.tsx` and rendered inside `DocsLayout`) by design. This
- * component is the global fallback for every other unmatched route.
- *
- * A11y: exactly one `<h1>` (the "Page not found" subject); the decorative "404"
- * and the brand wordmark are non-heading text; the recovery control is a
- * keyboard-focusable `Link` with a visible focus ring.
- */
+// Rendered inside the root route's Outlet, which already supplies the footer and shell.
 export function NotFoundPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-8">
       <div className="mx-auto max-w-6xl">
         <header className="mb-8">
-          {/* Brand wordmark — mirrors every page header's <h1>Longhand Budget</h1>
-              styling, but stays a non-heading node so the page keeps a single
-              <h1> ("Page not found"). */}
           <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">Longhand Budget</p>
         </header>
 

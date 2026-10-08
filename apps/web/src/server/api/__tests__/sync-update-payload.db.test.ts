@@ -1,19 +1,5 @@
 // @vitest-environment node
-/**
- * A sync UPDATE cannot delete, revive or re-date a row, and a sync CREATE cannot
- * insert a tombstone or a back-dated row (story 80.1, FR131 rider; the create half
- * was added by its code review, decision Lucas 2026-09-29).
- *
- * `updatePayload` spreads the op's `data` into `.set()`. The per-entity schemas
- * validate but do not strip, so before 80.1 a hand-crafted update carrying
- * `isDeleted: true` tombstoned a profile WITHOUT its cascade or the last-profile
- * rule (`deleteProfileWithChildren`), and `createdAt` reached the column that
- * orders the default repair's successor. A legitimate client never sends either
- * key (core's `syncOperationDataSchema` strips both on the way out).
- *
- * Harness (PGlite + full migration chain via a `vi.hoisted` holder) copied from
- * `sync-profile-concurrency.db.test.ts`.
- */
+/** Legitimate clients never send isDeleted/createdAt (core strips them); the server must strip too. */
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -159,11 +145,9 @@ describe('a sync update cannot delete a row (AC-3)', () => {
   it('a profile update carrying isDeleted: true leaves the profile and its children live', async () => {
     const result = await push([updateProfileQ({ isDeleted: true })])
 
-    // Positive anchor: the update itself was applied.
     expect(result).toMatchObject({ processedCount: 1, failedCount: 0, conflictCount: 0 })
     expect((await row(userProfiles, Q))?.name).toBe('Q renamed')
 
-    // MECHANISM: on `main` Q was tombstoned with no cascade, its child still live.
     expect((await row(userProfiles, Q))?.isDeleted, 'profile tombstoned by an update').toBe(false)
     expect((await row(incomeSources, ROW_Q))?.isDeleted).toBe(false)
   })
@@ -180,13 +164,8 @@ describe('a sync update cannot delete a row (AC-3)', () => {
 })
 
 describe('a sync update cannot revive a tombstoned child (AC-3, guard)', () => {
-  // ⚠️ A GUARD, not a RED: sequentially the update never reaches `updatePayload`
-  // (`checkConflict` answers `update-delete` for a tombstone), so this is green
-  // on `main` too. Revival was reachable only in the window between that check
-  // and the autocommit UPDATE (deferred-work, 76.3 review), which a single
-  // PGlite connection cannot open. Stripping `isDeleted` closes the REVIVAL by
-  // construction; the write landing on the tombstone in that window stays open
-  // (deferred-work, "Profile-scoped child UPDATE/DELETE…").
+  // A guard, not a red: sequentially checkConflict answers update-delete first,
+  // so revival is only reachable in a race PGlite cannot open.
   it('an update carrying isDeleted: false leaves the tombstone in place', async () => {
     await db.update(incomeSources).set({ isDeleted: true }).where(eq(incomeSources.id, ROW_P))
 
@@ -253,12 +232,9 @@ describe('a sync create cannot insert a tombstone or a back-dated row (AC-3, cod
   it('a create carrying createdAt is applied, stamped by the server', async () => {
     const result = await push([createIncome({ createdAt: '2000-01-01T00:00:00.000Z' })])
 
-    // MECHANISM: on `main` the string reached drizzle's timestamp mapper and the
-    // INSERT threw with no SQLSTATE: a kept-queued failure, replayed for ever.
     expect(result).toMatchObject({ processedCount: 1, failedCount: 0, conflictCount: 0 })
-    // Not back-dated. ⚠️ Not compared with `Date.now()`: the column is
-    // `timestamp` WITHOUT time zone, and PGlite's `now()` read back through it
-    // differed from the JS clock by ~5 h (MEASURED), a harness artifact.
+    // Not compared with Date.now(): the column is timestamp without time zone and
+    // PGlite's now() read back through it is offset from the JS clock.
     const created = await row(incomeSources, NEW_ROW)
     expect(created?.createdAt.getUTCFullYear()).toBeGreaterThan(2020)
   })

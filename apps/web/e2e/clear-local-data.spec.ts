@@ -1,23 +1,10 @@
 import { type Page, expect, test } from '@playwright/test'
 
-/**
- * "Clear local data" Settings control E2E (Story 17-2).
- *
- * Proves the all-users local-reset end-to-end: seed real financial data through
- * the Income Add flow, wipe it from Settings → Clear local data (themed
- * ConfirmDialog, not a browser confirm()), and — following the Story 17-1 review
- * lesson — assert the cleared state is PERSISTED (the localStorage entry is gone
- * and stays gone across a reload), not merely hidden in the current view.
- *
- * Requires browser binaries:
- *   pnpm --filter @budget-planner/web exec playwright install chromium
- */
-
 const INCOME_KEY = 'budget-planner-income-v1'
 const ADD_TRIGGER = '+ Add Income Source'
 const ADD_DIALOG = 'Add Income Source'
 
-/** Click a trigger until its dialog appears (survives pre-hydration clicks). */
+/** Retries because clicks before hydration are dropped. */
 async function clickUntilDialog(page: Page, triggerName: string, dialogName: string) {
   const trigger = page.getByRole('button', { name: triggerName })
   const dialog = page.getByRole('dialog', { name: dialogName })
@@ -28,7 +15,6 @@ async function clickUntilDialog(page: Page, triggerName: string, dialogName: str
   return dialog
 }
 
-/** Seed one income source through the real Add flow. */
 async function addIncomeSource(page: Page, name: string) {
   const dialog = await clickUntilDialog(page, ADD_TRIGGER, ADD_DIALOG)
   await dialog.getByLabel('Name *').fill(name)
@@ -45,18 +31,12 @@ const readIncomeStorage = (page: Page) =>
 
 test.describe('Clear local data (story 17-2)', () => {
   test('wipes seeded local data and the wipe persists across a reload', async ({ page }) => {
-    // 60 s, not the default 30 s (story 85.2, MEASURED): it timed out at the
-    // 30 s cap in 1 of 2 concurrent `pnpm gates` runs and took 29.1 s in the
-    // other; with the cap lifted and the web Vitest gate alongside, 22.2–24.9 s
-    // (3 runs). Several full DEV page loads, each hydrating slowly under load.
-    // `85-2-evidence/causes.md`.
+    // Several full dev page loads, each hydrating slowly under concurrent gates.
     test.setTimeout(60_000)
-    // 1. Seed real financial data and confirm it landed in localStorage.
     await page.goto('/income')
     await addIncomeSource(page, 'ClearMeE2E')
     await expect.poll(() => readIncomeStorage(page)).toContain('ClearMeE2E')
 
-    // 2. Clear it from the Settings control (available to this free user).
     await page.goto('/settings')
     const clearButton = page.getByRole('button', { name: 'Clear local data' })
     const confirm = page.getByRole('alertdialog', { name: 'Clear local data?' })
@@ -67,14 +47,11 @@ test.describe('Clear local data (story 17-2)', () => {
 
     await confirm.getByRole('button', { name: 'Clear data' }).click()
     await expect(confirm).toBeHidden()
-    // Feedback confirms the wipe (Settings shows no financial figures of its own).
-    // Target by text: the persistent AuthIndicator strip is also a role="status".
+    // By text: the persistent AuthIndicator strip is also a role="status".
     await expect(page.getByText(/your local data has been cleared/i)).toBeVisible()
 
-    // 3. PERSISTED: the income entry is gone from storage (clearStorage removed it).
     await expect.poll(() => readIncomeStorage(page)).not.toContain('ClearMeE2E')
 
-    // 4. And it stays gone after a full reload back on the Income page.
     await page.goto('/income')
     await page.reload()
     await expect(page.getByText('ClearMeE2E')).toHaveCount(0)

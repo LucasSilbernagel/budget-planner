@@ -1,17 +1,6 @@
 /**
- * The active profile id must survive a page reload (code review of story 54.4, HIGH).
- *
- * ⚠️ THE DEFECT THIS PINS. `DEFAULT_PROFILE.id` is `generateUUID()` evaluated at
- * MODULE LOAD, and a free user never writes the profile store — so zustand's
- * `rehydrate()` of an empty key left nothing in storage, and every page load
- * minted a new default id. Since 54.4 stamps every new row with the active
- * profile and scopes reads by it, a row added on one load was hidden on the next:
- * silent data loss for every free user.
- *
- * A "reload" is simulated with `vi.resetModules()` + fresh dynamic imports, which
- * re-evaluates `DEFAULT_PROFILE` exactly as a real page load does. Only store
- * state and the pure scoping predicate are read — no hooks — because a reset
- * module registry would hand React hooks a second copy of React.
+ * A reload is vi.resetModules() + fresh imports, re-minting DEFAULT_PROFILE's module-load id.
+ * No hooks: a reset module registry would hand React hooks a second copy of React.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

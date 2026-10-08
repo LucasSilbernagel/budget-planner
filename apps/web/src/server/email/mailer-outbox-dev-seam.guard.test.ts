@@ -1,29 +1,4 @@
-/**
- * The dev-only mail outbox is structurally incapable of reaching production
- * (story 87.1, decision D2, AC 4), to the bar story 58.1 set for the
- * `E2E_SESSION_SEED` seam (`server/api/auth/session-seed-dev-seam.guard.test.ts`).
- *
- * ## Why the seam exists
- *
- * Flow F9 signs in for real, and the one step a test cannot do for real is read
- * the email: the token is stored HASHED (`login-token.ts`), so it cannot be read
- * back from the database either. `sendMagicLinkEmail`'s no-key development
- * branch already logs the link without calling Brevo; with `E2E_MAIL_OUTBOX`
- * set it ALSO appends `{ to, link }` to that file, which the spec reads.
- *
- * ## Why a guard
- *
- * A file that collects working sign-in links is an account-takeover channel on
- * any host that can read it. So the gate must be the build-time literal
- * `import.meta.env.DEV`, evaluated first: a production build turns the
- * condition into `false && …` and the bundler deletes the branch, the variable
- * name and the `node:fs/promises` import with it.
- *
- * ⚠️ This file pins the SOURCE SHAPE (a tripwire). The PROOF is against the real
- * build: `scripts/check-client-bundle.mjs` (phase A of `pnpm gates`, and CI's
- * build step) fails if `E2E_MAIL_OUTBOX` appears anywhere in `dist/client` or
- * `dist/server` (`DEV_ONLY_SEAMS` in `client-bundle-guard-lib.mjs`).
- */
+/** Pins the source shape only; the real proof is the bundle check on dist/. */
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -38,7 +13,7 @@ const GATE = `import.meta.env.DEV && process.env['${ENV_KEY}']`
 describe('sendMagicLinkEmail dev-only outbox (story 87.1, AC 4)', () => {
   it('opens the outbox with NOTHING but the DEV build flag, evaluated first', () => {
     // The whole condition, exactly: `true || import.meta.env.DEV && …` contains
-    // the gate verbatim and would pass a substring check (58.1's review).
+    // the gate verbatim and would pass a substring check.
     const conditions = [...source().matchAll(/if \(([^)]*\)?[^{]*?)\) \{/g)].map((m) =>
       (m[1] ?? '').trim()
     )
@@ -68,14 +43,7 @@ describe('sendMagicLinkEmail dev-only outbox (story 87.1, AC 4)', () => {
   })
 
   it('never widens the gate to a runtime environment check', () => {
-    // The surrounding branch already tests NODE_ENV === 'development' (a
-    // runtime string). The outbox must not rely on it: pin that the ONLY
-    // condition naming the variable is the build-time one (first test), and
-    // that no `import.meta.env.MODE` rewrite crept in.
+    // The outbox must not rely on the surrounding runtime NODE_ENV check.
     expect(source()).not.toMatch(/import\.meta\.env\.MODE/)
-  })
-
-  it('records why the seam exists, at the seam', () => {
-    expect(source()).toMatch(/story 87\.1/i)
   })
 })

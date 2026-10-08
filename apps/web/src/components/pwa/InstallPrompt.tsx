@@ -1,36 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-/**
- * The `beforeinstallprompt` event (story 17-1).
- *
- * Chromium fires this on `window` once the app meets its installability
- * criteria (a valid manifest + a registered service worker — both shipped by
- * story 7-1 — plus the browser's own engagement heuristics). It is not part of
- * the standard DOM lib types, so it is declared locally. No `any` (project rule).
- */
+// Chromium-only, and absent from the DOM lib types.
 interface BeforeInstallPromptEvent extends Event {
   readonly platforms: string[]
   readonly userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
   prompt(): Promise<void>
 }
 
-/** localStorage key holding the epoch-ms timestamp of the last dismissal. */
 const DISMISSAL_STORAGE_KEY = 'bp-pwa-install-dismissed'
 
-/**
- * How long a dismissal suppresses the affordance (30 days). Long enough that a
- * user who declines is not nagged, short enough that a returning user is
- * eventually reminded (AC-2).
- */
 const DISMISSAL_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000
 
-/**
- * True when the app is already installed / launched from the home screen, so
- * the install affordance would be meaningless. Checks the standard
- * `display-mode: standalone` media query and iOS Safari's non-standard
- * `navigator.standalone`. Defensive: `matchMedia` is absent under SSR/jsdom and
- * can throw on a malformed query in some engines.
- */
+// navigator.standalone is iOS Safari's non-standard flag.
 function isRunningStandalone(): boolean {
   if (typeof window === 'undefined') {
     return false
@@ -48,12 +29,7 @@ function isRunningStandalone(): boolean {
   return (window.navigator as Navigator & { standalone?: boolean }).standalone === true
 }
 
-/**
- * True when the user dismissed the affordance within the suppression interval.
- * Any storage failure (Safari private mode `SecurityError`) or corrupt value is
- * swallowed and treated as "not dismissed" — mirrors the store-hydration
- * discipline; a blocked store must never throw or wrongly suppress forever.
- */
+// Storage failures (Safari private mode) and corrupt values count as not dismissed.
 function wasRecentlyDismissed(): boolean {
   try {
     const raw = localStorage.getItem(DISMISSAL_STORAGE_KEY)
@@ -61,10 +37,7 @@ function wasRecentlyDismissed(): boolean {
       return false
     }
     const dismissedAt = Number.parseInt(raw, 10)
-    // Reject non-finite AND future timestamps: a future `dismissedAt` (clock
-    // skew, or a corrupt-but-finite value) yields a negative delta that is
-    // always < the interval, which would suppress the affordance essentially
-    // forever. `Number.isFinite` alone does not catch that.
+    // Reject future timestamps too: a negative delta would suppress the affordance forever.
     if (!Number.isFinite(dismissedAt) || dismissedAt > Date.now()) {
       return false
     }
@@ -82,24 +55,12 @@ function rememberDismissal(): void {
   }
 }
 
-/**
- * Unobtrusive, dismissible affordance telling installable-browser users they can
- * install Longhand (story 17-1, FR29). Builds on the manifest + service
- * worker from story 7-1 — this adds only the affordance.
- *
- * Client-only and SSR-safe (mirrors {@link import('./RegisterSW').RegisterSW}):
- * all `window`/`navigator`/`localStorage` access happens inside effects, and the
- * component renders nothing on the server and the first client render, only
- * appearing after a `beforeinstallprompt` event — so there is no hydration
- * mismatch. On browsers that never fire the event (iOS Safari) or when already
- * installed, it stays hidden and shows no broken button (AC-3).
- */
+// Renders nothing until beforeinstallprompt fires, so SSR and the first client render match.
 export function InstallPrompt() {
   const [promptEvent, setPromptEvent] = useState<BeforeInstallPromptEvent | null>(null)
   const affordanceRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
-    // Never subscribe if the affordance should stay hidden this visit.
     if (isRunningStandalone() || wasRecentlyDismissed()) {
       return
     }
@@ -107,9 +68,7 @@ export function InstallPrompt() {
     const onBeforeInstallPrompt = (event: Event) => {
       // Suppress Chromium's default mini-infobar; we drive our own affordance.
       event.preventDefault()
-      // Re-check suppression per event, not just at mount: the subscription
-      // lives for the component's lifetime, so a same-session re-fire after the
-      // user has dismissed must not pop the affordance back up.
+      // Re-check per event: a same-session re-fire after dismissal must not reappear.
       if (isRunningStandalone() || wasRecentlyDismissed()) {
         return
       }
@@ -130,16 +89,12 @@ export function InstallPrompt() {
     rememberDismissal()
   }, [])
 
-  // Escape-to-dismiss (AC-4). A window-level listener works regardless of where
-  // focus sits, and only lives while the affordance is shown.
   useEffect(() => {
     if (!promptEvent) {
       return
     }
     const onKeyDown = (event: KeyboardEvent) => {
-      // Only dismiss when focus sits within the affordance (spec: "when the
-      // affordance holds focus"), so an Escape meant for unrelated UI never
-      // dismisses the banner or writes a 30-day suppression.
+      // Only when focus is within the affordance, so an Escape meant for other UI never dismisses it.
       if (event.key === 'Escape' && affordanceRef.current?.contains(document.activeElement)) {
         dismiss()
       }
@@ -153,14 +108,12 @@ export function InstallPrompt() {
     if (!event) {
       return
     }
-    // The captured event can only be prompted once — hide the affordance now,
-    // regardless of the user's choice in the native dialog.
+    // The captured event can only be prompted once.
     setPromptEvent(null)
     try {
       await event.prompt()
       const choice = await event.userChoice
       if (choice.outcome === 'dismissed') {
-        // Declining the native dialog counts as a dismissal for nag-suppression.
         rememberDismissal()
       }
     } catch {
@@ -175,29 +128,8 @@ export function InstallPrompt() {
   return (
     <section
       ref={affordanceRef}
-      // Mobile offset must clear the story-31.5 single-row (`grid-cols-5`, 56.75px)
-      // GlobalNav bottom bar plus `env(safe-area-inset-bottom)`, so it is kept in
-      // lockstep with the `__root.tsx`
-      // `pb-[calc(2.625rem_+_18px_+_env(safe-area-inset-bottom))]` reserve and the
-      // nav's own inset (a bare 64px `bottom-16` overlapped the bar).
-      // ⚠️ The rem+px split is deliberate and must be mirrored here, not
-      // "simplified" back to 3.75rem: the bar is `2.625rem + 14.75px` because its
-      // spacing scales with the root font while its `text-[11px]` label line box
-      // does not. A pure-rem offset drifts — measured, a 12px root font put the
-      // bar 1.25px OVER the footer. See the `__root.tsx` comment.
-      // If the bar/sheet split changes the nav's row count, revisit this together with
-      // those (same coupling `GlobalNav.tsx` documents). `sm:` is a top bar → `sm:bottom-4`.
-      // ⚠️ This banner is z-50 and so is the nav. The nav renders AFTER this
-      // component in `__root.tsx`, so it wins the tie — which is what keeps the
-      // open "More" sheet tappable where this banner overlaps it. Measured: at
-      // z-40 the banner swallowed the whole "Retirement" row while every geometry
-      // and `toBeVisible()` assertion still passed.
-      // Short form "Longhand", not "Longhand Budget": one of only two places the
-      // product is not called by its full name (story brand-2, Lucas 2026-09-27;
-      // guarded by `brand-form.test.ts`). This prompt is about the app icon, and
-      // the icon's label is the PWA `short_name` — which is "Longhand". The two
-      // must agree or the user is told to install one name and gets another on
-      // their home screen.
+      // Bottom offset mirrors the root layout's nav reserve (the rem+px split is deliberate). z-50 ties with
+      // the nav, which renders later and so stays tappable. 'Longhand' must match the PWA short_name.
       aria-label="Install Longhand"
       className="fixed bottom-[calc(2.625rem_+_18px_+_env(safe-area-inset-bottom))] left-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 rounded-lg border border-gray-200 bg-white p-4 shadow-lg sm:bottom-4 dark:border-gray-700 dark:bg-gray-800"
     >

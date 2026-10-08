@@ -1,16 +1,3 @@
-/**
- * Story 107.1 (FR175): `calculateFinancialForecast` projects its baseline from a
- * SEPARATE dataset when one is given (the builder passes the user's current saved
- * data), so a scenario's edited rows move only the projection.
- *
- * MEASURED at create-story (`621ee31`, the engine run on each dataset alone):
- * contribution 500/mo → ending net worth 478,627.14; 3,000/mo → 574,051.01. Before
- * the story both loops read `currentData`, so passing the 500 data as the baseline
- * changed nothing: the baseline ended at 574,051.01 too (the RED this file pins).
- *
- * The no-baseline path is pinned by the rest of the suite, unchanged (AC-2).
- */
-
 import { describe, expect, it } from 'vitest'
 import { type ForecastingScenario, calculateFinancialForecast } from '../forecasting'
 
@@ -21,7 +8,6 @@ const FLAT: ForecastingScenario = {
   oneTimeEvents: [],
 }
 
-/** The reported case: one investment row whose contribution is the only difference. */
 function data(contribution: number) {
   return {
     income: [{ amount: 600000, frequency: 'monthly' as const }],
@@ -47,7 +33,6 @@ describe('calculateFinancialForecast with a separate baseline (story 107.1)', ()
 
     expect(result.baseline.at(-1)?.netWorth).toBe(47862714)
     expect(result.projection.at(-1)?.netWorth).toBe(57405101)
-    // The summary stays the projection's.
     expect(result.summary.endingNetWorth).toBe(57405101)
   })
 

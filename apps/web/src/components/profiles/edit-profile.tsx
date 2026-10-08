@@ -1,16 +1,3 @@
-/**
- * Edit Profile Dialog Component (story 54.1, FR77)
- *
- * Modal dialog for renaming an existing profile or changing its description.
- * Structurally mirrors `CreateProfileDialog` and shares its validation
- * (`profile-form.ts`), but writes through `useProfileManager().modifyProfile`, so
- * the change is stamped with `updatedAt` and, for a paid session, queued to the
- * server through the existing `userProfile` sync entity.
- *
- * Architecture: React with Tailwind CSS
- * State Management: Zustand via useProfileManager hook
- */
-
 import { useProfileById, useProfileManager, useProfiles } from '@/hooks/useActiveProfile'
 import { resolveProfileIcon } from '@/lib/profile-appearance'
 import { isSyncActive } from '@/lib/sync/syncBridge'
@@ -20,7 +7,6 @@ import { type ProfileFormState, validateProfileForm } from './profile-form'
 import { ProfileIconPicker } from './profile-icon-picker'
 
 interface EditProfileDialogProps {
-  /** The profile being edited — not necessarily the active one. */
   profileId: string
   onClose: () => void
 }
@@ -30,27 +16,20 @@ export function EditProfileDialog({ profileId, onClose }: EditProfileDialogProps
   const profiles = useProfiles()
   const { modifyProfile } = useProfileManager()
 
-  // Captured ONCE, when the dialog opens. It seeds the form, so a background pull
-  // that replaces the profile while the dialog is open does not overwrite what the
-  // user is typing. It is also the baseline for "did the user change anything":
-  // comparing against the LIVE profile would make an untouched Save write the
-  // stale name back over a rename pulled from another device.
+  // Captured once at open: a background pull must not overwrite typing, and comparing
+  // against the live profile would make an untouched Save write a stale name back.
   const [initialForm] = useState<ProfileFormState>(() => ({
     name: profile?.name ?? '',
     description: profile?.description ?? '',
-    // The icon the profile is ALREADY showing — its stored one, or the
-    // hash-derived fallback when it has never had one chosen. Seeding the picker
-    // with the fallback is what stops the avatar appearing to change the instant
-    // the dialog opens. It also means a non-empty value here is not evidence of a
-    // choice, which is why `handleSubmit` sends `icon` only when it differs.
+    // Seeded with the displayed icon (stored or hash fallback), so a non-empty value is not
+    // evidence of a choice; handleSubmit sends icon only when it differs.
     icon: profile ? resolveProfileIcon(profile) : '',
   }))
   const [form, setForm] = useState<ProfileFormState>(initialForm)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // The profile can disappear under an open dialog (a pull delivered its
-  // tombstone). There is nothing left to edit, so close.
+  // A pull can tombstone the profile under an open dialog; there is nothing left to edit.
   useEffect(() => {
     if (!profile) {
       onClose()
@@ -64,14 +43,8 @@ export function EditProfileDialog({ profileId, onClose }: EditProfileDialogProps
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
-    // Nothing changed: skip the write so no pointless sync op is queued. Checked
-    // BEFORE validation, so a profile whose stored name already collides with
-    // another (duplicates merged from two devices) can still be closed with Save.
-    //
-    // ⚠️ `icon` MUST be part of this comparison (story 54.2). Without it an
-    // icon-only edit matches "unchanged" and closes having saved nothing — and
-    // every other test in this file still passes, because they all change the name
-    // or the description.
+    // Checked before validation so a profile whose name already collides (merged duplicates)
+    // can still be closed with Save. `icon` must be part of the comparison.
     if (
       form.name === initialForm.name &&
       form.description === initialForm.description &&
@@ -81,16 +54,12 @@ export function EditProfileDialog({ profileId, onClose }: EditProfileDialogProps
       return
     }
 
-    // Exclude the profile BEING EDITED, so it can keep its own name.
     const newErrors = validateProfileForm(form, profiles, profileId)
     setErrors(newErrors)
     if (Object.keys(newErrors).length > 0) return
 
-    // A paid session before its first pull (or offline) still holds the
-    // module-seeded bootstrap profile (`userId: ''`), which the server has never
-    // seen. An update for it is rejected, and the next pull's reconcile drops the
-    // placeholder, so the edit would silently vanish. The free tier (no sync) edits
-    // it locally, which is correct.
+    // The bootstrap profile (userId '') is unknown to the server: an update is rejected
+    // and the next pull drops it, so the edit would vanish.
     if (profile.userId === '' && isSyncActive()) {
       setErrors({ form: 'This profile is still syncing. Please try again in a moment.' })
       return
@@ -98,28 +67,8 @@ export function EditProfileDialog({ profileId, onClose }: EditProfileDialogProps
 
     setIsSubmitting(true)
     try {
-      // Only the two form fields. Currency, isDefault and userId are carried over
-      // from the stored profile by `updateProfile`'s merge.
-      //
-      // ⚠️ `description` stays a string, `''` when cleared — never `undefined`.
-      // The sync payload omits a null/undefined description and the server only
-      // SETs fields it receives, so `undefined` would leave the OLD description on
-      // the server, and the next pull would restore it on every device.
-      // ⚠️ `icon` is put in the UPDATES OBJECT only when the user actually changed
-      // it. The picker opens pre-selected on the hash fallback, so including it
-      // unconditionally would stamp that fallback into the database as a
-      // deliberate choice every time someone merely renamed a profile — a write
-      // the user never made, and one that would outlive any future hash change.
-      //
-      // ⚠️ PRECISION, corrected by code review 54.2: this is a claim about the
-      // UPDATES OBJECT, not about the wire. `updateProfile` syncs
-      // `{ ...previous, ...updates }`, so once a profile HAS a stored icon, that
-      // icon rides along in the payload of every later edit — and `updateEntity`
-      // does a partial `.set()` with no `baseVersion` check, so a stale device can
-      // revert a newer choice made elsewhere. That is pre-existing last-write-wins
-      // (it applies to `name` and `description` identically) and is logged in
-      // `deferred-work.md`; what this guard genuinely prevents is a NEVER-CHOSEN
-      // profile acquiring an icon it never had.
+      // A cleared description stays '' (undefined is dropped from the payload, keeping the old server value).
+      // `icon` only when changed, so a never-chosen profile does not get its hash fallback stored as a choice.
       const updates: { name: string; description: string; icon?: string } = {
         name: form.name,
         description: form.description,
@@ -152,7 +101,6 @@ export function EditProfileDialog({ profileId, onClose }: EditProfileDialogProps
       labelledBy="edit-profile-title"
       className="bg-white dark:bg-gray-800 dark:text-gray-100 rounded-xl shadow-xl w-full max-w-md"
     >
-      {/* Header */}
       <div className="flex items-center justify-between p-6 border-b border-default">
         <div>
           <h2 id="edit-profile-title" className="text-xl font-bold text-heading">
@@ -183,16 +131,13 @@ export function EditProfileDialog({ profileId, onClose }: EditProfileDialogProps
         </button>
       </div>
 
-      {/* Form */}
       <form onSubmit={handleSubmit} className="p-6 space-y-4">
-        {/* Icon picker (story 54.2, FR78; shared with create since story 98.1) */}
         <ProfileIconPicker
           idPrefix="edit-profile"
           value={form.icon}
           onChange={(icon) => handleChange('icon', icon)}
         />
 
-        {/* Name field */}
         <div>
           <label htmlFor="edit-profile-name" className="block text-sm font-medium text-label mb-1">
             Profile Name <span className="text-red-500">*</span>
@@ -213,7 +158,6 @@ export function EditProfileDialog({ profileId, onClose }: EditProfileDialogProps
           )}
         </div>
 
-        {/* Description field */}
         <div>
           <label
             htmlFor="edit-profile-description"
@@ -240,14 +184,12 @@ export function EditProfileDialog({ profileId, onClose }: EditProfileDialogProps
           )}
         </div>
 
-        {/* Form error */}
         {errors['form'] && (
           <div className="p-3 bg-red-50 dark:bg-red-950/30 rounded-lg">
             <p className="text-sm text-red-700 dark:text-red-300">{errors['form']}</p>
           </div>
         )}
 
-        {/* Actions */}
         <div className="flex items-center justify-end gap-3 pt-2">
           <button
             type="button"

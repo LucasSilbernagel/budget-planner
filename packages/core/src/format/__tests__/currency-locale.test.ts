@@ -1,12 +1,3 @@
-/**
- * Currency → locale mapping tests (story 8-1, FR25).
- *
- * The selected currency alone drives the formatting locale. Each supported
- * currency maps to its canonical regional BCP-47 locale, and any unmapped code
- * falls back to DEFAULT_LOCALE. Also asserts the mapped locales actually produce
- * the expected region-default `formatCurrency` output (the whole point of 8-1).
- */
-
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_LOCALE, localeForCurrency } from '../currency-locale.js'
 import { formatCurrency, getSupportedCurrencies } from '../currency.js'
@@ -19,7 +10,7 @@ describe('localeForCurrency (story 8-1)', () => {
   describe('maps every supported currency to its regional locale', () => {
     const cases: readonly [string, string][] = [
       ['USD', 'en-US'],
-      ['EUR', 'de-DE'], // Decision D1: largest eurozone economy
+      ['EUR', 'de-DE'], // largest eurozone economy
       ['GBP', 'en-GB'],
       ['JPY', 'ja-JP'],
       ['CAD', 'en-CA'],
@@ -40,11 +31,7 @@ describe('localeForCurrency (story 8-1)', () => {
   })
 
   it('maps every selectable currency explicitly (guards against future drift)', () => {
-    // Every currency the UI can select (all of getSupportedCurrencies except the
-    // NONE sentinel) must have a dedicated regional locale — not the DEFAULT_LOCALE
-    // fallback — so adding a currency to core without a map entry fails loudly here.
-    // (USD legitimately maps to en-US === DEFAULT_LOCALE, so exclude it from the
-    // "must differ from fallback" check and assert its presence separately.)
+    // USD maps to en-US === DEFAULT_LOCALE, so it's checked separately.
     const selectable = getSupportedCurrencies().filter((code) => code !== 'NONE')
     for (const code of selectable) {
       const locale = localeForCurrency(code)
@@ -57,8 +44,6 @@ describe('localeForCurrency (story 8-1)', () => {
   })
 
   it('falls back to DEFAULT_LOCALE for unmapped codes', () => {
-    // Codes valid elsewhere (server enum) but absent from the client map, plus
-    // the currency-less sentinel and outright garbage.
     expect(localeForCurrency('SEK')).toBe(DEFAULT_LOCALE)
     expect(localeForCurrency('NZD')).toBe(DEFAULT_LOCALE)
     expect(localeForCurrency('NONE')).toBe(DEFAULT_LOCALE)
@@ -66,8 +51,7 @@ describe('localeForCurrency (story 8-1)', () => {
   })
 
   describe('drives region-default formatting via formatCurrency (AC-1)', () => {
-    // de-DE uses U+00A0 before the symbol; ja-JP/others use various Unicode
-    // spaces. \s matches them all — normalize to a plain space for assertions.
+    // Intl uses various Unicode spaces (e.g. U+00A0); normalize to a plain space.
     const normalizeSpaces = (value: string) => value.replace(/\s/g, ' ')
 
     const format = (currency: string, cents: number) =>

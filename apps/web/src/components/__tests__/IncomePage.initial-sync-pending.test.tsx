@@ -1,19 +1,3 @@
-/**
- * IncomePage vs. the initial-sync-pending window (Story 53.1, AC-4; redesigned
- * in code review).
- *
- * Before Story 53.1, ActiveSync's mount-time pull never actually ran for
- * anyone (see SyncProvider.hasProbableSession), so a fresh device's "no local
- * rows yet" state was indistinguishable from... nothing running at all — this
- * window did not exist. Now that a paid session's first pull genuinely fires,
- * this file proves a fresh device shows a loading state (not a confident "no
- * income sources yet") while that pull is in flight, resolves to the real
- * empty message once it completes with nothing, and — critically for AC-6 —
- * a device that has synced at least once before (a persisted, device-level
- * flag, not a per-page check) is COMPLETELY unaffected even with zero local
- * rows and no pull resolved yet this session.
- */
-
 import { renderWithProviders, screen } from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useIncomeStore } from '../../stores/incomeStore'
@@ -66,9 +50,7 @@ describe('IncomePage — initial sync pending (Story 53.1, AC-4)', () => {
 
   it('AC-6: a device that has synced before is unaffected, even with zero local rows and no pull resolved this session', () => {
     window.localStorage.setItem(STORAGE_KEY, '1')
-    // Local store is still empty and no pull has resolved THIS session — the
-    // only signal distinguishing this from a genuinely fresh device is the
-    // persisted device-level flag.
+    // Only the persisted device-level flag distinguishes this from a fresh device.
     renderWithProviders(<IncomePage />)
 
     expect(screen.getByText('No income sources yet')).toBeInTheDocument()
@@ -81,8 +63,6 @@ describe('IncomePage — initial sync pending (Story 53.1, AC-4)', () => {
       amount: 500000,
       frequency: 'monthly',
     })
-    // Pull still pending (lastPullTimestamp stays null), device-flag also
-    // unset — proves the data itself, once present, is never hidden.
     renderWithProviders(<IncomePage />)
 
     expect(screen.getByText('Salary')).toBeInTheDocument()

@@ -9,63 +9,9 @@ import { LocalDataSection } from './local-data-section'
 import { ReportSection } from './report-section'
 import { RetirementVisibilityToggle } from './retirement-visibility-toggle'
 
-/**
- * Consolidated settings surface, rendered by the `/settings` route
- * (story 11-6, Epic 11 UX review P2).
- *
- * Before this story the display preferences were scattered: the `CurrencyToggle`
- * was duplicated in every page header (implying page scope even though it changes
- * currency globally) and a `ThemeToggle` was buried in the global footer. This
- * surface gives them one predictable home reached from the persistent `GlobalNav`
- * (story 11-1) — Consistency & standards; Recognition rather than recall.
- *
- * ⚠️ The dark-mode toggle that used to sit in this "Display" section was DELETED
- * in story 61.1 (FR93), along with its store, provider and `<head>` bootstrap.
- * The theme now follows the device's `prefers-color-scheme` and there is no
- * in-app control that can disagree with it. Do not "restore" one: a second source
- * of truth for the theme is the decision that story reversed.
- *
- * Design decision (UX, 2026-07-04): a dedicated route rather than a nav dropdown,
- * chosen for discoverability, clean mobile behaviour against the fixed bottom tab
- * bar, and as the extensible home for the account controls story 10-5 adds next
- * (sign-out + account deletion).
- *
- * Kept in `components/` (not inline in the route file) so the route stays
- * code-splittable — a route module must export only `Route` to be split.
- */
 export function SettingsPage() {
-  /**
-   * Whether this session already reaches Report and Categories from the nav, and
-   * so should not be shown their Settings tiles too (story 58.2, decision D2).
-   *
-   * ⚠️ The SSR seed is read as a `useState` INITIALIZER, never reactively —
-   * `session-seed.tsx` states that contract. AMENDED by story 101.2 (FR168):
-   * after the first paint the sections ALSO follow `AuthIndicator`'s last
-   * DEFINITIVE `/api/auth/me` answer (`lib/session/verifiedSession.ts`), as
-   * `GlobalNav` has since 99.1 and the Overview does since 101.2. No answer yet
-   * (also what SSR and hydration read) → the seed decides, so the fail direction
-   * below is unchanged; an unknown answer writes nothing. `usePremiumAccess()` is the wrong
-   * tool here for the same reasons as on the Overview: its no-seed path starts
-   * `isLoading: true`, so these sections would render and then vanish after the
-   * client round-trip resolved.
-   *
-   * ⚠️⚠️ FAILS **OPEN**, the opposite of `GlobalNav` — on purpose. After story
-   * 58.2 the nav is the ONLY route a paid user has to /financial-summary and /categories,
-   * because these tiles were their last remaining fallback. Failing CLOSED on an
-   * unverified seed would therefore leave a paid user with no route to either
-   * page; showing them a section they do not need is merely redundant.
-   * Do NOT "harmonise" this with the nav's direction. See
-   * `lib/premium/entitlement.ts`.
-   *
-   * ⚠️ Failing open improves the odds of a route, it does not guarantee one: the
-   * sections' own tiles are `PremiumFeatureGate`s, which with a null seed resolve
-   * through a client round-trip that may fail too. Overclaim corrected in code
-   * review (2026-09-21).
-   *
-   * ⚠️ The gate is HERE, at the call sites, and not inside `ReportSection` /
-   * `CategoriesSection`: those stay tier-blind, so their own suites keep covering
-   * all three tier states, and this page holds one tier read instead of two.
-   */
+  // Fails open, unlike GlobalNav: these tiles may be a paid user's only route to
+  // the report and categories pages if the seed is wrong.
   const sessionSeed = useSessionSeed()
   const [seedReachesPremium] = useState(() => isEntitledSeed(sessionSeed))
   const verifiedSession = useVerifiedSession()
@@ -92,24 +38,12 @@ export function SettingsPage() {
         <div className="mt-4 space-y-6">
           <div>
             <CurrencyToggle />
-            {/* Makes the global scope unambiguous (AC-2): the control no longer
-                sits in a single page's header implying it is page-scoped. */}
             <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
               Applies everywhere amounts are shown.
             </p>
           </div>
-          {/* Retirement planner visibility — story 35.2, FR55; widened by story
-              71.1, FR113. Placed in "Display" because it governs where the
-              planner and its questions APPEAR, not what the app stores or
-              calculates: turning it off hides the nav entry, the page, and the
-              expense form's ends-before-retirement question and row badge — and
-              deletes nothing (marked expenses keep their mark). */}
           <div>
-            {/* ⚠️ The description is linked with `aria-describedby`, not merely
-                placed nearby. It carries the data-safety reassurance, and this
-                control sits in the same Settings surface as "Clear local data" —
-                a screen-reader user who heard only "Show Retirement planner,
-                switch, on" would get the switch without the reassurance. */}
+            {/* aria-describedby, not mere proximity: the description carries the data-safety reassurance. */}
             <RetirementVisibilityToggle describedBy="settings-retirement-visibility-description" />
             <p
               id="settings-retirement-visibility-description"
@@ -123,44 +57,13 @@ export function SettingsPage() {
         </div>
       </section>
 
-      {/* Clear local data — story 17-2. Available to EVERY user (rendered
-          outside the auth-gated AccountSection below), distinct from the
-          Premium "Delete account" control: this wipes only this device. */}
       <LocalDataSection />
 
-      {/* Premium financial summary report — story 30-3. Surfaced-but-locked for
-          free visitors (the /financial-summary route gates independently), and placed after
-          Local data so the two data-facing controls sit together.
-
-          ⚠️ FREE-TIER ONLY SINCE STORY 58.2 (decision D2). Story 58.1 put Report
-          in a paid user's nav, so this tile became a second copy of a menu entry
-          they already have. What survives here is the discovery + upgrade pitch,
-          which only has a job for someone who has not bought it yet.
-
-          ⚠️⚠️ DO NOT MOVE THIS SECTION'S PRIVACY SENTENCE ONTO /financial-summary. Hiding
-          this section takes "The summary is assembled in your browser — nothing
-          is sent anywhere to produce it" away from a paid user, and re-homing it
-          to the report page is the obvious repair — it is what story 57.1
-          correctly did for /forecasting. It is WRONG here: story 56.1 / UX-DR62
-          removed that disclaimer from the report DELIBERATELY, and
-          `reports/__tests__/FinancialSummaryReport.test.tsx` pins its ABSENCE
-          with `not.toMatch`. Re-adding it reverses a shipped decision and turns
-          that guard red. The claim survives for paid users in
-          `content/docs/features.md`. (Story 58.2 AC-5. Generalisable: before
-          relocating any copy, grep for a pinned absence of it.) */}
+      {/* Don't move this privacy sentence onto /financial-summary: the report omits it deliberately and a test pins its absence. */}
       {!reachesPremiumFromNav && <ReportSection />}
 
-      {/* Premium custom categories — story 30.4b. Surfaced-but-locked for free
-          visitors (the /categories route gates independently). Placed after the
-          report so the two gated entry points sit together.
-
-          ⚠️ FREE-TIER ONLY SINCE STORY 58.2 (decision D2), same reasoning as the
-          report section above. */}
       {!reachesPremiumFromNav && <CategoriesSection />}
 
-      {/* Account controls (sign-out + self-serve deletion) — story 10-5.
-          Renders only for authenticated users; free/unauthenticated visitors
-          see just the Display + Local data sections above. */}
       <AccountSection />
     </main>
   )

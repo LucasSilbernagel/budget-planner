@@ -1,12 +1,3 @@
-/**
- * Contact form component tests (story 9-1, AC-1/AC-2/AC-4/AC-5).
- *
- * Covers inline field-level validation (no alert()), the honeypot, the async
- * submit states (busy, success, generic error), graceful-degrade when the
- * Formspark id is unset, and that a successful submit POSTs the right JSON to
- * `submit-form.com`. The Formspark call is MSW-mocked — no real network (NFR8).
- */
-
 import { server } from '@/mocks/server'
 import { expectNoDarkFill } from '@/test/white-fill-tokens'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -31,7 +22,6 @@ describe('ContactForm', () => {
   it('marks the optional fields with .text-muted, not the sub-AA greys (story 115.2)', () => {
     stubFormId()
     render(<ContactForm />)
-    // gray-400 on light gray-50 was 2.43:1 and gray-500 on dark gray-900 3.67:1.
     const marks = screen.getAllByText('(optional)')
     expect(marks).toHaveLength(2)
     for (const mark of marks) expect([...mark.classList]).toEqual(['text-muted'])
@@ -40,7 +30,6 @@ describe('ContactForm', () => {
   it('keeps the Send message fill at blue-600 in dark too (story 115.1)', () => {
     stubFormId()
     render(<ContactForm />)
-    // White on blue-500 is 3.68:1, below AA's 4.5:1; blue-600 is 5.17:1.
     expectNoDarkFill(screen.getByRole('button', { name: /send message/i }))
   })
 
@@ -112,9 +101,7 @@ describe('ContactForm', () => {
     const honeypot = screen.getByTestId('contact-honeypot')
     expect(honeypot).toHaveAttribute('name', '_gotcha')
     expect(honeypot).toHaveAttribute('tabindex', '-1')
-    // The `hidden` utility (display:none) removes it from the a11y tree, tab
-    // order, and focus. (jsdom loads no CSS, so we assert the class rather than
-    // computed visibility.)
+    // jsdom loads no CSS, so assert the class rather than computed visibility.
     expect(honeypot).toHaveClass('hidden')
   })
 
@@ -140,7 +127,6 @@ describe('ContactForm', () => {
     expect(confirmation).toHaveTextContent(/your message has been sent/i)
 
     await waitFor(() => expect(captured).not.toBeNull())
-    // The empty honeypot is sent so Formspark's server-side check can also act.
     expect(captured).toEqual({
       name: 'Jane',
       email: 'jane@example.com',
@@ -253,7 +239,6 @@ describe('ContactForm', () => {
     render(<ContactForm />)
 
     await user.type(screen.getByLabelText(/message/i), validMessage)
-    // A bot fills the hidden honeypot; a real user never would.
     const honeypot = screen.getByTestId('contact-honeypot')
     await user.type(honeypot, 'i-am-a-bot')
     await user.click(screen.getByRole('button', { name: /send message/i }))
@@ -271,8 +256,6 @@ describe('ContactForm', () => {
     await user.click(screen.getByRole('button', { name: /send message/i }))
     await screen.findByRole('status')
 
-    // The form is still mounted; editing a field clears the confirmation and the
-    // fields were reset, so a second message can be sent without a page reload.
     const messageField = screen.getByLabelText(/message/i) as HTMLTextAreaElement
     expect(messageField.value).toBe('')
     await user.type(messageField, 'A second, equally useful message.')

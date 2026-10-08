@@ -1,12 +1,3 @@
-/**
- * Finance Module Index Tests
- *
- * Tests that all exports from the finance module index are properly exported
- * and accessible. This ensures the module's public API is correctly exposed.
- *
- * Zero tolerance for errors - NFR3 requirement
- */
-
 import { describe, expect, it } from 'vitest'
 import * as finance from '../index'
 
@@ -29,7 +20,6 @@ describe('Finance Module Index', () => {
     })
 
     it('should export Frequency type', () => {
-      // Verify it's a type by using it
       const freq: finance.Frequency = 'weekly'
       expect(freq).toBe('weekly')
     })
@@ -61,7 +51,6 @@ describe('Finance Module Index', () => {
     })
 
     it('should export NormalizableFinancialItem interface', () => {
-      // Verify it's a type by creating an instance
       const item: finance.NormalizableFinancialItem = {
         amount: 10000,
         frequency: 'monthly',
@@ -187,7 +176,6 @@ describe('Finance Module Index', () => {
     })
 
     it('should export ForecastingResult interface', () => {
-      // Partial check - this is a complex interface
       const result: Partial<finance.ForecastingResult> = {
         scenario: {
           name: 'Test',
@@ -291,29 +279,26 @@ describe('Finance Module Index', () => {
 
     it('should calculate retirement requirement using exported function', () => {
       const result = finance.calculateRetirementRequirement({
-        monthlyIncome: 500000, // $5000/month
-        annualReturnRate: 0.06, // 6%
+        monthlyIncome: 500000,
+        annualReturnRate: 0.06,
       })
 
-      expect(result.requiredAssets).toBe(100000000) // $1,000,000
+      expect(result.requiredAssets).toBe(100000000)
     })
 
     it('should verify all modules work together', () => {
-      // Test net income
       const netIncome = finance.calculateNetPeriodIncome(
         [{ amount: 50000, frequency: 'monthly' as const }],
         [{ amount: 20000, frequency: 'monthly' as const }]
       )
       expect(netIncome).toBe(30000)
 
-      // Test savings capacity
       const savingsCapacity = finance.calculateSavingsCapacityPercentage(
         [{ amount: 50000, frequency: 'monthly' as const }],
         [{ amount: 20000, frequency: 'monthly' as const }]
       )
       expect(savingsCapacity).toBe(40)
 
-      // Test retirement
       const retirement = finance.calculateRequiredAssets(500000, 0.06)
       expect(retirement).toBe(100000000)
     })
@@ -321,7 +306,6 @@ describe('Finance Module Index', () => {
 
   describe('Mathematical Validation - Zero Tolerance', () => {
     it('should pass exact validation across all modules', () => {
-      // Net income: $500 - $200 = $300 (30000 cents)
       expect(
         finance.calculateNetPeriodIncome(
           [{ amount: 50000, frequency: 'monthly' as const }],
@@ -345,8 +329,8 @@ describe('Finance Module Index', () => {
       const currentData = {
         income: [{ amount: 50000, frequency: 'monthly' as const }],
         expenses: [{ amount: 20000, frequency: 'monthly' as const }],
-        savings: 1000000, // $10,000
-        investments: 500000, // $5,000
+        savings: 1000000,
+        investments: 500000,
       }
       const scenario: finance.ForecastingScenario = {
         name: 'Test Scenario',
@@ -356,7 +340,6 @@ describe('Finance Module Index', () => {
 
       const result = finance.calculateFinancialForecast(currentData, scenario, 1)
 
-      // Verify structure
       expect(result.scenario).toBeDefined()
       expect(result.baseline).toBeDefined()
       expect(result.projection).toBeDefined()

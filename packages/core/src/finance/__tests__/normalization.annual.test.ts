@@ -1,14 +1,5 @@
-/**
- * Story 111.1 (FR179): a recurring amount annualises EXACTLY.
- *
- * The forecast used to lift each item's ROUNDED monthly figure by 12
- * (`round(amount × periods / 12) × 12`), which is off by -5..+6 cents per item per
- * year for every frequency but `monthly`. `normalizeToAnnual` is
- * `round(amount × periods)` instead: for an integer amount the product is already
- * exact, so the rounding only touches a fractional (corrupt or hand-edited) one.
- *
- * Every oracle here is INTEGER arithmetic (`amount × periods`), never a float.
- */
+// normalizeToAnnual is round(amount × periods), not round(amount × periods / 12) × 12,
+// which is off by up to 6 cents a year. Oracles are integer arithmetic.
 
 import { describe, expect, it } from 'vitest'
 import {
@@ -37,7 +28,6 @@ describe('normalizeToAnnual (story 111.1)', () => {
   })
 
   it('differs from the old monthly round trip where the story says it does', () => {
-    // The AC 2 / AC 3 examples: new value, then the round trip it replaces.
     const roundTrip = (a: number, f: Frequency) => normalizeToMonthly(a, f) * 12
     expect([normalizeToAnnual(1000, 'annually'), roundTrip(1000, 'annually')]).toEqual([1000, 996])
     expect([normalizeToAnnual(100_000, 'weekly'), roundTrip(100_000, 'weekly')]).toEqual([
@@ -71,8 +61,7 @@ describe('normalizeToAnnual (story 111.1)', () => {
 
 describe('calculateTotalAnnualNormalized (story 111.1)', () => {
   it('sums each item annualised exactly (the annual twin of calculateTotalMonthlyNormalized)', () => {
-    // The docs' worked example: 2,000.00 every two weeks + 600.00 a month +
-    // 1,200.00 a year = 2000×26 + 600×12 + 1200 = 60,400.00.
+    // The docs' worked example: 2000×26 + 600×12 + 1200 = 60,400.00.
     expect(
       calculateTotalAnnualNormalized([
         { amount: 200_000, frequency: 'biweekly' },

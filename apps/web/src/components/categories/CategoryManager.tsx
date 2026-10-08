@@ -1,27 +1,4 @@
-/**
- * Category management UI — create, rename, delete (story 30.4b, AC-2).
- *
- * One section per `kind`, because a category belongs to exactly one side of the
- * ledger and the store's duplicate check is scoped to `(profile, kind)`: showing
- * both kinds in one list would make "that name is already taken" look wrong
- * whenever the clash was on the other side.
- *
- * ⚠️ No nested dialogs. The delete confirmation is the ONLY `Modal` this surface
- * ever opens, and renaming happens inline in the row rather than in a second
- * dialog — `Modal.tsx:27-30` assumes a single modal is open at a time.
- *
- * ⚠️ Local-first (AC-6). Every operation here is a synchronous `localStorage`
- * write; the sync bridge is fire-and-forget and a no-op without a sync handle,
- * so nothing on this page blocks on the network.
- *
- * Layout follows `profile-list.tsx`'s structure, and since story 54.5 so does its
- * styling: both use the `surface`/`text-*` semantic tokens. ⚠️ This note used to
- * say the opposite — that `profile-list.tsx` "hard-codes light-only classes
- * (`bg-white`, `text-gray-900`) and would be unreadable in dark mode". That was
- * true when it was written and 54.5 made it false; it is corrected here rather
- * than left to mislead the next reader into copying a workaround for a problem
- * that no longer exists.
- */
+// No nested dialogs: Modal assumes one open at a time, so renaming happens inline.
 
 import type { CategoryKind } from '@budget-planner/db'
 import { type ReactElement, useRef, useState } from 'react'
@@ -50,15 +27,7 @@ const SECTIONS: { kind: CategoryKind; title: string; description: string; placeh
     },
   ]
 
-/**
- * Whether an error is about what the user typed.
- *
- * ⚠️ This is exactly why `CategoryValidationError.reason` is four-valued rather
- * than two (code review 30.4a). `not-found` means the category was deleted —
- * on another device, or in another tab — while this row was being edited. It has
- * nothing to do with the name, so pulling focus back to the name input would ask
- * the user to fix something that is not broken.
- */
+// not-found means the category was deleted elsewhere, which is not a name problem, so focus stays put.
 function isNameError(error: CategoryValidationError): boolean {
   return error.reason === 'empty' || error.reason === 'too-long' || error.reason === 'duplicate'
 }
@@ -77,14 +46,11 @@ function ErrorMessage({ error, id }: { error: CategoryValidationError; id: strin
 }
 
 export function CategoryManager(): ReactElement {
-  // Profile-scoped (code review 30.4b) — see `useCategoriesForActiveProfile`.
   const categories = useCategoriesForActiveProfile()
   const { createCategory, renameCategory, deleteCategory } = useCategoryManager()
 
   const [pendingDelete, setPendingDelete] = useState<ClientCategory | null>(null)
-  // ⚠️ REACTIVE, not `countRowsUsing`. A snapshot read at render time freezes,
-  // and confirming a destructive action against a stale number is precisely the
-  // failure this count exists to prevent (code review 30.4a).
+  // Reactive count: a render-time snapshot could confirm a delete against a stale number.
   const affectedRowCount = useCategoryRowCount(pendingDelete?.id)
   const listRef = useRef<HTMLElement>(null)
 
@@ -96,17 +62,7 @@ export function CategoryManager(): ReactElement {
   }
 
   return (
-    // ⚠️⚠️ THIS MUST STAY EXACTLY ONE ELEMENT (story 30.5). The page shell —
-    // `min-h-screen surface-sunken p-4 sm:p-8` + `mx-auto max-w-3xl` — moved up
-    // into `CategoriesPage` so the manager and the breakdown share one scroll
-    // container instead of the breakdown starting a full viewport below the
-    // fold. What is left is a bare wrapper with a load-bearing job: `Modal`
-    // renders IN NORMAL FLOW with no portal, and the `ConfirmDialog` below is a
-    // SIBLING of <header>/<main>. Returning a fragment of three children into
-    // the page's `space-y-*` stack would apply a top margin to the FIXED
-    // overlay and leave an undimmed strip across the top of the open dialog —
-    // the same failure `HomePage.tsx` and `settings/categories-section.tsx`
-    // both already carry a wrapper to prevent.
+    // Must stay one element: Modal renders in flow, and a parent space-y margin would offset its fixed overlay.
     <div>
       <header className="mb-8">
         <h1 className="text-3xl font-bold text-heading">Categories</h1>
@@ -116,11 +72,7 @@ export function CategoryManager(): ReactElement {
         </p>
       </header>
 
-      {/* `tabIndex={-1}` is load-bearing (code review 30.4b): this is the
-            ConfirmDialog's `finalFocusRef`, and `Modal` calls `.focus()` on it
-            unconditionally on close. A non-focusable element makes that a silent
-            no-op and focus drops to <body>, so a keyboard user restarts tabbing
-            from the top of the page after every delete OR cancel. */}
+      {/* tabIndex={-1}: this is the dialog's finalFocusRef; a non-focusable element drops focus to <body>. */}
       <main className="space-y-6" ref={listRef} tabIndex={-1}>
         {SECTIONS.map((section) => (
           <CategorySection
@@ -182,23 +134,13 @@ function CategorySection({
 }: CategorySectionProps): ReactElement {
   const [newName, setNewName] = useState('')
   const [createError, setCreateError] = useState<CategoryValidationError | null>(null)
-  /**
-   * The row being renamed, held as a SNAPSHOT rather than an id.
-   *
-   * ⚠️ Load-bearing. `useLiveCategories` drops a category the moment it is
-   * tombstoned, so a list rendered straight from it would unmount the open
-   * rename form mid-keystroke if the category were deleted elsewhere — the
-   * user's form would simply vanish with no explanation, and the `not-found`
-   * reason the store returns could never be shown to anyone. Keeping the
-   * snapshot lets the row stay put until the user submits and gets told why.
-   */
+  // A snapshot, not an id: the live list drops tombstoned rows, which would unmount the rename form mid-edit.
   const [editing, setEditing] = useState<ClientCategory | null>(null)
   const [editingName, setEditingName] = useState('')
   const [renameError, setRenameError] = useState<CategoryValidationError | null>(null)
   const newNameRef = useRef<HTMLInputElement>(null)
   const editingNameRef = useRef<HTMLInputElement>(null)
 
-  // Keep the row under edit visible even after it leaves the live set.
   const visibleCategories =
     editing && !categories.some((category) => category.id === editing.id)
       ? [...categories, editing]
@@ -210,9 +152,6 @@ function CategorySection({
 
   const handleCreate = (event: React.FormEvent): void => {
     event.preventDefault()
-    // ⚠️ `createCategory` returns a result; it never throws, and the underlying
-    // `addCategory` can return null. Both are handled by branching on `ok`
-    // rather than assuming a row appeared.
     const result = onCreate(newName, kind)
     if (!result.ok) {
       setCreateError(result.error)
@@ -246,8 +185,7 @@ function CategorySection({
       if (isNameError(result.error)) {
         editingNameRef.current?.focus()
       } else {
-        // The category is gone. Close the form — but keep the message, which is
-        // rendered below the list precisely so it outlives the row.
+        // The message renders below the list so it outlives the row.
         setEditing(null)
         setEditingName('')
       }
@@ -279,10 +217,7 @@ function CategorySection({
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder={placeholder}
-            /* ⚠️ Deliberately NO `maxLength`. Capping the input would make the
-               `too-long` reason unreachable, and the store would still be the
-               only thing enforcing the bound — an error the user could never
-               see is an error that cannot be tested. */
+            /* No maxLength: it would make the too-long error unreachable. */
             className="w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
             aria-invalid={createError !== null}
             aria-describedby={createError ? createErrorId : undefined}
@@ -351,10 +286,7 @@ function CategorySection({
                     <button
                       type="button"
                       onClick={() => startEditing(category)}
-                      // `aria-label` REPLACES the subtree, so this string IS the
-                      // whole accessible name. Without it a screen-reader user
-                      // hears "Rename, Delete, Rename, Delete…" with nothing
-                      // binding a destructive action to its target.
+                      // aria-label replaces the subtree, so it must name the target row.
                       aria-label={`Rename ${category.name}`}
                       className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
                     >

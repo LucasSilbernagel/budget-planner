@@ -9,15 +9,6 @@ import { useProfileStore } from '../../stores/profileStore'
 import { useSavingsStore } from '../../stores/savingsStore'
 import { Route } from '../forecasting'
 
-/**
- * Reopening saved forecasts with and without savings rows (story 100.1, AC-11
- * to AC-13), through the page's real `mapToSavedForecast` → builder path.
- *
- * The engine is the REAL one, wrapped only to record what it was called with and
- * what it returned, so a v1 forecast's figures can be compared with the call the
- * page made before this story (no rows, the same `savings`).
- */
-
 const engineCalls = vi.hoisted(
   () =>
     [] as Array<{
@@ -82,7 +73,6 @@ function savedRow(inputs: unknown, version = 1): Record<string, unknown> {
   }
 }
 
-/** Open My Forecasts, Load "Plan", and wait for the loaded builder's first recompute. */
 async function loadPlan(inputs: unknown, version?: number) {
   fetchForecasts.mockResolvedValue({ success: true, data: [savedRow(inputs, version)] })
   renderWithRouter(<ForecastingPage />)
@@ -97,10 +87,8 @@ async function loadPlan(inputs: unknown, version?: number) {
   return last
 }
 
-/** Every savings row as `[name, balance, contribution]`, zipped by position. */
 function rows(): [string, number, number][] {
   const value = (el: HTMLElement) => (el as HTMLInputElement).value
-  // Money fields show grouped text since story 109.1 (`1,234.00`).
   const amount = (el: HTMLElement) => Number(value(el).replaceAll(',', ''))
   const balances = screen.queryAllByLabelText(/^Balance for /)
   const contributions = screen.queryAllByLabelText(/^Monthly Contribution for /)
@@ -124,8 +112,7 @@ beforeEach(() => {
   }
   usePremiumAccess.mockReturnValue({ status })
   useProfileStore.setState({ activeProfileId: PROFILE })
-  // The live store holds a DIFFERENT savings row; a loaded forecast must never
-  // show it (62.1 AC-7).
+  // The live store holds a DIFFERENT savings row; a loaded forecast must never show it.
   useSavingsStore.setState({
     savingsGoals: [
       {
@@ -182,19 +169,12 @@ describe('a v2 forecast reloads its rows exactly (AC-11)', () => {
   })
 })
 
-// Renamed by the 100.3 code review: under 100.3 D3 a v1 forecast no longer
-// reopens with the figures it had (its investments drop from 7% to 6%). The claim
-// kept here is 100.1's: the single Savings row changes no figure.
 describe('a v1 forecast reopens as one Savings row that changes no figure (AC-12)', () => {
   it('becomes ONE row named Savings, and projects exactly as the same inputs without savings rows', async () => {
     const call = await loadPlan({ savings: 123_400, investments: 50_000, years: 7 })
 
     expect(rows()).toEqual([['Savings', 1234, 0]])
-    // What the page computes without savings rows: the same inputs, no rows.
-    // ⚠️ Story 100.3 (D3): the v1 forecast's investments now reload as one
-    // Investments row at 6% (100.2 + 100.3), so the comparison call carries that
-    // same row. The claim pinned here is still 100.1's: the one Savings row
-    // changes no figure. (Before 100.3 this compared against a no-rows call at 7%.)
+    // A v1 forecast's investments reload as one Investments row at 6%, so the comparison carries it.
     const before = realForecast(
       {
         income: INCOME,
@@ -264,17 +244,12 @@ describe('corrupt saved rows (AC-13)', () => {
       ['', 0, 0],
       ['Ok', 10, 1],
     ])
-    // `inputs` survived: investments and years are the saved ones.
     expect(call.data.investments).toBe(50_000)
     expect(screen.getByLabelText('Projection Period (years)')).toHaveValue(7)
   })
 
-  /**
-   * ⚠️ End-to-end only. MEASURED (mutation W5, removing the mapper's recompute):
-   * this case stays GREEN, because the builder derives `savings` from the rows
-   * on its own. The mapper's half of D7 is pinned by the NaN-total case below,
-   * which W5 turns RED.
-   */
+  // Stays green without the mapper's recompute (the builder derives savings itself);
+  // the NaN-total case below pins the mapper.
   it('trusts the ROWS when they disagree with the saved total (D7)', async () => {
     const call = await loadPlan(
       {

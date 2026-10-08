@@ -1,23 +1,4 @@
-/**
- * Sync Changes Pull Route (Story 4-18)
- *
- * TanStack Start server route (file-route `server.handlers`).
- * Serves the server → client delta of entity changes for multi-device sync.
- *
- * Endpoint: GET /api/sync/changes?since=<ms-epoch>&limit=<n>
- *
- * - Auth + premium gate are enforced SERVER-SIDE from the HMAC-signed,
- *   DB-authoritative session cookie (Story 5-7). 401 = no session,
- *   403 = authenticated but not a paid sync tier, 200 = ok.
- * - The premium gate is the SAME `hasPaidAccess` as the sync PUSH path
- *   (active|past_due|lifetime; one definition since Story 78.3), NOT the
- *   premium-features gate (`hasPremiumFeatures`, which excludes past_due): pull
- *   must be reachable wherever push is.
- *   ⚠️ `lifetime` was missing from the old hand-copied list until Story 30.4a;
- *   since 78.3 there is no list here to drift.
- * - The delta is strictly scoped to the SESSION user id (and active profile for
- *   profile-scoped entities). A client-supplied userId is never trusted.
- */
+/** Same `hasPaidAccess` gate as push, so pull is reachable wherever push is. */
 
 import { logger } from '@/lib/logger'
 import { hasPaidAccess } from '@/lib/premium/access-statuses'
@@ -27,11 +8,9 @@ import { createDefaultProfileForUser } from '@/server/functions/profiles'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 
-/** Default page size when the client does not specify `limit`. */
 const DEFAULT_PULL_LIMIT = 100
 
 export const GET = async ({ request }: { request: Request }): Promise<Response> => {
-  // 1) Resolve and authenticate the session (cookie is HMAC-signed + DB-authoritative).
   const session = await getCurrentUserSession(request)
   if (!session.success) {
     return json({ success: false, error: session.error ?? 'No user session' }, { status: 401 })
@@ -40,8 +19,6 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
     return json({ success: false, error: 'No user session' }, { status: 401 })
   }
 
-  // 2) Paid-access gate — the same `hasPaidAccess` as the PUSH path (active|past_due|lifetime),
-  //    not the premium-features gate (which excludes past_due).
   if (!hasPaidAccess(session.data.subscriptionStatus)) {
     return json(
       {
@@ -52,19 +29,8 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
     )
   }
 
-  // 2a) Self-healing default-profile backfill (post-53.1 incident fix). The
-  // Paddle webhook (story 5-3) creates a default `userProfiles` row for every
-  // NEW signup, but any account that predates 5-3 never got one — and
-  // `reconcileActiveProfile()` (`lib/sync/applyServerChanges.ts`) permanently
-  // no-ops when a pull returns zero profiles, which also means the push
-  // bridge and the free→paid backlog seed never register. Story 53.1's
-  // `has_session` fix let `ActiveSync` finally mount for such an account, but
-  // its very first pull still came back empty and the client-side deadlock
-  // was unbreakable from there. `createDefaultProfileForUser` is idempotent
-  // (a no-op, returning the existing profile, when one already exists) — safe
-  // to call on every pull rather than only on account creation. Failure here
-  // must not fail the pull itself: worst case is the pre-existing deadlock,
-  // not a new one, and the NEXT pull (30s poll) tries again.
+  // Idempotent default-profile backfill: a pull with zero profiles deadlocks the client.
+  // Failure must not fail the pull; the next poll retries.
   try {
     const backfillResult = await createDefaultProfileForUser(session.data.userId)
     if (!backfillResult.success) {
@@ -76,14 +42,11 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
     logger.error('[sync/changes] default-profile backfill threw', { error })
   }
 
-  // 2b) Rate limit — shares the per-user budget with push (review D3). A runaway
-  // poll loop or an abusive client gets 429 instead of unbounded table scans.
   const rateLimit = await checkRateLimit(session.data.userId)
   if (!rateLimit.allowed) {
     return json({ success: false, error: 'Rate limit exceeded' }, { status: 429 })
   }
 
-  // 3) Parse query params (defensively — bad input is a 400, not a 500).
   const url = new URL(request.url)
 
   const sinceParam = url.searchParams.get('since')
@@ -105,21 +68,14 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
     }
   }
 
-  // Active profile travels in a header (set by `fetchServerChangesWithMeta` in
-  // `features/api/client.ts`), scoping the profile-scoped entity reads. Optional — absent = all profiles for the user.
   const profileId = request.headers.get('x-profile-id') || undefined
 
-  // 4) Fetch the delta, strictly scoped to the SESSION user id.
   try {
     const changes = await getSyncChanges(session.data.userId, since, limit, profileId)
-    // `changes.length > 0` already guarantees the element, but
-    // `noUncheckedIndexedAccess` cannot see through the ternary; read it once and
-    // narrow so the fallback stays explicit.
+    // `noUncheckedIndexedAccess` cannot see through the ternary.
     const newestChange = changes[changes.length - 1]
     const lastPullTimestamp = newestChange ? newestChange.updatedAt : since
-    // The authoritative live profile list (see `getLiveProfileIds`). Optional in
-    // the envelope: if it cannot be read, the pull itself still succeeds and the
-    // client simply skips unsynced-profile detection this round.
+    // Optional: if unreadable, the client skips unsynced-profile detection this round.
     let profileIds: string[] | undefined
     try {
       profileIds = await getLiveProfileIds(session.data.userId)

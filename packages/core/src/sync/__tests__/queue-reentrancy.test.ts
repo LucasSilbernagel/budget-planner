@@ -1,21 +1,5 @@
-/**
- * Sync queue re-entrancy (story 34.1b, AC-3)
- *
- * `SyncQueue.add` persists BEFORE mutating in-memory state, which means it
- * reads `this.queue`, awaits `saveQueue`, and only then assigns. Callers that
- * do not await it therefore interleave: the second call reads the queue as it
- * was before the first call finished, and its write clobbers the first
- * operation.
- *
- * This is not hypothetical. `syncEntityUpdate` (apps/web) returns `void` and
- * only attaches `.catch()`, so EVERY store write is an un-awaited add. A
- * story-34.1b reorder swaps two rows and therefore enqueues twice in one
- * synchronous turn; `useCategoryManager` already loops N un-awaited updates to
- * clear a deleted category.
- *
- * These tests pin the property the callers actually need: N un-awaited adds
- * yield N queued operations, in call order, both in memory and persisted.
- */
+// Store writes call `add` without awaiting it, so N un-awaited adds must yield
+// N queued operations, in call order, in memory and persisted.
 
 import { beforeEach, describe, expect, it } from 'vitest'
 import { SyncQueue } from '../queue'
@@ -34,12 +18,7 @@ function makeOperation(id: string): SyncOperation {
   } as unknown as SyncOperation
 }
 
-/**
- * Storage that records every save. `saveQueue` is genuinely async (it awaits a
- * resolved promise before writing), matching the real localStorage
- * implementation's `async` signature — that await is the window in which the
- * interleaving happens.
- */
+/** `saveQueue` awaits before writing; that await is the window in which adds interleave. */
 function createRecordingStorage(): SyncQueueStorage & { saves: SyncOperation[][] } {
   const saves: SyncOperation[][] = []
   return {
@@ -68,8 +47,6 @@ describe('SyncQueue re-entrancy (34.1b AC-3)', () => {
   })
 
   it('keeps BOTH operations when two adds are not awaited (the reorder swap)', async () => {
-    // Exactly what a row swap does: two store writes in one synchronous turn,
-    // neither awaited, because syncEntityUpdate returns void.
     const first = queue.add(makeOperation('A'))
     const second = queue.add(makeOperation('B'))
     await Promise.all([first, second])
@@ -82,8 +59,6 @@ describe('SyncQueue re-entrancy (34.1b AC-3)', () => {
     void queue.add(makeOperation('B'))
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    // The LAST save is what survives a reload. If the adds interleaved, it
-    // holds only ['B'] and operation A is unrecoverable.
     expect(storage.saves.at(-1)?.map((operation) => operation.id)).toEqual(['A', 'B'])
   })
 
@@ -104,22 +79,13 @@ describe('SyncQueue re-entrancy (34.1b AC-3)', () => {
     expect(storage.saves.at(-1)?.map((operation) => operation.id)).toEqual(['A', 'B', 'C', 'D'])
   })
 
-  /**
-   * Persist-before-mutate, for `clear()` specifically (code review).
-   *
-   * Every other mutator writes storage first so a storage failure cannot leave
-   * memory and disk disagreeing. `clear()` used to empty memory FIRST, so a
-   * throwing `clearQueue` left memory saying "empty" while the operations were
-   * still on disk — and they came back on the next reload.
-   */
+  // A throwing `clearQueue` must not leave memory empty while the ops remain on disk.
   it('keeps the in-memory queue when clearing storage fails', async () => {
     const failing: SyncQueueStorage = {
       async loadQueue() {
         return []
       },
-      async saveQueue() {
-        // no-op: adds must succeed so there is something to lose
-      },
+      async saveQueue() {},
       async clearQueue() {
         throw new Error('storage unavailable')
       },
@@ -131,13 +97,11 @@ describe('SyncQueue re-entrancy (34.1b AC-3)', () => {
 
     await expect(q.clear()).rejects.toThrow('storage unavailable')
 
-    // Memory must still agree with what is persisted — i.e. nothing was lost.
     expect(q.getAll().map((operation) => operation.id)).toEqual(['A', 'B'])
   })
 
   it('still rejects an add once the queue is full, counting interleaved adds', async () => {
-    // The size guard reads `this.queue.length`. Before serialization a burst of
-    // un-awaited adds all saw the same stale length, so the guard undercounted.
+    // The size guard reads `this.queue.length`; unserialized adds all saw a stale length.
     const full = new SyncQueue('user-2', createRecordingStorage())
     await full.initialize()
     await Promise.all(

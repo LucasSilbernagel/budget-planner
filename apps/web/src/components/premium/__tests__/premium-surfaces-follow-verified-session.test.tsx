@@ -24,38 +24,13 @@ import { AuthIndicator } from '../../auth/auth-indicator'
 import { SettingsPage } from '../../settings/settings-page'
 import { PremiumFeatureGate } from '../PremiumFeatureGate'
 
-// Not a tier reader: Settings' account controls (story 10-5) run their own
-// `/api/auth/me` fetch and render on its answer, which would muddy the request
-// count and the AC 5 mutation record. Stubbed as in `settings-page.test.tsx`.
+// Stubbed: it runs its own `/api/auth/me` fetch, which would muddy the request count.
 vi.mock('../../settings/account-section', () => ({
   AccountSection: () => <div data-testid="account-section" />,
 }))
 
-/**
- * Story 101.2 (FR168): the premium gates follow the verified session, like the nav.
- *
- * Story 99.1 made `GlobalNav` follow `AuthIndicator`'s last DEFINITIVE
- * `/api/auth/me` answer (`lib/session/verifiedSession.ts`). The other tier
- * readers still read the SSR seed only, so a document whose seed was signed-out
- * (a tab open from before sign-in, a cached document) showed "upgrade" to a paid
- * user until a reload. This file pins the three readers 101.2 moves onto the same
- * answer: `usePremiumAccess` (every `PremiumFeatureGate`), the Overview "Premium
- * Features" section and Settings' Report/Categories sections.
- *
- * Everything is REAL: `AuthIndicator` (the only writer), the hook, the gate,
- * `HomePage` and `SettingsPage`. Only `fetch` is stubbed, plus Settings'
- * `AccountSection` (not a tier reader; it fetches the session itself). That is why this is a
- * file of its own: `HomePage.test.tsx`, `settings-page.test.tsx` and
- * `PremiumFeatureGate.test.tsx` mock the hook file-wide and cannot see it.
- *
- * Fail directions are NOT harmonised (epic 58): Overview/Settings fail OPEN (a
- * null seed shows the sections), the hook fails CLOSED. With no definitive answer
- * every reader keeps today's behaviour.
- *
- * Every answer that matters is HELD until the first paint has been asserted, and
- * post-answer state is asserted only after the answer reached the store
- * (`findBy*` would resolve on the pre-answer render).
- */
+// Answers are held until the first paint is asserted; post-answer state is asserted only after
+// the answer reaches the store (`findBy*` would resolve on the pre-answer render).
 
 const PAID = { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'active' }
 type Me = typeof PAID
@@ -75,16 +50,9 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-/**
- * Who asked `/api/auth/me`: the indicator calls `fetch(url)` bare, the hook's
- * own null-seed check passes an `Accept` header (`fetchSessionSeed`).
- */
+/** The indicator calls `fetch(url)` bare; the hook's own check passes an `Accept` header. */
 type Caller = 'indicator' | 'hook'
 
-/**
- * `/api/auth/me` answers per call, told who is asking. Anything else answers
- * `{}`. `delayMs` puts every answer on a real timer (the CI-timing control).
- */
 function stubMe(answer: (caller: Caller) => Response | Promise<Response>, delayMs = 0) {
   const me = vi.fn(answer)
   global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -102,7 +70,6 @@ function stubMe(answer: (caller: Caller) => Response | Promise<Response>, delayM
 }
 const meIs = (user: Me | null) => () => new Response(JSON.stringify({ user }), { status: 200 })
 
-/** An answer held back until `release()`, so the FIRST paint can be asserted. */
 function held(answer: () => Response | Promise<Response>) {
   let release: () => void = () => {}
   const gate = new Promise<void>((resolve) => {
@@ -131,13 +98,8 @@ const UNKNOWN_ANSWERS = [
   },
 ] as const
 
-// ---------------------------------------------------------------------------
-// The readers
-// ---------------------------------------------------------------------------
-
 const GATE_COUNT = 3
 
-/** Three gates plus a probe that prints the hook's whole status. */
 function GatesPage() {
   return (
     <div data-testid="reader">
@@ -178,7 +140,6 @@ function Settings() {
   )
 }
 
-/** The app's root shape: the seed provider around the indicator and the page. */
 function renderApp(seed: SessionSeed | null, Reader: ComponentType, path = '/') {
   const rootRoute = createRootRoute({
     component: () => (
@@ -205,13 +166,11 @@ const unlockedGates = () => screen.queryAllByTestId('gate-unlocked').length
 const lockedGates = () => screen.queryAllByTestId('premium-gate-locked').length
 const skeletonGates = () => screen.queryAllByTestId('premium-gate-skeleton').length
 
-/** Positive anchor + the Overview section's presence. */
 function overviewSectionShown(): boolean {
   expect(screen.getByText('Track your finances with privacy and control')).toBeInTheDocument()
   return screen.queryByRole('heading', { level: 2, name: 'Premium Features' }) !== null
 }
 
-/** Positive anchor + both Settings sections' presence (they move together). */
 function settingsSectionsShown(): boolean {
   expect(document.getElementById('settings-display-heading')).not.toBeNull()
   const report = document.getElementById('settings-report-heading') !== null
@@ -220,18 +179,12 @@ function settingsSectionsShown(): boolean {
   return report
 }
 
-/** Let every pending fetch chain (fetch → json → setState → effects) finish. */
 const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve, 30)))
 
-/** Wait until the indicator's answer is in the store, then let React apply it. */
 async function answerApplied() {
   await waitFor(() => expect(getVerifiedSession()).toBeDefined())
   await settle()
 }
-
-// ---------------------------------------------------------------------------
-// AC 1: a definitive premium answer unlocks every reader
-// ---------------------------------------------------------------------------
 
 describe('AC 1: a definitive premium answer unlocks every reader', () => {
   const NOT_ENTITLED_SEEDS = [
@@ -341,10 +294,6 @@ describe('AC 1: a definitive premium answer unlocks every reader', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// AC 2: symmetric
-// ---------------------------------------------------------------------------
-
 describe('AC 2: a definitive not-entitled answer over an entitled seed locks (symmetric, 99.1 D1)', () => {
   const NOT_ENTITLED_ANSWERS = [
     {
@@ -428,10 +377,6 @@ describe('AC 2: a definitive not-entitled answer over an entitled seed locks (sy
   })
 })
 
-// ---------------------------------------------------------------------------
-// AC 3: unknown changes nothing
-// ---------------------------------------------------------------------------
-
 describe('AC 3: an unknown answer changes nothing', () => {
   it.each(UNKNOWN_ANSWERS)(
     '$name with no earlier answer: every reader keeps its seed',
@@ -445,7 +390,6 @@ describe('AC 3: an unknown answer changes nothing', () => {
           const { unmount } = renderApp(seed, Reader)
           await waitFor(() => expect(me).toHaveBeenCalled())
           await settle()
-          // Positive control: the answer landed (the strip collapses unknown to "Sign in").
           await screen.findByRole('link', { name: /sign in/i })
           expect(getVerifiedSession(), 'an unknown answer was recorded').toBeUndefined()
           if (Reader === GatesPage) expect(unlockedGates()).toBe(gatesUnlocked)
@@ -484,13 +428,7 @@ describe('AC 3: an unknown answer changes nothing', () => {
     }
   )
 
-  /**
-   * Decision DS1: with a null seed the hook still runs its own mount check. When
-   * that check FAILS after the indicator's definitive premium answer was applied,
-   * the failure is unknown and must not lock the gates. The two responses are
-   * ordered explicitly: the indicator is answered premium at once, the hook's
-   * own checks are held and fail only after the premium answer is visible.
-   */
+  /** A hook check failing after a definitive premium answer is unknown and must not lock the gates. */
   it.each([
     { name: 'a 503', fail: () => new Response('{}', { status: 503 }) },
     {
@@ -532,12 +470,7 @@ describe('AC 3: an unknown answer changes nothing', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// AC 4: with no answer, today's behaviour and fail directions
-// ---------------------------------------------------------------------------
-
 describe('AC 4: with no definitive answer every reader keeps today’s behaviour', () => {
-  /** The indicator's answer never arrives, so the store stays `undefined`. */
   const neverAnswer = () => new Promise<Response>(() => {})
 
   it('Overview and Settings fail OPEN on a null seed (the opposite of the nav, on purpose)', async () => {
@@ -575,7 +508,6 @@ describe('AC 4: with no definitive answer every reader keeps today’s behaviour
     await screen.findByText('Gates page')
     await settle()
     expect(hookStatus()).toMatchObject({ hasAccess: true, isLoading: false })
-    // Only the indicator asked.
     expect(me).toHaveBeenCalledTimes(1)
   })
 
@@ -591,17 +523,12 @@ describe('AC 4: with no definitive answer every reader keeps today’s behaviour
   })
 
   it('the hook: a null seed whose own check answers premium unlocks, with no indicator answer needed', async () => {
-    // The indicator's call never settles; the hook's own checks answer premium.
     stubMe((caller) => (caller === 'indicator' ? neverAnswer() : meIs(PAID)()))
     renderApp(null, GatesPage)
     await waitFor(() => expect(unlockedGates()).toBe(GATE_COUNT))
     expect(getVerifiedSession()).toBeUndefined()
   })
 })
-
-// ---------------------------------------------------------------------------
-// DS2: a definitive answer already held when a gate mounts
-// ---------------------------------------------------------------------------
 
 describe('DS2: a gate mounting after the answer uses it and asks nothing', () => {
   it('null seed, premium answer held: gates mounted later start unlocked with no request of their own', async () => {
@@ -625,7 +552,6 @@ describe('DS2: a gate mounting after the answer uses it and asks nothing', () =>
     await answerApplied()
     expect(me).toHaveBeenCalledTimes(1)
 
-    // A gate subtree mounting now, under the same null seed.
     const gates = render(
       <SessionSeedProvider seed={null}>
         <GatesPage />
@@ -639,16 +565,7 @@ describe('DS2: a gate mounting after the answer uses it and asks nothing', () =>
     app.unmount()
   })
 
-  /**
-   * Code review: the C2 shape (a stale signed-out seed, a premium answer held)
-   * with a gate mounting on a later client navigation. The hook's initializer
-   * must start from the held answer even though a seed EXISTS, or every late
-   * gate paints locked for one commit before its effect unlocks it. A DOM
-   * assertion after `render` cannot see that (RTL's `act` flushes the effect),
-   * so the hook's value is recorded on EVERY render. Mutation (initializer
-   * prefers a non-null seed over the held answer) was GREEN on the whole file
-   * before this test.
-   */
+  /** The hook's value is recorded on every render: RTL's `act` flushes the effect, hiding a locked first commit. */
   it('signed-out seed, premium answer held: a gate mounted later is unlocked from its very first render', async () => {
     const me = stubMe(meIs(PAID))
     const rootRoute = createRootRoute({
@@ -691,10 +608,6 @@ describe('DS2: a gate mounting after the answer uses it and asks nothing', () =>
   })
 })
 
-// ---------------------------------------------------------------------------
-// AC 5: no flip when seed and answer agree
-// ---------------------------------------------------------------------------
-
 describe('AC 5: when seed and answer agree no DOM node is added or removed in any reader', () => {
   const AGREE = [
     { name: 'paid seed + active answer', seed: ENTITLED_SEED, user: PAID as Me | null },
@@ -720,7 +633,6 @@ describe('AC 5: when seed and answer agree no DOM node is added or removed in an
     '$reader, $name: no node added or removed, no transient skeleton',
     async ({ seed, user, Reader }) => {
       const answer = held(meIs(user))
-      // Only the indicator's answer is held; anything else settles first.
       stubMe((caller) => (caller === 'indicator' ? answer.respond() : meIs(user)()))
       renderApp(seed, Reader)
       const reader = await screen.findByTestId('reader')
@@ -739,7 +651,6 @@ describe('AC 5: when seed and answer agree no DOM node is added or removed in an
       observer.observe(reader, { childList: true, subtree: true })
       answer.release()
       await answerApplied()
-      // Positive control: the answer really reached the store.
       expect(getVerifiedSession(), 'the answer never reached the store').toBeDefined()
       observer.disconnect()
       expect(changes, 'a reader flipped although seed and answer agree').toEqual([])

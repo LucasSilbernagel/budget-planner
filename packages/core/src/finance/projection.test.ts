@@ -1,14 +1,3 @@
-/**
- * Unit tests for Net Worth Projection Utilities
- *
- * Tests cover:
- * - Basic projection calculations
- * - Compound interest accuracy
- * - Edge cases (zero values, negative rates)
- * - Validation errors
- * - Time horizon handling
- */
-
 import { describe, expect, it } from 'vitest'
 import {
   NetWorthProjectionInput,
@@ -19,26 +8,16 @@ import {
   projectNetWorthSimple,
 } from './projection'
 
-// ============================================================================
-// Test Constants
-// ============================================================================
-
-// Convert dollars to cents for testing
 const toCents = (dollars: number): number => Math.round(dollars * 100)
 
-// Base test input: $100,000 assets, $0 liabilities, $5,000 monthly net income, 7% return
 const BASE_INPUT: NetWorthProjectionInput = {
   currentAssetsCents: toCents(100000),
   currentLiabilitiesCents: toCents(0),
   monthlyNetIncomeCents: toCents(5000),
-  assetReturnRate: 0.07, // 7% annual
-  incomeGrowthRate: 0.03, // 3% annual income growth
+  assetReturnRate: 0.07,
+  incomeGrowthRate: 0.03,
   timeHorizon: '10y',
 }
-
-// ============================================================================
-// Validation Tests
-// ============================================================================
 
 describe('Projection Input Validation', () => {
   it('should accept valid input without throwing', () => {
@@ -84,7 +63,6 @@ describe('Projection Input Validation', () => {
     const invalidInput: NetWorthProjectionInput = {
       ...BASE_INPUT,
       timeHorizon: 'custom',
-      // customYears is undefined
     }
     expect(() => createNetWorthProjection(invalidInput)).toThrow(
       'Custom years must be provided for custom time horizon'
@@ -114,10 +92,6 @@ describe('Projection Input Validation', () => {
   })
 })
 
-// ============================================================================
-// Basic Projection Tests
-// ============================================================================
-
 describe('Basic Projection Calculations', () => {
   it('should create a projection with 1 year horizon', () => {
     const input: NetWorthProjectionInput = {
@@ -127,7 +101,7 @@ describe('Basic Projection Calculations', () => {
 
     const result = createNetWorthProjection(input)
 
-    expect(result.timeline.length).toBe(13) // 12 months + month 0
+    expect(result.timeline.length).toBe(13)
     expect(result.summary.totalMonths).toBe(12)
   })
 
@@ -139,14 +113,14 @@ describe('Basic Projection Calculations', () => {
 
     const result = createNetWorthProjection(input)
 
-    expect(result.timeline.length).toBe(61) // 60 months + month 0
+    expect(result.timeline.length).toBe(61)
     expect(result.summary.totalMonths).toBe(60)
   })
 
   it('should create a projection with 10 year horizon', () => {
     const result = createNetWorthProjection(BASE_INPUT)
 
-    expect(result.timeline.length).toBe(121) // 120 months + month 0
+    expect(result.timeline.length).toBe(121)
     expect(result.summary.totalMonths).toBe(120)
   })
 
@@ -159,7 +133,7 @@ describe('Basic Projection Calculations', () => {
 
     const result = createNetWorthProjection(input)
 
-    expect(result.timeline.length).toBe(37) // 36 months + month 0
+    expect(result.timeline.length).toBe(37)
     expect(result.summary.totalMonths).toBe(36)
   })
 
@@ -171,11 +145,10 @@ describe('Basic Projection Calculations', () => {
   })
 
   it('should calculate assets compounding correctly over time', () => {
-    // Start with $10,000, 12% annual return, no additional contributions
     const input: NetWorthProjectionInput = {
       currentAssetsCents: toCents(10000),
       currentLiabilitiesCents: toCents(0),
-      monthlyNetIncomeCents: toCents(0), // No additional contributions
+      monthlyNetIncomeCents: toCents(0),
       assetReturnRate: 0.12,
       incomeGrowthRate: 0,
       timeHorizon: '1y',
@@ -183,30 +156,19 @@ describe('Basic Projection Calculations', () => {
 
     const result = createNetWorthProjection(input)
 
-    // After 12 months at 12% annual compounded monthly
-    // Expected: 10000 * (1 + 0.12/12)^12 = 10000 * 1.12682503013 = $11,268.25
     const monthlyRate = (1 + 0.12) ** (1 / 12) - 1
     const expectedFV = 10000 * (1 + monthlyRate) ** 12
     const expectedCents = Math.round(expectedFV * 100)
 
     const endingAssets = result.timeline[12].assetsCents
-    const tolerance = 2 // Allow for rounding differences
+    const tolerance = 2
 
-    // Use toBe for integer comparison, or use a larger tolerance
     expect(Math.abs(endingAssets - expectedCents)).toBeLessThanOrEqual(tolerance)
   })
 })
 
-// ============================================================================
-// Compound Interest Tests
-// ============================================================================
-
 describe('Compound Interest Accuracy', () => {
   it('should correctly calculate compound interest with monthly compounding', () => {
-    // Test with known values: $1000 at 12% annual, compounded monthly for 1 year
-    // Monthly rate: (1 + 0.12)^(1/12) - 1
-    // After 12 months: 1000 * (1 + monthlyRate)^12
-
     const input: NetWorthProjectionInput = {
       currentAssetsCents: toCents(1000),
       currentLiabilitiesCents: toCents(0),
@@ -217,13 +179,11 @@ describe('Compound Interest Accuracy', () => {
     }
 
     const result = createNetWorthProjection(input)
-    const endingNetWorth = result.timeline[12].netWorthCents / 100 // Convert back to dollars
+    const endingNetWorth = result.timeline[12].netWorthCents / 100
 
-    // Expected after 12 months of monthly compounding
     const monthlyRate = (1 + 0.12) ** (1 / 12) - 1
     const expectedValue = 1000 * (1 + monthlyRate) ** 12
 
-    // Should be approximately $1126.83
     expect(endingNetWorth).toBeCloseTo(expectedValue, 0.1)
   })
 
@@ -232,23 +192,19 @@ describe('Compound Interest Accuracy', () => {
       currentAssetsCents: toCents(10000),
       currentLiabilitiesCents: toCents(0),
       monthlyNetIncomeCents: toCents(1000),
-      assetReturnRate: 0, // 0% return
+      assetReturnRate: 0,
       incomeGrowthRate: 0,
       timeHorizon: '1y',
     }
 
     const result = createNetWorthProjection(input)
 
-    // With 0% return, assets should just accumulate the monthly contributions
-    // Starting: $10,000
-    // After 12 months: $10,000 + ($1,000 * 12) = $22,000
     const endingNetWorth = result.timeline[12].netWorthCents / 100
 
     expect(endingNetWorth).toBe(22000)
   })
 
   it('should handle negative return rate correctly', () => {
-    // Test with -50% return (losing half the value each year)
     const input: NetWorthProjectionInput = {
       currentAssetsCents: toCents(10000),
       currentLiabilitiesCents: toCents(0),
@@ -261,20 +217,12 @@ describe('Compound Interest Accuracy', () => {
 
     const result = createNetWorthProjection(input)
 
-    // After 2 years at -50% annual, compounded monthly
-    // Monthly rate: (1 - 0.5)^(1/12) - 1 = -0.04811
-    // After 24 months: 10000 * (1 - 0.04811)^24 ≈ 10000 * 0.3715 ≈ 3715
     const endingNetWorth = result.timeline[24].netWorthCents / 100
 
-    // Should be less than starting value
     expect(endingNetWorth).toBeLessThan(10000)
     expect(endingNetWorth).toBeGreaterThan(0)
   })
 })
-
-// ============================================================================
-// Edge Cases
-// ============================================================================
 
 describe('Edge Cases', () => {
   it('should handle zero starting assets', () => {
@@ -290,7 +238,6 @@ describe('Edge Cases', () => {
     const result = createNetWorthProjection(input)
 
     expect(result.summary.startingNetWorthCents).toBe(0)
-    // Should grow from contributions only
     expect(result.timeline[12].netWorthCents).toBeGreaterThan(0)
   })
 
@@ -306,14 +253,13 @@ describe('Edge Cases', () => {
 
     const result = createNetWorthProjection(input)
 
-    // Should only grow from compounding of initial assets
     expect(result.timeline[12].netWorthCents).toBeGreaterThan(toCents(10000))
   })
 
   it('should handle liabilities correctly', () => {
     const input: NetWorthProjectionInput = {
       currentAssetsCents: toCents(100000),
-      currentLiabilitiesCents: toCents(50000), // $50k debt
+      currentLiabilitiesCents: toCents(50000),
       monthlyNetIncomeCents: toCents(5000),
       assetReturnRate: 0.07,
       incomeGrowthRate: 0,
@@ -322,10 +268,8 @@ describe('Edge Cases', () => {
 
     const result = createNetWorthProjection(input)
 
-    // Starting net worth should be $50k
     expect(result.summary.startingNetWorthCents).toBe(toCents(50000))
 
-    // Liabilities should remain constant (not growing)
     expect(result.timeline[12].liabilitiesCents).toBe(toCents(50000))
   })
 
@@ -334,31 +278,18 @@ describe('Edge Cases', () => {
       currentAssetsCents: toCents(10000),
       currentLiabilitiesCents: toCents(0),
       monthlyNetIncomeCents: toCents(0),
-      assetReturnRate: -1, // -100%
+      assetReturnRate: -1,
       incomeGrowthRate: 0,
       timeHorizon: '1y',
     }
 
     const result = createNetWorthProjection(input)
 
-    // After any period with -100% rate, assets should go to 0
     expect(result.timeline[12].assetsCents).toBe(0)
   })
 })
 
-// ============================================================================
-// Assets/Liabilities Separation (FR47, story 28-2)
-// ============================================================================
-
-/**
- * NetWorthProjectionPage used to pre-net its inputs — it fed `assets - liabilities` as a
- * single principal into a compounder that multiplied the whole balance by (1 + rate)
- * every year. For a debt-dominated user that compounded the DEBT, so a mortgage grew
- * geometrically out of thin air. These tests pin the property that makes that impossible:
- * the return rate reaches assets only, and liabilities never move.
- */
 describe('Assets/Liabilities Separation (FR47)', () => {
-  // $1,000 of assets against a $300,000 mortgage — net worth starts at -$299,000.
   const DEBT_DOMINATED: NetWorthProjectionInput = {
     currentAssetsCents: toCents(1000),
     currentLiabilitiesCents: toCents(300000),
@@ -374,23 +305,17 @@ describe('Assets/Liabilities Separation (FR47)', () => {
 
     expect(result.summary.startingNetWorthCents).toBe(toCents(-299000))
 
-    // The trajectory improves: assets compound while the debt stands still.
     expect(result.summary.endingNetWorthCents).toBeGreaterThan(result.summary.startingNetWorthCents)
 
-    // THE load-bearing anti-divergence assertion. With assets non-negative and
-    // liabilities flat, net worth can never fall below the liability alone — whereas the
-    // old single-principal model produced -299,000 x 1.07^10 = -$588,178, inventing $289k
-    // of debt. Any return to geometric behaviour breaks this bound immediately.
-    // (Deliberately the only bound here: a looser -$350k check would be strictly implied
-    // by this one and could never fail on its own.)
+    // Load-bearing: net worth can never fall below the liability alone; any geometric debt
+    // growth breaks this bound.
     expect(result.summary.endingNetWorthCents).toBeGreaterThan(toCents(-300000))
   })
 
   it('compounds the assets alone, at the full return rate (FR47)', () => {
     const result = createNetWorthProjection(DEBT_DOMINATED)
 
-    // $1,000 at 7% for 10 years = $1,967.15, unaffected by the $300k of debt sitting
-    // beside it. Ranged rather than exact: the model rounds to whole cents monthly.
+    // $1,000 at 7% for 10 years = $1,967.15. Ranged: the model rounds to whole cents monthly.
     const finalAssets = result.timeline[120]?.assetsCents ?? Number.NaN
     expect(finalAssets).toBeGreaterThan(196_600)
     expect(finalAssets).toBeLessThan(196_800)
@@ -399,7 +324,7 @@ describe('Assets/Liabilities Separation (FR47)', () => {
   it('holds liabilities flat at every point in the timeline (FR47)', () => {
     const result = createNetWorthProjection(DEBT_DOMINATED)
 
-    expect(result.timeline).toHaveLength(121) // months 0..120 inclusive
+    expect(result.timeline).toHaveLength(121)
     for (const point of result.timeline) {
       expect(point.liabilitiesCents).toBe(toCents(300000))
     }
@@ -411,7 +336,6 @@ describe('Assets/Liabilities Separation (FR47)', () => {
       currentAssetsCents: toCents(0),
     })
 
-    // Nothing to compound and nothing to contribute: -$300,000 for the whole horizon.
     for (const point of result.timeline) {
       expect(point.netWorthCents).toBe(toCents(-300000))
     }
@@ -424,7 +348,6 @@ describe('Assets/Liabilities Separation (FR47)', () => {
     })
     const withDebt = createNetWorthProjection(DEBT_DOMINATED)
 
-    // The debt is a constant offset — it must not touch the asset path at all.
     expect(assetsOnly.timeline[120]?.assetsCents).toBe(withDebt.timeline[120]?.assetsCents)
     expect(assetsOnly.summary.endingNetWorthCents).toBe(
       withDebt.summary.endingNetWorthCents + toCents(300000)
@@ -438,7 +361,6 @@ describe('Assets/Liabilities Separation (FR47)', () => {
     })
     const withoutContributions = createNetWorthProjection(DEBT_DOMINATED)
 
-    // $500/mo for 10 years is $60,000 of principal, plus the return it earns on the way.
     const difference =
       withContributions.summary.endingNetWorthCents -
       withoutContributions.summary.endingNetWorthCents
@@ -446,14 +368,6 @@ describe('Assets/Liabilities Separation (FR47)', () => {
     expect(difference).toBeLessThan(toCents(90000))
   })
 
-  /**
-   * A spending deficit (expenses > income) drains assets past zero. A negative asset
-   * balance is an accumulated shortfall, NOT an investment — applying the return rate to
-   * it makes the shortfall compound geometrically, which is the same defect FR47 removes
-   * from the net-worth line, just relocated to the asset line. Caught in code review of
-   * story 28-2: $50k assets / $200k debt / -$500 a month at 7% over 30 years reached
-   * -$204,114 of assets where linear accumulation gives -$130,000.
-   */
   const SPENDING_DEFICIT: NetWorthProjectionInput = {
     currentAssetsCents: toCents(50000),
     currentLiabilitiesCents: toCents(200000),
@@ -467,8 +381,6 @@ describe('Assets/Liabilities Separation (FR47)', () => {
   it('does not compound a negative asset balance (FR47, review finding)', () => {
     const result = createNetWorthProjection(SPENDING_DEFICIT)
 
-    // Once assets are underwater, the only thing that may move them is the monthly
-    // shortfall itself — never a percentage of the negative balance.
     let checkedMonths = 0
     for (let month = 1; month < result.timeline.length; month++) {
       const previous = result.timeline[month - 1]?.assetsCents ?? Number.NaN
@@ -487,11 +399,9 @@ describe('Assets/Liabilities Separation (FR47)', () => {
     const result = createNetWorthProjection(SPENDING_DEFICIT)
     const finalAssets = result.timeline[360]?.assetsCents ?? Number.NaN
 
-    // Assets can never fall below "every month's shortfall, and nothing else":
-    // 360 months x -$500 against $50,000 of starting assets.
+    // Floor: 360 months x -$500 against $50,000 of starting assets.
     expect(finalAssets).toBeGreaterThanOrEqual(toCents(50000) + 360 * toCents(-500))
 
-    // The pre-fix compounding behaviour produced -$204,114 — well outside that floor.
     expect(finalAssets).toBeGreaterThan(toCents(-150000))
   })
 
@@ -502,14 +412,9 @@ describe('Assets/Liabilities Separation (FR47)', () => {
       monthlyNetIncomeCents: toCents(100),
     })
 
-    // No growth: exactly the starting assets plus 120 months of $100.
     expect(result.timeline[120]?.assetsCents).toBe(toCents(1000) + 120 * toCents(100))
   })
 })
-
-// ============================================================================
-// Years to Target Tests
-// ============================================================================
 
 describe('Years to Target Calculation', () => {
   it('should return 0 if already at target', () => {
@@ -519,12 +424,7 @@ describe('Years to Target Calculation', () => {
   })
 
   it('should return null if target cannot be reached', () => {
-    const years = calculateYearsToNetWorthTarget(
-      toCents(100000),
-      toCents(0),
-      0, // 0% return
-      toCents(200000) // Target is higher with no growth
-    )
+    const years = calculateYearsToNetWorthTarget(toCents(100000), toCents(0), 0, toCents(200000))
 
     expect(years).toBeNull()
   })
@@ -532,8 +432,8 @@ describe('Years to Target Calculation', () => {
   it('should return null if no savings and negative return', () => {
     const years = calculateYearsToNetWorthTarget(
       toCents(100000),
-      toCents(-1000), // Negative savings (withdrawing)
-      -0.1, // Negative return
+      toCents(-1000),
+      -0.1,
       toCents(200000)
     )
 
@@ -541,8 +441,6 @@ describe('Years to Target Calculation', () => {
   })
 
   it('should calculate years to reach a target with positive growth', () => {
-    // Starting at $100k, saving $5k/month, 7% return
-    // Target: $500k
     const years = calculateYearsToNetWorthTarget(
       toCents(100000),
       toCents(5000),
@@ -550,15 +448,10 @@ describe('Years to Target Calculation', () => {
       toCents(500000)
     )
 
-    // Should be able to reach the target in some number of years
     expect(years).toBeGreaterThan(0)
     expect(years).toBeLessThan(20)
   })
 })
-
-// ============================================================================
-// Type Guard Tests
-// ============================================================================
 
 describe('Type Guards', () => {
   it('should correctly identify TimeHorizon values', () => {
@@ -578,10 +471,6 @@ describe('Type Guards', () => {
   })
 })
 
-// ============================================================================
-// Summary Statistics Tests
-// ============================================================================
-
 describe('Summary Statistics', () => {
   it('should calculate correct summary statistics', () => {
     const result = createNetWorthProjection(BASE_INPUT)
@@ -594,7 +483,6 @@ describe('Summary Statistics', () => {
       result.summary.endingNetWorthCents - result.summary.startingNetWorthCents
     )
 
-    // Growth percentage calculation
     const expectedGrowthPct =
       (result.summary.endingNetWorthCents / result.summary.startingNetWorthCents) * 100
     expect(result.summary.growthPercentage).toBeCloseTo(expectedGrowthPct, 0.01)
@@ -612,14 +500,9 @@ describe('Summary Statistics', () => {
 
     const result = createNetWorthProjection(input)
 
-    // Should not throw, should return 0 for growth percentage
     expect(result.summary.growthPercentage).toBe(0)
   })
 })
-
-// ============================================================================
-// Simplified Function Tests
-// ============================================================================
 
 describe('Simplified Projection Function', () => {
   it('should create projection with simplified inputs', () => {

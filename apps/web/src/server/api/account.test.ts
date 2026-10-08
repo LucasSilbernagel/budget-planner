@@ -1,23 +1,3 @@
-/**
- * Account erasure server-function tests (Story 10-5, AC-1/2/3)
- *
- * Verifies the security- and correctness-critical invariants of
- * `deleteUserAccount`:
- *  - it hard-DELETEs every owned row across all 8 child tables + `users`, in a
- *    single transaction, in FK-safe order (children before parents);
- *  - the target user id comes from the SESSION only — never the request body —
- *    so a caller can only erase their OWN account (ownership);
- *  - no session → an `unauthenticated` result the route maps to 401, and NO
- *    deletion runs;
- *  - a session-resolution failure → an `error` result, and NO deletion runs;
- *  - it is idempotent (already-deleted user still reports success);
- *  - a best-effort Paddle cancel never blocks erasure when Paddle is unconfigured.
- *
- * The Drizzle `db` and Paddle config are mocked so this runs with no database
- * and no external calls (project testing rules). `eq` is mocked to a plain
- * `{ col, val }` sentinel so the WHERE clause target is inspectable.
- */
-
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
@@ -35,9 +15,7 @@ const {
       return Promise.resolve(undefined)
     }),
   }))
-  // Story 73.2: `eraseAccountRows` opens with a `users` row lock through
-  // `tx.execute`. Recorded in the same call log as the deletes so the test
-  // below can assert the lock comes FIRST.
+  // Recorded in the same call log as the deletes so the lock-first order is assertable.
   const txExecute = vi.fn((query: unknown) => {
     whereCalls.push({ table: 'LOCK users', arg: query })
     return Promise.resolve(undefined)
@@ -87,15 +65,7 @@ import {
 } from '@budget-planner/db/src/schema'
 import { deleteUserAccount } from './account'
 
-/**
- * FK-safe deletion order: children before parents, `users` last.
- *
- * ⚠️ `categories` (Story 30.4a) sits after incomeSources/expenses — which
- * reference it via categoryId — and before userProfiles/users, which it
- * references. It is the only entry here with both a parent and a child in this
- * list, so its position is load-bearing in BOTH directions: move it earlier and
- * the cashflow FKs break; move it later and its own FKs do.
- */
+// `categories` is both a parent and a child here: earlier breaks the cashflow FKs, later its own.
 const EXPECTED_ORDER = [
   forecastingProfiles,
   incomeSources,
@@ -103,18 +73,15 @@ const EXPECTED_ORDER = [
   categories,
   savingsGoals,
   balanceTracking,
-  // Story 99.2: the synced retirement plan, before `users` (RESTRICT FK).
   retirementPlans,
   loginTokens,
   rateLimits,
-  // Story 74.2: again, by the email `subject` — the magic-link throttle.
   rateLimits,
   userProfiles,
   users,
 ]
 
-// Mixed case + padding on purpose (Story 74.2): the email-bucket delete must
-// key on `normalizeEmail(...)`, and only an un-normalized address can show it.
+// Mixed case + padding: only an un-normalized address shows the delete keys on normalizeEmail.
 const SESSION_EMAIL = '  A@Test.Dev '
 
 const authedSession = (userId: string, paddleId = 'pdl_1') => ({
@@ -143,7 +110,6 @@ describe('deleteUserAccount', () => {
     expect(result).toEqual({ success: true })
     expect(transaction).toHaveBeenCalledTimes(1)
     expect(txDelete).toHaveBeenCalledTimes(EXPECTED_ORDER.length)
-    // Story 73.2, AC-6: the `users` row lock precedes every delete.
     expect(whereCalls.map((c) => c.table)).toEqual(['LOCK users', ...EXPECTED_ORDER])
   })
 
@@ -183,7 +149,6 @@ describe('deleteUserAccount', () => {
 
   it('is idempotent — an already-erased user still reports success', async () => {
     getCurrentUserSession.mockResolvedValue(authedSession('user-A'))
-    // tx.delete already resolves affecting zero rows; no throw ⇒ success.
     const result = await deleteUserAccount(req())
     expect(result).toEqual({ success: true })
   })
@@ -191,13 +156,10 @@ describe('deleteUserAccount', () => {
   it('erases ONLY the session user, never a client-supplied id (ownership)', async () => {
     getCurrentUserSession.mockResolvedValue(authedSession('user-A'))
 
-    // A malicious body naming a different user must be ignored entirely.
     await deleteUserAccount(req({ userId: 'user-B', email: 'victim@test.dev' }))
 
     const usersDelete = whereCalls.find((c) => c.table === users)
     expect(usersDelete?.arg).toEqual({ col: users.id, val: 'user-A' })
-    // Every WHERE clause targets user-A; none references user-B. The one
-    // keyed by address uses the SESSION's address, never the body's.
     for (const call of whereCalls) {
       if (call.table === 'LOCK users') {
         // A drizzle `sql` template keeps its interpolated values as raw
@@ -250,11 +212,7 @@ describe('deleteUserAccount', () => {
   })
 
   it('still succeeds and still erases when the Paddle cancel step HANGS past its overall deadline (not just an individual request timeout)', async () => {
-    // Regression: each Paddle HTTP call inside `cancelActiveSubscriptionsForCustomer`
-    // has its own request timeout, but nothing previously bounded the WHOLE
-    // step — a customer with many open subscriptions could still block
-    // erasure indefinitely. A never-resolving mock proves the outer deadline,
-    // not any inner one, is what unblocks this.
+    // A never-resolving mock proves the outer deadline, not a per-call timeout, unblocks this.
     vi.useFakeTimers()
     try {
       getCurrentUserSession.mockResolvedValue(authedSession('user-A'))

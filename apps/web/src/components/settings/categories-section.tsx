@@ -1,29 +1,6 @@
-/**
- * "Categories" entry point on `/settings` (story 30.4b, FR54).
- *
- * Management itself lives at `/categories`; this is the discoverable way in.
- * Wrapped in {@link PremiumFeatureGate} so a free visitor sees the feature
- * exists and is locked rather than not seeing it at all (FR24) — the same
- * treatment `/financial-summary` gets. The `/categories` route gates independently, so this
- * presentation layer is never the only thing between a free user and the page.
- *
- * ⚠️ Two shape constraints, both inherited from `report-section.tsx`:
- *  - The gate is wrapped in its own <div>. In the locked state
- *    `PremiumFeatureGate` returns the <button> PLUS a `PremiumPrompt` dialog as
- *    siblings, and `Modal` renders in normal flow with NO portal — so an
- *    unwrapped overlay inside a spaced stack picks up the parent's gap and
- *    leaves an undimmed strip across the top of the open dialog.
- *  - The locked content renders INSIDE a <button>, so it must contain no nested
- *    link or button. The unlocked branch is the <a>; the locked branch is inert
- *    text only. Its accessible name IS that text (story 116.2: the gate's
- *    button no longer has an `aria-label`): "Custom categories", the
- *    description, then "Premium, locked".
- */
-
 import type React from 'react'
 import { PremiumFeatureGate } from '../premium'
 
-/** The label shown in both tier states, so the section reads the same either way. */
 function CategoriesFeatureLabel(): React.ReactElement {
   return (
     <span className="text-sm font-medium text-heading">
@@ -51,7 +28,7 @@ export function CategoriesSection(): React.ReactElement {
         Create the categories you want to sort your income and expenses into, then pick one when you
         add or edit an entry. Renaming a category updates every entry that uses it.
       </p>
-      {/* Own wrapper <div>: see the Modal/no-portal note in the file header. */}
+      {/* Own wrapper: the locked gate renders a portal-less Modal sibling that would otherwise pick up the stack's gap. */}
       <div className="mt-3">
         <PremiumFeatureGate
           featureName="Custom Categories"

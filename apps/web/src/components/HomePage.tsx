@@ -47,38 +47,14 @@ import { GroupedAmount } from './ui/GroupedAmount'
 import { InfoTooltip } from './ui/InfoTooltip'
 import { LoadingStatus, PendingFigure, SKELETON_BAR, SkeletonBlock } from './ui/Skeleton'
 
-/**
- * Recharts is pulled in ONLY when a chart is about to render (story 38.3, AC-6).
- *
- * Both handles resolve the SAME module, so the two together cost one fetch. The
- * import is dynamic on purpose: `hydrateStart.js:28` awaits every route chunk's
- * STATIC import graph before hydration begins, so a top-level `from 'recharts'`
- * here put 104.0 KB gzipped — 36.1% of the measured critical path — in front of a
- * user waiting to see their net worth. See `HomeChartCanvases.tsx` for the fence.
- *
- * ⚠️ Every call site below sits inside the `hydrated` branch, so neither canvas
- * can render on the server. Hoisting one out re-creates BUG-F.
- */
+// Lazy so Recharts stays off the critical path: route chunks' static imports are awaited before hydration.
+// Every call site must stay inside the `hydrated` branch so no chart renders on the server.
 let chartChunkResolved = false
 
-/**
- * Whether the lazily-imported chart chunk has landed.
- *
- * ⚠️ Used ONLY to set `aria-busy` on the two chart sections. It deliberately does not
- * add a `role="status"` region: `ui/Skeleton.tsx:198-202` records that a third live
- * region per page is exactly what `loading-state.dom.test.tsx`'s count assertion
- * exists to prevent, and three simultaneous "loading" announcements (one bar chart,
- * two pies) would be worse than the silence this fixes. `aria-busy` says "this region
- * is updating" without competing for the announcement queue.
- *
- * Calling `import()` here costs nothing extra: the same module is being fetched by the
- * `Suspense` boundaries below at the same moment, and a module request is deduped.
- */
+// Drives aria-busy only: a role="status" region per chart would compete with the page's single announcer.
 function useChartsChunkReady(): boolean {
   const [ready, setReady] = React.useState(chartChunkResolved)
 
-  // The module flag is read once on mount and is deliberately NOT reactive — it only
-  // ever transitions false -> true, and the state setter below is what re-renders.
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only by design
   React.useEffect(() => {
     if (chartChunkResolved) {
@@ -93,8 +69,7 @@ function useChartsChunkReady(): boolean {
         }
       })
       .catch(() => {
-        // The ErrorBoundary around each canvas owns the failure path; this hook only
-        // drives an aria attribute, so a rejection must not surface here.
+        // The ErrorBoundary around each canvas owns the failure; this only drives an aria attribute.
       })
     return () => {
       active = false
@@ -104,26 +79,7 @@ function useChartsChunkReady(): boolean {
   return ready
 }
 
-/**
- * What fills a chart's box while its chunk is in flight (story 38.3, code review).
- *
- * ⚠️ This replaced `fallback={null}`, which was a real gap: by the time a chart
- * suspends, `hydrated` is already true, so `LoadingStatus` — the page's single
- * `role="status"` announcer — has unmounted. The user was left looking at blank
- * rectangles with no indication anything was coming, on exactly the connection
- * classes this story set out to measure, and a screen-reader user got a heading
- * followed by silence.
- *
- * It follows the contract `ui/Skeleton.tsx` already sets rather than inventing a
- * fourth convention: `SKELETON_BAR` tokens, `motion-safe:` so an indefinite pulse
- * never runs for someone who asked for less motion (WCAG 2.2.2), and `aria-hidden`
- * so the placeholder itself is out of the accessibility tree. The `aria-busy` that
- * marks the wait lives on the two chart SECTIONS (driven by {@link useChartsChunkReady})
- * — one attribute per region, and no second live region competing with `LoadingStatus`.
- *
- * ⚠️ `h-full w-full` and nothing else: the CALLER owns the box. Giving this element
- * its own dimensions would reintroduce exactly the guess that AC-11 removed.
- */
+// The caller owns the box: keep this `h-full w-full` only.
 function ChartPending(): React.ReactElement {
   return (
     <div aria-hidden="true" className={`${SKELETON_BAR} h-full w-full motion-safe:animate-pulse`} />
@@ -137,115 +93,41 @@ const BreakdownPieCanvas = lazyWithRetry(() =>
   import('./HomeChartCanvases').then((m) => ({ default: m.BreakdownPieCanvas }))
 )
 
-// Colors for the charts
 const INCOME_COLOR = '#10B981'
 const EXPENSE_COLOR = '#EF4444'
 const SAVINGS_COLOR = '#8B5CF6'
 const INVESTMENT_COLOR = '#3B82F6'
 const DEBT_COLOR = '#DC2626'
-// Story 43.4 (FR70). Amber, chosen to stay distinguishable from INVESTMENT_COLOR
-// (blue) and SAVINGS_COLOR (violet) under the common red-green and blue-yellow
-// confusions — the three asset-side bars must not read as one block.
+// Amber stays distinguishable from the blue and violet asset bars under common colour-blindness.
 const ASSET_COLOR = '#D97706'
-// Story UX-3 (code-review fix). A neutral gray for the expense-ratio pie's
-// "Remaining income" filler slice — deliberately NOT DEFAULT_COLORS.income
-// (`@budget-planner/core/finance/visualization`), which equals
-// CATEGORY_COLORS[1] and therefore collided with the first expense category's
-// color whenever there was exactly one income category. Verified absent from
-// the full CATEGORY_COLORS palette.
+// Not DEFAULT_COLORS.income: it equals CATEGORY_COLORS[1] and collided with the first expense slice.
 const REMAINING_INCOME_COLOR = '#9CA3AF'
 
 export function HomePage() {
-  /**
-   * Whether this session already reaches its premium pages from the nav, and so
-   * should not be shown the Overview's copy of them (story 58.2, FR88).
-   *
-   * ⚠️ The SSR seed is read as a `useState` INITIALIZER, never reactively —
-   * `session-seed.tsx` states that contract. Reading once means the first painted
-   * frame is already correct and a later provider value cannot remove a section
-   * out from under the user.
-   *
-   * ⚠️ AMENDED by story 101.2 (FR168): after the first paint the section ALSO
-   * follows `AuthIndicator`'s last DEFINITIVE `/api/auth/me` answer
-   * (`lib/session/verifiedSession.ts`), exactly as `GlobalNav` has since 99.1.
-   * No answer yet (`undefined`, which is also what SSR and hydration read) →
-   * the seed decides, so the fail direction below is unchanged. An unknown
-   * answer (503, network error, malformed) writes nothing, so the section keeps
-   * the seed or the last definitive answer. No fetch here: the answer is the
-   * indicator's own.
-   *
-   * ⚠️⚠️ `usePremiumAccess()` is the obvious reuse and is WRONG here, for two
-   * independent reasons. (1) It would re-add the SIXTH tier subscription that
-   * story 41.1 deliberately deleted to hold this section at five — each is an
-   * uncached server round-trip when the seed is null. (2) Its no-seed path starts
-   * `isLoading: true`, so the section would render and then VANISH when the
-   * round-trip resolved: a whole section disappearing after first paint, on the
-   * page stories 31.4 and 38.2 fought to keep stable.
-   *
-   * ⚠️⚠️ THIS GATE FAILS **OPEN**, WHICH IS THE OPPOSITE OF `GlobalNav`'S — ON
-   * PURPOSE. The nav withholds entries from an unverified session; this shows the
-   * section to one. Both are fail-safe and the harm is asymmetric: after story
-   * 58.2 the nav is the ONLY route a paid user has to Forecasting, Profiles,
-   * Report and Categories, so failing CLOSED here would leave a paid user whose
-   * seed failed to resolve with no nav entries AND no cards. Showing a paying
-   * user four cards they do not need is merely redundant.
-   * Do NOT "harmonise" the two directions. See `lib/premium/entitlement.ts`.
-   *
-   * ⚠️ Failing open IMPROVES the odds of a route; it does not guarantee one —
-   * the tiles here are `PremiumFeatureGate`s, and with a null seed they resolve
-   * via a client round-trip that may fail too, in which case they render locked.
-   * The guarantee wording in the first version of this comment was an overclaim
-   * (code review, 2026-09-21). Fail-open rescues the SSR-only outage, which is
-   * the common one.
-   *
-   * ~~⚠️ Accepted consequence, shared with the nav: the root loader caches the
-   * seed with `staleTime: Infinity`, so a user who upgrades MID-SESSION keeps
-   * seeing this section until a full reload.~~ No longer true since story 101.2:
-   * the root loader still caches the seed, but the section now follows the next
-   * definitive `/api/auth/me` answer (the indicator asks on every navigation),
-   * and the nav does the same since 99.1, so the two surfaces still move
-   * together — which remains the reason not to "fix" only one of them.
-   */
+  // Seed read once as an initializer, then follows the last definitive /api/auth/me answer. Fails OPEN, unlike
+  // GlobalNav, on purpose: failing closed would leave a paid user with neither nav entries nor these cards.
   const sessionSeed = useSessionSeed()
   const [seedReachesPremium] = useState(() => isEntitledSeed(sessionSeed))
   const verifiedSession = useVerifiedSession()
   const reachesPremiumFromNav =
     verifiedSession === undefined ? seedReachesPremium : isEntitledSeed(verifiedSession)
-  // Story 95.1 (FR154, D2): the "No account needed …" notice is for visitors, so
-  // ANY signed-in session (free included, so NOT `isEntitledSeed`) skips it. Same
-  // initializer-only seed read as above: SSR and the first client frame agree, so
-  // there is no flash and no hydration mismatch. `null` (unverified) still shows
-  // it, which is the harmless direction.
+  // Any signed-in session skips the visitor notice, free tier included.
   const [isSignedIn] = useState(() => sessionSeed?.isAuthenticated === true)
 
   const incomeSources = useIncomeSources()
   const expenses = useExpenses()
-  // Rows carry a category uuid, never a name (story 30.4b). Both pies group by
-  // the RESOLVED name, so a raw `categoryId` must never reach a data point — it
-  // would surface as a uuid in the hover tooltip and in the slice list beneath
-  // the plot (which the tests call the pie's "legend"; the Recharts `<Legend>`
-  // itself went in story 12-4). Story 36.2 removed the third surface, the
-  // in-plot slice label.
+  // Both pies group by resolved category name; a raw categoryId would leak a uuid into the tooltip and list.
   const categoryNames = useCategoryNameMap()
   const savingsGoals = useSavingsGoals()
   const balanceEntries = useBalanceEntries()
 
-  // Use currency formatting from store (respects user preferences)
   const formatAmount = useFormattedAmount()
-  // Currency mode/symbol for the compact bar-chart axis ticks (formatAmount
-  // always carries cents, which the narrow value axis has no room for).
   const { mode, currency } = useCurrencyPreferences()
 
-  // Below Tailwind `sm` (≤639px) charts must drop their desktop-width chrome
-  // (vertical right legend, wide Y-axis) so the plot area stays usable at 320px.
   const isNarrowViewport = useIsNarrowViewport()
 
-  // Theme-aware Recharts chrome (axis/grid/tooltip) for the summary bar chart so
-  // it stays legible on the dark `.surface` card (story 11-2 / 12-4 AC-2).
   const chartColors = useChartColors()
 
-  // Calculate normalized totals for consistent monthly comparison
-  // This ensures income and expenses with different frequencies are comparable
   const netIncomeResult = calculateNetIncomeResult(
     incomeSources.map((s) => ({ amount: s.amount, frequency: s.frequency })),
     expenses.map((e) => ({ amount: e.amount, frequency: e.frequency }))
@@ -254,123 +136,50 @@ export function HomePage() {
   const totalNormalizedIncome = netIncomeResult.grossIncome
   const totalNormalizedExpenses = netIncomeResult.totalExpenses
 
-  // Global duration selector (story 12-2, FR31). One control, persisted in its
-  // own store, drives BOTH the Total Income and Total Expenses cards — no
-  // per-card duplication. Values are stored monthly-normalized; we re-express
-  // them at the chosen duration via the core denormalizer (annually ×12, weekly
-  // ÷(52/12)), reusing the frequency engine rather than re-deriving factors.
-  // Amounts stay in cents, so `formatAmount` (currency mode/locale) is unchanged.
   const duration = useOverviewDuration()
   const setDuration = useSetOverviewDuration()
   const incomeForDuration = denormalizeFromMonthly(totalNormalizedIncome, duration)
   const expensesForDuration = denormalizeFromMonthly(totalNormalizedExpenses, duration)
 
-  // Raw (unconverted) entered totals, quoted inside the conversion disclosure.
-  // Deliberately NOT normalized — this is the "before conversion" figure.
   const totalIncomeRaw = incomeSources.reduce((sum, source) => sum + source.amount, 0)
   const totalExpensesRaw = expenses.reduce((sum, expense) => sum + expense.amount, 0)
-  // ⚠️ Gate the disclosure on whether conversion HAPPENED, not on whether the
-  // normalized and raw totals differ. Code review 32.1 showed the equality proxy
-  // has a false-negative: $330 weekly + $1,200 annually normalizes to exactly the
-  // raw sum (143000 + 10000 == 33000 + 120000 == 153000c), so a genuine
-  // conversion rendered no explanation at all. `PeriodTotal` on the Income and
-  // Expenses pages uses the same predicate, so all three surfaces now explain the
-  // same data the same way.
+  // Gate on whether conversion happened, not on normalized !== raw: mixed cadences can normalize to the raw sum.
   const incomeConversionApplied = incomeSources.some((source) => source.frequency !== 'monthly')
   const expensesConversionApplied = expenses.some((expense) => expense.frequency !== 'monthly')
   const totalSavings = savingsGoals.reduce((sum, goal) => sum + goal.currentBalance, 0)
   const totalInvestments = balanceEntries
     .filter((entry) => entry.type === 'investment')
     .reduce((sum, entry) => sum + entry.currentBalance, 0)
-  // Story 103.1 (FR171): a debt reads as the amount owed, exactly as the store's
-  // `useTotalDebtBalance` does, so the chart and the Net Worth tile agree on a
-  // legacy negative row.
+  // A debt reads as the amount owed, as useTotalDebtBalance does, so legacy negative rows agree with Net Worth.
   const totalDebts = balanceEntries
     .filter((entry) => entry.type === 'debt')
     .reduce((sum, entry) => sum + debtOwedCents(entry.currentBalance), 0)
-  // ⚠️ Story 43.4: this inline re-derivation is a SECOND copy of the balance
-  // store's own selectors (`balanceStore.ts:340-380`). It exists for the bar
-  // chart, which needs the components rather than the net. When FR70 added the
-  // `asset` type, forgetting this block would have put an asset in the Net Worth
-  // Net Worth tile and left it invisible in the balances chart below — the two
-  // contradicting each other on one screen.
-  // ⚠️ The guard is `lib/__tests__/balances-bar-data.test.ts`, which asserts the
-  // SERIES directly. `overview-reconciliation.test.tsx` does NOT cover this: it
-  // reads the Net Worth tile, which is fed by the shared `useNetWorth()` hook, so
-  // the Assets bar could be deleted outright and it would stay green. An earlier
-  // version of this comment named it as the guard; that was wrong, and review
-  // caught it.
+  // A second copy of the balance store's selectors (the chart needs components, not the net): a new balance type
+  // must be added here too, or Net Worth and this chart disagree.
   const totalAssets = balanceEntries
     .filter((entry) => entry.type === 'asset')
     .reduce((sum, entry) => sum + entry.currentBalance, 0)
-  // Story 32.2 (FR59) + 43.4 (FR70): net worth is investments + savings + assets
-  // − debts, read through
-  // the one shared hook so this card and the Balance page cannot drift apart.
-  // (A third reader, the free Net Worth projection page, was removed by 43.3.)
-  // Note the balances bar chart below (`balancesBarData`) has
-  // always plotted Savings + Investments − Debts under a comment claiming
-  // consistency "with the Net Worth definition" — until now that comment was
-  // describing a definition this card did not use.
   const netWorth = useNetWorth()
 
-  // Check if we have any data worth showing the dashboard for. Includes balances
-  // (savings/investments/debts), not just income/expense flows (story UX-2): a
-  // user who tracks only balances should reach the "Balances" sub-chart of the
-  // Financial Category Summary rather than the onboarding screen. The two
-  // Income/Expense breakdown pies handle their own empty state (`emptyLabel`), so
-  // a flows-less user sees empty-pie placeholders + the balances chart.
   const hasData =
     incomeSources.length > 0 ||
     expenses.length > 0 ||
     savingsGoals.length > 0 ||
     balanceEntries.length > 0
 
-  /**
-   * Story 38.2 (UX-DR43): `hasData` above is computed from four stores that have
-   * NOT rehydrated yet on the server and during hydration, so it is `false` for
-   * a returning user with five years of data. Before this gate, that served them
-   * three `$0.00` cards and — via the ternary below — "Let's set up your budget".
-   * MEASURED in the server response at `d66c821`, seeded with a savings goal.
-   *
-   * So the page has THREE states, not two: pending, resolved-with-data, and
-   * resolved-empty. `hasData` distinguishes only the last two.
-   */
+  // The stores have not rehydrated on the server or during hydration, so hasData is false for everyone:
+  // three states (pending, with data, empty), not two.
   const storesHydrated = useStoresHydrated()
-  // Story 53.1 (AC-4): a paid session's first-EVER cross-device pull on this
-  // device can still be in flight after stores hydrate. `useIsInitialSyncPending`
-  // combines a device-level "has this device ever synced" flag with `!hasData`
-  // — either one being false means an established user sees no different
-  // behavior (AC-6): a synced-before device is never gated, and a page that
-  // already has local data is never gated even on a never-synced device.
   const isInitialSyncPending = useIsInitialSyncPending(!hasData)
   const hydrated = storesHydrated && !isInitialSyncPending
   const chartsReady = useChartsChunkReady()
 
-  // ============================================================================
-  // Enhanced Visualization State (Story 3-3, simplified in 12-3)
-  // ============================================================================
+  // The shared overview duration store, on purpose: separate state showed the same expenses 12x apart on one screen.
 
-  // Income vs Expense Breakdown cadence (story 12-3). Replaces the old six
-  // date-range presets with a period toggle defaulting to Annually (UX-DR20).
-  //
-  // ⚠️ Story 12-3 gave this control its OWN component-local state, deliberately
-  // independent of the overview duration selector (12-2). Story 32.3 reversed
-  // that: the two controls could show the SAME expenses twelve times apart on one
-  // screen (card on Monthly = $2,441.67, pies still on Annually = $29,300.04 —
-  // reproduced before the fix), which is the strongest candidate for the "total
-  // expenses way off" report. There is now exactly ONE period value on this page,
-  // read from the shared store, so that divergence is structurally impossible.
-  // The breakdown keeps its own <select> (it sits far below the fold, and
-  // removing the affordance would be a discoverability regression) — it is simply
-  // a second WRITER to the one store.
-
-  // Convert stores data to FinancialDataPoint format for visualization utilities
   const financialData = useMemo<FinancialDataPoint[]>(() => {
     const data: FinancialDataPoint[] = []
 
-    // Add income sources
     for (const source of incomeSources) {
-      // Validate required fields per project context (zero tolerance for invalid financial data)
       if (
         !source?.id ||
         !source?.name ||
@@ -381,7 +190,6 @@ export function HomePage() {
         console.warn('Invalid income source, skipping:', source)
         continue
       }
-      // Parse createdAt date if available
       const sourceDate = source.createdAt ? new Date(source.createdAt) : undefined
 
       data.push({
@@ -395,9 +203,7 @@ export function HomePage() {
       })
     }
 
-    // Add expenses
     for (const expense of expenses) {
-      // Validate required fields per project context (zero tolerance for invalid financial data)
       if (
         !expense?.id ||
         !expense?.name ||
@@ -408,7 +214,6 @@ export function HomePage() {
         console.warn('Invalid expense, skipping:', expense)
         continue
       }
-      // Parse createdAt date if available
       const expenseDate = expense.createdAt ? new Date(expense.createdAt) : undefined
 
       data.push({
@@ -423,26 +228,10 @@ export function HomePage() {
     }
 
     return data
-    // ⚠️ `categoryNames` is load-bearing in this dependency list. Without it a
-    // RENAME leaves both pies showing the old label until some unrelated income
-    // or expense edit invalidates the memo — a silently stale chart.
+    // `categoryNames` is needed here, or a rename leaves both pies on the stale label.
   }, [incomeSources, expenses, categoryNames])
 
-  // Re-express each entry at the chosen period BEFORE aggregation (story 12-3,
-  // AC-2). The breakdown previously summed raw entered amounts and ignored
-  // frequency entirely, so a weekly $100 and an annual $100 rendered as equal
-  // slices. We normalize every entry to monthly then denormalize to the target
-  // period, reusing the core frequency engine rather than re-deriving any
-  // factors. Values stay integer cents, so formatAmount and the currency mode are
-  // unaffected.
-  //
-  // ⚠️ UNCONDITIONAL — do not reintroduce a per-value branch. This read
-  // `chartPeriod === 'annually' ? denormalizeFromMonthly(monthly, 'annually') :
-  // monthly`, a special case that existed only because the control had two
-  // values. `monthly` is ×1, so `round(m / 1) === m` exactly and the old branch
-  // was a no-op. Hand-classifying four values here would be the same rot
-  // `IS_NON_INTEGRAL_CADENCE` exists to prevent (story 32.1's `duration ===
-  // 'weekly'`).
+  // Scale each entry to the period before aggregating, unconditionally (monthly is ×1).
   const periodScaledData = useMemo<FinancialDataPoint[]>(
     () =>
       financialData.map((point) => {
@@ -452,12 +241,10 @@ export function HomePage() {
     [financialData, duration]
   )
 
-  // Aggregate the period-scaled data into income and expense category buckets.
   const aggregatedData = useMemo(() => {
     return aggregateByCategoryAndType(periodScaledData)
   }, [periodScaledData])
 
-  // Stable color per category, shared across both breakdown pies.
   const categoryColors = useMemo(() => {
     const allCategories = [
       ...(aggregatedData.get('income') || []).map((d) => d.category),
@@ -466,10 +253,6 @@ export function HomePage() {
     return generateColorMap(allCategories)
   }, [aggregatedData])
 
-  // One pie dataset per type (UX review #4). Income and expenses are separate
-  // wholes, so each pie carries only its own type and its slices sum to that
-  // type's total — a category's percentage is measured against the right
-  // denominator instead of income + expenses combined.
   const incomeData = useMemo(() => {
     return toPieChartData(aggregatedData.get('income') || [], categoryColors)
   }, [aggregatedData, categoryColors])
@@ -478,7 +261,6 @@ export function HomePage() {
     return toPieChartData(aggregatedData.get('expense') || [], categoryColors)
   }, [aggregatedData, categoryColors])
 
-  // Each pie's own 100% denominator (also shown as the pie's total figure).
   const totalIncomeChart = useMemo(
     () => incomeData.reduce((sum, item) => sum + item.value, 0),
     [incomeData]
@@ -488,29 +270,8 @@ export function HomePage() {
     [expenseData]
   )
 
-  // Story UX-3: the LEFT pie still shows each individual expense category —
-  // exactly the same slices as the RIGHT "Expenses by category" pie, reusing
-  // `expenseData` and its category colors so the two pies read as the same
-  // categories — but its 100% denominator is INCOME, not expenses. A
-  // "Remaining income" filler slice (unspent income) fills out the circle to
-  // represent the whole of income, so each expense's slice honestly reflects
-  // its share of income rather than its share of expenses (which is what the
-  // RIGHT pie already shows). The filler is OMITTED (not pushed as a 0-value
-  // row) once expenses reach or exceed income — see `expenseRatioIsOverspend`
-  // below for why the wedges themselves stop being income-relative at that
-  // point, which is a real, documented (code-review-found) limitation, not
-  // this filler's concern.
-  //
-  // Uses a fixed neutral gray rather than `DEFAULT_COLORS.income` (code
-  // review found `DEFAULT_COLORS.income === CATEGORY_COLORS[1]`, so with
-  // exactly one income category — a common case — the filler and the first
-  // expense category rendered identically, in both the arc and the legend
-  // dot).
-  //
-  // The emptiness gate keys off `incomeData.length` (not `totalIncomeChart`),
-  // matching the pre-existing convention that a pie is "empty" only when
-  // there are no income ROWS, not when their amounts happen to sum to zero —
-  // see the zero-total guard test in HomePage.pie-labels.chart-wiring.test.tsx.
+  // Same expense slices as the right pie, but against INCOME: a "Remaining income" filler completes the circle,
+  // omitted once expenses reach income.
   const expenseRatioData = useMemo<RechartsDataItem[]>(() => {
     if (incomeData.length === 0) {
       return []
@@ -530,12 +291,7 @@ export function HomePage() {
     ]
   }, [incomeData, expenseData, totalIncomeChart, totalExpenseChart])
 
-  // The chart's headline figure is a percentage, not a dollar total (AC-3).
-  // `totalIncomeChart <= 0` covers both "no income rows" (already routed to
-  // the empty state above) and "income rows exist but sum to 0" — that second
-  // case still renders the pie (data.length > 0) but cannot express a ratio,
-  // so it shows "—" rather than dividing by zero. Deliberately NOT capped at
-  // 100: an overspend period should read e.g. "132%", not a misleading 100%.
+  // Not capped at 100: an overspend should read e.g. 132%.
   const expenseRatioHeadline = useMemo(() => {
     if (totalIncomeChart <= 0) {
       return '—'
@@ -543,10 +299,6 @@ export function HomePage() {
     return `${Math.round((totalExpenseChart / totalIncomeChart) * 100)}%`
   }, [totalIncomeChart, totalExpenseChart])
 
-  // Each expense-ratio LEGEND row shows its own share of income as a percentage
-  // (not a dollar amount, unlike every other pie's legend) — the same "—" /
-  // uncapped-overspend guards as the headline above, applied per row instead
-  // of to the total.
   const formatExpenseRatioLegendValue = useCallback(
     (cents: number) => {
       if (totalIncomeChart <= 0) {
@@ -557,35 +309,15 @@ export function HomePage() {
     [totalIncomeChart]
   )
 
-  // ⚠️ Code-review finding: Recharts sizes each wedge as `value / sum(all
-  // data values)`, not against the `total` prop the legend/tooltip percentages
-  // use. With no "Remaining income" filler to absorb the difference (omitted
-  // above once expenses >= income), `sum(expenseRatioData) === totalExpenseChart`
-  // — so during an overspend period the WEDGES silently become each category's
-  // share of EXPENSES while the LEGEND/headline still (correctly) show each
-  // category's share of INCOME. A pie cannot geometrically show more than a
-  // full circle, so this note is the chosen fix (accept + disclose) rather
-  // than trying to make the wedges themselves income-relative.
+  // Recharts sizes wedges against sum(data), not `total`: during an overspend the wedges show share of expenses
+  // while the legend shows share of income, which the note discloses.
   const expenseRatioIsOverspend = totalIncomeChart > 0 && totalExpenseChart > totalIncomeChart
   const expenseRatioOverspendNote = expenseRatioIsOverspend
     ? "Expenses exceed income this period, so the wedges below show each category's share of total spending (not of income) — the percentages next to each category are still its true share of income."
     : undefined
 
-  // Whether the per-entry rounding disclosure below can actually be TRUE.
-  //
-  // ⚠️ The note is about per-entry rounding ACCUMULATING, so it needs a side with
-  // more than one entry to accumulate across: with a single entry the pie total is
-  // `round(m / k)` and the card is `round(m / k)` — the same expression, so they
-  // cannot differ. Counting ENTRIES, not slices, is the load-bearing part: the
-  // rounding happens per entry BEFORE `aggregateByCategoryAndType` merges entries
-  // into category slices, so one two-entry category diverges while two
-  // one-entry categories do not.
-  //
-  // ⚠️ Gating on the period ALONE (the first version of this) rendered "these
-  // figures can differ from the totals above" above two EMPTY pies for a
-  // balances-only user — a note contradicting the screen it sits on. Same defect
-  // class as the 32.2 gate that delegated to another section's `isEmpty`. Found in
-  // code review, verified by test.
+  // Per-entry rounding can only diverge on a side with 2+ entries: it happens per entry, before the category
+  // merge, so a single entry rounds identically on both surfaces.
   const breakdownCanDiverge = useMemo(() => {
     let incomeEntries = 0
     let expenseEntries = 0
@@ -596,17 +328,7 @@ export function HomePage() {
     return incomeEntries >= 2 || expenseEntries >= 2
   }, [financialData])
 
-  // Financial Category Summary. Flows and balances are two different kinds of
-  // number — a per-period FLOW (Income/Expenses, re-expressed at the overview
-  // duration) vs a point-in-time BALANCE (Savings/Investments/Debts) — so
-  // plotting them on one shared value axis let a large annual flow (~$93.6k)
-  // crush the balance bars into an unreadable sliver (story UX-2). Split into two
-  // datasets, each rendered in its own sub-chart with its own axis so neither can
-  // dominate the other.
-  //
-  // Flows keep the story-12-2 duration alignment: same cadence as the cards, same
-  // `(per week/month/year)` suffix. The chart uses Recharts' vertical layout, so
-  // bars run horizontally and Expenses (negative) extends leftward of the 0 line.
+  // Flows and balances get separate charts and axes so a large annual flow cannot crush the balance bars.
   const flowsBarData = [
     {
       category: `Income ${DURATION_LABEL[duration]}`,
@@ -620,8 +342,6 @@ export function HomePage() {
     },
   ].filter((item) => item.amount !== 0)
 
-  // Balances are absolute, point-in-time amounts — no period suffix — with debts
-  // shown as a reduction (negative), consistent with the Net Worth definition.
   const balancesBarData = buildBalancesBarData(
     {
       savingsCents: totalSavings,
@@ -637,60 +357,28 @@ export function HomePage() {
     }
   )
 
-  // Round, evenly-spaced axis ticks (cents) PER chart via the shared
-  // `barDomainTicks` helper (each domain clamped to include a 0 baseline for its
-  // diverging bars). Independent domains are the whole point — the flows axis
-  // scales to ~$90k while the balances axis scales to ~$5k, so a $5k savings
-  // balance is legible instead of a hair-line against a $90k income. The helper
-  // is unit-tested to prove the two domains come out independent.
   const flowsBarTicks = barDomainTicks(flowsBarData.map((d) => d.amount))
   const balancesBarTicks = barDomainTicks(balancesBarData.map((d) => d.amount))
 
   return (
     <div className="min-h-screen surface-sunken p-4 sm:p-8">
       <div className="max-w-6xl mx-auto">
-        {/* Story 38.2, AC-8: ONE announced region for the whole page, not one
-            per skeleton. Every skeleton below is `aria-hidden`, which without
-            this would hand a screen reader a heading followed by nothing; N
-            regions would instead announce N times. `sr-only` — the visible
-            signal is the pulsing placeholders. */}
+        {/* One announced region for the whole page; every skeleton below is aria-hidden. */}
         {!hydrated && <LoadingStatus />}
         <header className="mb-8">
           <div>
             <h1 className="text-3xl font-bold text-heading">Longhand Budget</h1>
-            {/* Primary subtitle (story 36-1, CONTENT-N — supersedes story 27-4 /
-                FR44): a single line beneath the wordmark saying what the app
-                does for the reader. Retires the 27-4 privacy-stance tagline,
-                which had itself replaced the 25-4 tagline and the 19-4
-                "bird's-eye" secondary subtitle. No trailing period
-                — byte-identical to the subtitle on routes/login.tsx, so the two
-                first-contact surfaces read the same. */}
+            {/* No trailing period: byte-identical to the login page subtitle. */}
             <p className="text-lg text-body mt-2">Track your finances with privacy and control</p>
-            {/* Privacy positioning (story 27-5, FR45 as amended by brand-1),
-                dismissable since story 55.1 (FR82). The copy, the semantic
-                tokens and the brand-1 AC-6 split of the no-AI claim all moved
-                intact into `components/overview/AccountNoticeBox` — see that
-                file for why the two <p> text nodes must stay byte-identical
-                (an SSR HTML substring assertion pins them) and why dismissal
-                needs BOTH a pre-paint <head> bootstrap and this component's
-                effect. Since story 95.1 (D2) it renders for signed-out and
-                unverified sessions only; the gate lives here so the box itself
-                stays auth-blind. */}
+            {/* Visitors only; the gate lives here so AccountNoticeBox stays auth-blind. */}
             {!isSignedIn && <AccountNoticeBox />}
           </div>
         </header>
 
         <main className="space-y-6">
-          {/* Quick Stats */}
           <section className="surface rounded-lg shadow-md p-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-xl font-semibold text-subheading">Financial Overview</h2>
-              {/* One global duration selector (story 12-2, widened to four values
-                  by 32.1). Drives the Total Income and Total Expenses cards here,
-                  and the same store drives the Income and Expenses pages — one
-                  source of truth, no per-surface duplication.
-                  Options are derived from VALID_DURATIONS so a selectable option
-                  can never be one `coerceDuration` would reject on reload. */}
               <label className="flex items-center gap-1 text-sm text-label">
                 <span className="sr-only">Show income and expenses per</span>
                 <select
@@ -707,10 +395,6 @@ export function HomePage() {
                 </select>
               </label>
             </div>
-            {/* Story 88.1: each figure below is a `GroupedAmount`, so one too wide
-                for its `minmax(0,1fr)` column wraps between digit groups instead
-                of overflowing its card (measured: `$1,013,222,221.80` needs 254px,
-                a card has 208px at 320px and 176px at 768px). */}
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               <div className="surface-inset rounded-lg p-4">
                 <p className="flex items-center gap-1 text-sm text-muted">
@@ -724,12 +408,7 @@ export function HomePage() {
                     />
                   )}
                 </p>
-                {/* data-testid rather than an accessible-name matcher: story 32.1
-                    measured that a label wrapping the InfoTooltip button resolves to
-                    a different accessible name under jsdom than under Chromium, so
-                    an anchored `^…$` matcher passes every unit test and finds
-                    nothing in a browser. Added by 32.3 so the reconciliation suite
-                    can assert this figure directly. */}
+                {/* testid, not accessible name: a label wrapping InfoTooltip resolves differently in jsdom and Chromium. */}
                 <p
                   data-testid="overview-total-income"
                   className="text-2xl font-bold text-green-600 dark:text-green-400"
@@ -753,8 +432,6 @@ export function HomePage() {
                     />
                   )}
                 </p>
-                {/* See the income card above — same jsdom-vs-Chromium
-                    accessible-name reason for keying on a testid. */}
                 <p
                   data-testid="overview-total-expenses"
                   className="text-2xl font-bold text-red-600 dark:text-red-400"
@@ -774,9 +451,6 @@ export function HomePage() {
                     text="Net worth is what you own minus what you owe: your investments, savings, and anything you own outright, minus your debts. Investments, assets and debts are tracked on the Balance Tracking page, savings on the Savings page. Income and expenses aren't counted here."
                   />
                 </p>
-                {/* data-testid rather than an accessible-name matcher: story 32.1
-                    measured that a label wrapping the InfoTooltip button resolves to
-                    a different accessible name under jsdom than under Chromium. */}
                 <p
                   data-testid="overview-net-worth"
                   className={`text-2xl font-bold ${
@@ -791,15 +465,7 @@ export function HomePage() {
                     <PendingFigure testId="overview-net-worth-skeleton" />
                   )}
                 </p>
-                {/* Explain a $0 net worth next to real income/expenses: it is $0
-                    because nothing it is made of has been added yet, not because
-                    something is broken. Self-removes once any balance exists.
-                    ⚠️ The gate must cover savings as well as balances (story 32.2):
-                    savings now COUNT toward net worth, so keying this on balance
-                    rows alone put "add something to track this" underneath a real,
-                    positive figure for a savings-only user — the card contradicting
-                    itself. Both lists must be empty for there to be nothing to
-                    show. */}
+                {/* Savings count toward net worth, so both lists must be empty for this hint. */}
                 {hasData && balanceEntries.length === 0 && savingsGoals.length === 0 && (
                   <p className="mt-1 text-xs text-faint" data-testid="net-worth-empty-hint">
                     Add investments or debts on the{' '}
@@ -823,24 +489,8 @@ export function HomePage() {
             </div>
           </section>
 
-          {/* Enhanced Visualizations */}
-          {/* Story 38.2: THREE states. The pending branch mirrors the
-              resolved-EMPTY card's box model exactly — same section padding,
-              same inset card, same type scale, same button row — so a user who
-              genuinely has nothing sees zero layout shift when it resolves. A
-              user WITH data sees this block grow into the charts, which no fixed
-              height could avoid (the two resolved states differ by ~1000px); the
-              residual shift is measured and recorded in the story rather than
-              claimed to be zero.
-              Story 117.2 (FR185) removed that residual from the viewport: when
-              the browser holds data, the <head> bootstrap
-              `lib/overview/no-flash-overview-data-script` marks <html> and
-              `styles/global.css` makes this block (`data-hook`) at least one
-              viewport tall, so what follows starts below the fold and the growth
-              is not counted as a shift. The empty footprint is unchanged.
-              ⚠️ The bars carry no `animate-pulse` of their own — the wrapping
-              `SkeletonBlock` already pulses, and nesting the animation makes the
-              two tick out of phase. */}
+          {/* The pending branch mirrors the resolved-empty card's box model so an empty user sees no shift. No animate-pulse
+             on the bars: the wrapping SkeletonBlock pulses, and nesting puts the two out of phase. */}
           {!hydrated ? (
             <SkeletonBlock
               className="surface rounded-lg shadow-md p-4 sm:p-6"
@@ -858,20 +508,8 @@ export function HomePage() {
                     className={`${SKELETON_BAR} inline-block h-[1em] w-80 max-w-full align-middle`}
                   />
                 </p>
-                {/* ⚠️ `h-6`, not `h-[1em]`, and the difference is 8px — MEASURED.
-                    Inside a `<p>` an `h-[1em]` bar is invisible to the box height
-                    because the paragraph's own line-box strut is taller and wins.
-                    An `inline-flex … items-center` button has NO strut: the flex
-                    item's height IS the content height, so `h-[1em]` (16px) gave
-                    a 34px button against the resolved link's 42px. `h-6` is the
-                    `text-base` line-height, which Tailwind sets in `rem` — a
-                    font-independent constant, not a measured width, so the CI
-                    font cannot falsify it.
-
-                    `border-transparent`, not no border: the resolved "+ Add
-                    expense" link is bordered, and in an `items-center` row the
-                    tallest child sets the height. Two invisible pixels are the
-                    difference between a matching footprint and a 2px jump. */}
+                {/* `h-6`, not `h-[1em]`: an inline-flex button has no line-box strut, so 1em made it 8px short.
+                   Transparent border because the resolved link is bordered. */}
                 <div className="flex flex-wrap items-center justify-center gap-3">
                   <span className="inline-flex items-center rounded-md px-4 py-2 font-medium">
                     <span className={`${SKELETON_BAR} inline-block h-6 w-24 align-middle`} />
@@ -884,46 +522,11 @@ export function HomePage() {
             </SkeletonBlock>
           ) : hasData ? (
             <>
-              {/* This section originally showed income and expense category
-                  breakdowns as TWO separate pies (UX review #4): summing
-                  income and expense slices into one 100% pie made every
-                  percentage meaningless, since a category's share was
-                  measured against income + expenses combined, two different
-                  wholes. That "own type's total" denominator rule survives —
-                  see `totalExpenseChart`/`totalIncomeChart` above — but story
-                  UX-3 changed the LEFT pie's DENOMINATOR: it plots the exact
-                  same expense-category slices as the RIGHT pie (reusing
-                  `expenseData`), plus one "Remaining income" filler slice
-                  (unspent income, clamped at 0 during an overspend period),
-                  and its 100% denominator is INCOME rather than expenses —
-                  `expenseRatioData` — so each slice honestly shows its share
-                  of income, and a reader can judge spending against income at
-                  a glance. The RIGHT pie keeps its expense-of-expenses
-                  breakdown, unchanged.
-
-                  ⚠️ Since story 30.4b both pies group expenses by the user's
-                  own CATEGORY, not by item name: `aggregateByCategoryAndType`
-                  merges rows that share a category, so four expenses in
-                  "Groceries" are one slice. A row with no category (or one
-                  this device cannot resolve — see `useCategoryLabels`) still
-                  falls back to its own name (Decision 10), so a merged
-                  category and a single uncategorized item render alike;
-                  distinguishing them is 30.5's concern. The former
-                  click-to-drill-down stays removed: one shared drill cannot
-                  span two independent charts. */}
               <section className="surface rounded-lg shadow-md p-6" aria-busy={!chartsReady}>
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                   <h2 className="text-xl font-semibold text-subheading">
                     Income vs Expense Breakdown
                   </h2>
-                  {/* Period toggle (story 12-3, UX-DR20), rebound to the SHARED
-                      store by story 32.3 and widened from two options to all
-                      four. A second writer to one store is deliberate: this
-                      section sits far below the fold, so removing its affordance
-                      would be a discoverability regression. Changing either
-                      selector now moves both — that is the point.
-                      Options derive from VALID_DURATIONS so a selectable option
-                      can never be one `coerceDuration` would reject on reload. */}
                   <label className="flex items-center gap-1 text-sm text-label">
                     <span className="sr-only">Show breakdown per</span>
                     <select
@@ -941,33 +544,8 @@ export function HomePage() {
                   </label>
                 </div>
 
-                {/* ⚠️ Only a NON-INTEGRAL period can diverge, and story 32.3 is
-                    what made this reachable. These pies scale EACH ENTRY to the
-                    period and then sum; the Total Income / Total Expenses cards
-                    above sum monthly first and denormalize ONCE. At ×12/52
-                    (weekly) and ×12/26 (biweekly) those two disagree by a cent or
-                    two — measured 112,692c (card) vs 112,693c (pies) at biweekly
-                    on the story's own fixture. `monthly` (×1) and `annually`
-                    (×12) are integral and agree exactly, so an unconditional note
-                    would be false half the time. Before 32.3 this was unreachable
-                    only because the toggle offered just monthly and annually.
-
-                    Its own testid — the /categories page's
-                    `breakdown-rounding-note` is queried by that section's tests.
-                    The predicate is IMPORTED, never re-declared.
-
-                    ⚠️ THE COPY SAYS "ENTRY", NOT "CATEGORY", AND THAT DISTINCTION
-                    IS LOAD-BEARING. It first read "Each category is rounded on its
-                    own" — which describes the /categories page's model, not this
-                    one. THESE pies round each ENTRY and then aggregate, so a
-                    multi-entry category's figure here is NOT that category rounded
-                    on its own. The two models genuinely disagree: one category
-                    holding two 28c-monthly entries renders 12c here and 13c on
-                    /categories at weekly. That CROSS-SURFACE divergence is real,
-                    is NOT what this note discloses (it compares against the cards
-                    above), and is recorded in deferred-work.md pending a decision
-                    on which rounding model is canonical for a category figure.
-                    Found in code review 32.3 by two independent layers. */}
+                {/* Only non-integral periods (weekly, biweekly) can make per-entry scaling differ from the cards by a cent.
+                   The copy says ENTRY, not category: these pies round per entry, unlike /categories. */}
                 {IS_NON_INTEGRAL_CADENCE[duration] && breakdownCanDiverge ? (
                   <p className="mb-4 text-xs text-muted" data-testid="breakdown-pies-rounding-note">
                     Each entry is rounded on its own as it is converted, so at this view these
@@ -1002,23 +580,12 @@ export function HomePage() {
                 </div>
               </section>
 
-              {/* Financial Category Summary. After the redundant "Asset &
-                  Liability Breakdown" pie was removed (story 12-4), this section
-                  is the sole carrier of the current Savings / Investments / Debts
-                  figures (alongside Income / Expenses). Story UX-2 splits the old
-                  single bar chart into two sub-charts — per-period flows and
-                  point-in-time balances — each on its own axis so a large annual
-                  flow can no longer flatten the balance bars. The section heading
-                  stays the carrier the story-12-4 tests assert. */}
               <section className="surface rounded-lg shadow-md p-6" aria-busy={!chartsReady}>
                 <h2 className="text-xl font-semibold text-subheading mb-4">
                   Financial Category Summary
                 </h2>
                 {flowsBarData.length > 0 || balancesBarData.length > 0 ? (
                   <div className="space-y-8">
-                    {/* Per-period flows (Income / Expenses). Only rendered when
-                        present so a balances-only dashboard shows no empty axis
-                        (AC-5). */}
                     {flowsBarData.length > 0 && (
                       <div>
                         <h3 className="text-sm font-semibold text-label mb-2">
@@ -1037,8 +604,6 @@ export function HomePage() {
                         />
                       </div>
                     )}
-                    {/* Point-in-time balances (Savings / Investments / Debts).
-                        Hidden when the user tracks no balances yet (AC-5). */}
                     {balancesBarData.length > 0 && (
                       <div>
                         <h3 className="text-sm font-semibold text-label mb-2">Balances</h3>
@@ -1072,11 +637,6 @@ export function HomePage() {
                 <p className="mb-6 text-sm text-muted">
                   Add your income and expenses and your financial overview will appear here.
                 </p>
-                {/* Primary onboarding action. The empty dashboard is the first
-                    screen a new user sees; without a direct call to action they
-                    had to discover the nav or the (hidden-on-mobile) section
-                    tiles on their own. Green matches the app's primary-action
-                    color used on the "Add" buttons across the CRUD pages. */}
                 <div className="flex flex-wrap items-center justify-center gap-3">
                   <a
                     href="/income"
@@ -1095,173 +655,19 @@ export function HomePage() {
             </section>
           )}
 
-          {/* The "Manage Your Finances" tile grid was removed here (story 19-1,
-              UX-DR26): it linked Income/Expenses/Savings/Balance/Projections —
-              the exact destinations the persistent GlobalNav already carries — so
-              on the overview it was a second copy of the primary menu. Story 18-3
-              had hidden it below 640px; 19-1 removes it on desktop too, so it is
-              gone at every width. Nothing is orphaned — every destination stays
-              reachable via GlobalNav (top bar ≥640px, fixed bottom bar <640px).
-              Its SECTION_TILES data + five category icons were deleted with it;
-              `InfoIcon` (used by the stat-card tooltips) is kept — story 32.1
-              moved it into `ui/InfoTooltip` so Income and Expenses share it. */}
-
-          {/* Premium features — discoverable but locked for free users (story
-              7-2, FR24). Enforcement stays server-side (the /forecasting loader
-              + session gate).
-
-              ⚠️⚠️ SINCE STORY 58.2 (FR88) THIS WHOLE SECTION IS FREE-TIER ONLY.
-              Story 58.1 put Forecasting, Profiles, Report and Categories into a
-              paid user's nav, at which point four of these five boxes became a
-              second copy of a menu they already have — so for an entitled session
-              the section does not render at all. What survives here is the
-              UPGRADE PITCH: each box's sub-text explains what a locked feature is
-              for, which a nav label alone cannot carry, and that job only exists
-              for someone who has not bought it yet.
-
-              DECISION D1 (Lucas, 2026-09-20): hide the ENTIRE <section>, heading
-              included — not four of the five boxes. The alternative (keep the
-              section holding only Multi-device sync) was considered and rejected
-              as a "Premium Features" heading over one inert row.
-
-              ⚠️ ACCEPTED COST OF D1, recorded so it is not mistaken for a bug:
-              sync has no route, so it cannot move to the nav, and this box was
-              the ONLY place that showed a signed-in user their sync STATE. What
-              remains are sales and reference surfaces a paid user has little
-              reason to revisit — /pricing (`pricing-page.tsx`) and the /docs
-              feature list (`content/docs/features.md`) both still describe the
-              feature. Nothing anywhere reports whether sync is ON or WORKING:
-              SyncProvider's only output is the refused-edit notice (story 75.2),
-              which reports a refused EDIT, not whether sync is on; no /settings
-              section mentions it, and
-              AuthIndicator's "Premium" marker speaks to the TIER, not to sync.
-              The named follow-up is a REAL SYNC STATUS INDICATOR, which has
-              never existed. Do NOT "fix" this by reinstating the section.
-
-              ⚠️ The first version of this comment claimed the box was the only
-              user-visible mention of sync ANYWHERE. That was false — /pricing and
-              /docs both mention it — and a guard test had pinned the false
-              wording into place. Caught in code review (2026-09-21). The claim
-              above is the narrower, true one, and it is the one that justifies
-              D1's cost.
-
-              ⚠️ The gate is SECTION-LEVEL, deliberately: there is no filter over
-              PREMIUM_BENEFIT_IDS and there must not be one. The map is iterated
-              unchanged inside a branch that simply does not run for an entitled
-              session, so the Record's five-key exhaustiveness guarantee and every
-              cross-surface parity check are untouched by this change. */}
-          {/* Padding tightened on mobile (story 19-4, UX-DR32): p-4 sm:p-6 keeps
-              the desktop (≥640px) spacing while reclaiming vertical space on
-              phones. Only this <section>'s padding changes here — its contents
-              are Epic 20's surface, kept untouched to avoid a merge collision. */}
           {!reachesPremiumFromNav && (
             <section className="surface rounded-lg shadow-md p-4 sm:p-6">
               <h2 className="text-xl font-semibold text-subheading mb-4">Premium Features</h2>
 
-              {/* One chassis, one benefit set (story 30-1, FR51). Every box below
-                shares PREMIUM_BOX_BASE so the section reads as a single set;
-                only the route-backed tiles add the interactive extras.
-
-                The rule since story 33.1 (UX-DR39) is BADGE ON EVERY BENEFIT,
-                ARROW ON THE OPENABLE ONES ONLY, and story 41.1 (UX-DR45) AMENDS
-                it: EVERY BENEFIT IS ALSO ACTIVATABLE. Multi-device sync is a
-                premium benefit like the rest, so it carries the same lock badge
-                AND opens the same upgrade dialog — it is wrapped in a
-                PremiumFeatureGate exactly like the route-backed tiles.
-
-                ⚠️ THIS REVERSES STORY 33.1's RATIFIED DECISION, which is why the
-                sentence it used to state here is gone rather than softened: 33.1
-                held that sync must never be gate-wrapped "(that would make it a
-                button that opens an upgrade dialog)". That is now precisely what
-                is wanted. 33.1 §2 listed five blockers against it; four were
-                superseded or are handled here, and the fifth (Modal assumes one
-                open modal at a time) is unchanged and untouched — these gates are
-                siblings, never nested.
-
-                What UX-DR45 does NOT change: there is still no /sync route. Sync
-                gets no href, no <a> and NO "Open →" in any tier state. That
-                affordance stays reserved for boxes that really open a page, which
-                is the half of UX-DR39 this amendment keeps. The DATA carries the
-                distinction: `activation` is 'prompt' for sync and 'route' for the
-                rest, never a boolean, so "is premium", "is activatable" and
-                "opens a page" stay three separate questions.
-
-                The chevron DOES paint on sync now, in the locked and loading
-                states only (Lucas, 2026-08-27). `LockedTileContent` documents the
-                chevron as the touch affordance — hover does not exist on touch and
-                the locked state has no "Open →" — so an activatable box with an
-                invisible chevron would look exactly as inert on a phone as the
-                one UX-DR45 is fixing. In the ENTITLED state sync opens nothing, so
-                it keeps its `chevronHidden` static chassis unchanged.
-
-                This chain AMENDS story 20-2 / CONTENT-G, which withheld the badge
-                from sync on the grounds that a lock affordance implies an openable
-                page. UX-DR39 answered that by splitting "is premium" from "is
-                openable"; UX-DR45 answers it again by splitting "is activatable"
-                out of both. The badge now comes from the gate, like every other
-                box — the standalone `usePremiumAccess()` read 33.1 added for it is
-                gone, which is what keeps this section at FIVE tier subscriptions
-                rather than six (deferred-work.md:593 — each is an independent,
-                uncached check when the session seed is null).
-                Sync is rendered LAST since story 5-20 — it used to lead, but a
-                sync-led pitch loses on comparison (Goodbudget gives two-device
-                sync away free), so the differentiating benefits lead instead.
-                The order is not decided here: it is `PREMIUM_BENEFIT_IDS`.
-
-                The boxes are RENDERED FROM `OVERVIEW_BENEFITS`, keyed by
-                `PremiumBenefitId`, rather than written out by hand (story 33.2,
-                FR56). That is what makes it impossible for this surface to list a
-                different set from /pricing, the upgrade prompt or /docs: omitting a
-                benefit here is a compile error. Before 33.2 all four surfaces were
-                hand-written and three of them disagreed.
-
-                Each gate gets its own wrapper <div> inside the space-y-3 stack:
-                in the locked state PremiumFeatureGate returns a fragment of the
-                <button> PLUS a <PremiumPrompt asDialog>, and Modal renders in
-                normal flow (no portal), so an unwrapped overlay would become a
-                spaced sibling and pick up a 12px margin — leaving an undimmed
-                strip across the top of the open dialog. ⚠️ Measured for EVERY gate
-                during story 33.2, not just the first: with the wrapper the overlay
-                is y=0/full-height from all four. Until 33.2 the e2e check opened
-                gate 0 only, so a missing wrapper on a later box would have shipped
-                undetected. Since story 84.5 the STRUCTURE is pinned for every gate
-                by `HomePage.test.tsx` › "every gate's upgrade dialog stays inside
-                the gate's OWN wrapper" (the e2e overlay measurement was retired). Story 41.1 re-measured it
-                from all FIVE, sync included.
-
-                Sync's wrapper also carries `data-testid="premium-benefit-sync"`.
-                It has to live there rather than on the box, because after 41.1 no
-                single inner element exists in all three tier states — the box is a
-                SkeletonBlock while loading, a <button> when locked and a <div>
-                when entitled. The wrapper is the one stable handle, so assertions
-                about the BOX's own classes must reach inside it. */}
+              {/* Sync has no route, so it opens the upgrade dialog without an href.
+                 Each gate needs its own wrapper div: Modal renders without a portal. */}
               <div className="space-y-3">
                 {PREMIUM_BENEFIT_IDS.map((id) => {
                   const benefit = OVERVIEW_BENEFITS[id]
                   const Label = benefit.label
 
-                  // Listed only — nothing to activate. No benefit is in this state
-                  // today; the branch exists so that adding one is a decision rather
-                  // than a default. See `OverviewBenefit`.
-                  //
-                  // ⚠️ THIS MARKUP RENDERS NO LOCK BADGE, AND THAT IS AN OPEN
-                  // QUESTION, NOT A DECISION. It sits under a comment stating BADGE
-                  // ON EVERY BENEFIT, so as written it would violate that rule the
-                  // moment it gained a member. Story 33.1 fed sync's badge from a
-                  // standalone `usePremiumAccess()` read; story 41.1 deleted that
-                  // read along with `SyncLockBadge`, and deliberately did NOT
-                  // reintroduce a second tier subscription for a branch with no
-                  // members (AC-9 holds this section at five). Whoever adds the
-                  // first `'none'` benefit must resolve this: either it takes a
-                  // badge — and then this arm needs a tier signal, which means
-                  // deciding where it comes from — or UX-DR39's rule is amended
-                  // again to exclude non-activatable benefits. Do not add a member
-                  // without answering that.
-                  //
-                  // What will NOT catch this for you: the free-tier badge-count
-                  // assertion in HomePage.test.tsx goes red, but it reports a count,
-                  // pointing nowhere near this branch. The loading and entitled
-                  // renders of a `'none'` member are covered by nothing at all.
+                  // Renders no lock badge, unlike every other benefit: whoever adds the first 'none' benefit must decide
+                  // where its tier signal comes from.
                   if (benefit.activation === 'none') {
                     return (
                       <div
@@ -1274,10 +680,6 @@ export function HomePage() {
                     )
                   }
 
-                  // Activatable, no page to open (story 41.1, UX-DR45). Same gate,
-                  // same dialog, same badge as the route-backed tiles — the ONLY
-                  // differences are that the entitled branch is inert rather than a
-                  // link, and that no "Open →" appears in any state.
                   if (benefit.activation === 'prompt') {
                     return (
                       <div key={id} data-testid={`premium-benefit-${id}`}>
@@ -1315,116 +717,42 @@ export function HomePage() {
             </section>
           )}
         </main>
-
-        {/* The version and the in-app "Contact" link now live in the global
-            <Footer> (story 4-8; story 9-1 replaced the old GitHub feedback link
-            from story 4-9), so the page no longer renders its own stopgap
-            footer block. */}
       </div>
     </div>
   )
 }
 
 interface BreakdownPieProps {
-  /**
-   * Stable identity for test queries — `breakdown-pie-<testId>` on the wrapper
-   * and `breakdown-pie-total-<testId>` on the total figure.
-   *
-   * ⚠️ `data-testid`, not the title, because the title now carries the period
-   * suffix (`Expenses by category (per week)`) and so changes with the selector —
-   * a title-anchored query would silently match nothing at three of the four
-   * periods. Same jsdom-vs-Chromium accessible-name reasoning the cards use.
-   */
+  // testid, not the title: the title carries the period suffix and changes with the selector.
   testId: string
-  /** Sub-heading shown above the pie (e.g. "Expenses by category (per week)"). */
   title: string
-  /** Pie slices for a SINGLE type, already period-scaled. */
   data: RechartsDataItem[]
-  /**
-   * The pie's own 100% denominator, used for the legend/tooltip percentage
-   * math and (unless `totalDisplay` overrides it) shown as the headline.
-   *
-   * ⚠️ NOT necessarily `sum(data)`. Recharts sizes each wedge as its own
-   * share of `sum(data)`, independent of this prop — the two normally
-   * coincide, but a caller whose `data` doesn't sum to `total` (story UX-3's
-   * expense-ratio pie, when expenses meet or exceed income) will show wedges
-   * proportioned differently than the legend/tooltip percentages computed
-   * from `total`. See `expenseRatioIsOverspend`/`note` at that call site —
-   * this is a known, disclosed limitation of a single Pie, not a bug to fix
-   * here.
-   */
+  // Not necessarily sum(data): Recharts sizes wedges by sum(data), so wedges and legend percentages diverge when they differ.
   total: number
-  /**
-   * Override for the headline figure beside the title — e.g. a percentage
-   * string for a ratio chart (story UX-3) instead of `formatAmount(total)`.
-   * `total` still drives the pie's own denominator either way; this only
-   * changes what text is displayed for it.
-   */
   totalDisplay?: string
-  /**
-   * Optional callout shown between the header and the chart — e.g. the
-   * expense-ratio pie's overspend disclosure (story UX-3 review). Omitted for
-   * every other caller.
-   */
   note?: string
-  /** Message shown when this type has no entries. */
   emptyLabel: string
-  /** Tailwind text-color classes for the total figure (income green / expense red). */
   accentClass: string
-  /**
-   * Narrow viewport: shrink the donut's radii so the plot stays inside its box
-   * at 320px. Since story 36.2 the in-plot slice labels are gone at every
-   * width, so the radii are all this flag drives here.
-   */
   isNarrow: boolean
   formatAmount: (cents: number) => string
-  /**
-   * Override for each legend row's own figure — e.g. a percentage-of-`total`
-   * string for a ratio chart (story UX-3) instead of `formatAmount(item.value)`.
-   * Defaults to `formatAmount` when omitted, so existing callers are unaffected.
-   */
   legendValue?: (cents: number) => string
 }
 
 type CategoryBarDatum = { category: string; amount: number; fill: string }
 
 interface CategoryBarChartProps {
-  /**
-   * Stable handle for the footprint measurement (story 38.3, AC-11). The box is
-   * sized by a COMPUTED inline style rather than a fixed class, which makes it the
-   * chart surface most able to drift — and it was the one AC-11 originally left
-   * unmeasured.
-   */
   testId: string
-  /** Bars to plot (amounts in cents), rendered in Recharts' vertical layout. */
   data: CategoryBarDatum[]
-  /** Round tick values (cents) spanning this chart's OWN diverging domain. */
   ticks: number[]
-  /** Narrow viewport: shrink the Y-axis label gutter and tick size for 320px. */
   isNarrow: boolean
   chartColors: ReturnType<typeof useChartColors>
   formatAmount: (cents: number) => string
   mode: ReturnType<typeof useCurrencyPreferences>['mode']
   currency: ReturnType<typeof useCurrencyPreferences>['currency']
-  /**
-   * Hide the chart from screen readers (story 116.1, FR184, D4): ONLY when every
-   * bar is already on the page as text. True for the flows chart (its two bars
-   * are the Total Income / Total Expenses cards, same period). NOT for balances:
-   * the Overview shows no Savings / Investments / Assets / Debts totals as text,
-   * so that chart is the only place a screen reader can reach them.
-   */
+  // Only when every bar is also on the page as text: the balances totals appear nowhere else.
   hiddenFromScreenReaders?: boolean
 }
 
-/**
- * One vertical bar chart for a Financial Category Summary sub-section — flows OR
- * balances (story UX-2). Each instance owns its axis domain (`ticks`) and its
- * height (scaled to the bar count via `categoryChartHeight`) so the two
- * sub-charts stay legible independently instead of sharing one axis a large
- * annual flow can dominate. Axis/grid/tooltip strokes are routed through the
- * shared chartTheme so the chart reads on the dark `.surface` card too (story
- * 11-2 / 12-4 AC-2 dark-mode constraint).
- */
 function CategoryBarChart({
   testId,
   data,
@@ -1437,8 +765,7 @@ function CategoryBarChart({
   hiddenFromScreenReaders = false,
 }: CategoryBarChartProps): React.ReactElement {
   return (
-    // `aria-hidden` on the sized wrapper, not inside the lazy canvas, so the
-    // pending skeleton and the error fallback are hidden too.
+    // On the sized wrapper, not the lazy canvas, so the pending skeleton and error fallback are hidden too.
     <div
       style={{ height: categoryChartHeight(data.length) }}
       data-testid={testId}
@@ -1447,9 +774,6 @@ function CategoryBarChart({
       <ErrorBoundary
         fallback={<div className="p-4 text-red-600 dark:text-red-400">Chart error occurred</div>}
       >
-        {/* The sized wrapper above owns the box, so the footprint is identical
-            whether or not the chunk has landed — nothing to guess, nothing to
-            drift. The fallback fills that box rather than leaving it blank. */}
         <Suspense fallback={<ChartPending />}>
           <CategoryBarCanvas
             data={data}
@@ -1466,13 +790,6 @@ function CategoryBarChart({
   )
 }
 
-/**
- * One category-breakdown pie for a single financial type (income OR expense),
- * with its own correct 100% denominator (UX review #4). The color-keyed list
- * below the plot doubles as the legend and carries the per-category amounts, so
- * those figures render as plain text — which the period-control test asserts,
- * since Recharts' SVG is not laid out under jsdom.
- */
 function BreakdownPie({
   testId,
   title,
@@ -1515,23 +832,13 @@ function BreakdownPie({
         </div>
       ) : (
         <>
-          {/* Hidden from screen readers (story 116.1, FR184, D4): the list below
-              reads out every slice's name and figure, so the plot adds nothing
-              to the accessibility tree but Recharts' unnamed `role="img"`
-              slices (Lighthouse `svg-img-alt`). On this sized wrapper, not
-              inside the lazy canvas, so the pending skeleton and the error
-              fallback are hidden too. The pie's tab stop is removed in
-              `BreakdownPieCanvas` (`rootTabIndex`). */}
+          {/* Hidden from screen readers: the list below reads every slice. On the wrapper so the fallbacks are hidden too. */}
           <div className="h-[240px]" aria-hidden="true">
             <ErrorBoundary
               fallback={
                 <div className="p-4 text-red-600 dark:text-red-400">Chart error occurred</div>
               }
             >
-              {/* Exact footprint by construction — the `h-[240px]` wrapper above
-                  owns the box, so there is nothing for a placeholder to get
-                  wrong. Story 38.2 shipped an 8px error by guessing a
-                  placeholder height; this avoids the guess. */}
               <Suspense fallback={<ChartPending />}>
                 <BreakdownPieCanvas
                   data={data}
@@ -1567,93 +874,16 @@ function BreakdownPie({
   )
 }
 
-/**
- * The one box chassis every Premium benefit shares (story 30-1, FR51).
- *
- * Colour-free on purpose: exactly ONE background token is added on top of it —
- * `surface-inset` on an inert box, and `surface-interactive` baked into
- * {@link PREMIUM_BOX_INTERACTIVE} on an activatable one. Both tokens set
- * `background-color` and both live in @layer components, where the winner is
- * decided by declaration order in global.css rather than by className order, so
- * putting both on one element would be a silent, hard-to-debug bug.
- *
- * ⚠️ Since story 41.1 the two are split by TIER as well as by box: sync renders
- * `surface-interactive` while locked (it opens the upgrade dialog) and
- * `surface-inset` while entitled (it opens nothing). A test asserting one token
- * on the sync box has to say which tier it means.
- *
- * `justify-between` lives here rather than in the interactive variant: an inert
- * box has a single child, so it is a visual no-op there, and keeping it shared
- * means every box carries a genuinely identical base string.
- */
+// Colour-free: add exactly one background token. surface-inset and surface-interactive both live in
+// @layer components, so declaration order in global.css, not className order, decides the winner.
 const PREMIUM_BOX_BASE =
   'flex w-full items-center justify-between gap-3 rounded-md border border-default px-4 py-3'
 
-/**
- * The chassis plus the affordances that mark a box as activatable (story 30-1;
- * "openable" until story 41.1 split activatable from openable).
- * Applied to BOTH the gate's `className` (which styles the locked <button> and
- * the loading skeleton) and the unlocked <a> — that duplication is the gate's
- * contract, not an oversight: `PremiumFeatureGate` renders bare `{children}`
- * when unlocked and emits no classes of its own.
- *
- * `focus-visible:ring-2` (not `focus:ring-2`) matches this page's own convention
- * for links and buttons, so a mouse click on a large tile does not light a ring.
- * The `forced-colors:` outline is not redundant with it: Tailwind implements
- * `ring-*` as a `box-shadow`, which Windows High Contrast discards entirely —
- * without the outline the activatable boxes, which since story 41.1 are every
- * box in the section for a non-entitled user, would have no visible focus
- * indicator at all (WCAG 2.4.7).
- */
+// The forced-colors outline is needed because ring-* is a box-shadow, which Windows High Contrast discards.
 const PREMIUM_BOX_INTERACTIVE = `${PREMIUM_BOX_BASE} surface-interactive text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2`
 
-/**
- * Benefit-box body: the feature label plus a chevron (story 30-1).
- *
- * The chevron is the touch affordance. Once 30-1 removed the blue fill, hover
- * became the only thing separating a tappable box from a listed one — and hover
- * does not exist on touch, while the locked state has no "Open →". The lock
- * badge does not fill that role: every benefit here is premium, so a lock reads
- * as "premium", not "tap me".
- *
- * ⚠️ `chevronHidden` is therefore a claim about ACTIVATION, not about routes.
- * Story 33.1 passed it for sync because sync did nothing; story 41.1 makes sync
- * activatable, so it now paints its chevron while locked and loading, and
- * reserves the width silently only in the entitled state where it opens nothing.
- * If you pass `chevronHidden` to something a user can activate, you are shipping
- * the defect UX-DR45 was raised to fix.
- *
- * Layout: `PremiumFeatureGate` renders `{locked}` and then its own
- * `<PremiumLockBadge />`, so the chevron uses `order-last` to sit AFTER the
- * badge, and the label takes `mr-auto` to absorb the free space so the badge
- * and chevron stay packed together on the right.
- *
- * `aria-hidden` on the chevron for two different reasons depending on call site:
- * in an activatable box the control's accessible name is already its visible
- * label (plus "Premium, locked" when locked) and the glyph would only add noise; where
- * `chevronHidden` is passed the glyph is `invisible` and exists purely to reserve
- * width, so announcing it would be announcing a spacer.
- *
- * ⚠️ `chevronHidden` still has to keep the badges ALIGNED (story 33.1,
- * UX-DR39) wherever it is used. Whichever item is last in visual order sits flush against the
- * content edge, so a badge with no chevron beside it lands ~26px right of one
- * that has a chevron — measured at +25.06…+27.20px depending on font, which is
- * exactly `chevron box width + gap-3`. A box that hides its chevron therefore
- * renders THIS component with the glyph made `invisible`: same element, same
- * classes, same text, so the reserved width tracks the real glyph. (Until story
- * 41.1 that box was sync in every tier; it is now sync in the ENTITLED tier only.)
- * Three things this must not become:
- *   - `hidden` / `display:none` — collapses the box and reinstates the ~26px gap.
- *   - a `w-[26px]`/`ch`/`em` literal — `›` is TEXT, 5.06–7.20px wide by font, so
- *     a literal drifts (+1.20px under DejaVu Sans).
- *   - a copied span in the hiding box — a parity guarantee that re-implements
- *     instead of importing guarantees nothing (story 32.2).
- * And the `mr-auto` above is load-bearing for the same reason: without it the
- * sync box has three flex children and no auto margin, so `justify-between`
- * spreads them — measured at 0.00px at 320/375 but −259.45px at 1280 under the
- * DejaVu Sans stack the alignment e2e pins (−276.93px in the default stack). The
- * shape is what matters: invisible at narrow widths, enormous at wide ones.
- */
+// chevronHidden makes the glyph `invisible`, not hidden, to reserve its width so the badges stay aligned.
+// Never pass it to a box the user can activate: the chevron is the touch affordance.
 function LockedTileContent({
   label,
   chevronHidden = false,
@@ -1676,86 +906,8 @@ function LockedTileContent({
   )
 }
 
-/**
- * Shared label for the Advanced Forecasting premium entry, rendered identically
- * in both the unlocked (link) and locked (gate button) states so the two look
- * the same apart from the lock badge the gate adds.
- *
- * The subtitle names the SITUATIONS the tool models rather than its mechanism
- * (story 57.1, FR86), so a user can tell when they would open it before clicking
- * in. Every situation it names must be expressible by the shipped engine, and the
- * engine is SMALLER than `ForecastingScenario`'s interface suggests. What
- * `calculateFinancialForecast` actually reads (`calculateFinancialForecast` in `core/finance/forecasting.ts` — cited by name, since its line numbers have shifted repeatedly; the projection is its second `for` loop):
- *   1. `incomeGrowthRate` — compounds from year 1 over the user's income items.
- *   2. `expenseGrowthRate` — likewise over expenses.
- *   3. `oneTimeEvents: {year, amount}` — the ONLY dated input. `amount` is SIGNED
- *      and simply added to the year's recurring flow (`annualIncome - annualExpenses + oneTimeForYear`); since story
- *      `forecast-1` the builder offers an explicit Money in / Money out direction,
- *      so an outflow is enterable.
- *   4. `currentData.savingsAccounts` (story 100.1) — per-account balances and
- *      monthly contributions. They only SPLIT savings across the user's own pots
- *      (every cent of net income already lands in savings), so they change no
- *      total, no net worth and no summary figure: only the per-row "After N
- *      years" lines. Not scenario-expressive for this copy.
- *   5. `currentData.balanceAccounts` (story 100.2) — per-investment and per-debt
- *      balances, contributions and frequencies. These ARE scenario-expressive:
- *      raising an investment contribution moves money from savings into
- *      investments at each row's own annual return (6% unless changed), and
- *      paying a debt down lowers it each year (no interest modelled). So "raise
- *      my pension contribution" and "pay down a loan" are expressible. Debts
- *      also lower the starting net worth. The copy names both (Lucas
- *      2026-10-05, story 100.2): "saving more each month" holds through
- *      INVESTMENT contributions only (savings-row contributions only split
- *      savings, item 4). Since story 102.2 (FR170, replacing 100.2 D4) a debt
- *      row's payment leaves savings while the debt is owed and stops at payoff
- *      (a linked Expenses row moves into the debt row when the builder seeds), so
- *      raising the row alone is an honest "pay it down faster" what-if. Only a
- *      row flagged "Payment already in Expenses" (every debt of a forecast saved
- *      before version 5) still leaves the cash to its Expenses line.
- *   6. `currentData.assets` (story 114.1) — the asset rows' total, a CONSTANT
- *      (no growth, no contribution). It lifts every year's net worth by the
- *      same amount, so the starting net worth matches the Overview's, but it
- *      changes no growth figure. Not scenario-expressive for this copy.
- * ⚠️ `newIncome`/`newExpenses` are **not read by the CALCULATION** — they
- * are the SAVE FORMAT for the builder's rows, which reload depends on. Do not cite
- * them as scenario-expressive, and do not delete them as dead.
- * Since story 107.1 (FR175) the comparison is against TODAY: the builder passes
- * the user's current saved data as the engine's separate baseline, so an edit to
- * any row (items 4-5, income, expenses) moves only the scenario line. Before it,
- * both lines came from the edited rows and only items 1-3 ever differed.
- *
- * So a raise, rising bills, a one-off windfall, a one-off cost, paying down a loan
- * and saving more each month are expressible.
- * **A house purchase and an early retirement are NOT** — each needs a RECURRING
- * change dated to a chosen year (a mortgage from year 5; income stopping at
- * retirement), and recurring items carry no start or end year. (`/retirement` is a
- * separate page for the last of those.) The copy must also not claim a side-by-side
- * comparison of two saved forecasts — no such view exists.
- *
- * The copy is pinned verbatim by `HomePage.test.tsx`'s "57.1" test. ⚠️ That pin is a
- * full-string `getByText`, so it breaks on ANY edit, not selectively on overpromises;
- * what keeps it an honesty guard is this list being re-checked when the copy changes.
- *
- * ⚠️ BOTH states derive their accessible name from these CONTENTS (since story
- * 116.2, FR184), the title span AND the subtitle span, concatenated:
- *   - LOCKED: `PremiumFeatureGate`'s button has no `aria-label` (it used to,
- *     "<featureName> — premium, locked", which REPLACED this subtree and hid the
- *     visible text: axe `label-content-name-mismatch`). Its name is title +
- *     subtitle + the badge's "Premium" + a hidden ", locked".
- *   - UNLOCKED: the `<a>` carries no `aria-label` either, so its name is title +
- *     subtitle.
- * The name therefore changes whenever the subtitle changes (story 57.1 did
- * exactly that). The queries still resolve because each is a REGEX anchored on
- * the TITLE, not because the name is stable. Renaming the title breaks the
- * locked and unlocked queries alike. `featureName` now drives only the upgrade
- * dialog's wording (and `OPENABLE_ROUTES`' regex in `HomePage.test.tsx`), so
- * keep it matching the title's words.
- *
- * ⚠️ Because the subtitle is part of the accessible name, a subtitle
- * wording that also matches another element's role-query regex makes `getByRole`
- * ambiguous, and it THROWS on multiple matches. Sweep the suite's role-query
- * regexes before changing this copy.
- */
+// Every situation the subtitle names must be expressible by the engine: recurring items have no start or end year,
+// so no house purchase or early retirement. The subtitle is part of the accessible name; check role-query regexes.
 function PremiumFeatureLabel(): React.ReactElement {
   return (
     <span className="flex flex-col">
@@ -1768,19 +920,6 @@ function PremiumFeatureLabel(): React.ReactElement {
   )
 }
 
-/**
- * Label for the Multi-device sync premium benefit (story 20-2, CONTENT-G;
- * amended by stories 33.1 / UX-DR39 and 41.1 / UX-DR45). Sync is an account-wide
- * benefit with no route to open — it is never given a link or an "Open →" —
- * but it IS wrapped in a PremiumFeatureGate and does open the upgrade dialog.
- * Copy is kept consistent with the Features/Pricing "securely stored and synced"
- * wording and claims nothing sync does not do.
- *
- * Story 30-1 (FR51) gave its box the shared PREMIUM_BOX_BASE so the section
- * reads as one set; 33.1 gave it the same lock badge; 41.1 gave it the same
- * behaviour. The only difference left that carries meaning is the DESTINATION —
- * "Open →" and an href on the boxes that really open a page, and nothing else.
- */
 function MultiDeviceSyncLabel(): React.ReactElement {
   return (
     <span className="flex flex-col">
@@ -1792,11 +931,6 @@ function MultiDeviceSyncLabel(): React.ReactElement {
   )
 }
 
-/**
- * Shared label for the Custom Profiles premium entry (story 13-3), rendered
- * identically in both the unlocked (link) and locked (gate button) states so the
- * two look the same apart from the lock badge the gate adds.
- */
 function CustomProfilesFeatureLabel(): React.ReactElement {
   return (
     <span className="flex flex-col">
@@ -1808,27 +942,8 @@ function CustomProfilesFeatureLabel(): React.ReactElement {
   )
 }
 
-/**
- * Shared label for the Financial summary report premium entry (story 33.2, FR56 /
- * FR53), rendered identically in the locked and unlocked states.
- *
- * ⚠️ The subtitle is bounded by what `/financial-summary` actually does, which is LESS than
- * FR53's own wording promises. FR53 says "budget, net worth, and retirement
- * outlook"; story 30-3 formally narrowed it, and the shipped report covers budget,
- * CURRENT net worth and savings only — the retirement and forward-projection inputs
- * are ephemeral `useState` with no persistence, so there is nothing to report on.
- * There are no charts either. And "as a PDF" is deliberately absent from this
- * subtitle: the button calls `window.print()`, so any PDF comes from the user's own
- * browser dialog and the app generates no file. "Built in your browser" carries
- * both the privacy claim and that limit honestly.
- *
- * The name matches the shipped `/settings` tile and the route's `featureName`
- * ("Financial summary report" / "Financial Summary Report") rather than
- * `features.md`'s former "Printable summary report" — one feature must not have two
- * names, which is the drift this whole story exists to remove. The one decided
- * exception is the upgrade prompt's benefit list, which says "Downloadable
- * Financial Summary Report" (story 95.1, D1); see `premium-prompt.tsx`.
- */
+// The report covers budget, current net worth and savings only, and any PDF comes from the browser's print dialog:
+// claim neither a retirement outlook nor a generated PDF.
 function ReportFeatureLabel(): React.ReactElement {
   return (
     <span className="flex flex-col">
@@ -1840,25 +955,7 @@ function ReportFeatureLabel(): React.ReactElement {
   )
 }
 
-/**
- * Shared label for the Custom categories premium entry (story 33.2, FR56 / FR54),
- * rendered identically in the locked and unlocked states.
- *
- * ⚠️ Two hard limits, both load-bearing:
- *   - Categories apply to INCOME AND EXPENSES ONLY. Savings goals and balance
- *     entries carry no `categoryId`, so "categorize your finances" would be false.
- *   - Categories and their breakdown DO NOT SYNC across devices.
- *     `lib/sync/syncBridge.ts` hard-pins `categoryId: null` on every outgoing row,
- *     and story 30-5 states the copy rule as an absolute: no surface may claim they
- *     do. That is why this subtitle says "your way" rather than anything about
- *     devices, and `docs-content.test.ts` bans sync-adjacent wording from the
- *     equivalent `features.md` bullet.
- *
- * The subtitle NAMES the breakdown ("what each category totals") on purpose. The
- * manager and the breakdown share one route, so they are one benefit entry — which
- * means this copy is the only thing carrying FR54's second half on this surface.
- * Drop those words and half the requirement disappears silently.
- */
+// Categories apply to income and expenses only and do not sync; the subtitle must still name the breakdown.
 function CategoriesFeatureLabel(): React.ReactElement {
   return (
     <span className="flex flex-col">
@@ -1870,71 +967,23 @@ function CategoriesFeatureLabel(): React.ReactElement {
   )
 }
 
-/**
- * One Overview benefit box, discriminated on WHAT ACTIVATING IT DOES.
- *
- * Story 33.1 split "is premium" from "is openable" behaviourally; story 33.2
- * needed the distinction as DATA in order to render the section from the
- * canonical set, and expressed it as a boolean `openable`. Story 41.1 (UX-DR45)
- * splits it once more, because a boolean cannot hold the case that matters here:
- * sync is activatable and has no page. Three states, three separate questions:
- *
- *   - `'none'`  — listed only. Activating it does nothing.
- *   - `'prompt'`— opens the shared upgrade dialog. No page exists to open.
- *   - `'route'` — opens a page, and only these carry the "Open →" affordance.
- *
- * ⚠️ `'none'` currently has NO members and is kept deliberately. Collapsing to
- * two arms would make `activation` a boolean with extra steps and re-create
- * exactly the conflation UX-DR45 unpicks: "is premium", "is activatable" and
- * "opens a page" have to stay three legible things, so that the next benefit
- * added here has to answer all three rather than inheriting an answer.
- *
- * It is deliberately not a general capability registry — it describes this
- * section's boxes and nothing else.
- */
+// 'none' has no members but is kept so a new benefit must answer premium, activatable and opens-a-page separately.
 type OverviewBenefit =
   | { activation: 'none'; label: () => React.ReactElement }
   | {
       activation: 'prompt'
       label: () => React.ReactElement
-      /** Names the feature in `PremiumFeatureGate`'s upgrade dialog. */
       featureName: string
     }
   | {
       activation: 'route'
       label: () => React.ReactElement
-      /** Route the box links to for an entitled user. */
       href: string
-      /** Names the feature in `PremiumFeatureGate`'s upgrade dialog. */
       featureName: string
     }
 
-/**
- * The Overview's copy for the canonical Premium benefit set (story 33.2, FR56).
- *
- * ⚠️ The set — which benefits, in what order — lives in `lib/premium/benefits.ts`.
- * Because this is a `Record<PremiumBenefitId, …>`, forgetting a benefit here is a
- * **compile error** and inventing one is an excess-property error. That is the
- * structural fix for the drift FR56 describes: before story 33.2 this section
- * hand-wrote three boxes while `/docs` listed five and two other surfaces listed a
- * third and fourth variant of "three".
- *
- * Exported for `components/premium/__tests__/benefit-set-parity.test.tsx`, which
- * asserts key-for-key agreement across every surface, and for `HomePage.test.tsx`,
- * which derives its box and tile counts from it rather than hard-coding numbers —
- * six stale literals across four files had to be hunted down to land this story.
- *
- * `featureName` values match the shipped `/settings` tiles exactly
- * ("Financial Summary Report", "Custom Categories") so the upgrade dialog names
- * one feature one way from either surface. (The upgrade prompt's benefit list is
- * the decided exception: "Downloadable Financial Summary Report", story 95.1 D1.)
- * Since story 116.2 it is no longer any control's accessible name: a locked row
- * is named by its visible label.
- */
+// A Record, so a missing or invented benefit is a compile error.
 export const OVERVIEW_BENEFITS: Record<PremiumBenefitId, OverviewBenefit> = {
-  // Activatable, but not a route: there is no /sync page to send anyone to, so
-  // it opens the upgrade dialog instead (story 41.1, UX-DR45). `featureName`
-  // matches the box's own visible label so the dialog names it in the same words.
   sync: { activation: 'prompt', label: MultiDeviceSyncLabel, featureName: 'Multi-device sync' },
   forecasting: {
     activation: 'route',
@@ -1942,9 +991,6 @@ export const OVERVIEW_BENEFITS: Record<PremiumBenefitId, OverviewBenefit> = {
     href: '/forecasting',
     featureName: 'Advanced Forecasting',
   },
-  // Custom Profiles resolved the /profiles nav-orphan (story 13-3, AC-1/AC-4);
-  // enforcement stays server-side (the profile server functions' tier guard) plus
-  // the /profiles route gate.
   profiles: {
     activation: 'route',
     label: CustomProfilesFeatureLabel,

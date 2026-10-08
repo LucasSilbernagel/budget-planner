@@ -1,44 +1,5 @@
-/**
- * Overview breakdown pies → Recharts `label` wiring (story 36.2, UX-DR41).
- *
- * ⚠️ WHY THIS FILE EXISTS. jsdom gives `ResponsiveContainer` a 0×0 box, so
- * `generateCategoricalChart`'s `validateWidthHeight` rejects it and
- * `PieChart.render()` returns `null` — NO SVG ever reaches the DOM. Measured on
- * this page: 0 `.recharts-sector`, 0 `role="img"`, and the responsive container
- * renders as an empty `<div>`. So a DOM assertion that the in-plot labels are
- * absent passes against labels-ON code and can NEVER fail. `HomePage.tsx`'s own
- * history records the same trap from the other side: code review 32.3 deleted
- * the zero-total guard from the label callback and the whole suite stayed green.
- *
- * Recharts is therefore replaced with prop-capturing stubs, and the assertion is
- * made on what each `<Pie>` was HANDED.
- *
- * ⚠️ This pins the PROP, not the paint. That the REAL chart library paints no
- * label is `HomePage.pie-paint.dom.test.tsx`'s job (story 84.5: Recharts renders
- * in jsdom with a sized container; it replaced `e2e/breakdown-pie-labels.spec.ts`),
- * which also has to handle the trap that pie labels appear only after the sector
- * animation finishes.
- *
- * ⚠️ Kept in its own file because `vi.mock('recharts')` is module-scoped: doing
- * it in the main HomePage suite would silently convert every test there into a
- * mocked-chart test (the rule `CategoryBreakdown.chart-wiring.test.tsx` states).
- *
- * ⚠️ Known gap, closed elsewhere: `matchMedia` does not exist in jsdom, so
- * `useIsNarrowViewport()` is permanently `false` here and only the DESKTOP
- * branch is ever exercised. A regression to `label={isNarrow}` would pass every
- * assertion below while painting labels at 320px — that is what the NARROW case
- * in `HomePage.pie-paint.dom.test.tsx` (which stubs `matchMedia`) exists to catch.
- *
- * ⚠️ **Every capture below must be `await`ed, and that is not a style choice.**
- * Story 38.3 moved `<Pie>` behind `React.lazy(() => import('../HomeChartCanvases'))`
- * to get the Recharts vendor chunk off the Overview's critical path. A bare
- * `render(<HomePage />)` now returns with the `Suspense` fallback mounted and
- * `captured.pies` still EMPTY. Reverting these awaits does not merely fail — it
- * turns the length assertion into the only thing standing between this file and
- * a vacuous pass, which is exactly the shape the `beforeEach` comment below warns
- * about for a different reason.
- */
-
+// jsdom gives ResponsiveContainer a 0x0 box, so Recharts renders no SVG: assert on the
+// props each stubbed <Pie> receives. vi.mock('recharts') is module-scoped, hence its own file.
 import { render, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -68,26 +29,18 @@ vi.mock('../../hooks/usePremiumAccess', () => ({
 vi.mock('recharts', () => {
   const Passthrough = ({ children }: { children?: ReactNode }) => <div>{children}</div>
   return {
-    // ⚠️ `ResponsiveContainer` and `PieChart` MUST render their children, or
-    // `<Pie>` never mounts and `captured.pies` stays empty. A missing stub does
-    // NOT throw — `HomePage.tsx` wraps each chart in an `ErrorBoundary` that
-    // swallows React's "Element type is invalid" and renders its fallback — so
-    // the symptom of a broken mock is an empty capture, not an exception.
+    // Must render children: a missing stub doesn't throw, the page's ErrorBoundary
+    // swallows it and captured.pies stays empty.
     ResponsiveContainer: Passthrough,
     PieChart: Passthrough,
     Pie: ({ label, labelLine }: CapturedPie) => {
       captured.pies.push({ label, labelLine })
       return null
     },
-    // The page also renders up to two `CategoryBarChart`s. Nothing here asserts
-    // on them, so their parts can be inert.
     BarChart: Passthrough,
     Bar: () => null,
     CartesianGrid: () => null,
     Cell: () => null,
-    // Captured, not inert: the pie Tooltip's `total > 0` guard is the LAST
-    // surviving zero-total/NaN% guard on this page, and deleting the pie labels
-    // deleted the only tests that pinned its twin. See the zero-total test below.
     Tooltip: ({ formatter }: { formatter?: TooltipFormatter }) => {
       if (formatter) {
         captured.tooltipFormatters.push(formatter)
@@ -110,8 +63,6 @@ function row(id: string, name: string, amount: number) {
     name,
     amount,
     frequency: 'monthly' as const,
-    // Uncategorized rows fall back to their own name (story 30.4b, Decision 10),
-    // so distinct names become distinct slices without seeding categories.
     categoryId: null,
     createdAt: NOW,
     updatedAt: NOW,
@@ -134,10 +85,7 @@ beforeEach(() => {
   useSavingsStore.setState({ savingsGoals: [] })
   useBalanceStore.setState({ entries: [] })
   useCategoryStore.setState({ categories: [] })
-  // ⚠️ BOTH pies must have data. `BreakdownPie` short-circuits to its
-  // `emptyLabel` placeholder before `<Pie>` when its list is empty, so an
-  // unseeded side captures nothing and every assertion below would pass
-  // vacuously on a single pie.
+  // BreakdownPie renders a placeholder before <Pie> for an empty list, so both sides need data.
   useIncomeStore.setState({
     incomeSources: [row('i1', 'Salary', 500_000), row('i2', 'Freelance', 120_000)],
   })
@@ -150,19 +98,9 @@ describe('BreakdownPie in-plot slice labels (story 36.2)', () => {
   it('AC-1: hands BOTH pies `label={false}`, so no in-plot text can paint', async () => {
     render(<HomePage />)
 
-    // Two pies, expense-ratio first (`HomePage.tsx` renders the expense-ratio
-    // BreakdownPie before the expense-category one). Asserting only `[0]`
-    // would let one pie stand in for two — the per-surface blind spot stories
-    // 30-4b, 33.3, 34.1b and 34.2 each hit.
-    //
-    // The `waitFor` is the lazy-chunk boundary (see the file docblock), and it
-    // doubles as the anti-vacuity guard: it cannot succeed on an empty array.
     await waitFor(() => expect(captured.pies).toHaveLength(2))
 
     for (const [index, pie] of captured.pies.entries()) {
-      // `toBe(false)`, not a truthiness check: `label={undefined}` would also
-      // suppress the labels today, but it does so by accident of Recharts'
-      // `label && renderLabels(...)` guard rather than by stating the intent.
       expect(pie.label, `pies[${index}].label`).toBe(false)
     }
   })
@@ -173,38 +111,13 @@ describe('BreakdownPie in-plot slice labels (story 36.2)', () => {
     await waitFor(() => expect(captured.pies).toHaveLength(2))
 
     for (const [index, pie] of captured.pies.entries()) {
-      // Inert while `label` is false — Recharts reads `labelLine` only inside
-      // `renderLabels`, which `label && …` never calls. Pinned anyway so that
-      // restoring the labels cannot silently also restore the leader lines.
       expect(pie.labelLine, `pies[${index}].labelLine`).toBe(false)
     }
   })
 })
 
-/**
- * The zero-total / "NaN%" boundary, re-pinned after story 36.2.
- *
- * ⚠️⚠️ WHY THIS EXISTS. Removing the in-plot labels also removed
- * `pieSliceLabel` and its three tests — and those were the ONLY tests anywhere
- * pinning zero-total behaviour. The identical hazard survives in the pie
- * `<Tooltip>`'s formatter, which carries the twin `total > 0` guard: Recharts
- * derives a share as value/sum, so an all-zero dataset gives 0/0 = NaN and an
- * unguarded formatter reads "NaN%".
- *
- * That branch is reachable — `toPieChartData` keeps zero-value slices, and a 2c
- * monthly expense rounds to 0c at the weekly view (story 32.3 widened it). It is
- * also invisible to the new e2e spec, whose tooltip case seeds a large total and
- * asserts `/%/` — which "NaN%" would satisfy.
- *
- * This is the exact incident code review 32.3 recorded from the other side: the
- * zero-total guard was deleted from the label callback and the whole suite
- * stayed green. Deleting it from the tooltip must not be free.
- */
 describe('pie tooltip zero-total guard (story 36.2, re-pinning story 32.3)', () => {
   it('emits no "NaN" when every slice is zero', async () => {
-    // Non-empty data with a zero total: `BreakdownPie` gates its chart on
-    // `data.length`, not on the total, so both pies still render `<Pie>` and
-    // hand their `<Tooltip>` a formatter closed over `total === 0`.
     useIncomeStore.setState({
       incomeSources: [row('i1', 'Salary', 0), row('i2', 'Freelance', 0)],
     })
@@ -214,8 +127,6 @@ describe('pie tooltip zero-total guard (story 36.2, re-pinning story 32.3)', () 
 
     render(<HomePage />)
 
-    // Both pies rendered, so their formatters were captured — otherwise this
-    // test would pass by asserting over an empty array.
     await waitFor(() => expect(captured.pies).toHaveLength(2))
     expect(captured.tooltipFormatters.length).toBeGreaterThanOrEqual(2)
 
@@ -226,18 +137,6 @@ describe('pie tooltip zero-total guard (story 36.2, re-pinning story 32.3)', () 
   })
 })
 
-/**
- * What the hover tooltip READS (was `e2e/breakdown-pie-labels.spec.ts:360` and
- * `:412`; moved by story 84.5, FR137).
- *
- * The e2e original hovered a point on the donut and read the tooltip: the slice
- * name, a `$` figure and a `%` share, on BOTH pies, including the expense-ratio
- * pie whose LEGEND shows percentages only (story UX-3 review, Correction 2).
- * Each pie's `<Tooltip>` formatter carries its OWN 100% denominator, so the two
- * are told apart here by the share each one computes for the same value.
- *
- * ⚠️ Hover hit-testing on the donut is the named D2 loss (platform).
- */
 describe('pie tooltip content (was e2e, story 84.5)', () => {
   it('each pie reads the slice as a $ amount AND its own share (was e2e :360, :412)', async () => {
     const pinned = useCurrencyStore.getState()
@@ -246,12 +145,7 @@ describe('pie tooltip content (was e2e, story 84.5)', () => {
       render(<HomePage />)
       await waitFor(() => expect(captured.pies).toHaveLength(2))
 
-      // Rent, annually (the default duration): 200,000c × 12 = 2,400,000c.
-      // Expense pie total = (200,000 + 60,000) × 12 = 3,120,000c -> 76.9%.
-      // Ratio pie total = INCOME = (500,000 + 120,000) × 12 = 7,440,000c -> 32.3%.
-      // ⚠️ `captured.tooltipFormatters` also holds the category BAR chart's
-      // tooltip, which formats the amount alone (`HomeChartCanvases.tsx`), so
-      // the two pie readings are asserted as members, each with its own share.
+      // tooltipFormatters also holds the bar chart's amount-only tooltip, so assert membership.
       const readings = captured.tooltipFormatters.map((format) => format(2_400_000, 'Rent'))
       expect(readings.map(([amount]) => amount)).toEqual(
         expect.arrayContaining(['$24,000.00 (76.9%)', '$24,000.00 (32.3%)'])

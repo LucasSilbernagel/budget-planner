@@ -1,39 +1,18 @@
-// Shared PWA configuration (story 7-1). Single source of truth for the web app
-// manifest and the Workbox options, imported by BOTH:
-//   - vite.config.ts  → vite-plugin-pwa (emits the manifest + serves the dev SW)
-//   - scripts/generate-sw.mjs → Workbox generateSW that emits the PRODUCTION
-//                               dist/client/sw.js
-//
-// Why the split: under TanStack Start's multi-environment (client + ssr) Vite
-// build, vite-plugin-pwa skips its own service-worker generation — its
-// closeBundle step is gated on `!build.ssr` and never fires for the client
-// output — so no production sw.js is emitted. We therefore run Workbox's own
-// generateSW (the same engine the plugin wraps, NOT a hand-rolled SW) as a
-// post-build step. Both paths share the options below so dev and prod behave
-// identically. Everything is generated at build time and self-hosted from our
-// own EU origin; no third-party/runtime PWA service is ever contacted
-// (NFR1/NFR2 — zero US data residency).
+// Shared by vite-plugin-pwa (dev) and the post-build Workbox generateSW step: under
+// TanStack Start's multi-environment build the plugin never emits a production sw.js.
 
 /** @type {import('vite-plugin-pwa').ManifestOptions} */
 export const pwaManifest = {
-  // Formal brand for `name` (the install dialog / store-style listing), short
-  // form for `short_name` (the label the OS prints under the home-screen icon).
-  // `short_name` is coupled to InstallPrompt's "Install <short_name>" copy —
-  // see the cross-surface pin in InstallPrompt.test.tsx (story brand-1, AC-3).
+  // `short_name` is coupled to InstallPrompt's "Install <short_name>" copy.
   name: 'Longhand Budget',
   short_name: 'Longhand',
   description: 'Longhand Budget — privacy-first budget & retirement planner.',
   start_url: '/',
   scope: '/',
   display: 'standalone',
-  theme_color: '#16a34a', // accent green — matches favicon + apple-touch (story 6-5)
-  // ⚠️ A manifest `background_color` cannot be media-keyed, so this is one value
-  // for both schemes and it is the LIGHT one. Since story 61.1 (FR93) the app
-  // follows the device, so a dark-preference device gets a white install splash
-  // before the app paints gray-900. Left as-is deliberately: changing it would
-  // invert the problem for light-preference users, and the fix (a second
-  // `<meta name="theme-color" media="(prefers-color-scheme: dark)">` plus a
-  // decision on the splash) is its own story — see `deferred-work.md`.
+  theme_color: '#16a34a',
+  // A manifest background_color can't be media-keyed, so dark-preference devices get a
+  // white install splash before the app paints.
   background_color: '#ffffff',
   icons: [
     { src: '/pwa-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
@@ -42,39 +21,19 @@ export const pwaManifest = {
   ],
 }
 
-// Precache the hashed build assets (JS/CSS/fonts/icons/manifest). Workbox stamps
-// each entry with a revision hash, so a new build invalidates the old precache
-// and old caches are cleaned up on activate (AC-4 — no stale builds). There is no
-// index.html to precache (the app is SSR), so the offline shell comes from the
-// runtime navigation cache below, not from a precached document.
+// No index.html to precache (SSR), so the offline shell comes from the runtime
+// navigation cache below.
 export const pwaGlobPatterns = ['**/*.{js,css,svg,png,ico,webmanifest,woff,woff2}']
 
-// Runtime caching so the SSR app opens offline (AC-3). A same-origin NetworkFirst
-// route caches the server-rendered app-shell document on the first online visit,
-// then serves it from cache when the network is unavailable. `/api/*` server
-// routes (sync, health, calc) are never cached — they must always hit the
-// network. Same-origin only: no third-party/CDN caching (NFR1/NFR2).
-//
-// The cache is used ONLY when the network request FAILS (offline, DNS, connection
-// refused). A slow network waits for the server (FR167, correct-course
-// 2026-10-05). There is deliberately NO `networkTimeoutSeconds`: the old 3 s
-// fallback served whatever document was cached, which could belong to another
-// session (signed out after a sign-in, or the previous user's signed-in page
-// after a sign-out; story 99.1's measured evidence `99-1-evidence/c1-run.txt`).
-// The accepted cost is a connected-but-very-slow network: no cached shell after
-// 3 s, the user waits for the server. The client deletes this cache on sign-out
-// and account deletion (`src/lib/pwa/app-shell-cache.ts`, whose cache-name
-// constant a parity test pins to `cacheName` below). The route's behaviour is
-// pinned by `src/lib/pwa/__tests__/app-shell-strategy.test.ts`.
+// Cache used only when the network request fails. Deliberately no networkTimeoutSeconds:
+// a timeout fallback could serve another session's cached document.
 export const pwaRuntimeCaching = [
   {
     urlPattern: ({ request, url }) =>
       request.mode === 'navigate' &&
       url.origin === self.location.origin &&
-      // LOAD-BEARING: this predicate is the ONLY thing keeping `/api/*` out of the
-      // offline app-shell cache. `pwaNavigateFallbackDenylist` below does NOT guard
-      // this route — it only filters a `navigateFallback` precache route, which we
-      // don't configure (SSR app, no index.html). Do not remove this line.
+      // The only thing keeping /api/* out of the app-shell cache: the fallback denylist
+      // below doesn't guard this route.
       !url.pathname.startsWith('/api/'),
     handler: 'NetworkFirst',
     options: {
@@ -85,10 +44,6 @@ export const pwaRuntimeCaching = [
   },
 ]
 
-// Reserved for a future `navigateFallback` precache route. NOTE: this is INERT
-// today — Workbox only applies `navigateFallbackDenylist` to a `navigateFallback`
-// route, and this SSR app configures none (no index.html to precache). The real
-// `/api/*` protection is the `!url.pathname.startsWith('/api/')` predicate in
-// `pwaRuntimeCaching` above. Kept so the denylist is already correct if a
-// navigateFallback is ever added.
+// Inert today: Workbox applies it only to a navigateFallback route, which this SSR
+// app doesn't configure. Kept correct in case one is added.
 export const pwaNavigateFallbackDenylist = [/^\/api\//]

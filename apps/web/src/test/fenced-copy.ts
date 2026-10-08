@@ -1,16 +1,6 @@
 /**
- * The "confident zero" fence, one table for both sides (story 84.4 review).
- *
- * `__tests__/served-pages.served.test.ts` asserts each gated page's SERVER
- * response does NOT contain these phrases (the skeleton must stand in for
- * store-derived content, story 38.2). `components/__tests__/loading-state.dom.test.tsx`
- * asserts the same page, resolved and EMPTY, really renders every one of them.
- * The second half is what keeps the first falsifiable: `not.toContain` passes
- * just as happily on copy the app never emits, so a phrase on only one side is
- * a fence guarding nothing. One constant, so the two tables cannot drift.
- *
- * ⚠️ Compared on DECODED text on the server side (`&#x27;` → `'`), with the
- * product's `$`/USD on, because the fence is `$0.00` with its symbol.
+ * Shared by the served-pages test (the server must NOT emit these) and the loading-state test
+ * (the empty page DOES), so the fence stays falsifiable.
  */
 export const FENCED_EMPTY_COPY = {
   '/': ['$0.00', "Let's set up your budget", '+ Add income'],

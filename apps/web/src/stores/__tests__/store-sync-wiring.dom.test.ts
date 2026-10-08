@@ -1,13 +1,3 @@
-/**
- * Store ↔ Sync Wiring Tests (Story 5-15)
- *
- * Proves the domain stores route paid-tier mutations to the push queue through
- * the sync bridge, AND that the free tier (no registered bridge) makes zero queue
- * calls — i.e. the localStorage-only path is unchanged (AC-2 / AC-3 / AC-6).
- *
- * The bridge is driven with a fake handle (no real service / network, NFR8).
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   type SyncBridgeHandle,
@@ -71,11 +61,9 @@ describe('paid tier (bridge registered) — mirrors edits to the queue', () => {
       name: 'Salary',
       amount: 500000,
       frequency: 'monthly',
-      categoryId: null, // Story 30.4a — always forwarded, see syncBridge
-      // Story 34.1a (FR60) — the row's display position, always forwarded (never
-      // conditionally omitted: updateEntity does a partial .set()). First row in
-      // an empty list ⇒ 0. This assertion stays EXHAUSTIVE on purpose, so an
-      // unexpected extra payload key fails here.
+      categoryId: null,
+      // Always forwarded (updateEntity does a partial set). Exhaustive on purpose so an extra payload
+      // key fails.
       sortOrder: 0,
       userId: SESSION_USER_ID,
     })
@@ -145,13 +133,10 @@ describe('paid tier (bridge registered) — mirrors edits to the queue', () => {
       name: 'Emergency',
       targetAmount: 1000000,
       currentBalance: 250000,
-      // Story 26.1: allocation mode is always forwarded (defaults to 'automatic'
-      // when the caller supplies none); no manual amount ⇒ monthlyAllocation is an
-      // explicit null (forwarded, not omitted — review 26-1 P1) so a later
-      // manual→automatic switch can reset the server value.
+      // monthlyAllocation is forwarded as an explicit null so a manual→automatic switch resets the
+      // server value.
       allocationMode: 'automatic',
       monthlyAllocation: null,
-      // Story 34.1a (FR60) — display position; first row in an empty list ⇒ 0.
       sortOrder: 0,
       userId: SESSION_USER_ID,
     })

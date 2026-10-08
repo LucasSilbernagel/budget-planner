@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { type CssRule, cssRules, selectorsOf } from '../css-rules'
 
-/**
- * The CSS-rule reader's own contract (84.5 code review). Every case below was a
- * MEASURED misread before the review: a hang, a silent truncation, a swallowed
- * rule, a split inside `:is()`.
- */
 const rule = (selector: string): CssRule => ({ selector, body: '', atRules: [] })
 
 describe('cssRules', () => {

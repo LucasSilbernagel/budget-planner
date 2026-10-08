@@ -1,34 +1,6 @@
 /**
- * `endsBeforeRetirement` — a REAL round trip against PostgreSQL (Story 65.2, AC-5).
- *
- * ## Why a contract test was not enough
- *
- * AC-5 refuses a green unit suite as proof, and it is right to. The sync-push
- * root cause on record is exactly this shape: the SERVER push schema stripped
- * `profileId`, every gate passed its own test, and the failure looked
- * client-side for days. Four of this field's five failure modes are green on a
- * full unit run. Only a write that comes back out of a database separates them.
- *
- * ## What this runs against
- *
- * PGlite — genuine PostgreSQL compiled to WebAssembly, reporting the same MAJOR
- * version as the managed instance, running in-process with no server, no Docker
- * and no credentials (see `packages/db/src/migration-replay.test.ts` for the
- * full rationale; this file reuses its journal-replay approach). The DDL applied
- * here is the committed migration chain, including `0019`, not a hand-written
- * CREATE TABLE — so the column under test is the one a deploy would create.
- *
- * ## What it exercises, and what it does not
- *
- * Exercised, in production code: `toServerPayload` (the push payload),
- * `syncOperationSchema` (the server's ingest gate), the field destructuring
- * `updateEntity` performs, and drizzle's real INSERT/UPDATE/SELECT against the
- * migrated schema — in both directions, set AND clear.
- *
- * NOT exercised: HTTP, auth, the `db` client singleton, the queue's retry and
- * circuit-breaker behaviour, and the managed instance's own minor version,
- * extensions and TLS. Those stay live verifications. This is a round trip
- * through the schema and the sync contract, not through the deployment.
+ * Real round trip on PGlite with the committed migration chain: contract tests can pass while a field never reaches a column.
+ * Not exercised: HTTP, auth, the db client, queue retry and circuit breaker.
  */
 
 import { readFileSync } from 'node:fs'
@@ -62,7 +34,6 @@ const journal = JSON.parse(readFileSync(new URL('meta/_journal.json', MIGRATIONS
   entries: JournalEntry[]
 }
 
-/** Statements for one migration, split on drizzle's own breakpoint marker. */
 function statementsFor(tag: string): string[] {
   return readFileSync(new URL(`${tag}.sql`, MIGRATIONS), 'utf8')
     .split('--> statement-breakpoint')
@@ -85,7 +56,6 @@ beforeAll(async () => {
   await pg.exec('COMMIT')
   db = drizzle(pg)
 
-  // Minimal owning rows for the two NOT NULL foreign keys.
   await pg.exec(`
     INSERT INTO "users" ("id", "email", "paddleId")
       VALUES ('${USER_ID}', 'roundtrip@example.com', 'ctm_roundtrip_65_2');
@@ -128,7 +98,6 @@ const clientRow = (endsBeforeRetirement: boolean | undefined) => ({
   updatedAt: '2026-01-01T00:00:00.000Z',
 })
 
-/** Push one client-side update through the real payload + server gate, then write. */
 async function pushUpdate(endsBeforeRetirement: boolean | undefined): Promise<void> {
   syncEntityUpdate('expense', clientRow(endsBeforeRetirement))
   const payload = handle.queueUpdate.mock.calls[0]?.[2]
@@ -151,31 +120,16 @@ async function pushUpdate(endsBeforeRetirement: boolean | undefined): Promise<vo
   const { id: _id, profileId: _p, userId: _u, ...fields } = data
   await db
     .update(expenses)
-    // Typed as the production call site is (`sync.ts` `updatePayload`); the
-    // `@ts-expect-error` once here was unused, surfaced by story 78.2.
     .set({ ...fields, userId: USER_ID, updatedAt: new Date() })
     .where(and(eq(expenses.userId, USER_ID), eq(expenses.id, ROW_ID)))
 }
 
-/** What a second device would pull: the row as the database actually holds it. */
 async function pullRow() {
   const rows = await db.select().from(expenses).where(eq(expenses.id, ROW_ID))
   return rows[0]
 }
 
-/**
- * The row as it reaches device B's STORE, through the real client pull applier.
- *
- * ⚠️ ADDED BY CODE REVIEW 65.2. `pullRow` above is a bare `SELECT` — it proves
- * the column holds the value, but it bypasses both halves of the pull direction,
- * and all six gates this story enumerated are PUSH-direction. The review was
- * right that "round trip" overstated what was being exercised.
- *
- * Both halves were also checked by reading, and neither needs a seventh gate:
- * the server pull is a bare `.select()` with no column list (`sync.ts:1698`), and
- * `applyOne` spreads the server row wholesale (`applyServerChanges.ts:97`). This
- * asserts that rather than asserting it in a comment.
- */
+/** Through the real pull applier: pullRow's bare SELECT bypasses the pull direction. */
 async function pullIntoStore(): Promise<Record<string, unknown> | undefined> {
   const row = await pullRow()
   useExpenseStore.setState({ expenses: [] })
@@ -184,7 +138,6 @@ async function pullIntoStore(): Promise<Record<string, unknown> | undefined> {
       {
         entityType: 'expense',
         entityId: ROW_ID,
-        // The server serializes whole rows; this is that payload.
         data: row as unknown as Record<string, unknown>,
         updatedAt: Date.now(),
         isDeleted: false,
@@ -205,8 +158,7 @@ describe('endsBeforeRetirement — device A writes, the database answers', () =>
       amount: 180_000,
       frequency: 'monthly',
     })
-    // The default is the whole migration-safety property: every row that existed
-    // before 0019 stays counted in the retirement target.
+    // The default keeps every pre-migration row counted in the retirement target.
     expect((await pullRow())?.endsBeforeRetirement).toBe(false)
   })
 
@@ -216,10 +168,7 @@ describe('endsBeforeRetirement — device A writes, the database answers', () =>
   })
 
   it('⚠️⚠️ an UNTICK pushed from device A actually CLEARS it for device B', async () => {
-    // THE direction that breaks when the payload is built behind an `if`, or
-    // when the key is omitted: `updateEntity` does a PARTIAL `.set()`, so the
-    // previous `true` would survive and every other device would go on excluding
-    // the expense from the user's retirement target. Forever, with no error.
+    // Partial .set(): an omitted key would leave the previous `true` in place.
     await pushUpdate(true)
     expect((await pullRow())?.endsBeforeRetirement).toBe(true)
 
@@ -229,9 +178,7 @@ describe('endsBeforeRetirement — device A writes, the database answers', () =>
   })
 
   it('⚠️ an UNSTAMPED row (pre-65.2, no key at all) clears rather than leaving a stale true', async () => {
-    // Rows persisted before this story carry no key, and `JSON.stringify` drops
-    // an undefined-valued one — so without the bridge's coercion to a real
-    // boolean this push would silently leave the server's `true` in place.
+    // Legacy rows have no key and JSON.stringify drops undefined, so only the bridge's coercion lands `false`.
     await pushUpdate(true)
     expect((await pullRow())?.endsBeforeRetirement).toBe(true)
 

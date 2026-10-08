@@ -1,10 +1,3 @@
-/**
- * PremiumLockBadge tests (story 7-2, FR24).
- *
- * Purely presentational: it must show a visible "Premium" label so the locked
- * state is discoverable (not hidden), and render no interactive elements.
- */
-
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { PremiumLockBadge } from '../PremiumLockBadge'

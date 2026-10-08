@@ -5,20 +5,7 @@ import { Line } from 'recharts'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useCurrencyStore } from '../../../stores/currencyStore'
 
-/**
- * The Projections chart, painted by the REAL chart library (story 97.2, FR158).
- *
- * ⚠️ Recharts renders no SVG under jsdom's 0×0 `ResponsiveContainer`; only that
- * is replaced here, by one handing the chart a fixed 600×400 (the pattern of
- * `RetirementTimelineChart.paint.dom.test.tsx`). Line animation is switched off
- * through `Line.defaultProps`, so the series render without waiting.
- *
- * Pinned: the legend names the scenario; a long name keeps its full text (and
- * `title`) while CSS truncates it; the value axis prints compact labels; the
- * rotated "Net Worth" SVG title is gone (with the X title as positive control).
- * NOT pinned (browser-only, jsdom measures no text): that a label FITS, and
- * Recharts' tick thinning. Those are `97-2-evidence/measure-after.jsonl`.
- */
+// Recharts renders no SVG under jsdom's 0x0 ResponsiveContainer, so it is replaced with a fixed 600x400 one.
 
 vi.mock('recharts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('recharts')>()
@@ -37,7 +24,6 @@ function row(year: number, netWorth: number) {
   return { year, income: 0, expenses: 0, netIncome: 0, savings: 0, investments: 0, netWorth }
 }
 
-/** The seed's 9-digit shape: $53.7M → $310.1M. */
 function result(name: string): ForecastingResult {
   return {
     scenario: { name, incomeGrowthRate: 0.03, expenseGrowthRate: 0.02 },
@@ -52,7 +38,6 @@ function result(name: string): ForecastingResult {
   }
 }
 
-/** Narrow for WIDTH queries only (copied from the Retirement paint test). */
 function matchNarrow(narrow: boolean): void {
   window.matchMedia = ((query: string) => ({
     matches: narrow && /max-width/.test(query),
@@ -97,29 +82,23 @@ describe('the legend names the scenario', () => {
   it('reads "Baseline" and the scenario name', () => {
     const { container } = render(<ProjectionChart result={result('Buy a house')} />)
     expect(legendTexts(container).map((t) => t.textContent)).toEqual(['Baseline', 'Buy a house'])
-    // The series drew (animation off), so this is the real chart, not a shell.
     expect(container.querySelectorAll('.recharts-line-curve').length).toBe(2)
   })
 
   it('a long name: full text and title, truncated by CSS only', () => {
     const { container } = render(<ProjectionChart result={result(LONG)} />)
     const scenario = legendTexts(container)[1] as HTMLElement
-    // Screen readers get the whole name.
     expect(scenario.textContent).toBe(LONG)
     const label = scenario.querySelector('[title]') as HTMLElement
     expect(label).not.toBeNull()
     expect(label.getAttribute('title')).toBe(LONG)
     expect(label.textContent).toBe(LONG)
-    // jsdom computes no layout: pin the class TOKENS that truncate.
     expect(label.className.split(/\s+/)).toEqual(
       expect.arrayContaining(['inline-block', 'truncate', 'align-bottom', 'max-w-[5rem]'])
     )
   })
 
   it('the legend wrapper has no fixed height (Recharts then offsets the plot by its measured height)', () => {
-    // Recharts offsets the plot by the wrapper's measured height; a fixed
-    // 36 px let a two-row legend paint over the top tick at 320 px (MEASURED,
-    // `97-2-evidence/measure-before.jsonl`). An inline style, so jsdom reads it.
     const { container } = render(<ProjectionChart result={result('Buy a house')} />)
     const wrapper = container.querySelector('.recharts-legend-wrapper') as HTMLElement
     expect(wrapper).not.toBeNull()
@@ -158,11 +137,6 @@ describe('the tooltip', () => {
 
 describe('the "Starting" reference line', () => {
   it('puts its label above the line, never on it (DN1 (b), story 97.2 review)', () => {
-    // 7-digit shape whose starting net worth ($2.0M) IS the axis floor, so the
-    // reference line coincides with the X-axis stroke. jsdom measures no text:
-    // this pins only the label's position (Recharts' computed x/y/anchor from
-    // the `position` prop). That the glyph box clears the stroke is
-    // browser-measured (`97-2-evidence/review/out-dn1.jsonl`).
     const seven: ForecastingResult = {
       ...result('Buy a house'),
       baseline: [row(1, 203_400_000), row(2, 225_000_000), row(3, 248_457_568)],
@@ -179,7 +153,6 @@ describe('the "Starting" reference line', () => {
     expect(line, 'the line is drawn at the floor').not.toBeNull()
     const label = container.querySelector('.recharts-reference-line .recharts-label') as Element
     expect(label.textContent).toBe('Starting')
-    // insideTopRight: right-aligned, and its y is above the stroke's y.
     expect(label.getAttribute('text-anchor')).toBe('end')
     expect(Number(label.getAttribute('y'))).toBeLessThan(Number(line.getAttribute('y1')))
   })
@@ -194,7 +167,6 @@ for (const narrow of [false, true]) {
       expect(ticks.length).toBeGreaterThanOrEqual(2)
       for (const tick of ticks) expect(tick).toMatch(/^\$\d+(\.\d+)?M$/)
       expect(new Set(ticks).size).toBe(ticks.length)
-      // Tick font size follows the chrome selector.
       const tickText = container.querySelector(
         '.recharts-yAxis .recharts-cartesian-axis-tick text'
       ) as Element
@@ -202,10 +174,6 @@ for (const narrow of [false, true]) {
     })
 
     it('sizes the gutter to the widest label, for a 3-letter symbol too', () => {
-      // Tick labels are right-aligned (text-anchor end) at x, so the label's
-      // left edge is x - width. Widths MEASURED under DejaVu (story 97.2
-      // review): "$350.0M" 43.6 / 52.3 px, "CHF350.0M" 57.5 / 69.0 px at
-      // 10 / 12 px. jsdom lays the axis out from props, so x is exact here.
       matchNarrow(narrow)
       for (const [currency, width] of [
         ['USD', narrow ? 43.6 : 52.3],
@@ -232,7 +200,6 @@ for (const narrow of [false, true]) {
       matchNarrow(narrow)
       const { container } = render(<ProjectionChart result={result('Buy a house')} />)
       const svgText = container.querySelector('.recharts-surface')?.textContent ?? ''
-      // Positive control: the X title is drawn, so the SVG has its labels.
       expect(svgText).toContain('Time (Years)')
       expect(container.querySelector('.recharts-yAxis .recharts-label')).toBeNull()
       expect(svgText).not.toContain('Net Worth')

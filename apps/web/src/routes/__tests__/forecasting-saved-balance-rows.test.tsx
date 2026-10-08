@@ -11,15 +11,6 @@ import { useBalanceStore } from '../../stores/balanceStore'
 import { useProfileStore } from '../../stores/profileStore'
 import { Route } from '../forecasting'
 
-/**
- * Reopening saved forecasts with and without investment/debt rows (story 100.2,
- * AC-13, AC-14), through the page's real `mapToSavedForecast` → builder path.
- *
- * The engine is the REAL one, wrapped only to record what it was called with and
- * what it returned, so a v1/v2 forecast's figures can be compared with the call
- * the page made before this story (no balance rows, the same `investments`).
- */
-
 const engineCalls = vi.hoisted(
   () =>
     [] as Array<{
@@ -84,7 +75,6 @@ function savedRow(inputs: unknown, version: number): Record<string, unknown> {
   }
 }
 
-/** Open My Forecasts, Load "Plan", and wait for the loaded builder's first recompute. */
 async function loadPlan(inputs: unknown, version: number) {
   fetchForecasts.mockResolvedValue({ success: true, data: [savedRow(inputs, version)] })
   renderWithRouter(<ForecastingPage />)
@@ -99,17 +89,14 @@ async function loadPlan(inputs: unknown, version: number) {
   return last
 }
 
-/** Every investment/debt row as `[name, type, balance, contribution, frequency, flag]`. */
 function rows(): [string, string, number, number, string, boolean | null][] {
   const section = screen.getByRole('region', { name: 'Investments & Debts' })
   const value = (el: HTMLElement) => (el as HTMLInputElement).value
-  // Money fields show grouped text since story 109.1 (`10,000.01`).
   const amount = (el: HTMLElement) => Number(value(el).replaceAll(',', ''))
   return within(section)
     .queryAllByLabelText(/^Balance Name, row \d+$/)
     .map((name) => {
       const label = value(name).trim() === '' ? 'unnamed balance' : value(name).trim()
-      // One flag per row, labelled per type (story 102.2, D2).
       const flag = (within(section).queryByLabelText(
         `Not taken from the money left over, for ${label}`
       ) ??
@@ -203,16 +190,13 @@ describe('a v3 forecast reloads its rows exactly (AC-13)', () => {
       3
     )
 
-    // Story 102.2 (D1): a v3 debt was computed under 100.2 D4, so it reloads
-    // flagged "Payment already in Expenses" (saved `false`).
     expect(rows()).toEqual([
       ['Pension', 'investment', 10000.01, 250, 'biweekly', true],
       ['Car loan', 'debt', 5000, 300, 'monthly', true],
       ['ISA', 'investment', 2000, 1200, 'annually', false],
     ])
     expect(call.data.investments).toBe(1_200_001)
-    // Story 100.3: a v3 row saved no rate, so each investment runs at 6% (D3);
-    // the debt carries none.
+    // A v3 row saved no rate, so each investment runs at the 6% default; the debt carries none.
     expect(call.data.balanceAccounts).toEqual([
       {
         type: 'investment',
@@ -247,13 +231,7 @@ describe('a v3 forecast reloads its rows exactly (AC-13)', () => {
   })
 })
 
-/**
- * ⚠️ RE-PINNED by story 100.3 (D3). Until then a v1/v2 forecast reopened with
- * EXACTLY the figures it had (its single Investments row compounded at the old
- * 7%). Under D3 a forecast saved without rates reloads at 6%, so it now reopens
- * LOWER than it was saved, by design (Lucas, 2026-10-05). The row itself is
- * unchanged; the figures are re-derived by hand at 6%.
- */
+// Forecasts saved without rates reload at 6%, so they reopen lower than saved, by design.
 describe('a v1/v2 forecast reopens as one Investments row, at 6% (AC-13; 100.3 D3)', () => {
   for (const version of [1, 2]) {
     it(`v${version}: becomes ONE Investments row at 6.00%, and projects LOWER than at the old 7%`, async () => {
@@ -261,16 +239,15 @@ describe('a v1/v2 forecast reopens as one Investments row, at 6% (AC-13; 100.3 D
 
       expect(rows()).toEqual([['Investments', 'investment', 500, 0, 'monthly', false]])
       expect(screen.getByLabelText('Annual return for Investments')).toHaveValue('6.00%')
-      // BY HAND at 6%, from 500.00: 530.00, 561.80, round(595.508) = 595.51,
-      // round(631.2406) = 631.24, round(669.1144) = 669.11, round(709.2566) =
-      // 709.26, round(751.8156) = 751.82.
+      // By hand at 6% from 500.00, rounding each year: 530.00, 561.80, 595.51, 631.24,
+      // 669.11, 709.26, 751.82.
       expect(call.result.projection.map((p) => p.investments)).toEqual([
         53_000, 56_180, 59_551, 63_124, 66_911, 70_926, 75_182,
       ])
       // Savings: 1,234.00 + 7 × 60,000.00 = 421,234.00. Ending: + 751.82.
       expect(call.result.summary.startingNetWorth).toBe(173_400)
       expect(call.result.summary.endingNetWorth).toBe(42_198_582)
-      // A relation, not a figure: lower than the no-rows (7%) call it matched in 100.2.
+      // A relation, not a figure: lower than the no-rows 7% call.
       const atSevenPercent = realForecast(
         { income: INCOME, expenses: [], savings: 123_400, investments: 50_000 },
         { ...SCENARIO, newIncome: INCOME, newExpenses: [], oneTimeEvents: [] },
@@ -351,24 +328,18 @@ describe('corrupt saved rows (AC-14)', () => {
       },
       3
     )
-    // The asset and the null entry (no type) are dropped. Story 102.2: a debt has
-    // its own flag now, and a v3 debt reloads it ON (D1, legacy D4 math).
+    // The asset and the null entry (no type) are dropped; a v3 debt reloads its flag ON.
     expect(rows()).toEqual([
       ['', 'investment', 0, 0, 'monthly', false],
       ['Loan', 'debt', 10, 1, 'weekly', true],
       ['Ok', 'investment', 10, 1, 'monthly', false],
     ])
-    // `inputs` survived: years is the saved one.
     expect(screen.getByLabelText('Projection Period (years)')).toHaveValue(7)
     expect(call.data.investments).toBe(1_000)
   })
 
-  /**
-   * The mapper's half of "rows win" (100.1 lesson: the builder derives the total
-   * from the rows by itself, so a disagreeing finite total cannot tell whether
-   * the MAPPER recomputed it). A non-finite total can: without the mapper's
-   * recompute `inputs` is dropped whole and the forecast reopens at 0.
-   */
+  // The builder derives the total from rows itself, so only a non-finite total shows the
+  // mapper recomputed it: without that, `inputs` is dropped and it reopens at 0.
   it('rescues a saved total that is not a number when the rows are valid (rows win, mapper level)', async () => {
     const call = await loadPlan(
       {
@@ -417,10 +388,7 @@ describe('corrupt saved rows (AC-14)', () => {
   })
 })
 
-/**
- * Saved rates reload (story 100.3, AC-12, D3/D9), through the real mapper and the
- * real builder. Presence decides, never `version`.
- */
+// Presence of a saved rate decides, never `version`.
 describe('a v4 forecast reloads each investment row at its own rate (story 100.3)', () => {
   const row = (name: string, extra: Record<string, unknown>, type = 'investment') => ({
     name,
@@ -524,11 +492,6 @@ describe('a v4 forecast reloads each investment row at its own rate (story 100.3
   })
 })
 
-/**
- * Version 5 (story 102.2, AC-7) through the page's real `mapToSavedForecast`: a
- * debt's flag is no longer forced `false` by the mapper, and `paidByExpenseName`
- * is kept on a debt when it is a non-empty string.
- */
 describe("a v5 forecast keeps each debt row's flag and label (story 102.2)", () => {
   const debtRow = (over: Record<string, unknown>) => ({
     name: 'Car loan',

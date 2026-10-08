@@ -11,27 +11,8 @@ import {
 } from './helpers/screenshot'
 import { seedFinanceRows } from './helpers/seed-finance-rows'
 
-/**
- * Screenshots of the PAID surfaces (story 84.1, FR137): the paid header and
- * the forecasting page. Read the header of `pages.screenshot.spec.ts` first:
- * baselines are made in CI only, by `.github/workflows/screenshots.yml`.
- *
- * ⚠️ `.paid.spec.ts` is load-bearing: only `screenshots-paid` (:5174, booted
- * with an entitled `E2E_SESSION_SEED`) runs this file. On the free server the
- * header has the free anchors and `/forecasting` is the upgrade prompt.
- *
- * `/forecasting` fetches `/api/profiles` and `/api/forecasts` (story 83.1) and
- * the dev servers have no database, so both are STUBBED: one profile and NO
- * saved forecasts. That keeps the page's profile state `ready` rather than an
- * error. The shot is of the default Scenario Builder tab; the saved list isn't
- * in the picture (story 84.1 review corrected an earlier "one saved forecast").
- *
- * ⚠️ `mockSignedIn` + `expectSignedInAs` for the same reason as
- * `account-menu.paid.spec.ts`: the seed paints a signed-in cluster, but the
- * post-mount `/api/auth/me` resolves signed-OUT on this server and swaps in
- * "Upgrade / Sign in". MEASURED at story 84.1 without them: the paid shots
- * showed the signed-out cluster.
- */
+// Only screenshots-paid runs `.paid.spec.ts`; baselines are made in CI only. The dev
+// servers have no DB, so /api/profiles and /api/forecasts are stubbed.
 
 /** Short and fixed, so the avatar initial and the sr-only identity never move. */
 const PAID_EMAIL = 'paid@example.test'
@@ -68,8 +49,6 @@ test('forecasting-1280-light', async ({ page }) => {
   })
 })
 
-// Story 91.3 (FR147): at 320 the tab strip fits the page (it scrolled 80 px
-// sideways before): no icons, half padding, two-line labels. Default tab.
 test('forecasting-320-light', async ({ page }) => {
   await open(page, '/forecasting', 320, 0)
   await expect(page).toHaveScreenshot('forecasting-320-light.png', {
@@ -79,13 +58,8 @@ test('forecasting-320-light', async ({ page }) => {
   })
 })
 
-// Story 97.2 (FR158): the Projections tab, the only place the chart mounts.
-// The legend names the scenario (the builder's default "My Financial
-// Forecast", truncated at 320), the value axis is compact and unclipped, and
-// the legend sits above the plot. 3 surfaces = the chart + the two legend
-// icons (MEASURED, 97.2 evidence). The tab click retries: a click that lands
-// before hydration only focuses the server-rendered button (MEASURED at 97.2:
-// the builder stayed on screen with "Projections" focused).
+// The tab click retries: a click before hydration only focuses the
+// server-rendered button.
 for (const width of [320, 1280]) {
   test(`forecasting-projections-${width}-light`, async ({ page }) => {
     await open(page, '/forecasting', width, 0)
@@ -116,25 +90,16 @@ for (const width of [768, 1280]) {
 }
 
 test('paid-sheet-320', async ({ page }) => {
-  // 320x640: the phone the 6-row sheet's on-screen claims were measured at.
   await open(page, '/', 320, 4, 640)
-  // Story 96.1 (FR156): signed in PAID (Premium pill beside it), the trigger is
-  // a 44 x 44px target and the strip is exactly 45px with nothing scrolling
-  // sideways. `open` already gated on the mocked identity.
   await expectTarget(accountTrigger(page), 'Account menu trigger')
   await expectPhoneStrip(page, 320)
   await openMore(page)
-  // The OPEN, PAID sheet, asserted: seven visible rows (the free sheet has
-  // three). Was six until story 96.3 (FR163) put Settings LAST in the phone
-  // sheet; asserted by its own name, not by its neighbour's label.
   const rows = page.locator('nav[aria-label="Primary"] details ul').getByRole('link')
   await expect(rows).toHaveCount(7)
-  // Story 96.1: every one of the seven rows is a >= 44 x 44px target.
   for (let i = 0; i < 7; i++) await expectTarget(rows.nth(i), `paid sheet row ${i + 1}`)
   await expect(rows.last()).toHaveAccessibleName('Settings')
   await expect(rows.last()).toBeVisible()
-  // On SCREEN at 320x640, not just rendered: `toBeVisible()` ignores clipping
-  // by the sheet's `max-h` scroll box (story 96.3 review, measured).
+  // `toBeVisible()` ignores clipping by the sheet's max-h scroll box.
   await expect(rows.last()).toBeInViewport({ ratio: 1 })
   // Viewport, not full page: the sheet is a fixed overlay above the bottom bar.
   await expect(page).toHaveScreenshot('paid-sheet-320.png', {
@@ -144,15 +109,8 @@ test('paid-sheet-320', async ({ page }) => {
 })
 
 /**
- * `/financial-summary` (story 91.2, FR145; path and shot names renamed by
- * story 95.2, FR155): fits the window on screen at 320 and 1280, and
- * prints every column. It is premium, hence this paid file.
- *
- * ⚠️ The browser clock is NOT fixed here, unlike every other shot. The page
- * stamps "Generated <date>" on the server AND the client; a fixed browser date
- * disagrees with the server's and hydration fails (88.4, MEASURED 5/5 widths).
- * The stamp is MASKED instead, like the footer year, and no page error may
- * occur. Nothing else on the page reads the clock (the seed's dates are fixed).
+ * The browser clock is not fixed here: the date is stamped on server and client, so a
+ * fixed browser date fails hydration. The stamp is masked instead.
  */
 async function openReport(page: Page, width: number) {
   const errors: string[] = []
@@ -171,7 +129,7 @@ async function openReport(page: Page, width: number) {
   expect(errors, 'no page error (a fixed clock fails hydration here)').toEqual([])
 }
 
-/** The report's date stamp, asserted to match exactly once (a mask on nothing passes). */
+/** Asserted to match exactly once: a mask on nothing passes. */
 async function reportDate(page: Page) {
   const stamp = page
     .locator('#financial-summary-report header p')
@@ -192,12 +150,12 @@ for (const width of [320, 1280]) {
 }
 
 test('financial-summary-print', async ({ page }) => {
-  // 794 px = A4's width at 96 dpi. `emulateMedia` applies the `@media print`
-  // rules but not paper size or margins: this pins the print CSS, not the PDF.
+  // A4's width at 96 dpi. emulateMedia applies `@media print` rules but not paper
+  // size or margins.
   await openReport(page, 794)
-  // After `expectSignedInAs`: the header is `data-print-hide`, hidden in print.
+  // After expectSignedInAs: the header is hidden in print.
   await page.emulateMedia({ media: 'print', colorScheme: 'light' })
-  // The print rule hides every print button: the media switch took effect.
+  // Proves the media switch took effect.
   await expect(page.getByRole('button', { name: /print \/ save as pdf/i })).toHaveCount(0)
   await expect(page).toHaveScreenshot('financial-summary-print.png', {
     fullPage: true,

@@ -1,53 +1,6 @@
 /**
- * A pulled server row is validated before it enters a client store (Story 66.2, FR103).
- *
- * ## The defect this closes
- *
- * `applyOne` used to write the server payload in verbatim:
- *
- *     const entity = { ...change.data, id }
- *     store.setState({ [collection]: [...without, entity] })
- *
- * with no validation of any kind — the authoritative server row was trusted
- * completely. Every one of the six sync gates sits on the PUSH path or at rest;
- * not one ran on the server→client direction.
- *
- * ⚠️⚠️ The failure mode that matters is NOT a crash. A persisted STRING amount
- * makes `+` a CONCATENATION, so the totals come out large, finite and entirely
- * plausible, with no `NaN` anywhere to flag them. MEASURED, not illustrated —
- * this is the literal red output of the test below against `e3202df`:
- *
- *     AssertionError: expected '0300000800000' to be 800000
- *
- * The investment total came back as the STRING `'0300000800000'`. (The digits are
- * in that order because `resortCollection` re-sorts the collection after the
- * apply, and the two fixtures tie on `sortOrder` so the id tiebreaker puts the
- * poisoned row first — the shape of the bug, not the exact digits, is the point.)
- *
- * (`deferred-work.md:1031`; still live at `stores/savingsStore.ts` and
- * `stores/balanceStore.ts`, both of which sum raw persisted rows, and consumed
- * by `hooks/useNetWorth.ts` → `lib/net-worth.ts`.) A finiteness check alone does
- * not catch it — `Number.isFinite("300000")` is false, but the string never
- * reaches a finiteness check; it reaches an addition. The guard must test
- * `typeof === 'number'`, which is what zod's `z.number()` does.
- *
- * ## Fixture discipline
- *
- * ⚠️ Every fixture here carries a uuid STRING `userId`, because that is what the
- * server actually sends: `getSyncChanges` emits `data: row` — the whole drizzle
- * row — and `incomeSources.userId` is `uuid(...).notNull()`. The older fixtures
- * in this directory used `userId: 0`, a number, which is the CLIENT STORE's type
- * for the free tier and was never on the wire. They are corrected in the same
- * pass; a fixture that is not production-shaped proves nothing about production.
- *
- * ## Where the check runs now (story 75.4)
- *
- * ⚠️⚠️ The validation moved from `applyOne` into CORE's `pull()`, which checks a
- * row before it can win last-writer-wins. Left in the applier, a refusal came
- * AFTER core had already dropped the user's queued edit. So every refusal here is
- * driven through {@link pullThrough}: a real `SynchronizationService` wired
- * exactly as `hooks/useSync.ts` wires it. The last block pins that the applier
- * itself no longer validates, so there is no second gate left to drift.
+ * A persisted string amount turns `+` into concatenation, so totals look plausible instead of
+ * NaN; the guard must check `typeof`, not finiteness.
  */
 
 import { createSynchronizationService } from '@budget-planner/core/sync'
@@ -146,11 +99,6 @@ function savingsChange(data: Record<string, unknown>, overrides: Partial<ServerC
   } satisfies ServerChange
 }
 
-/**
- * Pull `changes` through a real core service, wired exactly as `hooks/useSync.ts`
- * wires it. Asserts the positive anchor (the pull ran and succeeded) so a refusal
- * below can never be a pull that simply did nothing.
- */
 async function pullThrough(changes: ServerChange[]): Promise<PullResult> {
   const fetchServerChanges = vi.fn(async () => changes)
   const service = createSynchronizationService(USER_ID, {
@@ -183,7 +131,6 @@ describe('AC-1/AC-3: a malformed server row is refused, not written', () => {
   it('a STRING currentBalance never reaches the store', async () => {
     const result = await pullThrough([balanceChange({ currentBalance: '300000' })])
     expect(useBalanceStore.getState().entries).toHaveLength(0)
-    // The mechanism that refused it is core's (story 75.4), and it says so.
     expect(result.refused).toEqual([
       { entityType: 'balanceTracking', entityId: ROW_A, fields: ['currentBalance:invalid_type'] },
     ])
@@ -191,12 +138,6 @@ describe('AC-1/AC-3: a malformed server row is refused, not written', () => {
   })
 
   it('⚠️ the consequence: the concatenated total can no longer be produced', async () => {
-    // ⚠️ This asserts through `getTotalSavings()` — the store's OWN selector,
-    // production code — NOT a copy of its arithmetic written here. An earlier
-    // draft of this test summed the rows with a local `reduce` annotated "the
-    // same arithmetic the selectors perform"; its code review called that what it
-    // was, a copy asserted against itself. `getTotalSavings` is the real
-    // `totalSavingsFrom` reduce that `useNetWorth` ultimately feeds.
     useSavingsStore.setState({
       savingsGoals: [
         {
@@ -226,14 +167,8 @@ describe('AC-1/AC-3: a malformed server row is refused, not written', () => {
       debtsCents: 15_000_000,
     })
 
-    // Against `e3202df` the equivalent assertion read:
-    //   AssertionError: expected '0300000800000' to be 800000
-    // The total was a STRING, and every figure derived from it was nonsense that
-    // looked like money.
     expect(savingsCents).toBe(800_000)
     expect(net).toBe(-14_200_000)
-    // ⚠️ The type assertion is the load-bearing one: a future change that let the
-    // row through would make this a string again long before it made it NaN.
     expect(typeof savingsCents).toBe('number')
     expect(typeof net).toBe('number')
   })
@@ -275,10 +210,8 @@ describe('AC-1: a VALID row is written exactly as before — byte for byte', () 
     expect(rows).toHaveLength(1)
     const row = rows[0] as unknown as Record<string, unknown>
 
-    // ⚠️⚠️ The regression fence on `safeParse`-for-the-verdict-only. `z.object`
-    // STRIPS undeclared keys, and the entity schemas declare none of these. If a
-    // future edit writes the PARSE OUTPUT instead of `change.data`, every synced
-    // row silently loses its profile scope and its ordering.
+    // `z.object` strips undeclared keys, so writing the parse output instead of `change.data`
+    // would silently drop every row's profile scope and ordering.
     expect(row['profileId']).toBe(PROFILE_ID)
     expect(row['sortOrder']).toBe(0)
     expect(row['categoryId']).toBeNull()
@@ -289,10 +222,7 @@ describe('AC-1: a VALID row is written exactly as before — byte for byte', () 
   })
 
   it('a savings ACCOUNT (targetAmount null) is written, not refused', async () => {
-    // ⚠️ The false-rejection fence. `savingsGoals.targetAmount` is nullable —
-    // null means "savings account, no target" (story 16-1) — and core's schema
-    // required a number until this story. Getting this wrong would have deleted
-    // every savings account from every synced device.
+    // `targetAmount: null` means a savings account with no target.
     await pullThrough([
       {
         entityType: 'savingsGoal',
@@ -365,9 +295,7 @@ describe('AC-6: a tombstone is never validated', () => {
       ] as any,
     })
 
-    // A tombstone is reconstructed from a soft-deleted ROW and is not required to
-    // carry a well-formed payload. Validating it would stop deletes propagating
-    // across devices — a silent, permanent data-resurrection bug.
+    // A tombstone carries no well-formed payload; validating it would stop deletes propagating.
     await pullThrough([
       {
         entityType: 'balanceTracking',
@@ -411,10 +339,6 @@ describe('AC-6: a tombstone is never validated', () => {
 })
 
 describe('AC-7: a pull whose only row was refused does not perturb ordering or the active profile', () => {
-  // ⚠️ Since story 75.4 core refuses these rows, so the applier is never CALLED
-  // for them, and these two tests pin the END-TO-END outcome. The one refusal
-  // still inside the applier (the empty-id guard) is covered below, calling the
-  // applier directly.
   it('the empty-id refusal inside the applier does not re-sort the collection', () => {
     useIncomeStore.setState({
       // biome-ignore lint/suspicious/noExplicitAny: deliberately shaped as the store type
@@ -435,19 +359,16 @@ describe('AC-7: a pull whose only row was refused does not perturb ordering or t
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       applyServerChangesToStores([incomeChange({}, { entityId: '' })], USER_ID)
-      // Positive anchor: the applier ran and refused it.
       expect(warn).toHaveBeenCalledTimes(1)
     } finally {
       warn.mockRestore()
     }
-    // Same array identity: `stampMissingSortOrder` would have stamped ROW_B.
     expect(useIncomeStore.getState().incomeSources).toBe(before)
   })
 
   it('does not re-sort a collection whose only change was rejected', async () => {
-    // `resortCollection` runs `stampMissingSortOrder`, which ASSIGNS a position to
-    // any row that lacks one. A batch whose every change was refused must not
-    // trigger it, or a rejected pull silently rewrites the user's ordering.
+    // `stampMissingSortOrder` assigns positions to rows lacking one, so an all-refused batch must
+    // not trigger it or a rejected pull rewrites the user's ordering.
     useIncomeStore.setState({
       // biome-ignore lint/suspicious/noExplicitAny: deliberately shaped as the store type
       incomeSources: [
@@ -467,14 +388,12 @@ describe('AC-7: a pull whose only row was refused does not perturb ordering or t
 
     await pullThrough([incomeChange({ amount: '500000' })])
 
-    // Same array identity: nothing wrote to this collection at all.
     expect(useIncomeStore.getState().incomeSources).toBe(before)
   })
 
   it('does not reconcile the active profile when the only profile change was rejected', async () => {
-    // A rejected `userProfile` must not set `appliedProfile`. Otherwise
-    // `reconcileActiveProfile` runs against a list that is MISSING the row it was
-    // meant to add, and can repoint the active profile or drop placeholders.
+    // A rejected `userProfile` must not set `appliedProfile`, or `reconcileActiveProfile` can
+    // repoint the active profile against an incomplete list.
     useProfileStore.setState({
       // biome-ignore lint/suspicious/noExplicitAny: deliberately shaped as the store type
       profiles: [{ id: 'local-default', name: 'Main Profile', userId: '', isDefault: true }] as any,
@@ -486,7 +405,6 @@ describe('AC-7: a pull whose only row was refused does not perturb ordering or t
       {
         entityType: 'userProfile',
         entityId: PROFILE_ID,
-        // `name` is required and absent → refused.
         data: { id: PROFILE_ID, userId: USER_ID, isDefault: true, currency: 'USD' },
         updatedAt: 2000,
         isDeleted: false,
@@ -494,10 +412,7 @@ describe('AC-7: a pull whose only row was refused does not perturb ordering or t
     ])
 
     expect(useProfileStore.getState().activeProfileId).toBe('local-default')
-    // ⚠️ Array IDENTITY, not just length: `reconcileActiveProfile` calls
-    // `setProfiles`/`setActiveProfileId`, so any run at all replaces this array.
-    // Asserting only that an unchanged value is unchanged could not tell "did not
-    // run" from "ran harmlessly" (code review 66.2).
+    // Array identity, not length: any run of `reconcileActiveProfile` replaces this array.
     expect(useProfileStore.getState().profiles).toBe(profilesBefore)
   })
 
@@ -522,15 +437,9 @@ describe('AC-5: a refusal is reported, not swallowed', () => {
       expect(warn).toHaveBeenCalledTimes(1)
       const [message, context] = warn.mock.calls[0] ?? []
       expect(String(message)).toContain('[applyServerChanges]')
-      // ⚠️ The entity type and id are diagnosable; the row's MONEY is not logged.
-      // `lib/logger.ts` redacts financial keys by name on the server paths, and a
-      // client-side warning has no redaction pass at all — so the value must
-      // never be put into the message in the first place.
+      // A client-side warning has no redaction pass, so the money value must never be in the message.
       expect(JSON.stringify(context)).toContain('balanceTracking')
       expect(JSON.stringify(context)).not.toContain('300000')
-      // ⚠️ The `fields` array is the diagnosable half and is asserted, not assumed:
-      // without this the claim "the failing field paths are reported" rested on
-      // nothing (code review 66.2).
       const { fields } = context as { fields: string[] }
       expect(fields).toEqual(['currentBalance:invalid_type'])
     } finally {
@@ -555,8 +464,6 @@ describe('AC-5: the empty-id refusal is reported too', () => {
     try {
       await pullThrough([incomeChange({}, { entityId: '' })])
       expect(useIncomeStore.getState().incomeSources).toHaveLength(0)
-      // Before the code review this path returned silently, so a row dropped for a
-      // missing id was invisible while a row dropped for a bad amount was not.
       expect(warn).toHaveBeenCalledTimes(1)
       const [, context] = warn.mock.calls[0] ?? []
       expect((context as { fields: string[] }).fields).toEqual(['entityId:too_small'])
@@ -580,13 +487,9 @@ describe('an unknown entity type is still ignored defensively, not warned about'
           isDeleted: false,
         },
       ])
-      // Positive anchor (code review 75.4): core PASSED it on, so the applier is
-      // what ignored it, not core dropping or refusing it first.
       expect(result.applied).toHaveLength(1)
       expect(result.refused).toEqual([])
-      // Pre-existing behaviour at the `!binding` guard in `applyOne`, deliberately
-      // left alone: an older client seeing a newer entity type is not a corrupt row.
-      // (No line number on purpose — this diff moved that guard once already.)
+      // An older client seeing a newer entity type is not a corrupt row.
       expect(warn).not.toHaveBeenCalled()
     } finally {
       warn.mockRestore()
@@ -596,10 +499,8 @@ describe('an unknown entity type is still ignored defensively, not warned about'
 
 describe('story 75.4: the applier itself no longer validates — ONE validator, in core', () => {
   it('writes a row the schema would refuse, when it is called directly', () => {
-    // ⚠️ This is the one-validator pin, and the inversion is deliberate. Before
-    // 75.4 this call refused the row. If a second `safeParse` is ever re-added to
-    // `applyOne`, this goes red: the check belongs where it runs BEFORE
-    // last-writer-wins drops the user's queued edit, and that is core's `pull()`.
+    // Validation belongs in core's `pull()`, before last-writer-wins drops the queued edit;
+    // a second `safeParse` in `applyOne` turns this red.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       applyServerChangesToStores([incomeChange({ amount: '500000' })], USER_ID)
@@ -613,10 +514,7 @@ describe('story 75.4: the applier itself no longer validates — ONE validator, 
   })
 })
 
-/**
- * Story 99.2 (G4, AC-6g): the plan's pull gate is LENIENT on fields and strict
- * on the envelope — through core's real `pull()`, into the real store.
- */
+/** The plan's pull gate is lenient on fields and strict on the envelope. */
 describe('the retirement plan through core pull (story 99.2)', () => {
   const LOCAL = { ...RETIREMENT_PLAN_DEFAULTS, currentAgeInput: '50' }
   const planChange = (plan: unknown): ServerChange => ({

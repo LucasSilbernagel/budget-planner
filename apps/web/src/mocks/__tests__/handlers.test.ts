@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest'
 
-/**
- * Verifies MSW intercepts all external service calls (AC-3, NFR8).
- * `onUnhandledRequest: 'error'` (vitest.setup.ts) guarantees any un-mocked
- * request would fail the suite, so a passing test proves interception works.
- */
 describe('MSW external-service interception', () => {
   it('mocks Paddle API requests', async () => {
     const res = await fetch('https://api.paddle.com/transactions')

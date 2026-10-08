@@ -26,49 +26,24 @@ import {
 } from '../stores/plannerVisibilityStore'
 import { type CssRule, cssRules } from '../test/css-rules'
 
-/**
- * The pre-paint suppression chain, below the browser (story 84.3, D2; FR137).
- *
- * Two features hide a node on the FIRST frame, before React runs: the
- * Retirement nav entry for a user who turned the planner off (story 35.2) and
- * the dismissed Overview account notice (story 55.1). Each is a chain:
- *
- *   1. a synchronous `<head>` script marks `<html>` from localStorage
- *      (behaviour pinned by `lib/**\/no-flash-*-script.dom.test.ts`);
- *   2. `__root.tsx` emits that script INSIDE `<head>`, so it runs before the
- *      body is parsed (pinned below, on the source);
- *   3. a `global.css` rule hides the node the SERVER rendered, matched by the
- *      attribute the script sets and a hook the component renders (pinned
- *      below: the rule exists, says `display: none`, and its selector matches
- *      exactly the server-rendered nodes once the real script has run).
- *
- * ⚠️ What is NOT pinned (the named D2 loss, Lucas 2026-10-01): that the rule
- * WINS the cascade at every width and that the first painted frame shows no
- * flash. jsdom has no cascade and no paint. That was measured by
- * `e2e/nav-planner-visibility.spec.ts` and `e2e/overview-account-notice.spec.ts`
- * until story 84.3 retired them.
- */
+// jsdom has no cascade or paint: this pins the chain's source and selectors, not that the
+// rule wins the cascade or that the first frame shows no flash.
 
 const WEB = resolve(__dirname, '..', '..')
 const GLOBAL_CSS = readFileSync(resolve(WEB, 'src/styles/global.css'), 'utf-8')
 const ROOT_SOURCE = readFileSync(resolve(WEB, 'src/routes/__root.tsx'), 'utf-8')
 
-/** The ONE rule whose selector starts with `prefix`. */
 function ruleStartingWith(prefix: string): CssRule {
   const hits = cssRules(GLOBAL_CSS).filter((rule) => rule.selector.startsWith(prefix))
   expect(hits, `expected exactly one global.css rule starting ${prefix}`).toHaveLength(1)
   return hits[0] as CssRule
 }
 
-/**
- * Applies at every width, theme and medium: only `@layer` may enclose it.
- * `@media`, `@supports` and `@container` would each scope the hide to some
- * first frames and not others.
- */
+// Applies at every width, theme and medium: only `@layer` may enclose it; `@media`,
+// `@supports` or `@container` would scope the hide to some first frames only.
 const appliesUnconditionally = (rule: CssRule) =>
   rule.atRules.every((prelude) => /^@layer\b/.test(prelude))
 
-/** The LAST `display` declaration wins in CSS, so that is the one read. */
 function lastDisplay(body: string): string | undefined {
   const values = [...body.matchAll(/(?:^|;)\s*display\s*:\s*([^;!]+)(!important)?/g)].map((m) =>
     (m[1] as string).trim()
@@ -76,7 +51,6 @@ function lastDisplay(body: string): string | undefined {
   return values.at(-1)
 }
 
-/** Server-render `ui` (no effects run) into the live document, as the first frame. */
 async function firstFrame(ui: () => React.ReactElement) {
   const rootRoute = createRootRoute({ component: ui })
   const router = createRouter({
@@ -90,7 +64,6 @@ async function firstFrame(ui: () => React.ReactElement) {
   return container
 }
 
-/** Run a `<head>` bootstrap exactly as the browser would: as script text. */
 const runBootstrap = (script: string) => new Function(script)()
 
 beforeEach(() => {
@@ -98,7 +71,6 @@ beforeEach(() => {
   document.documentElement.removeAttribute('data-hide-retirement')
   document.documentElement.removeAttribute('data-dismiss-account-notice')
   document.documentElement.removeAttribute(OVERVIEW_HAS_DATA_ATTRIBUTE)
-  // The server and first client render paint the deterministic default.
   usePlannerVisibilityStore.setState({ showRetirementPlanner: true })
 })
 afterEach(() => {
@@ -129,12 +101,10 @@ describe('pre-paint suppression — the <head> wiring (__root.tsx)', () => {
       )
       expect(tag, `${name} is not an inline <script> inside <head>`).not.toBeNull()
       expect(tag?.[0], `${name} is deferred`).not.toMatch(/\b(async|defer|src|type)\b/)
-      // Before `<HeadContent />` (D2 of 84.3): ahead of the route's stylesheets
-      // and meta, so nothing in <head> can paint before the mark is set.
+      // Before `<HeadContent />`, so nothing in <head> can paint before the mark is set.
       expect(head.indexOf(tag?.[0] as string), `${name} comes after <HeadContent />`).toBeLessThan(
         headContentAt
       )
-      // Exactly once in the whole file: never also after <head>.
       expect(
         ROOT_SOURCE.split(`__html: ${name}`).length - 1,
         `${name} is emitted more than once`
@@ -162,19 +132,15 @@ describe('pre-paint suppression — the Retirement nav entry (story 35.2)', () =
     runBootstrap(NO_FLASH_PLANNER_SCRIPT)
     const container = await firstFrame(() => <GlobalNav />)
 
-    // The server rendered the default (both copies present)…
     const entries = container.querySelectorAll('li[data-nav-path="/retirement"]')
     expect(entries, 'the server HTML lost a Retirement copy').toHaveLength(2)
-    // …and the rule's selector reaches exactly those.
     const matched = [...document.querySelectorAll(rule().selector)]
     expect(matched).toHaveLength(2)
     for (const el of matched) expect(el.getAttribute('data-nav-path')).toBe('/retirement')
   })
 
-  // ⚠️ Two cases, because the bootstrap has two "not hidden" paths: nothing
-  // persisted (it returns before reading the flag) and a persisted `true`.
-  // The `setState` in `beforeEach` WRITES the key (persist's write path runs
-  // even under `skipHydration`), so the first case must remove it again.
+  // The bootstrap has two "not hidden" paths. persist writes the key even under
+  // `skipHydration`, so the first case must remove it again.
   it.each([
     ['nothing was ever persisted', () => localStorage.removeItem(PLANNER_VISIBILITY_STORAGE_KEY)],
     [
@@ -223,13 +189,8 @@ describe('pre-paint suppression — the dismissed account notice (story 55.1)', 
   })
 })
 
-/**
- * Story 117.2 (FR185): the third chain RESERVES space instead of hiding. With
- * budget rows in this browser, the Overview's server-rendered pending block is
- * made one viewport tall so its growth into the charts happens below the fold.
- * Same named loss as above: the first frame and the CLS are measured by the
- * story's probe/Lighthouse runs, not here.
- */
+// This chain RESERVES space instead of hiding: the pending block is one viewport tall so
+// its growth into the charts happens below the fold.
 describe('pre-paint reservation — the Overview pending block (story 117.2)', () => {
   const rule = () => ruleStartingWith(`[${OVERVIEW_HAS_DATA_ATTRIBUTE}='1']`)
 
@@ -242,7 +203,6 @@ describe('pre-paint reservation — the Overview pending block (story 117.2)', (
   })
 
   it('once the real bootstrap marks <html>, the rule matches exactly the server-rendered pending block', async () => {
-    // Written through the real store, as the browser would hold it.
     useIncomeStore.setState({ incomeSources: [{ id: 'row-1' }] } as never)
     runBootstrap(NO_FLASH_OVERVIEW_DATA_SCRIPT)
     useIncomeStore.setState({ incomeSources: [] } as never)

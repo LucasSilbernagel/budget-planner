@@ -1,26 +1,5 @@
-/**
- * A malformed server row is refused BEFORE last-writer-wins can discard the local
- * edit it would have replaced (story 75.4, FR123).
- *
- * ## The defect this closes
- *
- * `pull()` decided LWW per change and, when the server was strictly newer, queued
- * every local op for that entity for removal, fired the conflict callback and put
- * the change in `applied`. It then removed the ops from the queue, and only THEN
- * handed `applied` to the web layer, which was the one place that validated a
- * pulled row (story 66.2). A row the web layer refused had therefore already cost
- * the user their queued edit: the store kept the local value, nothing would ever
- * push it, and `conflictOperations` recorded an overwrite that never happened.
- *
- * Validation now runs in core, inside the LWW loop, for a change that is about to
- * be APPLIED. A change that LOSES to a queued local edit is suppressed exactly as
- * before and is not validated: nothing is written, so there is nothing to protect.
- *
- * ⚠️ Every "stays queued" assertion here is paired with a positive anchor (the
- * pull ran, and the cursor moved to the refused row), because the old local-wins
- * branch ALSO keeps ops queued. A test that asserted only that would pass against
- * code that never validated anything.
- */
+// Each "stays queued" assertion has a positive anchor, because the local-wins branch also
+// keeps ops queued.
 
 import { type Mock, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SyncQueue } from '../queue'
@@ -43,7 +22,6 @@ const ISO = '2026-09-01T00:00:00.000Z'
 type Internals = { queue: SyncQueue; state: SyncState }
 const internals = (service: SynchronizationService) => service as unknown as Internals
 
-/** Map-backed queue storage, so "still queued" can be read from STORAGE too. */
 function createStorage(): SyncQueueStorage & { persistedIds: () => string[] } {
   const stored = new Map<string, SyncOperation[]>()
   return {
@@ -60,7 +38,6 @@ function createStorage(): SyncQueueStorage & { persistedIds: () => string[] } {
   }
 }
 
-/** The recorded repro's local edit: an `update` for income X at t=1000, no baseVersion. */
 function localUpdate(id: string, overrides: Partial<SyncOperation> = {}): SyncOperation {
   return {
     id,
@@ -75,11 +52,7 @@ function localUpdate(id: string, overrides: Partial<SyncOperation> = {}): SyncOp
   }
 }
 
-/**
- * A production-shaped pulled income row: the whole drizzle row, uuid `userId`.
- * Every field is VALID unless `data` overrides it, so in the repro the string
- * amount is the ONLY reason the row can be refused.
- */
+/** Every field valid unless `data` overrides it, so the override is the only reason to refuse. */
 function incomeChange(
   data: Record<string, unknown> = {},
   overrides: Partial<ServerChange> = {}
@@ -152,12 +125,10 @@ describe('pull() refuses a malformed server row before LWW can drop the local ed
 
       const result = await service.pull()
 
-      // Positive anchors: the pull ran, delivered the row, and moved past it.
       expect(fetchServerChanges).toHaveBeenCalledTimes(1)
       expect(result.success).toBe(true)
       expect(result.lastPullTimestamp).toBe(2_000)
 
-      // The new mechanism RAN: the row is named as refused, with its field.
       const expected: RefusedServerChange = {
         entityType: 'incomeSource',
         entityId: INCOME_X,
@@ -166,12 +137,10 @@ describe('pull() refuses a malformed server row before LWW can drop the local ed
       expect(result.refused).toEqual([expected])
       expect(refusedCalls).toEqual([[expected]])
 
-      // The local edit survives, in memory AND in storage.
       expect(queuedIds()).toEqual(['local-x'])
       expect(storage.persistedIds()).toEqual(['local-x'])
-      // Via the service's own queue (ops here are added to the injected queue
-      // directly, so `state.pendingOperations` is never refreshed and would
-      // prove nothing either way).
+      // Via the service's own queue: ops are added to the injected queue directly, so
+      // `state.pendingOperations` is never refreshed.
       expect(
         service
           .getQueue()
@@ -179,12 +148,10 @@ describe('pull() refuses a malformed server row before LWW can drop the local ed
           .map((op) => op.id)
       ).toEqual(['local-x'])
 
-      // No overwrite is reported, because none happened.
       expect(conflicts).toEqual([])
       expect(service.getState().conflictOperations).toEqual([])
       expect(result.conflicts).toEqual([])
 
-      // The row reaches nobody.
       expect(result.applied).toEqual([])
       expect(result.changesPulledCount).toBe(0)
       expect(pulled).toEqual([])
@@ -327,9 +294,8 @@ describe('pull() refuses a malformed server row before LWW can drop the local ed
     it.each(['toString', 'constructor', '__proto__', 'hasOwnProperty'])(
       'an entityType named %s (an Object.prototype key) passes through instead of crashing the pull',
       async (entityType) => {
-        // Code review 75.4 (MEASURED): a bare `SERVER_ROW_SCHEMAS[entityType]`
-        // found the INHERITED function, `.safeParse` threw inside the LWW loop,
-        // and every later pull re-fetched the row and threw again.
+        // A bare `SERVER_ROW_SCHEMAS[entityType]` lookup finds inherited functions, and `.safeParse`
+        // would throw inside the LWW loop.
         const hostile = { ...incomeChange(), entityType } as unknown as ServerChange
         fetchServerChanges.mockResolvedValueOnce([hostile])
 
@@ -397,10 +363,8 @@ describe('pull() refuses a malformed server row before LWW can drop the local ed
       expect(refusedCalls).toHaveLength(1)
       expect(late).toEqual([])
 
-      // Story 79.1: a destroyed `pull()` fetches nothing, so this half no longer
-      // pulls AFTER `destroy()` (it used to anchor on a second fetch). It holds a
-      // pull in flight across the teardown instead: the fetch really happened,
-      // and the malformed row it returns reaches no subscriber.
+      // Holds a pull in flight across the teardown: the fetch happened, and its malformed row
+      // reaches no subscriber.
       let release: (changes: ServerChange[]) => void = () => {}
       fetchServerChanges.mockImplementationOnce(
         () =>

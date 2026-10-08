@@ -3,17 +3,8 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { useCurrencyStore } from '../../../stores/currencyStore'
 import { CurrencyToggle } from '../currency-toggle'
 
-/**
- * CurrencyToggle component tests (story 4-6, Task 4; updated by story 8-1).
- *
- * Covers AC-1 (currency-less default), AC-2 (switching to explicit symbols and
- * choosing a currency). Since story 8-1 the currency selection alone drives
- * formatting — there is no separate locale control. AC-3 persistence is provided
- * by the store middleware and covered at the store/integration level.
- */
 describe('CurrencyToggle', () => {
   beforeEach(() => {
-    // Reset the shared (singleton) store to its currency-less defaults.
     useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
   })
 
@@ -63,7 +54,6 @@ describe('CurrencyToggle', () => {
     expect(options).not.toContain('CAD')
     expect(options).not.toContain('AUD')
     expect(options).not.toContain('MXN')
-    // The canonical dollar representative remains selectable.
     expect(options).toContain('USD')
   })
 
@@ -88,8 +78,6 @@ describe('CurrencyToggle', () => {
     expect(screen.queryByRole('combobox', { name: /currency/i })).not.toBeInTheDocument()
   })
 
-  // --- Symbol presentation (story 14-1, UX-DR16) ---
-
   it('presents currencies by symbol, not by bare ISO code', async () => {
     const user = userEvent.setup()
     renderWithProviders(<CurrencyToggle />)
@@ -98,13 +86,11 @@ describe('CurrencyToggle', () => {
     const options = screen.getAllByRole('option') as HTMLOptionElement[]
     const byValue = new Map(options.map((o) => [o.value, o.textContent?.trim() ?? '']))
 
-    // The USD option shows the dollar symbol; no option is labelled by its bare code.
     expect(byValue.get('USD')).toBe('$')
     expect(byValue.get('EUR')).toBe('€')
     expect(byValue.get('GBP')).toBe('£')
     for (const [value, label] of byValue) {
-      // CHF is the one currency whose symbol IS its code, so "CHF" is its correct
-      // symbol label (not a leftover ISO code). Every other option must differ.
+      // CHF is the one currency whose symbol is its code.
       if (value === 'CHF') continue
       expect(label).not.toBe(value)
     }
@@ -131,24 +117,19 @@ describe('CurrencyToggle', () => {
     useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
     renderWithProviders(<CurrencyToggle />)
 
-    // Select by value — the underlying option value must remain the ISO code.
     await user.selectOptions(screen.getByRole('combobox', { name: /currency/i }), 'EUR')
 
     expect(useCurrencyStore.getState().currency).toBe('EUR')
   })
-
-  // --- No separate locale control (story 8-1) ---
 
   it('never renders a locale selector, even in symbol mode', async () => {
     const user = userEvent.setup()
     useCurrencyStore.setState({ mode: 'symbol', currency: 'EUR' })
     renderWithProviders(<CurrencyToggle />)
 
-    // The currency select is present, but the retired Locale control is not.
     expect(screen.getByRole('combobox', { name: /currency/i })).toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: /locale/i })).not.toBeInTheDocument()
 
-    // Toggling mode off and on must not resurrect it either.
     await user.click(screen.getByRole('switch', { name: /currency symbols/i }))
     await user.click(screen.getByRole('switch', { name: /currency symbols/i }))
     expect(screen.queryByRole('combobox', { name: /locale/i })).not.toBeInTheDocument()

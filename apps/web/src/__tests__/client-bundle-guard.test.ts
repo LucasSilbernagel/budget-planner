@@ -1,13 +1,4 @@
 // @vitest-environment node
-/**
- * The client-bundle guard's logic (story 83.1, FR136, AC-4).
- *
- * The guard itself was shown RED on the real `31e74bf` build (it named
- * `client/assets/paddle-*.js` and all four markers) and GREEN on the fixed build:
- * see the story's Debug Log. These tests pin the rules on fixture directories,
- * above all the positive controls, because a guard that scans the wrong place
- * finds nothing and looks exactly like a pass.
- */
 
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -22,7 +13,6 @@ import {
 
 const roots: string[] = []
 
-/** A dist root with the given files (path → content). */
 function dist(files: Record<string, string>): string {
   const root = mkdtempSync(join(tmpdir(), 'bundle-guard-'))
   roots.push(root)
@@ -34,13 +24,11 @@ function dist(files: Record<string, string>): string {
   return root
 }
 
-/** A server build that contains every marker, as the real one does. */
 const SERVER = { 'server/assets/db.js': SERVER_ONLY_MARKERS.join(' ') }
 const CLEAN_CLIENT = { 'client/assets/index-abc.js': 'console.log("hello")' }
 
 afterEach(() => {
   for (const root of roots.splice(0)) {
-    // Undo a chmod 000 from the unreadable-directory case so the cleanup can walk it.
     try {
       chmodSync(join(root, 'client', 'locked'), 0o755)
     } catch {}
@@ -119,16 +107,10 @@ describe('checkClientBundle', () => {
   )
 })
 
-/**
- * Dev-only test seams must be ABSENT from the whole production build, server
- * included (story 87.1, AC 4): a production server that still carried the
- * `E2E_MAIL_OUTBOX` branch could be made to write working sign-in links to a
- * file. The positive control is the SOURCE: a marker that no longer appears in
- * its source file would make "absent from the build" vacuous.
- */
+// Positive control: a marker missing from its source file would make
+// "absent from the build" vacuous.
 describe('checkDevSeamsAbsent (story 87.1, AC 4)', () => {
   const SEAM = { marker: 'E2E_MAIL_OUTBOX', source: 'src/mailer.ts' }
-  /** An app root whose seam source carries the marker, as the real one does. */
   function app(sourceText = "if (import.meta.env.DEV && process.env['E2E_MAIL_OUTBOX']) {}") {
     return dist({ 'src/mailer.ts': sourceText })
   }
@@ -140,8 +122,6 @@ describe('checkDevSeamsAbsent (story 87.1, AC 4)', () => {
     })
   })
 
-  // Story 92.1: the session seed moved here from an inline grep in `ci.yml`, so
-  // this list is now the ONLY build check for it, in CI and in `pnpm gates`.
   it('the real seam list names the session seed, in getSessionSeed (story 92.1)', () => {
     expect(DEV_ONLY_SEAMS).toContainEqual({
       marker: 'E2E_SESSION_SEED',

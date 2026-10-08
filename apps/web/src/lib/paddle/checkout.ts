@@ -1,21 +1,3 @@
-/**
- * Paddle.js Billing checkout — client-side helper (Story 5-3, Task 2a).
- *
- * Wraps `@paddle/paddle-js` behind three small functions so the component layer
- * never touches the SDK singleton or its CDN-loaded state directly:
- *   - `getPaddleInstance` lazy-loads and initializes the SDK exactly once per
- *     page load (`initializePaddle` itself injects the `cdn.paddle.com`
- *     script — already CSP-allow-listed, see `security-headers.ts`).
- *   - `getLocalizedPlanPrices` fetches country-localized totals via
- *     `Paddle.PricePreview()` for both catalog prices in one call.
- *   - `openPaddleCheckout` opens the one-page overlay checkout for a single
- *     price.
- *
- * Reuses the fetched config's `environment` (sandbox | production) and
- * `clientToken` from `/api/paddle/checkout-config` — never a hardcoded value,
- * so sandbox testing and production behave identically in this module.
- */
-
 import type { Environments, Paddle } from '@paddle/paddle-js'
 
 export interface PaddleCheckoutClientConfig {
@@ -23,35 +5,14 @@ export interface PaddleCheckoutClientConfig {
   clientToken: string
 }
 
-// Module-level singleton: Paddle.js itself is a singleton (it injects one
-// script tag and hangs its instance off `window.Paddle`), so re-initializing
-// per checkout attempt would be redundant work at best and a duplicate
-// `<script>` tag at worst. Reset only happens on a full page reload.
+// Paddle.js is itself a singleton; re-initializing would inject a duplicate script tag.
 let paddleInstancePromise: Promise<Paddle | undefined> | null = null
 
-/** The no-op `window.profitwell` (story sec-4, D1): callable, and already "loaded". */
 type ProfitwellStub = ((...args: unknown[]) => void) & { isLoaded: boolean }
 
 /**
- * Keep Paddle.js from loading ProfitWell (Paddle Retain) on our pages (story sec-4, D1).
- *
- * `Paddle.Initialize()` ends by calling `initPwSnippet()` (paddle.js
- * `src/gateway/profitwell.gateway.ts:17-35`), which, for a LIVE token, appends
- * `<script src="https://public.profitwell.com/js/profitwell.js?auth=…">` to `<head>`. Our CSP
- * blocks it, so every live `/pricing` load logged one CSP error. There is no `Initialize`
- * option or dashboard switch that stops the call; its only skip is its own first line,
- * `if (window.profitwell?.isLoaded) return`. So a no-op `window.profitwell` with
- * `isLoaded: true` is installed BEFORE `initializePaddle`: no script, no request, no console
- * line, no data to ProfitWell. It is callable because Paddle.js calls `window.profitwell(…)`
- * from `updatePwCustomer` / `Retain.*`.
- *
- * - An existing `window.profitwell` is never replaced (`null` counts as absent: Paddle's guard
- *   reads `null?.isLoaded` as `undefined` and would load the script).
- * - ⚠️ This DISABLES Paddle Retain's in-page features (payment-recovery / term-optimization
- *   notices, cancellation flows). The app uses none, and Retain is not turned on in the live
- *   Paddle dashboard (Lucas, 2026-10-02). Revisit this (sec-4 D1) BEFORE enabling Retain.
- * - It relies on an undocumented guard in an unversioned script; the weekly
- *   `paddle-drift.yml` workflow fails if the guard disappears.
+ * Paddle.Initialize() loads ProfitWell unless `window.profitwell?.isLoaded`; a no-op stub stops it.
+ * This disables Paddle Retain features: revisit before enabling Retain.
  */
 export function preemptPaddleRetainSnippet(): void {
   if (typeof window === 'undefined') return
@@ -61,7 +22,6 @@ export function preemptPaddleRetainSnippet(): void {
   host.profitwell = stub
 }
 
-/** Lazily loads and initializes Paddle.js. Safe to call more than once. */
 export function getPaddleInstance(config: PaddleCheckoutClientConfig): Promise<Paddle | undefined> {
   if (!paddleInstancePromise) {
     paddleInstancePromise = import('@paddle/paddle-js')
@@ -71,21 +31,15 @@ export function getPaddleInstance(config: PaddleCheckoutClientConfig): Promise<P
         return initializePaddle({ token: config.clientToken, environment: config.environment })
       })
       .then((paddle) => {
-        // `initializePaddle` signals its OWN failure by RESOLVING `undefined`
-        // (a bad token, a CDN load failure) — it does not reject for this
-        // case. A `.catch` alone never sees it, so the cache must be cleared
-        // here too, or a transient failure poisons every later checkout
-        // click ("Checkout isn't available right now") until a full reload.
+        // `initializePaddle` signals failure by resolving `undefined`, not rejecting; clear the cache so
+        // later clicks retry.
         if (!paddle) {
           paddleInstancePromise = null
         }
         return paddle
       })
       .catch((error) => {
-        // Un-cache a REJECTED promise (a momentary cdn.paddle.com hiccup, a
-        // network blip during the price-preview effect) so the NEXT call
-        // retries instead of every future checkout click being permanently
-        // poisoned by one transient failure until a full page reload.
+        // Un-cache a rejection so the next call retries.
         paddleInstancePromise = null
         throw error
       })
@@ -93,15 +47,11 @@ export function getPaddleInstance(config: PaddleCheckoutClientConfig): Promise<P
   return paddleInstancePromise
 }
 
-/** Resets the cached instance. Test-only — production never needs to re-init. */
 export function resetPaddleInstanceForTests(): void {
   paddleInstancePromise = null
 }
 
-/**
- * Paddle's own pre-formatted breakdown for one price — every field is a
- * ready-to-display string (e.g. "€39.00"), never a number to do math on.
- */
+/** Pre-formatted display strings; never do math on them. */
 export interface LocalizedPriceBreakdown {
   subtotal: string
   tax: string
@@ -109,43 +59,19 @@ export interface LocalizedPriceBreakdown {
 }
 
 export interface LocalizedPlanPrices {
-  /** Paddle's own pre-formatted breakdown for the monthly price (story 5-20). */
   monthly: LocalizedPriceBreakdown | null
-  /** Paddle's own pre-formatted breakdown for the annual price. */
   annual: LocalizedPriceBreakdown | null
-  /** Paddle's own pre-formatted breakdown for the lifetime price. */
   lifetime: LocalizedPriceBreakdown | null
 }
 
 /**
- * Fetches a country-localized price breakdown for the catalog prices in one
- * `Paddle.PricePreview()` call (three since story 5-20, when the monthly plan
- * was added; monthly is omitted from the request when it is not configured).
- *
- * Deliberately passes NO country/address — Paddle auto-detects the visitor's
- * location from their IP when none is given, which is exactly what we want:
- * this app runs on DanubeData Rapids, which sets no geo-IP request header
- * (unlike, say, Vercel's `x-vercel-ip-country`), so there is nothing to read
- * server-side and nothing to thread through here.
- *
- * Returns ONLY the pre-formatted `formattedTotals` strings Paddle computes —
- * never do price math or re-format these (no `Intl.NumberFormat`, no
- * rounding, no subtracting subtotal from total to "derive" tax): Paddle
- * already applied the visitor's currency, locale and tax treatment, and
- * reformatting or recomputing risks silently diverging from what checkout
- * will actually charge.
+ * No country passed: Paddle geolocates by IP, and Rapids sets no geo header. Never recompute or
+ * reformat the totals: Paddle already applied currency and tax.
  */
 export async function getLocalizedPlanPrices(
   paddle: Paddle,
   priceIds: {
-    /**
-     * Story 5-20. OPTIONAL, unlike its two siblings: a build can legitimately
-     * have annual and lifetime configured and no monthly price (the production
-     * assertion does not require one). Only configured ids are sent as line
-     * items — asking Paddle to preview an `undefined` price fails the WHOLE
-     * `PricePreview` call, which would take the other two plans' real totals
-     * down with it and fall the entire toggle back to static labels.
-     */
+    /** Optional: previewing an undefined price id fails the whole PricePreview call. */
     monthlyPriceId?: string | undefined
     annualPriceId: string
     lifetimePriceId: string
@@ -159,14 +85,8 @@ export async function getLocalizedPlanPrices(
     ? [{ priceId: priceIds.monthlyPriceId, quantity: 1 }]
     : []
 
-  // ⚠️ `PricePreview` is ALL-OR-NOTHING: one unknown price id rejects the whole
-  // call. Before the monthly plan existed only a required id could do that, so a
-  // failure meant checkout was broken anyway. Now a typo'd, archived, or
-  // wrong-environment monthly id — none of which this code can validate — would
-  // take annual's and lifetime's real localized totals down with it, silently
-  // stranding BOTH on their static "€39/€99" fallbacks via the caller's
-  // `.catch()`. So a failure with a monthly item present is retried without it:
-  // the optional plan degrades alone rather than damaging the two that pay.
+  // PricePreview is all-or-nothing; retry without monthly so a bad monthly id cannot strand the
+  // annual and lifetime totals.
   let preview: Awaited<ReturnType<typeof paddle.PricePreview>>
   let monthlyRequested = monthlyItem.length > 0
   try {
@@ -188,25 +108,12 @@ export async function getLocalizedPlanPrices(
   }
 
   return {
-    // `monthlyRequested` is false after a retry, so a monthly id that Paddle
-    // rejected reports `null` (static fallback) rather than being looked up in a
-    // response that never contained it.
     monthly: monthlyRequested ? breakdownFor(priceIds.monthlyPriceId) : null,
     annual: breakdownFor(priceIds.annualPriceId),
     lifetime: breakdownFor(priceIds.lifetimePriceId),
   }
 }
 
-/**
- * Opens the Paddle Billing checkout as a one-page overlay for one price.
- *
- * `customerEmail` pre-fills the checkout's email field when the buyer is
- * already signed in (5.16 magic-link session) so they aren't asked to retype
- * an address Paddle will key the webhook's `data.customer_id` resolution off
- * of anyway. `successUrl` sends the buyer to `/welcome` once Paddle confirms
- * the purchase, rather than leaving the overlay's own generic confirmation as
- * the only feedback.
- */
 export function openPaddleCheckout(
   paddle: Paddle,
   priceId: string,

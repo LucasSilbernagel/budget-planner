@@ -1,15 +1,5 @@
-// Regenerates the raster favicon set from the single source of truth,
-// `apps/web/public/favicon.svg`. Run with: `pnpm --filter @budget-planner/web icons:generate`.
-//
-// Why this exists: browsers still need PNG/ICO fallbacks (legacy tabs, iOS
-// apple-touch, Android/PWA maskable) that cannot be authored by hand.
-//
-// This file is the WRITING half and does nothing else — the rasterization
-// helpers live in `icons-lib.mjs`, which is a pure library the unit suite can
-// import without any risk of rewriting `public/` as a side effect. It therefore
-// runs `main()` unconditionally, exactly as it did before story 40.2: an entry
-// point that sometimes declines to run is worse than one that always does,
-// because "regenerated nothing, exited 0" is indistinguishable from success.
+// Always runs main(): "regenerated nothing, exited 0" would look like success. The
+// helpers live in icons-lib.mjs so tests can import them without rewriting public/.
 
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'

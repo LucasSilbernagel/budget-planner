@@ -1,21 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 
-/**
- * Post-checkout landing page — `/welcome` (story 5-3, Task 2a).
- *
- * Paddle Checkout's `settings.successUrl` (see `lib/paddle/checkout.ts`)
- * redirects here once the overlay confirms a purchase. This page does not
- * itself flip anything: the webhook (`routes/api/webhooks/paddle.ts`) is what
- * creates the account and sets `users.subscriptionStatus` DB-authoritatively,
- * and it can land slightly after the redirect.
- *
- * The CTA points at `/login`, not `/` — checkout is NOT auth-gated
- * (`PremiumCheckoutButton`), so most visitors landing here just bought as a
- * brand-new customer with no browser session yet. Their account now exists
- * (or will, within seconds), but they still need a magic-link sign-in to
- * actually reach it — sending them to `/` first would just show the
- * signed-out free tier.
- */
+// The CTA points at /login: checkout is not auth-gated, so most buyers here have no session yet.
 export const Route = createFileRoute('/welcome')({
   head: () => ({
     meta: [
@@ -46,15 +31,7 @@ function WelcomePage() {
           >
             Sign in to your account
           </a>
-          {/* A buyer who clicks "Sign in" before the webhook lands gets the
-              magic-link endpoint's generic 200 (it never signals whether an
-              account exists — no enumeration) and no email, which otherwise
-              looks identical to the permanent failure case. This is the ONE
-              thing that distinguishes them: retry guidance for the ordinary
-              "just a few seconds behind" case. Consistent with the "few
-              seconds" framing above (a prior "a minute" here read as
-              contradictory), and links back to the same sign-in form the
-              button above opens rather than only naming the action. */}
+          {/* Before the webhook lands, sign-in silently sends no email; this retry hint is the only cue. */}
           <p className="text-xs text-muted mt-4">
             No email after a few seconds? Wait a moment, then{' '}
             <a href="/login" className="underline hover:no-underline">

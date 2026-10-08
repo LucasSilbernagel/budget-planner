@@ -6,34 +6,7 @@ import type { SavedForecast } from '../../../routes/forecasting'
 import { PencilIcon } from '../../ui/RowActionIcons'
 import { ForecastList } from '../forecast-list'
 
-/**
- * ForecastList reload-affordance tests (story bug-3, AC-4) + the row-action
- * accessible-name contract (deferred-work item closed 2026-09-01).
- *
- * The reopen button only renders when the route passes `onLoad`. Before bug-3 the
- * route never passed it, so saved forecasts could not be reopened. These lock the
- * wiring contract: the action appears and fires when `onLoad` is provided.
- *
- * Story 108.1 (FR176, D7): the action was "Load" with a gear icon; it is now
- * "Edit" with the finance tables' pencil (`PencilIcon`), named `Edit {name}`
- * with `title="Edit"`. Since 97.1 a Save after reopening UPDATES the forecast,
- * so it is an edit. The prop and handler keep their `onLoad` names.
- *
- * ⚠️ THE NAME QUERIES BELOW ARE ROW-DISAMBIGUATED ON PURPOSE, AND THE ABSENCE
- * TEST DEPENDS ON IT. These buttons are icon-only (`PencilIcon`/`DeleteIcon` are
- * both `aria-hidden`), and until 2026-09-01 they carried `title` but NO
- * `aria-label`, so their entire accessible name came from `title` — the weakest
- * source in the accname spec, and un-disambiguated ("Delete", not "Delete
- * <name>") across every row. They now carry `aria-label={`Edit ${name}`}` (`Load ${name}` before 108.1) /
- * `Delete ${name}`; `title` is kept for the pointer tooltip only.
- *
- * ⚠️ `getByRole`'s `name` is a FULL-STRING match, so a query written against the
- * OLD bare name ('Load') now matches nothing — which makes a `queryByRole(...)
- * toBeNull()` absence assertion pass instantly whether or not the button
- * rendered. That is the same silent-green shape story 43.1 warned about and 51.1
- * hit again. Any future rename of these labels MUST be carried into the absence
- * test at the same time, or it stops proving anything.
- */
+// getByRole names are full-string: rename these labels without updating the absence test and it passes vacuously.
 
 vi.mock('../../../stores/currencyStore', () => ({
   useFormattedAmount: () => (cents: number) => (cents / 100).toFixed(2),
@@ -78,19 +51,12 @@ describe('ForecastList reload affordance (bug-3 AC-4)', () => {
   it('omits the Edit action when onLoad is not provided', () => {
     render(<ForecastList forecasts={[sampleForecast]} onDelete={vi.fn()} />)
     expect(screen.queryByRole('button', { name: 'Edit Retirement Plan' })).toBeNull()
-    /* Positive control: the row IS rendered, so the null above is the Edit button
-     * genuinely absent and not the whole list failing to mount. Without this the
-     * assertion passes on an empty render. */
     expect(screen.getByRole('button', { name: 'Delete Retirement Plan' })).toBeInTheDocument()
   })
 
   it('names both row actions after their forecast, not by bare verb', () => {
     render(<ForecastList forecasts={[sampleForecast]} onDelete={vi.fn()} onLoad={vi.fn()} />)
 
-    /* Row-disambiguated: two forecasts must not both expose a button named
-     * "Delete". Asserting the bare verb is ABSENT is what makes this falsifiable
-     * — dropping either `aria-label` reverts the name to `title`'s bare verb and
-     * reddens both halves. */
     expect(screen.getByRole('button', { name: 'Edit Retirement Plan' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Delete Retirement Plan' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull()
@@ -103,9 +69,6 @@ describe('ForecastList reload affordance (bug-3 AC-4)', () => {
       <ForecastList forecasts={[sampleForecast, second]} onDelete={vi.fn()} onLoad={vi.fn()} />
     )
 
-    /* The defect this closes: with names sourced from `title`, every row's Delete
-     * button was called "Delete", so a screen-reader user tabbing the list could
-     * not tell which forecast they were about to destroy. */
     for (const name of ['Retirement Plan', 'Sabbatical']) {
       expect(screen.getByRole('button', { name: `Edit ${name}` })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: `Delete ${name}` })).toBeInTheDocument()
@@ -119,8 +82,6 @@ describe('the Edit action looks and reads like an edit (story 108.1, AC-3)', () 
     const button = screen.getByRole('button', { name: 'Edit Retirement Plan' })
     expect(button).toHaveAttribute('title', 'Edit')
 
-    // The glyph is the SAME path as `PencilIcon`, read from a fresh render of it
-    // rather than a pasted string, so the test cannot drift from the shared icon.
     const { container: reference } = render(<PencilIcon />)
     const pencilPath = reference.querySelector('path')?.getAttribute('d')
     expect(pencilPath, 'PencilIcon rendered a path').toBeTruthy()
@@ -128,20 +89,12 @@ describe('the Edit action looks and reads like an edit (story 108.1, AC-3)', () 
     expect(paths).toEqual([pencilPath])
     expect(button.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
 
-    // The old name and tooltip are gone. Positive control: the button above.
     expect(screen.queryByRole('button', { name: 'Load Retirement Plan' })).toBeNull()
     expect(screen.queryByTitle('Load')).toBeNull()
   })
 })
 
 describe('Total Growth sign (story forecast-1)', () => {
-  /**
-   * The `+` prefix on Total Growth used to be hard-coded. That survived only
-   * because a negative `totalGrowth` needed expenses to exceed income; once a
-   * one-time event could be an OUTFLOW, a single "Money out" row produced one
-   * trivially, and `formatCurrency` emits its own `-` — so the cell rendered
-   * `+-40,000.00` for exactly the scenario the new Overview copy advertises.
-   */
   const negativeGrowth: SavedForecast = {
     ...sampleForecast,
     id: 'saved-negative',
@@ -160,8 +113,6 @@ describe('Total Growth sign (story forecast-1)', () => {
   it('renders a negative total growth without a "+-" prefix', () => {
     render(<ForecastList forecasts={[negativeGrowth]} onDelete={vi.fn()} onLoad={vi.fn()} />)
 
-    // The mocked formatter renders cents/100 with two decimals, so -4000000 is
-    // "-40000.00". The bug produced "+-40000.00".
     expect(screen.queryByText(/\+-/)).toBeNull()
     expect(screen.getByText('-40000.00')).toBeInTheDocument()
   })
@@ -169,16 +120,12 @@ describe('Total Growth sign (story forecast-1)', () => {
   it('still renders a "+" for positive growth', () => {
     render(<ForecastList forecasts={[sampleForecast]} onDelete={vi.fn()} onLoad={vi.fn()} />)
 
-    // Positive control: the guard is conditional, not a blanket removal of the
-    // plus sign. Without this, deleting the `+` entirely would pass the test above.
     expect(screen.getByText('+40000.00')).toBeInTheDocument()
   })
 })
 
 describe('secondary text on a selected row (story 115.2)', () => {
   it('reads .text-body on the selected row’s blue tint, .text-muted otherwise', () => {
-    // gray-500 on the selected row's blue-50 measured 4.44:1, below AA's 4.5:1.
-    // Tokens, not paint (jsdom has no Tailwind): the Lighthouse re-run is the proof.
     render(<ForecastList forecasts={[sampleForecast]} onDelete={vi.fn()} onLoad={vi.fn()} />)
     const lines = () => [screen.getByText('v1'), screen.getByText('+40000.00')]
 
@@ -195,10 +142,7 @@ describe('secondary text on a selected row (story 115.2)', () => {
 })
 
 describe('row checkbox selects its row (story 118.1, FR186)', () => {
-  // Before 118.1 the controlled checkbox's onChange only stopped propagation, so
-  // clicking it or pressing Space changed nothing; only a click elsewhere on the
-  // row selected it. The row's onClick toggles too, so the box's onClick must
-  // keep stopping propagation or one click toggles twice.
+  // The row's onClick toggles too, so the checkbox's onClick must stop propagation or one click toggles twice.
   const second: SavedForecast = { ...sampleForecast, id: 'saved-2', name: 'House Fund' }
 
   it('toggles the row once per click on its checkbox', async () => {
@@ -267,10 +211,6 @@ describe('row checkbox selects its row (story 118.1, FR186)', () => {
 })
 
 describe('selection acts only on visible forecasts (story 119.1, FR187)', () => {
-  // Before 119.1 the selection counted every selected id, so a forecast hidden by
-  // the search was still counted, still deleted by Delete Selected, and Select all
-  // compared counts, not ids. Each forecast gets its own scenario name: the search
-  // matches `scenario.name` too, and sampleForecast's would match both.
   const forecast = (id: string, name: string): SavedForecast => ({
     ...sampleForecast,
     id,
@@ -281,7 +221,6 @@ describe('selection acts only on visible forecasts (story 119.1, FR187)', () => 
   const bravo = forecast('b', 'Bravo')
   const checkbox = (name: string) => screen.getByRole('checkbox', { name })
 
-  // Owns the list like the page does: a delete drops the forecast from it.
   function Harness({ initial }: { initial: SavedForecast[] }) {
     const [list, setList] = useState(initial)
     return (
@@ -309,7 +248,6 @@ describe('selection acts only on visible forecasts (story 119.1, FR187)', () => 
     )
     expect(onDelete).toHaveBeenCalledTimes(1)
     expect(onDelete).toHaveBeenCalledWith('b')
-    // Still rendered (onDelete is a mock), but no longer selected (D1, review P1).
     expect(checkbox('Select Bravo')).not.toBeChecked()
     expect(screen.queryByText(/selected$/)).toBeNull()
   })
@@ -396,13 +334,6 @@ describe('selection acts only on visible forecasts (story 119.1, FR187)', () => 
 })
 
 describe('My Forecasts sortable headers (story 120.1, FR188)', () => {
-  /**
-   * Three forecasts whose three orderings all differ, so no direction can pass
-   * by accident:
-   *   by name:     Alpha, Bravo, Charlie
-   *   by created:  Bravo (Jan), Charlie (Mar), Alpha (Jun)
-   *   by net worth: Charlie (10), Alpha (50), Bravo (90)
-   */
   function forecastNamed(name: string, createdAt: string, endingNetWorth: number): SavedForecast {
     return {
       ...sampleForecast,
@@ -456,14 +387,12 @@ describe('My Forecasts sortable headers (story 120.1, FR188)', () => {
 
   it('reports the state on each <th> and in each button description', () => {
     renderList()
-    // Default: Created, descending.
     expect(header('Created')).toHaveAttribute('aria-sort', 'descending')
     expect(sortButton('Created')).toHaveAccessibleDescription('Sortable column, sorted descending')
     for (const name of ['Name', 'Ending Net Worth'] as const) {
       expect(header(name)).toHaveAttribute('aria-sort', 'none')
       expect(sortButton(name)).toHaveAccessibleDescription('Sortable column, not sorted')
     }
-    // Not sortable: no `aria-sort` at all.
     expect(screen.getByRole('columnheader', { name: 'Description' })).not.toHaveAttribute(
       'aria-sort'
     )
@@ -473,8 +402,6 @@ describe('My Forecasts sortable headers (story 120.1, FR188)', () => {
   it('shows the order the arrow claims: ↓ is newest, largest and Z→A first (D1)', async () => {
     const user = userEvent.setup()
     renderList()
-    // ⚠️ Before 120.1, "Created ↓" listed the OLDEST first and "Ending Net
-    // Worth ↓" the SMALLEST first (MEASURED at `5b4ed69`).
     expect(rowOrder()).toEqual(['Alpha', 'Charlie', 'Bravo'])
 
     await user.click(sortButton('Created'))
@@ -512,12 +439,9 @@ describe('My Forecasts sortable headers (story 120.1, FR188)', () => {
     await user.click(sortButton('Created'))
     expect(liveRegion(container).textContent).toBe('Sorted by Created, ascending')
 
-    // No match: the table, and the region with it, unmount.
     await user.type(screen.getByRole('searchbox'), 'zzz-no-match')
     expect(container.querySelector('[aria-live="polite"]')).toBeNull()
 
-    // Back: a region re-inserted already filled is not reliably announced, and
-    // its text would be stale, so it returns empty. The sort itself is kept.
     await user.clear(screen.getByRole('searchbox'))
     expect(liveRegion(container).textContent).toBe('')
     expect(header('Created')).toHaveAttribute('aria-sort', 'ascending')

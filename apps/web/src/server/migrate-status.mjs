@@ -1,23 +1,7 @@
 // @ts-check
 /**
- * The migrate container's status server (Story 5-18, AC-3).
- *
- * This is the pipeline's only verdict channel, and it exists because readiness
- * cannot carry a verdict. If `/healthz` only went green on a SUCCESSFUL
- * migration, then "the migration failed", "the image is broken", "the pod is
- * crash-looping" and "it is merely slow" would all present as the same thing: a
- * `--wait` timeout. So readiness answers *did the container boot*, and this
- * endpoint answers *what happened* — positively, on a bound, failing closed.
- *
- * Deliberately NOT log-scraping. `danube rapids logs` returns an envelope with
- * `available: false` when the log backend is down, and the CLI's own wording for
- * that case is "Logs are currently unavailable. This says nothing about the
- * container itself." A verdict that can silently become unreadable is not a
- * verdict; logs stay a diagnostic.
- *
- * The container is publicly routable for the few minutes it exists, so the
- * status endpoint is bearer-gated with a per-run token and the listener refuses
- * to be constructed without one.
+ * The pipeline's only verdict channel: readiness can't tell failed from slow, and logs
+ * can be silently unavailable. Bearer-gated because the container is publicly routable.
  */
 
 import { Buffer } from 'node:buffer'
@@ -26,16 +10,7 @@ import { timingSafeEqual } from 'node:crypto'
 const DEFAULT_HEALTH_PATH = '/healthz'
 const STATUS_PATH = '/migrate-status'
 
-/**
- * Constant-time bearer comparison that tolerates a length mismatch.
- *
- * `timingSafeEqual` THROWS on differing lengths, which would surface as a 500
- * and read exactly like a broken container — so length is checked first and a
- * mismatch is simply "no".
- *
- * @param {string} presented
- * @param {string} expected
- */
+/** timingSafeEqual throws on differing lengths (a 500), so length is checked first. */
 function tokenMatches(presented, expected) {
   const a = Buffer.from(presented, 'utf8')
   const b = Buffer.from(expected, 'utf8')
@@ -47,7 +22,7 @@ function tokenMatches(presented, expected) {
 
 /**
  * @param {string | undefined} header
- * @returns {string | null} the presented token, or null if the header is absent or malformed
+ * @returns {string | null}
  */
 function readBearer(header) {
   if (typeof header !== 'string') {
@@ -59,32 +34,8 @@ function readBearer(header) {
 }
 
 /**
- * A health endpoint and nothing else, for a migrate container with no work to do.
- *
- * ⚠️ THIS EXISTS BECAUSE OF A CRASH LOOP. 2026-09-16.
- *
- * The migrate container is permanent, and between releases its credentials are
- * stripped (`--rm-env`) while `APP_ENTRYPOINT=migrate` stays set. The entrypoint
- * used to `process.exit(1)` when `MIGRATE_STATUS_TOKEN` was missing — a sound
- * instinct for a container that is *supposed* to migrate, but wrong for one that
- * is deliberately idle: Knative started revision `budget-planner-migrator-00005`,
- * it exited 1 four times, and the platform reported `CrashLoopBackOff` and emailed
- * a provisioning failure. The container was doing exactly what it was told; the
- * design just had no way to say "nothing to do right now".
- *
- * So an unconfigured migrate container now STARTS and stays healthy, and serves
- * NO status endpoint at all — there is no token to guard one with, and a status
- * endpoint with nothing to report has nothing to gain by existing. It never
- * migrates: that still requires a full, explicit configuration.
- *
- * Safety is unchanged. The pipeline only ever accepts a verdict that carries its
- * own run id; an idle container returns 404 there, the poll times out, and the
- * release fails closed — which is the same outcome the old `exit(1)` produced,
- * minus the crash loop and the false alarm.
- *
- * @param {object} options
- * @param {string} [options.healthPath]
- * @returns {import('node:http').RequestListener}
+ * For an idle migrate container (credentials stripped between releases): stays healthy
+ * instead of crash-looping, never migrates, serves no status endpoint.
  */
 export function createIdleHealthListener({ healthPath = DEFAULT_HEALTH_PATH } = {}) {
   return (request, response) => {
@@ -108,10 +59,7 @@ export function createIdleHealthListener({ healthPath = DEFAULT_HEALTH_PATH } = 
 }
 
 /**
- * @param {object} options
- * @param {string | undefined} options.token per-run secret, minted by the pipeline
- * @param {() => Record<string, unknown>} options.readState current verdict snapshot
- * @param {string} [options.healthPath] must match the container's `--health-check-path`
+ * @param {{ token: string | undefined, readState: () => Record<string, unknown>, healthPath?: string }} options
  * @returns {import('node:http').RequestListener}
  */
 export function createMigrateStatusListener({
@@ -119,10 +67,8 @@ export function createMigrateStatusListener({
   readState,
   healthPath = DEFAULT_HEALTH_PATH,
 }) {
-  // Refuse at CONSTRUCTION, not per request: without a token this endpoint would
-  // be an open description of the production database's migration state. A
-  // container that fails to boot is a loud, diagnosable failure; one that comes
-  // up unguarded is a silent one.
+  // Refuse at construction: without a token this would openly describe the production
+  // database's migration state.
   if (typeof token !== 'string' || token.trim() === '') {
     throw new Error(
       'MIGRATE_STATUS_TOKEN is not set. Refusing to expose the migration status endpoint without a bearer token.'
@@ -141,19 +87,11 @@ export function createMigrateStatusListener({
       response.end(payload)
     }
 
-    // ⚠️ MUST be inside a try/catch, and this is not defensive padding: Node's
-    // HTTP parser accepts absolute-form request targets whose authority the
-    // WHATWG URL parser rejects — `GET http://a:99999/`, `GET http://a:b/`,
-    // `GET http://[/` are all delivered to this listener verbatim (verified
-    // against Node directly, 2026-09-15), and `new URL()` throws on each. An
-    // exception escaping a request listener is an UNCAUGHT exception: the process
-    // exits, taking the running `drizzle-kit migrate` child with it, and this
-    // container is publicly routable with its URL printed in the run log. So a
-    // stray scanner could otherwise kill a migration mid-flight.
+    // Must be in try/catch: Node's HTTP parser delivers absolute-form targets that new URL()
+    // rejects, and an uncaught throw would kill the running migration.
     let pathname
     try {
-      // A relative URL needs a base to parse; the authority is irrelevant here and
-      // parsing is what normalises `/migrate-status/../healthz` away from a match.
+      // Parsing normalises `/migrate-status/../healthz` away from a match.
       ;({ pathname } = new URL(request.url ?? '/', 'http://container.invalid'))
     } catch {
       send(400, { error: 'bad_request' })

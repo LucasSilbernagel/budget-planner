@@ -1,9 +1,3 @@
-/**
- * `ActiveSync` wires the not-synced notice's "Try again" to `useSync` (story 79.2,
- * AC-2, code review): the click reaches `forceSync`, and the button is disabled
- * while `isSyncing`. `useSync` is mocked here; the notice itself is real.
- */
-
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 

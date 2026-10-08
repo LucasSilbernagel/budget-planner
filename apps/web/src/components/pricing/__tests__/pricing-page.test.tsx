@@ -1,34 +1,10 @@
-/**
- * PricingPageView benefit-list guard (stories 25-1 / 25-3).
- *
- * The `/pricing` route renders its plan cards from hard-coded FREE_FEATURES /
- * PREMIUM_FEATURES arrays (separate from the pricing.md prose below them). These
- * guards pin the canonical split so a future edit can't reintroduce "Dark mode"
- * or "No ads" as a Premium perk on this surface — the exact miss this test closes:
- *   - Premium = exactly the canonical benefit set of `lib/premium/benefits.ts`
- *     (five since story 33.2 / FR56: multi-device sync · advanced forecasting ·
- *     custom profiles · financial summary report · custom categories), never Dark
- *     mode or No ads.
- *   - Dark mode is free for everyone (story 25-3), but since story 95.1 (FR154)
- *     the Free card no longer lists it either: the theme simply follows the
- *     device, so it is not a plan feature on either card.
- *
- * Story 33.2 added the COUNT assertion this file was missing. Cross-surface parity
- * (no surface omitting or inventing a benefit) is asserted once, centrally, in
- * `components/premium/__tests__/benefit-set-parity.test.tsx`.
- */
-
 import { render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SessionSeedProvider } from '../../../context/session-seed'
 import { PREMIUM_BENEFIT_IDS } from '../../../lib/premium/benefits'
 import { PricingPageView } from '../pricing-page'
 
-// Story 5-3 Task 2a: the Premium CTA is now `PremiumCheckoutButton`, which
-// fetches `/api/paddle/checkout-config` on mount regardless of auth state
-// (not auth-gated — see its module docblock). Stub that fetch so no real
-// network call is attempted; its result is irrelevant here since these tests
-// never click the CTA.
+// Stub the CTA's mount-time config fetch; these tests never click it.
 const originalFetch = global.fetch
 beforeEach(() => {
   global.fetch = vi.fn(() =>
@@ -40,7 +16,6 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-// Each plan renders as a card <div> whose first child is an <h2>{name}</h2>.
 function card(name: string): HTMLElement {
   const heading = screen.getByRole('heading', { name, level: 2 })
   const el = heading.closest('div')
@@ -53,12 +28,7 @@ describe('PricingPageView benefit lists', () => {
     render(<PricingPageView />)
     const premium = within(card('Premium'))
 
-    // ⚠️ This COUNT is the point of the test and it was missing until story 33.2.
-    // Before then the test was named "lists exactly the three canonical Premium
-    // benefits" but its body was three `getByText` calls and two negatives — so a
-    // fourth, fifth or sixth bullet passed it SILENTLY. The name was a claim about
-    // assertions the file did not contain. Derived from PREMIUM_BENEFIT_IDS.length
-    // rather than a literal so the next addition to the set cannot re-open the hole.
+    // Derived from PREMIUM_BENEFIT_IDS, so an extra bullet fails.
     expect(premium.getAllByRole('listitem')).toHaveLength(PREMIUM_BENEFIT_IDS.length)
 
     expect(premium.getByText('Multi-device sync, securely stored in the EU')).toBeInTheDocument()
@@ -77,7 +47,6 @@ describe('PricingPageView benefit lists', () => {
       )
     ).toBeInTheDocument()
 
-    // The ungated (25-3) / removed-ads (25-1) benefits must NOT be Premium perks.
     expect(premium.queryByText(/dark mode/i)).not.toBeInTheDocument()
     expect(premium.queryByText(/no ads/i)).not.toBeInTheDocument()
   })
@@ -85,7 +54,6 @@ describe('PricingPageView benefit lists', () => {
   it('does not list dark mode under the Free plan either (story 95.1, FR154)', () => {
     render(<PricingPageView />)
     const free = within(card('Free'))
-    // Positive anchor in the same card, so the absence cannot pass on an empty card.
     expect(free.getByText('Retirement modelling')).toBeInTheDocument()
     expect(free.queryByText(/dark mode/i)).not.toBeInTheDocument()
   })
@@ -96,35 +64,20 @@ describe('PricingPageView pricing (stories 25-2, 5-20)', () => {
     render(<PricingPageView />)
     const premium = within(card('Premium'))
 
-    // ANNUAL REMAINS THE ANCHOR (5-20 AC-2). €5.99 is the low-commitment entry
-    // point, not the headline — if the €39 headline ever moves to €5.99 this
-    // assertion is what catches it.
     expect(premium.getByText('€39')).toBeInTheDocument()
     expect(premium.getByText('/ year')).toBeInTheDocument()
     expect(premium.getByText(/€99 once — lifetime license/)).toBeInTheDocument()
     expect(premium.getByText(/€5\.99 \/ month/)).toBeInTheDocument()
 
-    // The saving claim steers committed buyers to annual, so it is pinned — but
-    // DERIVED, not hard-coded. A literal `/46%/` would stay green if €5.99 or €39
-    // ever changed and the copy did not, which is exactly the regression a pricing
-    // test exists to catch (code review).
+    // Derived, not a literal: a literal would stay green if the prices changed.
     const savingPct = Math.round((1 - 39 / (5.99 * 12)) * 100)
     expect(premium.getByText(new RegExp(`annual saves ${savingPct}%`))).toBeInTheDocument()
 
-    // ⚠️ Story 25-2's negative is INVERTED, not deleted — 5-20 reversed the
-    // annual-only decision on conversion grounds. The €10 figure it also banned
-    // stays banned: that was a pre-25-2 draft price that never shipped, and it
-    // is NOT the €5.99 this story added.
     expect(premium.queryByText('€10')).not.toBeInTheDocument()
     expect(premium.queryByText(/two months free/)).not.toBeInTheDocument()
   })
 
   it('does not raise the pinned €39 and €99 figures (5-20 AC-2)', () => {
-    // The 2026-09-16 market research REFUTED the "€99 is underpriced" premise
-    // and recommended explicitly against raising either figure — €99 already
-    // sits near the top of the budgeting-app lifetime field. A future pricing
-    // story that bumps them must fail here and re-derive the decision, not
-    // slide past on a green suite.
     render(<PricingPageView />)
     const premium = within(card('Premium'))
 
@@ -138,34 +91,14 @@ describe('PricingPageView forecasting honesty (story 20-1, re-homed in 20-4, upd
   it('states the reload claim exactly once and never overpromises side-by-side', () => {
     render(<PricingPageView />)
 
-    // The Premium card states the honest, shipped benefit…
     expect(
       within(card('Premium')).getByText(
         'Advanced forecasting — save, search, and reload what-if scenarios'
       )
     ).toBeInTheDocument()
 
-    // Story 20-1 also asserted the page never says "reloadable", because at the
-    // time saved forecasts genuinely could NOT be reloaded. Story bug-3 shipped
-    // reload, so that negative outlived its premise — it was silently forbidding
-    // accurate copy. It is inverted here rather than deleted (coverage moves, it
-    // does not drop).
-    //
-    // What this count actually buys, stated precisely: it catches the 2 case —
-    // pricing.md re-acquiring the benefit detail story 20-4 de-duped out of it —
-    // page-wide, spanning the cards AND the rendered prose, which is the scope
-    // the retired negative used to provide. It does NOT independently catch the
-    // 0 case: if the card drops "reload", the exact-string getByText above
-    // throws first and this line never executes. (An earlier comment claimed it
-    // was load-bearing "in BOTH directions" — corrected in the 30-2 review.)
     expect(screen.getAllByText(/reload/i)).toHaveLength(1)
 
-    // Side-by-side remains a REAL overpromise and this negative stays: nothing
-    // plots two SAVED forecasts together. The only comparison that ships is
-    // baseline-vs-scenario within a single forecast (projection-chart.tsx).
-    // Matches the hyphenated spelling too — the spaced-only form this replaces
-    // missed "side-by-side", the spelling used everywhere in this repo's own
-    // comments (30-2 review).
     expect(screen.queryByText(/side[\s-]by[\s-]side/i)).not.toBeInTheDocument()
   })
 })
@@ -174,22 +107,16 @@ describe('PricingPageView de-duplication + billing disclaimer (story 20-4)', () 
   it('states each plan/price once — the Free/Premium feature lists are not repeated in the prose', () => {
     render(<PricingPageView />)
 
-    // The scannable comparison lives in the cards; the prose the page renders below
-    // must NOT re-list those same tier features (CONTENT-L). Each appears exactly
-    // once — the card — where before de-dup the prose repeated them (→ length 2).
     expect(
       screen.getByText('Track income, expenses, savings goals, and balances')
     ).toBeInTheDocument()
-    expect(screen.getAllByText(/Track income, expenses/i)).toHaveLength(1) // Free card only, not prose
-    expect(screen.getAllByText(/Everything in Free, plus/i)).toHaveLength(1) // Premium card tagline only
+    expect(screen.getAllByText(/Track income, expenses/i)).toHaveLength(1)
+    expect(screen.getAllByText(/Everything in Free, plus/i)).toHaveLength(1)
   })
 
   it('keeps the balanced disclaimer line with its Paddle Merchant-of-Record + EUR disclosure', () => {
     render(<PricingPageView />)
 
-    // The centered disclaimer <p> survives the layout change; its text (unique to
-    // the disclaimer, distinct from the prose wording) still carries the MoR + EUR
-    // disclosure required by Paddle.
     expect(
       screen.getByText(/Billed\s+securely by Paddle, our Merchant of Record/i)
     ).toBeInTheDocument()
@@ -197,25 +124,7 @@ describe('PricingPageView de-duplication + billing disclaimer (story 20-4)', () 
   })
 })
 
-/**
- * Theming guards (story 31-1, AC-6/AC-7/AC-8).
- *
- * Class-TOKEN membership, never substring. These assert classes only and add no
- * visible text, because this file's `getAllByText(...)` COUNT assertions above
- * are brittle by design and a duplicate label would break them.
- *
- * The page-wide leak sweep is property-paired rather than a flat blocklist:
- * `bg-white` is legitimate on the outlined CTA, which has no semantic token
- * (none exists for buttons) and carries its own `dark:bg-gray-700`. What is a
- * defect is a light-only value with no dark counterpart for the SAME property,
- * so that is what is asserted.
- */
-/**
- * Retired light-only values, grouped by the CSS property they set. Kept in step
- * with the flat `RETIRED_LIGHT_ONLY_TOKENS` list the other three subtree sweeps
- * use — the grouping exists only so the pairing check below knows which `dark:`
- * variant would actually counter a given token.
- */
+/** Classes only: a duplicate text label would break the count assertions above. */
 const RETIRED_BY_PROPERTY = {
   bg: ['bg-white', 'bg-gray-50', 'bg-gray-100'],
   text: [
@@ -229,24 +138,9 @@ const RETIRED_BY_PROPERTY = {
   border: ['border-gray-200', 'border-gray-300'],
 } as const
 
-/**
- * Variant prefixes that still paint a light value. A code review found the first
- * version checked only bare tokens, so a light-only `hover:bg-gray-50` with no
- * `dark:hover:` counterpart passed silently.
- */
 const VARIANT_PREFIXES = ['', 'hover:', 'focus:', 'active:'] as const
 
-/**
- * Every light-only value on the subtree that has no `dark:` counterpart for the
- * SAME property and the SAME variant.
- *
- * Property-paired rather than a flat blocklist because `bg-white` is legitimate
- * on the outlined CTA — no semantic token exists for buttons — and it carries
- * its own `dark:bg-gray-700`. Variant-paired because a code review found that
- * matching `dark:bg-` against a `hover:bg-gray-50` leak was both a false negative
- * (no bare token to match) and, in the reverse direction, a false PASS: any
- * `dark:bg-*` anywhere on the element used to excuse any retired bg on it.
- */
+/** Paired by property and variant: `bg-white` is legitimate on the outlined CTA, which has its own dark fill. */
 function lightOnlyLeaks(root: HTMLElement): string[] {
   const leaks: string[] = []
   for (const element of [root, ...root.querySelectorAll('*')]) {
@@ -283,7 +177,6 @@ describe('PricingPageView theming', () => {
 
     const disclaimer = screen.getByText(/Prices shown in EUR/i)
     expect([...disclaimer.classList]).toContain('text-muted')
-    // The balanced-wrap utility (UX-DR29) composes with the colour token.
     expect([...disclaimer.classList]).toContain('text-balance')
 
     // Anchored structurally, not by text: "Merchant of Record" appears in BOTH
@@ -300,8 +193,6 @@ describe('PricingPageView theming', () => {
     const premium = [...card('Premium').classList]
     expect(premium).toContain('surface')
     expect(premium).not.toContain('bg-white')
-    // Light ranking is unchanged; dark drops to the 400 weight because a
-    // 500-weight accent on a gray-800 card reads hot (`global.css:102-110`).
     expect(premium).toContain('border-blue-500')
     expect(premium).toContain('ring-1')
     expect(premium).toContain('ring-blue-500')
@@ -312,12 +203,8 @@ describe('PricingPageView theming', () => {
     expect(free).toContain('surface')
     expect(free).toContain('border-default')
     expect(free).not.toContain('border-gray-200')
-    // Ring-only differentiation (D4): the Free card must NOT acquire one.
     expect(free).not.toContain('ring-1')
 
-    // D5: the badge straddles the card edge at -top-3, so a solid blue-600 pill
-    // with white text is deliberate — it reads against the card AND the canvas
-    // in both themes. Pinned so a future change is a decision, not a drift.
     const badge = screen.getByText('Recommended')
     expect([...badge.classList]).toContain('bg-blue-600')
     expect([...badge.classList]).toContain('text-white')
@@ -350,11 +237,8 @@ describe('PricingPageView theming', () => {
   })
 
   it('gives the solid CTA a fixed blue-600 fill and the outlined CTA a gray-700 dark fill', () => {
-    // The provider is required since Story 5-19 (AC-5): a `null` session seed
-    // means "could not verify", and the checkout CTA no longer renders on one —
-    // it used to fall through and offer a live checkout to an unverified
-    // (possibly already-paying) visitor. An AUTHORITATIVE signed-out seed is
-    // what the real page always carries here.
+    // A `null` seed means unverified and hides the CTA; the real page carries an authoritative
+    // signed-out seed.
     render(
       <SessionSeedProvider
         seed={{ isAuthenticated: false, userId: null, email: null, subscriptionStatus: null }}
@@ -364,17 +248,10 @@ describe('PricingPageView theming', () => {
     )
 
     const primary = [...screen.getByRole('button', { name: 'Get Premium' }).classList]
-    // The blue-600 fill is held in BOTH themes on purpose (story 115.1 made
-    // `contact-form.tsx`, the one-time blue-500 dark convention, follow suit):
-    // white on blue-500 measures 3.68:1 — below AA's 4.5:1 for normal text — against
-    // 5.17:1 for blue-600. Measured in a real browser during story 31-1 (AC-7).
     expect(primary).toContain('bg-blue-600')
     expect(primary).toContain('hover:bg-blue-700')
     expect(primary).toContain('text-white')
-    // The INVARIANT, not one token: any dark background override reintroduces
-    // the AA failure this fix closed. A code review found `not.toContain(
-    // 'dark:bg-blue-500')` still permitted `dark:bg-blue-400`, `dark:bg-sky-500`
-    // and friends — it guarded one past draft, not the stated rule.
+    // The invariant, not one token: any dark background override reintroduces the AA failure.
     expect(primary.filter((token) => token.startsWith('dark:bg-'))).toEqual([])
     expect(primary.filter((token) => token.startsWith('dark:hover:bg-'))).toEqual([])
 
@@ -382,15 +259,8 @@ describe('PricingPageView theming', () => {
     expect(outlined).toContain('dark:border-gray-600')
     expect(outlined).toContain('dark:text-gray-200')
     expect(outlined).toContain('dark:hover:bg-gray-600')
-    // gray-700, NOT the gray-800 that `FinancialSummaryReport.tsx:230` uses —
-    // that button sits on the page canvas, this one sits ON a `.surface`
-    // (gray-800) card, where gray-800 would make it vanish. Asserted as an exact
-    // single value so any other dark fill fails, not just gray-800.
     expect(outlined.filter((token) => token.startsWith('dark:bg-'))).toEqual(['dark:bg-gray-700'])
 
-    // AC-7: the focus affordance survives on both CTAs, and its ring-offset is
-    // dark-aware — Tailwind's offset defaults to WHITE, which would paint a band
-    // between button and ring on the gray-800 card these sit on.
     for (const tokens of [primary, outlined]) {
       expect(tokens).toContain('focus-visible:ring-2')
       expect(tokens).toContain('focus-visible:ring-blue-500')

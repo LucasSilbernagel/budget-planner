@@ -1,19 +1,4 @@
-/**
- * The forecasting headline figures break only between digit groups (story 88.4,
- * FR142, decision D1).
- *
- * The Scenario Builder's "Forecast Summary" stat cards and the Projections tab's
- * summary cards render their value through `GroupedAmount`. Measured in Chromium
- * under CI's font (story 88.4 Dev Agent Record): with the seed's figures
- * (`$310,100,483.69`, 171 px at 18 px semibold) the four-column grid overran its
- * cards by up to 63 px at 768 and 3 px at 1024.
- *
- * ⚠️ jsdom computes no layout: this pins the WIRING (exact text, one `<wbr>`
- * straight after each digit-flanked group separator), never "it fits".
- *
- * The engine is mocked to a fixed summary so every figure is known in advance;
- * the real currency store renders in symbol mode (USD), the widest rendering.
- */
+// jsdom has no layout: this pins the wiring (a <wbr> after each digit-flanked separator), not that it fits.
 
 import type { ForecastingResult } from '@budget-planner/core'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -56,13 +41,6 @@ vi.mock('../../../lib/chartTheme', () => ({
   useChartColors: () => ({ grid: '#cccccc', axis: '#333333', tooltipText: '#333333' }),
 }))
 
-/**
- * The text runs between `<wbr>`s; a plain string comes back as ONE run.
- *
- * Skips the Projections card's change line ("+$…"), which story 116.1 moved
- * INSIDE the `<dd>` as a block span (a `<dl>` group may hold only `<dt>`/`<dd>`):
- * it is a second figure under the headline one, not part of it.
- */
 function runsOf(el: Element): string[] {
   const out = ['']
   for (const node of Array.from(el.childNodes)) {
@@ -73,7 +51,6 @@ function runsOf(el: Element): string[] {
   return out
 }
 
-/** The `<dd>` a card pairs with its `<dt>` label. */
 function figureOf(label: string): HTMLElement {
   return screen.getByText(label, { selector: 'dt' }).nextElementSibling as HTMLElement
 }
@@ -83,7 +60,6 @@ const EXPECTED: [string, string[]][] = [
   ['Ending Net Worth', ['$310,', '100,', '483.69']],
   ['Total Growth', ['$284,', '532,', '582.89']],
   ['Avg Annual Growth', ['$28,', '453,', '258.29']],
-  // Story 107.1: ending minus the (mocked) one-row baseline, signed.
   ['vs. today', ['+$284,', '532,', '582.89']],
 ]
 
@@ -106,8 +82,6 @@ describe('forecasting headline figures break only between digit groups (story 88
     for (const [label, runs] of EXPECTED) {
       expect(runsOf(figureOf(label)), label).toEqual(runs)
     }
-    // Story 115.2: the card labels read `.text-body`. `.text-muted` on the
-    // blue-100 card was 3.96:1, below AA (tokens, not paint: no Tailwind in jsdom).
     for (const [label] of EXPECTED) {
       const term = screen.getByText(label, { selector: 'dt' })
       expect([...term.classList], label).toContain('text-body')

@@ -1,99 +1,23 @@
-/**
- * Premium Prompt Component
- *
- * Displays an upgrade prompt for users attempting to access premium features.
- * Shows the value proposition and provides a call-to-action to upgrade.
- *
- * Architecture: React Component with Tailwind CSS
- * Usage: Shown when non-premium users try to access premium features
- */
-
 import { Link } from '@tanstack/react-router'
 import React from 'react'
 import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../../lib/premium/benefits'
 import { Modal } from '../ui/Modal'
 
-// ============================================================================
-// Type Definitions
-// ============================================================================
-
-/**
- * Props for PremiumPrompt component
- */
 export interface PremiumPromptProps {
-  /** The premium feature name the user is trying to access */
   featureName?: string
-  /** Custom message to display */
   message?: string
-  /** Whether to show as a dialog/modal */
   asDialog?: boolean
-  /**
-   * Where the upgrade call-to-action links. Defaults to `/login` (the shipped
-   * behavior). Story 7-2 passes `/pricing` from `PremiumFeatureGate` so the
-   * locked-feature CTA leads to the public value/pricing page (DECISION 2).
-   */
   upgradeHref?: string
-  /** Callback when user clicks upgrade */
   onUpgradeClick?: () => void
-  /** Callback when user clicks close/dismiss */
   onClose?: () => void
 }
 
-// ============================================================================
-// Constants
-// ============================================================================
-
 /**
- * This surface's copy for the canonical Premium benefit set.
- *
- * ⚠️ The set itself — which benefits, in what order — lives in
- * `lib/premium/benefits.ts`, so dropping or inventing one here is a **compile
- * error**. This comment previously said "exactly these three, matched across every
- * surface that advertises Premium"; the *matched across every surface* half was
- * aspirational — nothing enforced it, and by story 33.2 three of the four surfaces
- * disagreed. It is now enforced by
- * `components/premium/__tests__/benefit-set-parity.test.tsx`, and the set is FIVE:
- * FR56 / story 33.2 added the financial summary report (FR53) and custom
- * categories with their breakdown (FR54), both shipped in Epic 30 and listed
- * nowhere until then.
- *
- * Still binding: keep to benefits the app actually delivers (Story 13.1); no
- * overpromises and no "coming soon" padding. Dark mode is NOT here — it is a free
- * feature for all users (Story 25.3); ad-freeness is universal, not a perk
- * (Story 25.1).
- *
- * Story 30.2 named the forecasting capability explicitly rather than leaving it at
- * "Scenario Modeling": reload shipped in story bug-3, so saved forecasts can now
- * be reopened in the builder. Never claim a side-by-side comparison of two saved
- * forecasts, which does not exist.
- *
- * These are deliberately TERSE names, not sentences — they sit in a scannable
- * list beside a check glyph, and the list is now five rows in a dialog that must
- * still fit a 320×480 viewport. The `categories` row names the breakdown because
- * the manager and the breakdown share one route and one benefit entry; dropping
- * the words "Category Breakdown" would silently drop half of FR54.
- *
- * ⚠️ ONE DECIDED EXCEPTION to "one feature, one name" (story 95.1, D1, Lucas
- * 2026-10-04): this list says "Downloadable Financial Summary Report", while the
- * Overview `featureName`, the `/settings` tile and the `/financial-summary` gate keep the
- * plain "Financial Summary Report" (`/pricing` words it as a sentence, "Financial
- * summary report — save … as a PDF from your browser"; the nav says "Financial Summary", story 95.2).
- * The exception covers this card in BOTH render modes (the dialog and the inline
- * locked-route card are one component), so on the locked `/financial-summary` card the
- * heading names the plain `featureName` and the list row says "Downloadable …":
- * two wordings in one card, accepted as part of D1. "Downloadable" is true in the browser's sense: `/financial-summary`
- * calls `window.print()` and the file comes from the browser's own "Save as PDF"
- * (see `pricing-page.tsx`); the app generates no file itself. Do not "correct" the
- * wording back, and do not spread it to the other surfaces.
+ * Terse names: the list must fit a 320×480 dialog. "Downloadable" on the report is a
+ * decided exception to one-name-per-feature, for this card only; don't spread or revert it.
  */
 export const PREMIUM_FEATURES: Record<PremiumBenefitId, string> = {
   sync: 'Multi-Device Data Sync',
-  // ⚠️ Situation-named, and DELIBERATELY still a terse name rather than a
-  // sentence (see the docblock above): this row sits beside the `/forecasting`
-  // prompt's own message, which names the same three situations, so the two no
-  // longer disagree about what the tool is for. Kept SHORTER than the wording it
-  // replaced ("… — What-If Scenarios You Can Save & Reload") so the five-row list
-  // cannot grow against the 320×480 fit. Decided 2026-09-21 (`forecast-3` review).
   forecasting: 'Advanced Forecasting — Raises, Rising Bills & One-Off Costs',
   profiles: 'Custom User Profiles',
   report: 'Downloadable Financial Summary Report',
@@ -103,26 +27,6 @@ export const PREMIUM_FEATURES: Record<PremiumBenefitId, string> = {
 const DEFAULT_MESSAGE =
   'This is a premium feature. Please upgrade to access advanced financial tools and insights.'
 
-// ============================================================================
-// Main Component
-// ============================================================================
-
-/**
- * Premium Prompt Component
- *
- * Displays information about premium features and prompts user to upgrade.
- *
- * @param props - Component props
- * @returns JSX Element
- *
- * @example
- * ```tsx
- * <PremiumPrompt featureName="Advanced Forecasting" />
- *
- * // As a dialog
- * <PremiumPrompt asDialog onClose={() => setShowPrompt(false)} />
- * ```
- */
 export function PremiumPrompt({
   featureName,
   message = DEFAULT_MESSAGE,
@@ -132,9 +36,7 @@ export function PremiumPrompt({
   onClose,
 }: PremiumPromptProps): React.ReactElement {
   const handleUpgradeClick = () => {
-    // Navigation to `upgradeHref` is handled natively by the <Link>. This hook
-    // stays so callers can run side effects (e.g. analytics) on upgrade; it must
-    // NOT preventDefault, or the CTA would never navigate.
+    // Navigation is the <Link>'s; this must not preventDefault, or the CTA never navigates.
     onUpgradeClick?.()
   }
 
@@ -149,10 +51,7 @@ export function PremiumPrompt({
         isOpen
         onClose={() => onClose?.()}
         ariaLabel="Go Premium"
-        // `rounded-xl` matches the visible gradient card rendered as this
-        // element's child. This wrapper is fully transparent, so its own radius
-        // is invisible — but story 31.3 makes it the SCROLL container, and a
-        // square clip box would crop the rounded card it contains.
+        // The wrapper is the scroll container, so a square clip box would crop the rounded card.
         className="relative w-full max-w-md rounded-xl"
       >
         <PremiumPromptContent
@@ -177,10 +76,6 @@ export function PremiumPrompt({
   )
 }
 
-// ============================================================================
-// Content Component
-// ============================================================================
-
 interface PremiumPromptContentProps {
   featureName?: string
   message: string
@@ -198,7 +93,6 @@ function PremiumPromptContent({
 }: PremiumPromptContentProps): React.ReactElement {
   return (
     <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-800 rounded-xl shadow-lg border border-blue-200 dark:border-gray-700 p-6 max-w-md mx-auto w-full">
-      {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center">
           <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center mr-3">
@@ -218,7 +112,6 @@ function PremiumPromptContent({
         )}
       </div>
 
-      {/* Message */}
       <div className="mb-4">
         {featureName && (
           <p className="text-gray-700 dark:text-gray-300 mb-2">
@@ -229,10 +122,7 @@ function PremiumPromptContent({
             .
           </p>
         )}
-        {/* `data-testid` so a caller's message can be asserted on its OWN element.
-            Without it the only handle is the whole card, and a page-wide text read
-            sweeps in the benefit list below — which made a `/forecasting` guard
-            satisfiable by copy it was not meant to be reading (`forecast-3` review). */}
+        {/* Own testid so a caller's message is asserted on its own element, not the benefit list. */}
         <p
           data-testid="premium-prompt-message"
           className="text-gray-600 dark:text-gray-400 text-sm"
@@ -241,7 +131,6 @@ function PremiumPromptContent({
         </p>
       </div>
 
-      {/* Features List */}
       <div className="mb-6">
         <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
           What you get:
@@ -259,7 +148,6 @@ function PremiumPromptContent({
         </ul>
       </div>
 
-      {/* CTA Button */}
       <div className="flex flex-col sm:flex-row gap-2">
         <Link
           to={upgradeHref}
@@ -279,19 +167,11 @@ function PremiumPromptContent({
         </button>
       </div>
 
-      {/* Footer */}
       <p className="mt-4 text-xs text-center text-gray-400">All data stored in Germany (EU)</p>
     </div>
   )
 }
 
-// ============================================================================
-// Icon Components
-// ============================================================================
-
-/**
- * Crown Icon - Represents premium features
- */
 function CrownIcon({ className }: { className: string }): React.ReactElement {
   return (
     <svg
@@ -312,9 +192,6 @@ function CrownIcon({ className }: { className: string }): React.ReactElement {
   )
 }
 
-/**
- * Check Icon - For feature list items
- */
 function CheckIcon({ className }: { className: string }): React.ReactElement {
   return (
     <svg
@@ -330,9 +207,6 @@ function CheckIcon({ className }: { className: string }): React.ReactElement {
   )
 }
 
-/**
- * Close Icon - For dialog close button
- */
 function CloseIcon({ className }: { className: string }): React.ReactElement {
   return (
     <svg
@@ -348,9 +222,6 @@ function CloseIcon({ className }: { className: string }): React.ReactElement {
   )
 }
 
-/**
- * Sparkles Icon - For upgrade button
- */
 function SparklesIcon({ className }: { className: string }): React.ReactElement {
   return (
     <svg

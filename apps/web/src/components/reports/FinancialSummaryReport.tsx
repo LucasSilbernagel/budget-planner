@@ -1,48 +1,5 @@
-/**
- * Premium printable financial summary (Story 30.3, FR53).
- *
- * Renders the persisted picture of a user's finances — budget, current net worth
- * and savings — as a plain, print-ready document, and offers a button that hands
- * it to the browser's own print dialog (where "Save as PDF" lives).
- *
- * ## Everything happens in this browser
- *
- * The model is assembled by the pure {@link buildFinancialSummary} from data
- * already in the local stores, and printing is `window.print()`. There is no
- * fetch, no server function, no third-party service, and no asset request — so
- * no financial figure leaves the device to produce this report (NFR1/NFR2). That
- * is a property of the code, not a promise: adding any network call here would
- * break it, and a test asserts `fetch` is never called.
- *
- * ## What this report does NOT contain, and why
- *
- * No retirement outlook and no forward net-worth projection.
- *
- * The retirement outlook is driven entirely by ephemeral component state —
- * `RetirementAccumulationPlanner` holds its assumptions in `useState` with no
- * store and no persistence key — so there is nothing for a report opened from
- * `/settings` to read. Including it would mean inventing assumptions and
- * presenting the output as the user's plan.
- *
- * The forward net-worth projection has no source at all: story 43.3 (FR69)
- * removed the free projection page, and Premium forecasting's projection is a
- * what-if scenario the user types, not a statement about their real position.
- *
- * ⚠️ Both exclusions narrow FR53 DELIBERATELY. This paragraph is the record of
- * that decision — a later reader who finds the report "missing" a projection
- * should read this before adding one back.
- *
- * No charts either: Recharts sizes its SVG from a client-measured container and
- * prints unreliably, and a tabular summary gains nothing from it.
- *
- * ## Rendering is client-side by necessity
- *
- * Every store is `skipHydration: true` and rehydrates on mount via
- * `StoreHydration`, so the server render and the first client paint both see
- * EMPTY stores. This component therefore reads live store state and must be
- * asserted post-hydration; an SSR/HTML smoke would happily pass against an empty
- * document.
- */
+// Assembled from local stores and printed via window.print(): no figure may leave the device.
+// Retirement outlook and net-worth projection are deliberately excluded (no persisted source).
 
 import { denormalizeFromMonthly } from '@budget-planner/core/finance'
 import { useMemo, useState } from 'react'
@@ -61,7 +18,6 @@ import { GroupedAmount } from '../ui/GroupedAmount'
 import { RESPONSIVE_SCROLL_SHADOW_CLASS, RESPONSIVE_WRAPPER_CLASS } from '../ui/ResponsiveTable'
 import { TableScrollRegion } from '../ui/TableScrollRegion'
 
-/** How a frequency reads in the report's own prose. */
 const FREQUENCY_LABELS: Record<string, string> = {
   weekly: 'Weekly',
   biweekly: 'Biweekly',
@@ -69,104 +25,29 @@ const FREQUENCY_LABELS: Record<string, string> = {
   annually: 'Annually',
 }
 
-/**
- * The period the Budget section's DERIVED figures are expressed in (story 56.3,
- * FR84).
- *
- * ⚠️ Both members are also valid core `Frequency` values, and that is
- * load-bearing: it lets `denormalizeFromMonthly` take the period directly, so
- * there is exactly ONE conversion rule with no `monthly`-vs-`annually` branch
- * anywhere in this file (`monthly` is ×1, i.e. the identity). Re-deriving from
- * a row's entered `amount`/`frequency`, or hand-writing `× 12`, would create a
- * second rule — the thing FR84's acceptance criteria explicitly forbid.
- *
- * ⚠️ NOT `OverviewDuration` and NOT the shared `overviewDurationStore`. That
- * store is persisted, defaults to `annually`, and is written by the dashboard
- * and the Income/Expenses pages — wiring it in here would change the report's
- * default view for every existing user and make a toggle on a printed document
- * silently move three other screens. This report is a point-in-time document,
- * so its period is local, ephemeral, and monthly on every visit.
- */
+// Both members are core Frequency values, so denormalizeFromMonthly is the one conversion rule.
+// Deliberately not the persisted overviewDurationStore: the report always opens monthly.
 type BudgetPeriod = 'monthly' | 'annually'
 
-/**
- * Everything that varies with the period, in ONE place.
- *
- * `word` is used by BOTH the derived column header and the three section total
- * labels. Two independent literals are how a header and its totals drift apart
- * — the column saying "Annual" over figures labelled "Monthly" is a wrong
- * document, not a cosmetic bug.
- */
 const BUDGET_PERIOD_LABEL: Record<BudgetPeriod, { option: string; word: string }> = {
   monthly: { option: 'Monthly', word: 'Monthly' },
   annually: { option: 'Annually', word: 'Annual' },
 }
 
-/**
- * Render order for the control's options. Derived from the label record rather
- * than written out a second time — the `overviewDurationStore` lesson: a
- * hand-written `readonly BudgetPeriod[]` happily accepts a SUBSET, so adding a
- * third period to the union alone would type-check, leave every test green and
- * silently omit the new option from the list.
- */
+// Derived from the label record so a new period cannot be silently omitted.
 const BUDGET_PERIODS = Object.keys(BUDGET_PERIOD_LABEL) as readonly BudgetPeriod[]
 
-/**
- * Accessible name for the period control.
- *
- * ⚠️ DO NOT use the words "amounts" or "currency" here. Story 56.1 (UX-DR62)
- * left two guards asserting `document.body.textContent` matches neither
- * `/currency/i` nor `/amounts\b/i`, and they run with this section rendered —
- * so "Show amounts per" turns two passing tests red, and the tempting repair
- * (loosening those regexes) would delete 56.1's guard instead. Phrasing follows
- * the sibling control at `HomePage.tsx:624` ("Show income and expenses per").
- */
+// Must not contain 'amounts' or 'currency': page-wide guards assert neither word is rendered.
 const BUDGET_PERIOD_LABEL_TEXT = 'Show the budget per'
 
 const TABLE_CLASS = 'min-w-full divide-y divide-gray-200 dark:divide-gray-700'
 
-/**
- * The scroll region every report table sits in (story 91.2, FR145).
- *
- * MEASURED under CI's font (`91-2-evidence/`): a four-column table needs ~477 px
- * at 320 even with short names, against a card ~254 px wide, so on a phone a
- * table must scroll INSIDE its own box or the whole page scrolls sideways. This
- * is the app's existing table-region pattern (`IncomePage.tsx`: the wrapper, its
- * self-hiding scroll shadows, and a name; since 93.1 a focus stop only while it
- * scrolls: `TableScrollRegion`), reused rather than
- * copied. Where the table fits, the shadows are almost invisible: a faint band
- * (~247/255, ~10 px) at each edge, the shared pattern's look (also in the
- * `balance-1280-light` baseline; MEASURED, deferred-work INFO).
- *
- * The `print:` resets are GUARDS, not measured necessities: after the name wrap
- * every table fits the paper, and removing both changed nothing for the seed
- * (arm L3, MEASURED). Paper cannot scroll, so a table that is ever wider than
- * the page must not be clipped (`print:overflow-visible`), and the shadow
- * GRADIENTS must not print with "Background graphics" on (`print:bg-none`; the
- * report's print rule in `global.css` forces only `background-color`). `mt-3`
- * lives here, not on the table: inside the scroll box it would sit under the
- * shadow covers.
- */
+// A four-column table is wider than a phone card, so it scrolls in its own region.
+// The print: resets keep wide tables unclipped and the shadow gradients off paper.
 const TABLE_REGION_CLASS = `${RESPONSIVE_WRAPPER_CLASS} ${RESPONSIVE_SCROLL_SHADOW_CLASS} mt-3 print:overflow-visible print:bg-none`
 
-/**
- * A row's free-text name may break anywhere (story 91.2, FR145).
- *
- * `break-word` would not do: it does not lower the cell's min-content, and an
- * auto-layout table sizes to the longest unbroken run (MEASURED: a 138-character
- * name made four tables ~1490 px wide). Deliberately NOT screen-only: on `main`
- * the printed PDF lost every figure column of those tables past the paper edge
- * (MEASURED, `91-2-evidence/`). Figures sit in their own cells and never get it.
- *
- * ⚠️ `max-sm:min-w-[8rem]` is the other half, and phone-only. `anywhere` drops
- * EVERY name's min-content to one character, so at 320 the auto-layout table
- * squeezed the Name column to ~45 px and split ordinary names mid-word
- * (`Freel` / `ance`), the long one over 31 lines (MEASURED). The floor keeps
- * names breaking between words; the table scrolls a little more inside its
- * region instead. At ≥ 640 px the column is already wider, and print never
- * matches `max-sm:` (MEASURED: 768/1024/1280 and both PDFs pixel-identical
- * with and without it).
- */
+// `anywhere` (not break-word) lowers min-content so long names cannot widen tables, on screen or paper;
+// max-sm:min-w keeps ordinary names from splitting mid-word on phones.
 const NAME_WRAP_CLASS = '[overflow-wrap:anywhere] max-sm:min-w-[8rem]'
 
 const TH_CLASS = 'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-label'
@@ -176,48 +57,17 @@ const TD_NUMERIC_CLASS = `${TD_CLASS} text-right tabular-nums`
 const SECTION_CLASS = 'surface border-default mt-6 rounded-lg border p-4 sm:p-6'
 const SECTION_HEADING_CLASS = 'text-lg font-semibold text-heading'
 
-/**
- * The print button's appearance, in ONE place (story 56.4).
- *
- * ⚠️ Two buttons render this — above the document and at the end of it — and
- * they are the same control, so they must look the same: same focus ring, same
- * dark-mode variants, same hit area. A second copy of this string would be two
- * things that eventually disagree, and the one further from the eye would be
- * the one left behind. A test asserts the two class attributes are EQUAL, which
- * is a real guard only because this constant is what makes it true.
- */
+// Shared by both print buttons; a test asserts their class attributes are equal.
 const PRINT_BUTTON_CLASS =
   'rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
 
-/**
- * The row shape both print buttons sit in — each adds its own vertical margin.
- *
- * ⚠️ `justify-end` is the load-bearing token (story 56.1: the row once held a
- * disclaimer opposite the button, and `justify-between` on a lone child drifts
- * it to the left edge); `flex` is what makes `justify-*` do anything at all.
- * `flex-wrap` and `gap-3` are INERT while each row holds a single child — they
- * are kept so the two rows stay one shape, and they are NOT what keeps the
- * button usable at 320px. That is the `px-4` page gutter and the button's own
- * intrinsic width.
- */
+// justify-end keeps the lone button right; flex-wrap and gap-3 are inert but keep both rows one shape.
 const PRINT_ROW_CLASS = 'flex flex-wrap items-center justify-end gap-3'
 
-/**
- * A whole-percent rendering, or an em-dash when there is nothing to measure
- * against. Never renders `NaN%` — the model guarantees `null` in that case
- * rather than a division result.
- */
 function formatPercent(percent: number | null): string {
   return percent === null ? '—' : `${Math.round(percent)}%`
 }
 
-/**
- * Rows plus their normalized column, shared by the income and expense tables.
- *
- * The model stores every row's figure MONTHLY-canonical (`monthlyCents`); this
- * component re-expresses that one column at `period` (story 56.3). The entered
- * `Amount` and `Frequency` columns state what the user typed and never move.
- */
 function CashflowTable({
   caption,
   rows,
@@ -252,57 +102,16 @@ function CashflowTable({
         <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
           {rows.map((row) => (
             <tr key={row.id}>
-              {/* Story 56.2 (UX-DR63): `text-left` is EXPLICIT here, and at the
-                other two row-header sites in this file. (Deliberately worded
-                without the scope attribute literal, so grepping for that
-                attribute counts the three real call sites and nothing else.)
-                An unstyled `<th>`
-                takes the UA stylesheet's `text-align: center`, and nothing in
-                this app resets it — Tailwind's Preflight declares no
-                `text-align` at all (unlike Bootstrap's `th { text-align:
-                inherit }`) and `global.css` has no `th` rule, so these cells
-                rendered centered beneath a left-aligned `TH_CLASS` header.
-                Applied per call site, NOT on the shared `TD_CLASS`:
-                `TD_NUMERIC_CLASS` derives from it, so that would put
-                `text-left` and `text-right` on every figure cell. Those have
-                EQUAL specificity (both single-class), so the winner is decided
-                by Tailwind's own emission order — correct today, and silently
-                dependent on a vendor internal. Sibling precedent:
-                `categories/CategoryBreakdown.tsx:390,411`. */}
+              {/* Explicit text-left: an unstyled <th> takes the UA default centre and Preflight does not reset it.
+                 Per call site, not on TD_CLASS, which TD_NUMERIC_CLASS extends with text-right. */}
               <th scope="row" className={`${TD_CLASS} font-normal text-left ${NAME_WRAP_CLASS}`}>
                 {row.name}
               </th>
-              {/* ⚠️ These two state what the user ENTERED, at the cadence they
-                entered it. They are inert under the period control — only the
-                derived column beside them moves (story 56.3). */}
+              {/* What the user entered: unaffected by the period control. */}
               <td className={TD_NUMERIC_CLASS}>{format(row.amountCents)}</td>
               <td className={TD_CLASS}>{FREQUENCY_LABELS[row.frequency] ?? row.frequency}</td>
-              {/* ⚠️ When the selected period IS the row's own entered cadence,
-                print what the user typed — do not round-trip it through the
-                monthly canonical figure.
-
-                `monthlyCents` is a ROUNDED intermediate, so the round trip is
-                lossy whenever the entered cents are not divisible by 12:
-                100.00/Annually normalizes to 833c and denormalizes back to
-                99.96, and the row would then read "100.00 | Annually | 99.96"
-                — the same figure, twice, four cents apart, on a page the user
-                prints and files. 1,000.01 drifts by five. (1,200.00 is exact,
-                which is why a fixture of round numbers hides this entirely.)
-
-                Story 56.3 originally forbade this branch, reasoning there must
-                be exactly ONE conversion rule. AMENDED at code review
-                (2026-09-17, Lucas): correctness wins over rule-count. This is
-                not a second conversion — it is the ABSENCE of a conversion in
-                the one case where converting can only lose information.
-
-                ⚠️ CONSEQUENCE, accepted deliberately: the derived column no
-                longer necessarily sums to the section total, which still comes
-                from the model's monthly-canonical figures (×12). For an
-                annually-entered row the column can differ from the total by a
-                few cents. Preferred to the alternative, because a row
-                contradicting its OWN entered amount is checkable at a glance
-                by the person who typed it, while a few cents across a column
-                is not. See the guard test naming both figures. */}
+              {/* At the row's own cadence print what was typed: round-tripping the rounded monthly cents is lossy
+                 (100.00/yr gives 99.96). Accepted cost: the column may differ from the total by a few cents. */}
               <td className={TD_NUMERIC_CLASS}>
                 {format(
                   period === row.frequency
@@ -318,19 +127,6 @@ function CashflowTable({
   )
 }
 
-/**
- * A label/value line used for each section's totals. Rendered as a `<dt>`/`<dd>`
- * pair inside the section's `<dl>` — these genuinely are term/definition pairs,
- * which also makes each total addressable on its own rather than being one of
- * several identical amounts on the page (a single monthly row's amount equals
- * its normalized value equals the section total, so a page-wide text query for
- * the figure is inherently ambiguous).
- *
- * The value renders as a `GroupedAmount` (story 88.4, FR142, D2), so a money
- * total that runs out of room breaks after a group separator, never inside a
- * group. The other values here (`formatPercent`'s whole `25%`, the `—` dash)
- * contain no separator and render unchanged.
- */
 function TotalRow({
   label,
   value,
@@ -341,10 +137,7 @@ function TotalRow({
   emphasis?: boolean
 }): React.ReactElement {
   return (
-    // The label gives up width first and the value stays right-aligned once it
-    // wraps (D7, as `OutputRow` in RetirementAccumulationPlanner): with
-    // `GroupedAmount` the value can shrink too, so without this a total wrapped
-    // before its label did and its continuation line sat left (88.4 review).
+    // The label gives up width first so a wrapped value stays right-aligned.
     <div className="border-default flex items-baseline justify-between gap-4 border-t py-2">
       <dt
         className={
@@ -368,20 +161,13 @@ function TotalRow({
   )
 }
 
-/**
- * Copy for a section with no readable rows. ⚠️ It must distinguish "you have not
- * added anything" from "what you added could not be read" — the two states looked
- * identical before, so a section whose rows were all corrupt claimed nothing had
- * been added while the disclosure directly beneath it said N entries were
- * dropped. Two lines contradicting each other on the same page.
- */
+// Must distinguish 'nothing added' from 'nothing readable', or it contradicts the disclosure below.
 function emptySectionCopy(unreadableCount: number, nothingAdded: string): string {
   return unreadableCount > 0
     ? 'None of the entries saved for this section could be read, so it has no figures to show.'
     : nothingAdded
 }
 
-/** Disclosure shown when rows had to be excluded because they were unreadable. */
 function UnreadableNote({ count }: { count: number }): React.ReactElement | null {
   if (count === 0) {
     return null
@@ -396,16 +182,7 @@ function UnreadableNote({ count }: { count: number }): React.ReactElement | null
 }
 
 export interface FinancialSummaryReportProps {
-  /**
-   * Overrides the report date. Supplied by tests so both the model and the
-   * rendered "Generated <date>" stamp are deterministic; production passes
-   * nothing and the report stamps today.
-   *
-   * Story 56.1 removed the currency note that used to share this line, but the
-   * date itself is retained deliberately — see the UX-DR62 amendment: a printed
-   * summary with no date cannot be distinguished from an older printout of the
-   * same figures.
-   */
+  // Injected by tests for determinism; production stamps today.
   generatedAt?: Date
 }
 
@@ -418,17 +195,10 @@ export function FinancialSummaryReport({
   const savings = useSavingsGoals()
   const format = useFormattedAmount()
 
-  // Story 56.3 (FR84). Local and ephemeral BY DESIGN: the report opens on
-  // `monthly` every visit, so the default view is unchanged for every existing
-  // user and re-selecting annual is a one-click action each time. See
-  // `BudgetPeriod` for why this is not the shared, persisted duration store.
   const [budgetPeriod, setBudgetPeriod] = useState<BudgetPeriod>('monthly')
   const periodWord = BUDGET_PERIOD_LABEL[budgetPeriod].word
 
-  // ⚠️ `budgetPeriod` is deliberately NOT a dependency. The model stays
-  // monthly-canonical and the period is applied at render; adding it here would
-  // rebuild the whole document — and re-run every corrupt-row partition — on a
-  // display toggle, for nothing.
+  // budgetPeriod is deliberately not a dependency: the period applies at render, not to the model.
   const model: FinancialSummaryReportModel = useMemo(
     () =>
       buildFinancialSummary({
@@ -442,21 +212,9 @@ export function FinancialSummaryReport({
   )
 
   return (
-    // `w-full` is load-bearing (story 91.2, MEASURED): this column is a direct
-    // child of the root's `flex-col`, and its auto side margins switch off
-    // stretching, so without it the column takes fit-content width, never
-    // narrower than its widest table (543 px at a 320 px window with short
-    // names). `max-w-3xl` still caps it and `mx-auto` still centres it.
+    // w-full is load-bearing: auto margins switch off flex stretching, so the column would size to its widest table.
     <main className="mx-auto w-full max-w-3xl px-4 py-10">
-      {/* `data-print-hide`: the control that triggers the print must not appear
-          on the printed page itself. */}
-      {/* Story 56.1 (UX-DR61): `justify-end`, not `justify-between`. The row
-          once held a privacy disclaimer on the left and the button on the
-          right; with the disclaimer gone, `justify-between` would drift the
-          lone button to the left edge. `flex-wrap` and `gap-3` are inert with a
-          single child and are kept because story 56.4's second print button
-          shares this row SHAPE — it did not land in this row. It has its own,
-          at the end of the document. */}
+      {/* data-print-hide: the print control must not appear on the printed page. */}
       <div data-print-hide className={`mb-6 ${PRINT_ROW_CLASS}`}>
         <button type="button" onClick={() => window.print()} className={PRINT_BUTTON_CLASS}>
           Print / Save as PDF
@@ -468,22 +226,11 @@ export function FinancialSummaryReport({
           <h1 id="report-heading" className="text-2xl font-bold text-heading">
             Financial Summary
           </h1>
-          {/* Story 56.1 / UX-DR62 as AMENDED (Lucas, 2026-09-17): the currency
-              note that shared this line is gone, but the date stays. This is a
-              document people print and file — without a date, two printouts
-              months apart are indistinguishable. It sits INSIDE the <article>
-              so it prints. */}
+          {/* Inside the article so the date prints; filed printouts need it. */}
           <p className="mt-1 text-sm text-muted">Generated {model.generatedAtISO}</p>
         </header>
 
-        {/* ⚠️ "Nothing to report" means nothing was STORED — never merely that
-            nothing could be READ. Each section's `isEmpty` counts readable rows
-            only, so a user whose every row is corrupt used to be told they had no
-            data and should add some, while the disclosure that N entries were
-            dropped lived inside the branch below and never mounted. Gating on the
-            unreadable count as well keeps the two states distinguishable, which
-            matters most for the user who has the most to lose. (Code review
-            2026-08-09.) */}
+        {/* Gate on unreadable rows too: 'nothing to report' must mean nothing stored, not nothing readable. */}
         {model.isEmpty && model.totalUnreadableCount === 0 ? (
           <p className="mt-6 text-body">
             There is nothing to report yet. Add your income, expenses, balances or savings goals and
@@ -503,18 +250,8 @@ export function FinancialSummaryReport({
                 <h2 id="report-budget-heading" className={SECTION_HEADING_CLASS}>
                   Budget
                 </h2>
-                {/* Story 56.3 (FR84). Rendered only when there ARE figures to
-                    re-express — a period control over "No income or expenses
-                    have been added" is an affordance that does nothing.
-
-                    `data-print-hide`: the control is a screen-only reading aid,
-                    exactly like the print button. It sits INSIDE the <article>,
-                    so unlike that button the section it governs still prints,
-                    showing whichever figures were selected on screen.
-
-                    Shape copied from the sibling duration selector at
-                    `HomePage.tsx:621-635` rather than inventing a control type.
-                    ⚠️ Read `BUDGET_PERIOD_LABEL_TEXT` before renaming this. */}
+                {/* Screen-only reading aid inside the article: the section still prints the selected period.
+                   See BUDGET_PERIOD_LABEL_TEXT before renaming. */}
                 {!model.budget.isEmpty && (
                   <div data-print-hide>
                     <label className="flex items-center gap-1 text-sm text-label">
@@ -544,22 +281,7 @@ export function FinancialSummaryReport({
                 </p>
               ) : (
                 <>
-                  {/* ⚠️ PERIOD-AWARE, and it must be. The monthly wording is
-                      byte-identical to what 56.1 left (that story froze this
-                      section's copy), but under Annual it was flatly wrong:
-                      "converted to a monthly figure" printed directly above a
-                      column headed "Annual" — and the control that would
-                      explain the mismatch is `data-print-hide`, so the printed
-                      page offered no cue at all. Found independently by two
-                      review layers, 2026-09-17.
-
-                      The second sentence documents the round-trip fix at the
-                      derived column: a yearly-entered figure is shown as typed,
-                      not re-derived.
-
-                      ⚠️ Neither string may contain "amounts" or "currency" —
-                      see `BUDGET_PERIOD_LABEL_TEXT`. Both 56.1 guards run with
-                      this paragraph rendered. */}
+                  {/* Period-aware because the control is hidden in print; must not contain 'amounts' or 'currency'. */}
                   <p className="mt-1 text-sm text-muted">
                     {budgetPeriod === 'monthly'
                       ? 'Every entry is converted to a monthly figure so the totals are comparable.'
@@ -581,13 +303,7 @@ export function FinancialSummaryReport({
                       period={budgetPeriod}
                     />
                   )}
-                  {/* Story 56.3: only the PERIOD WORD is interpolated. The
-                      three-way status branch is otherwise untouched — the
-                      break-even case in particular is a boundary the model
-                      derives deliberately (core's `isSurplus` reports a deficit
-                      at exactly zero), and a rewrite here would quietly lose
-                      it. `periodWord` is shared with the column header above,
-                      so the two cannot disagree. */}
+                  {/* Break-even is deliberately reported as a deficit (core's isSurplus). */}
                   <dl className="mt-4">
                     <TotalRow
                       label={`${periodWord} income`}
@@ -654,17 +370,11 @@ export function FinancialSummaryReport({
                       label="Total investments"
                       value={format(model.netWorth.totalInvestmentsCents)}
                     />
-                    {/* The savings total contributes to net worth (story 32.2), so
-                        it is printed here as well as in its own section — otherwise
-                        the FOUR lines above the total would not add up to it on a
-                        page the user keeps. The individual goals stay below. */}
+                    {/* Printed here too so the lines above the total add up to it. */}
                     <TotalRow
                       label="Total savings"
                       value={format(model.netWorth.totalSavingsCents)}
                     />
-                    {/* Story 43.4 (FR70). Assets sit on the owned side, printed
-                        between savings and debts so the column reads
-                        assets-then-liabilities. */}
                     <TotalRow
                       label="Total assets"
                       value={format(model.netWorth.totalAssetsCents)}
@@ -675,10 +385,7 @@ export function FinancialSummaryReport({
                 </>
               )}
               <UnreadableNote count={model.netWorth.unreadableCount} />
-              {/* Savings rows are counted in their own section, but if any were
-                  excluded this figure is missing money and must say so — otherwise
-                  the net worth reads as complete while the Savings section below
-                  discloses that entries were dropped (code review 32.2). */}
+              {/* If savings rows were excluded this figure is missing money and must say so. */}
               {model.netWorth.excludedSavingsCount > 0 && (
                 <p className="mt-3 text-sm text-muted">
                   {model.netWorth.excludedSavingsCount === 1
@@ -728,8 +435,7 @@ export function FinancialSummaryReport({
                       <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                         {model.savings.goals.map((goal) => (
                           <tr key={goal.id}>
-                            {/* `text-left`: see the note at `CashflowTable`'s
-                              row header — same UA default, same fix. */}
+                            {/* text-left: same UA-default fix as CashflowTable's row header. */}
                             <th
                               scope="row"
                               className={`${TD_CLASS} font-normal text-left ${NAME_WRAP_CLASS}`}
@@ -771,10 +477,7 @@ export function FinancialSummaryReport({
                 </>
               )}
               <UnreadableNote count={model.savings.unreadableCount} />
-              {/* A row kept for its balance but stripped of a corrupt target renders
-                  "—" for target and progress — visually identical to a genuine
-                  no-target account. Disclose it so the two are distinguishable
-                  (story 32.2 code review). */}
+              {/* Disclose a stripped corrupt target, or it looks like a genuine no-target account. */}
               {model.savings.unreadableTargetCount > 0 && (
                 <p className="mt-3 text-sm text-muted">
                   {model.savings.unreadableTargetCount === 1
@@ -784,26 +487,8 @@ export function FinancialSummaryReport({
               )}
             </section>
 
-            {/* Story 56.4 (FR83). The same action as the button above the
-                document, repeated where the reading ends — someone who has
-                just read to the bottom of the summary should not have to
-                scroll back to the top to print it.
-
-                ⚠️ This one sits INSIDE the <article>, unlike the top button,
-                so `data-print-hide` is the ONLY thing keeping it off paper.
-                That is sound and already precedented: the rule in
-                `global.css` is global within `@media print`, and 56.3's
-                period control depends on exactly it. The top button's own
-                test still asserts it lies outside this subtree — that
-                invariant is now stated per button rather than for all of
-                them, and a guard below pins this half.
-
-                ⚠️ Deliberately inside this branch, not beside the
-                `</article>`. On the "There is nothing to report yet"
-                document there is nothing to scroll past, so a second button
-                would sit a few centimetres below the first; gating here also
-                avoids restating the emptiness condition and letting the two
-                drift apart. */}
+            {/* Inside the article, so data-print-hide alone keeps it off paper; inside this branch so the
+               empty document does not get a second button. */}
             <div data-print-hide className={`mt-6 ${PRINT_ROW_CLASS}`}>
               <button type="button" onClick={() => window.print()} className={PRINT_BUTTON_CLASS}>
                 Print / Save as PDF
@@ -816,7 +501,6 @@ export function FinancialSummaryReport({
   )
 }
 
-/** Balance rows for the net-worth section. Declared after its only consumer. */
 function BalanceTable({
   caption,
   rows,
@@ -843,8 +527,7 @@ function BalanceTable({
         <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
           {rows.map((row) => (
             <tr key={row.id}>
-              {/* `text-left`: see the note at `CashflowTable`'s row header —
-                same UA default, same fix. */}
+              {/* text-left: same UA-default fix as CashflowTable's row header. */}
               <th scope="row" className={`${TD_CLASS} font-normal text-left ${NAME_WRAP_CLASS}`}>
                 {row.name}
               </th>

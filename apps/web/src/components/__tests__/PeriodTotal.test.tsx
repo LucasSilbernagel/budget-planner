@@ -1,17 +1,3 @@
-/**
- * Income & Expenses headline-total tests (story 32.1, FR58).
- *
- * These are the page-level half of the FR58 fix: the store returns a
- * monthly-normalized figure, and these tests prove the PAGE re-expresses it at
- * the shared duration, labels the period, and agrees with the Overview.
- *
- * ⚠️ Every fixture is MIXED-FREQUENCY. At a single frequency the raw sum and the
- * normalized sum are equal, so a single-frequency fixture cannot tell a fixed
- * page from the broken one. Amounts are asserted as currency-less grouped
- * decimals because `vitest.setup.ts` pins `{ mode: 'none', currency: 'NONE' }`
- * — the product default is `$`/USD, which is what the e2e specs assert.
- */
-
 import { act, fireEvent, renderWithProviders, screen, within } from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useExpenseStore } from '../../stores/expenseStore'
@@ -27,12 +13,6 @@ const base = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 }
 
-/**
- * The epic's example: $200 weekly + $1,500 monthly + $600 annually.
- *   raw sum            = 230000c  (what the defect displayed)
- *   normalized monthly = 241667c  (86667 + 150000 + 5000)
- * Denormalized: weekly 55769 · biweekly 111539 · monthly 241667 · annually 2900004
- */
 const MIXED_INCOME = [
   {
     id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -57,12 +37,6 @@ const MIXED_INCOME = [
   },
 ]
 
-/**
- * $50 weekly + $900 monthly + $1,200 annually.
- *   raw sum            = 215000c
- *   normalized monthly = 121667c  (21667 + 90000 + 10000)
- * Denormalized: weekly 28077 · biweekly 56154 · monthly 121667 · annually 1460004
- */
 const MIXED_EXPENSES = [
   {
     id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
@@ -87,8 +61,6 @@ const MIXED_EXPENSES = [
   },
 ]
 
-/** Period word inside each duration's label, so the zero-state loop asserts the
- *  label actually CHANGED rather than matching any period with a wildcard. */
 const PERIOD_WORD: Record<'weekly' | 'biweekly' | 'monthly' | 'annually', string> = {
   weekly: 'week',
   biweekly: '2 weeks',
@@ -99,7 +71,6 @@ const PERIOD_WORD: Record<'weekly' | 'biweekly' | 'monthly' | 'annually', string
 const incomeSelector = () => screen.getByRole('combobox', { name: /show income per/i })
 const expenseSelector = () => screen.getByRole('combobox', { name: /show expenses per/i })
 
-/** The total card: the heading's parent, which also holds the amount. */
 const totalCard = (labelPattern: RegExp): HTMLElement =>
   screen.getByRole('heading', { name: labelPattern }).parentElement as HTMLElement
 
@@ -129,7 +100,6 @@ describe('IncomePage — Total Income is frequency-correct and period-labelled (
     renderWithProviders(<IncomePage />)
 
     const card = totalCard(/^Total Income \(per month\)$/)
-    // Normalized monthly = 241667c. The raw sum would render "2,300.00".
     expect(within(card).getByText('2,416.67')).toBeInTheDocument()
     expect(within(card).queryByText('2,300.00')).not.toBeInTheDocument()
   })
@@ -138,17 +108,14 @@ describe('IncomePage — Total Income is frequency-correct and period-labelled (
     useIncomeStore.setState({ incomeSources: MIXED_INCOME })
     renderWithProviders(<IncomePage />)
 
-    // Annually is the default: 241667 × 12 = 2900004c.
     expect(within(totalCard(/per year/)).getByText('29,000.04')).toBeInTheDocument()
 
     fireEvent.change(incomeSelector(), { target: { value: 'monthly' } })
     expect(within(totalCard(/per month/)).getByText('2,416.67')).toBeInTheDocument()
 
-    // round(241667 × 12/52) = 55769
     fireEvent.change(incomeSelector(), { target: { value: 'weekly' } })
     expect(within(totalCard(/per week/)).getByText('557.69')).toBeInTheDocument()
 
-    // round(241667 × 12/26) = 111539
     fireEvent.change(incomeSelector(), { target: { value: 'biweekly' } })
     expect(within(totalCard(/per 2 weeks/)).getByText('1,115.39')).toBeInTheDocument()
   })
@@ -166,14 +133,7 @@ describe('IncomePage — Total Income is frequency-correct and period-labelled (
     ])
   })
 
-  /**
-   * ⚠️ Scope note (code review 32.1): zero denormalizes to zero at every duration,
-   * so this can only prove "no NaN / no divide-by-zero at any of the four", NOT
-   * that the denormalizer works — the four-duration cases in the tests above do
-   * that. The `act()` wrapper matters: a bare `setState` on a mounted component
-   * leaves the DOM stale, so the later iterations would assert against the first
-   * render and pass for the wrong reason.
-   */
+  // act() matters: a bare setState on a mounted component leaves the DOM stale.
   it('renders a zero total with no NaN at each of the four durations', () => {
     renderWithProviders(<IncomePage />)
 
@@ -205,12 +165,6 @@ describe('IncomePage — Total Income is frequency-correct and period-labelled (
     ).not.toBeInTheDocument()
   })
 
-  /**
-   * ⚠️ Code review 32.1: the original version of the test above was titled
-   * "single-frequency data" but seeded the MONTHLY row — the one frequency where
-   * raw and normalized coincide by identity. A weekly-only user is equally
-   * "single-frequency" and IS converted, so the disclosure must appear.
-   */
   it('DOES disclose for a single-frequency user whose one frequency is not monthly', () => {
     useIncomeStore.setState({ incomeSources: [MIXED_INCOME[0]] })
     renderWithProviders(<IncomePage />)
@@ -220,13 +174,6 @@ describe('IncomePage — Total Income is frequency-correct and period-labelled (
     ).toBeInTheDocument()
   })
 
-  /**
-   * ⚠️ The false-negative the equality proxy used to have. $330 weekly + $1,200
-   * annually normalizes to EXACTLY the raw sum:
-   *   round(33000 × 52/12) = 143000, + round(120000/12) = 10000  -> 153000c
-   *   raw                  = 33000 + 120000                      -> 153000c
-   * Both rows were genuinely converted, so the explanation must still render.
-   */
   it('DOES disclose when conversion lands coincidentally on the raw sum', () => {
     useIncomeStore.setState({
       incomeSources: [
@@ -263,7 +210,6 @@ describe('ExpensesPage — Total Expenses is frequency-correct and period-labell
     renderWithProviders(<ExpensesPage />)
 
     const card = totalCard(/^Total Expenses \(per month\)$/)
-    // Normalized monthly = 121667c. The raw sum would render "2,150.00".
     expect(within(card).getByText('1,216.67')).toBeInTheDocument()
     expect(within(card).queryByText('2,150.00')).not.toBeInTheDocument()
   })
@@ -283,13 +229,6 @@ describe('ExpensesPage — Total Expenses is frequency-correct and period-labell
     fireEvent.change(expenseSelector(), { target: { value: 'biweekly' } })
     expect(within(totalCard(/per 2 weeks/)).getByText('561.54')).toBeInTheDocument()
   })
-  /**
-   * ⚠️ Code review 32.1: the disclosure and unreadable-row tests originally ran
-   * against IncomePage only. ExpensesPage has its OWN wiring — a separate
-   * `summarizeReadableRows` call and its own props — so a transposed argument
-   * there would have shipped with every test green. "Mirror of the income suite"
-   * was asserted in a comment; these assert it in code.
-   */
   it('renders a zero total with no NaN when there are no rows', () => {
     renderWithProviders(<ExpensesPage />)
 
@@ -332,7 +271,6 @@ describe('ExpensesPage — Total Expenses is frequency-correct and period-labell
     useOverviewDurationStore.setState({ duration: 'monthly' })
     renderWithProviders(<ExpensesPage />)
 
-    // Only the readable $900 monthly row counts.
     expect(within(totalCard(/per month/)).getByText('900.00')).toBeInTheDocument()
     expect(screen.getByTestId('unreadable-rows-note')).toHaveTextContent(
       /1 entry could not be read and is not included/i
@@ -399,8 +337,7 @@ describe('unreadable rows are excluded and disclosed, never silently dropped (st
       ],
     })
 
-    // Routing the total through core exposed `validateFrequency`, which throws.
-    // Without the readable-rows guard this render white-screens the page.
+    // validateFrequency throws; without the readable-rows guard this render white-screens.
     expect(() => renderWithProviders(<IncomePage />)).not.toThrow()
     expect(screen.getByRole('heading', { level: 1, name: 'Income Sources' })).toBeInTheDocument()
   })

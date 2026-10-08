@@ -1,13 +1,3 @@
-/**
- * Account deletion route tests (Story 10-5, AC-1/3)
- *
- * The route is the thin HTTP shell over `deleteUserAccount`:
- *  - success → 200, `{ success: true }`, and the session cookie is cleared
- *    (the client-side half of signing out after erasure);
- *  - unauthenticated → 401 (no cookie clear needed — there is no valid session);
- *  - unexpected error → 500 with a non-leaky message.
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/server/api/account', () => ({

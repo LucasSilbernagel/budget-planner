@@ -1,14 +1,6 @@
 /**
- * Persisted column-sort state for the four financial tables (Story 42.1, FR67).
- *
- * ⚠️ WHY THE CORRUPT-PAYLOAD TESTS SEED AT THE **CURRENT** VERSION.
- *
- * `migrate` runs ONLY on a version mismatch. A corrupt blob written at the
- * current version never reaches it and lands straight in state. A corrupt-payload
- * suite that only seeds `version: 0` therefore exercises `migrate` and proves
- * nothing about the path a real corrupt payload takes — which is `merge`, the
- * one hook that runs on EVERY rehydrate. Every coercion case below is asserted
- * at BOTH versions for exactly that reason.
+ * Corrupt cases seed at both versions: at the current version migrate is skipped and only merge
+ * runs, which is the path a real corrupt payload takes.
  */
 
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -20,7 +12,6 @@ import {
   useTableSortStore,
 } from '../tableSortStore'
 
-/** Seed a raw persisted blob, bypassing the store's own writer. */
 function seed(sorts: unknown, version: number = TABLE_SORT_VERSION): void {
   localStorage.setItem(TABLE_SORT_STORAGE_KEY, JSON.stringify({ state: { sorts }, version }))
 }
@@ -36,17 +27,12 @@ beforeEach(() => {
   // zustand stores are module singletons shared across every test file in the
   // process — reset the in-memory state, not just storage.
   useTableSortStore.setState({ sorts: { ...EMPTY } })
-  // ⚠️ ORDER MATTERS. `setState` WRITES through the persist path, so the line
-  // above re-creates the storage key `localStorage.clear()` just removed. Left
-  // as-is, the "absent key" test below rehydrates a PRESENT, valid, empty blob
-  // and cannot fail against an absent-path defect. Remove it last.
+  // Order matters: setState writes through persist and re-creates the key. Remove it last.
   localStorage.removeItem(TABLE_SORT_STORAGE_KEY)
 })
 
 describe('tableSortStore — defaults and writes', () => {
   it('defaults every table to null (manual order)', () => {
-    // FR67 makes "manual order is the default" a RULE rather than something
-    // true by construction (story 34.2, decision 4). This is that rule.
     expect(useTableSortStore.getState().sorts).toEqual(EMPTY)
   })
 
@@ -107,7 +93,6 @@ describe('tableSortStore — defaults and writes', () => {
     const parsed = JSON.parse(raw as string)
 
     expect(parsed.version).toBe(TABLE_SORT_VERSION)
-    // partialize keeps the payload to just `sorts` — no action functions.
     expect(Object.keys(parsed.state)).toEqual(['sorts'])
     expect(parsed.state.sorts.balance).toEqual({ key: 'type', direction: 'asc' })
   })
@@ -167,8 +152,6 @@ describe('tableSortStore — corrupt, absent and unknown payloads (AC-5)', () =>
     expect(useTableSortStore.getState().sorts).toEqual(EMPTY)
   })
 
-  // ⚠️ Every case runs at BOTH versions. At `TABLE_SORT_VERSION` the blob
-  // bypasses `migrate` entirely — that is the path a real corrupt payload takes.
   const CORRUPT_CASES: ReadonlyArray<readonly [string, unknown]> = [
     ['sorts is a string', 'income'],
     ['sorts is an array', [{ key: 'name', direction: 'asc' }]],
@@ -213,11 +196,7 @@ describe('tableSortStore — corrupt, absent and unknown payloads (AC-5)', () =>
   })
 
   it('an UNKNOWN COLUMN is stored as-is — the hook, not the store, degrades it', async () => {
-    // The store cannot know which columns a table has, still less which of them
-    // a user's tier can see. It validates SHAPE only. `useTableSort`'s
-    // `effectiveState` derivation is what turns an unresolvable key into manual
-    // order, and leaving the raw value here is what lets an entitled user's
-    // Category sort return when entitlement returns (AC-6).
+    // The store validates shape only; keeping the raw key lets the sort return when entitlement does.
     seed({ ...EMPTY, income: { key: 'no-such-column', direction: 'asc' } })
 
     await useTableSortStore.persist.rehydrate()

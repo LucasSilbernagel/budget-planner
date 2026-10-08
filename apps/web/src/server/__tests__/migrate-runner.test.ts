@@ -1,14 +1,3 @@
-/**
- * Tests for the in-cluster migration sequence (Story 5-18, AC-3, AC-4).
- *
- * The runner is the part that must fail LOUDLY: AC-3's release ordering only
- * holds if a non-zero exit from either step becomes a `failed` verdict, and
- * AC-4's preflight guarantee only holds if a refused preflight stops the chain
- * before `drizzle-kit migrate` can touch the schema.
- *
- * `runStep` is injected so the sequencing is tested without spawning anything.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 
 // @ts-expect-error - .mjs module has no type declarations; behaviour is asserted below.
@@ -17,9 +6,7 @@ import { MIGRATION_STEPS, runMigration } from '../migrate-runner.mjs'
 type Step = { name: string; bin: string; args: string[] }
 
 describe('MIGRATION_STEPS', () => {
-  // One step, not two. The preflight -> drizzle-kit ordering moved INSIDE
-  // `migrate-lock-cli.ts` so that both run under one advisory lock — live run
-  // 35042874267-1 had two pods run both steps against production concurrently.
+  // One step: preflight and drizzle-kit run inside the lock CLI under one advisory lock.
   it('runs exactly one step, the locked sequence', () => {
     expect((MIGRATION_STEPS as Step[]).map((step) => step.name)).toEqual(['migrate'])
   })
@@ -45,8 +32,7 @@ describe('runMigration', () => {
     const runStep = vi.fn().mockResolvedValue(0)
 
     await expect(runMigration({ runStep })).resolves.toMatchObject({ state: 'succeeded' })
-    // One step since the preflight -> drizzle-kit ordering moved inside the lock
-    // CLI; derived from MIGRATION_STEPS so this cannot drift out of sync again.
+    // Derived from MIGRATION_STEPS so this cannot drift out of sync.
     expect(runStep).toHaveBeenCalledTimes((MIGRATION_STEPS as Step[]).length)
   })
 
@@ -72,8 +58,8 @@ describe('runMigration', () => {
     })
   })
 
-  // A step that dies on a signal reports a null exit code. Treating that as
-  // "not non-zero" would read an OOM-killed migration as a success.
+  // A step that dies on a signal reports a null exit code; an OOM-killed
+  // migration must not read as a success.
   it('treats a signal-killed step as a failure', async () => {
     const runStep = vi.fn().mockResolvedValue(null)
 

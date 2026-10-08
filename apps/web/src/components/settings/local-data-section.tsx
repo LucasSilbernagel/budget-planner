@@ -2,33 +2,6 @@ import { purgeLocalFinancialData } from '@/lib/account/purge-local-financial-dat
 import { useState } from 'react'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 
-/**
- * "Clear local data" control on the consolidated `/settings` surface (Story 17-2).
- *
- * A one-click, all-users reset of the data Budget Planner stores in THIS browser
- * (income, expenses, savings, balances, profiles, and — for a signed-in user —
- * the durable sync queue). Deliberately distinct from {@link AccountSection}'s
- * "Delete account", which is Premium-only and erases the SERVER-side account:
- *   - it renders for EVERYONE, including free / unauthenticated visitors (AC-1),
- *     so it is NOT auth-gated the way AccountSection self-hides;
- *   - it touches only local storage — no server call — so it is styled as a
- *     neutral utility, not a red danger zone.
- *
- * The purge itself is the shared `purgeLocalFinancialData` (reused from Story
- * 10-5); it resets the Zustand stores synchronously so any subscribed view
- * updates immediately (AC-3). Because `/settings` shows no financial figures of
- * its own, a `role="status"` line confirms the wipe happened.
- *
- * The userId (needed ONLY to clear the paid-tier sync queue when signed in) is
- * resolved at CONFIRM time via a best-effort `fetch('/api/auth/me')` — NOT
- * prefetched into state — so a signed-in user who confirms quickly can never
- * purge with a stale `undefined` and silently leave the queue behind. This
- * mirrors AccountSection's session pattern (plain fetch, no react-query; the
- * client-bundled `checkPremiumAccessServer` hazard it also avoided is gone since
- * story 83.1); a free user (no session) resolves to `undefined`, which skips the
- * queue step.
- */
-
 async function fetchCurrentUserId(): Promise<string | undefined> {
   try {
     const response = await fetch('/api/auth/me')
@@ -38,7 +11,6 @@ async function fetchCurrentUserId(): Promise<string | undefined> {
     const data = (await response.json()) as { user?: { userId?: string } | null }
     return data.user?.userId ?? undefined
   } catch {
-    // Best-effort: no session (or a network hiccup) just means no queue to clear.
     return undefined
   }
 }
@@ -51,11 +23,7 @@ export function LocalDataSection() {
   const handleConfirm = async (): Promise<void> => {
     setIsClearing(true)
     try {
-      // Resolve the userId HERE (not from prefetched state) so a signed-in user
-      // who confirms quickly still clears their sync queue. Free / unauthenticated
-      // users resolve to `undefined`, which skips the queue step. Both the fetch
-      // and the purge are best-effort and never throw, but `finally` guarantees the
-      // dialog can never wedge in the "Clearing…" state even if that ever changes.
+      // Resolve the userId at confirm time, not prefetched, so a quick confirm still clears the sync queue.
       const userId = await fetchCurrentUserId()
       await purgeLocalFinancialData(userId)
       setCleared(true)
@@ -84,9 +52,6 @@ export function LocalDataSection() {
         Removes the income, expenses, savings, balances and profiles stored in this browser. This
         only affects this device and does not delete any synced account.
       </p>
-      {/* Border gray-500 so it reaches 3:1 against the card-coloured fill
-          (story 70.2). Settings' Sign out shares this recipe, and
-          `account-section.test.tsx` pins the two together. */}
       <button
         type="button"
         onClick={() => {
@@ -97,16 +62,12 @@ export function LocalDataSection() {
       >
         Clear local data
       </button>
-      {/* Live region rendered unconditionally (not mounted on success) so screen
-          readers reliably announce the confirmation when its text appears. The
-          margin is applied only when populated so the empty region adds no gap. */}
+      {/* Rendered unconditionally so screen readers announce the text when it appears. */}
       <p role="status" className={statusClassName}>
         {cleared ? 'Your local data has been cleared from this device.' : ''}
       </p>
 
-      {/* No finalFocusRef: the trigger button is not removed on confirm, so
-          Modal's default restores focus to it (a non-focusable <section> would
-          drop focus to <body>). */}
+      {/* No finalFocusRef: the trigger stays mounted, so Modal restores focus to it. */}
       <ConfirmDialog
         isOpen={isConfirmOpen}
         onConfirm={handleConfirm}

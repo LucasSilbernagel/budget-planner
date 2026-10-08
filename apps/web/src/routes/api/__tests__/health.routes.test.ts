@@ -1,14 +1,3 @@
-/**
- * Health & readiness route boundary tests (story 5-5, AC-1)
- *
- * Drives the served GET handlers end-to-end:
- *  - /api/health is liveness — always 200, NO DB dependency (safe for
- *    scale-to-zero / SSR boot, NFR8).
- *  - /api/ready is readiness — 200 when the DB connects, 503 when it does not
- *    (this is the endpoint 5-2's Knative readiness probe is pointed at).
- * Neither leaks internal detail (versions / stack / secrets).
- */
-
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@budget-planner/db', () => ({
@@ -59,7 +48,6 @@ describe('GET /api/ready (readiness)', () => {
     expect(res.status).toBe(503)
     const body = await res.json()
     expect(body.status).toBe('not-ready')
-    // does not leak the underlying error message / stack
     expect(JSON.stringify(body)).not.toContain('boom')
   })
 

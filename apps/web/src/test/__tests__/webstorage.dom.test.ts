@@ -1,13 +1,5 @@
 // @vitest-environment jsdom
-/**
- * Story 82.2: a jsdom test file gets jsdom's OWN storage, on every Node.
- *
- * jsdom's storage belongs to the file's own window, in memory, so no other file
- * (and no other run) can see it. On Node 26 vitest skipped it, because Node
- * already defines `localStorage`, and every file shared Node's SQLite store.
- * Cross-file isolation itself is shown by the story's repeated parallel runs;
- * these tests pin the mechanism.
- */
+// On Node 26 vitest skipped jsdom's own storage because Node already defines `localStorage`.
 import { JSDOM } from 'jsdom'
 import { describe, expect, it } from 'vitest'
 import { installWebStorage } from '../webstorage'
@@ -23,9 +15,8 @@ describe('Web Storage under the jsdom environment', () => {
   })
 
   it('is where a store imported by vitest.setup.ts persists', () => {
-    // `vitest.setup.ts` resets the currency store before every jsdom test, and
-    // the write goes through persist. If the store had bound its storage before
-    // the shim ran, that write would not land here (on Node 26 it throws).
+    // `vitest.setup.ts` resets the currency store through persist; had the store bound its storage
+    // before the shim ran, that write would not land here.
     expect(dom?.window.localStorage.getItem('budget-planner-currency-prefs-v1')).not.toBeNull()
   })
 

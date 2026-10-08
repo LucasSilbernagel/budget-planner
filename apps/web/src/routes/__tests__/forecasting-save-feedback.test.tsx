@@ -10,25 +10,6 @@ import { useProfileStore } from '../../stores/profileStore'
 import { useSavingsStore } from '../../stores/savingsStore'
 import { Route } from '../forecasting'
 
-/**
- * Saving a forecast reports its outcome where the user is looking (story 62.2, FR95).
- *
- * ⚠️⚠️ The defect this pins: `defaultProfileId` was a bare `string | null`, and
- * `null` meant FIVE different things — effect not yet run, zero profiles, session
- * expired, premium denied at the server boundary, or a thrown fetch. The route now
- * carries an explicit four-arm status, and the "create a profile" prompt renders for
- * exactly one of them.
- *
- * ⚠️ The transport (`lib/forecasting/forecast-api.ts`) is mocked with the same
- * `ApiResult` shapes the routes answer. That the page and the REAL routes agree is
- * proven in `forecasting-transport-chain.db.test.tsx` (story 83.1), and the save
- * round trip on the production build in `e2e/forecasting-roundtrip.prod.spec.ts`.
- * The profile ARMS stay unit-tested here: the paid dev e2e server (:5174) has no
- * real session, so `/api/profiles` answers 401 there and every account lands on the
- * `error` arm. (Until story 83.1 it landed there because the page's client-side
- * server import threw `ReferenceError: Buffer is not defined`, story 80.1 Fact R.)
- */
-
 const usePremiumAccess = vi.fn()
 
 vi.mock('../../hooks/usePremiumAccess', () => ({
@@ -51,7 +32,6 @@ const ForecastingPage = Route.options.component as () => React.ReactElement
 const ISO = '2026-09-23T00:00:00.000Z'
 const PROFILE = 'profile-test'
 
-/** The copy under test, pinned so a reword fails loudly instead of silently. */
 const NO_PROFILE_NOTICE =
   'Saving a forecast needs a financial profile, and this account does not have one yet.'
 const PROFILE_ERROR_NOTICE =
@@ -72,7 +52,6 @@ function mockPaidUser(): void {
   usePremiumAccess.mockReturnValue({ status })
 }
 
-/** Enough of the user's own money that the builder computes a result to save. */
 function seedOwnFinances(): void {
   useProfileStore.setState({ activeProfileId: PROFILE })
   useIncomeStore.setState({
@@ -129,28 +108,20 @@ describe('an account with no financial profile is told BEFORE it builds anything
     fetchProfiles.mockResolvedValue({ success: true, data: [aProfile()] })
     renderWithRouter(<ForecastingPage />)
 
-    // Positive control: the page really rendered the builder. Without it a
-    // `queryBy… toBeNull()` pair passes just as happily on a blank render.
+    // Positive control: a queryBy/toBeNull pair also passes on a blank render.
     await findSaveButton()
     await waitFor(() => expect(fetchProfiles).toHaveBeenCalled())
 
     expect(screen.queryByTestId('save-blocked-notice')).toBeNull()
 
-    // ⚠️ Absence alone cannot tell `ready` from `loading` — both render no notice
-    // and an enabled button, so a `ready` branch that never set state would pass
-    // (code review 62.2). Driving a save to success proves the arm RESOLVED and
-    // carried a usable profile id.
+    // Absence alone cannot tell `ready` from `loading`; a successful save proves the arm resolved.
     fireEvent.click(screen.getByRole('button', { name: /save forecast/i }))
     expect(await screen.findByTestId('save-success')).toBeInTheDocument()
     expect(saveForecast).toHaveBeenCalledWith(expect.objectContaining({ profileId: 'prof-1' }))
   })
 
   it('keeps a resolved profile when the SAVED-FORECAST LIST fetch fails', async () => {
-    // ⚠️⚠️ REGRESSION GUARD (code review 62.2). The mount effect's single `try`
-    // wraps both fetches, so an unconditional `{kind:'error'}` in its `catch` let a
-    // failure of the forecast LIST demote an already-resolved `ready` — disabling
-    // Save and claiming the PROFILE check had failed, for a save that worked at
-    // `581c3f8`.
+    // A failing forecast list must not demote an already-resolved `ready` arm.
     fetchProfiles.mockResolvedValue({ success: true, data: [aProfile()] })
     fetchForecasts.mockRejectedValue(new Error('list fetch exploded'))
     renderWithRouter(<ForecastingPage />)
@@ -163,11 +134,7 @@ describe('an account with no financial profile is told BEFORE it builds anything
   })
 
   it('treats a malformed success (no data array) as an error, not as "no profiles"', async () => {
-    // ⚠️⚠️ MEASURED VACUOUS on its first draft (code review 62.2 follow-up). With
-    // the `!Array.isArray` branch disabled, `data.length` THROWS on undefined and
-    // the catch produces the very same notice — so asserting the copy alone passed
-    // against the defect. The `console.error` assertion is what separates
-    // "classified deliberately" from "crashed and was caught": only the catch logs.
+    // Only the catch logs, so console.error separates deliberate classification from a caught crash.
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       fetchProfiles.mockResolvedValue({ success: true })
@@ -187,8 +154,6 @@ describe('an account with no financial profile is told BEFORE it builds anything
   })
 
   it('treats a profile carrying an empty id as an error, not as ready', async () => {
-    // `{kind:'ready', profileId:''}` derives a FALSY `defaultProfileId`, so the arm
-    // claiming success would emit the old one-message-for-everything save error.
     fetchProfiles.mockResolvedValue({ success: true, data: [{ id: '', isDefault: true }] })
     renderWithRouter(<ForecastingPage />)
 
@@ -196,13 +161,8 @@ describe('an account with no financial profile is told BEFORE it builds anything
   })
 
   it('locks the tab strip while a save is in flight, and releases it afterwards', async () => {
-    // ⚠️ Switching tabs CSS-hides the builder, where the failure alert lives —
-    // hidden, it is neither focusable nor announced, so a failed save reached
-    // nobody. The release half matters just as much: a latched lock would leave
-    // the user unable to navigate at all.
-    // ⚠️ A deferred promise holds the save IN FLIGHT so the LOCK itself is
-    // observable. Asserting only the release (as the first draft of this test did)
-    // passes just as happily against a build where the tabs are never locked.
+    // Hidden, the builder's failure alert reaches nobody, so tabs lock during a save. The deferred
+    // promise holds the save in flight so the lock itself is observable.
     let release: (v: { success: boolean; error?: string }) => void = () => {}
     saveForecast.mockReturnValue(
       new Promise<{ success: boolean; error?: string }>((resolve) => {
@@ -219,9 +179,7 @@ describe('an account with no financial profile is told BEFORE it builds anything
 
     await waitFor(() => expect(projectionsTab).toBeDisabled())
 
-    // Story 120.2 (AC 5): neither the keyboard nor a click moves the selection
-    // while the save is in flight. The key goes to the tablist, which owns the
-    // arrow handling (a disabled tab cannot hold focus to receive it).
+    // The key goes to the tablist: a disabled tab cannot hold focus.
     const builderTab = screen.getByRole('tab', { name: /scenario builder/i })
     fireEvent.keyDown(screen.getByRole('tablist'), { key: 'ArrowRight' })
     fireEvent.keyDown(screen.getByRole('tablist'), { key: 'End' })
@@ -236,7 +194,6 @@ describe('an account with no financial profile is told BEFORE it builds anything
   })
 
   it('does not flash the prompt while the profile check is still in flight (AC-2)', async () => {
-    // Never resolves: the component stays on the `loading` arm for the whole test.
     fetchProfiles.mockReturnValue(new Promise(() => {}))
     renderWithRouter(<ForecastingPage />)
 
@@ -254,8 +211,6 @@ describe('an account with no financial profile is told BEFORE it builds anything
   })
 
   it('treats a THROWN profile fetch as an error, not as "you have no profiles" (AC-2)', async () => {
-    // A network failure: `fetch` rejects (until story 83.1 the real-world throw
-    // was the client-side server import's `Buffer is not defined`).
     fetchProfiles.mockRejectedValue(new TypeError('Failed to fetch'))
     renderWithRouter(<ForecastingPage />)
 
@@ -274,8 +229,6 @@ describe('a save reports its outcome where the user is looking (AC-5, AC-7)', ()
     expect(confirmation).toHaveTextContent(/My Financial Forecast/)
     expect(confirmation).toHaveAttribute('role', 'status')
 
-    // Story 120.2 (AC 3): the programmatic switch to My Forecasts moves the tab
-    // selection and the roving tabIndex with it.
     const savedTab = screen.getByRole('tab', { name: /my forecasts/i })
     expect(savedTab).toHaveAttribute('aria-selected', 'true')
     expect(savedTab.tabIndex).toBe(0)
@@ -284,9 +237,7 @@ describe('a save reports its outcome where the user is looking (AC-5, AC-7)', ()
       'false'
     )
 
-    // ⚠️ The builder is CSS-hidden (never unmounted) once the page switches to the
-    // "saved" tab, so a confirmation rendered inside it would still be findable in
-    // jsdom while being invisible to every real user. Assert it is NOT in there.
+    // The builder is CSS-hidden, not unmounted, so jsdom would still find a confirmation inside it.
     const builderPanel = screen
       .getByRole('heading', { name: 'Scenario Builder' })
       .closest('.hidden')

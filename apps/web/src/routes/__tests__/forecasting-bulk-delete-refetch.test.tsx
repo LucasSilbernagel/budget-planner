@@ -6,20 +6,7 @@ import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
 import { useProfileStore } from '../../stores/profileStore'
 import { Route } from '../forecasting'
 
-/**
- * A bulk delete's list reloads can't bring deleted forecasts back (story 119.1,
- * code review).
- *
- * Bulk delete calls the page's delete handler once per id, and each call reloads
- * the list after its own DELETE. Those reloads overlap, and nothing orders their
- * responses. Before the fix, every response replaced the list, so a slow early
- * reload (taken while later DELETEs were still pending) landing last put
- * already-deleted forecasts back on screen. Deleting them again answers
- * not-found, which reloads nothing, so they stayed until a page reload.
- *
- * The transport is mocked with a fake server: each GET answers the server's rows
- * at the moment it was CALLED, after a delay the test controls.
- */
+// Overlapping per-id reloads answer out of order; a slow early one must not resurrect deleted rows.
 
 const usePremiumAccess = vi.fn()
 vi.mock('../../hooks/usePremiumAccess', () => ({
@@ -111,12 +98,10 @@ describe('bulk delete list reloads', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete Selected' }))
     fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' }))
 
-    // All three DELETEs and the two later reloads are done; the slow one isn't.
     await act(() => sleep(150))
     expect(gets).toBe(4)
     expect(rowBoxes()).toHaveLength(0)
 
-    // The slow reload (One already gone, Two and Three not yet) answers now.
     await act(() => sleep(300))
     expect(server).toEqual([])
     expect(rowBoxes()).toHaveLength(0)

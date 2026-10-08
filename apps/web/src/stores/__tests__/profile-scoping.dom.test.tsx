@@ -1,18 +1,6 @@
 /**
- * Profile scoping of the four financial stores (story 54.4, FR79).
- *
- * ⚠️ THE DEFECT. `switchProfile` changes `activeProfileId` and nothing else, and
- * every selector hook returned its store's WHOLE array — so after a switch, the
- * previous profile's rows (and their money, in every total and in net worth)
- * stayed on screen. Every assertion here is about ABSENCE of profile A: a
- * presence-only test passes on the broken code, because both profiles' rows were
- * shown together.
- *
- * ⚠️ Fixture amounts for A and B are DISTINCT and chosen so A+B can never equal
- * B alone, so a total that silently includes A cannot match the B-only figure.
- *
- * Runs in jsdom (`.dom.test.tsx`) for a real `localStorage` — the stores use the
- * zustand persist middleware, whose `setState` goes through the WRITE path.
+ * Assertions are about the ABSENCE of profile A: a presence-only test passes on unscoped code.
+ * A and B amounts are chosen so A+B can never equal B alone.
  */
 
 import { act, renderHook } from '@testing-library/react'
@@ -87,14 +75,8 @@ function balance(
 }
 
 /**
- * Profile A:  income 100,000 · expense 10,000 · savings 1,000 ·
- *             investment 700 · asset 30 · debt 5
- * Profile B:  income 200,000 · expense 20,000 · savings 2,000 ·
- *             investment 800 · asset 40 · debt 6
- * (all monthly, so the normalized totals equal the raw sums)
- *
- * B-only net worth = 800 + 2,000 + 40 − 6 = 2,834
- * A+B net worth    = 1,500 + 3,000 + 70 − 11 = 4,559
+ * All monthly, so normalized totals equal raw sums.
+ * B-only net worth = 800 + 2,000 + 40 − 6 = 2,834; A+B = 4,559.
  */
 function seedTwoProfiles(): void {
   useIncomeStore.setState({
@@ -398,14 +380,8 @@ describe('free tier is unchanged (AC-5)', () => {
 })
 
 /**
- * The remaining row-derived hooks (code review 54.4). Each had scoping added with
- * no absence test, so dropping `scopeToActiveProfile` from any of them was silent
- * green. One fixture per hook where A and B are distinguishable:
- *   - unreadable counts: profile A holds one UNREADABLE row (corrupt frequency),
- *     B holds none — scoped to B the count must be 0, not 1.
- *   - savings targets: A 10,000 target / 1,000 saved; B 4,000 target / 2,000 saved
- *     → B total target 4,000 (A+B 14,000); B progress round(2,000/4,000) = 50%
- *     (A+B round(3,000/14,000) = 21%).
+ * Profile A holds one unreadable row (B none). Savings: B target 4,000 / saved 2,000 → 50%;
+ * A+B 14,000 / 3,000 → 21%.
  */
 describe('every other row-derived hook is scoped too (code review 54.4)', () => {
   function seedDistinguishing(): void {

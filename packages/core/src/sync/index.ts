@@ -1,9 +1,3 @@
-/**
- * Sync Module Index
- *
- * Exports all synchronization-related functionality for the budget planner.
- */
-
 export {
   SynchronizationService,
   createSynchronizationService,
@@ -45,9 +39,6 @@ export type {
   RefusedServerChange,
   ServerChangesRefusedCallback,
   ServerRowVerdict,
-  // Exported from `./types` but omitted from this barrel, so the two consumers
-  // that import them from `@budget-planner/core/sync` — `hooks/useSync.ts` and
-  // `server/functions/sync.ts` — could not resolve them.
   ProcessOperationFn,
   ProcessOperationResult,
 } from './types'

@@ -1,17 +1,3 @@
-/**
- * Automatic Leftover-Allocation Solver Tests (Story 26.2)
- *
- * Mathematical validation tests for the savings leftover-allocation solver.
- * Zero tolerance for errors - NFR3 requirement.
- *
- * Pool formula:
- *   distributablePool = max(0, netPeriodIncome
- *                              − Σ(normalized investment contributions)
- *                              − Σ(manual savings allocations))
- * Even split: each automatic account receives distributablePool / N with
- * deterministic cent-rounding whose sum equals the pool exactly.
- */
-
 import { describe, expect, it } from 'vitest'
 import {
   type AllocationAccount,
@@ -19,17 +5,8 @@ import {
   solveAutomaticAllocations,
 } from '../savingsAllocation.js'
 
-// Convenience builders keep the intent of each case obvious.
-//
-// `manual` / `automatic` build plain rows. Story 72.1 removed `targetAmount` from
-// `AllocationAccount` (the solver no longer reads it), so they carry none.
-//
-// `account` / `manualAccount` build TARGET-LESS rows in the realistic shape
-// `SavingsPage` passes — a wider object carrying `targetAmount: null`. Their
-// return type is deliberately NOT annotated `AllocationAccount`: annotated, the
-// literal would be excess-property-checked and could not carry the null target,
-// and every "a target-less row is allocated like a goal" case below would stop
-// expressing a target-less row at all.
+// Deliberately not annotated `AllocationAccount`, so the literal escapes
+// excess-property checks and can carry `targetAmount: null`.
 const manual = (id: string, monthlyAllocation: number | null): AllocationAccount => ({
   id,
   allocationMode: 'manual',
@@ -39,13 +16,11 @@ const automatic = (id: string): AllocationAccount => ({
   id,
   allocationMode: 'automatic',
 })
-/** A target-less savings account in automatic mode — allocated like a goal (72.1). */
 const account = (id: string) => ({
   id,
   targetAmount: null,
   allocationMode: 'automatic' as const,
 })
-/** A target-less savings account carrying a manual amount — deducted like a goal (72.1). */
 const manualAccount = (id: string, monthlyAllocation: number | null) => ({
   id,
   targetAmount: null,
@@ -267,7 +242,6 @@ describe('solveAutomaticAllocations', () => {
     expect(result.distributablePool).toBe(240000)
     expect(result.automaticAccountCount).toBe(2)
     expect(result.allocations).toEqual({ a: 120000, b: 120000 })
-    // the manual account is not part of the automatic distribution
     expect(result.allocations.m).toBeUndefined()
   })
 
@@ -363,16 +337,6 @@ describe('solveAutomaticAllocations', () => {
   })
 })
 
-/**
- * Story 72.1 (FR114) — a target-less entry takes part in the allocation exactly
- * like a goal. This REVERSES story 64.1 / FR98, which excluded target-less rows
- * from both arms of the solve; this describe once pinned that opposite rule
- * (`'account-balance entries take no part in the allocation'`). Its cases were
- * rewritten in place, not deleted, so the reversal stays visible here.
- *
- * Every expectation is HAND-DERIVED in the comment beside it, never read back
- * from the solver's output.
- */
 describe('target-less entries are allocated like goals (Story 72.1, reverses FR98)', () => {
   const income = [{ amount: 600_000, frequency: 'monthly' as const }]
 
@@ -389,10 +353,7 @@ describe('target-less entries are allocated like goals (Story 72.1, reverses FR9
   })
 
   it('⚠️ THE STORY IN ONE ASSERTION (reverses FR98): adding a target-less entry halves a goal’s share', () => {
-    // 64.1 asserted the OPPOSITE with this same with/without shape: that adding
-    // accounts left the goal's share untouched. Under 72.1 it moves.
-    // pool 500.00 = 50_000c. Without the account the goal takes all 50_000c;
-    // with it, the pool splits over 2 ⇒ 25_000c (250.00) each.
+    // Pool 50_000c: without the account the goal takes it all; with it, 25_000c each.
     const withoutAccount = solveAutomaticAllocations({
       incomeSources: [{ amount: 50_000, frequency: 'monthly' }],
       expenses: [],
@@ -421,9 +382,6 @@ describe('target-less entries are allocated like goals (Story 72.1, reverses FR9
   })
 
   it('a manual GOAL still consumes the deduction — the negative control', () => {
-    // Green on both sides of 72.1: goals were never excluded. It pins only that
-    // the manual deduction still works for a goal, so a change that broke the
-    // manual arm for EVERY row cannot hide behind the account case above.
     // 600_000 − 250_000 = 350_000.
     const pool = calculateDistributablePool({
       incomeSources: income,
@@ -435,10 +393,7 @@ describe('target-less entries are allocated like goals (Story 72.1, reverses FR9
   })
 
   it('a row with NO `targetAmount` key at all is allocated normally', () => {
-    // A RE-INTRODUCTION guard, not a target-specific path: the solver no longer
-    // reads `targetAmount`, so today this is an ordinary automatic row. It goes
-    // red if a target check comes back — 64.1's `isSavingsAccount` exclusion read
-    // an absent key as "account" and dropped exactly this row (RED at 88ecbb1).
+    // Guards against reintroducing a target check: an absent key must not mean "account".
     // 600_000 / 2 = 300_000 each.
     const noTargetKey = { id: 'acct', allocationMode: 'automatic' as const }
     const result = solveAutomaticAllocations({
@@ -451,7 +406,6 @@ describe('target-less entries are allocated like goals (Story 72.1, reverses FR9
   })
 
   it('an all-target-less page SPLITS the pool among its automatic entries (AC-9)', () => {
-    // 64.1 reported this pool with nobody to receive it. Now:
     // 600_000 − 100_000 (c, manual) = 500_000 over a, b ⇒ 250_000 each.
     const result = solveAutomaticAllocations({
       incomeSources: income,
@@ -481,7 +435,7 @@ describe('target-less entries are allocated like goals (Story 72.1, reverses FR9
 
   it('target-less entries that are ALL manual: pool reported, no recipients, no division (AC-9)', () => {
     // 600_000 − 100_000 − 50_000 = 450_000; zero automatic rows ⇒ empty
-    // `allocations` and a count of 0 (the `count === 0` early return).
+    // `allocations` and a count of 0.
     const result = solveAutomaticAllocations({
       incomeSources: income,
       expenses: [],
@@ -494,10 +448,7 @@ describe('target-less entries are allocated like goals (Story 72.1, reverses FR9
   })
 
   it('a zero target is allocated like any other row', () => {
-    // A RE-INTRODUCTION guard, as above: green on both sides of 72.1, and it goes
-    // red if anyone re-adds a falsy target check (`!targetAmount`), which would
-    // drop a zero-target row. 0, null and a real target allocate identically.
-    // Sole automatic row ⇒ the whole 600_000.
+    // 0, null and a real target must allocate identically; sole automatic row ⇒ 600_000.
     const zeroTarget = { id: 'z', targetAmount: 0, allocationMode: 'automatic' as const }
     const result = solveAutomaticAllocations({
       incomeSources: income,
@@ -509,25 +460,11 @@ describe('target-less entries are allocated like goals (Story 72.1, reverses FR9
   })
 })
 
-/**
- * Story 45.1 (FR72) — the distributable pool never deducts the same money twice.
- *
- * Mathematical validation, zero tolerance (NFR3). Every expectation below is
- * HAND-COMPUTED. A test that calls the function under test to build its own
- * expectation passes even when the operator is wrong.
- *
- * ⚠️ THE REGRESSION FENCE IS THE UNFLAGGED ARM, NOT THE FLAGGED ONE. A suite that
- * only ever exercises `recordedAsExpense: true` proves nothing about the user who
- * legitimately has an expense line AND a contribution for DIFFERENT money — and
- * that user's pool must not move by a cent (epic AC-3). Cases 2 and 3 were written
- * before the implementation existed, for exactly that reason.
- */
+// The unflagged arm is the regression fence: a user with an expense and a contribution
+// for different money must see the pool unchanged.
 describe('calculateDistributablePool — recordedAsExpense (Story 45.1, FR72)', () => {
-  // One shared scenario, varied ONLY by the flag, so any difference in the
-  // expected numbers is attributable to the flag and nothing else.
-  //   income  $3,000/mo = 300000c
-  //   expense   $500/mo =  50000c  ("TFSA contribution", the same money)
-  //   TFSA contribution  =  50000c
+  // income 300000c, expense 50000c ("TFSA contribution"), contribution 50000c; only the
+  // flag varies.
   const scenario = (recordedAsExpense?: boolean) => ({
     incomeSources: [{ amount: 300_000, frequency: 'monthly' as const }],
     expenses: [{ amount: 50_000, frequency: 'monthly' as const }],
@@ -539,15 +476,11 @@ describe('calculateDistributablePool — recordedAsExpense (Story 45.1, FR72)', 
     savingsAccounts: [automatic('a')],
   })
 
-  // --- Case 2: unflagged. TODAY'S NUMBER. This must not move. -----------------
   it('case 2 — unflagged: deducts twice, exactly as it does today (300000-50000-50000)', () => {
-    // net = 300000 − 50000 = 250000; contributions = 50000; pool = 200000.
-    // ⚠️ This "wrong-looking" figure is CORRECT for the different-money user and
-    // is the number epic AC-3 forbids this story from changing.
+    // net 250000 − contribution 50000 = 200000: correct for the different-money user.
     expect(calculateDistributablePool(scenario(false))).toBe(200_000)
   })
 
-  // --- Case 3: field absent ≡ false -------------------------------------------
   it('case 3 — flag absent is identical to false', () => {
     expect(calculateDistributablePool(scenario(undefined))).toBe(200_000)
     expect(calculateDistributablePool(scenario(undefined))).toBe(
@@ -555,18 +488,14 @@ describe('calculateDistributablePool — recordedAsExpense (Story 45.1, FR72)', 
     )
   })
 
-  // --- Case 1: flagged. The fix. ----------------------------------------------
   it('case 1 — flagged: the same money is deducted ONCE (the FR72 reproduction)', () => {
-    // net = 300000 − 50000 = 250000; the flagged contribution is NOT subtracted
-    // again, so pool = 250000. Before this story the same fixture returned 200000.
+    // net 250000; the flagged contribution is not subtracted again.
     expect(calculateDistributablePool(scenario(true))).toBe(250_000)
   })
 
-  // --- Case 4: distinct money, both unflagged ---------------------------------
   it('case 4 — distinct money: both are deducted and the pool is unchanged', () => {
-    // A user with a $500 RRSP expense and a SEPARATE $500 TFSA contribution.
-    // Same amounts, different money — indistinguishable from case 2 in the data,
-    // which is exactly why the distinguisher has to be user-supplied.
+    // Same amounts, different money: indistinguishable from case 2, so the flag must be
+    // user-supplied.
     const pool = calculateDistributablePool({
       incomeSources: [{ amount: 300_000, frequency: 'monthly' }],
       expenses: [{ amount: 50_000, frequency: 'monthly' }],
@@ -576,7 +505,6 @@ describe('calculateDistributablePool — recordedAsExpense (Story 45.1, FR72)', 
     expect(pool).toBe(200_000)
   })
 
-  // --- Case 5: manual-only accounts -------------------------------------------
   it('case 5 — manual-only accounts: manual sums subtracted, allocations empty', () => {
     const input = {
       incomeSources: [{ amount: 300_000, frequency: 'monthly' as const }],
@@ -593,7 +521,6 @@ describe('calculateDistributablePool — recordedAsExpense (Story 45.1, FR72)', 
     expect(solved.allocations).toEqual({})
   })
 
-  // --- Case 6: automatic-only, even split with exact cents ---------------------
   it('case 6 — automatic-only: even split with exact cents', () => {
     const input = {
       incomeSources: [{ amount: 300_001, frequency: 'monthly' as const }],
@@ -609,7 +536,6 @@ describe('calculateDistributablePool — recordedAsExpense (Story 45.1, FR72)', 
     expect(solved.allocations).toEqual({ a: 125_001, b: 125_000 })
   })
 
-  // --- Case 7: zero automatic accounts ----------------------------------------
   it('case 7 — zero automatic accounts: pool still reported, allocations empty', () => {
     const solved = solveAutomaticAllocations({
       incomeSources: [{ amount: 300_000, frequency: 'monthly' }],
@@ -622,10 +548,7 @@ describe('calculateDistributablePool — recordedAsExpense (Story 45.1, FR72)', 
     expect(solved.allocations).toEqual({})
   })
 
-  // --- Case 8: pool would go negative -----------------------------------------
   it('case 8 — a flagged row cannot turn a negative pool positive; it clamps at 0', () => {
-    // Expenses exceed income outright. Skipping the flagged contribution reduces
-    // how negative the raw figure is, but the clamp still floors it at zero.
     const input = {
       incomeSources: [{ amount: 100_000, frequency: 'monthly' as const }],
       expenses: [{ amount: 400_000, frequency: 'monthly' as const }],
@@ -640,13 +563,9 @@ describe('calculateDistributablePool — recordedAsExpense (Story 45.1, FR72)', 
     expect(solved.allocations).toEqual({ a: 0 })
   })
 
-  // --- Case 9: THE PRECISION TRAP ---------------------------------------------
   it('case 9 — a flagged row at a weekly cadence excludes its ROUNDED monthly value', () => {
-    // ⚠️ `normalizeToMonthly` rounds PER ITEM with Math.round, and totals sum
-    // already-rounded values. Excluding a row must remove exactly the rounded
-    // value that row contributed — not an unrounded recomputation.
-    //   11538c/wk × 52/12 = 49998.0  → Math.round = 49998
-    //   11537c/wk × 52/12 = 49993.66 → Math.round = 49994
+    // normalizeToMonthly rounds per item: 11538c/wk → 49998, 11537c/wk → 49993.67 → 49994.
+    // Excluding a row must remove exactly its rounded value.
     const weekly = { amount: 11_538, frequency: 'weekly' as const }
     const other = { amount: 11_537, frequency: 'weekly' as const }
 
@@ -670,11 +589,9 @@ describe('calculateDistributablePool — recordedAsExpense (Story 45.1, FR72)', 
     // 300000 − 49994 = 250006
     expect(firstFlagged).toBe(250_006)
 
-    // The difference is EXACTLY the rounded contribution of the flagged row.
     expect(firstFlagged - bothCounted).toBe(49_998)
   })
 
-  // --- Case 10: mixed flagged and unflagged ------------------------------------
   it('case 10 — with one flagged and one unflagged row, only the flagged one is skipped', () => {
     const pool = calculateDistributablePool({
       incomeSources: [{ amount: 300_000, frequency: 'monthly' }],
@@ -689,10 +606,7 @@ describe('calculateDistributablePool — recordedAsExpense (Story 45.1, FR72)', 
     expect(pool).toBe(220_000)
   })
 
-  // --- The skip must be strictly `=== true`, never truthy ----------------------
   it('treats a non-boolean truthy value as NOT flagged (the skip is strictly === true)', () => {
-    // A persisted `"false"` string or a `1` from a hand-edited store must never
-    // silently disable a real deduction. Only a genuine `true` skips.
     const withStringFalse = calculateDistributablePool({
       incomeSources: [{ amount: 300_000, frequency: 'monthly' }],
       expenses: [{ amount: 50_000, frequency: 'monthly' }],
@@ -709,27 +623,12 @@ describe('calculateDistributablePool — recordedAsExpense (Story 45.1, FR72)', 
   })
 })
 
-/**
- * Story 47.1 (FR73) — the SAME flag, now asked as a broader question.
- *
- * 45.1's suite varies one fixture by the flag. That is right for proving the flag
- * is the only variable, and wrong for proving the flag serves BOTH populations:
- * every 45.1 case has an EXPENSE ROW, i.e. it only ever models the user who typed
- * the contribution onto Expenses. The payroll-deducted user has NO expense row —
- * their income figure is simply smaller — and no 45.1 fixture has that shape.
- *
- * ⚠️ These cases add no behaviour. They exist because 47.1 re-words the control to
- * recruit a population the arithmetic already served but the suite never described.
- * If a future change breaks the payroll shape, 45.1's cases would all stay green.
- */
+// Payroll-deducted users have no expense row (income is already take-home); these
+// cases cover that shape.
 describe('calculateDistributablePool — the two populations (Story 47.1, FR73)', () => {
-  // --- Shape A is 45.1's `scenario(true)` above: expense-listed, flagged → 250000.
-
-  // --- Shape B: payroll-deducted. NO expense row; income is already take-home. ---
   it('shape B — payroll-deducted: take-home income, no expense row, flagged → nothing subtracted', () => {
-    // The $500 never reached the user, so it is absent from the $2,500 income they
-    // entered. Subtracting it here would remove money that was never there.
-    //   net = 250000 − 0 = 250000; flagged contribution skipped; pool = 250000.
+    // The $500 never reached take-home income, so it must not be subtracted.
+    // net 250000; flagged skipped; pool 250000.
     expect(
       calculateDistributablePool({
         incomeSources: [{ amount: 250_000, frequency: 'monthly' }],
@@ -743,8 +642,7 @@ describe('calculateDistributablePool — the two populations (Story 47.1, FR73)'
   })
 
   it('shape B — the same rows UNFLAGGED are the defect the wording exists to fix', () => {
-    // Identical data, flag off: 250000 − 50000 = 200000, understating by exactly
-    // the contribution. This is the arm that makes shape B worth asserting.
+    // Flag off: 250000 − 50000 = 200000, understating by the contribution.
     expect(
       calculateDistributablePool({
         incomeSources: [{ amount: 250_000, frequency: 'monthly' }],
@@ -755,13 +653,9 @@ describe('calculateDistributablePool — the two populations (Story 47.1, FR73)'
     ).toBe(200_000)
   })
 
-  // --- Shape C: BOTH at once. Ticking HALVES the error; it does not close it. ---
   it('shape C — payroll-deducted AND also listed on Expenses: ticking is not enough', () => {
-    // Take-home 250000, the same money ALSO typed onto Expenses, contribution flagged.
-    //   net = 250000 − 50000 = 200000; flagged skipped; pool = 200000.
-    // The truthful pool is 250000: the expense line subtracts money that was never
-    // in the take-home figure. ⚠️ This is why the help text tells a both-at-once
-    // user to REMOVE the expense line rather than just tick the box.
+    // net 250000 − 50000 = 200000; the truthful pool is 250000 because the expense line
+    // subtracts money never in take-home.
     const ticked = calculateDistributablePool({
       incomeSources: [{ amount: 250_000, frequency: 'monthly' }],
       expenses: [{ amount: 50_000, frequency: 'monthly' }],
@@ -778,8 +672,7 @@ describe('calculateDistributablePool — the two populations (Story 47.1, FR73)'
     })
     expect(untickedSameRows).toBe(150_000)
 
-    // Ticking recovers exactly half of the 100000 error. The documented fix —
-    // remove the expense line, keep the box ticked — recovers all of it.
+    // Ticking recovers half the 100000 error; removing the expense line recovers all.
     const expenseLineRemoved = calculateDistributablePool({
       incomeSources: [{ amount: 250_000, frequency: 'monthly' }],
       expenses: [],
@@ -787,19 +680,11 @@ describe('calculateDistributablePool — the two populations (Story 47.1, FR73)'
       savingsAccounts: [automatic('a')],
     })
     expect(expenseLineRemoved).toBe(250_000)
-    // ⚠️ No "ticking halves the error" assertion: `ticked` and `untickedSameRows`
-    // are already pinned to literals above, so any such line is arithmetic on
-    // constants and can never independently go red. The halving is a fact about
-    // those literals, documented here, not a test.
   })
 
-  // --- Shape D: the trap. Payroll-deducted, but GROSS income entered. -----------
   it('shape D — gross income entered: ticking OVERSTATES the pool, so the copy must exclude this user', () => {
-    // ⚠️ Documents a known wrong answer, deliberately. If a user enters $3,000
-    // gross and ticks, the $500 is subtracted NOWHERE and the pool is overstated.
-    // Leaving it unticked is correct for them. This is why the help text's payroll
-    // arm is CONJUNCTIVE — it asks whether the entered income is take-home, not
-    // merely whether the contribution comes out of their pay.
+    // A known wrong answer: gross income entered and ticked means the $500 is subtracted
+    // nowhere. Leaving it unticked is correct for them.
     const base = {
       incomeSources: [{ amount: 300_000, frequency: 'monthly' as const }],
       expenses: [],
@@ -817,16 +702,9 @@ describe('calculateDistributablePool — the two populations (Story 47.1, FR73)'
     expect(ticked).toBe(300_000)
   })
 
-  // --- The rounding path, with an INEXACT flagged row (mutation arm M14) --------
   it('excludes the flagged row at its ROUNDED value even when that rounding is inexact', () => {
-    // ⚠️ Case 9 above flags 11538c/wk, whose normalization is EXACT
-    // (11538 × 52/12 = 49998.0), so it cannot distinguish "skip then round" from
-    // "round everything, then subtract an unrounded recomputation". This fixture
-    // flags the INEXACT row instead:
-    //   11537c/wk × 52/12 = 49993.666… → Math.round = 49994  (error +0.333)
-    //   11538c/wk × 52/12 = 49998.0    → Math.round = 49998  (error 0)
-    // Real reducer:  300000 − 49998                       = 250002
-    // Unrounded-recompute mutant: 300000 − (99992 − 49993.666…) = 250001.666…
+    // Flags the inexact row (11537c/wk → 49993.67 → 49994) to separate skip-then-round
+    // (250002) from an unrounded recompute (250001.67).
     const pool = calculateDistributablePool({
       incomeSources: [{ amount: 300_000, frequency: 'monthly' }],
       expenses: [],
@@ -836,19 +714,14 @@ describe('calculateDistributablePool — the two populations (Story 47.1, FR73)'
       ],
       savingsAccounts: [automatic('a')],
     })
-    // ⚠️ Integrality FIRST, then the exact value. Reversed, `Number.isInteger` is
-    // implied by the `toBe` above it and can never fail on its own. The mutant
-    // returns 250001.666…, so this is the assertion that names WHY it is wrong.
+    // Integrality first; reversed, it's implied by the toBe and can never fail alone.
     expect(Number.isInteger(pool)).toBe(true)
     expect(pool).toBe(250_002)
   })
 })
 
-/**
- * Story 45.1 — AC-5: the solver's invariants survive the pool change.
- * ⚠️ Assert Σ allocations against the POOL, never against a hard-coded total: a
- * constant passes when the pool and the split are wrong together.
- */
+// Assert Σ allocations against the pool, never a constant: a constant passes when pool
+// and split are wrong together.
 describe('solveAutomaticAllocations — invariants hold across the 45.1 matrix', () => {
   const cases: Array<{ name: string; input: Parameters<typeof solveAutomaticAllocations>[0] }> = [
     {
@@ -863,11 +736,7 @@ describe('solveAutomaticAllocations — invariants hold across the 45.1 matrix',
       },
     },
     {
-      // ⚠️ 250_001 % 3 === 2, so TWO accounts take an extra cent. The first
-      // draft of this case used 300_002 → a pool of 250_002, which divides by 3
-      // EXACTLY — the fixture was named "indivisible" and was not, so the
-      // largest-remainder path these invariants exist to protect was never
-      // executed and mutation arms M5/M6 left them GREEN. Measured, not assumed.
+      // 250_001 % 3 === 2, so two accounts take an extra cent.
       name: 'flagged, three automatic accounts with an indivisible pool',
       input: {
         incomeSources: [{ amount: 300_001, frequency: 'monthly' }],
@@ -879,9 +748,8 @@ describe('solveAutomaticAllocations — invariants hold across the 45.1 matrix',
       },
     },
     {
-      // 500_001 − 50_000 = 450_001; weekly 30_000 → 130_000; manual 25_000 ⇒
-      // pool 295_001 over 2 automatic accounts, i.e. an odd pool with a leftover
-      // cent. Same correction as above: 500_000 gave an exactly-even 147_500.
+      // 500_001 − 50_000 = 450_001; weekly 30_000 → 130_000; manual 25_000 ⇒ odd pool
+      // 295_001 over 2 accounts.
       name: 'mixed flagged/unflagged with manual and automatic accounts',
       input: {
         incomeSources: [{ amount: 500_001, frequency: 'monthly' }],

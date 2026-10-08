@@ -1,14 +1,3 @@
-/**
- * `cancelActiveSubscriptionsForCustomer` (Story 5-3 review follow-up).
- *
- * This is the ONLY code that cancels a paying customer's Paddle subscription
- * (wired into account erasure) — the 2026-09-15 #3 review flagged it as
- * shipped with zero tests: its sole caller (`account.ts`) mocks the whole
- * module away, and `server/paddle/__tests__/` was otherwise empty.
- *
- * NFR8: no real network call — `fetch` is mocked directly.
- */
-
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { getPaddleConfig, captureError } = vi.hoisted(() => ({
@@ -147,7 +136,6 @@ describe('cancelActiveSubscriptionsForCustomer', () => {
 
     await cancelActiveSubscriptionsForCustomer('ctm_1')
 
-    // Only the one well-formed id should ever reach a cancel call.
     expect(fetchMock).toHaveBeenCalledTimes(2)
     const [cancelUrl] = fetchMock.mock.calls[1] as [string]
     expect(cancelUrl).toBe(`${API_BASE}/subscriptions/sub_valid/cancel`)

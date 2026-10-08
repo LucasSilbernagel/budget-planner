@@ -1,20 +1,5 @@
-/**
- * Text typed into the builder BEFORE hydration survives it.
- *
- * The server-rendered fields are live as soon as they paint, and on a cold load
- * that can be seconds before React takes over (observed during 97.2: a Scenario
- * Name typed in that window was overwritten). Hydration leaves the typed DOM
- * value in place but fires no onChange, so state still holds the server value,
- * and the next re-render writes it back. The store seed (62.1) is such a
- * re-render. (Savings are rows since story 100.1 and investments/debts since
- * story 100.2: none exist before the seed, so there is no money field to type
- * into before hydration on a fresh builder.)
- *
- * RTL's `render()` has no hydration pass, so this needs `renderToString` +
- * `hydrateRoot`, as in `scenario-builder.seeding.dom.test.tsx`. Typing before
- * hydration is simulated by setting `.value` on the server markup with no event,
- * which is exactly what the browser leaves behind when no listener is attached.
- */
+// Hydration keeps a typed DOM value but fires no onChange, so the next re-render writes the server value back.
+// RTL's render() has no hydration pass; typing is simulated by setting `.value` on server markup with no event.
 
 import { screen, within } from '@testing-library/react'
 import { act } from 'react'
@@ -29,7 +14,6 @@ import { useProfileStore } from '../../../stores/profileStore'
 import { useSavingsStore } from '../../../stores/savingsStore'
 import { ScenarioBuilder } from '../scenario-builder'
 
-// Same currency stub as the seeding suite: a displayed amount is `cents / 100`.
 vi.mock('../../../stores/currencyStore', () => ({
   useFormattedAmount: () => (cents: number) => (cents / 100).toFixed(2),
   useCurrencyPreferences: () => ({ mode: 'none', currency: 'NONE', locale: 'en-US' }),
@@ -47,7 +31,6 @@ function clearStores(): void {
   useBalanceStore.setState({ entries: [] })
 }
 
-/** Income, $3,456 of savings and $9,876 of investments: the seed re-renders AND sets both. */
 function fillStores(): void {
   useIncomeStore.setState({
     incomeSources: [
@@ -117,10 +100,6 @@ afterEach(async () => {
   vi.clearAllMocks()
 })
 
-/**
- * Server-render, let `typeBeforeHydration` edit the live markup, fill the stores
- * (as localStorage does on a real load), then hydrate and let the seed land.
- */
 async function hydrateAfterTyping(
   onSave: ReturnType<typeof vi.fn>,
   typeBeforeHydration: (server: ReturnType<typeof within>) => void
@@ -163,7 +142,6 @@ describe('typing before hydration is kept', () => {
       typeRaw(server.getByLabelText('Description'), 'Two weeks away')
     })
 
-    // The seed has landed (positive control), so the re-render has happened.
     expect(screen.getByDisplayValue('Consulting')).toBeInTheDocument()
     expect(screen.getByLabelText('Scenario Name')).toHaveValue('Holiday plan')
     expect(screen.getByLabelText('Description')).toHaveValue('Two weeks away')
@@ -174,17 +152,11 @@ describe('typing before hydration is kept', () => {
   })
 
   it('does NOT adopt money typed before hydration: the server markup has no money field, the seed fills the rows', async () => {
-    // Decided 2026-10-05 (review of this fix): the hydration render parses with
-    // the DEFAULT locale (the currency store is not read yet), so adopting
-    // `1234,56` for a de-DE user would save 100x the amount. Since story 100.2 the
-    // question cannot arise: every money field is a client-seeded row (savings
-    // 100.1, investments/debts 100.2), so the server markup has none to type into.
     const onSave = vi.fn().mockResolvedValue({ success: true })
     await hydrateAfterTyping(onSave, (server) => {
       expect(server.queryByLabelText(/^Balance for /)).toBeNull()
       expect(server.queryByLabelText(/^Contribution for /)).toBeNull()
       expect(server.queryByLabelText('Current Investments')).toBeNull()
-      // Positive control: the server markup really is the builder.
       expect(server.getByLabelText('Scenario Name')).toBeInTheDocument()
     })
 
@@ -198,9 +170,6 @@ describe('typing before hydration is kept', () => {
   })
 
   it('turns browser autofill/form restore off on every money row field once seeded', async () => {
-    // A restored stale figure would otherwise sit in a field. (Story 100.2: the
-    // last server-rendered money field, Current Investments, became client-seeded
-    // rows; the rows carry `autoComplete="off"` themselves.)
     const onSave = vi.fn().mockResolvedValue({ success: true })
     await hydrateAfterTyping(onSave, () => {})
 

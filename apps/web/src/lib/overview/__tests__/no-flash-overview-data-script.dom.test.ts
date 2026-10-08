@@ -1,15 +1,6 @@
 /**
- * Pre-paint bootstrap for the Overview's pending block (story 117.2, FR185).
- *
- * ⚠️ THE STRING IS WHAT SHIPS, SO THE STRING IS WHAT IS TESTED: the real
- * exported constant runs via `new Function` against `localStorage`, as in
- * `no-flash-account-notice-script.dom.test.ts`.
- *
- * ⚠️ The rows are written THROUGH THE REAL STORES (their `persist` middleware
- * writes on `setState`), not hand-built JSON. The bootstrap hard-codes each
- * store's persisted field name (`incomeSources`, `expenses`, `savingsGoals`,
- * `entries`); a store that renames its field or key would turn its case RED
- * here instead of silently shrinking the pending block back to the empty card.
+ * Rows are written through the real stores, so a renamed key or field turns red instead of
+ * silently shrinking the pending block.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -31,7 +22,6 @@ function marked(): string | null {
   return document.documentElement.getAttribute(OVERVIEW_HAS_DATA_ATTRIBUTE)
 }
 
-/** Any object stands in for a row: the bootstrap only counts them. */
 const ROW = { id: 'row-1' }
 
 const WRITERS: [string, () => void][] = [
@@ -76,7 +66,6 @@ describe('NO_FLASH_OVERVIEW_DATA_SCRIPT', () => {
 
   it('leaves <html> unmarked when all four stores are saved but empty', () => {
     emptyAllStores()
-    // Anti-vacuity: the stores really wrote their (empty) state.
     for (const [key] of OVERVIEW_DATA_STORES) expect(localStorage.getItem(key)).not.toBeNull()
     runScript()
     expect(marked()).toBeNull()

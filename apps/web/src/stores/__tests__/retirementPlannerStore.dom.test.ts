@@ -1,15 +1,6 @@
 /**
- * Persisted retirement plan (Story 44.1, FR71).
- *
- * ⚠️ EVERY CORRUPT CASE RUNS AT BOTH VERSIONS. At `RETIREMENT_PLANNER_VERSION`
- * the blob bypasses `migrate` entirely — that is the path a real corrupt payload
- * takes (a truncated write, hand-edited storage, another build). Seeding only at
- * a mismatching version tests the seam and not the guard. Story 42.1 proved this
- * the hard way: deleting `migrate` outright left its store suite fully green.
- *
- * ⚠️ ROUND-TRIP FIXTURES NEVER USE THE DEFAULTS. A test that stores `'35'` and
- * asserts `'35'` cannot tell "restored" from "defaulted" and passes against a
- * store that persists nothing at all.
+ * Corrupt cases run at both versions: at the current version the blob bypasses migrate.
+ * Round-trip fixtures never use the defaults, or restored and defaulted look the same.
  */
 
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -27,10 +18,7 @@ const SAVED_PLAN = {
   lifeExpectancyInput: '88',
   desiredIncomeInput: '55,000.00',
   desiredIncomeTouched: true,
-  // Story 65.2: the adopted "expenses ending before retirement" figure, in
-  // MONTHLY cents. Persisted so it survives the route change that unmounts the
-  // planner — held in component state it re-stranded the field in whichever
-  // basis it was adopted in, a 12x error in the plan's central number.
+  // Persisted so it survives the route change that unmounts the planner.
   adoptedMonthlyCents: 240_000,
   desiredIncomeLocale: 'en-US',
   incomeBasis: 'monthly',
@@ -41,20 +29,13 @@ const SAVED_PLAN = {
 } as const
 
 /**
- * Seed a pre-serialized blob VERBATIM.
- *
- * ⚠️ REQUIRED FOR THE PROTOTYPE-KEY CASES, and the reason is why the first
- * version of those tests was vacuous. In an object LITERAL, `__proto__:` is
- * prototype-setting syntax rather than a key, and `JSON.stringify` serializes
- * own enumerable properties only — so `seed({ __proto__: { ... } })` stores
- * `{"state":{"plan":{}}}` and silently re-runs the empty-object case. Only a raw
- * string survives `JSON.parse` as a real own `"__proto__"` key.
+ * In an object literal `__proto__:` sets the prototype and JSON.stringify drops it; only a raw
+ * string yields a real own `"__proto__"` key.
  */
 function seedRaw(json: string): void {
   localStorage.setItem(RETIREMENT_PLANNER_STORAGE_KEY, json)
 }
 
-/** Seed a raw persisted blob, bypassing the store's own writer. */
 function seed(plan: unknown, version: number = RETIREMENT_PLANNER_VERSION): void {
   localStorage.setItem(RETIREMENT_PLANNER_STORAGE_KEY, JSON.stringify({ state: { plan }, version }))
 }
@@ -64,11 +45,7 @@ beforeEach(() => {
   // zustand stores are module singletons shared across every test file in the
   // process — reset the in-memory state, not just storage.
   useRetirementPlannerStore.getState().resetPlan()
-  // ⚠️ ORDER MATTERS. `resetPlan` goes through `set`, which WRITES through the
-  // persist path (`skipHydration` skips only the initial READ), so the line above
-  // re-creates the storage key `localStorage.clear()` just removed. Left as-is,
-  // the "absent key" test below rehydrates a PRESENT, valid blob and cannot fail
-  // against an absent-path defect. Remove it last.
+  // Order matters: resetPlan writes through persist and re-creates the key. Remove it last.
   localStorage.removeItem(RETIREMENT_PLANNER_STORAGE_KEY)
 })
 
@@ -88,8 +65,7 @@ describe('retirementPlannerStore defaults (AC-2)', () => {
 
   it('starts the post-retirement rate EMPTY and untouched so it mirrors', () => {
     const { plan } = useRetirementPlannerStore.getInitialState()
-    // A literal '6.0' here would end the mirror on the very first render — the
-    // hazard RetirementAccumulationPlanner's own comment records (story 35.3).
+    // A literal '6.0' would end the mirror on the very first render.
     expect(plan.postRetirementReturnInput).toBe('')
     expect(plan.postRetirementTouched).toBe(false)
   })
@@ -108,7 +84,6 @@ describe('retirementPlannerStore writes', () => {
     expect(raw).not.toBeNull()
     const parsed = JSON.parse(raw as string)
     expect(parsed.version).toBe(RETIREMENT_PLANNER_VERSION)
-    // Story 90.1 (D1) adds the owner stamp beside the plan, persisted with it.
     expect(Object.keys(parsed.state)).toEqual(['plan', 'ownerUserId'])
     expect(parsed.state.plan.currentAgeInput).toBe('42')
   })
@@ -225,10 +200,7 @@ describe('corrupt, absent and foreign payloads (AC-5)', () => {
       seed(plan, version)
       await useRetirementPlannerStore.persist.rehydrate()
       const restored = useRetirementPlannerStore.getState().plan
-      // The solver's guards all run on parsed STRINGS; `parseAge` calls `.trim()`
-      // on its argument, so a surviving non-string is a TypeError before any
-      // guard fires. This is the "never hand the solver a value it cannot read"
-      // half of AC-5.
+      // parseAge calls `.trim()`, so a surviving non-string is a TypeError before any guard fires.
       expect(typeof restored.currentAgeInput).toBe('string')
       expect(typeof restored.lifeExpectancyInput).toBe('string')
       expect(typeof restored.desiredIncomeInput).toBe('string')
@@ -247,8 +219,7 @@ describe('corrupt, absent and foreign payloads (AC-5)', () => {
     expect(useRetirementPlannerStore.getState().plan).toEqual(SAVED_PLAN)
   })
 
-  // ⚠️ Seeded as a RAW STRING, not an object literal — see `seedRaw`. The literal
-  // form serializes to `{}` and makes this assertion unfailable.
+  // A raw string, not an object literal (see seedRaw); the literal form serializes to `{}`.
   it.each([
     ['__proto__', '{"state":{"plan":{"__proto__":{"currentAgeInput":"polluted"}}},"version":1}'],
     [
@@ -295,7 +266,6 @@ describe('corrupt, absent and foreign payloads (AC-5)', () => {
 })
 
 describe('the adopted figure (story 65.2)', () => {
-  /** Rehydrate a seeded blob and hand back the restored plan. */
   async function restore(plan: unknown) {
     seed(plan)
     await useRetirementPlannerStore.persist.rehydrate()
@@ -303,10 +273,8 @@ describe('the adopted figure (story 65.2)', () => {
   }
 
   it('a pre-65.2 blob with no key at all restores as "never adopted", not as a crash', async () => {
-    // The no-version-bump claim, pinned. `coerceRetirementPlan` rebuilds every
-    // field from a default, so an older payload simply yields null — which is
-    // exactly "the user never adopted a figure". Same reasoning as the expense
-    // store's D3.
+    // coerceRetirementPlan rebuilds every field from a default, so an older payload yields null
+    // (never adopted) with no version bump.
     const { adoptedMonthlyCents: _absent, ...withoutKey } = SAVED_PLAN
     expect((await restore(withoutKey)).adoptedMonthlyCents).toBeNull()
   })
@@ -320,10 +288,8 @@ describe('the adopted figure (story 65.2)', () => {
     ['null', null],
     ['an object', { cents: 240_000 }],
   ])('refuses %s rather than carrying it to the render path', async (_label, value) => {
-    // This value is MULTIPLIED BY 12 during render (`toAnnualIncomeCents`, which
-    // THROWS outside the safe-integer range) and localStorage is user-editable,
-    // so a corrupt blob must degrade to "never adopted" rather than crash the
-    // whole retirement route.
+    // Multiplied by 12 during render (throws outside the safe-integer range), so a corrupt value must
+    // degrade to never adopted.
     expect(
       (await restore({ ...SAVED_PLAN, adoptedMonthlyCents: value })).adoptedMonthlyCents
     ).toBeNull()
@@ -343,10 +309,8 @@ describe('the adopted figure (story 65.2)', () => {
 
 describe('coerceRetirementPlan coherence (AC-3)', () => {
   it('collapses the incoherent untouched-but-set region', () => {
-    // `postRetirementTouched: false` makes the component read the MIRROR, so a
-    // stored rate alongside it is invisible state that would spring back if any
-    // future path flipped the flag without writing the value
-    // (deferred-work.md:63). Resolve it on the way in, not by guarding later.
+    // With postRetirementTouched false the mirror is read, so a stored rate would be invisible
+    // state that could spring back.
     const plan = coerceRetirementPlan({
       ...SAVED_PLAN,
       postRetirementReturnInput: '3.25',
@@ -394,11 +358,7 @@ describe('the desired-income locale travels with its string (AC-5, code review)'
   })
 })
 
-/**
- * Story 99.2 (G16): `serverUpdatedAt`, the server version of the plan this device
- * last pulled. ⚠️ Every test here resets it explicitly: the store is a module
- * singleton and `resetPlan` (the file's `beforeEach`) leaves it alone.
- */
+/** Every test resets it explicitly: resetPlan (in beforeEach) leaves it alone. */
 describe('serverUpdatedAt (story 99.2)', () => {
   const OWNER = '11111111-1111-4111-8111-111111111111'
   const OTHER = '22222222-2222-4222-8222-222222222222'

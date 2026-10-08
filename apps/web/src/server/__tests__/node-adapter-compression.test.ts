@@ -1,14 +1,4 @@
-/**
- * Response compression in the production Node adapter.
- *
- * Production measured 2026-10-02: no response carried `content-encoding`, so
- * the 521 KB entry chunk went out raw. Static files are now precompressed at
- * build time (`scripts/precompress-lib.mjs`) and picked by `Accept-Encoding`;
- * handler responses (SSR HTML, `/api/*` JSON) are compressed on the fly.
- *
- * Requests go through `node:http`, not `fetch()`: fetch decodes the body and
- * picks its own `Accept-Encoding`, which would hide exactly what is asserted.
- */
+/** Requests go through node:http, not fetch(): fetch decodes the body and picks its own Accept-Encoding. */
 
 import { mkdir, mkdtemp, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { createServer, request as httpRequest } from 'node:http'

@@ -1,18 +1,6 @@
 /**
- * The local profile cascade (story 66.3, FR104, AC-1).
- *
- * ⚠️⚠️ THE TEST THAT MATTERS HERE is the UNSCOPED-row one. The natural instinct
- * — reuse `isInActiveProfile`, the predicate every read already goes through —
- * destroys every pre-54.4 row on the first profile deletion, because that
- * predicate returns TRUE for a null/absent `profileId` BY DESIGN.
- *
- * MUTATION ARM, measured rather than assumed: replacing the strict comparison in
- * `profile-cascade.ts` with `isInActiveProfile(row.profileId, profileId)` turns
- * THREE of these five red — the unscoped-survival test, the count in the
- * five-collection test (5 removed becomes 15) and the owns-nothing no-op (a
- * profile that owns nothing still eats every unscoped row). The two that stay
- * green are the surviving-profile test and the empty-id test, so neither is load
- * bearing for this predicate.
+ * `isInActiveProfile` is true for a null `profileId` by design; a cascade built on it
+ * would delete every unscoped row.
  */
 
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -26,11 +14,6 @@ import { cascadeProfileRowRemoval, registeredProfileScopedCollections } from '..
 const DOOMED = 'profile-doomed'
 const KEEPER = 'profile-keeper'
 
-/**
- * Every store gets the same four rows: one owned by the profile being deleted,
- * one owned by another profile, one with an explicit `null` profileId and one
- * with the key ABSENT entirely. The last two are the pre-54.4 shapes.
- */
 function seed() {
   useIncomeStore.setState({
     incomeSources: [
@@ -57,8 +40,7 @@ function seed() {
     ],
   } as never)
   useBalanceStore.setState({
-    // ⚠️ `entries`, not `balanceTracking` — the store key and the sync entity
-    // type disagree, and the entity name here would be a silent no-op.
+    // `entries`, not `balanceTracking`: the store key and the sync entity type differ.
     entries: [
       { id: 'b-doomed', profileId: DOOMED, name: 'ISA', type: 'investment', currentBalance: 1 },
       { id: 'b-keeper', profileId: KEEPER, name: 'Loan', type: 'debt', currentBalance: 2 },
@@ -103,11 +85,6 @@ describe('cascadeProfileRowRemoval (AC-1)', () => {
     expect(after.categories).not.toContain('c-doomed')
   })
 
-  /**
-   * ⚠️⚠️ THE MUTATION ARM. `isInActiveProfile(null, DOOMED)` is TRUE, so a
-   * cascade built on the read predicate deletes both of these rows. They are
-   * every row this device persisted before story 54.4.
-   */
   it('keeps an UNSCOPED row — null profileId AND an absent key — in every collection', () => {
     cascadeProfileRowRemoval(DOOMED)
 
@@ -135,8 +112,7 @@ describe('cascadeProfileRowRemoval (AC-1)', () => {
     const removed = cascadeProfileRowRemoval('profile-nobody-owns')
 
     expect(removed).toBe(0)
-    // Identity, not equality: an unchanged collection must not be re-set, or
-    // every subscriber re-renders on a deletion that touched nothing.
+    // Identity: an unchanged collection must not be re-set, or every subscriber re-renders.
     expect(useIncomeStore.getState().incomeSources).toBe(before)
   })
 
@@ -146,21 +122,7 @@ describe('cascadeProfileRowRemoval (AC-1)', () => {
   })
 })
 
-/**
- * The registry itself (story 66.3).
- *
- * ⚠️⚠️ THE CASCADE CAN ONLY REACH A COLLECTION THAT REGISTERED ITSELF, so a
- * store that stops calling `registerProfileScopedCollection` becomes a SILENT
- * hole — its rows survive a profile deletion and nothing fails. The registration
- * lives at the bottom of each store module, which is easy to drop in a refactor.
- *
- * ⚠️ In the real app the guarantee is `lib/store-hydration.tsx`: it statically
- * imports all five domain stores and is mounted from `routes/__root.tsx`, so
- * every one is registered before anything renders. A store that was never
- * imported also holds no rows, so the registry cannot be stale in the direction
- * that would lose data — but it CAN be stale if a store drops its call, which is
- * what this test is for.
- */
+/** The cascade only reaches registered collections, so a store dropping its registration silently keeps its rows. */
 describe('the cascade registry', () => {
   it('holds exactly the five profile-scoped local collections', () => {
     expect(registeredProfileScopedCollections().sort()).toEqual([
@@ -172,11 +134,6 @@ describe('the cascade registry', () => {
     ])
   })
 
-  /**
-   * ⚠️ `entries`, not `balanceTracking`. The balance store's collection key and
-   * its sync entity type disagree; registering the entity name would make that
-   * arm a silent no-op that every other test in this file would still pass.
-   */
   it('registers the balance store under its STORE key, not its entity type', () => {
     expect(registeredProfileScopedCollections()).toContain('entries')
     expect(registeredProfileScopedCollections()).not.toContain('balanceTracking')

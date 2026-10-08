@@ -2,28 +2,9 @@ import { currencyDisplayLabel, getSupportedCurrencies } from '@budget-planner/co
 import { type ChangeEvent, useId } from 'react'
 import { useCurrencyStore } from '../../stores/currencyStore'
 
-/**
- * Currency mode toggle (story 4-6, FR9 / UX-DR3).
- *
- * Lets the user switch between the two currency display modes and pick a
- * currency for explicit-symbols mode:
- * - currency-less (default): raw numeric entries, no symbol
- * - explicit symbols: values formatted via Intl.NumberFormat
- *
- * The selected currency alone drives the formatting locale (story 8-1); there is
- * no separate locale control.
- *
- * Preference is held in the global, localStorage-persisted currency store, so a
- * single instance controls formatting across the whole app and the choice
- * survives navigation (AC-3). Since story 11-6 this single instance lives on the
- * consolidated `/settings` surface rather than in each page header.
- */
-
-// 'NONE' is the currency-less sentinel; it is not a selectable symbol currency.
 const SELECTABLE_CURRENCIES = getSupportedCurrencies().filter((code: string) => code !== 'NONE')
 
 export interface CurrencyToggleProps {
-  /** Extra classes for the outer wrapper (e.g. layout/spacing from the host header). */
   className?: string
 }
 
@@ -42,8 +23,7 @@ export function CurrencyToggle({ className }: CurrencyToggleProps) {
       return
     }
     setMode('symbol')
-    // The currency-less default leaves `currency` as 'NONE', which still renders
-    // raw numbers even in symbol mode — pick a sensible default so symbols show.
+    // 'NONE' renders raw numbers even in symbol mode, so pick a default currency.
     if (currency === 'NONE') {
       setCurrency('USD')
     }
@@ -57,9 +37,7 @@ export function CurrencyToggle({ className }: CurrencyToggleProps) {
     <div
       role="group"
       aria-label="Currency display"
-      // `max-w-full` caps the group at its container width so `flex-wrap` can
-      // actually break the label/switch/selects onto multiple lines at narrow
-      // (≤320px) widths instead of growing to its single-line max-content width.
+      // `max-w-full` lets `flex-wrap` break lines at narrow widths instead of growing to max-content.
       className={`flex max-w-full flex-wrap items-center gap-3 ${className ?? ''}`.trim()}
     >
       <span id={labelId} className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -93,12 +71,7 @@ export function CurrencyToggle({ className }: CurrencyToggleProps) {
             onChange={handleCurrencyChange}
             className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
           >
-            {/*
-              Story 14-1 (UX-DR16): present each currency by its SYMBOL, not its
-              nationality-tagged ISO code. The option `value` stays the ISO code so
-              the store/persistence/sync contract (story 8-2) is unchanged; only the
-              visible, screen-reader-legible label changes via currencyDisplayLabel.
-            */}
+            {/* The value stays the ISO code for persistence and sync; only the label shows the symbol. */}
             {SELECTABLE_CURRENCIES.map((code: string) => (
               <option key={code} value={code}>
                 {currencyDisplayLabel(code)}

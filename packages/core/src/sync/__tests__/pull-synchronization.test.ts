@@ -1,17 +1,3 @@
-/**
- * Pull / reconcile tests for the SynchronizationService (Story 4-18).
- *
- * These exercise the server → client PULL half of multi-device sync:
- *   - pulled create/update applies and is surfaced via onChangesPulled
- *   - a pulled delete tombstone is surfaced so the host can remove it locally
- *   - state-based last-write-wins reconciliation against the unsynced queue:
- *       · a NEWER (or tied) queued local edit is preserved (AC-2)
- *       · a strictly-newer server change wins and drops the stale local op
- *   - the pull cursor (lastPullTimestamp) advances and prevents re-pulling
- *   - empty / future-cursor pulls are a no-op
- *   - a missing transport throws (fails loud, never silent)
- */
-
 import { type Mock, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SynchronizationService, createSynchronizationService } from '../index'
 import type { FetchServerChangesFn, ServerChange } from '../types'
@@ -22,9 +8,8 @@ function serverChange(overrides: Partial<ServerChange> = {}): ServerChange {
   return {
     entityType: 'incomeSource',
     entityId: 'srv-1',
-    // ⚠️ A VALID row (story 75.4). Core now validates a pulled row before it can
-    // win LWW, and `incomeSourceSchema` requires a uuid `userId`, which this
-    // fixture lacked, so every "applied" test here would have seen it refused.
+    // A valid row: core validates a pulled row before it can win LWW, and the
+    // income schema requires a uuid userId.
     data: {
       name: 'Salary',
       amount: 500000,
@@ -98,7 +83,6 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
   })
 
   it('preserves a NEWER queued local edit against an older server change (AC-2)', async () => {
-    // Queue a local update at t=5000.
     vi.setSystemTime(5000)
     await service.queueUpdate(
       'incomeSource',
@@ -107,7 +91,6 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
       testUserId
     )
 
-    // Server change for the same entity is OLDER (t=1000).
     const change = serverChange({ entityId: 'srv-1', updatedAt: 1000 })
     fetchServerChanges.mockResolvedValue([change])
     const pulled: ServerChange[][] = []
@@ -115,12 +98,10 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
 
     const result = await service.pull()
 
-    // Server change is SUPPRESSED; the queued local edit survives.
     expect(result.changesPulledCount).toBe(0)
     expect(result.applied).toEqual([])
     expect(result.conflicts).toEqual([change])
-    expect(pulled).toEqual([]) // onChangesPulled NOT called when nothing applied
-    // The unsynced local op is still queued (never dropped).
+    expect(pulled).toEqual([])
     const stillQueued = service
       .getQueue()
       .getAll()
@@ -137,7 +118,6 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
       testUserId
     )
 
-    // Equal timestamps → local (still-queued) wins by the defined tiebreaker.
     const change = serverChange({ entityId: 'srv-1', updatedAt: 3000 })
     fetchServerChanges.mockResolvedValue([change])
 
@@ -167,8 +147,6 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
 
     const result = await service.pull()
 
-    // Server wins → applied; the now-stale local op is removed so it can't
-    // re-push older data over the newer server value.
     expect(result.changesPulledCount).toBe(1)
     expect(result.applied).toEqual([change])
     expect(
@@ -184,7 +162,6 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
     await service.pull()
     expect(service.getState().lastPullTimestamp).toBe(4242)
 
-    // Second pull must pass the advanced cursor so the server filters > 4242.
     fetchServerChanges.mockResolvedValueOnce([])
     await service.pull()
     expect(fetchServerChanges).toHaveBeenLastCalledWith(4242)
@@ -209,7 +186,7 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
 
     expect(result.success).toBe(true)
     expect(result.changesPulledCount).toBe(0)
-    expect(result.lastPullTimestamp).toBeNull() // cursor unchanged
+    expect(result.lastPullTimestamp).toBeNull()
     expect(pulled).toEqual([])
   })
 
@@ -224,14 +201,14 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
 
   it('returns a failure result (cursor unchanged) when the transport throws', async () => {
     fetchServerChanges.mockResolvedValueOnce([serverChange({ updatedAt: 50 })])
-    await service.pull() // cursor → 50
+    await service.pull()
     fetchServerChanges.mockRejectedValueOnce(new Error('network down'))
 
     const result = await service.pull()
 
     expect(result.success).toBe(false)
     expect(result.error).toContain('network down')
-    expect(result.lastPullTimestamp).toBe(50) // unchanged
+    expect(result.lastPullTimestamp).toBe(50)
     expect(service.getState().lastPullTimestamp).toBe(50)
   })
 
@@ -243,7 +220,6 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
   })
 
   it('drops ALL queued ops for an entity when the server wins LWW (review P4)', async () => {
-    // Two queued ops for the SAME entity: an older create + a newer update.
     vi.setSystemTime(1000)
     await service.queueCreate(
       'incomeSource',
@@ -265,13 +241,11 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
         .filter((o) => o.entityId === 'srv-1')
     ).toHaveLength(2)
 
-    // Server change strictly newer than BOTH queued ops → server wins.
     fetchServerChanges.mockResolvedValue([serverChange({ entityId: 'srv-1', updatedAt: 9000 })])
     const result = await service.pull()
 
     expect(result.changesPulledCount).toBe(1)
-    // BOTH ops removed (not just the newest), so the older op can't re-push stale
-    // data over the value the pull just applied.
+    // Both ops go, so the older one can't re-push stale data over the pulled value.
     expect(
       service
         .getQueue()
@@ -294,14 +268,13 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
   })
 
   it('does NOT advance the cursor past a suppressed change (review D2)', async () => {
-    // Local edit newer than the server change → server change suppressed.
     vi.setSystemTime(5000)
     await service.queueUpdate('incomeSource', 'srv-1', { name: 'local', amount: 1 }, testUserId)
     fetchServerChanges.mockResolvedValue([serverChange({ entityId: 'srv-1', updatedAt: 1000 })])
 
     const result = await service.pull()
 
-    // Suppressed → cursor stays null so the change is re-pulled until the local op
+    // Suppressed: the cursor stays put so the change is re-pulled until the local op
     // pushes, instead of being skipped forever by the server's `> cursor` filter.
     expect(result.conflicts).toHaveLength(1)
     expect(result.lastPullTimestamp).toBeNull()
@@ -312,15 +285,14 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
     vi.setSystemTime(5000)
     await service.queueUpdate('incomeSource', 'srv-2', { name: 'local', amount: 1 }, testUserId)
     fetchServerChanges.mockResolvedValue([
-      serverChange({ entityId: 'srv-1', updatedAt: 100 }), // applied (no local op)
-      serverChange({ entityId: 'srv-2', updatedAt: 1000 }), // suppressed (local newer)
-      serverChange({ entityId: 'srv-3', updatedAt: 2000 }), // applied but AFTER the suppressed one
+      serverChange({ entityId: 'srv-1', updatedAt: 100 }),
+      serverChange({ entityId: 'srv-2', updatedAt: 1000 }),
+      serverChange({ entityId: 'srv-3', updatedAt: 2000 }),
     ])
 
     const result = await service.pull()
 
-    // Cursor advances to 100 (the applied change before the suppressed @1000) but
-    // not past 1000, so the suppressed change and srv-3 are re-pulled next time.
+    // The cursor advances past the applied change but not past the suppressed one.
     expect(result.lastPullTimestamp).toBe(100)
   })
 
@@ -337,14 +309,11 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
     expect(service.getState().conflictOperations).toHaveLength(0)
     await service.pull()
 
-    // The overwritten local op moved from pending → conflictOperations.
     expect(service.getState().conflictOperations).toHaveLength(1)
     expect(service.getState().conflictOperations[0].entityId).toBe('srv-1')
   })
 
   it('baseVersion (causal) overrides wall-clock — local wins when change <= base, despite an OLDER op timestamp (review D1)', async () => {
-    // Op has an OLD wall-clock timestamp (100) but was based on server version
-    // 5000. A server change at updatedAt=5000 is already incorporated by the op.
     vi.setSystemTime(100)
     await service.queueUpdate(
       'incomeSource',
@@ -352,14 +321,14 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
       { name: 'local', amount: 1 },
       testUserId,
       undefined,
-      5000 // baseVersion
+      5000
     )
     fetchServerChanges.mockResolvedValue([serverChange({ entityId: 'srv-1', updatedAt: 5000 })])
 
     const result = await service.pull()
 
-    // Wall-clock LWW would give the server (5000) the win over the op (100), but
-    // baseVersion says the op already incorporated v5000 → local wins, op kept.
+    // Wall-clock LWW would favour the server, but baseVersion shows the op already
+    // incorporated v5000, so local wins.
     expect(result.conflicts).toHaveLength(1)
     expect(result.applied).toHaveLength(0)
     expect(
@@ -371,8 +340,6 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
   })
 
   it('baseVersion (causal) overrides wall-clock — server wins when change > base, despite a NEWER op timestamp (review D1)', async () => {
-    // Op has a NEWER wall-clock timestamp (9000) but was based on server version
-    // 1000. A server change at updatedAt=2000 is a concurrent edit it never saw.
     vi.setSystemTime(9000)
     await service.queueUpdate(
       'incomeSource',
@@ -380,14 +347,14 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
       { name: 'local', amount: 1 },
       testUserId,
       undefined,
-      1000 // baseVersion
+      1000
     )
     fetchServerChanges.mockResolvedValue([serverChange({ entityId: 'srv-1', updatedAt: 2000 })])
 
     const result = await service.pull()
 
-    // Wall-clock LWW would give the op (9000) the win, but baseVersion says the
-    // server has a concurrent change (2000 > base 1000) → server wins, op dropped.
+    // Wall-clock LWW would favour the op, but the server has a concurrent change
+    // newer than baseVersion, so the server wins.
     expect(result.applied).toHaveLength(1)
     expect(result.conflicts).toHaveLength(0)
     expect(

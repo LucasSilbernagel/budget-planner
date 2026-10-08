@@ -1,53 +1,6 @@
 /**
- * What the pull cursor does when a row is REFUSED (Story 66.2, AC-4).
- *
- * ## The decision this pins, and why it is a decision at all
- *
- * ⚠️⚠️ The cursor is SET (in core's in-memory state; it is never persisted,
- * see below) BEFORE the web layer ever sees the rows.
- * `SynchronizationService.pull()` sets `this.state.lastPullTimestamp = newCursor`
- * and only THEN calls `notifyChangesPulledCallbacks(applied)`. `ChangesPulledCallback`
- * returns `void` and its throw is swallowed. So `applyServerChanges.ts` — where
- * 66.2 put its guard — structurally CANNOT hold the cursor back.
- *
- * ⚠️ Story 75.4 moved that guard into core's `pull()` (a refusal there must come
- * BEFORE last-writer-wins drops the user's queued edit). That removes the
- * MECHANICAL obstacle to option (B) below, and (B) is still rejected: its real
- * cost was always the stall, which moving the guard does not change. So a row
- * refused in core still advances the cursor.
- *
- * Two options existed and the smaller diff is not self-evidently right:
- *
- *   (A) ADVANCE — CHOSEN. A validation failure is not transient: a row that is
- *       malformed today is malformed on every future pull. Holding the cursor
- *       below it would re-fetch the same poison row forever AND block every
- *       later change behind it, because the server's filter is
- *       `updatedAt > cursor`. One bad row would become a permanent, total sync
- *       stall. Advancing keeps a one-row problem a one-row problem.
- *   (B) HOLD — rejected. It would add a refused change to the `earliestSuppressed`
- *       set (`synchronization.ts`), and it buys the stall above. (66.2 also
- *       counted "needs validation moved into core" against it; 75.4 made that
- *       move for a different reason, and the stall is the reason that remains.)
- *
- * ⚠️ The cost of (A) is real and is NOT hidden: within a session the refused row
- * is skipped by every subsequent poll.
- *
- * ⚠️⚠️ But "this device will never see it again" would be WRONG, and the story
- * said so before its code review corrected it. `lastPullTimestamp` lives in
- * `SynchronizationService`'s in-memory state — `synchronization.ts` initialises
- * it to `null` and never persists it — and `hooks/useSync.ts` builds a fresh
- * service per mount. So a page RELOAD pulls from `since = null`, re-fetches the
- * whole snapshot, and re-refuses (and re-warns about) the same row. The same
- * happens on a profile switch, which calls `resetPullCursor()` explicitly. The
- * row is skipped for the rest of the session, not forgotten forever.
- *
- * ⚠️ Either way the user is never told, which is why the refusal is at least
- * reported to the developer (see `server-row-validation.test.ts`).
- *
- * ⚠️ `earliestSuppressed` is NOT this mechanism. It exists for a change
- * suppressed by a still-queued LOCAL edit — a conflict that RESOLVES once the
- * local op pushes. A malformed row never resolves, which is exactly why reusing
- * that path would be wrong.
+ * A refused row still advances the pull cursor: holding it would re-fetch the bad row
+ * forever and stall every later change (the server filters on updatedAt > cursor).
  */
 
 import { createSynchronizationService } from '@budget-planner/core/sync'
@@ -99,7 +52,6 @@ describe('AC-4: the pull cursor when a row is refused', () => {
       processOperation: async () => ({ success: true }),
       fetchServerChanges,
     })
-    // Exactly the wiring `hooks/useSync.ts` performs.
     service.onChangesPulled((changes) => applyServerChangesToStores(changes, USER_ID))
     service.onServerChangesRefused(reportRefusedServerChanges)
   })
@@ -114,7 +66,6 @@ describe('AC-4: the pull cursor when a row is refused', () => {
 
     const result = await service.pull()
 
-    // Core refused it (story 75.4: core validates before LWW) and did not apply it.
     expect(result.success).toBe(true)
     expect(result.refused.map((r) => r.entityId)).toEqual([BAD_ID])
     expect(result.applied).toEqual([])
@@ -133,7 +84,6 @@ describe('AC-4: the pull cursor when a row is refused', () => {
     await service.pull()
 
     expect(fetchServerChanges).toHaveBeenNthCalledWith(1, null)
-    // ⚠️ THE POINT: 1500, not null. The refused row is behind the cursor now.
     expect(fetchServerChanges).toHaveBeenNthCalledWith(2, 1500)
   })
 
@@ -152,10 +102,8 @@ describe('AC-4: the pull cursor when a row is refused', () => {
   })
 
   it('a refused row is NOT reported as a conflict — the two are different things', async () => {
-    // A conflict is a server change suppressed by a still-queued local edit, and
-    // it RESOLVES when that edit pushes. A malformed row never resolves. Counting
-    // one as the other would hold the cursor (via `earliestSuppressed`) and stall
-    // sync permanently — the exact outcome option (A) exists to avoid.
+    // A conflict resolves once the local edit pushes; a malformed row never does, so counting
+    // it as one would hold the cursor and stall sync permanently.
     const conflicts: unknown[] = []
     service.onConflict((c) => conflicts.push(c))
     fetchServerChanges.mockResolvedValue([incomeChange(BAD_ID, '500000', 1500)])
@@ -172,7 +120,7 @@ describe('AC-4: the pull cursor when a row is refused', () => {
     await service.pull()
     expect(service.getState().lastPullTimestamp).toBe(1500)
 
-    // A reload is a NEW service: `lastPullTimestamp` is in-memory only.
+    // A reload is a new service: `lastPullTimestamp` is in-memory only.
     const reloaded = createSynchronizationService(USER_ID, {
       autoSync: false,
       debug: false,
@@ -183,7 +131,6 @@ describe('AC-4: the pull cursor when a row is refused', () => {
       reloaded.onChangesPulled((changes) => applyServerChangesToStores(changes, USER_ID))
       fetchServerChanges.mockResolvedValueOnce([incomeChange(BAD_ID, '500000', 1500)])
       await reloaded.pull()
-      // Pulled from scratch, not from 1500 — and refused again.
       expect(fetchServerChanges).toHaveBeenLastCalledWith(null)
       expect(useIncomeStore.getState().incomeSources).toHaveLength(0)
     } finally {
@@ -192,8 +139,6 @@ describe('AC-4: the pull cursor when a row is refused', () => {
   })
 
   it('CONTROL: a valid row advances the cursor the same way and DOES land', async () => {
-    // Without this, "the cursor advanced" would be indistinguishable from "the
-    // cursor always advances no matter what", which is the claim under test.
     fetchServerChanges.mockResolvedValue([incomeChange(GOOD_ID, 500_000, 1500)])
 
     const result = await service.pull()

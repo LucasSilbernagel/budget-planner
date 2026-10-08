@@ -1,19 +1,3 @@
-/**
- * Frequency Normalization Engine Tests
- *
- * Mathematical validation tests for frequency normalization calculations.
- * Zero tolerance for errors - NFR3 requirement
- *
- * Note: All amounts are in cents (e.g., $100 = 10000 cents) to avoid
- * floating-point precision issues
- *
- * Multipliers:
- * - Weekly: 52/12 = 4.333333...
- * - Biweekly: 26/12 = 2.166666...
- * - Monthly: 1
- * - Annually: 1/12 = 0.083333...
- */
-
 import { describe, expect, it } from 'vitest'
 import {
   NormalizableFinancialItem,
@@ -25,24 +9,19 @@ import {
   validateFrequency,
 } from '../normalization.js'
 
-// Test data: amounts in cents (e.g., $100 = 10000 cents)
 const TEST_AMOUNTS = {
-  WEEKLY: 10000, // $100/week
-  BIWEEKLY: 20000, // $200/biweekly
-  MONTHLY: 50000, // $500/month
-  ANNUALLY: 120000, // $1200/year
+  WEEKLY: 10000,
+  BIWEEKLY: 20000,
+  MONTHLY: 50000,
+  ANNUALLY: 120000,
 }
 
-// Expected monthly normalized values using exact fractions
-// Weekly: $100 * (52/12) = $433.333... = 43333 cents (rounded)
-// Biweekly: $200 * (26/12) = $433.333... = 43333 cents (rounded)
-// Monthly: $500 * 1 = $500 = 50000 cents
-// Annually: $1200 * (1/12) = $100 = 10000 cents
+// Weekly 10000 × 52/12 and biweekly 20000 × 26/12 are both 43333.33 → 43333.
 const EXPECTED_MONTHLY = {
-  WEEKLY: 43333, // $100 * 52/12 = $433.333... → 43333 cents
-  BIWEEKLY: 43333, // $200 * 26/12 = $433.333... → 43333 cents
-  MONTHLY: 50000, // $500 * 1 = $500
-  ANNUALLY: 10000, // $1200 * 1/12 = $100
+  WEEKLY: 43333,
+  BIWEEKLY: 43333,
+  MONTHLY: 50000,
+  ANNUALLY: 10000,
 }
 
 describe('Frequency Normalization Engine', () => {
@@ -56,7 +35,7 @@ describe('Frequency Normalization Engine', () => {
     it('should return correct exact multiplier for biweekly frequency (26/12)', () => {
       const multiplier = getNormalizationMultiplier('biweekly')
       expect(multiplier).toBe(26 / 12)
-      expect(multiplier).toBeCloseTo(2.166666, 5) // Looser tolerance for floating point
+      expect(multiplier).toBeCloseTo(2.166666, 5)
     })
 
     it('should return correct multiplier for monthly frequency (1)', () => {
@@ -82,9 +61,7 @@ describe('Frequency Normalization Engine', () => {
     })
 
     it('normalizes 27¢ biweekly to 59, the exact half rounded up (Story 105.1, AC-2)', () => {
-      // Why the rule multiplies before it divides: `26 / 12` is not exact in
-      // float, so the old `27 * (26 / 12)` lands just BELOW the exact 58.5 and
-      // `Math.round` gave 58. `(27 * 26) / 12` is exactly 58.5.
+      // Multiply before dividing: 27 * (26 / 12) lands just below 58.5; (27 * 26) / 12 is exact.
       expect(27 * (26 / 12)).toBe(58.49999999999999)
       expect(normalizeToMonthly(27, 'biweekly')).toBe(59)
     })
@@ -117,17 +94,11 @@ describe('Frequency Normalization Engine', () => {
     })
 
     it('should round to nearest integer using Math.round', () => {
-      // 1 cent weekly * 52/12 = 0.43333... which rounds to 0
-      // But 100 cents weekly * 52/12 = 433.333... which rounds to 433
       const result = normalizeToMonthly(100, 'weekly')
       expect(result).toBe(433)
     })
 
     it('should verify Math.round is used for rounding (half-up)', () => {
-      // Test that 0.5 rounds up
-      // We need to find a value that results in exactly .5 after multiplication
-      // For weekly: amount * (52/12) = amount * 4.333...
-      // This is tricky to get exactly .5, but we can verify the rounding behavior
       const result1 = normalizeToMonthly(1, 'monthly')
       expect(result1).toBe(1)
 
@@ -216,8 +187,7 @@ describe('Frequency Normalization Engine', () => {
         { amount: 5000000, frequency: 'monthly' as const },
       ]
 
-      // 1000000 * (52/12) = 4333333.333... + 5000000 = 9333333.333...
-      // Rounded to nearest integer = 9333333
+      // 1000000 × 52/12 + 5000000 = 9333333.33 → 9333333
       const result = calculateTotalMonthlyNormalized(items)
       expect(result).toBe(9333333)
     })
@@ -262,10 +232,8 @@ describe('Frequency Normalization Engine', () => {
       )
     })
 
-    // ⚠️ Story 105.1 review: these two MAX/MIN_SAFE_INTEGER tests are the ONLY ones
-    // that catch a divide-before-multiply rewrite of `normalizeToMonthly`
-    // (`(a / 12) * 12`): it is exact for every in-domain amount, so the
-    // `normalization.exact.test.ts` sweeps cannot see it. Keep them.
+    // Only these MAX/MIN_SAFE_INTEGER tests catch a divide-before-multiply `(a / 12) * 12`
+    // rewrite; it is exact for every in-domain amount.
     it('should handle very large numbers without overflow', () => {
       const largeAmount = Number.MAX_SAFE_INTEGER
       const result = normalizeToMonthly(largeAmount, 'monthly')
@@ -311,7 +279,6 @@ describe('Frequency Normalization Engine', () => {
     })
 
     it('should handle integer overflow gracefully', () => {
-      // Multiplying a very large number by 52/12 should not overflow
       const veryLarge = Number.MAX_SAFE_INTEGER / 2
       const result = normalizeToMonthly(veryLarge, 'weekly')
       expect(Number.isFinite(result)).toBe(true)

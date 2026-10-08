@@ -1,28 +1,3 @@
-/**
- * A debt is always an amount owed, on every surface (story 103.1, FR171, AC-3).
- *
- * ⚠️ WHY THIS FILE EXISTS. Before 103.1 the same debt row gave different net
- * worths on different surfaces: the Scenario Builder read a debt as `Math.abs`,
- * while the Overview tile, the Overview balances chart, the `/balance` totals and
- * the printed Report summed `currentBalance` RAW. A debt stored −X (legacy,
- * hand-edited or pulled: only the validator refuses the sign, by design) therefore
- * RAISED net worth by X instead of lowering it.
- *
- * Each surface is read for ONE fixture stored twice, once with the debt +X and
- * once −X, and every figure must be identical between the two runs AND equal to
- * the hand-computed value. Every reader imports the real code (the hooks, the
- * page, `buildFinancialSummary`), never a re-implemented formula: the 32.2
- * parity-test lesson recorded in `build-financial-summary.ts`.
- *
- * The builder's seed is covered in `scenario-builder.balance-rows.test.tsx`
- * (same ±X shape), because it needs that file's builder harness.
- *
- * HAND-COMPUTED (unit tests run currency-less):
- *   investments 2,000,000c; debt 1,500,000c owed; no savings, no assets
- *   net worth = 2,000,000 − 1,500,000 = 500,000c  -> "5,000.00"
- *   the pre-103.1 wrong value for −X:   2,000,000 + 1,500,000 = 3,500,000c
- */
-
 import { renderWithProviders } from '@/test/utils'
 import { cleanup, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -33,8 +8,6 @@ vi.mock('../../hooks/usePremiumAccess', () => ({
   usePremiumAccess: () => usePremiumAccess(),
 }))
 
-// A pass-through spy: records the totals the Overview hands its balances chart,
-// which HomePage derives INLINE (a second copy of the store selectors).
 const barTotals = vi.hoisted(() => [] as unknown[])
 vi.mock('../../lib/balances-bar-data', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../lib/balances-bar-data')>()
@@ -75,8 +48,7 @@ function seed(debtSign: 1 | -1): void {
   })
   useExpenseStore.setState({ expenses: [] })
   useSavingsStore.setState({ savingsGoals: [] })
-  // setState, not addBalanceEntry: a −X row can only exist by a path that skips
-  // the validator, which is exactly the legacy case under test.
+  // setState, not addBalanceEntry: the validator refuses a negative debt, so only a bypass creates one.
   useBalanceStore.setState({
     entries: [
       {
@@ -186,7 +158,6 @@ describe('a debt counts as money owed on every surface (Story 103.1, AC-3)', () 
   it('the SAME debt stored −X (legacy) reads identically: net worth is not raised', () => {
     const negative = readEverySurface(-1)
     expect(negative).toEqual(EXPECTED)
-    // The pre-103.1 defect, named: −X summed raw gave 35,000.00.
     expect(negative.overviewNetWorth).not.toBe('35,000.00')
   })
 })

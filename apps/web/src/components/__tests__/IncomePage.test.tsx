@@ -20,23 +20,8 @@ import { type ClientCategory, useCategoryStore } from '../../stores/categoryStor
 import { useCurrencyStore } from '../../stores/currencyStore'
 import { useIncomeStore } from '../../stores/incomeStore'
 
-/**
- * Tier control for the Premium-only Category column (story 33.3, FR57).
- *
- * ⚠️ A plain object mutated in place, NOT a `vi.fn()`. This file does not call
- * `vi.clearAllMocks()` today, but `category-assignment.test.tsx` — which mocks
- * the same hook and is the template this pattern came from — does (`:66`), and
- * there `clearAllMocks` would strip a `mockReturnValue` and make the hook return
- * `undefined`, so the page throws on `status.hasAccess` and every test in the
- * file fails for a reason unrelated to its subject. A plain object cannot be
- * cleared, so the pattern is safe to copy into either kind of file. Keeping it
- * uniform is the point; do not "simplify" this to a `vi.fn()` here.
- *
- * ⚠️ The factory must export ONLY `usePremiumAccess`. If production code ever
- * reaches for another export of that module, this mock fails at COLLECT time
- * (every test in the file, no clean assertion failure) rather than pointing at
- * the change that caused it.
- */
+// A plain object, not vi.fn(): vi.clearAllMocks() would strip a mockReturnValue
+// and make the hook return undefined.
 const premiumTier = vi.hoisted(() => ({
   status: {
     hasAccess: false,
@@ -66,20 +51,10 @@ const premium = () =>
   setTier({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
 const free = () => setTier({})
 
-// Reset the tier before EVERY test in this file, so a premium test cannot leak
-// entitlement into an unrelated one that renders the same page.
 beforeEach(() => {
   free()
 })
 
-/**
- * The row's mobile field labels, in document order.
- *
- * Asserting this array (rather than looping over a hand-written list) is what
- * ties the "labels every field" claim to reality: it pins the COUNT and the
- * ORDER, so a column that silently disappears fails the test instead of just
- * shortening an unchecked loop.
- */
 function mobileLabelsIn(row: HTMLElement): string[] {
   return [...row.querySelectorAll('span.sm\\:hidden')].map((el) => el.textContent ?? '')
 }
@@ -88,14 +63,6 @@ import { expectSortHeaderAnnouncements } from '@/test/sort-announcements'
 import { expectSharedGreen } from '@/test/white-fill-tokens'
 import { IncomePage } from '../IncomePage'
 
-/**
- * IncomePage delete-confirmation tests (story 6-3).
- *
- * Proves the destructive delete now flows through the themed ConfirmDialog
- * (alertdialog) instead of a browser `confirm()`: opening the dialog, aborting
- * on Cancel (nothing deleted), and proceeding on Confirm (row removed). This is
- * the representative end-to-end wiring for the four converted page components.
- */
 describe('IncomePage delete confirmation', () => {
   beforeEach(() => {
     useIncomeStore.setState({ incomeSources: [] })
@@ -145,11 +112,6 @@ describe('IncomePage delete confirmation', () => {
     expect(useIncomeStore.getState().incomeSources).toHaveLength(0)
   })
 
-  // Moved from `e2e/confirm-dialog.spec.ts` (story 82.3): the page wires
-  // ConfirmDialog's dismissal to ABORT, on every dismissal path. Whether the
-  // backdrop really covers the viewport corner is a layout claim. Its real-engine
-  // test (`responsive-320.spec.ts` › "dismissal still works") was DROPPED by
-  // story 84.2 (FR137: no modal screenshot pins it, accepted D2).
   it('Escape aborts the delete — the row remains', async () => {
     const user = userEvent.setup()
     renderWithProviders(<IncomePage />)
@@ -176,11 +138,6 @@ describe('IncomePage delete confirmation', () => {
   })
 })
 
-/**
- * Dismissing the Add dialog creates nothing (story 6-2, UX-DR10). Moved from
- * `e2e/modal-dismissal.spec.ts` (story 82.3). The fields are FILLED before each
- * dismissal, so a dismissal that submitted the draft would add a row.
- */
 describe('IncomePage add dialog dismissal', () => {
   beforeEach(() => {
     useIncomeStore.setState({ incomeSources: [] })
@@ -193,7 +150,6 @@ describe('IncomePage add dialog dismissal', () => {
   async function openFilledAddDialog(user: ReturnType<typeof userEvent.setup>) {
     renderWithProviders(<IncomePage />)
     expect(screen.getByText('No income sources yet')).toBeInTheDocument()
-    // Story 115.1: the shared AA green (white on green-600 was 3.30:1).
     expectSharedGreen(screen.getByRole('button', { name: '+ Add Income Source' }))
     await user.click(screen.getByRole('button', { name: '+ Add Income Source' }))
     const dialog = screen.getByRole('dialog', { name: 'Add Income Source' })
@@ -234,13 +190,6 @@ describe('IncomePage add dialog dismissal', () => {
   })
 })
 
-/**
- * IncomePage inline field-validation tests (story 6-8).
- *
- * Proves invalid add submissions surface themed, accessible inline field errors
- * (no browser alert()), block the store mutation and keep the modal open, and
- * that correcting the fields clears the errors and lets a valid submit proceed.
- */
 describe('IncomePage inline validation', () => {
   beforeEach(() => {
     useIncomeStore.setState({ incomeSources: [] })
@@ -258,18 +207,15 @@ describe('IncomePage inline validation', () => {
     const dialog = screen.getByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: 'Add Income Source' }))
 
-    // Both field errors render with the exact preserved messages.
     expect(screen.getByTestId('income-name-error')).toHaveTextContent(
       'Please enter a name for the income source'
     )
     expect(screen.getByTestId('income-amount-error')).toHaveTextContent(
       'Please enter a valid positive amount'
     )
-    // Errors are programmatically associated (AC-2).
     const nameInput = screen.getByTestId('income-name-input')
     expect(nameInput).toHaveAttribute('aria-invalid', 'true')
     expect(nameInput).toHaveAttribute('aria-describedby', 'income-name-error')
-    // No store mutation and the modal stays open (AC-1).
     expect(useIncomeStore.getState().incomeSources).toHaveLength(0)
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
@@ -283,7 +229,6 @@ describe('IncomePage inline validation', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Add Income Source' }))
     expect(screen.getByTestId('income-name-error')).toBeInTheDocument()
 
-    // Correct the name — its error clears as the user types (re-validate on change).
     await user.type(screen.getByTestId('income-name-input'), 'Freelance')
     await waitFor(() => expect(screen.queryByTestId('income-name-error')).not.toBeInTheDocument())
 
@@ -297,25 +242,6 @@ describe('IncomePage inline validation', () => {
   })
 })
 
-/**
- * Take-home guidance on the Amount field (story 46.1, UX-DR52).
- *
- * The form never said whether to enter pay before or after tax, and every
- * downstream figure assumes one answer. The guidance states it at the point of
- * entry.
- *
- * ⚠️ Every assertion here anchors on the DISTINGUISHING phrasing. "income",
- * "amount" and "pay" all appear throughout this page and an assertion on any of
- * them would have passed against the pre-fix defect — which is the whole reason
- * the story called the pin out as its own AC.
- *
- * ⚠️ The word "net" is deliberately absent from the copy. `netIncome` in
- * `packages/core/src/finance/netIncome.ts` means income MINUS EXPENSES, and that
- * meaning is already user-visible on the pricing page and in the PDF summary
- * report. Using "net" here would give one word two axes. The negative guard
- * below is scoped to the hint element, never the page: the page legitimately
- * contains "net" elsewhere and a page-wide negative would be red on arrival.
- */
 describe('IncomePage take-home guidance (story 46.1)', () => {
   beforeEach(() => {
     useIncomeStore.setState({ incomeSources: [] })
@@ -333,11 +259,6 @@ describe('IncomePage take-home guidance (story 46.1)', () => {
     const dialog = screen.getByRole('dialog')
     const hint = within(dialog).getByTestId('income-amount-hint')
 
-    // The concrete test a user can apply, not the jargon. Pinned as ONE ordered
-    // clause, not three loose fragments: separate `/reaches your bank account/`,
-    // `/after tax/` and `/deductions/` assertions all pass against a mangled
-    // string like "After tax, deductions reaches your bank account", and none of
-    // them pins the instruction verb that carries AC-1.
     expect(hint.textContent).toMatch(
       /Enter\s+the\s+amount\s+that\s+reaches\s+your\s+bank\s+account/i
     )
@@ -351,14 +272,10 @@ describe('IncomePage take-home guidance (story 46.1)', () => {
       .addIncomeSource({ name: 'Salary', amount: 500000, frequency: 'monthly' })
     renderWithProviders(<IncomePage />)
 
-    // One modal serves add and edit; the hint must not be gated on `editingId`.
     await user.click(screen.getByRole('button', { name: 'Edit Salary' }))
     const dialog = screen.getByRole('dialog')
     const amountInput = within(dialog).getByTestId('income-amount-input')
 
-    // Assert through the ACCESSIBLE DESCRIPTION, which resolves the
-    // `aria-describedby` id list against the real DOM — so edit mode proves the
-    // association too, not merely that the copy is on screen somewhere.
     expect(amountInput).toHaveAccessibleDescription(
       /Enter\s+the\s+amount\s+that\s+reaches\s+your\s+bank\s+account/i
     )
@@ -371,13 +288,6 @@ describe('IncomePage take-home guidance (story 46.1)', () => {
     await user.click(screen.getByRole('button', { name: '+ Add Income Source' }))
     const dialog = screen.getByRole('dialog')
 
-    // ⚠️ Scoped to the DIALOG, not to the hint element. Scoped to the hint this
-    // assertion was true-by-construction — the copy pins above already fix that
-    // element's exact text, so re-checking it for "net" guarded nothing. The
-    // real collision risk is a SIBLING in the same form ("Net amount" on a
-    // label, placeholder or future field), which only a dialog-wide negative
-    // can see. Still not page-wide: the page legitimately says "Net Worth"
-    // elsewhere and that would be red on arrival.
     expect(dialog.textContent).not.toMatch(/\bnet\b/i)
   })
 
@@ -389,20 +299,9 @@ describe('IncomePage take-home guidance (story 46.1)', () => {
     const dialog = screen.getByRole('dialog')
     const amountInput = within(dialog).getByTestId('income-amount-input')
 
-    // Unconditional: before story 46.1 this attribute was `undefined` until a
-    // validation error existed, so the hint reached no screen reader at all.
-    //
-    // ⚠️ `toHaveAccessibleDescription` is the load-bearing half. Asserting the
-    // attribute STRING alone passes even when the id resolves to nothing —
-    // rename `id="income-amount-hint"` to anything while leaving the
-    // `data-testid` intact and a string-only suite stays green while screen
-    // readers announce nothing. This resolves the id against the real DOM.
     expect(amountInput).toHaveAccessibleDescription(
       /Enter\s+the\s+amount\s+that\s+reaches\s+your\s+bank\s+account/i
     )
-    // And ONLY the hint describes it in this state — asserted as a token list
-    // rather than a string equality so appending a second legitimate describer
-    // later fails loudly here instead of silently widening the description.
     const described = (amountInput.getAttribute('aria-describedby') ?? '').split(/\s+/)
     expect(described).toEqual(['income-amount-hint'])
   })
@@ -416,17 +315,10 @@ describe('IncomePage take-home guidance (story 46.1)', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Add Income Source' }))
 
     const amountInput = within(dialog).getByTestId('income-amount-input')
-    // `aria-describedby` is an ID LIST. Replacing rather than composing is the
-    // silent regression this test exists for: the page still looks right and the
-    // error announcement is simply gone. Assert on the parsed token set so the
-    // order of the two ids is not accidentally pinned.
     const described = (amountInput.getAttribute('aria-describedby') ?? '').split(/\s+/)
     expect(described).toContain('income-amount-hint')
     expect(described).toContain('income-amount-error')
 
-    // Both ids must RESOLVE, not merely be listed. The accessible description
-    // is the concatenation of the referenced nodes, so this fails if either id
-    // points at nothing — the failure a string-only assertion cannot see.
     expect(amountInput).toHaveAccessibleDescription(
       /Enter\s+the\s+amount\s+that\s+reaches\s+your\s+bank\s+account/i
     )
@@ -434,21 +326,12 @@ describe('IncomePage take-home guidance (story 46.1)', () => {
       /Please\s+enter\s+a\s+valid\s+positive\s+amount/i
     )
 
-    // And the error itself is still rendered and still says what it said.
     expect(within(dialog).getByTestId('income-amount-error')).toHaveTextContent(
       'Please enter a valid positive amount'
     )
   })
 })
 
-/**
- * IncomePage currency-input formatting tests (story 14-3).
- *
- * Proves the amount input shows the selected currency's symbol only in symbols
- * mode (never a hard-coded "$"), and that a locale-grouped entry both parses to
- * the correct integer cents on submit and re-echoes grouped on blur. This is the
- * representative wiring for the four money add/edit forms.
- */
 describe('IncomePage currency input formatting (story 14-3)', () => {
   beforeEach(() => {
     useIncomeStore.setState({ incomeSources: [] })
@@ -512,10 +395,6 @@ describe('IncomePage currency input formatting (story 14-3)', () => {
   })
 
   it('never lets letters into the field, and blur leaves it empty rather than "0.00" (story 28-1)', async () => {
-    // Retargeted from the original review patch: the letters used to survive
-    // on-blur as visible garbage; on-input sanitization now stops them reaching
-    // state at all. The load-bearing half of that patch's intent — blur must NOT
-    // rewrite the field to a validating "0.00" — is what is pinned here.
     const user = userEvent.setup()
     renderWithProviders(<IncomePage />)
 
@@ -532,10 +411,8 @@ describe('IncomePage currency input formatting (story 14-3)', () => {
   })
 
   it('keeps a lone "-" on blur instead of zeroing it (the no-digit guard arm)', async () => {
-    // The sanitizer deliberately preserves digit-free partials so a negative can
-    // be typed one character at a time. That makes the `!/\d/` arm of the blur
-    // guard genuinely reachable: without it, "-" would parse to 0 and echo back
-    // as "0.00", turning an unfinished entry into a valid-looking zero.
+    // The sanitizer keeps digit-free partials so a negative can be typed; "-" must
+    // not blur-echo as "0.00".
     const user = userEvent.setup()
     renderWithProviders(<IncomePage />)
 
@@ -549,8 +426,7 @@ describe('IncomePage currency input formatting (story 14-3)', () => {
   })
 
   it('strips pasted garbage down to the numeric part in one change event (AC-5)', async () => {
-    // A paste arrives as a single change event carrying the whole string — the
-    // reason the filter lives in onChange rather than a keystroke handler.
+    // A paste arrives as one change event, which is why the filter lives in onChange.
     renderWithProviders(<IncomePage />)
 
     await userEvent.setup().click(screen.getByRole('button', { name: '+ Add Income Source' }))
@@ -572,25 +448,10 @@ describe('IncomePage currency input formatting (story 14-3)', () => {
     await user.click(screen.getByRole('button', { name: 'Edit Salary' }))
     const dialog = screen.getByRole('dialog')
 
-    // Not "1234567.89" — the prefill goes through the same formatter as the blur
-    // echo, so re-saving without editing cannot shift the stored cents.
     expect(within(dialog).getByTestId('income-amount-input')).toHaveValue('1,234,567.89')
   })
 })
 
-/**
- * Visible focus indicator (story 28-1, AC-7).
- *
- * `focus:outline-none` removes the browser's native focus ring, so a
- * `focus:ring-<color>` without `focus:ring-2` sets a ring colour of zero width —
- * keyboard users get no visible focus indicator at all. Third recurrence of this
- * defect class (Epics 15 and 24), hence a structural guard rather than a manual
- * check only.
- *
- * Asserted by class-TOKEN membership, not substring: a substring check for
- * "focus:ring-2" also matches tokens like "focus:ring-2xl" and would pass on a
- * class list that has no 2px ring at all.
- */
 describe('IncomePage form controls have a visible focus ring', () => {
   beforeEach(() => {
     useIncomeStore.setState({ incomeSources: [] })
@@ -613,9 +474,6 @@ describe('IncomePage form controls have a visible focus ring', () => {
       within(dialog).getByLabelText('Frequency *'),
     ]
 
-    // Count the controls actually asserted on: a bare `if (tokens.includes(...))`
-    // guard silently asserts NOTHING the day `focus:outline-none` moves or the
-    // class string is reshaped, which is exactly how this defect class recurs.
     let checked = 0
     for (const control of controls) {
       const tokens = control.className.split(/\s+/)
@@ -623,8 +481,6 @@ describe('IncomePage form controls have a visible focus ring', () => {
         'focus:outline-none'
       )
       expect(tokens, `${control.id} has no visible focus ring`).toContain('focus:ring-2')
-      // And the ring must carry a real COLOUR — `focus:ring-offset-*` / `-inset`
-      // satisfy a naive "starts with focus:ring-" check while painting nothing.
       expect(
         tokens.some((t) => /^focus:ring-(?!offset-|inset$)[a-z]+-\d+$/.test(t)),
         `${control.id} has a ring width but no ring colour`
@@ -635,24 +491,6 @@ describe('IncomePage form controls have a visible focus ring', () => {
   })
 })
 
-/**
- * Mobile card presentation (story 31.2, UX-DR36).
- *
- * Below `sm` the income table's rows render as stacked cards. There is exactly
- * ONE `<table>` in the DOM at every viewport — the switch is CSS-only.
- *
- * ⚠️ These are STRUCTURE and CLASS assertions, not layout proofs. jsdom
- * computes no layout (every width is 0), so nothing here can show that anything
- * fits, stacks or hides; a width assertion would pass vacuously. The geometry
- * proofs lived in `e2e/responsive-320.spec.ts` until stories 84.2/84.5 (FR137)
- * deleted it; the CI screenshots (`income-320-light`, `income-768-light`,
- * `income-1280-dark`) are the only layout check on this page now. Titles below say "declares"
- * rather than "does" for exactly that reason.
- *
- * Every class check asserts TOKEN membership, never a substring of `className`:
- * `-` and `:` are substring boundaries, so `toContain('block')` false-matches
- * `max-sm:block`.
- */
 describe('IncomePage mobile card presentation (story 31.2)', () => {
   beforeEach(() => {
     useIncomeStore.setState({ incomeSources: [] })
@@ -676,8 +514,6 @@ describe('IncomePage mobile card presentation (story 31.2)', () => {
     renderWithProviders(<IncomePage />)
     const row = rowFor('Salary')
 
-    // The currency baseline in unit tests is `{ mode: 'none' }`, so amounts
-    // render as neutral grouped numbers rather than symbols.
     expect(within(row).getByText('5,000.00')).toBeInTheDocument()
     expect(within(row).getByText('monthly')).toBeInTheDocument()
     expect(within(row).getByTestId('income-row-uncategorized')).toBeInTheDocument()
@@ -690,13 +526,10 @@ describe('IncomePage mobile card presentation (story 31.2)', () => {
     renderWithProviders(<IncomePage />)
     const row = rowFor('Salary')
 
-    // Everything the free tier IS entitled to still renders...
     expect(within(row).getByText('5,000.00')).toBeInTheDocument()
     expect(within(row).getByText('monthly')).toBeInTheDocument()
     expect(within(row).getByRole('button', { name: 'Edit Salary' })).toBeInTheDocument()
     expect(within(row).getByRole('button', { name: 'Delete Salary' })).toBeInTheDocument()
-    // ...and BOTH category renderings are gone. Asserting only the placeholder
-    // would still pass if the assigned-category pill leaked through.
     expect(within(row).queryByTestId('income-row-uncategorized')).not.toBeInTheDocument()
     expect(within(row).queryByTestId('income-row-category')).not.toBeInTheDocument()
   })
@@ -706,14 +539,8 @@ describe('IncomePage mobile card presentation (story 31.2)', () => {
     renderWithProviders(<IncomePage />)
     const row = rowFor('Salary')
 
-    // Scoped with `within(row)`: the <thead> <th> text and the mobile label
-    // text are BOTH in the DOM at all times (jsdom applies no media queries),
-    // so an unscoped getByText would be ambiguous.
-    //
-    // ⚠️ The array equality is the point. The previous version of this test
-    // looped over a hand-written list with no count assertion, so its name
-    // ("every field") was a claim its assertions did not make — dropping a
-    // column left it green. Pin count and order, not just membership.
+    // Scoped with within(row): jsdom applies no media queries, so header and mobile
+    // label text are both in the DOM.
     expect(mobileLabelsIn(row)).toEqual(['Name', 'Amount', 'Frequency', 'Category', 'Actions'])
     for (const label of ['Name', 'Amount', 'Frequency', 'Category', 'Actions']) {
       expect([...within(row).getByText(label).classList]).toContain('sm:hidden')
@@ -729,8 +556,6 @@ describe('IncomePage mobile card presentation (story 31.2)', () => {
   })
 
   it('has exactly one table in the DOM — no dual-rendered card list', () => {
-    // A `hidden sm:table` + `sm:hidden` card list would duplicate every value
-    // and make the queries above multi-match under jsdom.
     const { container } = renderWithProviders(<IncomePage />)
     expect(container.querySelectorAll('table')).toHaveLength(1)
     expect(screen.getAllByText('Salary')).toHaveLength(1)
@@ -747,11 +572,6 @@ describe('IncomePage mobile card presentation (story 31.2)', () => {
   })
 
   it('every row Edit/Delete button carries a focus ring with a colour (AC-5)', () => {
-    // ENUMERATED, not grepped: these two buttons carried neither
-    // `focus:outline-none` nor `focus:ring-2` before this story, so the
-    // completeness grep that guards the modal controls above was structurally
-    // blind to them and returned zero either way. A missing guard has no
-    // mutation to run against — coverage has to come from naming the controls.
     renderWithProviders(<IncomePage />)
     const row = rowFor('Salary')
     for (const label of ['Edit Salary', 'Delete Salary']) {
@@ -767,16 +587,6 @@ describe('IncomePage mobile card presentation (story 31.2)', () => {
     }
   })
 
-  /**
-   * Story 48.2 (AC-1, AC-15) — the actions cell offers EXACTLY Edit and Delete.
-   *
-   * ⚠️ AN EXACT ARRAY, NOT `queryByRole(/^Move /) -> toBeNull()`. Story 48.2
-   * DELETES `RowMoveControls`, and an absence assertion about a deleted component
-   * is vacuous by construction: it passes for the same reason whether the removal
-   * was done correctly or the render broke entirely. Enumerating what IS offered
-   * fails on a re-added arrow AND on a lost Edit/Delete button, so it is
-   * falsifiable in both directions (mutation arm M1).
-   */
   it('offers exactly Edit and Delete in a row action cell (48.2 AC-1, AC-15)', () => {
     renderWithProviders(<IncomePage />)
     const cell = rowFor('Salary').querySelector('td:last-child') as HTMLElement
@@ -787,32 +597,12 @@ describe('IncomePage mobile card presentation (story 31.2)', () => {
     ).toEqual(['Edit Salary', 'Delete Salary'])
   })
 
-  /**
-   * Story 50.1 (AC-1, AC-3, AC-9) — the row actions are ICONS now.
-   *
-   * ⚠️ THE TEST DIRECTLY ABOVE CANNOT TELL. It reads `aria-label`, which 50.1
-   * leaves byte-identical, so it stays green against a button that renders no
-   * child at all — despite being titled "offers exactly Edit and Delete". It is
-   * the right guard for the accessibility contract and the wrong one for what
-   * the row SHOWS. This is the assertion that goes red.
-   *
-   * See `assertIsIconOnlyAction` for why both halves ship together and why
-   * `aria-hidden` is pinned as an attribute rather than through the name.
-   */
   it('renders each row action as an aria-hidden icon with no visible label (50.1 AC-1, AC-3, AC-9)', () => {
     renderWithProviders(<IncomePage />)
     const cell = rowFor('Salary').querySelector('td:last-child') as HTMLElement
     const geometry = ['Edit Salary', 'Delete Salary'].map((label) =>
       assertIsIconOnlyAction(within(cell).getByRole('button', { name: label }), label)
     )
-    // ⚠️ EDIT AND DELETE MUST BE DIFFERENT GLYPHS, AND NOTHING ELSE CHECKS THAT.
-    // Both icons are `h-5 w-5` `aria-hidden` SVGs from the same module, so pasting
-    // `<TrashIcon>` into the Edit slot — the likeliest slip across four copy-pasted
-    // call sites — leaves the accessible names, the empty textContent, the icon
-    // count, the rendered box and every width baseline untouched. Copied from
-    // `SortableColumnHeader.test.tsx`, which pins asc vs desc the same way and says
-    // why: "the two states would be visually identical and only a screen reader
-    // could tell them apart".
     expect(geometry[0], 'Edit and Delete render the same glyph').not.toBe(geometry[1])
   })
 
@@ -823,29 +613,7 @@ describe('IncomePage mobile card presentation (story 31.2)', () => {
   })
 })
 
-/**
- * Column sorting (Story 34.2, FR61).
- *
- * ⚠️ Written per page rather than once over a table of four, for the same reason
- * the 34.1b reorder block is: four independent page components, four hand-rolled
- * `<thead>`s and four extractor sets. 30-4b, 33.3 and 34.1b each shipped (or
- * nearly shipped) a HIGH by testing one surface and assuming its siblings.
- */
 describe('IncomePage — sort by column (34.2)', () => {
-  /**
-   * The fixture is built so that NO two of the four orderings coincide.
-   *
-   * manual (insertion):   Zeta, Alpha, Mid, Beta
-   * by name:              Alpha, Beta, Mid, Zeta
-   * by amount NORMALIZED: Zeta(5000), Beta(43333), Alpha(50000), Mid(50000)
-   * by amount RAW:        Beta(100_00), Alpha(500_00), Mid(500_00), Zeta(600_00)
-   * by frequency:         Beta(w), Alpha(m), Mid(m), Zeta(a)
-   *
-   * Alpha and Mid TIE on both amount and frequency while sitting in a known
-   * manual order, so the tie fallback is exercised by construction — and the raw
-   * and normalized amount orders disagree completely, so an un-normalized
-   * comparator cannot pass.
-   */
   const SEED = [
     { name: 'Zeta', amount: 600_00, frequency: 'annually' as const },
     { name: 'Alpha', amount: 500_00, frequency: 'monthly' as const },
@@ -856,9 +624,8 @@ describe('IncomePage — sort by column (34.2)', () => {
 
   function seedRows() {
     useIncomeStore.setState({ incomeSources: [] })
-    // Distinct createdAt per row: rows added inside one millisecond tie on the
-    // secondary manual key, and a tie-preserving stable sort can then make an
-    // ordering assertion pass by accident (34.1a's M10, 34.1b's M6).
+    // Distinct createdAt: rows created in one millisecond tie on the manual key,
+    // so a stable sort could pass an ordering assertion by accident.
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-03-01T00:00:00.000Z'))
     for (const row of SEED) {
@@ -868,7 +635,6 @@ describe('IncomePage — sort by column (34.2)', () => {
     vi.useRealTimers()
   }
 
-  /** The rendered row names, top to bottom (first cell of each body row). */
   function renderedOrder(): string[] {
     return screen
       .getAllByRole('row')
@@ -910,8 +676,7 @@ describe('IncomePage — sort by column (34.2)', () => {
     }
     const actions = header('Actions')
     expect(within(actions).queryByRole('button')).toBeNull()
-    // Not `none` — no attribute at all. `aria-sort="none"` advertises a column
-    // as sortable, which this one is not.
+    // No attribute at all: aria-sort="none" advertises the column as sortable.
     expect(actions).not.toHaveAttribute('aria-sort')
   })
 
@@ -942,8 +707,6 @@ describe('IncomePage — sort by column (34.2)', () => {
     const user = userEvent.setup()
     renderWithProviders(<IncomePage />)
     await user.click(within(header('Amount')).getByRole('button', { name: 'Amount' }))
-    // Raw ascending would be ['Beta','Alpha','Mid','Zeta'] — a completely
-    // different sequence, so this assertion can actually fail.
     expect(renderedOrder()).toEqual(['Zeta', 'Beta', 'Alpha', 'Mid'])
   })
 
@@ -953,10 +716,8 @@ describe('IncomePage — sort by column (34.2)', () => {
     const button = () => within(header('Frequency')).getByRole('button', { name: 'Frequency' })
 
     await user.click(button())
-    // Alpha and Mid are both monthly; Alpha precedes Mid manually.
     expect(renderedOrder()).toEqual(['Beta', 'Alpha', 'Mid', 'Zeta'])
     await user.click(button())
-    // Descending flips the CADENCES but must not flip the tied pair.
     expect(renderedOrder()).toEqual(['Zeta', 'Alpha', 'Mid', 'Beta'])
   })
 
@@ -972,8 +733,6 @@ describe('IncomePage — sort by column (34.2)', () => {
 
   it('places an unreadable row LAST without blanking the page', async () => {
     const user = userEvent.setup()
-    // A corrupt cadence with a sortOrder that puts the row FIRST manually, so
-    // "last under the sort" cannot be an accident of its manual position.
     useIncomeStore.setState((state) => ({
       incomeSources: [
         {
@@ -995,14 +754,11 @@ describe('IncomePage — sort by column (34.2)', () => {
 
     await user.click(within(header('Amount')).getByRole('button', { name: 'Amount' }))
     expect(renderedOrder()).toEqual(['Zeta', 'Beta', 'Alpha', 'Mid', 'Corrupt'])
-    // Absent values stay last under DESCENDING too — they are not merely the
-    // ascending order reversed.
     await user.click(within(header('Amount')).getByRole('button', { name: 'Amount' }))
     expect(renderedOrder().at(-1)).toBe('Corrupt')
   })
 
   it('MOVES each row node rather than relabelling positions (rows keyed by id)', async () => {
-    // ⚠️ This is what proves rows are keyed by IDENTITY, not by position.
     const user = userEvent.setup()
     renderWithProviders(<IncomePage />)
     const before = screen.getByRole('button', { name: 'Edit Zeta' })
@@ -1010,11 +766,8 @@ describe('IncomePage — sort by column (34.2)', () => {
     await user.click(within(header('Name')).getByRole('button', { name: 'Name' }))
     expect(renderedOrder()).toEqual(['Alpha', 'Beta', 'Mid', 'Zeta'])
 
-    // Identity, not equality: React MOVED Zeta's existing DOM node to the end.
-    // Under `key={index}` the element in each position would be reused and
-    // relabelled instead, so the node now named "Edit Zeta" would be a different
-    // object — and anything anchored to a row (focus, scroll position, an open
-    // menu) would silently jump to whichever row landed in that slot.
+    // Identity, not equality: under key={index} a different node would be relabelled
+    // and focus or scroll anchored to a row would jump.
     expect(screen.getByRole('button', { name: 'Edit Zeta' })).toBe(before)
   })
 
@@ -1039,24 +792,12 @@ describe('IncomePage — sort by column (34.2)', () => {
       })
     })
     expect(renderedOrder()).toEqual(['Alpha', 'Beta', 'Bravo', 'Mid', 'Zeta'])
-    // The MANUAL order still has it at the bottom — sorting never writes to it.
     expect(useIncomeStore.getState().incomeSources.map((r) => r.name)).toEqual([
       ...MANUAL_ORDER,
       'Bravo',
     ])
   })
 
-  /**
-   * The mobile sort control (story 48.1, UX-DR53).
-   *
-   * ⚠️ This block REPLACES the old "shows the mobile escape hatch only while a
-   * sort is active" test, and the replacement is the point. `TableSortNotice`
-   * rendered nothing while a table was in manual order, because a sort could
-   * only be STARTED at >= 640px (34.2, ratified decision 1). Manual order is
-   * exactly the state a phone user needs a control in — it is how they start
-   * one — so the control now renders unconditionally and the old assertion
-   * would be asserting the opposite of the requirement.
-   */
   function sortControl(): HTMLSelectElement {
     return screen.getByRole('combobox', { name: 'Sort income sources' }) as HTMLSelectElement
   }
@@ -1065,12 +806,10 @@ describe('IncomePage — sort by column (34.2)', () => {
     const user = userEvent.setup()
     renderWithProviders(<IncomePage />)
 
-    // Present in MANUAL order — the state the old escape hatch rendered nothing in.
     expect(sortControl()).toBeInTheDocument()
     expect(sortControl().value).toBe('manual')
 
     await user.selectOptions(sortControl(), 'name:asc')
-    // And still present once a sort is active, now reporting it.
     expect(sortControl().value).toBe('name:asc')
   })
 
@@ -1078,15 +817,9 @@ describe('IncomePage — sort by column (34.2)', () => {
     const user = userEvent.setup()
     renderWithProviders(<IncomePage />)
 
-    // ⚠️ DESCENDING, chosen directly. Ascending alone cannot tell a `select`
-    // from a `toggle`, and name-descending differs from BOTH the manual order
-    // and the ascending order for this seed — an order assertion that happened
-    // to match one of them could not fail.
     await user.selectOptions(sortControl(), 'name:desc')
     expect(renderedOrder()).toEqual(['Zeta', 'Mid', 'Beta', 'Alpha'])
 
-    // ⚠️ THE SINGLE-SOURCE-OF-TRUTH CLAIM. A control wired to its own state
-    // would reorder the rows and leave this header reporting `none`.
     expect(header('Name')).toHaveAttribute('aria-sort', 'descending')
   })
 
@@ -1103,12 +836,8 @@ describe('IncomePage — sort by column (34.2)', () => {
   })
 
   it('a header click RESUMES the cycle from a sort chosen on the mobile control (was e2e mobile-table-sort:275)', async () => {
-    // ⚠️ THE SHARED-STATE-MACHINE CLAIM, not just a shared value. The `desc`
-    // state comes from the `<select>`, never from two header clicks, so the
-    // header's FIRST activation must clear it (`nextSortState(desc) -> null`).
-    // A header that kept its own cycle would go to `ascending` here. Both
-    // surfaces are in the jsdom DOM at once; the viewport switch the e2e
-    // original drove is CSS (`max-sm:hidden`), the named D2 loss.
+    // The desc state came from the <select>, so the header's first activation must
+    // clear it; a header with its own cycle would go to ascending.
     const user = userEvent.setup()
     renderWithProviders(<IncomePage />)
 
@@ -1124,13 +853,6 @@ describe('IncomePage — sort by column (34.2)', () => {
 
   describe('Category is a sort target only for entitled users (AC-5)', () => {
     it('offers Category as a mobile sort option ONLY for an entitled user (48.1 AC-7)', async () => {
-      // ⚠️ EXACT ARRAYS on BOTH tiers. `queryByRole('option', { name: /Category/ })`
-      // returning null is satisfied by an options list that is empty for any
-      // reason at all, and the failure this guards is subtle: the Category
-      // extractor is OMITTED for an unentitled user
-      // (`createFlowSortExtractors`), so a Category option offered to a free
-      // user writes a sort that `effectiveState` immediately degrades — a
-      // control that visibly does nothing, with no error anywhere.
       free()
       const { unmount } = renderWithProviders(<IncomePage />)
       expect(
@@ -1190,21 +912,12 @@ describe('IncomePage — sort by column (34.2)', () => {
 
   it('adds no retired colour tokens to the header row', () => {
     renderWithProviders(<IncomePage />)
-    // The sweep covers the whole <table>, `<thead>` included, so the new header
-    // buttons are enrolled with no test change.
     const table = screen.getAllByRole('table')[0] as HTMLElement
     expect(collectRetiredTokenViolations(table)).toEqual([])
   })
 
   it('enqueues NOTHING on a PAID session — sorting is read-only over the store (AC-8)', async () => {
-    // ⚠️ REGISTERED, not left unregistered. A spy handed to nobody can never be
-    // called, so `not.toHaveBeenCalled()` could not fail — the tautology story
-    // 34.1b's review caught in the sibling store suite. Registering proves these
-    // exact spies are reachable from the code under test.
-    //
-    // ⚠️ And PAID, not free: `deferred-work.md:822-832` records a mutation that
-    // passed 1525 green tests because every test in the suite ran under one tier.
-    // Sorting must be inert on the tier that actually has a sync path.
+    // Registered so not.toHaveBeenCalled() can fail, and paid because that tier has a sync path.
     const spies = {
       userId: '550e8400-e29b-41d4-a716-446655440000',
       queueCreate: vi.fn(async () => {}),
@@ -1225,7 +938,6 @@ describe('IncomePage — sort by column (34.2)', () => {
       expect(spies.queueUpdate).not.toHaveBeenCalled()
       expect(spies.queueCreate).not.toHaveBeenCalled()
       expect(spies.queueDelete).not.toHaveBeenCalled()
-      // And the persisted order itself is byte-identical — no `sortOrder` write.
       expect(useIncomeStore.getState().incomeSources.map((row) => [row.id, row.sortOrder])).toEqual(
         before
       )
@@ -1248,8 +960,6 @@ describe('IncomePage — sort by column (34.2)', () => {
       }
     }
 
-    /** Seed two categories and assign them so the Category order differs from
-     * every other order in the fixture. */
     function seedCategories() {
       useCategoryStore.setState({
         categories: [
@@ -1271,16 +981,11 @@ describe('IncomePage — sort by column (34.2)', () => {
     })
 
     it('re-sorts when a category is RENAMED, though no row changed', async () => {
-      // ⚠️ The real invalidation path, end to end: rename -> new `categories`
-      // array -> new name map -> new extractor identity -> re-sorted projection.
-      // The hook's own test swaps the extractors object directly, which proves
-      // the memo reacts but NOT that a store rename reaches it.
       premium()
       seedCategories()
       const user = userEvent.setup()
       renderWithProviders(<IncomePage />)
       await user.click(within(header('Category')).getByRole('button', { name: 'Category' }))
-      // 'Alfa' before 'Zulu': rows 1 and 3 (Alpha, Beta) carry cat-2.
       expect(renderedOrder()).toEqual(['Alpha', 'Beta', 'Zeta', 'Mid'])
 
       await act(async () => {
@@ -1288,17 +993,12 @@ describe('IncomePage — sort by column (34.2)', () => {
           categories: state.categories.map((c) => (c.id === 'cat-2' ? { ...c, name: 'Zzz' } : c)),
         }))
       })
-      // No row changed — only the label the key resolves to.
       expect(renderedOrder()).toEqual(['Zeta', 'Mid', 'Alpha', 'Beta'])
     })
 
     it('degrades an active Category sort to manual order if entitlement lapses', () => {
-      // ⚠️ Unreachable today — `usePremiumAccess` cannot downgrade within a mount
-      // — but the combination it guards against has no exit: the table would stay
-      // sorted by a column that is no longer rendered, every header would report
-      // `aria-sort="none"`, every move arrow would be disabled, and the only reset
-      // control is `sm:hidden`. Omitting the extractor makes the state
-      // unrepresentable rather than merely improbable.
+      // Unreachable today, but a sort by an unrendered column would have no exit, so the
+      // extractor is omitted to make the state unrepresentable.
       premium()
       seedCategories()
       const { rerender } = renderWithProviders(<IncomePage />)
@@ -1310,10 +1010,6 @@ describe('IncomePage — sort by column (34.2)', () => {
 
       expect(screen.queryByRole('columnheader', { name: 'Category' })).toBeNull()
       expect(renderedOrder()).toEqual(MANUAL_ORDER)
-      // ⚠️ The POSITIVE form. The old `queryByText(/^Sorted by /)` absence
-      // assertion went vacuous when `TableSortNotice` was deleted; this fails if
-      // `effectiveState` is bypassed, because `category:asc` has no matching
-      // `<option>` on the free tier and the select's DOM value would be `''`.
       expect(
         (screen.getByRole('combobox', { name: 'Sort income sources' }) as HTMLSelectElement).value
       ).toBe('manual')
@@ -1322,23 +1018,13 @@ describe('IncomePage — sort by column (34.2)', () => {
 
   it('gives every sortable header the standard focus ring', () => {
     renderWithProviders(<IncomePage />)
-    // ⚠️ ENUMERATED, not grepped — `assertHasFocusRing` takes one element, so a
-    // control missing from this array is silently uncovered.
     for (const name of ['Name', 'Amount', 'Frequency']) {
       assertHasFocusRing(within(header(name)).getByRole('button', { name }), name)
     }
   })
 })
 
-/**
- * Money-field behaviour a value-only assertion cannot see (was
- * `e2e/money-input-sanitization.spec.ts`, story 28-1; moved by story 84.5).
- *
- * ⚠️ jsdom DOES reproduce the caret jump (MEASURED at 84.5 Task 1): with the
- * `onChange` reduced to `sanitizeMoneyInput(e.target.value)` (no caret write),
- * React's controlled-value restore moves the caret from 3 to 8 here, exactly as
- * Chromium did. So the selection is asserted, not just the string.
- */
+// jsdom reproduces the caret jump, so the selection is asserted, not just the value.
 describe('IncomePage money field: caret, focus and magnitude (story 28-1)', () => {
   beforeEach(() => {
     useIncomeStore.setState({ incomeSources: [] })
@@ -1369,10 +1055,8 @@ describe('IncomePage money field: caret, focus and magnitude (story 28-1)', () =
 
     await user.keyboard('x')
     expect(amount).toHaveValue('1,234.56')
-    // The caret stays where the rejected character was — NOT at the end (8).
     expect(amount.selectionStart).toBe(3)
 
-    // …and a legal character still inserts at that same position.
     await user.keyboard('9')
     expect(amount).toHaveValue('1,2934.56')
     expect(amount.selectionStart).toBe(4)
@@ -1387,17 +1071,12 @@ describe('IncomePage money field: caret, focus and magnitude (story 28-1)', () =
     await user.tab()
     expect(amount).toHaveValue('1,000.00')
 
-    // Caret to the very start, fumble a '.'. This used to yield ".1,00000" -> $0.10.
     await user.click(amount)
     amount.setSelectionRange(0, 0)
     await user.keyboard('.')
     await user.tab()
-    // Pinned EXACTLY (84.5 code review: `not.toHaveValue('0.10')` passed for any
-    // other wrong value). MEASURED: the malformed `.1,000.00` blurs to `0.00`,
-    // i.e. it is read as no amount, never rescaled to 0.10; submit rejects it.
     expect(amount).toHaveValue('0.00')
 
-    // And it must be REJECTED, not saved as some other number.
     const dialog = screen.getByRole('dialog')
     await user.type(within(dialog).getByTestId('income-name-input'), 'Salary')
     await user.click(within(dialog).getByRole('button', { name: 'Add Income Source' }))

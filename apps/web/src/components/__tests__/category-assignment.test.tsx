@@ -1,13 +1,3 @@
-/**
- * Category assignment on the income and expense pages (story 30.4b, AC-1/AC-3/AC-5).
- *
- * These are the wiring assertions the picker's own suite cannot make: that the
- * selection reaches the STORE, comes back when the row is re-opened for edit,
- * and shows up in the row's table listing — and that the locked picker inside
- * the real Add/Edit `<Modal>` opens no second dialog (AC-5, the one that is the
- * DEFAULT experience for every non-premium visitor).
- */
-
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -89,10 +79,8 @@ describe('IncomePage category assignment (AC-1)', () => {
     await user.selectOptions(within(dialog).getByLabelText('Category'), 'i1')
     await user.click(within(dialog).getByRole('button', { name: 'Add Income Source' }))
 
-    // The STORE holds the id...
     const [row] = useIncomeStore.getState().incomeSources
     expect(row?.categoryId).toBe('i1')
-    // ...and the table shows the NAME, never the uuid.
     expect(screen.getByTestId('income-row-category')).toHaveTextContent('Employment')
     expect(screen.queryByText('i1')).not.toBeInTheDocument()
   })
@@ -135,7 +123,6 @@ describe('IncomePage category assignment (AC-1)', () => {
     })
     render(<IncomePage />)
 
-    // First add: categorized.
     await user.click(screen.getByRole('button', { name: '+ Add Income Source' }))
     let dialog = screen.getByRole('dialog')
     await user.type(within(dialog).getByTestId('income-name-input'), 'Salary')
@@ -143,10 +130,7 @@ describe('IncomePage category assignment (AC-1)', () => {
     await user.selectOptions(within(dialog).getByLabelText('Category'), 'i1')
     await user.click(within(dialog).getByRole('button', { name: 'Add Income Source' }))
 
-    // Second add: the form must open back on Uncategorized. Without the reset the
-    // picker still shows "Employment" and the next row silently inherits it —
-    // the classic sticky-form-state defect, and invisible to every other test
-    // here because they each add only ONE row.
+    // Without the form reset the next row silently inherits the previous category.
     await user.click(screen.getByRole('button', { name: '+ Add Income Source' }))
     dialog = screen.getByRole('dialog')
     expect((within(dialog).getByLabelText('Category') as HTMLSelectElement).value).toBe('')
@@ -214,13 +198,6 @@ describe('ExpensesPage category assignment (AC-1)', () => {
 })
 
 describe('ExpensesPage EDIT round-trip — the sibling the first pass never tested', () => {
-  // ⚠️ ADDED BY CODE REVIEW 30.4b. All three review layers independently found
-  // that `ExpensesPage.openEditModal` never seeded `categoryId`, so every expense
-  // edit silently wrote `null` over the row's category. The whole suite was green
-  // because the edit round-trip was tested on IncomePage ONLY — the same
-  // sibling-asymmetry axis that mutation M34 caught in the two pie charts, hit a
-  // second time in one story. These mirror the income tests exactly.
-
   function seedCategorizedExpense(categoryId: string): void {
     useExpenseStore.setState({
       expenses: [
@@ -264,7 +241,6 @@ describe('ExpensesPage EDIT round-trip — the sibling the first pass never test
     seedCategorizedExpense('e1')
     render(<ExpensesPage />)
 
-    // Change ONLY the amount, never touching the picker, and save.
     await user.click(screen.getByRole('button', { name: 'Edit Tesco run' }))
     const dialog = screen.getByRole('dialog')
     await user.clear(within(dialog).getByTestId('expense-amount-input'))
@@ -273,7 +249,6 @@ describe('ExpensesPage EDIT round-trip — the sibling the first pass never test
 
     const [row] = useExpenseStore.getState().expenses
     expect(row?.amount).toBe(9500)
-    // The category MUST survive. Before the fix this was null.
     expect(row?.categoryId).toBe('e1')
     expect(screen.getByTestId('expense-row-category')).toHaveTextContent('Groceries')
   })
@@ -367,20 +342,11 @@ describe('a dangling reference in the table (AC-3)', () => {
     render(<ExpensesPage />)
 
     expect(screen.getByTestId('expense-row-uncategorized')).toBeInTheDocument()
-    // The deleted category's NAME must not surface either.
     expect(screen.queryByText('Groceries')).not.toBeInTheDocument()
   })
 })
 
 describe('the free tier: a locked picker, and CRUD that still works (AC-4, AC-5)', () => {
-  // ⚠️ Story 33.3 (FR57) REVERSED story 30.4b's decision here. 30.4b deliberately
-  // let free users' income and expense tables carry a Category column that could
-  // only ever render the "—" placeholder, and pinned that choice in a code-review
-  // ruling. FR57 called it what it was — a feature advertised as a permanently
-  // empty column — so the column is now absent entirely for the free tier.
-  //
-  // What AC-4 still promises is unchanged: their CRUD keeps working
-  // uncategorized. The page is NOT byte-identical to the premium one.
   it('41.2 AC-1/AC-3: the locked picker inside the Add Expense modal is a link OUT to /pricing, and opens no second dialog', async () => {
     const user = userEvent.setup()
     free()
@@ -392,21 +358,11 @@ describe('the free tier: a locked picker, and CRUD that still works (AC-4, AC-5)
     const locked = screen.getByTestId('expense-category-locked')
     const link = within(locked).getByRole('link')
 
-    // ⚠️ Story 41.2 reversed 30.4b's AC-5. This test used to assert only that
-    // clicking opened no second dialog — which an `<a>` satisfies trivially, so
-    // it would have stayed GREEN against the very change it existed to forbid.
-    // The destination is what makes it fail if the fix regresses.
     expect(link).toHaveAttribute('href', '/pricing')
 
-    // ⚠️ NOT clicked: jsdom does not implement navigation, so clicking a real
-    // `<a href>` emits `Not implemented: navigation` to stderr. The anchor has no
-    // `onClick`, so "no second dialog" holds by construction; that the click is a
-    // navigation nothing intercepts is the 41.2 test below (story 84.5).
+    // Not clicked: jsdom logs "Not implemented: navigation" for a real `<a href>`.
 
-    // Still exactly one dialog: `Modal` does not inert the background
-    // (Modal.tsx:38-40), so a nested dialog stays forbidden even though story
-    // 41.1's shared modal stack fixed the Escape and scroll-lock faults that
-    // were the ORIGINAL reason for the ban.
+    // Modal doesn't inert the background, so a nested dialog stays forbidden.
     expect(screen.getAllByRole('dialog')).toHaveLength(1)
     expect(screen.queryByRole('dialog', { name: /go premium/i })).not.toBeInTheDocument()
   })
@@ -423,28 +379,8 @@ describe('the free tier: a locked picker, and CRUD that still works (AC-4, AC-5)
     expect(screen.getAllByRole('dialog')).toHaveLength(1)
   })
 
-  /**
-   * The locked picker's click is a REAL navigation that nothing intercepts (was
-   * `e2e/categories-premium.spec.ts:266`, story 41.2; moved by story 84.5).
-   *
-   * The e2e original followed the link and checked that the entry modal, its
-   * scroll lock and its focus did not come along. A plain `<a href>` gives all
-   * three by construction, because the browser loads a NEW document. What our
-   * code can break is the plain-ness: an `onClick` that calls `preventDefault()`
-   * (a router `Link`, or a handler opening a nested dialog) keeps the user on
-   * the form.
-   *
-   * ⚠️ The witness is jsdom's own anchor activation: it runs only for a click
-   * whose default action was NOT prevented, and jsdom reports it as
-   * "Not implemented: navigation" on the console. That depends on Vitest's jsdom
-   * environment forwarding jsdom's VirtualConsole errors to `console.error`; if
-   * that ever stops, this test goes RED (0 navigations), never silently green. A window-level listener cannot
-   * see this click (the `Modal` card's `onClick` calls `stopPropagation()`,
-   * `Modal.tsx:357`; MEASURED: 0 events reached a window listener), so the console is the reliable signal here.
-   *
-   * ⚠️ The document load, and the scroll and focus state after it, are the named
-   * D2 loss (platform).
-   */
+  // jsdom reports an unprevented anchor activation as a "Not implemented: navigation"
+  // console error; Modal stops propagation, so a window listener cannot see the click.
   for (const { Page, prefix, addButton } of [
     { Page: ExpensesPage, prefix: 'expense', addButton: '+ Add Expense' },
     { Page: IncomePage, prefix: 'income', addButton: '+ Add Income Source' },
@@ -471,7 +407,6 @@ describe('the free tier: a locked picker, and CRUD that still works (AC-4, AC-5)
         consoleError.mockRestore()
       }
 
-      // …and the click opened nothing on the way: no second dialog, no prompt.
       expect(screen.getAllByRole('dialog')).toHaveLength(1)
       expect(screen.queryByRole('dialog', { name: /go premium/i })).toBeNull()
     })
@@ -491,41 +426,11 @@ describe('the free tier: a locked picker, and CRUD that still works (AC-4, AC-5)
     const [row] = useExpenseStore.getState().expenses
     expect(row?.name).toBe('Rent')
     expect(row?.categoryId).toBeNull()
-    // FR57 changes what the free tier SEES, never what is STORED — the row above
-    // still round-trips a null categoryId. What changes is that neither category
-    // rendering reaches the table.
     expect(screen.queryByTestId('expense-row-uncategorized')).not.toBeInTheDocument()
     expect(screen.queryByTestId('expense-row-category')).not.toBeInTheDocument()
   })
 })
 
-/**
- * The Category column is Premium-only (story 33.3, FR57).
- *
- * ⚠️ Two coverage holes this suite exists to close, both measured during story
- * creation:
- *
- * 1. NOTHING in the repo asserted the `<th>` at all. The mobile card-label
- *    tests are scoped `within(row)`, so they only ever reached the per-cell
- *    <FieldLabel> span — never the header. A half-applied gate that dropped the
- *    header but kept the cell (or the reverse) skewed every column at >= 640px
- *    while staying green across all 1500 unit tests AND all 191 e2e tests.
- *    `expectColumnParity` is the fix.
- *
- * 2. The free tier's ABSENCE had no coverage: 30.4b's tests all ran under
- *    `premium()`, so only the positive was ever pinned.
- *
- * ⚠️ This is also the ONLY layer where the entitled branch can be proved at
- * all. The whole e2e suite is unauthenticated with no session seeding, so after
- * FR57 no Playwright run can render the 5-column table.
- *
- * ⚠️ Every assertion here is DOM presence/absence, never visibility. jsdom
- * applies no media queries, so every `max-sm:`/`sm:hidden` class is inert and a
- * width claim is meaningless at this layer — width lives in Playwright. Absence
- * is also the honest claim for a gate implemented as conditional JSX, and it is
- * what stops a CSS-class implementation (which would leak onto printed output)
- * from passing.
- */
 describe('the Category column is Premium-only (story 33.3, FR57)', () => {
   function seedIncomeRow(categoryId: string | null): void {
     useIncomeStore.setState({
@@ -561,12 +466,6 @@ describe('the Category column is Premium-only (story 33.3, FR57)', () => {
     })
   }
 
-  /**
-   * A table's header labels and every row's cell count.
-   *
-   * Returned together so the parity assertion cannot drift from the header
-   * assertion — they are two readings of the same render.
-   */
   function readTable(container: HTMLElement): { headers: string[]; cellCounts: number[] } {
     const table = container.querySelector('table')
     if (!table) throw new Error('no <table> rendered')
@@ -586,8 +485,6 @@ describe('the Category column is Premium-only (story 33.3, FR57)', () => {
     }
   }
 
-  // Both pages, seeded identically, so a gate applied to one file and not the
-  // other cannot hide. The `kind` differs only to keep the seeds realistic.
   const PAGES = [
     {
       name: 'IncomePage',
@@ -613,24 +510,6 @@ describe('the Category column is Premium-only (story 33.3, FR57)', () => {
     },
   ]
 
-  // Every state the hook can be in.
-  //
-  // ⚠️ SCOPE OF WHAT THIS TABLE PROVES, stated precisely (code review 33.3
-  // corrected an earlier comment here that overclaimed it). The hook is MOCKED,
-  // so these rows prove one half of the chain: that the PAGE keys on
-  // `hasAccess` alone and renders no column whenever it is false — which is why
-  // `unresolved` and `errored` need no separate branch in the implementation.
-  // They do NOT prove the other half, that the real hook actually yields
-  // `hasAccess: false` in each of these states; mocking a hook cannot prove
-  // anything about the hook.
-  //
-  // That half is pinned separately in `src/hooks/__tests__/usePremiumAccess.test.tsx`
-  // for active / free / past_due / canceled / not-authenticated / signed-out /
-  // no-seed. ⚠️ Two derivations are pinned in NEITHER place and rest on source
-  // reading alone: the **errored** path and the **`lifetime`** mapping. Both are
-  // currently correct (`usePremiumAccess.ts:68-85`, `:151-178`); both are a
-  // pre-existing gap logged in `deferred-work.md`, not something this table
-  // covers.
   const NOT_ENTITLED: { label: string; status: Partial<PremiumAccessStatus> }[] = [
     { label: 'free', status: { subscriptionStatus: 'free', isAuthenticated: true } },
     { label: 'past_due', status: { subscriptionStatus: 'past_due', isAuthenticated: true } },
@@ -645,8 +524,7 @@ describe('the Category column is Premium-only (story 33.3, FR57)', () => {
 
   const ENTITLED: { label: string; status: Partial<PremiumAccessStatus> }[] = [
     { label: 'active', status: { hasAccess: true, subscriptionStatus: 'active' } },
-    // `lifetime` is a real entitled state (story 25-2) and is easy to drop when
-    // someone "simplifies" the gate to `status === 'active'`.
+    // `lifetime` is entitled and easy to drop if the gate is simplified to `status === 'active'`.
     { label: 'lifetime', status: { hasAccess: true, subscriptionStatus: 'lifetime' } },
   ]
 
@@ -660,8 +538,6 @@ describe('the Category column is Premium-only (story 33.3, FR57)', () => {
               category({ id: page.categoryId, name: page.categoryName, kind: page.kind }),
             ],
           })
-          // Seeded WITH a resolvable category, so this cannot pass merely
-          // because there was nothing to show.
           page.seed(page.categoryId)
           const { container } = page.render()
 
@@ -669,7 +545,6 @@ describe('the Category column is Premium-only (story 33.3, FR57)', () => {
           expect(headers).toEqual(['Name', 'Amount', 'Frequency', 'Actions'])
           expect(screen.queryByTestId(`${page.prefix}-row-category`)).not.toBeInTheDocument()
           expect(screen.queryByTestId(`${page.prefix}-row-uncategorized`)).not.toBeInTheDocument()
-          // The category NAME must not reach the page by any other route either.
           expect(screen.queryByText(page.categoryName)).not.toBeInTheDocument()
           expectColumnParity(container)
         })
@@ -705,10 +580,6 @@ describe('the Category column is Premium-only (story 33.3, FR57)', () => {
       })
 
       it('keeps header and cell counts in lockstep across a tier change', () => {
-        // The half-applied gate this guards against: gate the <th> but not the
-        // <td> (or the reverse). Both renders below are parity-checked, so
-        // either half-fix fails here even though every other test in the repo
-        // stays green.
         page.seed(page.categoryId)
 
         free()
@@ -722,21 +593,13 @@ describe('the Category column is Premium-only (story 33.3, FR57)', () => {
         const premiumTable = readTable(premiumRender.container)
         expectColumnParity(premiumRender.container)
 
-        // And the difference between the tiers is EXACTLY one column.
         expect(premiumTable.headers.length).toBe(freeTable.headers.length + 1)
       })
     })
   }
 
-  // Named for what it actually checks. It is NOT the only test a one-file gate
-  // fails — each page's own matrix catches that too, and more strictly (code
-  // review 33.3 corrected an earlier name claiming exclusivity). What this adds
-  // is both pages asserted in a SINGLE render pass under one tier, so a future
-  // refactor that makes the two pages read tier differently shows up as one
-  // obvious failure rather than two unrelated-looking ones.
   it('renders both pages under one tier state with neither showing a Category column', () => {
     free()
-    // Seeded WITH resolvable categories, so this cannot pass on emptiness.
     useCategoryStore.setState({
       categories: [
         category({ id: 'i1', name: 'Employment', kind: 'income' }),
@@ -754,31 +617,12 @@ describe('the Category column is Premium-only (story 33.3, FR57)', () => {
     expect(readTable(expenses.container).headers).not.toContain('Category')
   })
 
-  /**
-   * ⚠️⚠️ THE HIGHEST-CONSEQUENCE PROPERTY IN THIS STORY, AND IT WAS PINNED
-   * NOWHERE UNTIL NOW (code review 33.3).
-   *
-   * A user who was premium, categorized their rows, then lapsed to
-   * `canceled`/`past_due` keeps their `categoryId`s — they simply cannot see or
-   * change them. Editing any other field on such a row MUST round-trip the
-   * category untouched. Story 33.3 makes this strictly more dangerous than it
-   * was before: the free user can no longer SEE the category, so a regression
-   * that silently drops it is invisible to them.
-   *
-   * ⚠️ Every pre-existing test of this round-trip runs under `premium()`, where
-   * a TIER-CONDITIONAL regression is inert. The code review measured the exact
-   * hole: mutating `handleSubmit` to write
-   * `categoryId: showCategoryColumn ? categoryId : null` — i.e. destroy the
-   * assignment for precisely the users who cannot see it — passed the FULL
-   * 1525-test suite GREEN, and is invisible to the unauthenticated e2e layer
-   * too. These two tests are what close it. Do not delete them, and do not
-   * "simplify" them to the premium tier.
-   */
+  // Lapsed users keep categoryIds they cannot see; editing another field must
+  // round-trip them.
   for (const page of PAGES) {
     it(`preserves a lapsed user's category when they edit a ${page.name} row`, async () => {
       const user = userEvent.setup()
-      // `canceled`, not `free`: this is the state that actually holds orphaned
-      // assignments. A never-premium user has none to lose.
+      // `canceled`, not `free`: this is the state that holds orphaned assignments.
       mockStatus({ subscriptionStatus: 'canceled', isAuthenticated: true })
       useCategoryStore.setState({
         categories: [category({ id: page.categoryId, name: page.categoryName, kind: page.kind })],
@@ -786,23 +630,18 @@ describe('the Category column is Premium-only (story 33.3, FR57)', () => {
       page.seed(page.categoryId)
       const { container } = page.render()
 
-      // Precondition: they genuinely cannot see the category they are about to
-      // edit around. If this ever fails, the rest of the test is meaningless.
       expect(readTable(container).headers).not.toContain('Category')
       expect(screen.queryByTestId(`${page.prefix}-row-category`)).not.toBeInTheDocument()
 
       await user.click(screen.getByRole('button', { name: `Edit ${page.rowName}` }))
       const dialog = screen.getByRole('dialog')
-      // Edit an UNRELATED field, the way a lapsed user actually would.
       const amountInput = within(dialog).getByTestId(`${page.prefix}-amount-input`)
       await user.clear(amountInput)
       await user.type(amountInput, '4321')
       await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
 
-      // The edit landed...
       const row = page.readStoreRow()
       expect(row?.amount).toBe(432100)
-      // ...and the category they could not see survived it.
       expect(row?.categoryId).toBe(page.categoryId)
     })
   }

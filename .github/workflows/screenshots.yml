@@ -1,33 +1,7 @@
 name: Screenshots
 
-# Screenshot baselines (story 84.1, FR137).
-#
-# The `screenshots` / `screenshots-paid` Playwright projects compare pages
-# against PNGs in `apps/web/e2e/__screenshots__/`. Those PNGs must be rendered
-# where CI compares them: CI resolves `system-ui` to DejaVu Sans, a dev box to
-# Noto Sans, so a baseline made locally never matches. This workflow is the ONLY
-# place baselines are made.
-#
-#   mode=update   render every shot and upload them as `screenshot-baselines`:
-#                   gh workflow run screenshots.yml --ref <branch> -f mode=update
-#                   gh run download <run-id> -n screenshot-baselines -D apps/web/e2e/__screenshots__
-#                 Look at every changed PNG before committing it: a blank or
-#                 half-rendered shot becomes a baseline that always passes.
-#   mode=compare  run the shots against the committed baselines (the same check
-#                 ci.yml's e2e step runs on every PR to main and every deploy),
-#                 without a deploy.
-#
-# Update mode DELETES apps/web/e2e/__screenshots__ first, so a renamed or
-# removed shot's old PNG is not re-uploaded and re-committed forever
-# (Playwright never flags an unused snapshot). Commit the artifact as the
-# whole directory: `git rm -r` the old one, then download.
-#
-# ⚠️ `runs-on` must match ci.yml's `e2e-tests` job (ubuntu-24.04), or the
-# baselines made here are compared on a different image. A Playwright upgrade
-# or a runner image change means re-running mode=update.
-#
-# GitHub only dispatches a workflow that exists on the default branch; the run
-# then uses the file as it is on `--ref`.
+# The only place baselines are made: CI renders system-ui as DejaVu Sans, dev boxes
+# as Noto Sans. runs-on must match ci.yml's e2e-tests job.
 
 on:
   workflow_dispatch:
@@ -39,10 +13,7 @@ on:
         type: choice
         options: [compare, update]
 
-# Don't cancel the RUNNING run: an update run cancelled by a compare dispatched
-# right after it loses the baselines (MEASURED in story 84.1: back-to-back
-# dispatches cancelled each other). GitHub still keeps only ONE pending run per
-# group, so a third dispatch cancels the pending second: dispatch one at a time.
+# Not cancel-in-progress: a compare dispatched right after an update would lose its baselines.
 concurrency:
   group: screenshots-${{ github.ref }}
   cancel-in-progress: false
@@ -102,8 +73,7 @@ jobs:
           MODE: ${{ inputs.mode }}
         run: |
           set -euo pipefail
-          # An API dispatch bypasses the `choice` list, so check it here: an
-          # unknown mode must fail, not silently run a compare.
+          # An API dispatch bypasses the `choice` list.
           case "$MODE" in
             update | compare) ;;
             *) echo "::error::unknown mode '$MODE' (expected update or compare)"; exit 1 ;;

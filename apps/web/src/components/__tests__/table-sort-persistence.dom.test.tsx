@@ -21,22 +21,6 @@ import { ExpensesPage } from '../ExpensesPage'
 import { IncomePage } from '../IncomePage'
 import { SavingsPage } from '../SavingsPage'
 
-/**
- * A column sort that SURVIVES the page (Story 42.1, FR67).
- *
- * These are the claims the existing 34.2 suites cannot make. Every sort test in
- * `IncomePage.test.tsx` and its three siblings starts from an unsorted table and
- * activates a header — none of them begins with a sort already in storage,
- * because before this story none could exist. The paths below are reachable only
- * now:
- *
- *   - a FRESH MOUNT that opens already sorted (AC-1);
- *   - a fresh mount holding a sort for a column this user's tier cannot see,
- *     which before was reachable only by a tier flip WITHIN one mount (AC-6);
- *   - a table's sort leaking into a sibling table (AC-4);
- *   - a first paint that shows manual order and then re-orders (AC-10).
- */
-
 const premiumTier = vi.hoisted(() => ({
   status: {
     hasAccess: false,
@@ -65,13 +49,7 @@ const premium = () =>
   setTier({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
 const free = () => setTier({})
 
-/**
- * Four rows whose manual order coincides with NO other ordering in this file.
- *
- * manual:    Zeta, Alpha, Mid, Beta
- * by name:   Alpha, Beta, Mid, Zeta
- * by amount: Beta, Alpha, Mid, Zeta   (normalized; Alpha and Mid tie)
- */
+/** Manual order (Zeta, Alpha, Mid, Beta) coincides with no other ordering in this file. */
 const SEED = [
   { name: 'Zeta', amount: 600_00, frequency: 'annually' as const },
   { name: 'Alpha', amount: 500_00, frequency: 'monthly' as const },
@@ -81,8 +59,7 @@ const SEED = [
 const MANUAL_ORDER = ['Zeta', 'Alpha', 'Mid', 'Beta']
 const BY_NAME_ASC = ['Alpha', 'Beta', 'Mid', 'Zeta']
 
-/** Seed rows with distinct `createdAt`s so the manual tiebreaker cannot make an
- * ordering assertion pass by accident (34.1a M10, 34.1b M6). */
+/** Distinct `createdAt`s so the manual tiebreaker cannot make an ordering assertion pass by accident. */
 function seedIncome(): void {
   useIncomeStore.setState({ incomeSources: [] })
   vi.useFakeTimers()
@@ -105,7 +82,6 @@ function seedExpenses(): void {
   vi.useRealTimers()
 }
 
-/** Rendered row names, top to bottom. */
 function renderedOrder(container?: HTMLElement): string[] {
   const scope = container ? within(container) : screen
   return scope
@@ -114,21 +90,11 @@ function renderedOrder(container?: HTMLElement): string[] {
     .map((row) => row.querySelector('td')?.textContent?.replace('Name', '').trim() ?? '')
 }
 
-/**
- * Move the seeded income rows OUT of memory and into localStorage.
- *
- * ⚠️ Load-bearing for the AC-10 probe. In production the rows and the sort both
- * start in localStorage and rehydrate in the SAME `StoreHydration` pass. A probe
- * that seeds the rows in memory but the sort in storage invents an asymmetry
- * that cannot occur, and measures a "flash" that is an artifact of the fixture.
- */
+/** Rows and sort must both start in localStorage, as in production, or the probe measures a fixture artifact. */
 function persistIncomeToStorage(): void {
   const rows = useIncomeStore.getState().incomeSources
-  // ⚠️ ORDER IS LOAD-BEARING: clear memory FIRST, then write the blob.
-  // `setState` goes through zustand's persist WRITE path even under
-  // `skipHydration` (which skips only the initial READ), so clearing after the
-  // write silently overwrites the blob with an empty array — measured here, and
-  // the same shape epic 22 recorded.
+  // Order matters: `setState` writes through persist even under `skipHydration`, so clearing
+  // after writing the blob would overwrite it with an empty array.
   useIncomeStore.setState({ incomeSources: [] })
   localStorage.setItem(
     'budget-planner-income-v1',
@@ -136,7 +102,6 @@ function persistIncomeToStorage(): void {
   )
 }
 
-/** Write a persisted sort blob directly, bypassing the store's own writer. */
 function seedPersistedSort(sorts: Record<string, unknown>): void {
   localStorage.setItem(
     TABLE_SORT_STORAGE_KEY,
@@ -160,16 +125,6 @@ afterEach(() => {
   useBalanceStore.setState({ entries: [] })
 })
 
-/**
- * Savings and Balance carry the SAME persistence wiring and, until review, had
- * no rendered-table coverage at any layer — only store-shape tests.
- *
- * ⚠️ That is precisely AC-8's named failure ("not one tested and three
- * assumed"): a wrong `tableId` at `SavingsPage.tsx:222` or `BalancePage.tsx:144`
- * — say `'income'` pasted from its sibling — reddened NO test. The e2e suite
- * covers Income and Expenses; these two close the other half here, where the
- * stores can be seeded directly.
- */
 const SAVINGS_SEED = [
   { name: 'Zeta', targetAmount: 900_00, currentBalance: 300_00 },
   { name: 'Alpha', targetAmount: null, currentBalance: 500_00 },
@@ -187,8 +142,6 @@ const BALANCE_SEED = [
   {
     type: 'debt' as const,
     name: 'Alpha',
-    // Story 103.1: was -500_00. Seeded through `addBalanceEntry`, which now
-    // refuses a negative balance; no assertion here reads the balance order.
     currentBalance: 500_00,
     monthlyContribution: 300_00,
     frequency: 'monthly' as const,
@@ -224,8 +177,6 @@ function seedBalance(): void {
   vi.useRealTimers()
 }
 
-/** Row names top to bottom, matched by seeded name — these two pages carry a
- * badge in the name cell, so the whole cell's text is not the name. */
 function namedOrder(names: readonly string[]): string[] {
   return screen
     .getAllByRole('row')
@@ -233,21 +184,7 @@ function namedOrder(names: readonly string[]): string[] {
     .map((row) => names.find((n) => within(row).queryByText(n)) ?? '')
 }
 
-/**
- * The INCOME page's mobile sort control value (story 48.1).
- *
- * ⚠️ Named for its page. It hardcodes `Sort income sources`, and this file also
- * covers Savings and Balance — a generic name invites a call from one of those
- * describes, where it would throw or silently query the wrong control.
- *
- * ⚠️ This REPLACES `expect(queryByText(/^Sorted by /)).toBeNull()`, which
- * became VACUOUS the moment `TableSortNotice` was deleted — an absence
- * assertion against markup that no longer exists in any state cannot fail.
- * The positive form still catches the defect the original was aimed at: if
- * `effectiveState` were bypassed, the select would be handed a value with no
- * matching `<option>` (the Category options are not rendered for a free user),
- * and the DOM value would be `''`, not `'manual'`.
- */
+/** If `effectiveState` were bypassed, the select would get an unmatched value and read `''`. */
 function incomeSortControlValue(): string {
   return (screen.getByRole('combobox', { name: 'Sort income sources' }) as HTMLSelectElement).value
 }
@@ -267,7 +204,6 @@ describe('Savings and Balance persist their own sorts (AC-8)', () => {
   })
 
   it('Savings ignores a sort stored for another table', async () => {
-    // The wrong-`tableId` mutation: if SavingsPage read `'income'`, this reddens.
     seedSavings()
     seedPersistedSort({ income: { key: 'name', direction: 'asc' } })
     await useTableSortStore.persist.rehydrate()
@@ -303,7 +239,6 @@ describe('a persisted sort is applied on a fresh mount (AC-1)', () => {
 
     renderWithProviders(<IncomePage />)
 
-    // No header was activated in this test. The order can only come from storage.
     expect(renderedOrder()).toEqual(BY_NAME_ASC)
     expect(screen.getByRole('columnheader', { name: 'Name' })).toHaveAttribute(
       'aria-sort',
@@ -312,8 +247,6 @@ describe('a persisted sort is applied on a fresh mount (AC-1)', () => {
   })
 
   it('opens sorted DESCENDING when that is what was stored', async () => {
-    // The direction is half the claim. A guard that only ever stores `asc` is
-    // satisfied by an implementation that hard-codes it.
     seedIncome()
     seedPersistedSort({ income: { key: 'name', direction: 'desc' } })
     await useTableSortStore.persist.rehydrate()
@@ -328,8 +261,6 @@ describe('a persisted sort is applied on a fresh mount (AC-1)', () => {
   })
 
   it('opens in manual order when nothing is stored', async () => {
-    // The positive control for the two above: without it, an implementation that
-    // always sorted by name would satisfy them both.
     seedIncome()
     await useTableSortStore.persist.rehydrate()
 
@@ -352,8 +283,7 @@ describe('the sort is scoped to one table (AC-4)', () => {
 
     renderWithProviders(<ExpensesPage />)
 
-    // ⚠️ The scoping claim lives HERE, on the OTHER table. Asserting only that
-    // Income is sorted stays green under a single shared storage key.
+    // The scoping claim lives on the OTHER table: asserting only Income stays green under a shared key.
     expect(renderedOrder()).toEqual(MANUAL_ORDER)
   })
 
@@ -399,18 +329,13 @@ describe('clearing returns to manual order, and the manual order survives (AC-2,
     renderWithProviders(<IncomePage />)
     expect(renderedOrder()).toEqual(BY_NAME_ASC)
 
-    // The projection is a VIEW. `lib/ordering.ts` still owns the manual order and
-    // this story must not have touched a single `sortOrder`.
     const after = useIncomeStore.getState().incomeSources.map((r) => [r.name, r.sortOrder])
     expect(after).toEqual(before)
     expect(after.map(([, order]) => order)).toEqual([0, 1, 2, 3])
   })
 
-  // ⚠️ NOT a persistence test, and deliberately not titled as one. After an
-  // explicit `rehydrate()` the sort lives in the module-singleton store, so an
-  // unmount/remount never touches storage — this stays GREEN with persistence
-  // entirely dead. It pins that the state outlives the COMPONENT; the e2e
-  // reload specs are the only layer that can pin storage.
+  // Not a persistence test: after `rehydrate()` the sort lives in the singleton store, so a
+  // remount never touches storage.
   it('the sort outlives the component (state is not component-local)', async () => {
     seedIncome()
     seedPersistedSort({ income: { key: 'name', direction: 'asc' } })
@@ -427,15 +352,7 @@ describe('clearing returns to manual order, and the manual order survives (AC-2,
 
 describe('a rehydrated sort enqueues no sync operation (AC-2)', () => {
   it('is inert on a PAID session', async () => {
-    // ⚠️ REGISTERED, not left unregistered — a spy handed to nobody can never be
-    // called, so `not.toHaveBeenCalled()` could not fail (the tautology story
-    // 34.1b's review caught). And PAID, because that is the tier with a sync path.
-    // The live-toggle case is already covered in `IncomePage.test.tsx`; this is
-    // the REHYDRATED case, which only exists since sort became persistent.
-    // ⚠️ Seed BEFORE registering. `seedIncome()` adds four rows through the real
-    // store action, which legitimately enqueues four creates — registering first
-    // counts those against the sort and the test fails for the wrong reason
-    // (measured: 4 calls).
+    // Seed BEFORE registering: `seedIncome()` legitimately enqueues four creates.
     seedIncome()
     seedPersistedSort({ income: { key: 'name', direction: 'asc' } })
 
@@ -492,8 +409,6 @@ describe('a persisted sort on the Premium-only Category column (AC-6)', () => {
   }
 
   it('an ENTITLED user opens sorted by Category', async () => {
-    // The positive control. Without it, "unentitled sees manual order" is also
-    // satisfied by a build where the Category sort never works at all.
     premium()
     seedIncome()
     seedCategories()
@@ -510,10 +425,7 @@ describe('a persisted sort on the Premium-only Category column (AC-6)', () => {
   })
 
   it('an UNENTITLED user opens in manual order with a live way out', async () => {
-    // ⚠️ The path story 42.1 created. `IncomePage.test.tsx`'s existing degrade
-    // test flips entitlement inside ONE mount and is explicitly annotated as
-    // unreachable in production; a persisted key reaches this state on a FRESH
-    // mount, which is entirely reachable — sort as Premium, lapse, reload.
+    // A persisted key reaches this on a fresh mount: sort as Premium, lapse, reload.
     free()
     seedIncome()
     seedCategories()
@@ -524,12 +436,8 @@ describe('a persisted sort on the Premium-only Category column (AC-6)', () => {
 
     expect(screen.queryByRole('columnheader', { name: 'Category' })).toBeNull()
     expect(renderedOrder()).toEqual(MANUAL_ORDER)
-    // ⚠️ The trap this pins: drive the UI from the RAW stored value instead of the
-    // EFFECTIVE state and a free user is stranded in a sort they cannot see or
-    // clear. Until story 48.2 this was pinned on the move arrows' `aria-disabled`;
-    // they are gone, and the claim is unchanged — the control reports MANUAL ORDER
-    // rather than a column this render does not have, which is the same
-    // effective-vs-raw distinction on the surface that still exists.
+    // Drive the UI from the effective state, not the raw stored value, or a free user is stranded
+    // in a sort they cannot see.
     expect(incomeSortControlValue()).toBe('manual')
   })
 
@@ -543,14 +451,11 @@ describe('a persisted sort on the Premium-only Category column (AC-6)', () => {
     const view = renderWithProviders(<IncomePage />)
     expect(renderedOrder()).toEqual(MANUAL_ORDER)
 
-    // The degradation is a DERIVATION, not a write. Nothing cleared the value.
     expect(useTableSortStore.getState().sorts.income).toEqual({
       key: 'category',
       direction: 'asc',
     })
-    // ⚠️ And in STORAGE, which is what the AC actually names — in-memory state is
-    // a proxy, and a clearing write that happened to skip the persist path would
-    // satisfy the proxy while losing the user's sort on the next load.
+    // Check storage too: a clearing write that skipped persist would lose the sort on the next load.
     const raw = JSON.parse(localStorage.getItem(TABLE_SORT_STORAGE_KEY) as string)
     expect(raw.state.sorts.income).toEqual({ key: 'category', direction: 'asc' })
 
@@ -561,22 +466,7 @@ describe('a persisted sort on the Premium-only Category column (AC-6)', () => {
 })
 
 describe('a persisted key that names a PROTOTYPE member (AC-5)', () => {
-  /**
-   * ⚠️ Found in review, and it was a real no-exit crash.
-   *
-   * `coerceSortState` validates SHAPE and deliberately accepts any non-empty
-   * string key — resolving a column is the hook's job. But the hook resolved it
-   * with a bare `extractors[key]`, which walks the PROTOTYPE CHAIN: `'toString'`
-   * returns `Object.prototype.toString`, a function, not `undefined`. The
-   * degradation therefore did not fire. Measured before the fix: the then-current
-   * `TableSortNotice` rendered, every move arrow went `aria-disabled="true"` with
-   * no reset control below `sm` (story 48.1 has since added one), and React
-   * rejected `SORT_COLUMN_LABELS['toString']` with "Functions are not valid as a
-   * React child".
-   *
-   * Unreachable before this story — a header can only emit a real column key.
-   * Persisting the key is what made it reachable.
-   */
+  /** `extractors[key]` walks the prototype chain, so a persisted `'toString'` must still degrade. */
   const PROTOTYPE_KEYS = ['toString', 'constructor', 'valueOf', 'hasOwnProperty', '__proto__']
 
   it.each(PROTOTYPE_KEYS)('degrades a persisted %s key to manual order', async (key) => {
@@ -587,15 +477,11 @@ describe('a persisted key that names a PROTOTYPE member (AC-5)', () => {
     renderWithProviders(<IncomePage />)
 
     expect(renderedOrder()).toEqual(MANUAL_ORDER)
-    // The symptoms of the no-exit state, each asserted separately. (A third arm
-    // read the move arrows' `aria-disabled`; story 48.2 removed them.)
     expect(incomeSortControlValue()).toBe('manual')
     expect(screen.getByRole('columnheader', { name: 'Name' })).toHaveAttribute('aria-sort', 'none')
   })
 
   it('still renders a real sort, so the guard is not just rejecting everything', async () => {
-    // The positive control. Without it, an implementation that treats EVERY
-    // persisted key as unresolvable satisfies all five cases above.
     seedIncome()
     seedPersistedSort({ income: { key: 'name', direction: 'asc' } })
     await useTableSortStore.persist.rehydrate()
@@ -608,18 +494,8 @@ describe('a persisted key that names a PROTOTYPE member (AC-5)', () => {
 
 describe('no first-paint flash from manual order into the persisted sort (AC-10)', () => {
   /**
-   * ⚠️ WHY A PROFILER AND NOT A PLAIN ASSERTION.
-   *
-   * React Testing Library renders inside `act` and every `findBy*` awaits, so by
-   * the time any ordinary assertion runs the effects have flushed and the table
-   * is already sorted. An RTL test therefore CANNOT distinguish "sorted from the
-   * first paint" from "painted manual, then re-ordered" — story 41.3 measured
-   * exactly that blindness against a real flash.
-   *
-   * `Profiler.onRender` fires once per COMMIT, after the DOM is mutated, so it
-   * observes the intermediate committed states `act` otherwise hides. We record
-   * the row order at every commit and assert the FIRST commit that contains a
-   * table is already sorted.
+   * RTL flushes effects before any assertion, hiding a flash. `Profiler.onRender` fires per commit,
+   * so the first commit containing a table must already be sorted.
    */
   async function recordCommits(ui: React.ReactElement): Promise<string[][]> {
     const orders: string[][] = []
@@ -640,11 +516,7 @@ describe('no first-paint flash from manual order into the persisted sort (AC-10)
         {ui}
       </Profiler>
     )
-    // `persist.rehydrate()` resolves on a MICROTASK even for synchronous
-    // storage, so the commit that first shows the table happens after the
-    // synchronous render returns. Without this flush the probe records nothing
-    // and every assertion below passes vacuously on an empty array — which is
-    // why `orders.length` is asserted before its contents.
+    // `persist.rehydrate()` resolves on a microtask; without this flush the probe records nothing.
     await act(async () => {
       await Promise.resolve()
     })
@@ -656,26 +528,19 @@ describe('no first-paint flash from manual order into the persisted sort (AC-10)
     persistIncomeToStorage()
     seedPersistedSort({ income: { key: 'name', direction: 'asc' } })
 
-    // NOT pre-rehydrated: `StoreHydration` does it in an effect, exactly as the
-    // real app does, so the commit sequence here is the real one.
     const orders = await recordCommits(<IncomePage />)
 
     expect(orders.length).toBeGreaterThan(0)
     expect(orders[0], 'the first commit that shows a table must already be sorted').toEqual(
       BY_NAME_ASC
     )
-    // Every commit the probe WITNESSED — which is those up to the single
-    // microtask flush above, not every commit for all time. A re-order scheduled
-    // in a macrotask would land after recording stops; that window is the honest
-    // limit of this probe, and the e2e layer is where a later flash would show.
+    // Only commits up to the microtask flush are witnessed; a macrotask re-order would be missed.
     for (const order of orders) {
       expect(order).toEqual(BY_NAME_ASC)
     }
   })
 
   it('the probe can SEE a manual-order commit when there is one', async () => {
-    // The positive control. Without it the assertion above is satisfied by a
-    // probe that records nothing, or one that only ever sees post-sort commits.
     seedIncome()
     persistIncomeToStorage()
 
@@ -686,18 +551,7 @@ describe('no first-paint flash from manual order into the persisted sort (AC-10)
   })
 })
 
-/**
- * A sort SURVIVES a page load (was `e2e/table-sort-persistence.spec.ts` and
- * `e2e/mobile-table-sort.spec.ts:260`, story 84.5; FR137).
- *
- * The tests above seed the stored blob BY HAND, so none of them can see the
- * WRITE half: a `partialize` that stores nothing leaves every one of them green.
- * These start from a real header click or a real mobile-control choice and cross
- * the reload chain (`test/reload-chain.tsx`): stores back to their initial state,
- * storage the only carrier, `StoreHydration` the only reader.
- *
- * ⚠️ The browser re-reading storage on a real reload is the named D2 loss.
- */
+/** These start from a real click or choice and cross the reload chain, so they cover the write half. */
 describe('a sort survives the reload chain (was e2e, story 84.5)', () => {
   function nameHeader(): HTMLElement {
     return screen.getByRole('columnheader', { name: 'Name' })
@@ -717,15 +571,12 @@ describe('a sort survives the reload chain (was e2e, story 84.5)', () => {
 
     await renderAfterReload(<IncomePage />)
 
-    // Nothing was activated after the reload: the order and the token can only
-    // have come out of storage.
     expect(renderedOrder()).toEqual(BY_NAME_ASC)
     expect(nameHeader()).toHaveAttribute('aria-sort', 'ascending')
   })
 
   it('a restored sort is DESCRIBED on the header but never ANNOUNCED (story 120.1, D2)', async () => {
-    // The live region speaks only for a header click in THIS mount. A sort that
-    // came back out of storage is not news: describe it, stay silent.
+    // The live region speaks only for a header click in this mount; a restored sort stays silent.
     const user = userEvent.setup()
     seedIncome()
     renderWithProviders(<IncomePage />)
@@ -756,9 +607,7 @@ describe('a sort survives the reload chain (was e2e, story 84.5)', () => {
   })
 
   it('a CLEARED sort stays cleared while a sibling table keeps its sort (was e2e table-sort-persistence:176)', async () => {
-    // ⚠️ The SIBLING is the falsifier, as in the e2e original: with nothing
-    // persisted at all, "cleared" and "never stored" look identical on Income
-    // alone. Expenses carries the half that needs storage to work.
+    // The sibling is the falsifier: on Income alone, "cleared" and "never stored" look identical.
     const user = userEvent.setup()
     seedIncome()
     seedExpenses()
@@ -800,8 +649,8 @@ describe('a sort survives the reload chain (was e2e, story 84.5)', () => {
   })
 
   it('a stored payload that is not a sort at all opens in manual order (was e2e table-sort-persistence:252)', async () => {
-    // The e2e original's exact payload: a bare string where a `{ key, direction }`
-    // object belongs, at the CURRENT version so `migrate` never sees it.
+    // A bare string where a `{ key, direction }` object belongs, at the current version so `migrate`
+    // never sees it.
     seedIncome()
     localStorage.setItem(
       TABLE_SORT_STORAGE_KEY,

@@ -12,8 +12,6 @@ import {
   testDbConnection,
 } from './client'
 
-// Story 5.8 — AC group A: database connection & data sovereignty hardening.
-
 describe('isRelaxedDbEnv (NODE_ENV fail-closed)', () => {
   it('relaxes only for explicit development/test', () => {
     expect(isRelaxedDbEnv('development')).toBe(true)
@@ -26,7 +24,7 @@ describe('isRelaxedDbEnv (NODE_ENV fail-closed)', () => {
     expect(isRelaxedDbEnv('preview')).toBe(false)
     expect(isRelaxedDbEnv(undefined)).toBe(false)
     expect(isRelaxedDbEnv('')).toBe(false)
-    expect(isRelaxedDbEnv('Production')).toBe(false) // case-sensitive on purpose
+    expect(isRelaxedDbEnv('Production')).toBe(false)
   })
 })
 
@@ -38,8 +36,7 @@ describe('isEuSovereignDbHost (anchored EU allowlist)', () => {
   })
 
   it('accepts the public endpoint exposed by `danube db dns enable`', () => {
-    // Confirmed 2026-09-03 against the live instance. Note the port is 5445, not
-    // 5432 — the host check does not see it, but the connection string must.
+    // Port 5445, not 5432: the host check ignores it, but the connection string must carry it.
     expect(
       isEuSovereignDbHost('postgresql-budget-planner-prod.budgetplanner795.danubedata.ro')
     ).toBe(true)
@@ -51,9 +48,8 @@ describe('isEuSovereignDbHost (anchored EU allowlist)', () => {
   })
 
   it('rejects danubedata.com — a domain this provider does not use', () => {
-    // The allowlist pinned `.danubedata.com` from the architecture docs until
-    // 2026-09-03; no real DanubeData host has ever matched it. Allowlisting a
-    // domain a third party may own is the exact hole this guard exists to close.
+    // `.danubedata.com` is not DanubeData's domain; allowlisting a domain a third party may own
+    // is the hole this guard closes.
     expect(isEuSovereignDbHost('danubedata.com')).toBe(false)
     expect(isEuSovereignDbHost('pg-01.fra.danubedata.com')).toBe(false)
   })
@@ -75,9 +71,7 @@ describe('isEuSovereignDbHost (anchored EU allowlist)', () => {
   })
 })
 
-// Story 5.18 — AC-4. A strict subset of the above: same sovereignty, narrower
-// reachability. Used by the MIGRATION path only, so a retired public-DNS window
-// cannot be reopened by pointing DATABASE_URL back at the public endpoint.
+// Migration-only: a strict subset that refuses the public endpoint.
 describe('isInClusterDbHost (migration-only, excludes the public endpoint)', () => {
   it('accepts both in-cluster writer forms', () => {
     expect(isInClusterDbHost('budget-planner-prod-rw')).toBe(true)
@@ -93,8 +87,7 @@ describe('isInClusterDbHost (migration-only, excludes the public endpoint)', () 
     )
   })
 
-  // The distinguishing case, and the whole reason this predicate exists: the
-  // public endpoint IS EU-sovereign, so `isEuSovereignDbHost` admits it.
+  // The public endpoint is EU-sovereign, so `isEuSovereignDbHost` admits it; this must not.
   it('rejects the public endpoint that the sovereignty check admits', () => {
     const publicHost = 'postgresql-budget-planner-prod.budgetplanner795.danubedata.ro'
     expect(isEuSovereignDbHost(publicHost)).toBe(true)
@@ -106,8 +99,8 @@ describe('isInClusterDbHost (migration-only, excludes the public endpoint)', () 
     expect(isInClusterDbHost('pg-01.fra.danubedata.ro')).toBe(false)
   })
 
-  // Exact match, never a suffix: a `.svc.cluster.local` suffix rule would admit
-  // every service in every namespace of any cluster.
+  // Exact match, never a suffix: a `.svc.cluster.local` suffix rule would admit every service
+  // in every namespace of any cluster.
   it('rejects lookalikes and other in-cluster services', () => {
     expect(isInClusterDbHost('budget-planner-prod-rw.attacker.com')).toBe(false)
     expect(isInClusterDbHost('budget-planner-prod-ro')).toBe(false)
@@ -136,16 +129,11 @@ describe('buildDbSsl (production CA support)', () => {
   })
 })
 
-// Story 4.17 — AC-2: the production database is reached over DanubeData internal
-// DNS, a BARE hostname with no `.danubedata.ro` suffix. It is allowed by EXACT
-// match only, so the anchoring that protects the suffix list is not weakened.
+// Bare in-cluster hostnames are allowed by exact match only.
 
 describe('isEuSovereignDbHost (internal-DNS exact allowlist)', () => {
   it('accepts the verified internal writer endpoint in both resolvable forms', () => {
-    // Kubernetes in-cluster DNS. A pod in the same namespace resolves the short
-    // name via its search domain; the CLI and dashboard report the FQDN, which is
-    // what actually lands in DATABASE_URL. Both must be allowed or the pasted
-    // value is rejected at getPool().
+    // Pods resolve the short name; DATABASE_URL carries the FQDN. Both must be allowed.
     expect(isEuSovereignDbHost('budget-planner-prod-rw')).toBe(true)
     expect(isEuSovereignDbHost('budget-planner-prod-rw.budgetplanner795.svc.cluster.local')).toBe(
       true
@@ -153,8 +141,6 @@ describe('isEuSovereignDbHost (internal-DNS exact allowlist)', () => {
   })
 
   it('rejects another namespace and any other cluster service', () => {
-    // Exact match, not a `.svc.cluster.local` suffix rule: a suffix would admit
-    // every service in every namespace of any cluster.
     expect(isEuSovereignDbHost('budget-planner-prod-rw.someone-else.svc.cluster.local')).toBe(false)
     expect(isEuSovereignDbHost('postgres.default.svc.cluster.local')).toBe(false)
     expect(
@@ -168,7 +154,6 @@ describe('isEuSovereignDbHost (internal-DNS exact allowlist)', () => {
   })
 
   it('rejects a lookalike built by extending the internal name', () => {
-    // The whole point of exact match: none of these are the internal service.
     expect(isEuSovereignDbHost('budget-planner-prod-rw.attacker.com')).toBe(false)
     expect(isEuSovereignDbHost('budget-planner-prod-rw.evil.io')).toBe(false)
     expect(isEuSovereignDbHost('evil-budget-planner-prod-rw')).toBe(false)
@@ -186,12 +171,7 @@ describe('isEuSovereignDbHost (internal-DNS exact allowlist)', () => {
   })
 })
 
-// Production incident, 2026-09-09: `/api/ready` failed in ~25ms (a fast TLS
-// rejection, not the 2s readiness timeout) with DATABASE_CA_CERT set correctly
-// and never consulted. `getPool()` passed `connectionString` alongside an
-// explicit `ssl` option, so a `?sslmode=` on the URL silently won and dropped
-// the CA — the exact defect fixed in migrate-preflight-cli.ts the day before,
-// never propagated to the pool the LIVE APP actually uses.
+// A `?sslmode=` on the URL must not override the explicit `ssl` and drop the CA.
 describe('buildAppDbCredentials (the 2026-09-09 production incident)', () => {
   const CA = '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n'
 
@@ -218,7 +198,7 @@ describe('buildAppDbCredentials (the 2026-09-09 production incident)', () => {
       host: 'budget-planner-prod-rw',
       port: 5432,
       user: 'bp_app',
-      password: 's3cr@t', // percent-decoded
+      password: 's3cr@t',
       database: 'pgdb',
     })
   })
@@ -239,13 +219,6 @@ describe('buildAppDbCredentials (the 2026-09-09 production incident)', () => {
   })
 })
 
-// Production incident, 2026-09-10: `/api/ready` returned 503 for hours with
-// NO trace of why anywhere -- not the HTTP response (by design, story 5-5
-// AC-1), not the container's stdout logs either, because `testDbConnection`
-// swallowed the pg/node error into a bare `false`. A real, confirmed defect
-// (getPool's connectionString/ssl conflict) got fixed and deployed and the
-// symptom persisted -- undiagnosable, because nothing recorded which of many
-// possible causes it actually was.
 describe('testDbConnection (diagnosability, 2026-09-10)', () => {
   const originalUrl = process.env['DATABASE_URL']
   const originalEnv = process.env['NODE_ENV']
@@ -256,13 +229,11 @@ describe('testDbConnection (diagnosability, 2026-09-10)', () => {
     else process.env['DATABASE_URL'] = originalUrl
     process.env['NODE_ENV'] = originalEnv
     vi.restoreAllMocks()
-    await closeDb() // reset the memoized pool so the next test rebuilds it
+    await closeDb()
   })
 
   it('logs a structured, safe summary of the failure server-side', async () => {
-    // Missing DATABASE_URL makes getPool() throw SYNCHRONOUSLY -- a real,
-    // dependency-free way to reach testDbConnection's catch block without a
-    // database or mocking `pg`.
+    // Missing DATABASE_URL makes getPool() throw synchronously, reaching the catch without a database.
     // biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
     delete process.env['DATABASE_URL']
     process.env['NODE_ENV'] = 'production'
@@ -270,7 +241,7 @@ describe('testDbConnection (diagnosability, 2026-09-10)', () => {
 
     const result = await testDbConnection()
 
-    expect(result).toBe(false) // contract preserved: never throws to the caller
+    expect(result).toBe(false)
     expect(spy).toHaveBeenCalledTimes(1)
     const [, detail] = spy.mock.calls[0] as [string, Record<string, unknown>]
     expect(detail).toMatchObject({ name: 'Error' })
@@ -278,9 +249,7 @@ describe('testDbConnection (diagnosability, 2026-09-10)', () => {
   })
 
   it('redacts a connection string embedded in the failure message', async () => {
-    // A driver-level error whose `.message` carries the full URL, user:pass and
-    // all -- some pg/node errors do this. `getPool()` succeeds (valid EU host),
-    // then the connect attempt rejects with the leaky error.
+    // Some pg/node errors embed the full URL, credentials included.
     process.env['DATABASE_URL'] = 'postgresql://bp_app:s3cr3tpw@budget-planner-prod-rw:5432/pgdb'
     process.env['NODE_ENV'] = 'production'
     const leak = new Error(
@@ -293,9 +262,9 @@ describe('testDbConnection (diagnosability, 2026-09-10)', () => {
 
     expect(result).toBe(false)
     const logged = JSON.stringify(spy.mock.calls)
-    expect(logged).not.toContain('s3cr3tpw') // the password never reaches the log
-    expect(logged).not.toContain('bp_app:') // nor the user:pass@ shape
-    expect(logged).toContain('postgresql://[redacted]@budget-planner-prod-rw') // logged, scrubbed
+    expect(logged).not.toContain('s3cr3tpw')
+    expect(logged).not.toContain('bp_app:')
+    expect(logged).toContain('postgresql://[redacted]@budget-planner-prod-rw')
   })
 
   it('unwraps an AggregateError so the log is actually diagnostic', async () => {

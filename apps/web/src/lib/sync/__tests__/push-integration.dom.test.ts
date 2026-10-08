@@ -1,15 +1,3 @@
-/**
- * Push Path Integration (Story 5-15)
- *
- * Drives the REAL core SynchronizationService through the REAL HTTP push
- * transport (sendSyncOperation) with only `fetch` stubbed. This proves the whole
- * push chain end to end at the web layer: a queued op is serialized and POSTed to
- * /api/sync/batch (AC-2), a transport failure leaves the op queued for a later
- * flush instead of being lost (AC-3 durability), and a follow-up success drains it.
- *
- * No real network (NFR8) — `fetch` is stubbed.
- */
-
 import { createSynchronizationService } from '@budget-planner/core/sync'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { sendSyncOperation } from '../../../features/api/client'
@@ -63,18 +51,14 @@ describe('push integration — service → sendSyncOperation → /api/sync/batch
       entityType: 'incomeSource',
       entityId: ENTITY_ID,
       userId: USER_ID,
-      profileId: 'profile-1', // stamped from service config (server requires NOT NULL)
+      profileId: 'profile-1',
     })
 
-    // The op drained from the pending queue once the server accepted it.
     expect(service.getState().pendingOperations).toHaveLength(0)
   })
 
   it('AC-3: a transient transport failure preserves the op (durability, not data loss)', async () => {
-    // Network throws → sendSyncOperation returns a retryable failure, so the core
-    // must keep the op for its scheduled retry rather than dropping it. (The retry
-    // timer / reconnect flush is exercised in the core sync suite; here we pin the
-    // web-layer guarantee that a transient push failure never loses the edit.)
+    // A network throw is a retryable failure: the op must stay queued, not be lost.
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => {
@@ -90,16 +74,11 @@ describe('push integration — service → sendSyncOperation → /api/sync/batch
     )
     await service.forceSync()
 
-    // The op survived the failure — still QUEUED, exactly once, never lost.
-    // (Story 75.3: a retryable op no longer leaves the queue. `failedOperations`
-    // is now a view of queued ops, a subset of `pendingOperations`, so the old
-    // `pending + failed === 1` would count it twice.)
+    // failedOperations is a view of queued ops, so pending + failed would double count.
     const afterFailure = service.getState()
     expect(afterFailure.pendingOperations.map((o) => o.entityId)).toEqual([ENTITY_ID])
     expect(afterFailure.failedOperations.map((o) => o.entityId)).toEqual([ENTITY_ID])
 
-    // Then a successful sync of a SECOND op proves the transport recovers and the
-    // route is reached once connectivity is back.
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => okOnce())

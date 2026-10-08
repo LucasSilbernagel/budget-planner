@@ -1,14 +1,3 @@
-/**
- * Error-tracking tests (story 5-5, AC-3)
- *
- * The CODE deliverable is provider-agnostic: scrub-before-send + a DSN-gated
- * transport seam. Selecting the EU-hosted provider, creating the account, and
- * injecting the real DSN are OPS (blocked-on-account). These tests prove the two
- * things that matter for the privacy promise regardless of provider:
- *   1. without a configured transport/DSN, capture is a safe no-op (nothing egresses);
- *   2. with a (mocked) transport, the event is fully scrubbed before send.
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   __resetErrorTrackingForTesting,
@@ -23,10 +12,10 @@ afterEach(() => __resetErrorTrackingForTesting())
 describe('scrubEvent()', () => {
   it('strips PII / financial / secret fields from error + context before send', () => {
     const event = scrubEvent(new Error('checkout failed for jane@example.com'), {
-      userId: 'u-123', // non-PII — kept
-      email: 'jane@example.com', // PII — redacted
-      amount: 4200, // financial — redacted
-      sessionToken: 'abc.def', // secret — redacted
+      userId: 'u-123',
+      email: 'jane@example.com',
+      amount: 4200,
+      sessionToken: 'abc.def',
     })
 
     expect(event.error.name).toBe('Error')

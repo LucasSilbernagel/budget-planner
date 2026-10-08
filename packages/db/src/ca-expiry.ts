@@ -1,23 +1,5 @@
-/**
- * Early warning for `DATABASE_CA_CERT` expiry (Story 4.16 follow-up, 2026-09-08).
- *
- * The DanubeData PostgreSQL instance presents a **self-signed** chain issued by
- * a per-cluster CA, measured 2026-09-08 with a **90-day** validity window (CA
- * and server certificate share one window, both expiring 2026-12-04).
- * CloudNativePG renews its own certificates; what does NOT renew is the copy
- * pinned in the `DATABASE_CA_CERT` secret. When that copy lapses, the
- * application's pool — which enforces `rejectUnauthorized: true` — stops
- * connecting to its database, with no code change and no deploy to blame.
- *
- * This module converts that from a silent outage on a calendar date into a loud
- * failure weeks earlier. It deliberately does **no** network I/O and needs no
- * database: it reads the certificate the deployment has already been given and
- * asks only when it expires. That is what makes it safe to run on every deploy
- * and on a schedule, without opening the database's public DNS.
- *
- * It does not renew anything. Renewal is a manual fetch (see `formatCaExpiry`),
- * and the honest framing is that this buys warning, not automation.
- */
+// The CA copy pinned in DATABASE_CA_CERT does not auto-renew; once it lapses the pool stops
+// connecting. No network I/O, so this can run on every deploy.
 
 import { X509Certificate } from 'node:crypto'
 
@@ -25,25 +7,14 @@ type CaExpiryStatus = 'ok' | 'warn' | 'expired' | 'invalid'
 
 export interface CaExpiryResult {
   status: CaExpiryStatus
-  /** Whole days until expiry; negative once expired. Absent when unparseable. */
   daysRemaining?: number
-  /** `notAfter`, ISO-8601. Absent when unparseable. */
   notAfter?: string
   subject?: string
 }
 
 const MS_PER_DAY = 86_400_000
 
-/**
- * Classify a PEM certificate against a warning threshold.
- *
- * `now` and `warnWithinDays` are parameters rather than ambient values so the
- * behaviour is testable at any point in a certificate's life — a check about
- * time that reads the clock internally can only ever be tested at one instant.
- *
- * Absent or unparseable input is `invalid`, never `ok`: an unset secret and a
- * healthy certificate must not produce the same verdict.
- */
+/** Absent or unparseable input is `invalid`, never `ok`. */
 export function assessCaExpiry(
   pem: string | undefined,
   now: Date,
@@ -53,11 +24,8 @@ export function assessCaExpiry(
     return { status: 'invalid' }
   }
 
-  // `new X509Certificate(pem)` parses only the FIRST block. If an operator pastes
-  // a full chain (leaf + intermediate + CA) into DATABASE_CA_CERT, checking only
-  // block #1 would report on the auto-renewing CloudNativePG leaf while the
-  // pinned CA quietly lapses — the exact outage this module exists to prevent.
-  // Assess every certificate and report on the one that expires SOONEST.
+  // X509Certificate parses only the first block, so check a pasted chain whole and report on
+  // the certificate that expires soonest.
   const blocks = pem.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g)
   const pemBlocks = blocks && blocks.length > 0 ? blocks : [pem]
 
@@ -84,8 +52,7 @@ export function assessCaExpiry(
     return { status: 'invalid' }
   }
 
-  // Truncated toward zero: "0 days remaining" means it lapses within the day,
-  // which should read as urgent rather than as one more day of headroom.
+  // Truncated toward zero so "0 days" reads as urgent.
   const daysRemaining = Math.trunc((notAfter.getTime() - now.getTime()) / MS_PER_DAY)
   const base = {
     daysRemaining,
@@ -102,13 +69,6 @@ export function assessCaExpiry(
   return { status: 'ok', ...base }
 }
 
-/**
- * Render a result as the message a human will actually act on.
- *
- * Carries the remedy inline. A warning that says only "expires soon" sends
- * whoever reads it hunting through runbooks at precisely the wrong moment, and
- * this one may fire months after anyone last thought about certificates.
- */
 export function formatCaExpiry(result: CaExpiryResult): string {
   const remedy = [
     'To renew:',

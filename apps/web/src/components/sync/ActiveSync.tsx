@@ -7,57 +7,8 @@ import { useProfileStore } from '@/stores/profileStore'
 import { type ReactElement, useEffect, useRef, useState } from 'react'
 import { RefusedEditNotice } from './RefusedEditNotice'
 
-/**
- * The sync engine, split out so it is DOWNLOADED ONLY BY A PAID SESSION
- * (story 38.3, AC-6).
- *
- * `SyncProvider` is mounted in `routes/__root.tsx`, so before this split its
- * static imports — `useSync`, `seedLocalData`, `syncBridge` and, through them,
- * `applyServerChanges` — landed in the root chunk that every visitor downloads
- * before hydration can begin. Nobody on the free tier can ever execute a line of
- * it: the parent returns `null` for them at `SyncProvider.tsx`'s paid-session
- * gate. Pulling it through `React.lazy` moves the whole engine into its own chunk
- * that only a paid session fetches.
- *
- * ⚠️ Hydration-safe for the same reason the Overview's charts are: the parent
- * renders `null` until its client-only `/api/auth/me` probe resolves, so this
- * subtree cannot appear in the SSR HTML and there is nothing for a `Suspense`
- * fallback to diverge from.
- *
- * ⚠️ This is mostly wiring. Its only UI is the refused-edit notice (story
- * 75.2, and 79.2's not-synced edits), which renders nothing until the server
- * permanently refuses an edit or one keeps failing to sync. The
- * one-chunk delay before it mounts is invisible, and the ordering it depends on
- * (`activeProfileReconciled` before the bridge registers) is enforced inside
- * this file, not by when the module arrives.
- */
-
-/**
- * The mounted-for-paid-sessions component. Split out so the `useSync` hook (and
- * its poller) only ever runs once we KNOW the session is a paid sync tier —
- * hooks cannot be called conditionally in the parent.
- *
- * ⚠️ It first removes ANOTHER account's data from this browser's stores (story
- * 86.2, FR140, D2), and only then mounts the engine. Every store is shared by
- * whoever uses the browser, so after A signs out and B signs in they still hold
- * A's profiles and rows; the engine's first render reads them (the active
- * profile it stamps on ops, `activeProfileReconciled` below, the seed). An
- * effect runs after that render, so the engine is not rendered until the removal
- * has run. A throw here reaches `SyncProvider`'s error boundary: no sync, rather
- * than sync on another account's data. (Only the SYNC is stopped: the pages
- * beside this component keep rendering whatever the stores hold, and the removal
- * is not atomic, one persisted store per write, so a write that throws part-way
- * leaves the later stores' rows in place until the next load re-runs it. Pages
- * also show the previous account's rows for the `/api/auth/me` + chunk round trip
- * before this effect runs: deferred-work, 86.2 review.)
- *
- * ⚠️ Since story 90.1 this is a BACKUP (D3): the boundary is applied for every
- * session from the root chunk, by `StoreHydration` right after rehydrate (or by
- * `SyncProvider` once an untrusted seed is verified), so by the time this
- * mounts the call is normally a no-op. Kept because the removal is idempotent
- * and the engine must never start on another account's data if the root run
- * threw part-way (`lib/sync/accountBoundary.ts`).
- */
+// Removes another account's data from the shared stores before the engine mounts,
+// so its first render never reads them.
 export function ActiveSync({ userId }: { userId: string }): ReactElement | null {
   const [clearedFor, setClearedFor] = useState<string | null>(null)
   useEffect(() => {
@@ -75,21 +26,9 @@ function ActiveSyncEngine({ userId }: { userId: string }): ReactElement {
   const initialPullRef = useRef(false)
   const backfillRef = useRef(false)
   const planSeedRef = useRef(false)
-  // True once the initial pull below has resolved SUCCESSFULLY, i.e. its changes
-  // are applied (story 99.3, AC-7: the plan seed waits for exactly that).
   const [initialPullApplied, setInitialPullApplied] = useState(false)
-  // True once the active profile is a REAL server-backed profile (non-empty
-  // userId) — i.e. the reconciling pull has landed. BOTH the push bridge and the
-  // backlog seed gate on this so neither runs while config.profileId is still the
-  // un-reconciled bootstrap placeholder. Reactive: re-runs the gated effects when
-  // reconciliation flips it true.
-  //
-  // ⚠️ Any truthy owner opens it, `'temp-user'` included (deliberately unchanged
-  // by story 86.3). A Profiles-page profile the PREVIOUS account pushed no longer
-  // reaches here as `'temp-user'`: the accepted push stamps that account's id on
-  // it (`stampSyncedOwner`), so `dropAnotherAccountsLocalData` removes it first.
-  // What still can is one whose push never landed or whose response was never
-  // processed: the accepted D4 adoption (deferred-work, 86.3).
+  // Gates the push bridge and backlog seed until the reconciling pull replaces the
+  // placeholder profile.
   const activeProfileReconciled = useProfileStore((s) => {
     const active = s.profiles.find((p) => p.id === s.activeProfileId)
     return active !== undefined && Boolean(active.userId)
@@ -97,12 +36,8 @@ function ActiveSyncEngine({ userId }: { userId: string }): ReactElement {
 
   const { queueCreate, queueUpdate, queueDelete, forcePull, forceSync, isSyncing } = sync
 
-  // Register the push queue ONLY once the active profile is reconciled (review P1):
-  // before that, config.profileId is the 'local-default' placeholder, so any pushed
-  // op would carry an invalid profileId, fail non-retryably, stick in the queue and
-  // trip the circuit breaker. While unreconciled the bridge stays unregistered →
-  // paid edits are localStorage-only and are picked up by the backlog seed below.
-  // Clears on unmount (logout / downgrade) or if the profile de-reconciles.
+  // Register only once reconciled: before that profileId is a placeholder, and pushed
+  // ops would fail non-retryably and trip the circuit breaker.
   useEffect(() => {
     if (!activeProfileReconciled) {
       return
@@ -113,9 +48,6 @@ function ActiveSyncEngine({ userId }: { userId: string }): ReactElement {
     }
   }, [userId, activeProfileReconciled, queueCreate, queueUpdate, queueDelete])
 
-  // Seed local state with one immediate pull on mount (the poller otherwise waits
-  // a full interval). This also delivers the user's server profiles, which
-  // applyServerChanges uses to repoint the active profile (Story 5-15).
   useEffect(() => {
     if (initialPullRef.current) {
       return
@@ -132,12 +64,6 @@ function ActiveSyncEngine({ userId }: { userId: string }): ReactElement {
       })
   }, [forcePull])
 
-  // Free→paid backlog seed (Task 5): once the active profile is reconciled (so the
-  // bridge above is registered and config.profileId is valid), push the user's
-  // pre-upgrade localStorage backlog ONCE. seedOnce awaits the durable enqueues and
-  // only then sets its per-user marker, skipping rows already on the server — so a
-  // re-login does not replay creates and seeding never generates create-create
-  // conflicts (review P2 + P6). On failure the ref is reset so a later trigger retries.
   useEffect(() => {
     if (backfillRef.current || !activeProfileReconciled) {
       return
@@ -155,20 +81,8 @@ function ActiveSyncEngine({ userId }: { userId: string }): ReactElement {
       })
   }, [activeProfileReconciled, userId])
 
-  // The retirement plan after the initial pull (story 99.3, AC-7 / D4, AC-12).
-  // Runs AFTER that pull has been APPLIED, by awaiting it above, not by inference
-  // from the profile gate: a seed `create` queued before the pull would win
-  // locally by last-writer-wins while the server acknowledged it as a no-op
-  // (insert-if-absent), and the device would show its own plan instead of the
-  // server's until its next edit. Also gated on the bridge being registered (the
-  // profile gate), since the ops go through it. A plan marked as not on the
-  // server is pushed; otherwise, if the server has none, it is seeded once.
-  //
-  // ⚠️ Deliberately NOT `seedOnce`'s per-user marker: that is set on any browser
-  // that synced before 99.3, and the plan never reached the server then.
-  // ⚠️ ONE attempt per mount, no retry: if the initial pull fails, or the queue
-  // add fails (which marks the plan as not on the server), the next session tries
-  // again; an edit before then upserts anyway.
+  // Must run after the initial pull is applied: a seed queued earlier would win locally
+  // by last-writer-wins while the server treated it as a no-op.
   useEffect(() => {
     if (planSeedRef.current || !initialPullApplied || !activeProfileReconciled) {
       return
@@ -179,9 +93,6 @@ function ActiveSyncEngine({ userId }: { userId: string }): ReactElement {
     })
   }, [initialPullApplied, activeProfileReconciled])
 
-  // Story 75.2: the only UI the sync engine has — a notice naming each edit the
-  // server permanently refused, and (story 79.2) each edit that keeps failing to
-  // sync, with a "Try again" that pushes now. Renders nothing until there is one.
   return (
     <RefusedEditNotice
       onRetry={() => {

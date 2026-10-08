@@ -1,72 +1,15 @@
 import { type Page, expect, test } from '@playwright/test'
 
-/**
- * No route fails React hydration with real persisted data (Story 38.1, BUG-F).
- *
- * ## What this proves that nothing else can
- *
- * Every persisted store is `skipHydration: true` and is rehydrated by a single
- * mount effect (`lib/store-hydration.tsx`) that lives in the ROOT subtree, while
- * the route content sits inside the Suspense boundary `@tanstack/react-router`
- * wraps around the root `<Outlet/>` unconditionally (`Match.js:286-289`). React
- * hydrates that boundary in a LATER pass, by which point the stores are already
- * full. A selector that reads the snapshot React hands it is unaffected; a
- * selector that CALLS a state method reaches past the snapshot into live state
- * and produces a text mismatch, which React resolves by discarding the tree.
- *
- * jsdom cannot see any of this — nothing in `apps/web` hydrates in a unit test,
- * and there is no SSR document there. Only a real browser against the real SSR
- * response can falsify it. The unit-level counterpart lives in
- * `src/stores/__tests__/store-selector-hydration.dom.test.tsx`.
- *
- * Flow F1 (FR137): story 84.4 kept only the route sweep and the rehydrated
- * figures here. `/login` moved to `components/auth/__tests__/auth-indicator.ssr.dom.test.tsx`,
- * the pending-markup case to `__tests__/served-pages.served.test.ts` (server
- * bytes) + `components/__tests__/overview-pending-hydration.dom.test.tsx`
- * (hydration), and the empty-storage control was dropped (84-4-evidence/inventory.md).
- *
- * ## ⚠️ Two traps this file is built around — both measured, both mutation-armed
- *
- * 1. **The seed decides whether these tests can fail at all.** Seeding only
- *    `budget-planner:balance-tracking` makes the Overview's net worth flip from
- *    `$0.00` to `-$142,000.00` with ZERO hydration errors, because both balance
- *    selectors are pure. The obvious seed for a testid called
- *    `overview-net-worth` is therefore structurally incapable of failing.
- *    **Every seed here includes `budget-planner:savings-goals`.**
- * 2. **`page.on('console')` is GREEN against the broken code.** React 19 routes
- *    a hydration mismatch through `onRecoverableError` →
- *    `reportGlobalError` → `reportError`, i.e. the UNCAUGHT ERROR channel.
- *    Playwright surfaces that on `pageerror` and NOT on `console`. Measured:
- *    console.error entries 0, pageerror entries 1.
- *
- * ⚠️ The listener must be attached BEFORE `goto`, or the error is missed.
- *
- * ⚠️ `playwright.config.ts` boots `pnpm dev`, so React's readable message is
- * available. Against a production build the same defect minifies to React error
- * #418 — match the code, not the prose, if this is ever pointed at a build.
- *
- * ⚠️ E2E runs the PRODUCT default (`$`/USD). The unit suite pins currency-less
- * mode, so figure strings do not transfer between the two layers.
- */
+// Stores rehydrate in a root effect, but the router's Suspense boundary hydrates route
+// content in a later pass, so a selector that calls a state method mismatches.
 
-/**
- * ⚠️ React surfaces a hydration mismatch under several minified codes, not just
- * one: #418 (text mismatch), #423 (the root switched to client rendering after an
- * error while hydrating) and #425 (text content did not match). The first version
- * of this file matched #418 alone — against a production build a mismatch
- * surfacing as #423/#425 would have filtered to zero and every route test would
- * have gone green against broken code, which is the exact failure mode the rest of
- * this file exists to prevent. Raised in code review.
- */
+// Every seed includes savings-goals: balance selectors are pure, so a balance-only seed
+// can't fail. Mismatches arrive on `pageerror`, not `console`.
+
+/** A production build can surface a mismatch as #418, #423 or #425. */
 const HYDRATION_ERROR = /Hydration failed|Minified React error #(418|423|425)/
 
-/**
- * Collects hydration errors for one page. Call BEFORE `goto`.
- *
- * Returns the live array so a failure message can name what was seen — an empty
- * `toEqual([])` failure that prints only "expected [] to equal []" tells the
- * next reader nothing.
- */
+/** Call before `goto`, or the error is missed. */
 function collectHydrationErrors(page: Page): string[] {
   const errors: string[] = []
   page.on('pageerror', (error) => {
@@ -77,20 +20,7 @@ function collectHydrationErrors(page: Page): string[] {
   return errors
 }
 
-/**
- * Seeds all four financial stores.
- *
- * ⚠️ `version: 2` against a store at 3 (income/expenses/savings) or 4 (balance,
- * since story 49.1) forces zustand's `migrate` to run
- * (it fires on any MISMATCH), which backfills `sortOrder`. That matters for
- * ordering-dependent specs. It does NOT matter for hydration — measured: savings
- * at `version: 2` and at `version: 3` both produce exactly one hydration error.
- * Recorded so a future reader does not credit the version with work it is not
- * doing.
- *
- * Savings is the load-bearing store here (trap 1). The others are seeded so the
- * routes that read them render populated rather than empty.
- */
+/** Savings is the load-bearing store; the others make their routes render populated. */
 function seedAllStores() {
   const now = new Date().toISOString()
 
@@ -200,16 +130,8 @@ function seedAllStores() {
 }
 
 /**
- * The five routes that read a persisted store through a component-level hook, each
- * paired with a testid that only renders once that store-backed content has
- * mounted. (Six until story 43.3 removed `/net-worth-projection` — the warning
- * below is exactly the case that removal creates, so the entry left with it.)
- *
- * ⚠️ THE MARKER IS NOT DECORATION. Code review found that asserting only "zero
- * hydration errors" passes VACUOUSLY on a route that never rendered — a 404, an
- * SSR throw into an error boundary, or a route removed by a later story would all
- * produce zero errors because nothing hydrated. The marker is what makes a green
- * result mean "this route hydrated cleanly" instead of "nothing happened".
+ * The marker isn't decoration: zero hydration errors also holds on a route that
+ * never rendered (a 404 or an error boundary).
  */
 const STORE_BACKED_ROUTES = [
   { path: '/', marker: 'overview-net-worth' },
@@ -227,8 +149,6 @@ test.describe('hydration', () => {
       await page.addInitScript(seedAllStores)
       const response = await page.goto(path)
 
-      // The route was actually served, and its store-backed content actually
-      // mounted. Both must hold before "no hydration errors" means anything.
       expect(response?.status(), `${path} did not return 200`).toBe(200)
       await expect(page.getByTestId(marker)).toBeVisible()
 
@@ -242,21 +162,15 @@ test.describe('hydration', () => {
   }
 
   /**
-   * The figures still resolve after rehydration. Guards against "fixing" the
-   * mismatch by never showing the user their data — a page that renders `$0.00`
-   * forever would satisfy every assertion above.
-   *
+   * Guards against "fixing" the mismatch by never showing the data.
    * investments 800,000c + savings 300,000c − debts 15,000,000c = −13,900,000c
    */
   test('the Overview shows the rehydrated figures, not the defaults', async ({ page }) => {
     await page.addInitScript(seedAllStores)
     await page.goto('/')
 
-    // 15 s, not the default 5 s (story 85.2 follow-up, MEASURED): the figure is
-    // empty until the client hydrates, which in this DEV build took 9.5–10.5 s
-    // after `goto` with the web Vitest gate running alongside (3.5 s idle). It
-    // failed at 5 s in 2 of 15 local concurrent `pnpm gates` runs, never in CI.
-    // `85-2-evidence/review/hydration-251-timing.txt`.
+    // The figure is empty until the client hydrates, which is slow in dev under
+    // concurrent gates.
     await expect(page.getByTestId('overview-net-worth')).toHaveText('-$139,000.00', {
       timeout: 15_000,
     })

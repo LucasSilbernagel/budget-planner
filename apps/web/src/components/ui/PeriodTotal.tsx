@@ -1,22 +1,6 @@
 /**
- * A headline flow total that states the period it covers (story 32.1, FR58).
- *
- * Used by the Income and Expenses pages. Both render the identical chrome —
- * period-suffixed heading, duration selector, normalization disclosure and
- * excluded-row disclosure — and the repo has already paid for this kind of
- * copy-paste twice (`DURATION_LABEL` / `CADENCE_LABEL`), so it lives in one
- * place from the start.
- *
- * ## Contract
- *
- * `monthlyTotalCents` is MONTHLY-NORMALIZED cents, straight from
- * `getTotalIncome()` / `getTotalExpenses()`. This component owns the
- * denormalization to the selected period — callers must not pre-convert, or the
- * value is scaled twice.
- *
- * The duration comes from the shared `overviewDurationStore`, so changing it
- * here also changes the Overview and the category breakdown. That is the point:
- * one period preference for the whole app (AC-3).
+ * `monthlyTotalCents` is monthly-normalized; this component denormalizes to the selected period,
+ * so callers must not pre-convert.
  */
 
 import { denormalizeFromMonthly } from '@budget-planner/core'
@@ -36,35 +20,15 @@ import { InfoTooltip } from './InfoTooltip'
 import { PendingFigure } from './Skeleton'
 
 interface PeriodTotalProps {
-  /** e.g. "Total Income" — the period suffix is appended for you. */
   label: string
   /** Monthly-normalized cents. Do NOT pre-denormalize. */
   monthlyTotalCents: number
-  /**
-   * Sum of entered amounts across READABLE rows only, unconverted. Quoted inside
-   * the disclosure as "before conversion"; never displayed as the total.
-   */
   rawTotalCents: number
-  /**
-   * Whether any readable row is on a non-monthly cadence — i.e. whether
-   * conversion actually happened. Gates the disclosure.
-   */
   conversionApplied: boolean
-  /** Rows the store had to exclude because core could not read them. */
   unreadableCount: number
-  /**
-   * Accent colour (and spacing) for the amount, so each page keeps its own.
-   *
-   * ⚠️ Do NOT pass a `text-{size}` or `font-` class here. The size is owned by
-   * this component (see the render) because it is a shared 320px invariant, not
-   * a per-page style — and a caller-supplied `text-3xl` would not merely be
-   * redundant, it would WIN or LOSE by Tailwind SOURCE ORDER rather than by prop
-   * order, which is not something a call site can reason about (story 21 lesson).
-   */
+  /** Accent colour only: no `text-{size}`/`font-` class, since Tailwind resolves conflicts by source order. */
   amountClassName: string
-  /** Accessible name for the info affordance, e.g. "…the income figure". */
   tooltipLabel: string
-  /** Distinguishes the two selectors for tests and screen readers. */
   selectorLabel: string
 }
 
@@ -83,21 +47,15 @@ export function PeriodTotal({
   const setDuration = useSetOverviewDuration()
   const hydrated = useStoresHydrated()
 
-  // Re-express the monthly-canonical total at the selected period using the core
-  // engine. Never re-derive the multipliers — they are core-private on purpose.
+  // Never re-derive the multipliers; they are core-private on purpose.
   const amountForDuration = denormalizeFromMonthly(monthlyTotalCents, duration)
 
   return (
     <div>
       <h2 className="flex items-center gap-1 text-xl font-semibold text-subheading">
         {`${label} ${DURATION_LABEL[duration]}`}
-        {/* ⚠️ Gated on whether conversion HAPPENED, not on whether the two totals
-            differ. Code review 32.1 caught the equality proxy failing both ways:
-            it fired on an excluded corrupt row (announcing a conversion that
-            never occurred, while quoting money the total excluded), and it stayed
-            silent when a genuine conversion happened to land on the same number
-            ($330 weekly + $1,200 annually both give 153000c). See
-            `lib/readable-rows.ts` → `summarizeReadableRows`. */}
+        {/* Gated on whether conversion happened, not on the totals differing: a conversion can land on
+            the same number, and an excluded row can make them differ without one. */}
         {conversionApplied && (
           <InfoTooltip
             label={tooltipLabel}
@@ -107,41 +65,8 @@ export function PeriodTotal({
           />
         )}
       </h2>
-      {/* ⚠️ `data-testid`, not sibling traversal from the heading. The heading
-          contains the InfoTooltip button, so its ACCESSIBLE NAME includes that
-          button's label — an anchored `^…$` name matcher silently finds nothing
-          in a real browser (jsdom's accname implementation disagrees, so unit
-          tests alone will not catch it). */}
-      {/* ⚠️ SIZE AND WRAPPING ARE OWNED HERE, and both are load-bearing at 320px.
-          This figure is DENORMALIZED to the selected period, and the default
-          period is `annually` — so story 32.1 multiplied what this element
-          renders by up to 12× without touching its `text-3xl` styling. A
-          $12.8M/month total became "$153,629,614.80", which needs ~285px in a
-          wide font stack against the 240px this card actually has, and the
-          overflow escaped the card and pushed the whole PAGE to 325px. It passed
-          locally and failed in CI purely on font metrics.
-
-          A currency figure has no break opportunity of its own, and
-          `overflow-wrap: break-word` leaves the element's MIN-CONTENT width equal
-          to the whole unbroken string. Since this sits in a flex column whose
-          items default to `min-width: auto`, that min-content is exactly what
-          forced the page wider. Story 88.1 (D2) replaced the earlier
-          `[overflow-wrap:anywhere]` with `GroupedAmount`: a `<wbr>` after each
-          digit-group separator drops the min-content to the longest group, and
-          a figure that does not fit wraps at a group boundary instead of
-          mid-group (`anywhere` could split `$14,812,345,6` / `78.90`).
-
-          Measured at 320px with the widest common Linux font (DejaVu Sans):
-          `text-3xl` needs 285px / has 240px → page 325px. `text-2xl` needs 228px
-          → fits on one line with 12px to spare, and a $14.8bn figure takes a
-          second line instead of widening the page. `sm:` and up are unchanged,
-          so the desktop design is untouched. */}
-      {/* Story 38.2 (UX-DR43): pending → a placeholder, never a formatted zero.
-          `PendingFigure`'s bar is `h-[1em]`, so it is exactly as tall as the text
-          it stands in for at BOTH type sizes above (`text-2xl` / `sm:text-3xl`)
-          without either size being restated here. The `<p>` keeps its testid, its
-          classes and the 320px wrapping rules above untouched — only its CONTENT
-          changes. */}
+      {/* `data-testid`, not a name query: the heading's accessible name includes the tooltip button's label. */}
+      {/* `text-2xl` below `sm` plus `GroupedAmount` keep a denormalized annual figure from widening the page at 320px. */}
       <p
         className={`text-2xl sm:text-3xl font-bold ${amountClassName}`}
         data-testid="period-total-amount"
@@ -153,9 +78,6 @@ export function PeriodTotal({
         )}
       </p>
 
-      {/* ⚠️ Disclosure, not silence. A row core cannot read is EXCLUDED from the
-          figure above; saying so is what keeps an excluded row from being a
-          silently under-reported total. See lib/readable-rows. */}
       {unreadableCount > 0 && (
         <p className="mt-1 text-xs text-muted" data-testid="unreadable-rows-note">
           {unreadableCount === 1

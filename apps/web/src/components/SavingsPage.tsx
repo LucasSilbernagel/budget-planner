@@ -55,19 +55,10 @@ import { SortableColumnHeader, useSortHeaderAnnouncements } from './ui/SortableC
 import { TableScrollRegion } from './ui/TableScrollRegion'
 import { TableSortControl } from './ui/TableSortControl'
 
-// Valid contribution cadences (mirrors the core Frequency enum). A persisted
-// investment `frequency` can be a corrupt/legacy non-null string — localStorage is
-// user-editable and the balance-store migrate only backfills *nullish* frequency —
-// and the solver's normalizer throws on an unknown frequency. Coerce a bad value to
-// 'monthly' at this boundary so it degrades instead of crashing the page, mirroring
-// the Balance page's `monthlyContributionCents`.
+// A persisted frequency can be a corrupt non-null string and the normalizer throws on it,
+// so unknown values are coerced to 'monthly'.
 const KNOWN_FREQUENCIES = new Set(['weekly', 'biweekly', 'monthly', 'annually'])
 
-/**
- * Column labels for the sortable header cells and the mobile sort control's
- * options, so the two cannot drift apart (story 34.2; the mobile consumer became
- * `TableSortControl` in story 48.1).
- */
 const SORT_COLUMN_LABELS: Record<SavingsSortKey, string> = {
   name: 'Name',
   target: 'Target',
@@ -76,16 +67,7 @@ const SORT_COLUMN_LABELS: Record<SavingsSortKey, string> = {
   progress: 'Progress',
 }
 
-/**
- * The sortable columns, in the order the headers render them (story 48.1).
- *
- * ⚠️ Module scope: this table has no tier gate, so the set is fixed and a
- * per-instance `useMemo` would allocate an identical array on every mount —
- * and `TableSortControl` memoises its options on this identity.
- *
- * Labels are read from `SORT_COLUMN_LABELS` rather than written out a second
- * time, so a header and its mobile option cannot drift apart.
- */
+// Module scope: TableSortControl memoises its options on this identity.
 const SAVINGS_SORT_COLUMNS: readonly { key: SavingsSortKey; label: string }[] = [
   { key: 'name', label: SORT_COLUMN_LABELS.name },
   { key: 'target', label: SORT_COLUMN_LABELS.target },
@@ -100,48 +82,23 @@ export function SavingsPage() {
   const { addSavingsGoal, updateSavingsGoal, deleteSavingsGoal, getSavingsProgress } =
     useSavingsStore()
 
-  // Leftover-allocation solver inputs (Story 26.3). Read the three other stores
-  // the pool depends on; investment contributions are the `type === 'investment'`
-  // balance entries mapped to { amount, frequency } (the solver normalizes them).
   const incomeSources = useIncomeSources()
   const expenses = useExpenses()
-  // ⚠️ Story 43.4 (FR70) deliberately does NOT add an asset arm here. Assets
-  // carry no contribution at all (D2: the form hides the field and the save path
-  // writes 0), so there is nothing for the distributable pool to double-count.
-  // ⚠️ That argument is FORM-DEEP only: `applyServerChanges.ts` writes pulled
-  // rows into the store with no validation, so an asset row carrying a non-zero
-  // contribution IS reachable from sync or hand-edited localStorage.
-  // (Story 48.2 removed `moveBalanceEntry`, which was a third bypass; the two
-  // that remain are why this warning still stands.) It would be excluded from this filter and the
-  // pool would be overstated by that amount. Pinned by the asset case in
-  // `SavingsPage.test.tsx`.
+  // No asset arm: the form gives assets no contribution, but a synced or hand-edited asset
+  // row with one would be excluded here and overstate the pool.
   const investmentEntries = useInvestmentEntries()
 
-  // Story 45.1: the breakdown is CLOSED by default and its body is not rendered
-  // at all until opened.
-  // ⚠️ Not a micro-optimisation — it is required. A collapsed `<details>` still
-  // puts its children in the DOM, so rendering the contribution list eagerly
-  // published every balance-entry NAME onto /savings as hidden text. That broke
-  // nine `responsive-320` e2e specs whose `getByText(name).first()` began
-  // resolving to the hidden label instead of the visible savings row, and it
-  // would equally have handed screen-reader users a duplicate copy of every
-  // name. Controlled open state (rather than the native toggle) keeps the
-  // behaviour identical in jsdom and the browser.
+  // The body is not rendered until opened: a collapsed <details> still puts its text (every entry
+  // name) in the DOM. Controlled state keeps jsdom and browsers identical.
   const [breakdownOpen, setBreakdownOpen] = useState(false)
 
-  // Story 45.1 (FR72): one mapping, used by BOTH the solver and the breakdown, so
-  // the explanation can never describe a different set of rows than the one the
-  // pool actually used.
-  // Story 100.1: the mapping lives in `lib/savings` so the forecast builder seeds
-  // its automatic rows from exactly the same solver inputs.
+  // One mapping for both the solver and the breakdown, so the explanation matches the pool.
   const contributionItems = useMemo(
     () => investmentContributionItems(investmentEntries),
     [investmentEntries]
   )
 
-  // Recompute only when an input changes. `allocations` maps each AUTOMATIC
-  // account's id to its computed even-share (cents); manual accounts are absent,
-  // so membership discriminates the two modes for the per-row display below.
+  // `allocations` holds only automatic accounts, so membership discriminates the two modes.
   const { distributablePool, automaticAccountCount, allocations } = useMemo(
     () =>
       solveAutomaticAllocations({
@@ -153,8 +110,6 @@ export function SavingsPage() {
     [incomeSources, expenses, contributionItems, savingsGoals]
   )
 
-  // Story 45.1 (FR72): the derivation shown in the breakdown. Computed from the
-  // SAME inputs the solver received, so the two cannot drift.
   const breakdown = useMemo(() => {
     const monthly = (amount: number, frequency: string) =>
       normalizeToMonthly(amount, KNOWN_FREQUENCIES.has(frequency) ? frequency : 'monthly')
@@ -171,30 +126,20 @@ export function SavingsPage() {
       .filter((line) => !line.excluded)
       .reduce((sum, line) => sum + line.monthlyCents, 0)
     const manualTotal = savingsGoals.reduce((sum, goal) => {
-      // Every manual row counts, target-less or not — mirroring core's
-      // `sumManualAllocations` (Story 72.1 removed 64.1's account skip from BOTH
-      // in the same pass). This reducer explains the very figure the pool used,
-      // so a divergence here would contradict itself on screen.
+      // Mirrors core's sumManualAllocations: every manual row counts, target-less or not.
       if ((goal.allocationMode ?? 'automatic') !== 'manual') {
         return sum
       }
-      // ⚠️ `Number.isFinite`, NOT `?? 0`. This must mirror the solver's
-      // `sumManualAllocations` EXACTLY, and `??` does not intercept `NaN` —
-      // `Math.max(0, NaN)` is `NaN`. A corrupt persisted `monthlyAllocation`
-      // would render `formatAmount(NaN)` here while "Left over" stayed correct,
-      // i.e. the breakdown would contradict the very figure it explains.
+      // Number.isFinite, not ?? 0: ?? does not catch NaN, and this must match sumManualAllocations exactly.
       const amount = goal.monthlyAllocation
       return sum + (Number.isFinite(amount) ? Math.max(0, amount as number) : 0)
     }, 0)
-    // The arithmetic the four displayed lines actually perform, BEFORE the
-    // solver's floor-at-zero. Rendered explicitly when it differs from the pool
-    // so the breakdown always reconciles — see the clamp row in the render.
+    // Before the solver's floor at zero; shown when it differs so the breakdown reconciles.
     const rawLeftover = incomeTotal - expenseTotal - contributionsCounted - manualTotal
     return { incomeTotal, expenseTotal, lines, contributionsCounted, manualTotal, rawLeftover }
   }, [incomeSources, expenses, contributionItems, savingsGoals])
 
-  // Story 45.1 (D7): DETECTION ONLY. `highlight` gives a breakdown line visual
-  // weight and nothing else — it never reaches `solveAutomaticAllocations`.
+  // Detection only: highlight never reaches solveAutomaticAllocations.
   const duplicateCandidates = useMemo(
     () =>
       findContributionDuplicateCandidates({
@@ -209,22 +154,8 @@ export function SavingsPage() {
     [expenses, contributionItems]
   )
 
-  /**
-   * ⚠️ Story 47.1 review: the SAME detector, re-run with every row treated as
-   * UNFLAGGED, purely to answer "does this excluded row STILL have a matching
-   * expense line?".
-   *
-   * `findContributionDuplicateCandidates` skips `recordedAsExpense === true` rows
-   * outright (`contributionDuplicates.ts:160-162`) — correct for its own job, since
-   * a flagged row is not a *suspected* duplicate. But it means the excluded arm can
-   * never see a candidate, and the first attempt at the shape-C cue below was
-   * therefore DEAD CODE that every test passed straight through.
-   *
-   * Re-running the detector is deliberate rather than re-deriving the match here:
-   * 45.1's D9 puts this rule in core, and duplicating the amount/name comparison in
-   * a component is how the two drift. This is presentation-only and touches no
-   * calculation — the pool never sees these candidates.
-   */
+  // Re-run with every row unflagged: the detector skips flagged rows, so the excluded arm
+  // could otherwise never see a matching expense line. Presentation only.
   const stillDuplicatedByContribution = useMemo(() => {
     const candidates = findContributionDuplicateCandidates({
       expenses: expenses.map((expense, index) => ({
@@ -257,59 +188,31 @@ export function SavingsPage() {
     return map
   }, [duplicateCandidates])
 
-  // Column sorting (story 34.2, FR61). A VIEW-level projection only: it never
-  // writes `sortOrder` and never enqueues a sync operation, so clearing it returns
-  // the table to the default order untouched.
-  //
-  // ⚠️ Memoised on `allocations` and `getSavingsProgress` as well as the rows,
-  // because two of the five keys read data the row does not carry: the Monthly
-  // Allocation column reads the solver's pool (which is recomputed when ANY
-  // other goal changes) and Progress is a store selector. A projection memoised
-  // on the rows alone would keep a stale order with no error anywhere.
-  //
-  // ⚠️ Neither money column is frequency-normalized. A savings balance is a
-  // point-in-time STOCK, not a per-period flow — story 32.1 (FR58) settled that,
-  // and `ClientSavingsGoal` has no `frequency` field to normalize by.
+  // View-only projection: never writes sortOrder. Memoised on allocations and getSavingsProgress
+  // too, because two sort keys read data the row does not carry.
   const sortExtractors = useMemo(
     () => createSavingsSortExtractors(allocations, getSavingsProgress),
     [allocations, getSavingsProgress]
   )
   const sort = useTableSort('savings', savingsGoals, sortExtractors)
   const sortedRows = sort.rows
-  // Story 120.1 (FR188): the headers' "Sortable column, ..." description and the
-  // live region that announces a header click.
   const sortA11y = useSortHeaderAnnouncements(
     sort.state
       ? { label: SORT_COLUMN_LABELS[sort.state.key], direction: sort.state.direction }
       : null
   )
-  // Amounts are stored in cents; the formatter respects the user's currency
-  // display preference (currency-less vs explicit symbols) from the store.
   const formatAmount = useFormattedAmount()
-  // Currency preferences drive the input symbol affordance and locale-aware
-  // grouping/parsing (story 14-3). Currency-less mode shows no symbol and groups
-  // with the neutral en-US locale (per the store).
   const { mode, currency, locale } = useCurrencyPreferences()
 
-  // State for the add/edit modal
   const [isModalOpen, setIsModalOpen] = useState(false)
-  // ids are uuid strings (Story 5-14); keep this typed as string.
   const [editingId, setEditingId] = useState<string | null>(null)
   const [name, setName] = useState('')
-  // Goal-less "savings account" toggle (Story 16-1): when true, there is no target
-  // and the target field is hidden and not validated; the entry saves with targetAmount: null.
   const [isAccount, setIsAccount] = useState(false)
   const [targetAmount, setTargetAmount] = useState('')
   const [currentBalance, setCurrentBalance] = useState('')
-  // Per-account allocation (Story 26.1). 'automatic' (default) gets an even share
-  // of the leftover pool (computed in Story 26.2); 'manual' holds a fixed amount.
   const [allocationMode, setAllocationMode] = useState<AllocationMode>('automatic')
   const [monthlyAllocation, setMonthlyAllocation] = useState('')
 
-  // Inline field-validation error state (replaces browser alert() popups).
-  // Mirrors the app's canonical inline-validation pattern: an errors map plus
-  // hasFieldError/getFieldError helpers and re-validate-on-change after the
-  // first submit attempt.
   type FieldName = 'name' | 'targetAmount' | 'currentBalance' | 'monthlyAllocation'
   const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({})
   const [submitAttempted, setSubmitAttempted] = useState(false)
@@ -317,21 +220,17 @@ export function SavingsPage() {
   const hasFieldError = (field: FieldName): boolean => Boolean(errors[field])
   const getFieldError = (field: FieldName): string | undefined => errors[field]
 
-  // Compute inline validation errors from the current field values, preserving
-  // the exact conditions and messages that previously drove the alert() popups.
   const computeErrors = useCallback((): Partial<Record<FieldName, string>> => {
     const next: Partial<Record<FieldName, string>> = {}
     if (!name.trim()) {
       next.name = 'Please enter a name for the savings goal'
     }
-    // A savings account has no target, so the target check is skipped entirely.
     if (!isAccount) {
       const targetInCents = parseFromInput(targetAmount, locale)
       if (targetInCents <= 0) {
         next.targetAmount = 'Please enter a valid positive target amount'
       } else if (exceedsMoneyLimit(targetInCents)) {
-        // Story 106.1 (FR174): above the int32 sync limit the row would be saved
-        // here and silently refused at enqueue, so refuse it before saving.
+        // Above the int32 sync limit the row would save here but be refused at enqueue.
         next.targetAmount = moneyLimitMessage({ mode, currency, locale })
       }
     }
@@ -341,16 +240,7 @@ export function SavingsPage() {
     } else if (exceedsMoneyLimit(balanceInCents)) {
       next.currentBalance = moneyLimitMessage({ mode, currency, locale })
     }
-    // Manual allocation must be non-negative. An automatic row ignores any
-    // amount, so the check is skipped entirely in automatic mode.
-    //
-    // ⚠️ Deliberately NOT gated on `isAccount` (Story 72.1). 64.1 gated it because
-    // it HID the control for accounts, and an error on a hidden control is
-    // invisible. The control now renders for every entry, so the check must run
-    // for every entry too, or an account would save a negative amount. A leading
-    // '-' IS legal in `sanitizeMoneyInput` (core `currency.ts:400-402`), so a
-    // negative is typeable, and `formatForInputDisplay` prefills one from a
-    // server-pulled row.
+    // Not gated on isAccount: the control renders for every entry, and '-' is typeable.
     if (allocationMode === 'manual') {
       const allocationInCents = parseFromInput(monthlyAllocation, locale)
       if (allocationInCents < 0) {
@@ -377,11 +267,9 @@ export function SavingsPage() {
     setSubmitAttempted(false)
   }
 
-  // Reset form state when modal opens or editingId changes
   useEffect(() => {
     if (isModalOpen) {
       if (editingId === null) {
-        // Adding new: reset all fields
         setName('')
         setIsAccount(false)
         setTargetAmount('')
@@ -389,26 +277,21 @@ export function SavingsPage() {
         setAllocationMode('automatic')
         setMonthlyAllocation('')
       }
-      // Editing: fields are set by openEditModal
     }
   }, [isModalOpen, editingId])
 
-  // After the first submit attempt, re-validate as the user edits so errors
-  // clear on correction (AC-3).
   useEffect(() => {
     if (submitAttempted) {
       setErrors(computeErrors())
     }
   }, [submitAttempted, computeErrors])
 
-  // Open modal for adding new savings goal
   const openAddModal = () => {
     setEditingId(null)
     clearErrors()
     setIsModalOpen(true)
   }
 
-  // Open modal for editing existing savings goal (or account)
   const openEditModal = (goal: {
     id: string
     name: string
@@ -419,17 +302,11 @@ export function SavingsPage() {
   }) => {
     setEditingId(goal.id)
     setName(goal.name)
-    // null target ⇒ account: hide the target field and leave it blank.
     const account = goal.targetAmount == null
     setIsAccount(account)
     setTargetAmount(account ? '' : formatForInputDisplay(goal.targetAmount as number, locale))
     setCurrentBalance(formatForInputDisplay(goal.currentBalance, locale))
-    // Allocation (Story 26.1): default a legacy row (no mode) to 'automatic'; only
-    // prefill the amount for a manual row with a stored value.
-    // ⚠️ Story 72.1: an ACCOUNT prefills from storage exactly like a goal. 64.1
-    // reset it to automatic/blank because the table then showed “—” for accounts;
-    // the table now shows the stored mode and figure, so a reset here would open
-    // "Fixed 300.00" as Automatic and one UNTOUCHED Save would silently convert it.
+    // An account prefills like a goal; resetting it would let an untouched Save convert Fixed to Automatic.
     const mode = goal.allocationMode ?? 'automatic'
     setAllocationMode(mode)
     setMonthlyAllocation(
@@ -441,7 +318,6 @@ export function SavingsPage() {
     setIsModalOpen(true)
   }
 
-  // Close modal
   const closeModal = () => {
     setIsModalOpen(false)
     setEditingId(null)
@@ -454,23 +330,18 @@ export function SavingsPage() {
     clearErrors()
   }
 
-  // Loading state to prevent duplicate submissions
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Delete confirmation state (themed dialog replaces browser confirm()). The
-  // "Add" button is a stable focus target after a confirmed delete (AC-5).
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const addButtonRef = useRef<HTMLButtonElement>(null)
   const pendingDeleteName = savingsGoals.find((g) => g.id === pendingDeleteId)?.name ?? ''
 
-  // Handle form submission (add or update)
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setSubmitAttempted(true)
     setIsSubmitting(true)
 
     try {
-      // Validate all fields inline; block submission if any errors exist.
       const validationErrors = computeErrors()
       setErrors(validationErrors)
       if (Object.keys(validationErrors).length > 0) {
@@ -479,14 +350,10 @@ export function SavingsPage() {
 
       const newGoal = {
         name: name.trim(),
-        // Account (Story 16-1): persist an absent target as null, never 0.
+        // An absent target persists as null, never 0.
         targetAmount: isAccount ? null : parseFromInput(targetAmount, locale),
         currentBalance: parseFromInput(currentBalance, locale),
-        // Allocation (Story 26.1): store the mode; a manual row persists its fixed
-        // amount (cents), an automatic row persists null (the leftover share is
-        // computed, never stored) — ignoring any stale typed value. Story 72.1:
-        // this applies to accounts exactly as to goals; the account tick affects
-        // only `targetAmount` above.
+        // Automatic rows persist null: the leftover share is computed, never stored.
         allocationMode,
         monthlyAllocation:
           allocationMode === 'manual' ? parseFromInput(monthlyAllocation, locale) : null,
@@ -504,12 +371,10 @@ export function SavingsPage() {
     }
   }
 
-  // Open the themed delete confirmation for a savings goal
   const handleDelete = (id: string) => {
     setPendingDeleteId(id)
   }
 
-  // Confirm and execute the pending delete
   const confirmDelete = () => {
     if (pendingDeleteId !== null) {
       deleteSavingsGoal(pendingDeleteId)
@@ -517,25 +382,15 @@ export function SavingsPage() {
     }
   }
 
-  // Story 38.2 (UX-DR43): three states — pending, resolved-with-data,
-  // resolved-empty. See `hooks/useStoresHydrated` for why this is a mount gate
-  // and NOT `persist.hasHydrated()`.
   const storesHydrated = useStoresHydrated()
-  // Story 53.1 (AC-4): a paid session's first-EVER cross-device pull on this
-  // device can still be in flight after stores hydrate. `useIsInitialSyncPending`
-  // combines a device-level "has this device ever synced" flag with this
-  // page's own emptiness check — either one being false means an established
-  // user sees no different behavior (AC-6).
+  // A paid session's first-ever pull can still be in flight after stores hydrate.
   const isInitialSyncPending = useIsInitialSyncPending(savingsGoals.length === 0)
   const hydrated = storesHydrated && !isInitialSyncPending
 
   return (
     <div className="surface-sunken p-4 sm:p-8 min-h-screen">
       <div className="mx-auto max-w-4xl">
-        {/* Story 38.2, AC-8: ONE announced region per page. Every skeleton on
-            this page is `aria-hidden`, so without this a screen reader gets a
-            heading followed by nothing; one region per skeleton would announce
-            several times instead. */}
+        {/* One announced region per page: every skeleton is aria-hidden. */}
         {!hydrated && <LoadingStatus />}
         <header className="mb-8">
           <div>
@@ -545,29 +400,12 @@ export function SavingsPage() {
         </header>
 
         <main className="space-y-6">
-          {/* Stats Card */}
           <section className="surface shadow-md p-6 rounded-lg">
             <div className="flex md:flex-row flex-col md:justify-between md:items-center gap-4">
-              {/* ⚠️ Story 32.1 (FR58) deliberately did NOT normalize this figure.
-                  A savings goal has no `frequency` — `currentBalance` is a
-                  point-in-time BALANCE (a stock), not a per-period FLOW like the
-                  Income and Expenses totals, so re-expressing it "per week" would
-                  be arithmetic on a quantity that has no period. Hence no duration
-                  selector here; the sub-line says what the number is instead. */}
+              {/* Not normalized: a savings balance is a stock, not a per-period flow. */}
               <div>
                 <h2 className="font-semibold text-subheading text-xl">Total Savings</h2>
-                {/* ⚠️ This is the page's HEADLINE figure and it carries no
-                    `data-testid`, so it was missing from story 38.2's own
-                    scope table — found only because the server-response
-                    assertion looks for the VALUE (`$0.00`) rather than for a
-                    list of testids it already knew about. A testid-shaped
-                    sweep would have shipped without it. The testid was added
-                    by story 88.4 (it changes no pixel). The figure is a
-                    `GroupedAmount` (story 88.4, FR142): at 320 px under CI's
-                    font `$13,222,221.90` is 264 px against a 240 px card, so
-                    it may break after a group separator and nowhere else. The
-                    skeleton branch is untouched (`ui/Skeleton.tsx`'s 0.4 px
-                    `text-3xl` clearance note). */}
+                {/* GroupedAmount: at 320px the figure can exceed the card, so it breaks only after a group separator. */}
                 <p
                   data-testid="savings-total"
                   className="mt-2 font-bold text-purple-600 dark:text-purple-400 text-3xl"
@@ -593,33 +431,11 @@ export function SavingsPage() {
               </button>
             </div>
 
-            {/* Leftover split summary (Story 26.3). Shows the distributable pool
-                and how many automatic entries share it; a calm note covers the
-                over-committed case (pool floored to 0 with automatic entries).
-                Story 72.1 (Lucas, review decision): "entry/entries", not
-                "account(s)", because the recipients are goals and target-less
-                accounts alike, and "Account" is a badge label that would read as
-                "only accounts" — the same reason D3 gives for the remedy copy. */}
+            {/* 'entry/entries', not 'account(s)': recipients include goals, and 'Account' is a badge label. */}
             <div className="mt-4 pt-4 border-gray-200 dark:border-gray-700 border-t">
-              {/* Story 38.2: pending → one placeholder line. This sentence is
-                  entirely store-derived (the pool AND the account count), so
-                  before the gate it read "$0.00/mo is left over" to a user whose
-                  savings had simply not loaded. */}
               <p className="text-body text-sm" data-testid="savings-leftover-summary">
                 {!hydrated ? (
-                  /* ⚠️ FOUR word-shaped bars, not one `w-full` bar — and the
-                     difference was MEASURED at 320px in code review. The resolved
-                     content here is a SENTENCE, so it wraps: one full-width bar
-                     is always exactly one line, while the resolved text is 1 line
-                     at 1280px, 2 lines with data at 320px and 4 lines empty at
-                     320px (20 / 40 / 80px). A single bar therefore shipped a
-                     20–60px downward shift on phones.
-                     Separate inline bars wrap through the SAME line-breaking the
-                     text does, so the placeholder now tracks the viewport instead
-                     of ignoring it. Sized to the with-data sentence (the case this
-                     story exists for); the resolved-EMPTY sentence is longer still
-                     and its residual is recorded in the story rather than claimed
-                     away. */
+                  // Word-shaped inline bars wrap like the sentence does, so the placeholder tracks its line count.
                   <>
                     <PendingFigure testId="savings-leftover-summary-skeleton" widthClass="w-24" />{' '}
                     <PendingFigure widthClass="w-20" /> <PendingFigure widthClass="w-28" />{' '}
@@ -629,10 +445,6 @@ export function SavingsPage() {
                   <>
                     <span className="font-semibold">{formatAmount(distributablePool)}/mo</span> is
                     left over — nothing is set to receive it.{' '}
-                    {/* Story 72.1 (D3): every entry can receive an allocation, so
-                        the only question is whether there is an entry to set.
-                        "entry", not "account": "Account" is now a badge label and
-                        would read as "only accounts". */}
                     {savingsGoals.length > 0
                       ? 'Set an entry to “Automatic” to divide it up.'
                       : 'Add a savings goal or account to divide it up.'}
@@ -652,127 +464,14 @@ export function SavingsPage() {
                 </p>
               )}
 
-              {/* Story 45.1 (FR72, D10). THE DERIVATION.
-                  Before 45.1 the page showed a leftover figure with no way to
-                  audit it: no tooltip, no breakdown, nothing. A user whose
-                  contribution was double-deducted saw a number that felt wrong
-                  and could not find out why — which is the real damage, more than
-                  the money itself. So the derivation is itemised HERE, on the
-                  contribution line, where a confused user actually arrives.
-                  ⚠️ Story 47.1 (FR73) REMOVED the inline toggle that used to sit
-                  on each line. This panel is now an explanation only: nothing on
-                  /savings writes to the balance store, and the setting itself
-                  lives on the Balance Tracking entry. Pinned by
-                  `savings-page-readonly.guard.test.ts`.
-                  ⚠️ No banner and no blocking prompt, deliberately (D6): the
-                  detector matches on equal normalized amounts, and round numbers
-                  collide constantly. A prompt firing on coincidences trains
-                  click-through, and the click-through answer STOPS a real
-                  deduction — wrong in the opposite direction, carrying the
-                  user's apparent consent. */}
+              {/* Explanation only: nothing on this page writes to the balance store. No blocking prompt:
+                 the detector matches equal amounts, and round numbers collide constantly. */}
               {hydrated && (
                 <div className="mt-3" data-testid="savings-leftover-breakdown">
-                  {/* ⚠️ A real <button>, not <details>/<summary>. The body must be
-                      ABSENT from the DOM when closed (see `breakdownOpen` above),
-                      which means overriding the native disclosure behaviour — and
-                      a <summary> whose activation is intercepted is no longer
-                      keyboard-operable for free. A button gives correct keyboard
-                      and screen-reader semantics without the override. */}
-                  {/* Story 51.2 (UX-DR57). THE AFFORDANCE, and nothing else.
-                      This was `text-muted hover:text-body text-xs cursor-pointer`:
-                      no underline, no border, no glyph, a muted 12px caption
-                      colour. It read as a label, so the derivation above went
-                      unopened. The markup was already correct — only the
-                      appearance was not — so the ELEMENT ITSELF (a real
-                      `<button type="button">`), the ARIA wiring and the
-                      conditional body are untouched. The `className` is
-                      rewritten and a chevron child is added; nothing else.
-
-                      ⚠️ WHY NOT A BORDERED TARGET, which UX-DR57 offers as a
-                      candidate: `.border-default` measures 1.24:1 in light
-                      (gray-200 on white) and 1.42:1 in dark (gray-700 on
-                      gray-800) against this `.surface` card — both far below
-                      WCAG 1.4.11's 3:1 for a graphic. Story 30-1 already
-                      measured that and deferred it as a token-level question
-                      (46 call sites), so a bordered affordance here would need
-                      a border colour no token supplies. An underline and a
-                      `currentColor` glyph inherit the TEXT colour instead, so
-                      they raise no separate non-text contrast case at all.
-
-                      ⚠️ `.text-accent` is not a colour picked for looks — it is
-                      the token global.css defines for "interactive text and
-                      affordance glyphs", with the reason this story is also
-                      making: hover does not exist on touch, so the cue has to
-                      be persistent. Hence `underline`, not `hover:underline`.
-
-                      CONTRAST — computed with the WCAG 2.x relative-luminance
-                      formula, against the `.surface` card this control sits on
-                      (NOT the `.surface-sunken` page canvas). Every row names
-                      its theme: quoting one arm of a two-arm token is how a
-                      reviewer was led to a wrong AA conclusion in story 49.2.
-
-                        text-accent  light  blue-700 #1d4ed8 on white #ffffff
-                                                                       6.70:1
-                                     dark   blue-300 #93c5fd on gray-800
-                                            #1f2937                    8.14:1
-                        hover        light  blue-800 #1e40af on white   8.72:1
-                                     dark   blue-200 #bfdbfe on #1f2937 10.33:1
-                        chevron      both   `currentColor`, so identical to the
-                                            text above; 1.4.11 wants >= 3:1
-
-                      ⚠️ The token this REPLACED, for the record: `text-muted` is
-                      4.83:1 light / 5.78:1 dark — it passed AA and was never the
-                      defect. The neighbour avoided here was `text-faint`, then
-                      2.54:1 in LIGHT ONLY and pixel-identical to `text-muted` in
-                      dark (both gray-400). Story 115.2 retokened it to gray-500,
-                      so it now equals `text-muted` in both themes.
-
-                      ⚠️ No `focus:ring-offset-*`. The default ring-offset colour
-                      is white and global.css has no override, so an offset here
-                      paints a white band across the gray-800 card. The button
-                      previously had no focus style at all and leaned on the UA
-                      outline, so `focus:outline-none` without the ring would
-                      have been a 2.4.7 regression.
-
-                      ⚠️ The 44px floor is `max-sm:`-scoped via the shared
-                      constant; unprefixed would change the desktop rendering.
-
-                      ⚠️ AN EARLIER REVISION OF THIS COMMENT SAID "`inline-flex`
-                      is what makes that min-height paint a real box". THAT IS
-                      FALSE, and `ResponsiveTable.tsx:449-451` — the docblock of
-                      the very constant reused here — already said so: a
-                      `<button>` is `inline-block` by default, so `min-h`/`min-w`
-                      apply without it. `inline-flex` CENTRES the glyph against
-                      the text; it does not create the box.
-
-                      MEASURED at 320px / 1280px by isolating one token at a
-                      time, because the first attempt changed two at once and
-                      published a number for the wrong mutation:
-
-                        as shipped (floor + flex)          44px / 24px
-                        floor only, no `inline-flex`       44px / 28px
-                        `inline-flex` only, no floor       16px / 16px
-
-                      So the floor ALONE produces 44px, and the honest
-                      "without the floor" figure is **16px** — not the 28px an
-                      earlier revision cited, which was the inline-block layout
-                      that also drops the flex. UX-DR57's "small target for a
-                      touch device" is still literally true: 16px.
-
-                      ⚠️ `p-1` IS NOT DECORATION. Above `sm` the shared constant
-                      contributes NOTHING (it is `max-sm:`-only), so the desktop
-                      box is whatever the content makes it — measured at 16px,
-                      under WCAG 2.2 SC 2.5.8's 24x24 floor. The constant's own
-                      docblock says the padding "belongs at the CALL SITE"; this
-                      was the first call site to adopt the constant and omit it.
-                      `p-1` takes the desktop box to 24px.
-
-                      ⚠️ `forced-colors:focus:outline` is not redundant with the
-                      ring. Tailwind implements `ring-*` as a `box-shadow`, which
-                      Windows High Contrast discards entirely — so
-                      `focus:outline-none` plus a ring alone leaves NO focus
-                      indicator there (WCAG 2.4.7). `HomePage.tsx:1301-1309`
-                      records the same reasoning. */}
+                  {/* A <button>, not <details>: the body must be absent when closed, and an intercepted <summary>
+                     loses its free keyboard behaviour. */}
+                  {/* Persistent underline (touch has no hover) and a currentColor glyph avoid a sub-3:1 border. Rings are
+                     box-shadows, which High Contrast drops, hence forced-colors:focus:outline; p-1 makes 24px on desktop. */}
                   <button
                     type="button"
                     className={`inline-flex items-center gap-1 p-1 text-accent underline text-xs cursor-pointer rounded hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 forced-colors:focus:outline forced-colors:focus:outline-2 dark:hover:text-blue-200 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
@@ -781,16 +480,7 @@ export function SavingsPage() {
                     onClick={() => setBreakdownOpen((open) => !open)}
                   >
                     How is this worked out?
-                    {/* Geometry copied verbatim from `SortableColumnHeader`'s
-                        chevron so the two disclosure-ish glyphs stay identical.
-                        ⚠️ `aria-hidden` is load-bearing but NOT for the reason
-                        it looks like: this <svg> has no <title> and no text, so
-                        it contributes nothing to the accessible name either way
-                        — deleting the attribute reddens exactly one test (the
-                        attribute pin) and leaves all sixteen name-based
-                        locators green. Keep it because an assistive technology
-                        should not announce a decorative glyph, and know that
-                        the attribute pin is its ONLY guard. */}
+                    {/* Geometry copied from SortableColumnHeader's chevron. */}
                     <svg
                       aria-hidden="true"
                       className={`h-3 w-3 shrink-0 transition-transform${
@@ -825,12 +515,7 @@ export function SavingsPage() {
                         </span>
                       </div>
 
-                      {/* Itemised, one line per investment row. `excluded` rows stay
-                        VISIBLE (struck through) rather than disappearing — a user
-                        needs to see that the money was accounted for, not that it
-                        vanished. ⚠️ Story 47.1 removed the per-line toggle that used
-                        to sit on each row; the setting lives on the Balance Tracking
-                        entry and each arm below says so. */}
+                      {/* Excluded rows stay visible (struck through) so the money reads as accounted for. */}
                       {breakdown.lines.length > 0 && (
                         <ul className="space-y-1 pl-4" data-testid="breakdown-contribution-lines">
                           {breakdown.lines.map((line) => {
@@ -858,15 +543,7 @@ export function SavingsPage() {
                                   {formatAmount(line.monthlyCents)}
                                 </span>
                                 {stillDuplicated ? (
-                                  /* ⚠️ Story 47.1 review: SHAPE C — the row is flagged
-                                     AND a same-amount expense line still exists. Ticking
-                                     alone leaves this user wrong by exactly the
-                                     contribution (proven in `savingsAllocation.test.ts`,
-                                     "shape C"), because the expense line subtracts money
-                                     that was never in their take-home income. Before this
-                                     branch existed the detector went SILENT the moment a
-                                     row was flagged — muting the only cue precisely for
-                                     the users who still needed it. */
+                                  // Flagged AND a same-amount expense line exists: ticking alone leaves this user wrong by the contribution.
                                   <span
                                     className="basis-full text-[11px] text-amber-700 dark:text-amber-300"
                                     data-testid={`breakdown-still-duplicated-${line.id}`}
@@ -891,11 +568,7 @@ export function SavingsPage() {
                                   </span>
                                 ) : null}
                                 {line.unreadable && (
-                                  /* The stored contribution was not a number, so the
-                                     mapper counted it as 0. Said here, on the line,
-                                     because a silent $0.00 overstates the leftover
-                                     by an amount the user cannot see. Independent of
-                                     the arms above: a flagged row still gets it. */
+                                  // A non-numeric contribution counted as 0: say so, or the leftover is silently overstated.
                                   <span
                                     className="basis-full text-[11px] text-amber-700 dark:text-amber-300"
                                     data-testid={`breakdown-unreadable-${line.id}`}
@@ -916,13 +589,7 @@ export function SavingsPage() {
                           −{formatAmount(breakdown.manualTotal)}
                         </span>
                       </div>
-                      {/* ⚠️ THE CLAMP, SHOWN. `distributablePool` floors at zero
-                          (`max(0, …)`), but the four lines above are a plain
-                          subtraction that can go negative. Without this row an
-                          over-committed user reads "1,000.00 − 2,000.00" sitting
-                          directly above a "Left over" of "0.00" — four numbers
-                          that visibly do not add up, in the one affordance whose
-                          entire job is to make the figure auditable. */}
+                      {/* The pool floors at zero but the lines above can go negative; show the clamp so it adds up. */}
                       {breakdown.rawLeftover !== distributablePool && (
                         <>
                           <div className="flex justify-between gap-4 pt-1 border-gray-200 dark:border-gray-700 border-t">
@@ -952,15 +619,10 @@ export function SavingsPage() {
             </div>
           </section>
 
-          {/* Savings Goals List */}
           <section className="surface shadow-md p-6 rounded-lg">
             <h2 className="mb-6 font-semibold text-subheading text-xl">Your Savings Goals</h2>
 
-            {/* Story 38.2 (UX-DR43): pending is a THIRD state. Before this gate
-                the server sent a returning user "No savings goals recorded yet" — the store has not
-                rehydrated, so the list is empty and the page said so with
-                confidence. The skeleton mirrors this card's exact box model, so
-                a user who genuinely has nothing sees no shift when it resolves. */}
+            {/* Pending is a third state; the skeleton mirrors the card's box model to avoid a shift. */}
             {!hydrated ? (
               <EmptyStateSkeleton testId="savings-list-skeleton" />
             ) : savingsGoals.length === 0 ? (
@@ -970,31 +632,13 @@ export function SavingsPage() {
               </div>
             ) : (
               <>
-                {/* The mobile sort control (story 48.1, UX-DR53).
-
-                    ⚠️ This REPLACES `TableSortNotice`, and it renders
-                    UNCONDITIONALLY where the notice rendered only while a sort
-                    was active. Story 34.2's ratified decision 1 scoped sorting
-                    to >= 640px because the `<thead>` is `display: none` below
-                    `sm`, so the notice could only ever EXPLAIN and ESCAPE a sort
-                    a desktop interaction had already started. This control is
-                    the first affordance that can START one on a phone, and
-                    manual order is precisely the state it has to be reachable
-                    in. `deferred-work.md`'s "Sorting cannot be STARTED below
-                    640px" is closed by this story.
-
-                    It drives `sort.select`, the same store slice the headers
-                    drive through `sort.toggle` — one source of truth, so a sort
-                    chosen on a phone and one chosen on a desktop cannot
-                    disagree, and it persists exactly as a header click does. */}
+                {/* Drives the same sort slice as the headers, so phone and desktop sorts agree. */}
                 <TableSortControl
                   label="Sort savings goals and accounts"
                   columns={SAVINGS_SORT_COLUMNS}
                   state={sort.state}
                   onSelect={sort.select}
                 />
-                {/* The table's scroll region: a named landmark, and a Tab stop only
-                    while it scrolls (story 93.1; see `TableScrollRegion`). */}
                 <TableScrollRegion
                   label="Savings goals and accounts table"
                   className={`${RESPONSIVE_WRAPPER_CLASS} ${RESPONSIVE_SCROLL_SHADOW_CLASS}`}
@@ -1002,9 +646,7 @@ export function SavingsPage() {
                   <table className={RESPONSIVE_TABLE_CLASS}>
                     <thead className={RESPONSIVE_THEAD_CLASS}>
                       <tr>
-                        {/* Sortable headers (story 34.2). Each `<th>`'s text
-                          content stays EXACTLY the column label — the direction
-                          indicator is an aria-hidden <svg>. */}
+                        {/* Header text stays exactly the label; the direction indicator is an aria-hidden svg. */}
                         <SortableColumnHeader
                           label={SORT_COLUMN_LABELS.name}
                           ariaSort={sort.ariaSort('name')}
@@ -1040,28 +682,17 @@ export function SavingsPage() {
                           onActivate={sortA11y.markActivated}
                           onToggle={() => sort.toggle('progress')}
                         />
-                        {/* Not sortable: no button, and no `aria-sort` at all
-                          (`none` would advertise a sortable column). */}
+                        {/* No aria-sort at all: `none` would advertise a sortable column. */}
                         <th className={RESPONSIVE_HEADER_CELL_RIGHT_CLASS}>Actions</th>
                       </tr>
                     </thead>
                     <tbody className={RESPONSIVE_TBODY_CLASS}>
                       {sortedRows.map((goal) => {
-                        // Account (Story 16-1): null target ⇒ absent progress (not 0%).
+                        // null target means absent progress (not 0%).
                         const isAccountRow = goal.targetAmount == null
                         const progress = getSavingsProgress(goal.id)
-                        // Allocation (Story 26.3): a row is automatic iff the solver
-                        // placed it in `allocations` (every automatic row is present,
-                        // value may be 0); manual rows are absent and show their
-                        // stored fixed amount. (`in` rather than Object.hasOwn to stay
-                        // within the tsconfig lib target; ids are uuids, so no
-                        // Object.prototype key can collide.)
-                        //
-                        // Story 72.1 (reverses 64.1 / FR98): TWO states, for goals and
-                        // target-less accounts alike. 64.1 excluded accounts from the
-                        // solve and gave them a third, dash-and-no-pill state; that
-                        // exclusion is gone, so `isAccountRow` drives only the badge
-                        // and the Target cell, never the allocation.
+                        // Automatic iff the solver placed it in `allocations`; `in` rather than Object.hasOwn for the lib
+                        // target (uuid ids cannot collide with prototype keys).
                         const isAutomatic = goal.id in allocations
                         // Clamp a (corrupt-data) negative manual amount to 0 so the row
                         // matches the solver, which floors manual allocations at 0.
@@ -1070,15 +701,9 @@ export function SavingsPage() {
                           : Math.max(0, goal.monthlyAllocation ?? 0)
                         return (
                           <tr key={goal.id} className={RESPONSIVE_ROW_CLASS}>
-                            {/* Stacked below `sm` (story 91.1): a name AND a badge
-                              need the card's full width. See RESPONSIVE_STACKED_CELL_CLASS. */}
                             <td className={RESPONSIVE_STACKED_CELL_CLASS}>
                               <FieldLabel>Name</FieldLabel>
-                              {/* ⚠️ The NAME deliberately does NOT get
-                                RESPONSIVE_AMOUNT_CLASS: it is unbounded user free
-                                text, so it must keep the cell's `anywhere` and
-                                wrap. Only the badge is protected. See the
-                                asymmetry note on RESPONSIVE_VALUE_TAG_CLASS. */}
+                              {/* The name gets no RESPONSIVE_AMOUNT_CLASS: free text must keep `anywhere` and wrap. */}
                               <div className={RESPONSIVE_VALUE_TAG_CLASS}>
                                 <span className="font-medium text-heading text-sm">
                                   {goal.name}
@@ -1097,11 +722,6 @@ export function SavingsPage() {
                             </td>
                             <td className={RESPONSIVE_CELL_CLASS}>
                               <FieldLabel>Target</FieldLabel>
-                              {/* Story 91.1: every row figure wraps only between
-                                digit groups below `sm` (RESPONSIVE_AMOUNT_CLASS +
-                                GroupedAmount, inside the `hydrated` branch). "No
-                                target" is plain words, which `normal` wraps at the
-                                space like any label. */}
                               <div className={`text-muted text-sm ${RESPONSIVE_AMOUNT_CLASS}`}>
                                 {goal.targetAmount == null ? (
                                   'No target'
@@ -1116,15 +736,9 @@ export function SavingsPage() {
                                 <GroupedAmount text={formatAmount(goal.currentBalance)} />
                               </div>
                             </td>
-                            {/* Stacked below `sm` (story 91.1): a figure AND a pill
-                              need the card's full width. See RESPONSIVE_STACKED_CELL_CLASS. */}
                             <td className={RESPONSIVE_STACKED_CELL_CLASS}>
                               <FieldLabel>Monthly Allocation</FieldLabel>
                               <div className={RESPONSIVE_VALUE_TAG_CLASS}>
-                                {/* A formatted currency figure, so it wraps only
-                                  between digit groups — unlike the free-text name
-                                  above. It was nowrap until story 91.1 (D3); why it
-                                  changed is on RESPONSIVE_AMOUNT_CLASS. */}
                                 <span
                                   className={`text-muted text-sm ${RESPONSIVE_AMOUNT_CLASS}`}
                                   data-testid={`savings-allocation-${goal.id}`}
@@ -1140,9 +754,7 @@ export function SavingsPage() {
                               </div>
                             </td>
                             <td className={RESPONSIVE_STACKED_CELL_CLASS}>
-                              {/* Stacked, not label-left/value-right: the progress
-                                bar is full-width, so squeezing it beside its
-                                label at 320px would leave a ~150px track. */}
+                              {/* Stacked: beside its label at 320px the bar would get a ~150px track. */}
                               <FieldLabel>Progress</FieldLabel>
                               {progress == null ? (
                                 <div
@@ -1167,8 +779,7 @@ export function SavingsPage() {
                             </td>
                             <td className={RESPONSIVE_ACTIONS_CELL_CLASS}>
                               <FieldLabel>Actions</FieldLabel>
-                              {/* `p-1` is the DESKTOP tap target — see RESPONSIVE_ACTION_BUTTON_CLASS,
-                                  which owns the full rationale (story 50.1). */}
+                              {/* p-1 is the desktop tap target (see RESPONSIVE_ACTION_BUTTON_CLASS). */}
                               <div className={RESPONSIVE_ACTIONS_GROUP_CLASS}>
                                 <button
                                   type="button"
@@ -1194,15 +805,12 @@ export function SavingsPage() {
                     </tbody>
                   </table>
                 </TableScrollRegion>
-                {/* Story 120.1: the header descriptions + sort live region. LAST
-                    children and outside the table (`useSortHeaderAnnouncements`). */}
                 {sortA11y.nodes}
               </>
             )}
           </section>
         </main>
 
-        {/* Add/Edit Modal */}
         <Modal isOpen={isModalOpen} onClose={closeModal} labelledBy="savings-modal-title">
           <div className="flex justify-between items-center mb-6">
             <h3 id="savings-modal-title" className="font-medium text-heading text-lg">
@@ -1369,9 +977,7 @@ export function SavingsPage() {
               )}
             </div>
 
-            {/* Monthly allocation mode (Story 26.1). Rendered for EVERY entry,
-              account or goal (Story 72.1, reversing 64.1 / FR98): the "account
-              balance" tick affects only the Target field above. */}
+            {/* Rendered for every entry; the account tick affects only the Target field. */}
             <div>
               <label htmlFor="allocationMode" className="block mb-1 font-medium text-label text-sm">
                 Monthly Allocation
@@ -1387,8 +993,6 @@ export function SavingsPage() {
                 <option value="manual">Manual (a fixed amount each month)</option>
               </select>
               <p className="mt-1 text-faint text-xs">
-                {/* "entry" (Story 72.1, D3): this helper renders for goals and
-                    accounts alike. */}
                 {allocationMode === 'automatic'
                   ? 'This entry receives an even share of whatever is left over each month.'
                   : 'This entry gets the fixed amount you set below each month.'}
@@ -1471,7 +1075,6 @@ export function SavingsPage() {
           </form>
         </Modal>
 
-        {/* Delete confirmation */}
         <ConfirmDialog
           isOpen={pendingDeleteId !== null}
           onConfirm={confirmDelete}

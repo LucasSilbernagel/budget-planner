@@ -1,22 +1,9 @@
 // @vitest-environment node
-// No DOM needed: the `components/**` glob would give it jsdom (story 82.2).
+// No DOM needed; the components/** glob would otherwise give it jsdom.
 import type { ClientProfile } from '@/hooks/useActiveProfile'
 import { describe, expect, it } from 'vitest'
 import { EMPTY_PROFILE_FORM, validateProfileForm } from '../profile-form'
 
-/**
- * Shared profile form validator (story 54.1).
- *
- * One rule set for both dialogs. The only difference between them is which
- * profile the name-uniqueness check ignores:
- * - create passes `null` — a new profile has no id, so EVERY existing name counts;
- * - edit passes the id of the profile being edited, so saving under its own name
- *   is allowed.
- *
- * ⚠️ The create dialog used to exclude the ACTIVE profile (`p.id !== activeProfileId`),
- * which let a new profile take the active profile's name. The `null` test below is
- * that bug's regression test.
- */
 const profile = (id: string, name: string): ClientProfile => ({
   id,
   userId: 'u1',
@@ -87,8 +74,6 @@ describe('validateProfileForm (story 54.1)', () => {
   })
 
   it("rejects another profile's name when the edited profile is NOT the active one", () => {
-    // `biz` is not active (the active profile is `main` in every real store seed);
-    // the old active-id exclusion would have skipped `main` and let this through.
     expect(
       validateProfileForm(
         { ...EMPTY_PROFILE_FORM, name: 'Main Profile', description: '' },

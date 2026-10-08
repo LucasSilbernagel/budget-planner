@@ -22,8 +22,8 @@ describe('savingsGoals service', () => {
       const goal: ClientSavingsGoal = {
         id: 'sg-1',
         name: 'Vacation Fund',
-        targetAmount: 500000, // $5000 in cents
-        currentBalance: 250000, // $2500 in cents
+        targetAmount: 500000,
+        currentBalance: 250000,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       }
@@ -36,7 +36,7 @@ describe('savingsGoals service', () => {
     it('should have ClientNewSavingsGoal interface without ID and timestamps', () => {
       const newGoal: ClientNewSavingsGoal = {
         name: 'Emergency Fund',
-        targetAmount: 1000000, // $10000 in cents
+        targetAmount: 1000000,
         currentBalance: 0,
       }
       expect(newGoal.name).toBe('Emergency Fund')
@@ -48,8 +48,8 @@ describe('savingsGoals service', () => {
       const goalWithProgress: SavingsGoalWithProgress = {
         id: 'sg-1',
         name: 'Car Down Payment',
-        targetAmount: 2000000, // $20000 in cents
-        currentBalance: 500000, // $5000 in cents
+        targetAmount: 2000000,
+        currentBalance: 500000,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         progress: 25,
@@ -193,8 +193,6 @@ describe('savingsGoals service', () => {
     })
 
     it('treats a missing targetAmount as an account, not an error (Story 16-1)', () => {
-      // Nullable target is the single source of truth: an absent target means a
-      // goal-less savings account, so validation must NOT require one.
       const input = {
         name: 'Test',
         currentBalance: 50000,
@@ -330,8 +328,8 @@ describe('savingsGoals service', () => {
   describe('sortByCreationDate', () => {
     it('should sort goals by creation date (newest first)', () => {
       const now = new Date()
-      const older = new Date(now.getTime() - 86400000) // Yesterday
-      const oldest = new Date(now.getTime() - 172800000) // Two days ago
+      const older = new Date(now.getTime() - 86400000)
+      const oldest = new Date(now.getTime() - 172800000)
 
       const goals: ClientSavingsGoal[] = [
         {
@@ -361,9 +359,9 @@ describe('savingsGoals service', () => {
       ]
 
       const sorted = sortByCreationDate(goals)
-      expect(sorted[0].id).toBe('sg-2') // Newest first
-      expect(sorted[1].id).toBe('sg-3') // Older second
-      expect(sorted[2].id).toBe('sg-1') // Oldest last
+      expect(sorted[0].id).toBe('sg-2')
+      expect(sorted[1].id).toBe('sg-3')
+      expect(sorted[2].id).toBe('sg-1')
     })
 
     it('should return new array (not mutate original)', () => {
@@ -391,7 +389,7 @@ describe('savingsGoals service', () => {
 
       const originalOrder = [...goals]
       sortByCreationDate(goals)
-      expect(goals).toEqual(originalOrder) // Original not mutated
+      expect(goals).toEqual(originalOrder)
     })
   })
 
@@ -453,8 +451,6 @@ describe('savingsGoals service', () => {
     })
   })
 
-  // Story 5-14: ids are now client-generated uuids (replacing negative-integer
-  // temp ids) so an offline-created row keeps the SAME id once synced.
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
   describe('generateSavingsGoalTempId', () => {
@@ -477,7 +473,6 @@ describe('savingsGoals service', () => {
   describe('resetSavingsGoalTempId', () => {
     it('is a stateless no-op and still yields fresh unique uuids', () => {
       const before = generateSavingsGoalTempId()
-      // No counter to reset; the call must not throw and must not collide ids.
       resetSavingsGoalTempId()
       const after = generateSavingsGoalTempId()
       expect(after).toMatch(UUID_RE)
@@ -494,7 +489,7 @@ describe('savingsGoals service', () => {
       }
 
       const result = toClientSavingsGoal(input)
-      expect(result.id).toMatch(UUID_RE) // client-generated uuid (Story 5-14)
+      expect(result.id).toMatch(UUID_RE)
       expect(result.name).toBe('Test Goal')
       expect(result.targetAmount).toBe(100000)
       expect(result.currentBalance).toBe(50000)
@@ -517,8 +512,6 @@ describe('savingsGoals service', () => {
     })
   })
 
-  // Story 16-1: goal-less savings accounts (null target). Progress must be
-  // ABSENT (null) for accounts, never 0 (0 reads as "0% toward a goal").
   describe('savings accounts (no target, Story 16-1)', () => {
     const account: ClientSavingsGoal = {
       id: 'acc-1',
@@ -576,7 +569,6 @@ describe('savingsGoals service', () => {
       })
 
       it('skips the "balance exceeds target" check for accounts', () => {
-        // A goal would reject balance > target; an account has no ceiling.
         const errors = validateSavingsGoal({
           name: 'Buffer',
           targetAmount: null,
@@ -611,15 +603,6 @@ describe('savingsGoals service', () => {
   })
 })
 
-/**
- * Story 26.1: per-account monthly allocation + allocation mode.
- *
- * Each savings account/goal can carry a nullable `monthlyAllocation` (cents, >= 0)
- * and an `allocationMode` of 'manual' | 'automatic'. Manual accounts hold a fixed
- * amount; automatic accounts get an even share of the leftover pool (computed in
- * Story 26.2). Validation only constrains a manual amount; an automatic account
- * ignores any stored amount.
- */
 describe('savingsGoals — allocation fields (Story 26.1)', () => {
   describe('Type Definitions', () => {
     it('ClientSavingsGoal carries optional monthlyAllocation + allocationMode', () => {
@@ -631,7 +614,7 @@ describe('savingsGoals — allocation fields (Story 26.1)', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         allocationMode: 'manual',
-        monthlyAllocation: 25000, // $250/mo
+        monthlyAllocation: 25000,
       }
       const auto: ClientSavingsGoal = {
         id: 'sg-2',
@@ -717,8 +700,6 @@ describe('savingsGoals — allocation fields (Story 26.1)', () => {
     })
 
     it('ignores the manual amount when mode is automatic (no monthlyAllocation error)', () => {
-      // A stale negative amount left over from a prior manual entry must not
-      // produce an error once the account is switched to automatic.
       const errors = validateSavingsGoal({
         name: 'Leftover',
         targetAmount: null,

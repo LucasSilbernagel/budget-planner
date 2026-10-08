@@ -1,48 +1,11 @@
 import type React from 'react'
 
 /**
- * The two glyphs the finance tables use for their per-row actions (story 50.1,
- * UX-DR56). Shared rather than inlined because there are FOUR call sites —
- * `IncomePage`, `ExpensesPage`, `BalancePage`, `SavingsPage` — and eight
- * buttons. `SortableColumnHeader` keeps its chevrons file-local for the
- * opposite reason: it has one consumer.
- *
- * ⚠️ HAND-ROLLED ON PURPOSE, NOT FOR WANT OF A LIBRARY. `lucide`, `heroicons`,
- * `react-icons`, `feather`, `phosphor`, `tabler` and `iconify` are absent from
- * `apps/web/package.json`, the root manifest AND `pnpm-lock.yaml`; 18 components
- * already draw their own inline SVG. A CDN-hosted icon font or sprite is not an
- * alternative either — `server/middleware/security-headers.ts` ships
- * `font-src 'self' data:` and `img-src 'self' data:`, so both are unloadable.
- * (That is the real blocker. `script-src`'s missing `'unsafe-inline'` governs
- * scripts and is NOT what stops an icon font, whatever a passing reader assumes.)
- *
- * ⚠️ `aria-hidden="true"` IS NOT DECORATION HERE, IT IS THE CONTRACT. Every
- * caller wraps these in a button carrying `aria-label={`Edit ${name}`}` /
- * `Delete ${name}`, which is the row's entire accessible name. Hiding the glyph
- * keeps it out of the name computation.
- *
- * ⚠️ AND NO ACCESSIBLE-NAME TEST CAN PROVE THAT ATTRIBUTE IS PRESENT. `aria-label`
- * overrides element content unconditionally, so an un-hidden `<svg>` — even one
- * carrying a `<title>` — still computes the name `Edit Salary`. The guard that
- * can see it is an attribute pin: `assertIsIconOnlyAction` in
- * `src/test/responsive-table-tokens.ts`.
- *
- * House idiom, measured across the 43 inline SVGs in this app: `fill="none"` +
- * `stroke="currentColor"`, `viewBox="0 0 24 24"`, round caps and joins,
- * `strokeWidth` as a JSX number, and sizing ALWAYS through `className` — not one
- * existing SVG sets a `width` or `height` attribute. `currentColor` is what lets
- * the caller's `text-blue-600` / `text-red-600` and their `hover:` and `dark:`
- * variants reach the glyph unchanged.
- *
- * Paths are Heroicons v1 outline (`pencil-alt`, `trash`), MIT © Tailwind Labs,
- * transcribed by hand — see the CSP note above for why they are not imported.
+ * Hand-rolled: there is no icon package, and the CSP (`font-src`/`img-src 'self'`) rules out a CDN icon font.
+ * `aria-hidden` is the contract: the wrapping button's `aria-label` is the whole accessible name.
  */
 
-/** ⚠️ A DEFAULT, NOT A CONSTANT TO OVERRIDE CASUALLY. These SVGs set no `width`
- * or `height` attributes (house idiom), so an element that receives no sizing
- * class falls back to the replaced-element default of roughly 300x150 and
- * destroys the table row. jsdom computes no layout and the e2e box assertion is
- * a lower bound, so NOTHING would catch it. Defaulting is cheaper than a guard. */
+/** These SVGs set no width/height, so without a sizing class they fall back to ~300x150. */
 const ICON_SIZE = 'h-5 w-5'
 
 /** Heroicons v1 outline `pencil-alt` — the row Edit action. */

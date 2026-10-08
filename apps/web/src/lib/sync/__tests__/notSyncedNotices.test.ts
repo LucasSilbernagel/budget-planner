@@ -1,13 +1,3 @@
-/**
- * The not-synced notice's store rules and naming (story 79.2, FR128).
- *
- * An edit that keeps failing to sync is reported by the core on EVERY status
- * change, as long as it stays escalated. The store therefore reconciles against
- * that view instead of adding: a notice appears once, stays dismissed once the
- * user dismisses it, clears itself when the edit lands, and never touches a
- * refusal notice.
- */
-
 import type { SyncOperation } from '@budget-planner/core/sync'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -67,8 +57,7 @@ describe('describeNotSyncedRow — naming a row whose edit keeps failing', () =>
   })
 
   it("says what is pending from the device's side: a delete wins over a create, a create over an update", () => {
-    // Created then deleted: the row is already gone here, so it is a pending DELETE
-    // (code review 79.2), not a create "saved on this device".
+    // Created then deleted: already gone here, so it is a pending delete.
     expect(
       describeNotSyncedRow([op({ type: 'create' }), op({ type: 'delete' })], undefined).change
     ).toBe('delete')
@@ -112,7 +101,7 @@ describe('reconcileNotSyncedNotices', () => {
     reconcileNotSyncedNotices([notSynced('expense:row-1')])
 
     expect(keysAndOutcomes()).toEqual(['expense:row-1=not-synced'])
-    // A quiet cycle leaves the list untouched (same array, so no re-render).
+    // Same array, so no re-render.
     expect(getRefusalNotices()).toBe(first)
   })
 
@@ -198,7 +187,6 @@ describe('reconcileNotSyncedNotices', () => {
     resetRefusalNotices()
     expect(getRefusalNotices()).toEqual([])
 
-    // The dismissal is gone too: the next session shows its own escalation.
     reconcileNotSyncedNotices([notSynced('expense:row-1')])
     expect(keysAndOutcomes()).toEqual(['expense:row-1=not-synced'])
   })

@@ -1,38 +1,5 @@
 name: Deploy (production)
 
-# Production deploy pipeline (Story 5-4).
-#
-# THE SINGLE deploy workflow for this repo. Story 4-16 was originally assigned
-# `deploy.yml`'s authorship but had not created it (sprint-change-proposal
-# 2026-06-26 §4.1); 5-4 owns it now. Do NOT add a second deploy workflow —
-# 4-16 should harden this file instead.
-#
-# Division of labour:
-#   - ci.yml (4-15) ...... the three quality gates. Invoked here, never rebuilt.
-#   - 5-2 ................ the runtime: server-entry.mjs, Dockerfile, rapids-service.yaml.
-#   - 4-17 ............... the managed PostgreSQL instance itself.
-#   - THIS FILE .......... gating, build, migration, deploy, rollback, smoke.
-#
-# TRIGGER (AC-1) — push to `main`, plus manual dispatch.
-#   `main` is the release branch: every merge into it is a candidate release.
-#   (Branch protection is documented in .github/BRANCH_PROTECTION.md but is
-#   admin-applied, so whether it is actually ON is not knowable from the repo —
-#   which is exactly why this workflow re-runs the gates itself rather than
-#   trusting that a PR already ran them.) A tag/release trigger was considered and NOT
-#   chosen: it adds a manual ceremony step for a single-maintainer pre-launch
-#   project without adding a safety property that the `production` Environment
-#   (AC-5) does not already provide. `workflow_dispatch` covers the cases a push
-#   trigger cannot: re-deploying without a code change, and ROLLBACK (dispatch
-#   with `image_tag` set to a previous known-good SHA — see DEPLOY_RUNBOOK.md).
-#
-# ⚠️ BLOCKED-ON-ACCOUNT. The steps that talk to DanubeData cannot be written
-# blind: the registry path, the deploy CLI/API and the revision model are not
-# public (ADR-001 flags Rapids as thinly documented). They are gated behind the
-# `DEPLOY_ENABLED` repository variable and are deliberately built to FAIL LOUDLY
-# rather than no-op: a pipeline that reports success without deploying is worse
-# than one that is honestly switched off. Everything before them — the gates,
-# the type-check, the image build — runs for real on every push today.
-
 on:
   push:
     branches: [main]
@@ -43,9 +10,8 @@ on:
         required: false
         type: string
 
-# One production deploy at a time, and NEVER cancel one in flight: a cancelled
-# run between the migrate and deploy jobs is exactly how a database ends up
-# ahead of the code that serves it.
+# Never cancel a deploy in flight: a run cancelled between migrate and deploy
+# leaves the database ahead of the code.
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -56,47 +22,17 @@ permissions:
 env:
   NODE_VERSION: '24'
   IMAGE_NAME: budget-planner-web
-  # Pinned deliberately: the `migrate` job's safety depends on `rapids
-  # apply`/`update`/`rm` behaving exactly as expected, and the `deploy` job's on
-  # `rapids apply --wait`, so the CLI does not float underneath the pipeline.
-  #
-  # `DB_INSTANCE` lived here until Story 5.18 for the sole purpose of naming the
-  # instance to `danube db dns enable`/`disable`. No step opens a public database
-  # endpoint any more, so nothing in this workflow addresses the database
-  # instance by name — only the app reaches it, over internal DNS.
+  # Pinned: migrate and deploy rely on exact CLI behaviour (`apply --wait`).
   DANUBE_CLI_VERSION: '1.3.0'
 
 jobs:
-  # --- Gate 1: the existing quality checks (AC-1) ----------------------------
-  # Calls ci.yml as a reusable workflow, so lint + unit + e2e must ALL pass
-  # before anything downstream starts. Expressed as a `needs:` dependency rather
-  # than `workflow_run` on purpose: `workflow_run` fires on failure too and only
-  # blocks if you remember to test `conclusion == 'success'`, which makes "a red
-  # build never deploys" a convention. Here it is structural.
-  #
-  # ci.yml no longer has a `push: main` trigger (removed 2026-09-15), so on a
-  # push to `main` these gates run exactly once — here. They previously ran
-  # twice, once per workflow. The job names are unchanged, so the required
-  # status checks on PRs still resolve.
-  #
-  # Concurrency: ci.yml's group is `ci-${{ github.workflow }}-${{ github.ref }}`,
-  # and under `workflow_call` `github.workflow` resolves to the CALLING workflow,
-  # so the nested run sits in `ci-Deploy (production)-<ref>`. A PR run
-  # (`ci-CI-<ref>`) can therefore never cancel the nested gates out from under an
-  # in-flight deploy, and this workflow's own `deploy-production` group queues
-  # later runs rather than running them concurrently (code review 2026-09-03).
+  # A `needs:` on the reusable workflow, not workflow_run (which also fires on
+  # failure), so "a red build never deploys" is structural.
   quality-gates:
     name: Quality gates
     uses: ./.github/workflows/ci.yml
 
-  # --- Gate 2: the full type-check (AC-1) ------------------------------------
-  # NEW in 5-4. The old "tsc is deliberately not a gate" rationale died with the
-  # strict-TS sweep (closed 2026-08-24; every package reports 0 errors).
-  #
-  # ⚠️ Uses `pnpm --filter <pkg> type-check`, NEVER the root `tsc:web` /
-  # `tsc:core` / `tsc:db` / `tsc:config` scripts. Those are dead: they exit 1
-  # with ERR_PNPM_RECURSIVE_RUN_NO_SCRIPT *without running a compiler*, so a
-  # grep for "error TS" over their output returns a confident, meaningless 0.
+  # Use `pnpm --filter <pkg> type-check`: the root tsc:* scripts exit without running a compiler.
   type-check:
     name: Type-check (tsc, all packages)
     runs-on: ubuntu-latest
@@ -106,8 +42,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up pnpm
-        # Version comes from `packageManager` in package.json (pnpm@10.34.3).
-        # Do NOT also pass `version:` — action-setup errors on a conflict.
+        # No `version:` here: it conflicts with package.json `packageManager`.
         uses: pnpm/action-setup@v4
 
       - name: Set up Node.js
@@ -119,54 +54,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # --- Prerequisites. Do NOT reorder or drop these. ---------------------
-      # `tsc` reads the workspace packages through PROJECT REFERENCES, i.e. their
-      # built `packages/*/dist/*.d.ts`, and `apps/web/src/router.tsx` imports the
-      # generated `./routeTree.gen.ts`. Both are gitignored build artifacts, so a
-      # fresh CI checkout has NEITHER — while a dev box has both lying around from
-      # the last `pnpm dev`. That is why this job passed locally and failed here
-      # with ~190 errors: 150-odd TS6305 "output file has not been built from
-      # source file", 38 route errors cascading from the missing route tree, and a
-      # tail of implicit-`any`s that were only downstream noise. None of them said
-      # anything about the code under review.
-      #
-      # `tsc -b` (build mode), NOT `pnpm -r build`. What tsc actually consumes is
-      # the `references` graph in the tsconfigs, and build mode walks that graph
-      # itself — so the order is correct by construction and cannot drift out of
-      # sync with pnpm's separate package-dependency graph. (Those two graphs HAD
-      # drifted: `packages/core` imported types from `@budget-planner/db` without
-      # declaring it, so pnpm saw no edge, built core and db CONCURRENTLY, and
-      # core lost the race with the same TS6305. The dependency is declared now,
-      # but the reason to prefer build mode here does not depend on that.)
+      # tsc reads workspace packages via project references (built .d.ts) and needs the
+      # generated route tree; both are gitignored, so build them first.
       - name: Build workspace packages (project references)
         run: pnpm build:packages
 
-      # Vite aliases `@budget-planner/*` to `src`, so this does not depend on the
-      # step above; it is here for the SIDE EFFECT of the TanStack Start plugin
-      # regenerating `src/routeTree.gen.ts`. There is no standalone generator CLI
-      # (`@tanstack/router-generator` ships no bin), so a real build is the only
-      # supported way to produce it. It also means a broken web build reds this
-      # job rather than waiting for the Docker build.
+      # A real build is the only supported way to generate src/routeTree.gen.ts.
       - name: Build the web app (generates src/routeTree.gen.ts)
         run: pnpm --filter web build
 
-      # One step per package so a failure names the package in the job log.
-      # `config` is included beyond AC-1's web/core/db list because it is a real
-      # workspace package that already type-checks clean; leaving it unchecked on
-      # the deploy path would be an arbitrary hole.
-      #
-      # Story 78.2: web's `type-check` script runs THREE programs, joined by `&&`:
-      # the app (tsconfig.app.json, STRICT, excludes tests), the unit tests plus
-      # their setup/config (tsconfig.vitest.json) and the Playwright specs
-      # (tsconfig.e2e.json). The two test programs use RELAXED index-access flags,
-      # so app code's strictness comes from the first program alone. Before 78.2
-      # no gate type-checked a test file. validate-deploy-workflow.py pins both
-      # this step (exact `run`, no continue-on-error) and the script it calls.
-      #
-      # Story 78.4: core's and db's `type-check` run TWO programs, joined by `&&`:
-      # the build config (tsconfig.json, STRICT, excludes tests) and a no-emit
-      # tsconfig.test.json (tests + root-level TS files, the same RELAXED
-      # index-access flags as web's test programs). Same pin, same validator.
+      # One step per package so a failure names the package.
       - name: Type-check web
         run: pnpm --filter web type-check
 
@@ -179,44 +76,20 @@ jobs:
       - name: Type-check config
         run: pnpm --filter @budget-planner/config type-check
 
-  # --- Build + package the Start app for Rapids (AC-2) -----------------------
-  # Runs on EVERY push, gated or not: building the image needs no DanubeData
-  # account, and a Dockerfile that stopped building is something we want to learn
-  # about now rather than on cutover day. Only the registry PUSH is blocked.
-  #
-  # No `needs:` — this runs IN PARALLEL with the quality gates and the
-  # type-check (2026-09-15; it used to wait ~9 minutes for them). That is safe
-  # because this job only builds and verifies locally and touches nothing
-  # outside its runner: it references no secrets and never pushes. The step that
-  # makes the image a deploy candidate — the registry push — lives in
-  # `push-image`, which DOES need every gate. The verified bytes are handed over
-  # as a short-lived artifact, so what gets pushed is exactly what booted here.
+  # No `needs:`: runs alongside the gates, which is safe only because it reads no
+  # secrets and never pushes. push-image, which needs every gate, pushes these bytes.
   build-image:
     name: Build container image
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # NOT for secrets (this job reads none; validate-deploy-workflow pins that).
-    # VITE_COUNTERDEV_ID is defined at BOTH repository and `production` scope with
-    # DIFFERENT values, and the environment value wins — so dropping this key
-    # would silently bake the repository-scope id into the production bundle.
-    # VITE_FORMSPARK_FORM_ID rides the same path; define it at ONE scope only, so
-    # which value ships is not a question anyone has to look up.
+    # Not for secrets: VITE_COUNTERDEV_ID has a different value at production scope,
+    # and that is the one that must ship.
     environment: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Build-time public vars (AC-2). These are baked into the client bundle by
-      # `vite build` inside the image, so they MUST be build args, not runtime
-      # env — setting VITE_COUNTERDEV_ID on the running container does nothing.
-      # It is a public site identifier, not a secret (see apps/web/.env.example
-      # and ADR-005), but it is passed from repo *variables* so it is configured
-      # in one place. `__APP_VERSION__` needs no wiring: vite.config.ts inlines it
-      # from package.json at build time.
-      #
-      # Build context is the monorepo root — the Dockerfile's build stage
-      # installs the whole pnpm workspace, and its runtime stage keeps only what
-      # the serve and migrate entrypoints need (apps/web/Dockerfile documents this).
+      # VITE_* vars are inlined at build time, so they must be build args, not runtime env.
       - name: Build production image
         env:
           VITE_COUNTERDEV_ID: ${{ vars.VITE_COUNTERDEV_ID }}
@@ -230,20 +103,8 @@ jobs:
             -t "${IMAGE_NAME}:${GITHUB_SHA}" \
             .
 
-      # Story ops-1 (AC-3, AC-7). The registry plan is 500 MB and counts every
-      # tag at its full compressed size, with no dedup across tags. The pipeline
-      # keeps 2 rollback tags + the live tag + the migrator's pinned tag, so one
-      # tag must stay <= 112 MB ((2 + 1 + 1) x S <= 450 MB, 50 MB margin) — the
-      # derivation is the BUDGET constant in .github/scripts/image_size.py. A
-      # bigger image would build, boot and pass every check here, and only die at
-      # the push, after every gate had run: so measure it HERE, before anything
-      # is exported or pushed, and fail the build above budget. Warns at 90 %.
-      #
-      # The number is what `docker push` uploads (gzip of each layer), not
-      # `.Size` (uncompressed, printed alongside for the record). It is an
-      # ESTIMATE of the registry's own `bytes_size`, which push-image prints per
-      # tag: compare the two for the same SHA in each deploy log (the margin is
-      # sized to absorb the gzip-level gap). PR #28's check: 104.0 MB.
+      # Fail here, not at the push: the registry bills each tag's compressed size, and an
+      # oversized image would otherwise only die after every gate had run.
       - name: Check the image size budget
         run: |
           set -euo pipefail
@@ -252,22 +113,9 @@ jobs:
           docker pull -q node:24-slim > /dev/null
           docker save "${IMAGE_NAME}:${GITHUB_SHA}" | python3 .github/scripts/image_size.py --base node:24-slim
 
-      # Prove the image works in BOTH modes before it is a deploy candidate
-      # (ops-1 AC-4, AC-5): serve (health, SSR, brotli on the on-the-fly AND the
-      # precompressed path, production env, unprivileged user) and migrate (idle
-      # without credentials; a real preflight + drizzle-kit migrate against a
-      # throwaway postgres, verdict line, status endpoint, row count = journal).
-      # The migrate half is the only pre-production proof that the slim image
-      # still carries packages/db's toolchain: production migrations are rare,
-      # and the serving container is unaffected when that payload goes missing.
-      # No database secrets: everything is minted inside the script. The script
-      # prints every container's logs and removes them on exit.
       - name: Verify the image serves and migrates
         run: bash .github/scripts/verify-image.sh "${IMAGE_NAME}:${GITHUB_SHA}" packages/db/migrations/meta/_journal.json
 
-      # Hand the verified image to `push-image`. Only when deploys are on —
-      # otherwise nothing would ever consume it. zstd, and no second zip pass on
-      # an already-compressed file. One-day retention covers "Re-run failed jobs".
       - name: Export the verified image
         if: ${{ vars.DEPLOY_ENABLED == 'true' }}
         run: |
@@ -285,27 +133,14 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  # --- Push the verified image (AC-2) ----------------------------------------
-  # The first job that makes a build a deploy candidate, so it needs EVERY gate:
-  # lint/unit/e2e, the type-check, and the image build + boot check.
   push-image:
     name: Push container image
     runs-on: ubuntu-latest
     needs: [quality-gates, type-check, build-image]
-    # ⚠️ `refs/heads/main` as well as DEPLOY_ENABLED (story ops-1, D5). This job
-    # PRUNES tags and PUSHES one into a 500 MB registry, so a `workflow_dispatch`
-    # from any other branch must not reach it: before this, dispatching this
-    # workflow from a branch to "try a Dockerfile change" would have deleted
-    # rollback targets and spent quota on an unreviewed image. Try images with
-    # container-image.yml instead, which builds and verifies and pushes nothing.
-    # Rollback is unaffected: it is a dispatch from main with `image_tag` set.
+    # Main only: this job prunes and pushes, so a branch dispatch must not reach it.
     if: ${{ vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
     timeout-minutes: 15
-    # DANUBEDATA_REGISTRY_USERNAME/_PASSWORD are `production` ENVIRONMENT secrets
-    # (DEPLOY_RUNBOOK.md §1). GitHub does NOT expose environment-scoped secrets to
-    # a job that does not declare the environment — without this key they resolve
-    # to EMPTY STRINGS and `docker login` silently runs with blank credentials.
-    # Found in code review 2026-09-03; the workflow and the runbook had disagreed.
+    # Environment-scoped registry secrets resolve to empty without this key.
     environment: production
     steps:
       # Needed for `packageManager` in package.json, which pnpm/action-setup reads.
@@ -323,11 +158,7 @@ jobs:
           zstd -dc image.tar.zst | docker load
           docker image inspect "${IMAGE_NAME}:${GITHUB_SHA}" > /dev/null
 
-      # pnpm/Node for the CLI install below. Same reason as the deploy job: a
-      # fresh runner inherits no toolchain. Enforced by validate-deploy-workflow.
-      #
-      # ⚠️ These run BEFORE the push now, not after, because the prune step below
-      # runs before the push and needs the CLI. See that step's comment.
+      # Set up before the push: the prune step runs first and needs the CLI.
       - name: Set up pnpm
         if: ${{ vars.DEPLOY_ENABLED == 'true' }}
         uses: pnpm/action-setup@v4
@@ -342,10 +173,7 @@ jobs:
         if: ${{ vars.DEPLOY_ENABLED == 'true' }}
         run: pnpm add -g "@danubedata/cli@${{ env.DANUBE_CLI_VERSION }}"
 
-      # Story ops-1 (AC-1): quota usage and every tag's billed size, printed
-      # before the prune, after it and after the push, so each deploy log shows
-      # what one tag costs and how the quota check behaves — measured, not
-      # inferred from two failures. Report-only: never fails the job.
+      # Report-only: quota usage and per-tag billed size around the prune and push.
       - name: Registry usage before prune
         if: ${{ vars.DEPLOY_ENABLED == 'true' }}
         continue-on-error: true
@@ -355,44 +183,8 @@ jobs:
           REGISTRY: ${{ vars.DANUBEDATA_REGISTRY }}
         run: bash .github/scripts/registry-report.sh "before prune"
 
-      # Every run pushes a new SHA-tagged image and nothing removed the old ones.
-      # Six runs filled a 500 MB plan and the seventh died with
-      # `denied: Storage quota exceeded (638 MB used of 500 MB)` — after a full
-      # build (run 34497637074, 2026-09-10).
-      #
-      # ⚠️ This step runs BEFORE the push, on purpose. A prune AFTER the push
-      # cannot recover a registry that is already at quota: the push fails, the
-      # job stops, and the prune never runs — the pipeline stays wedged until
-      # someone deletes tags by hand. Pruning first means a full registry
-      # self-heals on the next run.
-      #
-      # ⚠️ Retention is NOT just housekeeping: rollback redeploys an earlier tag
-      # (DEPLOY_RUNBOOK §6), so pruning too hard deletes the thing you would roll
-      # back TO. REGISTRY_KEEP_TAGS defaults to 2 — two rollback targets. It was
-      # 5 until run 34528527480 (2026-09-10) died with `denied: Storage quota
-      # exceeded (638 MB used of 500 MB)`: the image was fat then (~173 MB a tag,
-      # the whole workspace), and five of them do not fit the 500 MB registry
-      # plan, so keep-5 could never self-heal.
-      #
-      # ⚠️ THE QUOTA (story ops-1). Every tag is billed at its full compressed
-      # size — no layer dedup across tags — and the push was refused only when
-      # usage was ALREADY at the limit when it started (2026-10-02: allowed at
-      # 499.9 MB, denied at 509.6 MB; two data points, re-checked by the
-      # registry-usage steps around this one every run). What this step can never
-      # delete adds to the bill: the live tag, and the migrator container's tag,
-      # which only moves when a migration runs. Steady state is therefore
-      # (KEEP + 1 + 1) tags, and the image is slimmed and size-guarded
-      # (build-image "Check the image size budget") so that 4 x S <= 450 MB holds
-      # with KEEP=2. Raising KEEP_TAGS breaks that sum; recompute it first. The
-      # tag this run is about to push does not exist in the registry yet, so it
-      # is structurally impossible for this step to delete it; the GITHUB_SHA
-      # guard below is a belt-and-braces check for a re-run that re-pushes an
-      # existing SHA.
-      #
-      # A prune failure WARNS rather than failing the job. If there was genuinely
-      # room, the push below still succeeds. If there was not, the push fails
-      # loudly with the quota error — the same signal as before, just one step
-      # later, and now preceded by a real attempt to make room.
+      # Runs before the push so a registry already at quota self-heals. Rollback needs
+      # earlier tags, and raising KEEP_TAGS breaks the image size budget.
       - name: Prune old image tags
         if: ${{ vars.DEPLOY_ENABLED == 'true' }}
         continue-on-error: true
@@ -406,13 +198,8 @@ jobs:
           # REGISTRY is host + namespace; the repository path drops the host.
           REPO="${REGISTRY#*/}/${IMAGE_NAME}"
 
-          # ⚠️ REGISTRY_KEEP_TAGS is operator-set and its degenerate values are
-          # dangerous: `0` would delete EVERY rollback target, and a non-integer
-          # (`five`, a stray space) would crash `int()` below — which, under
-          # `continue-on-error: true`, fails the step silently and prunes NOTHING
-          # forever (the exact "silently never prunes" mode this step already
-          # regressed into once). Validate loudly and clamp to >= 1. (Review
-          # 2026-09-10.)
+          # 0 would delete every rollback target; a non-integer would silently
+          # disable pruning under continue-on-error.
           KEEP="${KEEP_TAGS:-2}"
           case "${KEEP}" in
             ''|*[!0-9]*)
@@ -426,24 +213,8 @@ jobs:
           fi
           echo "Keeping the ${KEEP} newest tags in ${REPO}"
 
-          # ⚠️⚠️ NEVER PRUNE A TAG THAT IS CURRENTLY DEPLOYED. Added 2026-09-16
-          # after this step took the live site down.
-          #
-          # A deployed Knative revision is pinned to the exact image it was created
-          # from. On 2026-09-15 several deploy attempts pushed tags in quick
-          # succession, pushing the tag `budget-planner-web` was RUNNING out of the
-          # keep-window; this step deleted it. The container served happily until it
-          # scaled to zero, then could not restart — `manifest unknown` — and the
-          # site was down from ~05:28 CEST until it was redeployed by hand.
-          #
-          # "Keep one more tag" was considered and rejected: it moves the cliff
-          # instead of removing it, and a burst of runs walks straight off the new
-          # one. Age is the wrong question; "is anything running this?" is the right
-          # one.
-          #
-          # FAILS CLOSED: if the deployed tags cannot be read, this prunes NOTHING.
-          # A registry that grows is a bounded, visible problem; deleting the image
-          # your site is running is an outage.
+          # Never prune a deployed tag: a Knative revision is pinned to its image and cannot
+          # cold-start once it is gone. Fails closed if the deployed tags cannot be read.
           if ! deployed=$(danube --json rapids ls | python3 .github/scripts/rapids_deployed_tags.py); then
             echo "::warning::Could not determine which tags are deployed; skipping the prune entirely."
             echo "A tag pruned while a container runs it takes the site down on its next cold start."
@@ -454,30 +225,10 @@ jobs:
 
           danube --json registry repos tags "${REPO}" > /tmp/tags.json
 
-          # Newest-first by pushed_at, skip the newest KEEP, and never the tag
-          # this run just pushed even if the sort or the clock disagrees, and never
-          # a tag some container is currently deployed from.
           doomed=$(KEEP="${KEEP}" KEEPSHA="${GITHUB_SHA}" python3 - <<'PY'
           import json, os, sys
 
-          # ⚠️⚠️ The CLI's `--json` mode DOUBLE-WRAPS the response. `jsonOutput(res)`
-          # (dist/lib/json-mode.js) puts whatever it is given under ANOTHER "data"
-          # key, and `res` here is the server's OWN `{ data: [...tags] }` payload
-          # (confirmed against dist/commands/registry/repositories.js, where human
-          # mode reads `res.data`). So the tag array is at .data.data, not .data:
-          #
-          #   {"success":true,"data":{"data":[{tag,digest,bytes_size,pushed_at},...]}}
-          #
-          # First shipped reading .data directly, which is the INNER dict, not the
-          # list -- crashed a real run with `AttributeError: 'dict' object has no
-          # attribute 'sort'`. `continue-on-error: true` kept that deploy green, so
-          # NO tag was ever actually pruned and the quota filled again days later.
-          # A prune that silently never prunes is the same failure mode this
-          # comment is now guarding against a second time. The fallback below
-          # accepts EITHER the confirmed nested shape or a bare list directly
-          # under "data" (in case a future CLI version flattens it) -- anything
-          # else raises with the actual payload attached, rather than quietly
-          # reporting "0 pruned", which looks identical to "already caught up".
+          # The CLI's --json mode double-wraps the payload: tags are at .data.data.
           keep = int(os.environ["KEEP"])
           keepsha = os.environ["KEEPSHA"]
           envelope = json.load(open("/tmp/tags.json"))
@@ -489,11 +240,7 @@ jobs:
                   f"data.data to be a list, got {type(rows).__name__}): "
                   f"{json.dumps(envelope)[:500]}"
               )
-          # If the listing is paginated we only ever see the first page, so the
-          # oldest tags (the ones most worth pruning) may not be in `rows` at
-          # all and the quota keeps climbing. The CLI 1.1.0 response has no
-          # pagination envelope; warn if a future version adds a cursor or the
-          # page looks capped, rather than silently under-pruning.
+          # A paginated listing would hide the oldest tags; warn rather than under-prune.
           page_meta = inner if isinstance(inner, dict) else {}
           if any(k in page_meta for k in ("next", "next_cursor", "cursor", "page", "total")):
               print(
@@ -501,10 +248,6 @@ jobs:
                   "cover the first page — verify the CLI response shape",
                   file=sys.stderr,
               )
-          # Tags currently deployed to a Rapids container. Read from a file the
-          # step wrote after a fail-closed check: if that check could not answer,
-          # the step already exited without pruning anything, so reaching here
-          # means this list is trustworthy.
           try:
               with open("/tmp/deployed-tags.txt", encoding="utf-8") as fh:
                   deployed = {line.strip() for line in fh if line.strip()}
@@ -517,7 +260,6 @@ jobs:
               if not tag or tag == keepsha:
                   continue
               if tag in deployed:
-                  # Deleting this is what caused the 2026-09-16 outage.
                   print(f"::notice::keeping {tag} — a container is deployed from it", file=sys.stderr)
                   continue
               print(tag)
@@ -529,11 +271,7 @@ jobs:
             exit 0
           fi
 
-          # `done <<< "${doomed}"`, NOT `echo … | while read`: a pipe puts the
-          # loop in a subshell AND leaves the tag list on stdin, so if `danube
-          # rm-tag` ever reads stdin it consumes the rest and only the first tag
-          # is deleted (the classic ssh-in-a-loop bug). A here-string keeps the
-          # loop in this shell and gives the child a clean stdin.
+          # Here-string, not a pipe: a child reading stdin would swallow the remaining tags.
           while read -r tag; do
             [ -n "${tag}" ] || continue
             echo "Deleting ${REPO}:${tag}"
@@ -551,12 +289,6 @@ jobs:
           REGISTRY: ${{ vars.DANUBEDATA_REGISTRY }}
         run: bash .github/scripts/registry-report.sh "after prune"
 
-      # [OPS] blocked-on-account: push the built image to the DanubeData
-      # registry. Fails loudly if deploys are enabled without a registry
-      # configured, rather than letting a later job deploy a stale image.
-      #
-      # Runs AFTER the prune above, so a registry that filled up recovers on its
-      # own before this step is attempted.
       - name: Push image to the DanubeData registry
         if: ${{ vars.DEPLOY_ENABLED == 'true' }}
         env:
@@ -570,25 +302,19 @@ jobs:
             echo "Set it to the registry path from provisioning (Story 4-16/5-2) before enabling deploys."
             exit 1
           fi
-          # Reject malformed values up front. A trailing slash or a scheme would
-          # otherwise build a broken image reference (`host//name`, `https://...`)
-          # and fail later with an opaque Docker error instead of this message.
           case "${REGISTRY}" in
             */)      echo "::error::DANUBEDATA_REGISTRY must not end with '/': '${REGISTRY}'"; exit 1 ;;
             *://*)   echo "::error::DANUBEDATA_REGISTRY must not include a scheme: '${REGISTRY}'"; exit 1 ;;
             *\ *)    echo "::error::DANUBEDATA_REGISTRY must not contain spaces: '${REGISTRY}'"; exit 1 ;;
           esac
-          # DANUBEDATA_REGISTRY is the full image PREFIX (host + namespace), e.g.
-          # cr.danubedata.ro/budgetplanner795. `docker login` takes the HOST ONLY —
-          # passing it a path fails — so strip everything from the first slash.
+          # docker login takes the host only.
           REGISTRY_HOST="${REGISTRY%%/*}"
           echo "Logging in to ${REGISTRY_HOST}"
           echo "${REGISTRY_PASSWORD}" | docker login "${REGISTRY_HOST}" -u "${REGISTRY_USERNAME}" --password-stdin
           docker tag "${IMAGE_NAME}:${GITHUB_SHA}" "${REGISTRY}/${IMAGE_NAME}:${GITHUB_SHA}"
           docker push "${REGISTRY}/${IMAGE_NAME}:${GITHUB_SHA}"
 
-      # After the push — and after a FAILED push too (`!cancelled()`): a quota
-      # denial is exactly the run whose numbers are most worth having.
+      # Also after a failed push: a quota denial is the run worth measuring.
       - name: Registry usage after push
         if: ${{ !cancelled() && vars.DEPLOY_ENABLED == 'true' }}
         continue-on-error: true
@@ -598,31 +324,12 @@ jobs:
           REGISTRY: ${{ vars.DANUBEDATA_REGISTRY }}
         run: bash .github/scripts/registry-report.sh "after push"
 
-  # --- Are there migrations to apply? ----------------------------------------
-  # The migrate job costs a few minutes and most pushes change no migration, so
-  # this decides whether it has to run at all. (Before Story 5.18 it also kept
-  # the database's public DNS window closed on pushes that did not need it;
-  # there is no window any more, so this is now purely a time saving.)
-  #
-  # The baseline is the head commit of the most recent run whose DEPLOY JOB
-  # succeeded — not `github.event.before`. A deploy only succeeds after its
-  # migrations were applied (or were found to be already applied by this same
-  # check), so that commit's migrations are known to be live. `event.before`
-  # would be wrong twice over: a previous run that failed before migrating would
-  # be forgotten, and this workflow's concurrency group REPLACES a pending run
-  # with a newer one, so a push's migrations can belong to a run that never ran.
-  #
-  # FAILS SAFE: every path that cannot prove "nothing changed" — a manual
-  # dispatch, an API error, no previous deploy, a baseline commit missing from
-  # history (force-push), a git error — outputs migrate=true. If this job itself
-  # fails, its output is empty, which the deploy job treats as "not proven", so
-  # nothing deploys.
+  # Baseline is the last run whose deploy job succeeded, not event.before (failed or
+  # replaced runs). Every path that cannot prove "no change" migrates.
   migration-check:
     name: Detect pending migrations
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # `actions: read` to list previous runs of this workflow and their jobs. The
-    # only job allowed to widen permissions; validate-deploy-workflow pins it.
     permissions:
       contents: read
       actions: read
@@ -642,10 +349,8 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           REPO: ${{ github.repository }}
           CURRENT_RUN: ${{ github.run_id }}
-          # Must match the deploy job's `name:` exactly (pinned by the validator).
+          # Must match the deploy job's `name:` exactly.
           DEPLOY_JOB_NAME: Deploy to DanubeData Rapids
-          # What `drizzle-kit migrate` actually applies: the journal + SQL files,
-          # and the config that names that folder and the migrations table.
           MIGRATION_PATHS: packages/db/migrations packages/db/drizzle.config.ts
         run: |
           set -uo pipefail
@@ -656,7 +361,6 @@ jobs:
             exit 0
           }
 
-          # A dispatch is the rollback / redeploy path; keep its old behaviour.
           [ "${EVENT_NAME}" = "push" ] || decide true "manual dispatch always migrates"
 
           runs=$(gh api "repos/${REPO}/actions/workflows/deploy.yml/runs?branch=main&status=success&per_page=30" \
@@ -680,14 +384,7 @@ jobs:
           git cat-file -e "${base}^{commit}" 2>/dev/null \
             || decide true "last deployed commit ${base} is not in this history"
 
-          # ⚠️ `|| status=$?` is REQUIRED, not stylistic. GitHub runs every `run:`
-          # block as `bash -e {0}` — the `-e` is injected by the runner and a
-          # script cannot opt out by merely omitting it from its own `set` line.
-          # `git diff --quiet` returns 1 to mean "there ARE changes", which is this
-          # step's whole answer, but `-e` treats that 1 as a fatal error and kills
-          # the script before `case` runs. Result: the job failed with exit 1 and
-          # no output on the first push that actually touched a migration path
-          # (run 35041921329, 2026-09-15). Capturing the status keeps it data.
+          # `|| status=$?`: the runner injects `bash -e`, and diff exits 1 to mean "changed".
           status=0
           # shellcheck disable=SC2086 # MIGRATION_PATHS is a deliberate word list
           git diff --quiet "${base}" "${GITHUB_SHA}" -- ${MIGRATION_PATHS} || status=$?
@@ -697,60 +394,20 @@ jobs:
             *) decide true "git diff against ${base} failed" ;;
           esac
 
-  # --- Database migration (AC-4) — closes 5-8 AC-11 -------------------------
-  # Ordered BEFORE the deploy so the schema is never behind the code that serves
-  # it, and any failure here aborts the run before the new revision goes live.
-  #
-  # Runs only when `migration-check` says there is something to apply. When it
-  # is skipped for that reason, `deploy` proceeds; when it is skipped or fails
-  # for any other reason, `deploy` does not (see the deploy job's `if:`).
-  #
-  # `build-image` and `push-image` also name the `production` Environment and run
-  # first, so an Environment approval rule pauses the run THERE before here. Four
-  # jobs name it in total — build-image, push-image, migrate, deploy — and GitHub
-  # prompts once per job. DEPLOY_RUNBOOK.md §3 has the authoritative account.
-  #
-  # ✅ IN-CLUSTER SINCE STORY 5.18 (2026-09-15). The ADR-001 time-boxed exception
-  # — open the database's public DNS, migrate from this runner, close it again —
-  # is RETIRED. It expired on its own terms the moment the database held real
-  # user data, which live 5.3 checkouts produced.
-  #
-  # How this works now: the database is reachable only over Kubernetes in-cluster
-  # DNS, and DanubeData Rapids offers no run-to-completion job primitive and no
-  # container command override (re-verified against @danubedata/cli 1.1.0 on
-  # 2026-09-15). So the app image is started as a short-lived Rapids container in
-  # the same cluster and namespace, in `APP_ENTRYPOINT=migrate` mode. It applies
-  # the migrations, reports a terminal verdict over a token-gated endpoint, and is
-  # deleted. No public database endpoint is opened at any point.
-  #
-  # ⚠️ Readiness is NOT the verdict. `/healthz` goes green as soon as the
-  # container boots, deliberately: if readiness meant "the migration succeeded",
-  # then a failed migration, a broken image and a crash-loop would all present as
-  # the same `--wait` timeout. The verdict is read positively from
-  # `/migrate-status`, and anything short of an explicit `succeeded` fails the job.
+  # Runs in-cluster as a Rapids container in migrate mode. Readiness is not the
+  # verdict: only an explicit `succeeded` from /migrate-status passes.
   migrate:
     name: Migrate production database
     runs-on: ubuntu-latest
     needs: [push-image, migration-check]
     if: ${{ vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' && needs.migration-check.outputs.migrate == 'true' }}
     environment: production
-    # Tight on purpose. Because this workflow serialises on a NON-cancelling
-    # concurrency group, one stuck run queues every later deploy behind it.
-    # Budget: ~2min setup + container create/update + cold start + the apply
-    # itself, with the verdict poll separately bounded at 600s below.
+    # Tight: the non-cancelling concurrency group queues later deploys behind a stuck run.
     timeout-minutes: 20
     env:
-      # The short-lived migrate container. A FIXED name (not run-scoped) so a
-      # leftover from a crashed run is reused and torn down rather than
-      # accumulating one orphan per failure — each of which would hold a
-      # DATABASE_URL in its environment.
+      # Fixed name so a crashed run's leftover is reused, not orphaned with credentials.
       MIGRATE_CONTAINER: budget-planner-migrator
-      # In-cluster writer endpoint. Static now that no public endpoint is ever
-      # opened, so there is nothing to discover at run time.
-      # ⚠️ Must stay in sync with EU_DB_INTERNAL_HOSTS in packages/db/src/client.ts:
-      # `buildMigrationCredentials` refuses any host that is not on that list, so a
-      # drift here fails the migration closed rather than connecting to something
-      # unexpected.
+      # Must match EU_DB_INTERNAL_HOSTS in the db client, which refuses any other host.
       DB_INTERNAL_HOST: budget-planner-prod-rw.budgetplanner795.svc.cluster.local
       DB_INTERNAL_PORT: '5432'
     steps:
@@ -769,36 +426,23 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Pinned: this job's safety now rests on `rapids apply/update/rm` behaving
-      # exactly as expected, so the tool does not float underneath the pipeline.
       - name: Install the DanubeData CLI
         run: pnpm add -g "@danubedata/cli@${{ env.DANUBE_CLI_VERSION }}"
 
-      # DANUBE_TOKEN is read from the environment by `danube` itself — the CLI's
-      # own help recommends this over `--token` to keep it out of shell history.
       - name: Authenticate the DanubeData CLI
         env:
           DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
         run: danube whoami
 
-      # Offline, and before anything is created: an expired or missing CA makes
-      # the migration impossible, so failing here costs nothing.
-      #
-      # ⚠️ Threshold is deliberately 0, NOT the 21 days the weekly job uses. This
-      # gate blocks only on a certificate that is actually broken — expired or
-      # unparseable. A deploy is not the place to refuse work over a certificate
-      # that still has three weeks left; that is what the scheduled warning is
-      # for. Two different questions, two different thresholds.
+      # Threshold 0, unlike the weekly job's 21 days: a deploy blocks only on a
+      # certificate that is already expired or unparseable.
       - name: Verify the database CA certificate is usable
         env:
           DATABASE_CA_CERT: ${{ secrets.DATABASE_CA_CERT }}
           CA_EXPIRY_WARN_DAYS: '0'
         run: pnpm --filter @budget-planner/db db:ca-expiry
 
-      # Per-run secret for the status endpoint. The migrate container is publicly
-      # routable for the minutes it exists, and its status endpoint would
-      # otherwise describe the production database's migration state to anyone.
-      # Minted here, never stored, dies with the container.
+      # The migrate container is publicly routable, so its status endpoint needs a per-run token.
       - name: Mint the migration status token
         id: token
         run: |
@@ -807,14 +451,6 @@ jobs:
           echo "::add-mask::${token}"
           echo "token=${token}" >> "$GITHUB_OUTPUT"
 
-      # Composed from the INTERNAL host only. There is no endpoint discovery any
-      # more: nothing is exposed, so nothing has to be looked up, and the port is
-      # the stable in-cluster 5432 rather than the public port that DanubeData
-      # reassigned on every `dns enable` (5445 -> 5446 -> refused, across 2026-09).
-      #
-      # DATABASE_MIGRATOR_USER and DATABASE_NAME are repository variables, not
-      # secrets — `bp_migrator` / `pgdb` are already plaintext in
-      # docs/production-database-runbook.md. Only the password is sensitive.
       - name: Compose the in-cluster DATABASE_URL
         id: dburl
         env:
@@ -843,23 +479,8 @@ jobs:
           echo "url=${database_url}" >> "$GITHUB_OUTPUT"
           echo "::notice::Migrating over internal DNS (${DB_INTERNAL_HOST}:${DB_INTERNAL_PORT}). No public endpoint is opened."
 
-      # ⚠️ ONE CALL. This was two — `apply` to create, then `update` to inject the
-      # environment — because `apply` could not set env before CLI 1.3.0. That gap
-      # is closed, and closing it removes a real hazard rather than just tidying:
-      #
-      # DanubeData confirmed (2026-09-16) that an update arriving while the
-      # PREVIOUS update to the same container was still rolling out was accepted,
-      # returned success, and was then never rolled out. Our two calls landed
-      # seconds apart, every run, which is precisely that collision. At 13:32 and
-      # 13:53 UTC the second call of each pair — the one setting `--min-scale 1` —
-      # was silently dropped, so the migration never started and the job polled a
-      # container that was never told to run. The platform-side fix is in flight;
-      # this removes our side of it regardless.
-      #
-      # `--wait` is generation-aware in 1.3.0: it follows the `spec_generation` this
-      # very call produced and returns only once `observed_generation` has caught up
-      # and `status_details.operation.terminal` is true. So a green step here means
-      # THIS configuration is live — not merely accepted.
+      # One call, not apply + update: an update landing while the previous one still rolls
+      # out is accepted and silently dropped. `--wait` waits for this call's generation.
       - name: Start the migration (create-or-update in one call)
         env:
           DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
@@ -874,11 +495,7 @@ jobs:
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          # ⚠️ NEVER add `--json` to this step. The container object it prints
-          # carries `environment_variables` WITH VALUES — it would put DATABASE_URL
-          # and its password straight into the run log. (True of `rapids ls --json`
-          # too, which is why every step reading that pipes into a script emitting
-          # only a single word or a URL.) The validator pins this.
+          # Never add --json here: the printed container carries env values, DATABASE_URL included.
           danube rapids apply \
             --name "${MIGRATE_CONTAINER}" \
             --image "${REGISTRY}/${IMAGE_NAME}" \
@@ -900,20 +517,14 @@ jobs:
             --wait-timeout 10m
           echo "::notice::Migrate container is live with this run's configuration. Polling for a verdict."
 
-      # Read the container's public URL out of the API. `--json` is piped straight
-      # into python and ONLY the url field is ever printed — necessary because the
-      # raw rows carry environment_variables with their values.
+      # The --json listing carries env values; only the url field is ever printed.
       - name: Resolve the migrate container URL
         id: url
         env:
           DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
           DANUBE_TEAM_ID: ${{ vars.DANUBE_TEAM_ID }}
         run: |
-          # ⚠️ `set -e` is deliberately NOT used here. With it, a single transient
-          # CLI/API failure aborted this step on the first iteration and the retry
-          # loop only ever protected against an EMPTY url — i.e. it guarded the one
-          # failure that was least likely. Each attempt now absorbs its own failure
-          # and the loop is what decides.
+          # No `set -e`: each attempt absorbs its own failure and the retry loop decides.
           set -uo pipefail
           url=""
           for i in $(seq 1 12); do
@@ -942,13 +553,7 @@ jobs:
           echo "::notice::Migrate container URL: ${url}"
           echo "url=${url}" >> "$GITHUB_OUTPUT"
 
-      # THE VERDICT. Exit status propagates straight out of this step into the
-      # job, and every downstream job `needs:` this one, so a failed or
-      # unreadable migration aborts the release before `deploy` runs (AC-3).
-      #
-      # Fails closed on every ambiguous outcome: still `running` at the deadline,
-      # unreachable, unparseable, a run id that is not ours, or any state that is
-      # not exactly `succeeded`.
+      # Fails closed on anything other than an explicit `succeeded` for this run id.
       - name: Wait for the migration verdict
         env:
           DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
@@ -964,13 +569,7 @@ jobs:
           last_error="(no attempt completed)"
 
           while [ "${SECONDS}" -lt "${deadline}" ]; do
-            # ⚠️ `-L` is REQUIRED. `danube rapids ls` reports the container URL with
-            # an `http://` scheme and the platform edge 301-redirects to https.
-            # Without -L, curl returns exit 0 and an EMPTY BODY for that redirect —
-            # so the poll read "unparseable" forever and the job hung until its
-            # 600s deadline while the migration had in fact already succeeded
-            # (live run 35042874267-1, 2026-09-16). The `-n "${body}"` guard is the
-            # second half of that lesson: a successful curl with nothing in it is
+            # -L: the listed URL is http:// and the edge 301s to https. An empty 200 is
             # not a verdict.
             if body=$(curl -fsSL --max-time 15 \
                 -H "Authorization: Bearer ${STATUS_TOKEN}" \
@@ -986,8 +585,7 @@ jobs:
               state="${parsed%% *}"
               reported_run="${parsed#* }"
 
-              # A verdict from a container this run did not start is not our
-              # verdict, whatever it says. Keep polling rather than trusting it.
+              # A verdict from a container this run did not start is ignored.
               if [ "${reported_run}" != "${RUN_ID}" ]; then
                 last_error="reported runId '${reported_run}' != this run '${RUN_ID}'"
                 state="(foreign container)"
@@ -995,9 +593,7 @@ jobs:
                 break
               fi
             else
-              # Distinguish "curl failed" from "curl succeeded but said nothing" —
-              # the second is what an unfollowed redirect looks like, and reporting
-              # them identically is what made the earlier hang so hard to read.
+              # Distinguish a curl failure from an empty response (an unfollowed redirect).
               curl_err="$(tr -d '\n' < /tmp/curl-err 2>/dev/null)" || curl_err=""
               if [ -n "${curl_err}" ]; then
                 last_error="curl: ${curl_err}"
@@ -1006,16 +602,8 @@ jobs:
               fi
             fi
 
-            # SECOND CHANNEL — the logs. The endpoint above is reached through the
-            # container's public URL, and Knative routes that URL to whatever
-            # revision is currently READY, which need not be the one that migrated.
-            # Live run 35042874267-1: the migration SUCCEEDED and every later poll
-            # got 401 from a successor revision holding a different token, so the
-            # job timed out on work that was already done. Logs aggregate across
-            # revisions, so they can answer when the URL cannot.
-            #
-            # Matched on this run's id, so a previous release's verdict sitting in
-            # the log window is never mistaken for this one.
+            # Second channel: Knative may route the URL to a newer revision than the one
+            # that migrated, but logs aggregate across revisions.
             log_verdict=$(danube --json rapids logs "${MIGRATE_CONTAINER}" --since 1h --limit 500 2>/dev/null \
               | python3 .github/scripts/rapids_verdict.py "${RUN_ID}") || log_verdict="error"
             case "${log_verdict}" in
@@ -1030,8 +618,7 @@ jobs:
                 break
                 ;;
               error)
-                # Not fatal on its own: the HTTP channel may still answer, and a
-                # missing `serverless:diagnostics` scope shows up exactly here.
+                # Not fatal: the HTTP channel may still answer.
                 last_error="${last_error}; logs unreadable"
                 ;;
             esac
@@ -1046,8 +633,6 @@ jobs:
             exit 0
           fi
 
-          # Diagnostics, not the verdict: logs can be reported unavailable, which
-          # is exactly why the verdict does not travel through them.
           echo "::error::Migration did not succeed (state: ${state}). Aborting the release before deploy."
           echo "Last transport error: ${last_error}"
           echo "--- status body ---"
@@ -1060,26 +645,8 @@ jobs:
           danube rapids logs "${MIGRATE_CONTAINER}" --since 30m --limit 200 || true
           exit 1
 
-      # `always()` is load-bearing, exactly as the window-close step it descends
-      # from was: this MUST run when the migration fails, when the verdict times
-      # out, when a step errors, and when the job is cancelled.
-      #
-      # ⚠️ This step REPLACES a `rapids rm`. The container is no longer deleted.
-      # (2026-09-16: two provisions failed after a deletion and we blamed orphaned
-      # GitOps config; DanubeData later confirmed deletion is clean — the theory
-      # was ours — and that day's migrations were lost to the apply+update
-      # collision instead, DEPLOY_RUNBOOK §4. Not deleting
-      # stays the rule: no create/update races, no `serverless:delete` scope, and
-      # less churn.) Instead it is scaled back to zero (so no pod runs and it costs
-      # ~nothing) and its credentials are STRIPPED, which is the property deletion
-      # was really there for.
-      #
-      # The strip is then VERIFIED, because "the container holds no credentials
-      # between releases" is a safety claim and an unverified safety claim is just
-      # a hope. The check reads a WORD (`clean`/`dirty:KEYS`/`error`) rather than an
-      # exit code, for the same reason the presence check does: an exit code cannot
-      # distinguish "they are gone" from "we could not tell", and an earlier version
-      # of this job announced success on exactly that confusion.
+      # Never delete the container: scale to zero, strip its credentials, and verify the strip
+      # as a word (clean/dirty/error), since an exit code cannot say "could not tell".
       - name: Scale down and strip the migrate container's credentials
         if: ${{ always() }}
         env:
@@ -1089,15 +656,8 @@ jobs:
           set -uo pipefail
           SECRET_KEYS="DATABASE_URL DATABASE_CA_CERT MIGRATE_STATUS_TOKEN MIGRATE_RUN_ID"
 
-          # `always()` means this can run before the container ever existed, where
-          # `update` returns non-zero. The exit code is advisory; the STATE CHECK
-          # below decides.
+          # May run before the container exists; the state check below decides.
           # shellcheck disable=SC2086 # SECRET_KEYS is a deliberate word list
-          # `--wait` (CLI 1.3.0) follows THIS call's `spec_generation` and returns
-          # only once it is actually live, so the strip cannot be one of the
-          # accepted-but-never-rolled-out updates that cost us two runs. The state
-          # check below still decides — `--wait` makes it converge, it does not
-          # replace it.
           danube rapids update "${MIGRATE_CONTAINER}" \
             --rm-env ${SECRET_KEYS} \
             --min-scale 0 \
@@ -1128,16 +688,12 @@ jobs:
           echo "Strip them by hand: danube rapids update ${MIGRATE_CONTAINER} --rm-env ${SECRET_KEYS} --min-scale 0"
           exit 1
 
-  # --- Deploy to Rapids (AC-2/AC-5) ------------------------------------------
   deploy:
     name: Deploy to DanubeData Rapids
     runs-on: ubuntu-latest
     needs: [push-image, migration-check, migrate]
-    # `!cancelled()` replaces the implicit success() so this can run when
-    # `migrate` was SKIPPED — but only skipped because `migration-check`
-    # positively reported nothing to apply. Every other state (migrate failed,
-    # migrate skipped because the check failed and left its output empty, image
-    # not pushed) keeps the deploy off. Do not loosen to `always()`.
+    # `!cancelled()` allows a skipped migrate only when the check positively reported
+    # nothing to apply. Never loosen to `always()`.
     if: >-
       ${{ !cancelled()
       && vars.DEPLOY_ENABLED == 'true'
@@ -1166,15 +722,7 @@ jobs:
           echo "image_tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "Deploying image tag: ${TAG}"
 
-      # ⚠️ pnpm and Node are prerequisites of the CLI install below, not
-      # decoration. This job originally jumped straight to `pnpm add -g` — copied
-      # from the migrate job without the setup steps that precede it there — and
-      # died with `pnpm: command not found` AFTER the migration had already been
-      # applied to production. Every job is its own runner with its own empty
-      # toolchain; nothing is inherited from an earlier job.
-      #
-      # No `pnpm install` here on purpose: this job runs no workspace script, so
-      # the lockfile install would be ~90 seconds of nothing.
+      # No `pnpm install`: this job runs no workspace script.
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
 
@@ -1183,14 +731,9 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      # The CLI is pinned for the same reason the migrate job pins it: this
-      # rollout's safety depends on `rapids apply --wait` meaning exactly what it
-      # means today, so the tool does not float underneath the pipeline.
       - name: Install DanubeData CLI
         run: pnpm add -g "@danubedata/cli@${{ env.DANUBE_CLI_VERSION }}"
 
-      # Fail on a bad/expired token HERE, before anything is mutated, rather than
-      # halfway through a rollout. Mirrors the migrate job.
       - name: Verify CLI authentication
         env:
           DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
@@ -1199,10 +742,7 @@ jobs:
           set -euo pipefail
           danube whoami
 
-      # Catches a missing/misnamed/unreadable image before the rollout starts.
-      # NOTE the calling convention differs from `apply` below: preflight takes
-      # ONE full reference including the tag, while apply splits repository and
-      # tag across --image/--tag. Verified against @danubedata/cli 1.1.0.
+      # preflight takes the full image:tag reference, unlike apply's --image/--tag split.
       - name: Preflight the image
         env:
           DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
@@ -1213,45 +753,17 @@ jobs:
           set -euo pipefail
           danube rapids preflight --image "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
 
-      # `apply` is create-or-update against the desired state, so the first
-      # deploy and every later one take the same path — no "does it exist yet"
-      # branch to get wrong, and re-running an unchanged SHA is a no-op rather
-      # than a spurious revision.
-      #
-      # ⚠️ --wait is load-bearing, not cosmetic. Without it the step exits 0 as
-      # soon as the API accepts the desired state, while the revision is still
-      # rolling out, and the smoke job then measures the OLD revision — a green
-      # deploy of nothing. --wait-timeout bounds it so a stuck rollout fails the
-      # run instead of hanging until the job timeout.
-      #
-      # ⚠️ What this CANNOT set, because the CLI has no flag for it: environment
-      # variables (only `rapids update --env` does), request timeout, concurrency
-      # target, and CPU/memory (only via --profile, whose valid names are not
-      # documented). Those are configured once at provisioning and are NOT
-      # reasserted here — see apps/web/rapids-service.yaml and DEPLOY-RAPIDS.md §2.
-      # This step therefore rolls out CODE, not full service configuration.
+      # --wait: otherwise the step exits on acceptance and smoke measures the old revision.
+      # Env vars, timeouts and resources have no CLI flag; they are set at provisioning.
       - name: Deploy revision to Rapids
         env:
           DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
           DANUBE_TEAM_ID: ${{ vars.DANUBE_TEAM_ID }}
           IMAGE_TAG: ${{ steps.resolve.outputs.image_tag }}
           REGISTRY: ${{ vars.DANUBEDATA_REGISTRY }}
-          # run_id alone is STABLE across "Re-run failed jobs" (only run_attempt
-          # changes), so a re-run after a rollout that was accepted-then-failed
-          # would replay the cached outcome instead of driving the revision to
-          # completion. Include run_attempt. (Review 2026-09-10.)
+          # run_id alone is stable across re-runs, which would replay a cached outcome.
           IDEMPOTENCY_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
-          # Valid values are free | small | medium | large (read from the CLI's
-          # own interactive picker, @danubedata/cli 1.1.0 create.js). Creating a
-          # container REQUIRES one: omitting it fails with
-          # `422 resource_profile: Please select a resource profile`, which this
-          # step hit on 2026-09-09.
-          #
-          # `small` (0.5-1 vCPU, 256-512MB) is Lucas' decision, and it matches
-          # what apps/web/rapids-service.yaml has specified since story 5-2.
-          # ⚠️ NOT `free`: 64-128MB is marginal for a TanStack Start SSR Node
-          # process, and the free tier also caps max-scale at 3 while this step
-          # asks for 5. Scale-to-zero means idle cost stays ~EUR 0 either way.
+          # Required on create. Not `free`: too little memory, and it caps max-scale at 3.
           RESOURCE_PROFILE: ${{ vars.RAPIDS_RESOURCE_PROFILE || 'small' }}
         run: |
           set -euo pipefail
@@ -1269,17 +781,11 @@ jobs:
             --wait \
             --wait-timeout 10m
 
-  # --- Post-deploy smoke check (AC-5) ----------------------------------------
-  # A deploy is not done because the deploy tool exited 0 — it is done when the
-  # live URL actually serves. A failure here reds the run and is the signal to
-  # roll back (DEPLOY_RUNBOOK.md); it does not auto-roll-back, because an
-  # automatic rollback on an unproven pipeline is its own hazard.
   smoke:
     name: Post-deploy smoke check
     runs-on: ubuntu-latest
     needs: deploy
-    # Explicit result check: `deploy` can succeed while an upstream job
-    # (`migrate`) was skipped, and the implicit success() would then skip this.
+    # Explicit result check: a skipped migrate would make the implicit success() skip this.
     if: ${{ !cancelled() && vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' && needs.deploy.result == 'success' }}
     timeout-minutes: 10
     steps:
@@ -1293,24 +799,15 @@ jobs:
             exit 1
           fi
 
-          # Strip a trailing slash before composing paths. With `SITE_URL` set to
-          # "https://host/", the requests below became "https://host//" and
-          # "https://host//api/health" — and `//` is a protocol-relative target
-          # the server returned 500 for (fixed in node-adapter.mjs the same day).
-          # The server no longer breaks on it; this stops the smoke check
-          # fabricating the shape in the first place, so a stray slash in a
-          # GitHub variable cannot fail a good deploy.
           SITE_URL="${SITE_URL%/}"
           echo "Smoke-checking ${SITE_URL}"
 
-          # 1. The SSR document renders.
           code=$(curl -fsS -o /tmp/home.html -w '%{http_code}' --max-time 30 "${SITE_URL}/")
           echo "GET /            -> ${code}"
           grep -qi '<html' /tmp/home.html \
             || { echo "::error::/ returned ${code} but the body is not an HTML document"; exit 1; }
 
-          # 2. A server route executes (proves it is the SSR server, not a CDN
-          #    serving a stale static shell).
+          # A server route proves this is the SSR server, not a stale static shell.
           health=$(curl -fsS --max-time 30 "${SITE_URL}/api/health")
           echo "GET /api/health  -> ${health}"
           echo "${health}" | grep -q '"status"' \
@@ -1318,10 +815,7 @@ jobs:
 
           echo "Smoke check passed."
 
-  # --- Honest run summary ----------------------------------------------------
-  # Without this, a run where every deploy job was SKIPPED still shows a green
-  # tick, which reads as "deployed". This states plainly what did and did not
-  # happen, on every single run.
+  # Without this, a run whose deploy jobs were all skipped still shows green.
   summary:
     name: Pipeline summary
     runs-on: ubuntu-latest
@@ -1357,11 +851,7 @@ jobs:
             echo "| Deploy to Rapids | ${DEPLOY} |"
             echo "| Post-deploy smoke | ${SMOKE} |"
             echo ""
-            # Order matters. A BROKEN BUILD is the headline even when deploys are
-            # switched off — the original version branched only on ENABLED, so a run
-            # whose gates had actually FAILED still printed the reassuring
-            # "expected pre-launch state" banner. The one job written to keep this
-            # pipeline honest was reassuring on a red build (code review 2026-09-03).
+            # A broken build outranks the "deploys are off" banner.
             if [ "${GATES}" = "failure" ] || [ "${TYPES}" = "failure" ] || [ "${BUILD}" = "failure" ]; then
               echo "> ❌ **THE BUILD IS BROKEN.** A pre-deploy stage failed above, so nothing"
               echo "> could have been deployed regardless of the \`DEPLOY_ENABLED\` setting."
@@ -1376,8 +866,7 @@ jobs:
                 echo "> follow the rollback procedure in \`.github/DEPLOY_RUNBOOK.md\`."
               fi
             elif [ -n "${ENABLED}" ] && [ "${ENABLED}" != "false" ]; then
-              # Set, but not to a value that enables anything. Without this branch a
-              # typo ("True", "1", "yes") is indistinguishable from a deliberate off.
+              # A typo ("True", "1") must not read as a deliberate off.
               echo "> ⚠️ **\`DEPLOY_ENABLED\` is set to \`${ENABLED}\`, which is NOT the exact string"
               echo "> \`true\`, so nothing was deployed.** If you meant to enable deploys, set it to"
               echo "> lowercase \`true\`. If you meant to keep them off, unset it or use \`false\`."

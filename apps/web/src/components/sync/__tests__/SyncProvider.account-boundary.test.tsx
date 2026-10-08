@@ -1,13 +1,3 @@
-/**
- * `SyncProvider` applies the account boundary when the root could not (story
- * 90.1, AC 3): the SSR seed was `null` or untrusted, so `StoreHydration` removed
- * nothing, and the session is only known once `/api/auth/me` answers.
- *
- * Real stores and the real `dropAnotherAccountsLocalData`; only the sync engine's
- * internals are mocked, and the engine chunk itself is made to FAIL to load, so
- * the removal is shown not to depend on it (86.2 review LOW).
- */
-
 import { render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 

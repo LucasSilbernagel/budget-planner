@@ -18,30 +18,7 @@ import { IncomePage } from '../IncomePage'
 import { SavingsPage } from '../SavingsPage'
 import { RESPONSIVE_SCROLL_SHADOW_CLASS, RESPONSIVE_WRAPPER_CLASS } from '../ui/ResponsiveTable'
 
-/**
- * The table scroll region, on EVERY page that has one (story 42.2, UX-DR46).
- *
- * ⚠️ THIS FILE EXISTS BECAUSE "ONE TESTED AND THREE ASSUMED" HAS ALREADY SHIPPED
- * HERE. Story 42.1's review found its AC-8 violated with the guard task ticked:
- * Savings and Balance had no rendered-table coverage at any layer, so a wrong
- * `tableId` on those pages reddened nothing. The affordance in this story is
- * wired at four separate call sites and a forgotten one fails SILENTLY — the
- * table renders correctly, just unsignposted, and no other test notices.
- *
- * ⚠️ Structural only. jsdom computes no layout and applies no media queries, so
- * nothing here proves the shadow is painted, that it hides on a table that
- * fits, or that arrow keys scroll anything. Those were geometry and behaviour
- * claims of `e2e/table-scroll-affordance.spec.ts`, which stories 84.2/84.5
- * (FR137) retired; layout is now held by the CI screenshots. Read a case below
- * as "this page declares what the AC needs".
- *
- * Story 93.1 (FR149): the region is a Tab stop ONLY while it scrolls, so its
- * `tabindex` follows the region's widths, which jsdom reports as 0 ("fits").
- * The focusability case stubs them (`@/test/region-widths`) and checks the
- * rule both ways on every page; a hand-written always- or never-focusable
- * wrapper fails one direction. The rule itself is pinned in
- * `ui/__tests__/TableScrollRegion.test.tsx`.
- */
+// Structural only: jsdom has no layout. Region widths are stubbed so the Tab-stop rule is checked both ways.
 
 const premiumTier = vi.hoisted(() => ({
   status: {
@@ -100,8 +77,6 @@ afterEach(() => {
   useBalanceStore.setState({ entries: [] })
 })
 
-/** Every page carrying a shared-layer table. Enumerated, never counted — story
- *  43.1 removed one of these and the epic text still says "five tables". */
 const PAGES = [
   { name: 'Income', render: () => renderWithProviders(<IncomePage />) },
   { name: 'Expenses', render: () => renderWithProviders(<ExpensesPage />) },
@@ -114,10 +89,7 @@ describe('table scroll region', () => {
     describe(page.name, () => {
       for (const state of ['overflows', 'fits'] as const) {
         it(`wraps EVERY table it renders in a named region, a Tab stop only while it scrolls (AC-5; 93.1): ${state}`, () => {
-          // ⚠️ Checks every table-bearing region, not `getAllByRole('region')[0]`.
-          // Taking only the first would let a page that grows a SECOND shared-layer
-          // table ship it with no tabindex, no label and no affordance — the exact
-          // "one tested and three assumed" hole this file exists to close.
+          // Every table-bearing region, not `[0]`, so a second table can't ship unwired.
           stubRegionWidths()
           if (state === 'overflows') setRegionOverflows()
           else setRegionFits()
@@ -140,8 +112,6 @@ describe('table scroll region', () => {
                 false
               )
             }
-            // A region with no accessible name is announced as an unlabelled
-            // landmark — the "meaningless content" the AC forbids.
             expect(region.getAttribute('aria-label')?.trim()).toBeTruthy()
           }
         })
@@ -151,8 +121,6 @@ describe('table scroll region', () => {
         page.render()
         const region = screen.getAllByRole('region')[0]
         const classes = [...region.classList]
-        // Both, on the same element: the affordance is inert without the scroll
-        // container, and the container is unsignposted without the affordance.
         for (const token of RESPONSIVE_WRAPPER_CLASS.split(/\s+/)) {
           expect(classes, `${page.name} lost ${token}`).toContain(token)
         }
@@ -162,9 +130,7 @@ describe('table scroll region', () => {
       })
 
       it('nests no second scroll container (AC-7)', () => {
-        // A nested `overflow-x-auto` double-counted in the wrapper sweeps of the
-        // e2e specs stories 84.2/84.5 retired, and any bare
-        // `document.querySelector('div.overflow-x-auto')` still picks the wrong one.
+        // A nested `overflow-x-auto` makes a bare `querySelector('div.overflow-x-auto')` pick the wrong one.
         const { container } = page.render()
         const wrappers = container.querySelectorAll('div.overflow-x-auto')
         for (const w of wrappers) {
@@ -178,9 +144,6 @@ describe('table scroll region', () => {
   }
 
   it('every shared-layer table on every page is inside a scroll region', () => {
-    // The cross-page claim the per-page cases cannot make on their own: a table
-    // that lost its wrapper entirely would still pass a per-page case that only
-    // looks at the region it does find.
     for (const page of PAGES) {
       const { container, unmount } = page.render()
       const tables = [...container.querySelectorAll('table')]

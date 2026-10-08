@@ -1,18 +1,6 @@
 /**
- * The mount gate's module flag (story 38.2 review; moved below the browser by
- * story 84.4, FR137).
- *
- * Replaces `e2e/loading-state.spec.ts` › "a client-side navigation does not
- * re-enter the pending state". That test watched the DOM with a
- * MutationObserver while a router `Link` took the user back to `/`. The
- * mechanism it guarded is this hook: a gated page that mounts AFTER the first
- * one has resolved must start resolved, or every in-app navigation replays the
- * skeleton → content jump. A remount here is what a client navigation does to
- * the page component. The real router transition is the named loss.
- *
- * ⚠️ Every render is recorded, not just the settled value: the regression
- * (`useState(false)` per mount) is a ONE-RENDER flash that a settled-value
- * assertion cannot see, which is exactly why the e2e needed an observer.
+ * Every render is recorded: the regression is a one-render flash that a settled-value assertion
+ * cannot see.
  */
 
 import { render } from '@testing-library/react'

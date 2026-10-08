@@ -1,18 +1,6 @@
 /**
- * The next person on this browser never sees the previous account's data
- * (story 90.1, FR144).
- *
- * Runs through the REAL `StoreHydration` and the REAL persisted stores: the data
- * is written to localStorage first, exactly as a previous session left it, and
- * the assertion is on the stores the moment `render` returns, i.e. before any
- * route component could have painted them (story 90.1 AC 2, F3: `rehydrate()` is
- * synchronous for localStorage and route content hydrates in a later pass).
- *
- * Every session kind the next load can resolve to is covered: signed out, a free
- * signed-in account, a paid account. The seed is what the root loader hands
- * `StoreHydration`; the `has_session` marker cookie is what tells a document
- * served from the service worker's cache apart from a fresh one (a signed-out
- * browser has no marker, whatever a cached document's seed says).
+ * Asserted as `render` returns: `rehydrate()` is synchronous for localStorage. The
+ * `has_session` cookie tells a service-worker-cached document's stale seed from a fresh one.
  */
 
 import { render } from '@testing-library/react'
@@ -64,7 +52,6 @@ function income(id: string, userId: string | number) {
 
 const A_PLAN = { ...RETIREMENT_PLAN_DEFAULTS, currentAgeInput: '41', lifeExpectancyInput: '93' }
 
-/** What account A (paid, synced) leaves in this browser when it signs out. */
 function leaveAccountAsDataBehind(): void {
   localStorage.setItem(
     PROFILES_KEY,
@@ -171,9 +158,7 @@ describe("StoreHydration removes the previous account's data before first paint 
   })
 
   it("a cached document still carrying A's seed, on a browser with no marker cookie, is signed out", () => {
-    // The service worker serves the app-shell document from its cache offline
-    // (`pwa.config.mjs`, NetworkFirst). Its seed is from when it was cached; the
-    // marker cookie is now. Sign-out clears the marker (`session-cookies.ts`).
+    // Offline, the service worker serves a cached document: its seed is stale, the cookie is current.
     leaveAccountAsDataBehind()
     render(<StoreHydration seed={seedFor(ACCOUNT_A, 'active')} />)
 
@@ -181,7 +166,6 @@ describe("StoreHydration removes the previous account's data before first paint 
   })
 
   it('a signed-out seed on a browser that HAS a marker cookie is unverified: nothing removed', () => {
-    // A cached signed-out document opened by a signed-in user (offline).
     leaveAccountAsDataBehind()
     setMarkerCookie()
     render(<StoreHydration seed={{ ...SIGNED_OUT_SEED }} />)

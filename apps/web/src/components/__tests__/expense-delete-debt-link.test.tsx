@@ -1,15 +1,3 @@
-/**
- * Deleting an expense that pays a debt says so (Story 113.1, FR181, D6 copy).
- *
- * The link lives on the DEBT row (`paymentExpenseId`, story 102.1). Deleting the
- * expense does not touch that row (102.1 D8: no cascade), but the debt is then
- * unlinked and the forecast stops paying it down, so the confirmation names it.
- *
- * Every message is pinned as the dialog's WHOLE accessible description (an
- * exact, whitespace-normalised match), not a fragment: a JSX line wrap that
- * doubles or drops a space, or a stray sentence, fails here.
- */
-
 import { renderWithProviders, screen, userEvent, within } from '@/test/utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearSyncBridge, registerSyncBridge } from '../../lib/sync/syncBridge'
@@ -50,7 +38,6 @@ function balance(
   return {
     id,
     type,
-    // Untrusted: a synced or legacy row may carry a non-string name (AC 6).
     name: name as string,
     currentBalance: 1_200_000,
     monthlyContribution: 0,
@@ -136,8 +123,6 @@ describe('the expense delete dialog names the debt it pays (Story 113.1)', () =>
       ],
       activeProfileId: PROFILE_A,
     })
-    // The expense is unscoped (`profileId: null`), so it is visible, and deleted,
-    // in every profile. The debt lives in profile B only.
     seed([balance('debt-b', 'debt', 'Partner car loan', 'exp-car', PROFILE_B)])
     const { dialog } = await openDelete('Car payment')
     expect(dialog).toHaveAccessibleDescription(
@@ -190,8 +175,7 @@ describe('the expense delete dialog names the debt it pays (Story 113.1)', () =>
   })
 
   it('a PAID session enqueues exactly the one expense delete, no balance write (AC 5)', async () => {
-    // ⚠️ REGISTERED, so these exact spies are reachable: an unregistered spy can
-    // never be called, and `not.toHaveBeenCalled()` would be a tautology.
+    // Registered so these spies are reachable; otherwise not.toHaveBeenCalled() is a tautology.
     const spies = {
       userId: '550e8400-e29b-41d4-a716-446655440000',
       queueCreate: vi.fn(async () => {}),

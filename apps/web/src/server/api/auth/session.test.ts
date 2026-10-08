@@ -1,28 +1,11 @@
-/**
- * Signed Session Tests (Story 5-7, LAUNCH BLOCKER)
- *
- * Covers:
- *  - signSession → verifySession round-trip
- *  - rejection of unsigned raw-JSON cookies (today's forgery exploit)
- *  - rejection of tampered payloads
- *  - rejection of tokens signed with a different secret
- *  - validateSessionToken (via getCurrentUserSession): subscription status is
- *    read from the database, not the cookie; forged cookies and missing user
- *    rows are rejected.
- */
-
 import { resetConfig } from '@budget-planner/config'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { signSession, verifySession } from './session'
 
 const VALID_UUID = '11111111-1111-1111-1111-111111111111'
 
-// Captured from the Vitest test env so per-test secret mutations can be undone.
 const ORIGINAL_SESSION_SECRET = process.env.SESSION_SECRET
 
-// ---------------------------------------------------------------------------
-// Database mock: only the `db` export is replaced; real schema/exports remain.
-// ---------------------------------------------------------------------------
 const limitMock = vi.fn()
 
 function mockUserLookup(result: unknown[]): void {
@@ -44,13 +27,8 @@ vi.mock('@budget-planner/db', async (importOriginal) => {
   }
 })
 
-// Imported after the mock is registered.
 import { getCurrentUserSession } from './paddle'
 
-/**
- * Build a Request carrying a `session` cookie with the given raw token value,
- * URL-encoded exactly as the callback handler stores it.
- */
 function requestWithSessionCookie(rawToken: string): Request {
   return {
     headers: new Headers({
@@ -60,10 +38,7 @@ function requestWithSessionCookie(rawToken: string): Request {
 }
 
 afterEach(() => {
-  // Restore the test-env SESSION_SECRET after any per-test mutation.
   if (ORIGINAL_SESSION_SECRET === undefined) {
-    // `delete` is required here: assigning `undefined` to a process.env key
-    // stores the string "undefined" in Node, not an absent variable.
     // biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
     delete process.env.SESSION_SECRET
   } else {
@@ -86,7 +61,6 @@ describe('signSession / verifySession', () => {
     expect(token).toContain('.')
 
     const verified = verifySession(token)
-    // Identity claims round-trip; signSession also stamps an issued-at (iat).
     expect(verified).toMatchObject(payload)
     expect(verified?.iat).toBeGreaterThanOrEqual(before)
     expect(verified?.iat).toBeLessThanOrEqual(Date.now())
@@ -155,7 +129,6 @@ describe('validateSessionToken via getCurrentUserSession', () => {
   }
 
   it('returns a session with subscription status read from the DATABASE, not the cookie', async () => {
-    // Signed token carries identity only; it never asserts a subscription.
     const token = signSession({
       userId: VALID_UUID,
       paddleId: 'paddle-cookie',
@@ -167,7 +140,6 @@ describe('validateSessionToken via getCurrentUserSession', () => {
 
     expect(result.success).toBe(true)
     expect(result.data).not.toBeNull()
-    // Authoritative values come from the DB row, not the cookie payload.
     expect(result.data?.subscriptionStatus).toBe('active')
     expect(result.data?.currency).toBe('EUR')
     expect(result.data?.email).toBe('db-user@example.com')
@@ -187,7 +159,6 @@ describe('validateSessionToken via getCurrentUserSession', () => {
 
     expect(result.success).toBe(true)
     expect(result.data).toBeNull()
-    // The DB must never be consulted for an unverifiable token.
     expect(limitMock).not.toHaveBeenCalled()
   })
 
@@ -211,7 +182,6 @@ describe('validateSessionToken via getCurrentUserSession', () => {
       paddleId: 'paddle-cookie',
       email: 'cookie@example.com',
     })
-    // User logged out "in the future" relative to this token's iat → revoked.
     mockUserLookup([{ ...dbUserRow, sessionsRevokedAt: Date.now() + 60_000 }])
 
     const result = await getCurrentUserSession(requestWithSessionCookie(token))
@@ -226,7 +196,6 @@ describe('validateSessionToken via getCurrentUserSession', () => {
       paddleId: 'paddle-cookie',
       email: 'cookie@example.com',
     })
-    // The watermark is in the past → this freshly-issued token is still valid.
     mockUserLookup([{ ...dbUserRow, sessionsRevokedAt: Date.now() - 60_000 }])
 
     const result = await getCurrentUserSession(requestWithSessionCookie(token))
@@ -245,21 +214,7 @@ describe('validateSessionToken via getCurrentUserSession', () => {
   })
 })
 
-/**
- * Story 5-19 code review — an infrastructure failure must NOT look like
- * "signed out".
- *
- * `validateSessionToken` used to catch every error and return `null`, which is
- * the same value it returns for a genuinely absent or invalid session. Two
- * guarantees were silently defeated by that:
- *
- *  - `/api/paddle/checkout-config`'s already-entitled guard saw "anonymous"
- *    during a DB outage and waved an entitled user through to a second real
- *    charge — in exactly the outage where the webhook could not record it.
- *  - `getSessionSeed` returns `null` on error SPECIFICALLY so the client
- *    re-checks rather than being shown a wrong signed-out state (UX-1, code
- *    review 2026-07-14). The error never reached it.
- */
+// `null` means signed out; an outage must surface as success:false so callers re-check.
 describe('getCurrentUserSession — infrastructure failure is not "signed out"', () => {
   it('reports success:false when the user lookup throws, rather than a null session', async () => {
     const { getCurrentUserSession } = await import('./paddle')
@@ -274,15 +229,11 @@ describe('getCurrentUserSession — infrastructure failure is not "signed out"',
       new Request('https://app.test/', { headers: { cookie: `session=${token}` } })
     )
 
-    // NOT `{ success: true, data: null }` — that would assert the caller is
-    // signed out, which is a claim this outage does not support.
     expect(result.success).toBe(false)
     expect(result.data).toBeUndefined()
   })
 
   it('still reports an ABSENT session as success:true with a null session', async () => {
-    // The complement: the distinction only has value if the ordinary
-    // signed-out path is unchanged.
     const { getCurrentUserSession } = await import('./paddle')
 
     const result = await getCurrentUserSession(new Request('https://app.test/'))

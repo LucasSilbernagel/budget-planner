@@ -1,29 +1,6 @@
-/**
- * "Financial summary report" entry point on `/settings` (story 30-3, FR53).
- *
- * The report itself lives at `/financial-summary`; this is the discoverable way in. It is
- * wrapped in {@link PremiumFeatureGate} so a free visitor sees the feature
- * exists and is locked, rather than not seeing it at all — the same
- * surfaced-but-locked treatment the overview gives Advanced Forecasting and
- * Custom Profiles. The `/financial-summary` route gates independently, so this presentation
- * layer can never be the only thing standing between a free user and the report.
- *
- * ⚠️ Two shape constraints, both learned the hard way:
- *  - The gate is wrapped in its own <div>. In the locked state
- *    `PremiumFeatureGate` returns a fragment of the <button> PLUS a
- *    `PremiumPrompt` dialog as siblings, and `Modal` renders in normal flow with
- *    NO portal — so an unwrapped overlay inside a spaced stack picks up the
- *    parent's gap and leaves an undimmed strip across the top of the open
- *    dialog.
- *  - The locked content renders INSIDE a <button>, so it must contain no nested
- *    link or button. The unlocked branch is the <a>; the locked branch is inert
- *    text only.
- */
-
 import type React from 'react'
 import { PremiumFeatureGate } from '../premium'
 
-/** The label shown in both tier states, so the section reads the same either way. */
 function ReportFeatureLabel(): React.ReactElement {
   return (
     <span className="text-sm font-medium text-heading">
@@ -52,7 +29,7 @@ export function ReportSection(): React.ReactElement {
         through your browser's print dialog. The summary is assembled in your browser — nothing is
         sent anywhere to produce it.
       </p>
-      {/* Own wrapper <div>: see the Modal/no-portal note in the file header. */}
+      {/* Own wrapper: the locked gate renders a portal-less Modal sibling that would otherwise pick up the stack's gap. */}
       <div className="mt-3">
         <PremiumFeatureGate
           featureName="Financial Summary Report"

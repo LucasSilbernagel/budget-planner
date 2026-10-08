@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { sortProfilesOldestFirst } from '../profile-order'
 
-/**
- * Profiles oldest → newest (story 98.1, FR159, AC 4). The store-level proof that
- * every consumer actually reads this order is `stores/__tests__/profile-order.dom.test.tsx`.
- */
 describe('sortProfilesOldestFirst (story 98.1)', () => {
   const ids = (rows: { id?: string }[]) => rows.map((r) => r.id)
 

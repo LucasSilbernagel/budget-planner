@@ -10,15 +10,7 @@ import { renderToString } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TableScrollRegion } from '../TableScrollRegion'
 
-/**
- * Story 93.1 (FR149, AC 1): a table region is a Tab stop ONLY while it scrolls.
- *
- * ⚠️ jsdom computes no layout: `scrollWidth` and `clientWidth` are always 0, and
- * the global `ResizeObserver` (`vitest.setup.ts`) is a no-op. So both are
- * STUBBED here, explicitly, and the cases prove the stub is what decides: the
- * "overflows" and "fits" cases differ ONLY in the stubbed widths. Real pixels
- * were measured in a browser (story 93.1, `93-1-evidence/`).
- */
+// jsdom has no layout, so widths and ResizeObserver are stubbed; cases differ only in the stubbed widths.
 
 /** A ResizeObserver that records what it watches and can be fired by hand. */
 class RecordingResizeObserver {
@@ -135,11 +127,11 @@ describe('TableScrollRegion', () => {
     render(<Region />)
     expect(region().hasAttribute('tabindex')).toBe(false)
 
-    setOverflows() // the viewport narrowed
+    setOverflows()
     fireResize()
     expect(region().getAttribute('tabindex')).toBe('0')
 
-    setFits() // and widened again
+    setFits()
     fireResize()
     expect(region().hasAttribute('tabindex')).toBe(false)
     expect(region().getAttribute('role')).toBe('region')
@@ -157,7 +149,7 @@ describe('TableScrollRegion', () => {
     const { rerender } = render(<Region rows={1} />)
     expect(region().hasAttribute('tabindex')).toBe(false)
 
-    setOverflows() // a long row arrived
+    setOverflows()
     rerender(<Region rows={2} />)
     expect(region().getAttribute('tabindex')).toBe('0')
 

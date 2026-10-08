@@ -1,12 +1,3 @@
-/**
- * RetirementDisabledNotice tests (story 35.2, FR55, AC-5 / AC-6 / AC-7).
- *
- * The off-state must be an EXIT, not a dead end: it explains what happened, says
- * plainly that nothing was deleted, and offers a working way back. A panel that
- * merely says "turned off" would strand a user who arrived here from the in-app
- * docs link or a bookmark.
- */
-
 import { renderWithRouter, screen } from '@/test/utils'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -39,11 +30,6 @@ describe('RetirementDisabledNotice', () => {
     ).toBeInTheDocument()
   })
 
-  /**
-   * AC-7's user-facing half. The control that leads here sits on the same
-   * Settings page as "Clear local data", so the copy must actively deny data
-   * loss rather than leave the user to infer it.
-   */
   it('states plainly that nothing was deleted', async () => {
     renderWithRouter(<RetirementDisabledNotice />)
     expect(await screen.findByText(/nothing was deleted/i)).toBeInTheDocument()

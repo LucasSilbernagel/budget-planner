@@ -1,25 +1,4 @@
 // @vitest-environment node
-/**
- * A profile deleted on another device does not strand this device's queue, and
- * a deletion that LOST does not move the default (story 76.2, FR121).
- *
- * Real `ActiveSync` → `useSync` → core `SynchronizationService` → real
- * `sendSyncOperation` / `fetchServerChangesWithMeta` → real `/api/sync/batch` and
- * `/api/sync/changes` handlers → real PostgreSQL (PGlite, full migration chain).
- * Only the session lookup, the rate limiter and the logger are stubbed. Harness
- * from `refused-edit-notice.db.test.tsx`.
- *
- * "Device A" is the server state: its effects are written through the route (a
- * delete) or straight into the table (an edit), before or while device B runs.
- *
- * ⚠️⚠️ ORDERING IS CONTROLLED. `/api/sync/batch` is held by a gate this file
- * opens by hand, so every assertion about B's queue is made after B's pull and
- * BEFORE any push can answer for it. Without the gate the mount-time push could
- * decide the outcome by itself.
- *
- * ⚠️ Every test asserts a positive anchor: a pull REACHED the route, and B
- * applied the profile change it carried.
- */
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -86,17 +65,12 @@ const OLD = new Date(OLD_ISO)
 
 let pg: PGlite
 let db: ReturnType<typeof Drizzle>
-/** Every request the routes served, in order: `"<METHOD> <path> <status>"`. */
 const served: string[] = []
-/** The JSON bodies `/api/sync/batch` answered with. */
 const batchAnswers: string[] = []
 let openBatch: () => void = () => {}
 let batchGate: Promise<void> = Promise.resolve()
-/**
- * Bumped per test. A request records its answer only if it STARTED in the
- * current test: an unmounted engine's push, released late, must not leak into
- * the next test's assertions (it did, on `main`, before this guard).
- */
+// A request records its answer only if it started in the current test, so a late
+// push from an unmounted engine cannot leak into the next test.
 let generation = 0
 
 async function routeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -122,7 +96,6 @@ async function routeFetch(input: RequestInfo | URL, init?: RequestInit): Promise
   throw new Error(`unrouted fetch ${url}`)
 }
 
-/** Device A's push, straight through the route (it does not wait on B's gate). */
 async function deviceAPushes(operation: Partial<SyncOperation>): Promise<void> {
   const response = await batchPOST({
     request: new Request('https://app.test/api/sync/batch', {
@@ -165,7 +138,6 @@ function persistedQueue(): SyncOperation[] {
   return raw ? (JSON.parse(raw) as SyncOperation[]) : []
 }
 
-/** `"<type>:<entityType>:<name-or-id>"` per queued op: readable in a RED diff. */
 function queueSummary(): string[] {
   return persistedQueue().map((o) => `${o.type}:${o.entityType}:${o.entityId}`)
 }
@@ -229,8 +201,7 @@ beforeAll(async () => {
   vi.stubGlobal('fetch', routeFetch)
 
   const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://app.test/' })
-  // ⚠️ `localStorage` and `navigator` MUST come from the JSDOM window — see
-  // `cross-device-sync.db.test.tsx` and `permanent-rejection-chain.db.test.ts`.
+  // `localStorage` and `navigator` must come from the JSDOM window.
   for (const key of [
     'window',
     'document',
@@ -286,8 +257,7 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
-  // The gate is NOT opened here: a push this test left held stays held, so it
-  // cannot write to the next test's database state.
+  // The gate is not opened here: a held push stays held and cannot touch the next test's state.
   rtl.cleanup()
   resetSyncStore()
 })
@@ -311,7 +281,6 @@ describe('a profile deleted on another device (story 76.2)', () => {
       profiles: [localProfile(MAIN, 'Main', true), localProfile(P, 'Side', false)],
       activeProfileId: MAIN,
     })
-    // B's offline edits in P: a new row, and an edit of a row the server has.
     const childCreate = queuedOp({
       type: 'create',
       entityId: C1,
@@ -320,7 +289,6 @@ describe('a profile deleted on another device (story 76.2)', () => {
     })
     const childUpdate = queuedOp({ profileId: P, baseVersion: OLD.getTime() })
     localStorage.setItem(QUEUE_KEY, JSON.stringify([childCreate, childUpdate]))
-    // Device A deletes P: the server tombstones P and cascades R1.
     await deviceAPushes({
       type: 'delete',
       entityType: 'userProfile',
@@ -330,34 +298,21 @@ describe('a profile deleted on another device (story 76.2)', () => {
 
     rtl.render(<ActiveSync userId={USER} />)
 
-    // Positive anchor: B pulled, and applied P's tombstone (66.3 cascade).
     await rtl.waitFor(
       () => expect(useProfileStore.getState().profiles.map((p) => p.id)).toEqual([MAIN]),
       { timeout: 15_000 }
     )
     expect(pulls()).toBeGreaterThan(0)
-    // RED at 145cb27: both child ops are still queued.
     expect(queueSummary()).toEqual([])
 
-    // Now let the push through that mount started (it is held at the gate).
-    // RED at 145cb27, measured: `Profile not found` (failed, no rejection) and
-    // an `update-delete` conflict, on every push.
-    //
-    // ⚠️ That push was ALREADY IN FLIGHT when the pull dropped the ops: core's
-    // push loop sends from the batch it took, so it still sends them ONCE
-    // (deferred-work, story 76.2: "A push already in flight…"). What this story
-    // guarantees is that they are not queued afterwards, so no LATER push
-    // carries them.
+    // That push was already in flight when the pull dropped the ops, so it still sends
+    // them once; what matters is that no later push carries them.
     openBatch()
-    // Positive anchor: that push really reached the route and was answered.
     await rtl.waitFor(() => expect(batchAnswers.length).toBeGreaterThan(0), { timeout: 15_000 })
     await rtl.act(async () => {
       await new Promise((r) => setTimeout(r, 0))
     })
-    // After a real push round trip, still nothing is queued: no later push
-    // can carry them.
     expect(queueSummary()).toEqual([])
-    // Not a refusal: no notice for rows the user can no longer see.
     expect(document.querySelectorAll('[role="alert"]')).toHaveLength(0)
   }, 60_000)
 
@@ -374,18 +329,13 @@ describe('a profile deleted on another device (story 76.2)', () => {
     rtl.render(<ActiveSync userId={USER} />)
     await rtl.waitFor(() => expect(isSyncActive()).toBe(true), { timeout: 15_000 })
     await rtl.waitFor(() => expect(pulls()).toBeGreaterThan(0), { timeout: 15_000 })
-    // Let the mount pull settle before A's edit, so it cannot carry it.
     await new Promise((r) => setTimeout(r, 300))
 
-    // Device A renames Main AFTER B last saw it.
     await db
       .update(userProfiles)
       .set({ name: 'Main (renamed on A)', updatedAt: new Date() })
       .where(eq(userProfiles.id, MAIN))
 
-    // B deletes its active default: tombstone + promotion of Travel, queued
-    // (the push is held). The active-profile switch triggers a full re-pull,
-    // which carries A's newer Main: B's deletion loses LWW.
     const pullsBefore = pulls()
     await rtl.act(async () => {
       useProfileStore.getState().removeProfile(MAIN)
@@ -402,16 +352,11 @@ describe('a profile deleted on another device (story 76.2)', () => {
     )
     expect(pulls()).toBeGreaterThan(pullsBefore)
 
-    // RED at 145cb27: the promotion stays queued and BOTH profiles are default here.
     await rtl.waitFor(() => expect(queueSummary()).toEqual([]), { timeout: 15_000 })
     await rtl.waitFor(() => expect(localDefaults()).toEqual(['Main (renamed on A)']), {
       timeout: 15_000,
     })
 
-    // And nothing moves the default on the server when pushes resume. The
-    // debounced push (2s after the edit) finds an empty queue, so NO request is
-    // made; on 145cb27 the promotion was queued, pushed, and moved the default
-    // to Travel. Both checks together tell the two apart.
     openBatch()
     await new Promise((r) => setTimeout(r, 2500))
     expect(batchAnswers).toEqual([])
@@ -424,8 +369,6 @@ describe('a profile deleted on another device (story 76.2)', () => {
       { id: Y, userId: USER, name: 'Travel', isDefault: false, updatedAt: OLD },
     ])
 
-    // `deviceAPushes` asserts `processedCount: 1`: a strict request schema would
-    // have refused the whole batch (400).
     await deviceAPushes({
       type: 'update',
       entityType: 'userProfile',
@@ -438,22 +381,8 @@ describe('a profile deleted on another device (story 76.2)', () => {
   })
 
   it("AC-2 convergence: deleting the ACTIVE default promotes the repair's own pick, so the returning tombstone changes nothing", async () => {
-    // ⚠️ REWRITTEN by the deferred-work follow-up to story 98.1. This test used to
-    // pin that B's promotion of TRAVEL survived the tombstone's return and beat
-    // the server repair's pick (ARCHIVE, the oldest). Deleting the ACTIVE profile
-    // now switches to, and promotes, the OLDEST survivor, which is what the
-    // repair picks when it RUNS. MEASURED after the change: the repair bumps
-    // Archive's `updatedAt`, B's promotion of Archive loses pull last-writer-wins
-    // and is drained, and both sides already agree. What stays pinned: the
-    // promotion carries the DELETED profile's stamp, and the round trip converges
-    // on ONE default (Archive) everywhere with no conflict.
-    //
-    // ⚠️ This test can NO LONGER catch the two 76.2 trap mutations (drain a
-    // stamp-P promotion; count a tombstone as a loss): the promotion is drained
-    // by plain LWW either way (code review). The NEXT test is the trap control.
-    //
-    // THREE profiles, Archive the OLDEST, with distinct local `createdAt`s that
-    // match the server's, so a first-in-store-order pick (Travel) fails below.
+    // Archive is the oldest, with local createdAt matching the server's, so a
+    // first-in-store-order pick (Travel) fails below.
     await db.insert(userProfiles).values([
       {
         id: Z,
@@ -500,19 +429,16 @@ describe('a profile deleted on another device (story 76.2)', () => {
     expect(useProfileStore.getState().activeProfileId).toBe(Z)
     await rtl.waitFor(() => expect(persistedQueue()).toHaveLength(2), { timeout: 15_000 })
     const promotion = persistedQueue().find((o) => o.entityId === Z) as SyncOperation
-    // MEASURED (Task 1.3): the promotion carries the DELETED profile's stamp —
-    // the queue ran before the active-profile switch reached the sync config.
+    // The promotion carries the deleted profile's stamp: the queue ran before the
+    // active-profile switch reached the sync config.
     expect(promotion.profileId).toBe(P)
 
-    // P's tombstone reaches the server before B's own delete does (another
-    // device, or this one with its response lost), and B's next pull brings it.
     await deviceAPushes({
       type: 'delete',
       entityType: 'userProfile',
       entityId: P,
       data: { userId: USER },
     })
-    // A reload: engine gone, queue kept. Its mount pull is a full snapshot.
     rtl.cleanup()
     resetSyncStore()
     const pullsBefore = pulls()
@@ -520,11 +446,9 @@ describe('a profile deleted on another device (story 76.2)', () => {
     await rtl.waitFor(() => expect(pulls()).toBeGreaterThan(pullsBefore), { timeout: 15_000 })
     await new Promise((r) => setTimeout(r, 300))
 
-    // The repair already seated Archive, so nothing is left to push.
     expect(queueSummary()).toEqual([])
     expect(localDefaults()).toEqual(['Archive'])
 
-    // Pushes resume: the debounced push (2 s) finds nothing that moves the seat.
     openBatch()
     await new Promise((r) => setTimeout(r, 2500))
     expect(await serverDefaults()).toEqual(['Archive'])
@@ -532,18 +456,8 @@ describe('a profile deleted on another device (story 76.2)', () => {
   }, 60_000)
 
   it('AC-2 trap control: a promotion stamped with the deleted profile survives the tombstone and wins the seat', async () => {
-    // ⚠️ The replacement trap control (code review of the 98.1 follow-up). The
-    // seat is NOT empty when P's tombstone lands: device A promoted Travel BEFORE
-    // deleting P, so the server's repair never runs and Archive's row is never
-    // bumped. B's queued promotion of Archive (stamped P, `dependsOn` its own
-    // delete of P) must survive the pull that brings P's tombstone, and then
-    // win the seat (last promotion wins, 76.1).
-    //
-    // MEASURED discriminating, each mutation in core's `synchronization.ts`:
-    // M1 (`isStrandedByDeletedProfile` without its `userProfile` exclusion) and
-    // M5 (`lostToLiveRow` also recording a loss to a TOMBSTONE) both turn this
-    // RED at the queue assertion (`[]`: the promotion was dropped). That the
-    // server then keeps Travel is REASONED, not measured (the run stops first).
+    // Trap control: A promoted Travel before deleting P, so no server repair runs; B's
+    // queued promotion of Archive must survive the pull and win the seat.
     await db.insert(userProfiles).values([
       {
         id: Z,
@@ -593,7 +507,6 @@ describe('a profile deleted on another device (story 76.2)', () => {
     expect(promotion?.profileId).toBe(P)
     expect(promotion?.dependsOn).toMatchObject({ type: 'delete', entityId: P })
 
-    // Device A promotes Travel, THEN deletes P: the seat is never empty.
     await deviceAPushes({
       type: 'update',
       entityType: 'userProfile',
@@ -606,10 +519,8 @@ describe('a profile deleted on another device (story 76.2)', () => {
       entityId: P,
       data: { userId: USER },
     })
-    // Positive anchor: no repair ran, Travel holds the seat.
     expect(await serverDefaults()).toEqual(['Travel'])
 
-    // A reload: engine gone, queue kept. Its mount pull is a full snapshot.
     rtl.cleanup()
     resetSyncStore()
     const pullsBefore = pulls()
@@ -621,10 +532,8 @@ describe('a profile deleted on another device (story 76.2)', () => {
     )
     await new Promise((r) => setTimeout(r, 300))
 
-    // The deletion HAPPENED, so the promotion is still the user's choice.
     expect(queueSummary()).toEqual([`update:userProfile:${Z}`])
 
-    // Discriminating: without the promotion, A's pick (Travel) stays.
     openBatch()
     await rtl.waitFor(async () => expect(await serverDefaults()).toEqual(['Archive']), {
       timeout: 15_000,

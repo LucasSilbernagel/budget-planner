@@ -1,21 +1,5 @@
-/**
- * An op that keeps failing is escalated, never dropped (story 79.2, FR128).
- *
- * ⚠️ Two conditions (code review): `maxRetries + 1` consecutive failed attempts
- * AND a run of failures at least `maxRetries × retryDelay` long (the TIME FLOOR,
- * 3 000 ms here). `failTimes` therefore advances the clock `retryDelay` after
- * each sync, the pace of the fast retry path.
- *
- * Before 79.2 a queued op that failed on every attempt had no end state: it
- * replayed every sync, invisibly. Now, after `maxRetries + 1` consecutive failed
- * attempts that keep it queued (retryable OR unclassified), it appears in
- * `state.escalatedOperations`, which the web layer names to the user. It stays
- * queued and persisted (FR120) and leaves the view when it leaves the queue.
- *
- * ⚠️ The service starts OFFLINE in Node, and an offline service sends nothing,
- * so every "not escalated" assertion here would pass vacuously. Each test forces
- * `isOnline` and anchors on how many times the op was actually sent.
- */
+// The service starts offline in Node, so each test forces `isOnline` and anchors on send
+// counts; otherwise "not escalated" would pass vacuously.
 
 import { type Mock, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SyncQueue } from '../queue'
@@ -41,7 +25,6 @@ const internals = (service: SynchronizationService) => service as unknown as Int
 
 type TestStorage = SyncQueueStorage & { persistedIds: () => string[] }
 
-/** Map-backed queue storage: what a reload reads back. */
 function createStorage(): TestStorage {
   const stored = new Map<string, SyncOperation[]>()
   return {
@@ -73,7 +56,7 @@ function op(id: string, overrides: Partial<SyncOperation> = {}): SyncOperation {
 }
 
 const RETRYABLE: ProcessOperationResult = { success: false, error: 'HTTP 503', retryable: true }
-/** A per-op server fault: the 200 envelope with `failedCount > 0` and no status. */
+/** The 200 envelope with `failedCount > 0` and no status. */
 const UNCLASSIFIED: ProcessOperationResult = {
   success: false,
   error: 'Operation failed on server',
@@ -102,10 +85,7 @@ describe('escalating an op that keeps failing (story 79.2)', () => {
   const escalatedIds = (): string[] => service.getState().escalatedOperations.map((o) => o.id)
   const countOf = (id: string): number | undefined => internals(service).failureCounts.get(id)
 
-  /**
-   * `n` explicit syncs of an op that fails with `result` every time, the clock
-   * advancing `retryDelay` (1 000 ms) after each, as the fast retry path would.
-   */
+  /** The clock advances `retryDelay` after each sync, as the fast retry path would. */
   async function failTimes(id: string, n: number, result = UNCLASSIFIED): Promise<void> {
     resultFor.set(id, result)
     for (let i = 0; i < n; i++) {
@@ -243,7 +223,6 @@ describe('escalating an op that keeps failing (story 79.2)', () => {
       await failTimes('promote', 3)
       expect(countOf('promote')).toBe(3)
 
-      // The deletion it depends on is queued and fails, so the promotion is held.
       await queue.add(
         op('delete-X', {
           type: 'delete',
@@ -258,7 +237,6 @@ describe('escalating an op that keeps failing (story 79.2)', () => {
       expect(sentCount('promote')).toBe(3)
       expect(countOf('promote')).toBe(3)
 
-      // The deletion lands; the promotion goes out, fails a 4th time and escalates.
       resultFor.set('delete-X', { success: true })
       await service.sync()
 
@@ -310,7 +288,6 @@ describe('escalating an op that keeps failing (story 79.2)', () => {
       await reloaded.initialize()
       expect(reloaded.getAll().map((o) => o.id)).toEqual(['stuck'])
 
-      // And it keeps being sent.
       await failTimes('stuck', 1)
       expect(sentCount('stuck')).toBe(5)
       expect(queue.getAll().map((o) => o.id)).toEqual(['stuck'])
@@ -367,7 +344,7 @@ describe('escalating an op that keeps failing (story 79.2)', () => {
       await failTimes('stuck', 4)
       expect(escalatedIds()).toEqual(['stuck'])
 
-      // 75.2's refused-create sweep reaches the raw queue through `getQueue()`.
+      // The refused-create sweep reaches the raw queue through `getQueue()`.
       await service.getQueue().discardBatch(['stuck'])
       await service.sync()
 
@@ -415,7 +392,7 @@ describe('escalating an op that keeps failing (story 79.2)', () => {
 
       const changes: ServerChange[] = [
         {
-          // Older than the queued edit: the local edit wins, so this is SUPPRESSED.
+          // Older than the queued edit: the local edit wins, so this is suppressed.
           entityType: 'incomeSource',
           entityId: 'entity-stuck',
           data: { id: 'entity-stuck', name: 'server', amount: 10, frequency: 'monthly' },
@@ -439,7 +416,6 @@ describe('escalating an op that keeps failing (story 79.2)', () => {
       expect(service.getState().lastPullTimestamp).toBeNull()
       expect(queue.getAll().map((o) => o.id)).toEqual(['stuck'])
 
-      // The op lands; the next pull is free to advance past both changes.
       await failTimes('stuck', 1, { success: true })
       await service.pull()
 
@@ -554,7 +530,6 @@ describe('escalating an op that keeps failing (story 79.2)', () => {
       expect(escalatedIds()).toEqual(['stuck'])
       const stuck = queue.getAll()[0] as SyncOperation
       internals(service).state.failedOperations = [stuck]
-      // The web sweep empties the queue behind the service's back.
       await service.getQueue().discardBatch(['stuck'])
       const notified: string[][] = []
       service.onStatusChange((state) => {

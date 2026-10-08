@@ -1,17 +1,7 @@
 // @vitest-environment node
 /**
- * `/api/forecasts` on a real PostgreSQL (PGlite, the migration chain) (story 83.1,
- * FR136, AC-1).
- *
- * The handlers are called directly with real `Request`s. Only the session
- * resolver is mocked; everything after it (the premium gate, parsing, the cores
- * with 80.1's transaction, the SQL) is the shipped code. Each D4 row that can
- * occur for a handler has a case, with the database state asserted, not just the
- * status: a refused write must leave no row.
- *
- * ⚠️ undici's `new Request(url, { body })` sets NO `content-length` (story 79.3,
- * MEASURED), so `post()` and `put()` set it by hand; without it the 413 guard is
- * never reached.
+ * undici's `new Request(url, { body })` sets no `content-length`, so `post()` and `put()`
+ * set it by hand; without it the 413 guard is never reached.
  */
 
 import type { PGlite } from '@electric-sql/pglite'
@@ -92,7 +82,6 @@ function post(body: unknown, headers: Record<string, string> = {}): Request {
   })
 }
 
-/** A PUT, with `content-length` set by hand like `post()` (story 97.1). */
 function put(query: string, body: unknown, headers: Record<string, string> = {}): Request {
   const text = typeof body === 'string' ? body : JSON.stringify(body)
   return new Request(`${BASE}${query}`, {
@@ -118,7 +107,6 @@ function aSave(overrides: Record<string, unknown> = {}) {
   }
 }
 
-/** A PUT body: the shared fields only (story 97.1). */
 function anEdit(overrides: Record<string, unknown> = {}) {
   return {
     name: 'Plan A',
@@ -127,7 +115,6 @@ function anEdit(overrides: Record<string, unknown> = {}) {
   }
 }
 
-/** Every column a PUT may or may not touch, for before/after comparisons. */
 async function fullRow(id: number) {
   const [row] = await db.select().from(forecastingProfiles).where(eq(forecastingProfiles.id, id))
   return row
@@ -199,7 +186,6 @@ describe('the session and premium gate, on every method', () => {
         success: false,
         error: 'Your session could not be checked. Try again in a moment.',
       })
-      // The resolver's own text (driver detail) never reaches the client.
       expect(JSON.stringify(body)).not.toContain('DATABASE_URL')
     }
   )
@@ -362,8 +348,6 @@ describe('POST /api/forecasts', () => {
       aSave({ scenarioData: '{nope' }),
       'scenarioData must be valid JSON',
     ],
-    // Valid JSON but not an object: stored, then hidden by the page while still
-    // holding its name (story 83.1 code review).
     ['scenarioData "null"', aSave({ scenarioData: 'null' }), 'scenarioData must be a JSON object'],
     ['scenarioData "1"', aSave({ scenarioData: '1' }), 'scenarioData must be a JSON object'],
     ['scenarioData "[]"', aSave({ scenarioData: '[]' }), 'scenarioData must be a JSON object'],
@@ -389,7 +373,6 @@ describe('POST /api/forecasts', () => {
     ['a fractional version', aSave({ version: 1.5 })],
     ['no scenarioData', aSave({ scenarioData: undefined })],
     ['a name that is not a string', aSave({ name: 42 })],
-    // PostgreSQL text cannot hold NUL (22021): it used to reach the column as a 500.
     ['a NUL in the name', aSave({ name: 'Plan\u0000A' })],
     ['a NUL in the description', aSave({ description: 'x\u0000y' })],
   ])('%s is a 400 "Invalid request", and writes nothing', async (_label, body) => {
@@ -400,7 +383,6 @@ describe('POST /api/forecasts', () => {
   })
 
   it('refuses a body over the cap with 413 BEFORE parsing it', async () => {
-    // Not JSON at all: had the handler parsed it, the answer would be a 400.
     const res = await POST({
       request: post('{not json', { 'content-length': String(MAX_FORECAST_BODY_BYTES + 1) }),
     })
@@ -409,7 +391,6 @@ describe('POST /api/forecasts', () => {
   })
 
   it('accepts a body exactly at the cap boundary by length (the cap is exclusive)', async () => {
-    // The header is the one the check reads; the body is a normal save.
     const res = await POST({
       request: post(aSave(), { 'content-length': String(MAX_FORECAST_BODY_BYTES) }),
     })
@@ -501,7 +482,6 @@ describe('PUT /api/forecasts (story 97.1, FR157)', () => {
     'This forecast was deleted, so it was not saved. Save again to keep it as a new forecast.'
   const DUPLICATE = 'A forecast with this name already exists for this profile.'
 
-  /** A forecast saved through POST, so it carries a real description/version/default. */
   async function saved(overrides: Record<string, unknown> = {}) {
     const res = await POST({
       request: post(aSave({ description: 'first', isDefault: true, version: 2, ...overrides })),
@@ -529,7 +509,6 @@ describe('PUT /api/forecasts (story 97.1, FR157)', () => {
     expect(Number(after?.updatedAt.getTime())).toBeGreaterThan(Number(before?.updatedAt.getTime()))
     expect(JSON.parse(String(after?.scenarioData))).toEqual(anEdit().scenarioData)
     expect(after?.description).toBe('second')
-    // Not in the PUT contract: unchanged.
     expect(after?.isDefault).toBe(true)
     expect(after?.version).toBe(2)
     expect(await rows()).toHaveLength(1)

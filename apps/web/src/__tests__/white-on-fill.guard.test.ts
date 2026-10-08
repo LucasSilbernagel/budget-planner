@@ -3,24 +3,8 @@ import { join, relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { GLOBAL_CSS, cssRules } from '../test/css-rules'
 
-/**
- * White text on a coloured fill passes WCAG AA in both themes (story 115.1,
- * FR183; Lighthouse audit 2026-10-07, A1).
- *
- * White on green-600 measures 3.30:1 and on green-500 2.28:1, below AA's 4.5:1
- * for normal text. Every white-text green fill therefore uses ONE shared class,
- * `.fill-green` (green-700, 5.02:1), in both themes. The red and blue fills keep
- * their 600 shade in dark too: white on red-500 is 3.76:1, on blue-500 3.68:1.
- *
- * ⚠️ What this pins is SOURCE, not paint: jsdom applies no stylesheet, so the
- * rendered colour is out of reach below the browser. The proof that the colours
- * pass is the Lighthouse re-run recorded in the story. This file stops the old
- * tokens from coming back.
- *
- * The scan is line-level: today every className is written on one line, so a
- * `dark:bg-red-500` and the `text-white` it fails against share a line. A
- * className split over several lines would get past the `dark:` arm.
- */
+// White on green-600 is 3.30:1, below AA. Pins SOURCE only (jsdom applies no stylesheet),
+// line by line: a className split over several lines would get past the `dark:` arm.
 
 const SRC = resolve(__dirname, '..')
 
@@ -69,9 +53,7 @@ describe('white text on a fill (story 115.1)', () => {
   })
 
   it('`.fill-green` is used on exactly the 7 white-text green sites', () => {
-    // An EXACT count, not "at least one": an 8th green button written with the
-    // old tokens, or a site that lost the class, both change it.
-    // className lines only, so a comment naming the class is not a use.
+    // An EXACT count: an 8th green button with old tokens, or a site that lost the class, changes it.
     expect(hits(/(^|[\s"'`])fill-green\b/, /className=/).length).toBe(7)
   })
 })

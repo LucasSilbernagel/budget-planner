@@ -1,15 +1,3 @@
-/**
- * ReportPage tests (story 30-3, FR53).
- *
- * The route-level gate. This is the boundary that matters: the `/settings`
- * entry point is presentation, but a user can navigate straight to `/financial-summary`,
- * and this must refuse them independently — following the `/profiles` precedent
- * (story 13-3).
- *
- * The report body is stubbed so these assertions are about GATING only; its own
- * suite covers the content.
- */
-
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../../hooks/usePremiumAccess'
@@ -72,8 +60,7 @@ describe('ReportPage', () => {
     mockStatus({ hasAccess: false, subscriptionStatus, isAuthenticated: isAuth })
     render(<ReportPage />)
 
-    // Exact (anchored), not a substring: the gate's `featureName` keeps the PLAIN
-    // name. Only the prompt's own benefit list says "Downloadable …" (story 95.1, D1).
+    // Anchored: the gate's featureName keeps the plain name.
     expect(screen.getByTestId('premium-prompt')).toHaveTextContent(/^Financial Summary Report$/)
     expect(screen.queryByTestId('financial-summary-report')).not.toBeInTheDocument()
   })
@@ -86,8 +73,6 @@ describe('ReportPage', () => {
   })
 
   it('never renders the report while the tier is still unknown', () => {
-    // SSR + first client paint. A skeleton here rather than content is what stops
-    // a not-yet-verified visitor from seeing paid output for a frame.
     mockStatus({ isLoading: true })
     render(<ReportPage />)
 
@@ -97,9 +82,6 @@ describe('ReportPage', () => {
   })
 })
 
-// Story 116.1 (FR184, A4): the gate's loading and locked states are each ONE
-// `<main>` landmark (the active state is `FinancialSummaryReport`'s, stubbed
-// here and pinned in its own suite).
 describe('ReportPage landmarks (story 116.1)', () => {
   it.each([
     ['loading', { isLoading: true }],
@@ -111,13 +93,6 @@ describe('ReportPage landmarks (story 116.1)', () => {
   })
 })
 
-/**
- * Story 117.2 (FR185): when the tier resolves, the loading branch's DOM is
- * REPLACED, not reused. Reused, the spinner's 32 px <div> became the page's
- * container and Chrome counted it growing as a layout shift (CLS 0.1153 on
- * /categories, MEASURED). The branch keys force the replacement; jsdom can show
- * node identity, the CLS itself was measured by the story's probe.
- */
 describe('ReportPage loading → resolved (story 117.2)', () => {
   it.each([
     ['the locked prompt', { hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true }],

@@ -1,18 +1,4 @@
-/**
- * Session resolution for authenticated (paid-tier) requests.
- *
- * Architecture: TanStack Start server routes / functions call `getCurrentUserSession`
- * to resolve the signed session cookie into a DB-authoritative user identity.
- * Data Sovereignty: all data stored in DanubeData (Germany - EU) (NFR1, NFR2).
- *
- * ⚠️ History: this file was the Paddle "OAuth login" module. That flow was a
- * false premise (Paddle is billing-only, not an identity provider) and its stub
- * was removed in Story 5-3. Identity is now app-owned — the magic-link login
- * (`routes/api/auth/login/*`, Story 5-16) mints the signed session; account
- * creation happens at the Paddle Billing checkout webhook
- * (`routes/api/webhooks/paddle.ts`). The filename is kept only because ~12 call
- * sites import `getCurrentUserSession` / `UserSession` from `@/server/api/auth/paddle`.
- */
+// The filename is historical: identity is app-owned (magic link), not Paddle. Kept for its importers.
 
 import { logger } from '@/lib/logger'
 import { db } from '@budget-planner/db'
@@ -20,17 +6,12 @@ import { users } from '@budget-planner/db/src/schema'
 import { and, eq } from 'drizzle-orm'
 import { verifySession } from './session'
 
-// Imported for local use AND re-exported so existing importers of this module
-// keep working; the single declaration lives in `../result`.
+// Re-exported so existing importers of this module keep working.
 import type { BillingInterval, Currency } from '@budget-planner/db'
 import type { ApiResult } from '../result'
 
 export type { ApiResult }
 
-/**
- * User session information.
- * userId matches the UUID type from database schema (Story 4-2).
- */
 export interface UserSession {
   userId: string
   email: string
@@ -39,23 +20,12 @@ export interface UserSession {
   // Non-null: the column is nullable but carries a `'NONE'` default, and every
   // construction site below falls back to that rather than propagating null.
   currency: Currency
-  /**
-   * The plan cadence the user bought (Story 70.1). NULL = not known — a row
-   * that predates the column, a cadence this product does not sell, or a
-   * lifetime buyer (whose status alone names the plan). Display only: no
-   * entitlement decision may read it.
-   */
+  // NULL = cadence unknown, or lifetime. Display only: no entitlement decision may read it.
   billingInterval: BillingInterval | null
   isAuthenticated: boolean
   name?: string
 }
 
-/**
- * Get current user session from the request's signed session cookie.
- *
- * @param request - Incoming request object
- * @returns User session or null if not authenticated
- */
 export async function getCurrentUserSession(
   request: Request
 ): Promise<ApiResult<UserSession | null>> {
@@ -66,7 +36,6 @@ export async function getCurrentUserSession(
       return { success: true, data: null }
     }
 
-    // Parse cookies from header
     const cookies: Record<string, string> = {}
     for (const cookie of cookieHeader.split(';')) {
       const [name, ...rest] = cookie.trim().split('=')
@@ -96,22 +65,7 @@ export async function getCurrentUserSession(
   }
 }
 
-/**
- * Logout user by revoking their server-side sessions.
- *
- * Stamps the user's `sessionsRevokedAt` watermark to now, which invalidates
- * every session token issued at or before this moment (see validateSessionToken).
- * Clearing the client cookie alone (done by the logout route) is insufficient —
- * a token that was exfiltrated would otherwise stay valid for its full 7-day
- * TTL. Resolving the user from the current session means logout works even
- * though the stateless token carries no server-side session record.
- *
- * No valid session → no-op success (the caller is already effectively logged
- * out). Failures are reported so the route can surface a 500.
- *
- * @param request - Incoming request carrying the session cookie to revoke
- * @returns Success status
- */
+// Stamps the revocation watermark: clearing the cookie alone leaves an exfiltrated token valid for its TTL.
 export async function logoutUser(request: Request): Promise<ApiResult<void>> {
   try {
     const sessionResult = await getCurrentUserSession(request)
@@ -130,40 +84,25 @@ export async function logoutUser(request: Request): Promise<ApiResult<void>> {
   }
 }
 
-/**
- * Validate session token and return user session.
- *
- * Security (Story 5-7): the token's HMAC signature is verified before any of
- * its contents are trusted, so forged or tampered cookies are rejected. The
- * subscription status and currency are then read authoritatively from the
- * database by userId — never from the cookie — so a client cannot grant itself
- * premium access, and a stale cookie cannot outlive a downgrade/cancellation.
- */
+// Status and currency come from the DB, never the cookie, so a client cannot grant itself premium.
 async function validateSessionToken(token: string): Promise<UserSession | null> {
   try {
     // The cookie value is URL-encoded; decode before signature verification.
     const decodedToken = decodeURIComponent(token)
 
-    // Verify the HMAC signature first. Unsigned, tampered, or wrong-secret
-    // tokens return null and are treated as unauthenticated.
     const payload = verifySession(decodedToken)
     if (!payload) {
-      // Security signal (possible tampering/forgery) — emitted in prod (warn),
-      // but not error, to avoid false error-rate spikes from routine bad cookies.
+      // warn, not error: routine bad cookies must not spike the error rate.
       logger.warn('Invalid session token: signature verification failed')
       return null
     }
 
-    // Ensure userId is a valid UUID format before querying the database.
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     if (!uuidPattern.test(payload.userId)) {
       logger.debug('Invalid session token: userId is not a valid UUID')
       return null
     }
 
-    // Resolve the authoritative user record. Subscription status and currency
-    // come from the database, NOT the cookie (NFR: server-enforced premium).
-    // Soft-deleted users are excluded (fail-closed → treated as logged out).
     const matchingUsers = await db
       .select()
       .from(users)
@@ -176,12 +115,7 @@ async function validateSessionToken(token: string): Promise<UserSession | null> 
       return null
     }
 
-    // Server-side revocation (Story 5-8): a token issued at or before the user's
-    // revocation watermark is rejected, so logout (and "sign out everywhere")
-    // invalidates exfiltrated tokens ahead of their 7-day TTL.
     if (user.sessionsRevokedAt != null && payload.iat <= user.sessionsRevokedAt) {
-      // Security signal (token used after logout / "sign out everywhere") —
-      // emitted in prod (warn), not error, to avoid false error-rate spikes.
       logger.warn('Invalid session token: issued before session revocation')
       return null
     }
@@ -196,22 +130,8 @@ async function validateSessionToken(token: string): Promise<UserSession | null> 
       isAuthenticated: true,
     }
   } catch (error) {
-    // ⚠️ RETHROW — do NOT collapse an infrastructure failure into `null`.
-    //
-    // `null` from this function means "this request carries no valid session",
-    // an AUTHORITATIVE answer that every caller is entitled to act on. A DB
-    // outage is not that answer; it is "unknown". Swallowing it here made a
-    // database blip indistinguishable from a signed-out visitor, which
-    // (a) let `/api/paddle/checkout-config`'s already-entitled guard wave an
-    // entitled user through to a second real charge during exactly the outage
-    // in which the webhook could not record it (Story 5-19 review), and
-    // (b) silently defeated `getSessionSeed`'s documented contract — it returns
-    // `null` on error SPECIFICALLY so the client re-checks rather than being
-    // shown a wrong signed-out state (UX-1, code review 2026-07-14) — because
-    // the error never reached it.
-    //
-    // `getCurrentUserSession` turns this into `{success:false}`, which callers
-    // already treat as "could not determine", and which is the whole point.
+    // Rethrow: a DB outage is "unknown", not "no session". Callers act on null as an authoritative
+    // signed-out answer (e.g. checkout's already-entitled guard).
     logger.error('Failed to validate session token', { error })
     throw error
   }

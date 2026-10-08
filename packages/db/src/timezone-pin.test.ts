@@ -1,10 +1,4 @@
-/**
- * Story 92.1 (code review): `packages/db/vitest.config.ts` sets
- * `process.env.TZ = 'UTC'` before the worker threads start (Vitest 1.6 ignores
- * `test.env.TZ` for the zone), so the PGlite harnesses' session TimeZone and JS
- * local time match CI and production. CI's runners are UTC anyway, so this only
- * bites on a dev box in another zone; it is the regression pin for that line.
- */
+// Vitest 1.6 threads ignore `test.env.TZ` for the zone; the config sets `process.env.TZ` instead.
 
 import { describe, expect, it } from 'vitest'
 

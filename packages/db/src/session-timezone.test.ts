@@ -1,22 +1,5 @@
-/**
- * Story ops-2: every connection the app and the migrator open pins the session
- * `TimeZone` to UTC (AC-1, AC-2, decisions D1 + D2).
- *
- * WHY at the wire: `createdAt`/`updatedAt` are `timestamp WITHOUT time zone`, so a
- * DB-side `now()` (a column default, or `SET "updatedAt" = now()` in a migration)
- * stores the SESSION TimeZone's wall time, while every app-written value is UTC
- * (`toISOString()`). The pin is a startup parameter (`options`), so the only
- * honest witness is the StartupMessage itself. A PGlite-backed `SHOW TimeZone`
- * cannot witness it: pglite-socket ignores startup `options`, and a `SET` on one
- * connection leaks into every later one (story F9, MEASURED while drafting).
- *
- * The stub below answers an SSLRequest with 'N', records the StartupMessage's
- * parameters, and hangs up. The callers then fail to connect, which is expected:
- * every assertion is on the capture, never on an exit code or a return value.
- * Each test also asserts the capture's `user` + `database` (the positive control),
- * so a stub that recorded nothing, or a caller that dialled somewhere else,
- * cannot pass.
- */
+// The pin is a startup parameter, so the only honest witness is the StartupMessage: a TCP stub
+// records it and hangs up. Assertions are on the capture, never on exit codes.
 import { spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
@@ -27,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DB_SESSION_OPTIONS, closeDb, testDbConnection } from './client'
 import { stepEnv } from './migrate-lock'
 
-/** The exact value every connection must send. Pinned as a literal on purpose (mutation M5). */
+/** A literal on purpose, not the imported constant. */
 const EXPECTED_OPTIONS = '-c TimeZone=UTC'
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -56,7 +39,6 @@ function parseStartup(packet: Buffer): StartupParams | null {
   return params
 }
 
-/** A TCP stub that records each connection's StartupMessage parameters. */
 async function startStartupStub(): Promise<StartupStub> {
   const captures: StartupParams[] = []
   const sockets = new Set<net.Socket>()
@@ -97,7 +79,6 @@ async function startStartupStub(): Promise<StartupStub> {
   }
 }
 
-/** Run a package binary to completion; the exit code is returned, never asserted on. */
 function runBin(
   bin: string,
   args: string[],
@@ -117,7 +98,6 @@ function runBin(
   })
 }
 
-/** The child env: the parent's, minus anything that could steer the connection. */
 function childEnv(port: number, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env }
   for (const name of ['PGOPTIONS', 'DATABASE_CA_CERT', 'PGHOST', 'PGPORT', 'PGSSLMODE']) {
@@ -131,7 +111,7 @@ function childEnv(port: number, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEn
   }
 }
 
-/** Put an env var back; assigning `undefined` would store the string "undefined". */
+/** Assigning `undefined` would store the string "undefined". */
 function restoreEnv(name: string, saved: string | undefined): void {
   if (saved === undefined) Reflect.deleteProperty(process.env, name)
   else process.env[name] = saved
@@ -157,14 +137,12 @@ describe('AC-1: the app pool sends TimeZone=UTC on every connection', () => {
     const savedUrl = process.env['DATABASE_URL']
     const savedEnv = process.env['NODE_ENV']
     const savedCa = process.env['DATABASE_CA_CERT']
-    // pg falls back to PGOPTIONS when `options` is absent: an ambient value would
-    // make this pass with the pin removed.
+    // An ambient PGOPTIONS would make this pass with the pin removed.
     const savedPgOptions = process.env['PGOPTIONS']
     process.env['DATABASE_URL'] = `postgresql://u:p@127.0.0.1:${stub.port}/d`
     process.env['NODE_ENV'] = 'test'
     Reflect.deleteProperty(process.env, 'DATABASE_CA_CERT')
     Reflect.deleteProperty(process.env, 'PGOPTIONS')
-    // testDbConnection logs the (expected) hang-up; keep the run quiet.
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
     try {
       await closeDb()
@@ -176,10 +154,8 @@ describe('AC-1: the app pool sends TimeZone=UTC on every connection', () => {
       restoreEnv('PGOPTIONS', savedPgOptions)
     }
 
-    // Positive control: a startup packet arrived, from this pool's credentials.
     expect(stub.captures.length).toBeGreaterThanOrEqual(1)
     expect(stub.captures[0]).toMatchObject({ user: 'u', database: 'd' })
-    // The pin itself.
     expect(stub.captures[0]?.['options']).toBe(EXPECTED_OPTIONS)
   })
 })
@@ -190,7 +166,6 @@ describe('AC-2(a): the migrator CLIs send it too', () => {
       stub = await startStartupStub()
       const { output } = await runBin('tsx', [cli], childEnv(stub.port))
 
-      // Positive control. On failure, show what the CLI said.
       expect(stub.captures.length, output).toBeGreaterThanOrEqual(1)
       expect(stub.captures[0]).toMatchObject({ user: 'u', database: 'd' })
       expect(stub.captures[0]?.['options']).toBe(EXPECTED_OPTIONS)
@@ -210,19 +185,13 @@ describe('AC-2(b): stepEnv pins PGOPTIONS for the spawned steps (drizzle-kit = C
     const env = stepEnv(parent)
     expect(env['PGOPTIONS']).toBe(EXPECTED_OPTIONS)
     expect(env).toEqual({ ...parent, PGOPTIONS: EXPECTED_OPTIONS })
-    // The parent is not mutated.
     expect(parent['PGOPTIONS']).toBe('-c TimeZone=Europe/Berlin')
   })
 })
 
 describe('AC-2(c): library-behaviour pin for drizzle-kit migrate', () => {
-  // drizzle-kit 0.23.2 validates `dbCredentials` with a zod object that STRIPS
-  // unknown keys, so an `options` key in the config never reaches pg. pg falls
-  // back to PGOPTIONS only when the config has no `options`. One run covers
-  // both: the config carries a DIFFERENT value than PGOPTIONS, so if drizzle-kit
-  // ever starts passing `options` through, pg prefers it and the capture reads
-  // Berlin; if PGOPTIONS stops reaching the wire, the capture reads undefined.
-  // GREEN on the pre-ops-2 code by design: this pins the library, not our code.
+  // drizzle-kit strips an `options` key, and pg falls back to PGOPTIONS only without one. The
+  // config carries a different value, so either change shows up in the capture.
   it('PGOPTIONS reaches the wire; an `options` key in dbCredentials does not', async () => {
     stub = await startStartupStub()
     const dir = mkdtempSync(path.join(tmpdir(), 'ops2-drizzle-kit-'))

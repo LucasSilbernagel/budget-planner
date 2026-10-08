@@ -1,24 +1,7 @@
-/**
- * Magic-link REQUEST route tests (Story 5-16 → DB-backed limiter in Story SEC-2)
- *
- * The endpoint must:
- *  - return an IDENTICAL response whether or not the email matches an account
- *    (no enumeration) — including when the underlying send fails;
- *  - rate-limit per IP and per email through the shared atomic DB store, with the
- *    exact preserved windows/maxima (IP 5/60s, email 5/15min — AC-2);
- *  - keep the email limit un-skippable even when the IP is unknown (AC-3);
- *  - never create an account (delegated to requestMagicLink, mocked here).
- *
- * `checkDbRateLimit` is mocked to a stateful in-memory counter (no database) that
- * honours the scope/subject/maxAttempts each call site passes, so the emergent
- * 429 / throttle behaviour is still exercised end-to-end through the route.
- */
-
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { checkDbRateLimit, buckets, logger, captureError, MagicLinkStageError } = vi.hoisted(() => {
-  // Story 74.1: a stand-in with the real class's shape, so the route's
-  // `instanceof` check runs against the same constructor the tests throw.
+  // Same class shape, so the route's `instanceof` check runs against the constructor the tests throw.
   class MagicLinkStageError extends Error {
     readonly stage: string
     readonly cause: unknown
@@ -67,8 +50,7 @@ import { POST } from '../request'
 
 const asMock = (fn: unknown) => fn as ReturnType<typeof vi.fn>
 
-// With the default trusted-hop count (0 = rightmost), the proxy-appended value is
-// the rightmost XFF entry, so a single value resolves to the client IP.
+// With the default trusted-hop count (0 = rightmost), a single XFF value resolves to the client IP.
 const CLIENT_IP = { 'x-forwarded-for': '203.0.113.5' }
 
 const post = (body: unknown, headers: Record<string, string> = {}) =>
@@ -94,7 +76,6 @@ describe('POST /api/auth/login/request', () => {
     expect(known.status).toBe(200)
     expect(unknown.status).toBe(200)
     expect(await known.clone().json()).toEqual(await unknown.clone().json())
-    // Delegated to the orchestration layer with the configured origin.
     expect(requestMagicLink).toHaveBeenCalledWith('known@example.com', 'https://app.test')
   })
 
@@ -120,7 +101,6 @@ describe('POST /api/auth/login/request', () => {
     const huge = await post({ email: `${'a'.repeat(300)}@x.com` })
     expect(blank.status).toBe(200)
     expect(huge.status).toBe(200)
-    // Neither reaches the orchestration layer (no send, no work).
     expect(requestMagicLink).not.toHaveBeenCalled()
   })
 
@@ -130,7 +110,6 @@ describe('POST /api/auth/login/request', () => {
       last = await post({ email: `u${i}@example.com` }, CLIENT_IP)
     }
     expect(last?.status).toBe(429)
-    // AC-2: exact preserved IP window/max, keyed by the resolved client IP.
     expect(checkDbRateLimit).toHaveBeenCalledWith(
       expect.objectContaining({
         scope: 'ip',
@@ -147,9 +126,7 @@ describe('POST /api/auth/login/request', () => {
       last = await post({ email: 'spammed@example.com' })
     }
     expect(last?.status).toBe(200)
-    // Sending stopped after the per-email max (5), so not all 7 reached the sender.
     expect(asMock(requestMagicLink).mock.calls.length).toBeLessThan(7)
-    // AC-2: exact preserved email window/max.
     expect(checkDbRateLimit).toHaveBeenCalledWith(
       expect.objectContaining({
         scope: 'email',
@@ -161,13 +138,11 @@ describe('POST /api/auth/login/request', () => {
   })
 
   it('still applies the email limit when the IP is unknown (AC-3: email never skippable)', async () => {
-    // No forwarded-for → IP bucket skipped, but the email bucket must still throttle.
     let last: Response | undefined
     for (let i = 0; i < 7; i++) {
       last = await post({ email: 'noip@example.com' })
     }
     expect(last?.status).toBe(200)
-    // The IP scope was never consulted; the email scope was.
     const scopes = checkDbRateLimit.mock.calls.map((c) => (c[0] as { scope: string }).scope)
     expect(scopes).not.toContain('ip')
     expect(scopes).toContain('email')
@@ -178,10 +153,8 @@ describe('POST /api/auth/login/request', () => {
 describe('Story 74.1 — one outcome line per request (AC-4, AC-5)', () => {
   const OUTCOME = 'Magic-link request outcome'
 
-  /** Let the fire-and-forget chain settle; the response has already returned. */
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-  /** Every call on any level that carries the outcome message. */
   function outcomeLines() {
     return [logger.info, logger.warn, logger.error, logger.debug].flatMap((fn) =>
       fn.mock.calls
@@ -243,9 +216,6 @@ describe('Story 74.1 — one outcome line per request (AC-4, AC-5)', () => {
   )
 
   it('the provider status survives the REAL redact() on a send failure (review)', async () => {
-    // The logger serialises an Error as `{ name, message }` only. Logging the
-    // stage WRAPPER recorded "failed at stage 'send'" and lost the Brevo status
-    // that the pre-74.1 line showed.
     const { redact } = await vi.importActual<typeof import('@/lib/logger')>('@/lib/logger')
     asMock(requestMagicLink).mockRejectedValueOnce(
       new MagicLinkStageError(
@@ -319,8 +289,7 @@ describe('Story 74.1 — one outcome line per request (AC-4, AC-5)', () => {
 
     expect(statuses).toEqual([200, 200, 200, 200])
     expect(new Set(bodies)).toEqual(new Set(['{"success":true}']))
-    // The throttled request really was throttled — otherwise this compares
-    // four copies of the same branch.
+    // The throttled request really was throttled, otherwise this compares four copies of one branch.
     expect(outcomeLines()).toContainEqual({ branch: 'throttled', scope: 'email' })
   })
 

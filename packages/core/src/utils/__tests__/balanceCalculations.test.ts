@@ -1,10 +1,3 @@
-/**
- * Balance Calculations Tests
- *
- * Unit tests for balance tracking calculation utilities.
- * Tests timeline calculation, progress calculation, and formatting functions.
- */
-
 import { describe, expect, it } from 'vitest'
 import {
   calculateDebtMetrics,
@@ -42,13 +35,11 @@ describe('calculateProjectedBalance', () => {
   })
 
   it('should calculate positive projection', () => {
-    // $1000 + $500/month * 5 months = $3500
     const result = calculateProjectedBalance(100000, 50000, 5)
     expect(result).toBe(350000)
   })
 
   it('should calculate negative projection (debt reduction)', () => {
-    // -$1000 - $500/month * 5 months = -$3500
     const result = calculateProjectedBalance(-100000, -50000, 5)
     expect(result).toBe(-350000)
   })
@@ -80,10 +71,6 @@ describe('formatProgress', () => {
     expect(result).toBe('100%')
   })
 })
-
-// ============================================================================
-// Edge Case Tests - Addressing code review findings
-// ============================================================================
 
 describe('Edge Case Handling - calculateProjectedBalance', () => {
   it('should return currentBalance for NaN currentBalance', () => {
@@ -124,25 +111,11 @@ describe('Edge Case Handling - calculateProjectedBalance', () => {
 
 describe('Debt-Specific Calculations', () => {
   describe('calculateDebtMetrics for credit-card', () => {
-    /**
-     * ⚠️ Story 49.1 (FR75). These two tests previously asserted a UTILISATION
-     * percentage computed against `maxContributionLimit`, which this function was
-     * borrowing as a credit limit. That field is gone, so utilisation is gone with
-     * it — a credit-card row now reports its payoff TIMELINE and no progress.
-     *
-     * The tests are NARROWED rather than deleted: the timeline half is the part
-     * that was never about the limit, and dropping it would silently retire the
-     * only coverage of the no-payment branch.
-     */
     it('reports the payoff timeline, and no progress without a recorded limit', () => {
-      const result = calculateDebtMetrics(
-        -100000, // -$1,000 owed
-        50000, // $500/month payment
-        'credit-card'
-      )
+      const result = calculateDebtMetrics(-100000, 50000, 'credit-card')
       expect(result.progress).toBeNull()
       expect(result.progressLabel).toBe('No limit')
-      expect(result.timeline).toBe(2) // 100000/50000 = 2 months
+      expect(result.timeline).toBe(2)
       expect(result.timelineLabel).toBe('2 months to pay off')
     })
 
@@ -156,27 +129,15 @@ describe('Debt-Specific Calculations', () => {
 
   describe('calculateDebtMetrics for mortgage', () => {
     it('should calculate payoff percentage with originalBalance', () => {
-      const result = calculateDebtMetrics(
-        -180000, // -$18,000 owed
-        50000, // $500/month payment
-        'mortgage',
-        200000 // Original balance
-      )
-      // Paid off: 200000 - 180000 = 20000
-      // Progress: 20000/200000 * 100 = 10%
+      const result = calculateDebtMetrics(-180000, 50000, 'mortgage', 200000)
       expect(result.progress).toBe(10)
       expect(result.progressLabel).toBe('10% paid off')
-      expect(result.timeline).toBe(4) // 180000/50000 = 3.6 -> 4 months
+      expect(result.timeline).toBe(4) // 3.6 rounds up to 4
       expect(result.timelineLabel).toBe('4 months to pay off')
     })
 
     it('should handle mortgage without originalBalance', () => {
-      const result = calculateDebtMetrics(
-        -180000,
-        50000,
-        'mortgage'
-        // No originalBalance provided
-      )
+      const result = calculateDebtMetrics(-180000, 50000, 'mortgage')
       expect(result.progress).toBeNull()
       expect(result.timeline).toBe(4)
       expect(result.timelineLabel).toBe('4 months to pay off')

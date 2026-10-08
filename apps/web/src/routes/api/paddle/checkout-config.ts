@@ -1,39 +1,6 @@
 /**
- * Public Paddle Billing checkout config
- *
- * Endpoint: GET /api/paddle/checkout-config
- *
- * Story 5-3, Task 2a. Exposes ONLY the browser-safe subset of
- * `getPaddleConfig()` that Paddle.js checkout needs client-side: the
- * environment, the client-side token, and the three catalog price IDs (monthly
- * added by story 5-20; it may be `null` on a healthy build). The
- * server API key and webhook secret are never read here. No auth is REQUIRED —
- * none of these values are secret (the client token is designed to ship in
- * the browser bundle; the price IDs are visible in any checkout request
- * anyway), matching how `/pricing` itself is a public, unauthenticated route.
- *
- * ⚠️ Story 5-19 (AC-5): the endpoint stays public, but it now READS the session
- * when one is present and REFUSES (403) an already-entitled user, so a second
- * real charge cannot be started from a stale or failed client-side guard. It
- * also fails closed (503) when the session cannot be resolved at all. See the
- * inline rationale in the handler.
- *
- * `assertPaddleProductionConfig()` runs first, mirroring the webhook route
- * (`routes/api/webhooks/paddle.ts`): a production deploy missing a secret/price
- * or with `annual === lifetime` fails this endpoint loudly (500) instead of
- * quietly telling every `/pricing` visitor checkout is unconfigured (AC-3).
- *
- * BEFORE that, a narrower check unique to this endpoint: `PADDLE_ENVIRONMENT`
- * itself must be explicitly set. `packages/config`'s schema defaults it to
- * `sandbox` when unset (kept as-is — other Paddle code paths and their tests
- * rely on that default, and this story scopes the stricter behaviour to the
- * checkout entry point only, not the shared schema). This endpoint is the ONE
- * place that hands the browser both the environment AND a client token —
- * silently defaulting here is exactly the "ran against the wrong Paddle
- * account" failure mode a real-money checkout must never risk. A developer
- * exercising this checkout locally sets `PADDLE_ENVIRONMENT=sandbox` in `.env`
- * (already the value `.env.example` documents) — a deliberate choice, not a
- * default.
+ * Public: none of these values is secret. PADDLE_ENVIRONMENT must be set explicitly here,
+ * so the schema's sandbox default can't point a real checkout at the wrong account.
  */
 
 import { logger } from '@/lib/logger'
@@ -43,30 +10,14 @@ import { assertPaddleProductionConfig, getPaddleConfig } from '@budget-planner/c
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 
-/**
- * This endpoint is deliberately public and unauthenticated (see the module
- * docblock) — a free deployment-health probe otherwise, so its responses must
- * never be cached by an intermediary.
- *
- * A fresh object per call, not a shared module-level constant: `json()`
- * copies these into a `Headers` instance, so aliasing is harmless today, but
- * a single mutable object handed to every response in the process is a latent
- * footgun for the next person who reaches for `NO_STORE.headers[...] = ...`.
- */
+/** Public and unauthenticated, so responses must never be cached by an intermediary. */
 function noStoreHeaders() {
   return { headers: { 'Cache-Control': 'no-store' } }
 }
 
-/**
- * Exported standalone so it is unit-testable without a running server —
- * mirrors `routes/api/webhooks/paddle.ts`'s exported `POST`.
- */
 export const GET = async ({ request }: { request: Request }): Promise<Response> => {
   try {
-    // Treat an explicitly-empty value the same as unset — `PADDLE_ENVIRONMENT=`
-    // (declared, no value) must not skip this endpoint's tailored diagnostic
-    // and fall through to the schema's `z.enum` throwing with only the
-    // generic catch-all message below.
+    // An empty `PADDLE_ENVIRONMENT=` counts as unset.
     if (!process.env['PADDLE_ENVIRONMENT']) {
       return json(
         {
@@ -80,18 +31,8 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
 
     assertPaddleProductionConfig()
 
-    // AC-5: refuse to mint checkout configuration for a session that ALREADY
-    // has paid access. Until now the only thing standing between an entitled
-    // user and a second real charge was a client-side render guard that fails
-    // open on an unverified session seed — a guard against a real-money outcome
-    // living entirely in optional client state.
-    //
-    // ⚠️ FAILS CLOSED when the session cannot be resolved. An unresolvable
-    // session is not "anonymous": we genuinely do not know, and the wrong
-    // direction here charges a paying customer twice. The same outage that
-    // breaks session resolution also stops the webhook recording a purchase, so
-    // there is nothing coherent to sell during one. An anonymous visitor
-    // resolves normally (`data: null`) and is unaffected.
+    // Fails closed on an unresolvable session: treating it as anonymous could charge a
+    // paying customer twice.
     const session = await getCurrentUserSession(request)
     if (!session.success) {
       logger.warn(
@@ -105,9 +46,7 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
         { status: 503, ...noStoreHeaders() }
       )
     }
-    // A session that already holds paid access is refused checkout configuration
-    // (Story 5-19, AC-5). `canceled` has none: that subscription has ended, so
-    // checkout is the correct way to resubscribe.
+    // `canceled` has no paid access, so checkout is how it resubscribes.
     if (session.data && hasPaidAccess(session.data.subscriptionStatus)) {
       logger.info('Paddle checkout-config: refused for an already-entitled session', {
         subscriptionStatus: session.data.subscriptionStatus,
@@ -129,22 +68,8 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
         isConfigured: config.isConfigured,
         environment: config.environment,
         clientToken: config.clientToken ?? null,
-        // Trimmed, mirroring the webhook's price-match trimming — an id
-        // pasted with a trailing newline (a common pasted-secret shape)
-        // would otherwise pass every config check here but get silently
-        // rejected by `Paddle.Checkout.open` client-side.
-        //
-        // ⚠️ In PRODUCTION none of the three can be null — `assertPaddleProductionConfig()`
-        // above has already thrown. A null here means a dev/sandbox build, where
-        // clients degrade by disabling that plan. (Story 5-20 originally allowed a
-        // null monthly id in production; code review reversed that, because
-        // `pricing.md` states the €5.99 price on the legal pricing page.)
-        //
-        // `|| null`, not `?? null`: a declared-but-empty manifest value
-        // (`PADDLE_MONTHLY_PRICE_ID=`, the `.env.example` convention) trims to
-        // `''`, and `??` would serve that empty string while this contract says
-        // the field is `string | null`. Clients survive either on truthiness,
-        // but the route should not emit a third state its own type denies.
+        // Trimmed: an id pasted with a trailing newline would fail `Paddle.Checkout.open`.
+        // `|| null`, not `?? null`, so an empty value becomes null.
         monthlyPriceId: config.monthlyPriceId?.trim() || null,
         annualPriceId: config.annualPriceId?.trim() ?? null,
         lifetimePriceId: config.lifetimePriceId?.trim() ?? null,
@@ -152,16 +77,8 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
       noStoreHeaders()
     )
   } catch (error) {
-    // `assertPaddleProductionConfig()`'s message enumerates exactly which
-    // PADDLE_* vars are unset — useful to an operator, but this route is
-    // unauthenticated and unrate-limited, so it must not become a free
-    // "which secrets are missing" probe. Log the detail; return a generic one.
-    //
-    // Logged at `debug`, not `error`: while this endpoint stays misconfigured,
-    // EVERY `/pricing` pageview hits this branch, and primary alerting on a
-    // broken production deploy should come from 5xx-rate monitoring, not this
-    // route flooding the error log once per visitor (the same log-amplification
-    // concern the 2026-09-10 pass fixed on the webhook's pre-auth path).
+    // The assertion message names unset PADDLE_* vars and this route is public, so log it
+    // at debug (every /pricing view hits this) and return a generic message.
     logger.debug('Paddle checkout-config: production config assertion failed', { error })
     return json(
       { success: false, error: 'Checkout is not available right now.' },

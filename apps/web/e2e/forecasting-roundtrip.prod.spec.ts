@@ -1,39 +1,8 @@
 import { type Page, type Route, expect, test } from '@playwright/test'
 import { PROD_E2E_USER_ID, addProdSessionCookie, signProdSession } from './helpers/prod-session'
 
-/**
- * A saved forecast survives a reload, on the PRODUCTION build (story 83.1, FR136, AC-5).
- *
- * ⚠️ `.prod.spec.ts` is load-bearing: only the `chromium-prod` project runs it,
- * against `pnpm build && node server-entry.mjs` (see `playwright.config.ts`). The
- * defect this story fixes existed ONLY in the production client bundle: the page
- * `import()`ed `server/functions/*`, the browser chunk carried `pg`, and it failed
- * with `ReferenceError: Buffer is not defined`. A dev-server or SSR check cannot
- * see that (the story 62.2 D4 mistake), so this spec must never move to `:5173`.
- *
- * ## ⚠️⚠️ What is REAL here and what is STUBBED
- *
- * REAL: the production client bundle, the production SSR server, and the path a
- * paid user takes when the SSR seed cannot be resolved (`usePremiumAccess` → a
- * browser-side access check). The signed cookie makes the seed resolve to `null`
- * on this database-less server (`helpers/prod-session.ts`).
- *
- * STUBBED with `page.route`: `/api/auth/me`, `/api/profiles` and `/api/forecasts`.
- * There is no database under e2e (CI has no Postgres service, and the only real
- * one is production). So this proves the BROWSER half: the bundle loads, the
- * page speaks to these URLs with these methods and bodies, and renders the
- * answers. The SERVER half is proven below the browser: the PGlite route tests
- * (`routes/api/__tests__/*.route.db.test.ts`) and the in-process chain test that
- * runs this page against the real handlers (`forecasting-transport-chain.db.test.tsx`).
- *
- * ## The RED on `31e74bf`
- *
- * The first assertion after the page settles is that no page or console error
- * contains `Buffer is not defined`. MEASURED on `31e74bf`: a paid user on this
- * path got the upgrade prompt and `Premium access check failed: Buffer is not
- * defined`. The assertion goes first so the RED names the cause, not a missing
- * selector.
- */
+// Runs only on chromium-prod: the `Buffer is not defined` defect existed only in the
+// production client bundle. /api/* is stubbed, so this proves the browser half.
 
 const PROFILE_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const FORECAST_NAME = 'Round trip plan'
@@ -52,7 +21,6 @@ interface StoredForecast {
   profileName: string
 }
 
-/** The server this spec stands in for, holding its state across the reload. */
 function stubServer(page: Page) {
   const forecasts: StoredForecast[] = []
   const posts: Record<string, unknown>[] = []
@@ -94,7 +62,7 @@ function stubServer(page: Page) {
           profileId: String(body['profileId']),
           name: String(body['name']),
           description: null,
-          // The server stores the object as a JSON string (`validateScenarioData`).
+          // The server stores scenarioData as a JSON string.
           scenarioData: JSON.stringify(body['scenarioData']),
           version: 1,
           isDefault: false,
@@ -122,7 +90,6 @@ function stubServer(page: Page) {
   return { install, forecasts, posts, deletes }
 }
 
-/** Enough of the user's own money that the builder computes a result to save. */
 async function seedIncome(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const now = '2026-09-29T00:00:00.000Z'
@@ -170,13 +137,8 @@ test('a paid user saves a forecast, finds it after a reload, and deletes it (83.
   const builderHeading = page.getByRole('heading', { name: 'Scenario Builder' })
   const upgradePrompt = page.getByRole('heading', { name: /go premium/i })
   const saveButton = page.getByRole('button', { name: 'Save Forecast' })
-  // Settle on WHICHEVER the page resolves to (the access check AND, for a paid
-  // user, the profile load behind Save), then check the cause first.
-  //
-  // ⚠️ Waiting for the builder heading alone is too early: it renders before the
-  // profile load finishes, so a failure of THAT load (the path-1 variant of the
-  // defect: the page's own server import) had not been logged yet and the RED
-  // surfaced later as a disabled Save button, a symptom (MEASURED, story 83.1).
+  // The builder heading renders before the profile load behind Save finishes, so
+  // waiting on it alone misses a failure of that load.
   await expect(
     page
       .getByRole('button', { name: 'Save Forecast', disabled: false })
@@ -190,7 +152,6 @@ test('a paid user saves a forecast, finds it after a reload, and deletes it (83.
   ).toEqual([])
   await expect(builderHeading).toBeVisible()
 
-  // Save.
   await page.getByLabel('Scenario Name').fill(FORECAST_NAME)
   await expect(saveButton).toBeEnabled()
   await saveButton.click()
@@ -198,7 +159,6 @@ test('a paid user saves a forecast, finds it after a reload, and deletes it (83.
     `Saved "${FORECAST_NAME}" to My Forecasts.`
   )
 
-  // The request carried the profile the page resolved, and the builder's scenario.
   expect(server.posts).toHaveLength(1)
   expect(server.posts[0]).toMatchObject({ name: FORECAST_NAME, profileId: PROFILE_ID })
   expect(server.posts[0]?.['scenarioData']).toMatchObject({
@@ -206,17 +166,14 @@ test('a paid user saves a forecast, finds it after a reload, and deletes it (83.
     result: expect.any(Object),
   })
 
-  // The success switches to "My Forecasts", which lists it.
   const deleteButton = page.getByRole('button', { name: `Delete ${FORECAST_NAME}` })
   await expect(deleteButton).toBeVisible()
 
-  // Reload: the list comes back from the "server", not from page state.
   await page.reload()
   await expect(builderHeading).toBeVisible({ timeout: 20_000 })
   await page.getByRole('tab', { name: /my forecasts/i }).click()
   await expect(deleteButton).toBeVisible()
 
-  // Delete.
   await deleteButton.click()
   await page.getByRole('alertdialog').getByRole('button', { name: 'Delete' }).click()
   await expect(deleteButton).toHaveCount(0)
@@ -226,18 +183,8 @@ test('a paid user saves a forecast, finds it after a reload, and deletes it (83.
   expect(errors.filter((e) => e.includes('Buffer is not defined'))).toEqual([])
 })
 
-/**
- * The BUILT server really serves these routes (story 83.1 code review).
- *
- * The round trip above stubs every `/api/*` call in the browser, and the chain
- * test calls the handlers directly, so neither would notice a route the
- * production build does not register (a 404, or the SSR HTML shell answering
- * instead). These requests go through Playwright's `request` fixture, which
- * `page.route` does not intercept, to the real :5175 server. With no database
- * behind it, a signed session cannot be resolved (503) and no cookie is signed
- * out (401): both are the handlers' own JSON, which only a registered route can
- * produce.
- */
+// `request` bypasses page.route, so this proves the built server registers these
+// routes: 503/401 handler JSON, not a 404 or the HTML shell.
 test('the production server routes /api/profiles and /api/forecasts to their handlers', async ({
   request,
 }) => {
@@ -246,7 +193,6 @@ test('the production server routes /api/profiles and /api/forecasts to their han
     ['GET', '/api/profiles'],
     ['GET', '/api/forecasts'],
     ['POST', '/api/forecasts'],
-    // Story 97.1 (FR157): saving over a loaded forecast.
     ['PUT', '/api/forecasts?id=1'],
     ['DELETE', '/api/forecasts?id=1'],
   ] as const

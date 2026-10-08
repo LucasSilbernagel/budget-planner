@@ -1,71 +1,15 @@
-/**
- * Synchronization Service Types
- *
- * This file defines the core types used by the synchronization service for
- * multi-device data synchronization in the paid tier.
- */
-
 import { z } from 'zod'
 import { MAX_MONEY_CENTS } from '../finance/money-limits'
 import { INCOME_BASES, RETIREMENT_MODELS } from '../finance/retirement'
 import { FINANCE_TYPES } from '../services/balanceTracking'
 
-// ============================================================================
-// Entity Validation Schemas
-// ============================================================================
-
-/**
- * PostgreSQL 32-bit `integer` bounds. Monetary fields are stored as `integer`
- * (cents), so client-side validation must reject values the DB cannot store to
- * avoid "integer out of range" failures that would otherwise only surface at
- * persistence time and be retried forever.
- *
- * ⚠️ `PG_INT32_MAX` is EXPORTED (story 66.4). It is not exported for convenience:
- * `nextSortOrder` (`apps/web/src/lib/ordering.ts`) has to clamp the position it
- * computes to the SAME bound `syncOperationDataSchema.sortOrder` rejects on
- * (`.max(PG_INT32_MAX)` below), and a producer whose bound is a separate copy of
- * the literal is a bound that can silently drift away from its gate. This repo
- * has already paid for that once, immediately below: the hand-mirrored currency
- * enum drifted to 11 of 21 values and became a permanent sync lockout. Import
- * this constant rather than re-declaring the number.
- *
- * ⚠️ SCOPE, stated precisely: this unifies the producer with the CLIENT gate
- * below. The SERVER ingest gate still carries its own literals
- * (`apps/web/src/server/api/sync.ts:125,136,190,209` for `sortOrder`, `:187` for
- * `monthlyAllocation`), so client/server drift remains possible. Narrowing that
- * gap would mean the server importing from core, which is a separate change.
- *
- * ⚠️ `PG_INT32_MIN` stays module-private — nothing outside this file needs it,
- * and an unused export is a maintenance claim with no caller.
- */
+// Money is stored as int32 cents; refuse what the DB can't store before it queues and retries forever.
+// Import PG_INT32_MAX rather than re-declaring the literal, so producers can't drift from the gate.
 export const PG_INT32_MAX = 2_147_483_647
 const PG_INT32_MIN = -2_147_483_648
 
-/**
- * Every value the `currency` PostgreSQL enum can hold.
- *
- * ⚠️⚠️ THIS MUST MIRROR `currencyEnum` IN `packages/db/src/schema.ts` EXACTLY, and
- * a missing value is not a cosmetic gap — it is a lockout. Code review of story
- * 66.2 found this list stopped at `NZD` (11 of 21) while the column had carried
- * all 21 since migration `0001`. The write path is live and server-side:
- * `routes/api/webhooks/paddle.ts`'s `mapProvidedCurrency` validates a checkout's
- * currency against the FULL `currencyEnum.enumValues`, stores it on
- * `users.currency`, and `server/functions/profiles.ts`'s
- * `createDefaultProfileForUser` copies it onto the user's default profile.
- *
- * So once 66.2 made this schema a PULL gate, a user billed in any of the ten
- * missing currencies had their DEFAULT PROFILE refused on arrival — and because
- * `applyServerChangesToStores` then never sets `appliedProfile`,
- * `reconcileActiveProfile` never runs, `ActiveSync` never registers the push
- * bridge, and the free→paid seed never fires. A permanent client-side sync
- * deadlock, reported only through a `console.warn`.
- *
- * Core cannot import `@budget-planner/db` at runtime (it is a devDependency, and
- * the dependency direction is db → core, never the reverse), so this list is
- * duplicated deliberately and pinned by a parity test in
- * `__tests__/entity-schemas.test.ts` that imports the real enum. Do not edit one
- * without the other; the test is what stops the drift recurring.
- */
+// Must mirror `currencyEnum` in the db schema exactly: a missing value locks that user out of sync.
+// Duplicated because core can't depend on db; a parity test pins it.
 export const SYNC_CURRENCIES = [
   'NONE',
   'USD',
@@ -90,69 +34,8 @@ export const SYNC_CURRENCIES = [
   'TRY',
 ] as const
 
-/**
- * Zod schemas for validating entity data payloads
- * These ensure data structure matches expected format for each entity type
- *
- * ## ⚠️⚠️ What these schemas are FOR (story 66.2, FR103) — read before editing one
- *
- * Until 66.2 these were declared-for-parity and imported by NOTHING. They are now
- * the **PULL-path gate**: `validateServerRow` (below) checks every non-tombstone
- * server row against the matching schema inside `SynchronizationService.pull()`,
- * before the row can win last-writer-wins (story 75.4 moved it there from
- * `apps/web/src/lib/sync/applyServerChanges.ts`, where a refusal came too late to
- * save the user's queued edit). That makes them the only gate in the whole sync
- * contract that runs on the server→client direction — the other five all sit on
- * push or at rest.
- *
- * Two consequences that are easy to get wrong:
- *
- *  1. **They model a COMPLETE row, not an operation payload.** That is exactly
- *     why they, and not `syncOperationDataSchema`, are the pull gate: every field
- *     in that schema is `.optional()`, so it accepts `{}` and can never catch a
- *     row missing its required fields.
- *  2. **They must accept every SHAPE the column allows** — every legal null, and
- *     every enum value. A pulled row is the whole drizzle row, so it carries all
- *     of them. Four of these schemas disagreed with their columns and would have
- *     false-rejected the user's own data (`savingsGoalSchema.targetAmount`,
- *     `userProfileSchema.description`, and `currency` twice over — nullability
- *     AND a list that held 11 of the column's 21 values). ⚠️ A false rejection
- *     here is worse than the corruption the gate exists to stop: it silently
- *     refuses good rows. Before tightening any field, check the column.
- *
- *     ⚠️ VALUE RANGE is the one deliberate exception, and it is narrow.
- *     `targetAmount` carries `.positive()`, which the column alone does not
- *     require — it mirrors the server ingest gate (`server/api/sync.ts`) AND, since
- *     story 66.5 / migration 0020, a real database constraint
- *     (`savingsGoals_targetAmount_positive`). ⚠️ That was NOT true when this note
- *     was written: none of the eight declarations had ever been emitted to a
- *     migration (0 of 8), so the bound was safe only because of the write path.
- *     Both reasons now hold. Still do not add a bound that no write path enforces:
- *     a bound the database rejects but nothing upstream catches becomes a stuck
- *     sync queue, not a clean error (see `synchronization.ts`'s D1 note).
- *
- *
- * ## ⚠️⚠️ The REQUIRED/NULLABLE rule — added by code review of 66.2
- *
- * A field here is **required iff its column is NOT NULL**, and `.nullable()` iff
- * the column is nullable. `.default(x)` is BANNED on these schemas.
- *
- * Why: `.default(x)` makes a key OPTIONAL on input. The review measured
- * `balanceTrackingSchema.safeParse({userId, type, name})` → **success**, parsed
- * as `currentBalance: 0` — so a server row that simply OMITTED `currentBalance`
- * passed the guard, entered the store with the key absent, and
- * `stores/balanceStore.ts`'s `sum + entry.currentBalance` produced **NaN**. That
- * is the same failure class this gate exists to stop, walking through the door
- * next to the one it closed. A default is a sensible thing for a PUSH payload,
- * where the client legitimately sends a partial row; it is never right for a
- * pulled row, which came from `db.select()` and therefore carries every column.
- *
- * ⚠️ `validateServerRow` returns a VERDICT ONLY, and `pull()` passes the ORIGINAL
- * change on; nothing ever writes the parse output — `z.object` STRIPS undeclared keys, and these schemas
- * do not declare `profileId`, `sortOrder`, `categoryId`, `isDeleted`,
- * `createdAt` or `updatedAt`. Writing the output would delete them from every
- * synced row. Pinned by `__tests__/entity-schemas.test.ts`.
- */
+// Pull-path gates for whole rows: required iff the column is NOT NULL, `.nullable()` iff nullable,
+// never `.default()`. A false rejection here silently refuses the user's own data.
 export const incomeSourceSchema = z.object({
   name: z.string().min(1).max(255),
   amount: z.number().int(),
@@ -164,30 +47,10 @@ export const expenseSchema = z.object({
   name: z.string().min(1).max(255),
   amount: z.number().int(),
   frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']),
-  // Story 65.2 (FR101): the user's statement that this expense ends before they
-  // retire. Defaults false = today's behaviour. ⚠️ SIX-GATED: mirrored in
-  // `syncOperationDataSchema` below (the gate that runs on the way OUT; this one
-  // now runs on the way IN — see the block comment above), in the server gate
-  // (apps/web/src/server/api/sync.ts), in the syncBridge payload whitelist, in
-  // the db column and its migration, and in the client types — or the field
-  // silently does not round-trip.
-  // ⚠️ REQUIRED, not `.default(false)` — the column is NOT NULL (see the
-  // REQUIRED/NULLABLE rule above); a pulled row always carries it.
   endsBeforeRetirement: z.boolean(),
   userId: z.string().uuid(),
 })
 
-/**
- * Story 30.4a: user-defined category (FR54).
- *
- * ⚠️ Like its siblings above, this schema runs on the PULL path (story 66.2) —
- * it is no longer unexercised. The gate that runs at QUEUE time, on the way out,
- * is still `syncOperationDataSchema` below (see `validateOperationData` in
- * synchronization.ts). The two are mirrors in different directions, and the drift
- * between them is exactly how the documented asymmetries in savingsGoalSchema
- * arose. If you change one, consider both — but a difference that exists because
- * one gate sees a whole ROW and the other a partial PAYLOAD is correct, not drift.
- */
 export const categorySchema = z.object({
   name: z.string().min(1).max(255),
   kind: z.enum(['income', 'expense']),
@@ -196,39 +59,13 @@ export const categorySchema = z.object({
 
 export const savingsGoalSchema = z.object({
   name: z.string().min(1).max(255),
-  // ⚠️ NULLABLE, and that is load-bearing (story 66.2). The column is
-  // `integer('targetAmount')` with no NOT NULL: "null ⇒ savings account (no
-  // target); a positive int ⇒ goal" (story 16-1). This schema required a number
-  // until 66.2 gave it its first consumer — the PULL-path guard, then in
-  // `apps/web/src/lib/sync/applyServerChanges.ts` and since story 75.4 in core's
-  // `pull()` (`validateServerRow`) — at which point it would have
-  // rejected EVERY savings account the user owns. The bug was invisible for as
-  // long as nothing imported this file. `.positive()` mirrors the server ingest
-  // gate; `.max()` mirrors syncOperationDataSchema and the int32 column.
+  // Nullable: null means a savings account with no target.
   targetAmount: z.number().int().positive().max(MAX_MONEY_CENTS).nullable(),
-  // ⚠️ REQUIRED and BOUNDED — `.default(0)` here let a row omit its balance
-  // entirely and NaN `getTotalSavings()`. NOT NULL column.
-  //
-  // ⚠️ `.min(0)`, NOT `PG_INT32_MIN` (story 66.5). This now mirrors a REAL database
-  // constraint — `savingsGoals_currentBalance_non_negative`, added by migration
-  // `0020` — so a pulled row carrying a negative balance is a row the server
-  // cannot be storing. Refusing it here is safe in a way that refusing on the
-  // PUSH path is not: `pull()` refuses and reports the row (keeping any queued
-  // local edit, story 75.4), while
-  // a push-side rejection is kept queued forever and eventually stops all sync.
-  // ⚠️ Deliberately NOT mirrored onto `balanceTrackingSchema` below. That table
-  // has no such constraint, and must not gain one: story 103.1 (FR171) refuses a
-  // negative balance ONLY at the client store write, because any refusal past
-  // the queue (DB, push gate, pull gate) deadlocks sync or drops the user's row.
-  // A legacy negative debt that is pulled is read as owed (`debtOwedCents`).
+  // `.min(0)` mirrors a DB constraint. Deliberately not mirrored onto balanceTracking, where any
+  // refusal past the client store would deadlock sync or drop the row.
   currentBalance: z.number().int().min(0).max(MAX_MONEY_CENTS),
-  // Story 26.1: per-account allocation. `monthlyAllocation` is nullable cents
-  // (0..int32). `allocationMode` is `.optional()` here (the client emits it via
-  // syncBridge); the server gate uses `.default('automatic')` on ingest — an
-  // intentional asymmetry, not an exact mirror. Bound matches syncOperationDataSchema.
+  // `allocationMode` is optional here; the server gate defaults it on ingest.
   monthlyAllocation: z.number().int().min(0).max(MAX_MONEY_CENTS).nullable().optional(),
-  // ⚠️ REQUIRED — NOT NULL column (`default 'automatic'` is the DB's default
-  // for an INSERT, not permission for a pulled row to omit the key).
   allocationMode: z.enum(['manual', 'automatic']),
   userId: z.string().uuid(),
 })
@@ -236,106 +73,40 @@ export const savingsGoalSchema = z.object({
 export const balanceTrackingSchema = z.object({
   type: z.enum(FINANCE_TYPES),
   name: z.string().min(1).max(255),
-  // ⚠️ REQUIRED and BOUNDED. `.default(0)` here was the measured hole: a row
-  // omitting `currentBalance` passed the guard and NaN'd the net-worth figure via
-  // `stores/balanceStore.ts`. NOT NULL column; may be negative (debt balances).
+  // May be negative (debt balances).
   currentBalance: z.number().int().min(PG_INT32_MIN).max(MAX_MONEY_CENTS),
-  // ⚠️ REQUIRED — NOT NULL column, and non-negative by a CHECK that is REAL since
-  // story 66.5 / migration 0020 (`balanceTracking_monthlyContribution_non_negative`).
-  // It was inert when this bound was written; the bound is now a mirror rather
-  // than the sole enforcement, and must not be loosened on that account.
   monthlyContribution: z.number().int().min(0).max(MAX_MONEY_CENTS),
-  // Story 16-2: cadence of the contribution. ⚠️ REQUIRED — the column is NOT NULL
-  // with a DB-side default of 'monthly', which is not permission for a pulled row
-  // to omit the key. Mirrors the server gate in apps/web/src/server/api/sync.ts.
   frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']),
-  // Story 45.1 (FR72): the user's statement that this contribution is already
-  // recorded as an expense, so the savings distributable pool must not subtract it
-  // twice. Defaults false = today's arithmetic. ⚠️ TRIPLE-GATED: this must be
-  // mirrored in the server gate (apps/web/src/server/api/sync.ts) and the
-  // syncBridge payload whitelist, or the field silently does not round-trip.
-  // ⚠️ REQUIRED — NOT NULL column (see the REQUIRED/NULLABLE rule above).
+  // The contribution is already recorded as an expense, so the savings pool must not subtract it twice.
   contributionRecordedAsExpense: z.boolean(),
-  // Story 102.1 (FR169), D1: `paymentExpenseId` is DELIBERATELY NOT DECLARED here,
-  // following `categoryId`. This schema is a VERDICT ONLY (`validateServerRow`):
-  // `pull()` keeps the original row, so the undeclared key still reaches the store.
-  // Declaring it could only add a false rejection (trap 4) and buys nothing: every
-  // reader resolves the link through `resolveDebtPaymentExpense`, which treats any
-  // bad value as "not linked".
+  // `paymentExpenseId` is deliberately undeclared: this gate is verdict-only, so the key still reaches
+  // the store, and declaring it could only add false rejections.
   userId: z.string().uuid(),
 })
 
 export const userProfileSchema = z.object({
   name: z.string().min(1).max(255),
-  // ⚠️ `.nullable()` AS WELL AS `.optional()` (story 66.2), and the distinction is
-  // the whole point: `.optional()` accepts an ABSENT KEY, never an explicit
-  // `null`. The column is `text('description')` — nullable — so a PULLED row
-  // carries `description: null` for every profile the user never described,
-  // which is most of them. This schema rejected all of them.
-  //
-  // ⚠️ Why the server gate (apps/web/src/server/api/sync.ts) is NOT changed to
-  // match: it only ever sees a PUSH payload, and `toServerPayload` OMITS the key
-  // when the value is null (`syncBridge.ts`, `if (entity['description'] != null)`),
-  // so a null never reaches it. Widening it would newly accept a "clear my
-  // description" operation the product does not have. The two gates sit on
-  // OPPOSITE paths and legitimately see different value sets — a deliberate
-  // asymmetry of the same kind `allocationMode` already documents, not drift to
-  // be tidied away.
+  // `.optional()` alone rejects the explicit null a pulled row carries. The push gate never sees
+  // null (the bridge omits it), so it legitimately differs.
   description: z.string().max(500).nullable().optional(),
-  // ⚠️ REQUIRED — NOT NULL column (see the REQUIRED/NULLABLE rule above).
   isDefault: z.boolean(),
-  // ⚠️ `.nullable()` for the same reason (story 66.2): `currencyEnum('currency')`
-  // carries `.default('NONE')` but NO `.notNull()`, so a stored null is legal and
-  // a pull delivers it.
-  //
-  // ⚠️⚠️ `.nullable()` and `.default('NONE')` are NOT interchangeable here, and
-  // the story originally recorded that they were — corrected by its code review.
-  // MEASURED on zod 3.25.76: `.default('NONE').safeParse(null)` → **false**;
-  // `.safeParse(undefined)` → true; `.nullable().safeParse(null)` → true.
-  // `.default()` substitutes for `undefined` ONLY, so swapping it in here would
-  // reject every null-currency profile and reinstate the exact false rejection
-  // this line was written to fix. The choice is forced, not stylistic.
+  // Nullable column; `.default()` would not do, since it substitutes for undefined only.
   currency: z.enum(SYNC_CURRENCIES).nullable(),
-  // Story 54.2 (FR78): the user-chosen avatar emoji. Nullable because the column
-  // is nullable and `null` ("never chosen", render the hash fallback) must
-  // round-trip through a pull without a ZodError. Bounded to the varchar(16) the
-  // column declares. ⚠️ TRIPLE-GATED: mirrored in syncOperationDataSchema below,
-  // in the server gate (apps/web/src/server/api/sync.ts) and in the syncBridge
-  // payload whitelist, or the field silently does not round-trip.
   icon: z.string().max(16).nullable().optional(),
   userId: z.string().uuid(),
 })
 
-/**
- * The longest raw input string a synced retirement plan may carry (story 99.2).
- *
- * Every plan string is a value as TYPED on `/retirement` (an age, a rate, a
- * formatted income) or a BCP 47 locale tag, so real values are a few characters
- * long. The bound only stops a pathological payload. A plan over it is refused
- * CLIENT-SIDE (a ZodError before `queue.add`, nothing queued), which is the one
- * refusal in this product that cannot deadlock sync (schema-as-gate trap 5).
- */
+/** Real values are a few characters; the bound only stops a pathological payload. */
 export const RETIREMENT_PLAN_STRING_MAX = 255
 
-/**
- * A NUL, or a UTF-16 surrogate without its pair: the two string contents the
- * plan's jsonb column REFUSES (99.2 code review). MEASURED on PGlite: a NUL raises
- * 22P05 ("unsupported Unicode escape sequence") and a lone surrogate 22P02
- * ("invalid input syntax for type json"). Neither SQLSTATE is permanent in
- * `server/api/sync-rejection.ts`, so an op carrying one stayed QUEUED and replayed
- * until the circuit breaker stopped all sync for the account (schema-as-gate
- * trap 5). Refused here instead: client-side that is a ZodError before
- * `queue.add` (nothing queued); server-side the same schema answers 400
- * `invalid-request`, which drops the op.
- */
+// Strings jsonb refuses (NUL, lone surrogate) fail with a non-permanent SQLSTATE and would
+// replay forever, so refuse them before they queue.
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/
 
-/** Whether jsonb can store this string: no NUL and no lone surrogate (see above). */
 function isJsonbStorableString(value: string): boolean {
   return !value.includes('\u0000') && !LONE_SURROGATE.test(value)
 }
 
-/** One plan string: bounded, and storable in jsonb (see above). */
 const retirementPlanString = z
   .string()
   .max(RETIREMENT_PLAN_STRING_MAX)
@@ -343,39 +114,18 @@ const retirementPlanString = z
     message: 'contains a character the server cannot store',
   })
 
-/**
- * The largest `adoptedMonthlyCents` whose ×12 is still a safe integer: the bound
- * `coerceAdoptedCents` (`apps/web/src/lib/retirement-plan.ts`) applies, as a
- * number (story 99.2). Pinned against that coercion by a test.
- */
+/** The largest value whose ×12 is still a safe integer. */
 export const RETIREMENT_ADOPTED_CENTS_MAX = Math.floor(Number.MAX_SAFE_INTEGER / 12)
 
-/**
- * The PUSH gate for a synced retirement plan (story 99.2, FR161): all eleven
- * `RetirementPlan` fields (`apps/web/src/lib/retirement-plan.ts`), every one
- * REQUIRED.
- *
- * ⚠️⚠️ No `.default()` and no `.optional()` inside the plan. The client always
- * sends the WHOLE plan (`toServerPayload`), and the server writes the whole
- * object into one jsonb column, so a missing key would be a field silently
- * dropped from every other device.
- *
- * ⚠️⚠️ This object STRIPS undeclared keys (it is nested inside
- * `syncOperationDataSchema`, and both are plain `z.object`s). A field added to
- * `RetirementPlan` and not here would be removed from the payload before it is
- * queued, with no error. That is why a test pins this schema's keys to
- * `Object.keys(RETIREMENT_PLAN_DEFAULTS)` (story 99.2 AC-5a).
- *
- * The server imports THIS schema (`server/api/sync.ts`); there is no second copy.
- */
+// Every field required: the whole plan is written to one jsonb column. This nested object strips
+// undeclared keys, so a test pins its keys to the plan defaults.
 export const retirementPlanSyncSchema = z.object({
   currentAgeInput: retirementPlanString,
   lifeExpectancyInput: retirementPlanString,
   desiredIncomeInput: retirementPlanString,
   desiredIncomeTouched: z.boolean(),
   desiredIncomeLocale: retirementPlanString,
-  // `.nullable()` because `null` is "never adopted", a reachable value that must
-  // land as `null` on every device (AC-2c).
+  // `null` means never adopted.
   adoptedMonthlyCents: z.number().int().min(0).max(RETIREMENT_ADOPTED_CENTS_MAX).nullable(),
   incomeBasis: z.enum(INCOME_BASES),
   annualReturnInput: retirementPlanString,
@@ -384,258 +134,83 @@ export const retirementPlanSyncSchema = z.object({
   model: z.enum(RETIREMENT_MODELS),
 })
 
-/**
- * The PULL gate for a `retirementPlans` row (story 99.2). DELIBERATELY LENIENT,
- * and the asymmetry with {@link retirementPlanSyncSchema} is the point.
- *
- * Only the envelope is checked: `plan` must be an object and `userId` a uuid.
- * The plan's FIELDS are not, because the web applier rebuilds every one of them
- * through `coerceRetirementPlan` (each field falls back to its default). A strict
- * pull gate would refuse a WHOLE plan from a newer client for one field this
- * client does not know, or one value it would have coerced anyway: a false
- * rejection of the user's own data (schema-as-gate trap 4). A `plan` that is not
- * an object (null, an array, a string) is refused: there is nothing to coerce,
- * and the local plan is kept (AC-6g).
- *
- * `plan` is required (the column is NOT NULL); `.default()` is banned here, as on
- * every read gate (trap 1).
- */
+// Deliberately lenient: the web applier coerces every field, so a strict gate would refuse a
+// newer client's whole plan over one unknown field.
 const retirementPlanRowSchema = z.object({
   plan: z.record(z.unknown()),
   userId: z.string().uuid(),
 })
 
-/**
- * Schema for sync operation data validation
- * Validates data structure based on entityType
- *
- * Numeric bounds mirror the `check()` declarations in packages/db/schema.ts so
- * invalid amounts are rejected client-side instead of failing the INSERT/UPDATE.
- *
- * ⚠️ This claim has been wrong in BOTH directions and the current state is worth
- * stating precisely. It said "mirror the DATABASE CHECK constraints" until story
- * 49.1 corrected it to "the ONLY enforcement", because drizzle-kit 0.23 emits no
- * CHECK DDL and none of the declarations had ever reached a real database. Story
- * 66.5 / migration 0020 put all eight there by hand, so these bounds are once
- * again a mirror — a FIRST line of defence in front of a real constraint.
- *
- * ⚠️⚠️ THAT MAKES THEM MORE LOAD-BEARING, NOT LESS. Do not weaken them on the
- * assumption the database will catch it. A database rejection on the push path is
- * not a clean refusal in this product: the server returns a 200 envelope with no
- * status code, the client cannot prove the rejection is permanent, and
- * `synchronization.ts` keeps the operation QUEUED — it replays until the circuit
- * breaker opens and all sync for that account stops. These bounds are what stops
- * a bad row ever being enqueued.
- * - amount: must be > 0
- * - targetAmount: > 0 for a goal, or null for a goal-less savings account (Story 16-1)
- * - monthlyContribution: must be >= 0
- * - contributionRecordedAsExpense: boolean (Story 45.1); absent leaves it unchanged
- * - endsBeforeRetirement: boolean (Story 65.2); absent leaves it unchanged
- * - paymentExpenseId: uuid or null (Story 102.1); absent leaves it unchanged
- * - currentBalance: must fit in int32. The SIGN is deliberately not checked here
- *   (story 103.1): the client validator refuses a negative balance before
- *   queueing, and a refusal at this gate would fail the whole batch forever.
- */
+// Strips undeclared keys before queueing, so a field missing here silently never syncs. Keep bounds
+// strict: a DB rejection on push replays until the circuit breaker stops all sync.
 export const syncOperationDataSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   amount: z.number().int().positive().max(MAX_MONEY_CENTS).optional(),
   frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']).optional(),
-  // null ⇒ savings account (no target); a positive int ⇒ goal. Must allow null
-  // or a paid-tier account create/update ZodError-fails at the sync-queue gate.
+  // Must allow null (a savings account without a target).
   targetAmount: z.number().int().positive().max(MAX_MONEY_CENTS).nullable().optional(),
   currentBalance: z.number().int().min(PG_INT32_MIN).max(MAX_MONEY_CENTS).optional(),
   type: z.enum(FINANCE_TYPES).optional(),
   monthlyContribution: z.number().int().min(0).max(MAX_MONEY_CENTS).optional(),
-  // Story 45.1 (FR72): see balanceTrackingSchema above. Optional here because an
-  // operation payload is partial; absent leaves the server value untouched.
   contributionRecordedAsExpense: z.boolean().optional(),
-  // Story 102.1 (FR169): the expense that pays a debt row.
-  //
-  // ⚠️ THIS GATE STRIPS UNDECLARED KEYS and runs BEFORE `queue.add()`: without
-  // this line the link never leaves the device, with no error and a "successful"
-  // sync (the trap `endsBeforeRetirement` documents below).
-  // ⚠️ `.nullable()` as well as `.optional()`, for the reason `categoryId` records
-  // below: unlinking sends an explicit `null` (the bridge always emits the key,
-  // because `updateEntity` does a partial `.set()`), and `.optional()` alone
-  // rejects `null`. Never required: this schema is shared by every entity.
-  // ⚠️ A uuid that matches no expense is VALID here and everywhere else (no FK):
-  // a dangling link is a normal state, never a reason to refuse an operation.
+  // Nullable: unlinking sends an explicit null. A uuid matching no expense is valid (no FK).
   paymentExpenseId: z.string().uuid().nullable().optional(),
-  // Story 65.2 (FR101): the expense row's "this ends before I retire" flag.
-  //
-  // ⚠️⚠️ THIS GATE STRIPS UNDECLARED KEYS, and it is the one the story's epic
-  // left out of its five-gate list. `validateOperationData` runs it
-  // (synchronization.ts:116-117) BEFORE `queue.add()`, so omitting this line
-  // drops the flag from the payload before the operation is ever queued — with
-  // no error, no rejection, and a "successful" sync that silently discards the
-  // user's tick. Same trap `sortOrder` and `icon` each document below, hit for
-  // the third time. `.optional()` because an operation payload is partial; the
-  // bridge stamps an explicit `false` so an untick always lands.
   endsBeforeRetirement: z.boolean().optional(),
-  // Story 26.1: savings monthly allocation (nullable cents, >= 0) + mode. Bounds
-  // mirror the DB (allocationMode NOT NULL default 'automatic'; monthlyAllocation
-  // nullable). Absent from a payload is fine — both are optional here.
   monthlyAllocation: z.number().int().min(0).max(MAX_MONEY_CENTS).nullable().optional(),
   allocationMode: z.enum(['manual', 'automatic']).optional(),
   description: z.string().max(500).optional(),
   isDefault: z.boolean().optional(),
-  // Story 30.4a (FR54): the category entity's own `kind`, and the nullable
-  // `categoryId` reference carried by incomeSource/expense rows.
-  //
-  // ⚠️ `categoryId` MUST be `.nullable()`, not merely `.optional()`. Clearing a
-  // category sends an explicit `null` (an omitted key would leave the previous
-  // server value in place — updateEntity does a PARTIAL `.set()`), so a
-  // nullable-less schema would reject every un-categorize operation at the queue
-  // gate with a ZodError. This is the same trap savingsGoal.targetAmount hit in
-  // Story 16-1; see its note above.
+  // Nullable: clearing a category sends an explicit null, since updates are partial `.set()`s.
   kind: z.enum(['income', 'expense']).optional(),
   categoryId: z.string().uuid().nullable().optional(),
-  // Story 34.1a (FR60): explicit display position for the four financial lists.
-  //
-  // ⚠️ This gate STRIPS undeclared keys (see the note below), so omitting this line
-  // would drop `sortOrder` from the payload before the operation is ever queued —
-  // with no error, no rejection, and a "successful" sync that silently discards the
-  // user's ordering. Bounded to the int32 column range for the same
-  // defense-in-depth reason as monthlyAllocation.
-  //
-  // `.optional()` because entity types that have no ordering (userProfile,
-  // category) share this one schema; `.min(0)` because positions are dense and
-  // zero-based, and the backfill plus `max + 1` can never produce a negative.
   sortOrder: z.number().int().min(0).max(PG_INT32_MAX).optional(),
-  // ⚠️ Same list, same reason as the pull gate above: an 11-value list here
-  // rejects an EDIT to a profile whose currency the webhook legitimately stored.
-  // Pre-existing (this gate predates 66.2); fixed alongside it so the two cannot
-  // drift back apart.
   currency: z.enum(SYNC_CURRENCIES).optional(),
-  // Story 54.2 (FR78): the userProfile entity's chosen avatar emoji.
-  //
-  // ⚠️ This gate STRIPS undeclared keys, so omitting this line would drop `icon`
-  // from the payload before the operation is ever queued — with no error, no
-  // rejection, and a "successful" sync that silently discards the user's choice.
-  // Same trap `sortOrder` documents above.
-  //
-  // `.nullable()` as well as `.optional()`, for the reason `categoryId` records
-  // above: a `null` is a legitimate value ("never chosen") that must survive a
-  // pull, and an optional-only schema would reject it at the queue gate.
   icon: z.string().max(16).nullable().optional(),
-  // Story 99.2 (FR161): the `retirementPlan` entity's whole plan. ⚠️ A NESTED
-  // `z.object` strips undeclared nested keys, so the plan's own schema is pinned
-  // key-for-key to `RETIREMENT_PLAN_DEFAULTS` by a test. `.optional()` because the
-  // other entity types do not carry it; the per-entity refinement in
-  // `synchronization.ts` makes it REQUIRED for a plan op.
+  // Required for a plan op by the per-entity refinement.
   plan: retirementPlanSyncSchema.optional(),
   userId: z.string().uuid().optional(),
 })
 
-/**
- * Supported entity types that can be synchronized
- */
 export type SyncEntityType =
   | 'incomeSource'
   | 'expense'
   | 'savingsGoal'
   | 'balanceTracking'
   | 'userProfile'
-  // Story 30.4a: user-defined income/expense categories (FR54).
-  //
-  // ⚠️ Extending this union type-enforces exactly TWO downstream gates —
-  // `ENTITY_BINDINGS` in apps/web/src/lib/sync/applyServerChanges.ts and
-  // `SERVER_ROW_SCHEMAS` below (story 75.4), both declared
-  // `Record<SyncEntityType, …>`. Every other gate must be updated by hand and
-  // fails SILENTLY if missed:
-  //   - toServerPayload's switch (syncBridge.ts) — now has a `never`-exhaustive
-  //     default so it, too, is a compile error rather than a silent misroute
-  //   - syncOperationDataSchema below — zod STRIPS undeclared keys
-  //   - syncOperationSchema.entityType (server/api/sync.ts) — a hard-coded enum;
-  //     an unknown value fails the whole batch, not just its own operation
-  //   - getSyncChanges (server/api/sync.ts) — seven hard-coded per-entity blocks
-  // A green `tsc` is NOT evidence the contract is complete.
+  // Only compile-checked against SERVER_ROW_SCHEMAS and the web ENTITY_BINDINGS; every other
+  // sync gate must be updated by hand and fails silently if missed.
   | 'category'
-  // Story 99.2 (FR161): the account's ONE retirement plan (entityId = the user's
-  // id). A new ENTITY touches seventeen gates, not the two above: the inventory
-  // (G1-G17) and where each is pinned is story 99.2's "Gate inventory". Compile-
-  // forced: SERVER_ROW_SCHEMAS, ENTITY_BINDINGS (applyServerChanges.ts), KIND
-  // (refusedEdits.ts), toServerPayload's `never`, and the server `schemaFor` once
-  // the server enum has the value. Everything else fails SILENTLY; each is pinned
-  // by a test (`sync-retirement-plan.db.test.ts`, `sync-category-gates.test.ts`).
   | 'retirementPlan'
 
-/**
- * Supported operation types for synchronization
- */
 export type SyncOperationType = 'create' | 'update' | 'delete'
 
-/**
- * Represents a single synchronization operation
- * Contains all metadata needed to sync data between devices
- */
 export interface SyncOperation {
-  /** Unique identifier for the operation */
   id: string
 
-  /** Type of operation: create, update, or delete */
   type: SyncOperationType
 
-  /** Type of entity being synchronized */
   entityType: SyncEntityType
 
-  /** ID of the entity being synchronized */
   entityId: string
 
-  /** The actual data payload for the operation */
   data: Record<string, unknown>
 
-  /** Timestamp when the operation was created (Unix timestamp in milliseconds) */
   timestamp: number
 
-  /** Unique identifier for the device where the operation originated */
   deviceId: string
 
-  /** User ID who owns the data */
   userId: string
 
-  /** Profile ID for data isolation (UUID) - required for profile-scoped entities */
   profileId?: string
 
-  /** Optional version number for optimistic concurrency control */
   version?: number
 
-  /**
-   * The server-authoritative `updatedAt` (Unix ms epoch) of the entity row this
-   * operation was derived from, if known (Story 4-18 review D1). Lets pull
-   * reconciliation decide the winner by CAUSAL version instead of wall-clock
-   * `timestamp`, which is unreliable across devices with skewed clocks: a pulled
-   * server change is "already incorporated" by this op iff `change.updatedAt <=
-   * baseVersion`. When absent (e.g. a brand-new create, or an edit on an entity
-   * never pulled), reconciliation falls back to the `timestamp` comparison, so
-   * this is a strict, regression-free improvement. Populated by the host layer
-   * when it queues an edit against a known server row.
-   */
+  // Server `updatedAt` this op was based on, so pull LWW compares causally instead of trusting
+  // skewed wall clocks. Absent falls back to `timestamp`.
   baseVersion?: number
 
-  /**
-   * The op this one only makes sense after (story 76.2, decision D1 = A). When
-   * pull last-writer-wins drops a queued op that matches this reference, this op
-   * is dropped in the same pass.
-   *
-   * The link is ONE-WAY, and that is the point. `profileStore.removeProfile`
-   * queues `delete X` then a promotion of the survivor, and only the promotion
-   * names the delete: a promotion without its deletion would move the default
-   * because of a deletion that did not happen, but a deletion without its
-   * promotion is the ordinary "a default was chosen for you" repair. So a lost
-   * promotion leaves the delete queued.
-   *
-   * It is honoured on BOTH paths (code review 76.2, decision (a)). On push the
-   * dependent is HELD, unsent, while the op it names is still queued and has not
-   * landed: sent alone, a promotion made the server demote the profile being
-   * deleted, which bumped its `updatedAt`, so the next pull dropped the deletion
-   * as lost. And a permanently refused target takes its dependents with it.
-   *
-   * A reference, not an op id: the host queues both ops fire-and-forget and never
-   * sees the first op's id. Ops persisted before this field existed lack it and
-   * behave exactly as before. The server never reads it (`syncOperationSchema` is
-   * a plain `z.object`, which strips unknown keys).
-   */
+  // One-way: a dropped target drops this op, not vice versa. On push this op is held until its
+  // target lands, else a promotion makes the server bump the profile being deleted.
   dependsOn?: {
     entityType: SyncEntityType
     entityId: string
@@ -643,41 +218,19 @@ export interface SyncOperation {
   }
 }
 
-/**
- * A single server-side change surfaced by the pull endpoint (Story 4-18).
- *
- * Reconstructed from an entity ROW (not an operation), so it deliberately carries
- * no originating deviceId or operation id — the server stores entities, not the
- * op log. Pull reconciliation therefore uses state-based last-write-wins keyed on
- * `updatedAt` rather than the op-based `detectConflict` path. A tombstone
- * (`isDeleted: true`) represents a delete the client must apply by removing the
- * entity locally.
- */
+// Built from an entity row, not an op, so it has no deviceId; pull uses state-based LWW on `updatedAt`.
 export interface ServerChange {
-  /** Type of entity that changed */
   entityType: SyncEntityType
 
-  /** Server-authoritative id of the entity (serial int as string, or uuid) */
   entityId: string
 
-  /** The entity's current column values (cents for monetary fields) */
   data: Record<string, unknown>
 
-  /** When the row was last mutated on the server (Unix ms epoch) */
   updatedAt: number
 
-  /** Whether this change is a soft-delete tombstone */
   isDeleted: boolean
 }
 
-/**
- * The schema a PULLED, non-tombstone row must satisfy before core lets it win
- * last-writer-wins (story 75.4, FR123). ONE map, ONE verdict: the web applier no
- * longer validates, so there is no second gate to drift from this one.
- *
- * `Record<SyncEntityType, …>`, so a new entity type fails to compile until it has
- * a schema here.
- */
 export const SERVER_ROW_SCHEMAS: Record<SyncEntityType, z.ZodTypeAny> = {
   incomeSource: incomeSourceSchema,
   expense: expenseSchema,
@@ -685,33 +238,18 @@ export const SERVER_ROW_SCHEMAS: Record<SyncEntityType, z.ZodTypeAny> = {
   balanceTracking: balanceTrackingSchema,
   userProfile: userProfileSchema,
   category: categorySchema,
-  // Lenient on purpose: see `retirementPlanRowSchema` (story 99.2).
+  // Lenient on purpose: see `retirementPlanRowSchema`.
   retirementPlan: retirementPlanRowSchema,
 }
 
-/** The verdict on one pulled row. `fields` is `path:code` and never a value. */
+/** `fields` is `path:code`, never a value. */
 export type ServerRowVerdict = { ok: true } | { ok: false; fields: string[] }
 
-/**
- * Validate a pulled server row against its entity schema (story 75.4).
- *
- * ⚠️ A VERDICT ONLY. Callers keep the ORIGINAL change: `z.object` strips
- * undeclared keys, and these schemas declare none of `profileId`, `sortOrder`,
- * `categoryId`, `isDeleted`, `createdAt` or `updatedAt`.
- *
- * ⚠️ `fields` is built from each issue's `path` and `code` only. An issue's
- * `message` can embed the received value, and the value may be money, so it is
- * never carried out of here (story 66.2).
- *
- * An entity type with no schema (a server newer than this client) passes:
- * older clients ignore unknown types, and that is not a corrupt row.
- */
+// Verdict only: callers keep the original change, since `z.object` strips undeclared keys.
+// Issue messages can embed money values, so only path and code leave here.
 export function validateServerRow(change: ServerChange): ServerRowVerdict {
-  // ⚠️ An OWN-property check, not a bare index (code review 75.4, MEASURED): the
-  // server supplies `entityType`, and `SERVER_ROW_SCHEMAS['toString']` is an
-  // INHERITED function, so a bare lookup was truthy, `.safeParse` threw inside
-  // the LWW loop, and every later pull re-fetched the row and threw again.
-  // (`Object.hasOwn` is ES2022; this package's `lib` is ES2021.)
+  // Own-property check: `entityType` comes from the server, and inherited keys like `toString`
+  // would otherwise match. (`Object.hasOwn` needs ES2022.)
   if (!Object.prototype.hasOwnProperty.call(SERVER_ROW_SCHEMAS, change.entityType)) {
     return { ok: true }
   }
@@ -726,374 +264,181 @@ export function validateServerRow(change: ServerChange): ServerRowVerdict {
   }
 }
 
-/**
- * A pulled row that core REFUSED (story 75.4): it failed {@link validateServerRow},
- * was not applied, and did not displace any queued local op. It carries no
- * `data` and no zod issues, so no value can leak through it.
- */
+/** A refused pulled row. It carries no data or zod issues, so no value can leak through it. */
 export interface RefusedServerChange {
   entityType: SyncEntityType
   entityId: string
-  /** `path:code` for each failing field, e.g. `amount:invalid_type`. */
   fields: string[]
 }
 
-/**
- * Callback invoked once per pull with the server rows that pull refused (story
- * 75.4). Not called when nothing was refused.
- */
 export type ServerChangesRefusedCallback = (refused: RefusedServerChange[]) => void
 
-/**
- * Transport hook for fetching server-side changes since a cursor (Story 4-18).
- * Injected via {@link SyncConfig} to keep the core transport-agnostic — the web
- * layer supplies an HTTP implementation; the core never imports `fetch`/`db`.
- *
- * @param since - Pull cursor (Unix ms epoch); `null` requests a full snapshot.
- */
+/** `since` is the pull cursor; `null` requests a full snapshot. */
 export type FetchServerChangesFn = (since: number | null) => Promise<ServerChange[]>
 
-/**
- * Callback invoked with the server changes that were applied during a pull, so
- * the host app (web layer) can write them into its UI stores. The core never
- * imports the stores; it only emits the applied changes.
- */
 export type ChangesPulledCallback = (changes: ServerChange[]) => void
 
-/**
- * Callback invoked with the operations a sync PERMANENTLY refused and removed
- * from the queue (story 75.2, FR119). Fired once per sync, with that sync's
- * refusals only, and never with an op whose removal from the queue failed (that
- * op is still queued and will be sent again). The web layer uses it to tell the
- * user which entry was refused and to revert the refused change locally.
- */
+/** Fired once per sync; never with an op whose queue removal failed (it will be re-sent). */
 export type OperationsRejectedCallback = (operations: SyncOperation[]) => void
 
-/**
- * Callback invoked with the operations the server ACCEPTED in one sync (story
- * 86.3). Fired once per sync, only when at least one op was accepted, and never
- * by a service destroyed while the push was in flight. Includes an accepted op
- * whose removal from the queue then failed: the server committed it, it is only
- * re-sent (and acknowledged again). The web layer uses it to mark each pushed
- * row as the session's at once, instead of waiting for the next pull.
- */
+/** Includes an accepted op whose queue removal failed; never fired by a destroyed service. */
 export type OperationsSyncedCallback = (operations: SyncOperation[]) => void
 
-/**
- * Result of a pull (server → client) operation (Story 4-18).
- */
 export interface PullResult {
-  /** Whether the pull completed without a transport/processing error */
   success: boolean
 
-  /** Number of server changes applied to local state */
   changesPulledCount: number
 
-  /** The server changes that were applied locally */
   applied: ServerChange[]
 
-  /**
-   * Server changes that were NOT applied because a newer queued local edit won
-   * the last-write-wins comparison (unsynced local work is never discarded).
-   */
+  /** Server changes suppressed because a newer queued local edit won LWW. */
   conflicts: ServerChange[]
 
-  /**
-   * Server rows that would have been applied but failed their entity schema
-   * (story 75.4). Not applied, not counted in `changesPulledCount`, and they
-   * displaced no queued local op. The cursor still advances past them.
-   */
+  /** Failed their entity schema: not applied, displaced nothing, and the cursor still advances. */
   refused: RefusedServerChange[]
 
-  /**
-   * Queued ops dropped because this pull APPLIED the tombstone of the profile
-   * they were stamped with (story 76.2). The server can never accept them, and
-   * they are not conflicts: they lost no comparison. Empty on a failed pull.
-   */
+  /** Ops dropped because this pull applied their profile's tombstone. */
   discardedForDeletedProfile: SyncOperation[]
 
-  /**
-   * Queued ops dropped because the op they `dependsOn` lost last-writer-wins in
-   * this pull (story 76.2). The host must revert whatever it wrote locally when it
-   * queued them. Empty on a failed pull.
-   */
+  /** Ops dropped because their `dependsOn` target lost LWW; the host must revert them locally. */
   droppedDependents: SyncOperation[]
 
-  /** Error message if the pull failed */
   error?: string
 
-  /** The advanced pull cursor after this pull (Unix ms epoch, or null) */
   lastPullTimestamp: number | null
 }
 
-/**
- * Status of the synchronization process
- */
 export enum SyncStatus {
-  PENDING = 'PENDING', // Sync has not started or is queued
-  IN_PROGRESS = 'IN_PROGRESS', // Sync is currently in progress
-  COMPLETED = 'COMPLETED', // Sync completed successfully with no conflicts or failures
-  FAILED = 'FAILED', // Sync failed with errors
-  CONFLICT = 'CONFLICT', // Sync detected conflicts that need resolution
-  PARTIAL = 'PARTIAL', // Sync completed with some conflicts but no failures
-  OFFLINE = 'OFFLINE', // Device is offline, operations are queued
+  PENDING = 'PENDING',
+  IN_PROGRESS = 'IN_PROGRESS',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+  CONFLICT = 'CONFLICT',
+  PARTIAL = 'PARTIAL',
+  OFFLINE = 'OFFLINE',
 }
 
-/**
- * Interface for tracking the overall synchronization state
- */
 export interface SyncState {
-  /** Current status of synchronization */
   status: SyncStatus
 
-  /** Timestamp of the last successful sync (null if never synced) */
   lastSyncTimestamp: number | null
 
-  /**
-   * Cursor for server → client pulls (Unix ms epoch; null if never pulled).
-   * Tracked SEPARATELY from `lastSyncTimestamp` (the push cursor): a push must
-   * not advance the pull cursor, or remote changes between the last pull and the
-   * push would be skipped forever (Story 4-18).
-   */
+  // Separate from the push cursor: a push must not advance it, or remote changes would be skipped.
   lastPullTimestamp: number | null
 
-  /** Operations that are pending synchronization */
   pendingOperations: SyncOperation[]
 
-  /**
-   * The ops that failed RETRYABLY in the most recent sync and are still queued
-   * (story 75.3). This is a VIEW: a subset of `pendingOperations`, replaced every
-   * sync, and never the only copy. Retryable ops no longer leave the persisted
-   * queue; this list used to carry them in memory until a retry re-added them,
-   * which lost them past the retry budget or across a reload.
-   */
+  /** A view of `pendingOperations`: ops that failed retryably last sync. Never the only copy. */
   failedOperations: SyncOperation[]
 
-  /**
-   * The queued ops that have failed too many sync attempts IN A ROW to stay
-   * silent (story 79.2, FR128). The web layer names each one to the user.
-   *
-   * Like `failedOperations`, this is a VIEW: a subset of `pendingOperations`,
-   * refreshed whenever the queue changes under the service, and never the only
-   * copy. An escalated op is NOT removed from the queue (FR120): it keeps being
-   * sent, and it leaves this list when it lands or leaves the queue another way.
-   *
-   * An attempt counts when it ends in a failure that keeps the op queued: the
-   * retryable bucket (5xx, 429, network) or the unclassified one (a per-op
-   * server fault, `retryable: false` with no status). 401, 403, a conflict, a
-   * permanent refusal or a success resets the op's count. The threshold is
-   * `maxRetries + 1` attempts AND a run of failures at least
-   * `maxRetries × retryDelay` long (the time floor; see
-   * `SynchronizationService.escalationThreshold` / `escalationFloorMs`). Counts
-   * live in memory, so a reload starts them again.
-   */
+  // A view of `pendingOperations`: ops that failed too many attempts in a row. They stay queued;
+  // counts live in memory, so a reload resets them.
   escalatedOperations: SyncOperation[]
 
-  /** Operations that have conflicts requiring resolution */
   conflictOperations: SyncOperation[]
 
-  /**
-   * Operations the server permanently REJECTED — a non-retryable failure whose
-   * status code is POSITIVE evidence of permanence (see
-   * `PERMANENT_REJECT_STATUS_CODES` in `synchronization.ts`).
-   *
-   * These are removed from the queue, because replaying one forever pins the
-   * sync status at FAILED and re-opens the circuit breaker every cycle, which
-   * suppresses retries for every OTHER entity.
-   *
-   * A bounded diagnostic record of what was refused — the most recent
-   * `MAX_RECORDED_REJECTIONS` operations (see `synchronization.ts`), not a full
-   * history. ⚠️ It is NOT how the user is told: that is the
-   * `onOperationsRejected` subscription (story 75.2), which fires once per sync
-   * with that sync's refusals. Read this for debugging and tests only.
-   *
-   * ⚠️ Auth-blocked (401) and tier-blocked (403) operations are deliberately NOT
-   * routed here — both stay queued. So does any non-retryable failure with no
-   * status code proving permanence, which is the common 200-envelope shape the
-   * server returns for transient database faults.
-   */
+  // Bounded diagnostic record, not how the user is told. 401/403 and failures without a status
+  // proving permanence stay queued instead.
   rejectedOperations: SyncOperation[]
 
-  /** Whether the device is currently online */
   isOnline: boolean
 
-  /** Error message from the last failed sync, if any */
   lastError?: string
 
-  /** Number of retries attempted for failed operations */
   retryCount: number
 }
 
-/**
- * Interface for conflict detection result
- */
 export interface ConflictResult {
-  /** Whether a conflict was detected */
   hasConflict: boolean
 
-  /** Type of conflict if detected */
   conflictType?: ConflictType
 
-  /** The operation from the local device */
   localOperation?: SyncOperation
 
-  /** The operation from the server */
   serverOperation?: SyncOperation
 
-  /** Suggested resolution */
   resolution?: SyncOperation
 }
 
-/**
- * Types of conflicts that can occur during synchronization
- */
 export type ConflictType =
-  | 'create-create' // Both local and server created same entity
-  | 'create-update' // Local create conflicts with server update
-  | 'create-delete' // Local create conflicts with server delete
-  | 'update-create' // Local update conflicts with server create
-  | 'update-update' // Both local and server updated same entity
-  | 'update-delete' // Local update conflicts with server delete
-  | 'delete-create' // Local delete conflicts with server create
-  | 'delete-update' // Local delete conflicts with server update
-  | 'delete-delete' // Both local and server deleted same entity
-  | 'version-mismatch' // Version numbers don't match
+  | 'create-create'
+  | 'create-update'
+  | 'create-delete'
+  | 'update-create'
+  | 'update-update'
+  | 'update-delete'
+  | 'delete-create'
+  | 'delete-update'
+  | 'delete-delete'
+  | 'version-mismatch'
 
-/**
- * Strategy for resolving conflicts
- */
 export type ConflictResolutionStrategy =
-  | 'last-write-wins' // Most recent timestamp wins
-  | 'server-wins' // Server always wins
-  | 'client-wins' // Client always wins
-  | 'manual' // Require manual resolution
-  | 'merge' // Attempt to merge changes
+  | 'last-write-wins'
+  | 'server-wins'
+  | 'client-wins'
+  | 'manual'
+  | 'merge'
 
-/**
- * Result of processing a single operation
- */
 export interface ProcessOperationResult {
-  /** Whether the operation was successful */
   success: boolean
-  /** Whether a conflict was detected */
   conflict?: boolean
-  /** Error message if operation failed */
   error?: string
-  /**
-   * Whether a failed operation should be retried. Transient failures
-   * (network/5xx) are retryable; auth/validation failures (4xx) are not and
-   * must abort rather than be hammered. When omitted, the failure is treated
-   * as retryable for backwards compatibility.
-   */
+  /** Omitted means retryable, for backwards compatibility. */
   retryable?: boolean
-  /** Optional HTTP-style status code from the transport, used to classify failures. */
   statusCode?: number
 }
 
-/**
- * Function type for processing a single operation
- * This allows the sync service to be customized with different transport mechanisms
- * (e.g., direct database access, HTTP API calls, etc.)
- */
 export type ProcessOperationFn = (operation: SyncOperation) => Promise<ProcessOperationResult>
 
-/**
- * Configuration options for the synchronization service
- */
 export interface SyncConfig {
-  /** Strategy to use for conflict resolution */
   conflictResolutionStrategy: ConflictResolutionStrategy
 
-  /** Maximum number of retry attempts for failed operations */
   maxRetries: number
 
-  /** Delay between retry attempts in milliseconds */
   retryDelay: number
 
-  /** Maximum batch size for sync operations */
   batchSize: number
 
-  /** Whether to enable automatic sync */
   autoSync: boolean
 
-  /** Interval for automatic sync in milliseconds (0 = disabled) */
   autoSyncInterval: number
 
-  /** Whether to enable debug logging */
   debug: boolean
 
-  /** Custom function to process operations (e.g., make API calls)
-   * If not provided, operations will be queued but not processed
-   */
   processOperation?: ProcessOperationFn
 
-  /**
-   * Transport hook for pulling server-side changes (Story 4-18). Injected the
-   * same way as {@link processOperation} to keep the core transport-agnostic.
-   * If not provided, `pull()` fails loud (it does not silently no-op) so a
-   * misconfiguration can't masquerade as "no remote changes".
-   */
+  /** If absent, `pull()` fails loud so a misconfiguration can't pass as "no remote changes". */
   fetchServerChanges?: FetchServerChangesFn
 
-  /** Interval for automatic server pulls in milliseconds (0/undefined = disabled) */
   pullInterval?: number
 
-  /**
-   * Active profile ID (UUID) for the session. Profile-scoped entities
-   * (incomeSource, expense, savingsGoal, balanceTracking) require a
-   * `profileId NOT NULL` server-side, so every queued operation is stamped
-   * with this value. Required for those entity types when syncing the paid tier.
-   */
   profileId?: string
 }
 
-/**
- * Result of a synchronization operation
- */
 export interface SyncResult {
-  /** Whether the sync was successful */
   success: boolean
 
-  /** Number of operations synchronized */
   synchronizedCount: number
 
-  /** Number of operations that failed */
   failedCount: number
 
-  /** Number of conflicts detected */
   conflictCount: number
 
-  /** New sync state after the operation */
   state: SyncState
 
-  /** Error message if sync failed */
   error?: string
 
-  /** Duration of the sync operation in milliseconds */
   duration: number
 }
 
-/**
- * Callback function type for sync status changes
- */
 export type SyncStatusCallback = (state: SyncState) => void
 
-/**
- * Callback function type for conflict detection
- */
 export type ConflictCallback = (conflict: ConflictResult) => void
 
-/**
- * Interface for storage of persisted sync queue
- * This allows the sync queue to survive page refreshes and browser restarts
- */
 export interface SyncQueueStorage {
-  /** Load the sync queue from storage */
   loadQueue: (userId: string) => Promise<SyncOperation[]>
 
-  /** Save the sync queue to storage */
   saveQueue: (userId: string, queue: SyncOperation[]) => Promise<void>
 
-  /** Clear the sync queue from storage */
   clearQueue: (userId: string) => Promise<void>
 }

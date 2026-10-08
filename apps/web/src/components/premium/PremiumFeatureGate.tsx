@@ -1,35 +1,5 @@
-/**
- * PremiumFeatureGate (story 7-2, FR24).
- *
- * Reusable presentation-layer gate that makes a premium feature *discoverable
- * but locked* for non-paying users, rather than hiding it. It is driven entirely
- * by {@link usePremiumAccess} — the same server-verified tier signal that the
- * `/forecasting` route uses — so routes and feature gates can never disagree
- * about a user's tier.
- *
- * This is a PRESENTATION layer only: it never calls premium server functions and
- * is not a security boundary. Real enforcement stays server-side (the
- * `/forecasting` loader + session gate from stories 5-7/5-8). A determined user
- * bypassing this UI still hits the server gate.
- *
- * Three render states (fail-closed — unknown/errored/loading tier ⇒ NOT premium):
- *   - `status.isLoading` (SSR + first client paint) → the tier-agnostic feature
- *     label (the copy both resolved states share), gently pulsing inside the
- *     resolved control's exact footprint. Server and first client render are
- *     identical here, so hydration is stable; paid users never see a lock flash
- *     before their status resolves (DECISION 3); and the card reads as content
- *     settling rather than a blank grey box. Never the children, never the lock
- *     badge, never the upgrade affordance.
- *   - resolved `hasAccess === true` → the unlocked {@link children}, no lock UI.
- *   - resolved `!hasAccess` (free, past_due, canceled, unauthenticated, OR an
- *     errored check) → the locked presentation: a button showing {@link locked}
- *     content + a {@link PremiumLockBadge}; activating it opens the shared
- *     {@link PremiumPrompt} upgrade dialog (CTA → `/pricing`, DECISION 2).
- *
- * New premium features (e.g. the dark-mode toggle in story 7-3) adopt the same
- * locked treatment by wrapping their control in this gate — no bespoke gating
- * logic (AC-4).
- */
+// Presentation only, not a security boundary. Fail-closed: a loading or errored
+// tier check renders as not premium.
 
 import { useState } from 'react'
 import type React from 'react'
@@ -39,27 +9,12 @@ import { SkeletonBlock } from '../ui/Skeleton'
 import { PremiumLockBadge } from './PremiumLockBadge'
 
 export interface PremiumFeatureGateProps {
-  /**
-   * Human-readable feature name, for the upgrade prompt so the user knows what
-   * they are unlocking. NOT the locked control's accessible name since story
-   * 116.2 (FR184): that is the control's own visible `locked` content, then
-   * "Premium, locked".
-   */
+  /** For the upgrade prompt; not the locked control's accessible name. */
   featureName: string
-  /** Unlocked content, rendered only when the user has active premium access. */
   children: React.ReactNode
-  /**
-   * Visible content shown inside the locked affordance for non-paying users
-   * (e.g. the feature's label/card body). Must be non-interactive — it is
-   * rendered inside a `<button>`, so do not nest links or other buttons here.
-   */
+  /** Rendered inside a `<button>`, so it must be non-interactive. */
   locked: React.ReactNode
-  /** Classes applied to the locked `<button>` wrapper. */
   className?: string
-  /**
-   * Where the upgrade call-to-action points. Defaults to `/pricing` (public
-   * value + how to unlock), per story 7-2 DECISION 2.
-   */
   upgradeHref?: string
 }
 
@@ -73,22 +28,8 @@ export function PremiumFeatureGate({
   const { status } = usePremiumAccess()
   const [isPromptOpen, setIsPromptOpen] = useState(false)
 
-  // Tier not yet known (SSR + first client paint): render the tier-agnostic
-  // label inside the resolved control's exact footprint (from `className`) so
-  // the card looks like settling content, not a blank grey box, and the layout
-  // never jumps when the tier resolves. `animate-pulse` signals the pending
-  // state; `aria-hidden` keeps this transient placeholder out of the a11y tree.
-  // Identical on server + first client render → hydration-safe, and fail-closed:
-  // never the premium children, never the lock badge, never the upgrade prompt.
-  //
-  // Story 38.2 lifted this shape into `ui/Skeleton`'s `SkeletonBlock` so the
-  // store-rehydration skeletons it adds are the same thing rather than a fourth
-  // convention. The rendered ELEMENT, its classes and the `premium-gate-skeleton`
-  // testid are unchanged; the attribute ORDER in the emitted HTML is not, since
-  // the primitive spells them out itself. (Raised in code review, because a test
-  // in this repo briefly depended on that order.) The pulse is now `motion-safe:`.
-  // ⚠️ The TRIGGER is still the premium-tier signal, NOT store rehydration — the
-  // two pending states are independent and this story did not merge them.
+  // Identical on server and first client paint (hydration-safe); never reveals
+  // the children or the lock UI.
   if (status.isLoading) {
     return (
       <SkeletonBlock className={className} testId="premium-gate-skeleton">
@@ -97,21 +38,11 @@ export function PremiumFeatureGate({
     )
   }
 
-  // Verified active premium: render the real, unlocked feature with no lock UI.
   if (status.hasAccess) {
     return <>{children}</>
   }
 
-  // Everything else (free / lapsed / unauthenticated / errored check) is treated
-  // as NOT premium and shown locked but discoverable.
-  //
-  // ⚠️ NO `aria-label` (story 116.2, FR184): it would REPLACE the button's
-  // content in the accessible name, so the visible title and description were
-  // never announced and a voice-control user saying the visible title matched
-  // nothing (axe `label-content-name-mismatch`). The name is now the content
-  // itself: title, description, the badge's "Premium", then the hidden
-  // ", locked" below. It lives here, not in `PremiumLockBadge`, because
-  // `CategoryPicker` shows that badge outside any button.
+  // No aria-label: it would replace the visible content in the accessible name.
   return (
     <>
       <button

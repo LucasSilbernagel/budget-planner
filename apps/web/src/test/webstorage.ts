@@ -1,23 +1,8 @@
-/**
- * Give every test file the Web Storage that Node 20 (CI) gives it (story 82.2).
- *
- * Newer Node defines its own `localStorage`/`sessionStorage` globals (on by
- * default from Node 25; behind `--experimental-webstorage` in 22–24). Vitest's
- * jsdom environment does not replace a global that already exists, so on Node 26
- * a jsdom test got Node's storage instead of jsdom's: `undefined` without
- * `--localstorage-file`, and with it ONE SQLite file shared by every parallel
- * worker and every later run. On Node 20 there is no such global, so each jsdom
- * file gets its own window's in-memory storage and a node-env file gets none.
- * This makes every Node behave like that.
- *
- * ⚠️ Must be the FIRST import of `vitest.setup.ts`. zustand's persist reads
- * storage when a store module is evaluated, and the setup file imports stores.
- * `src/test/__tests__/webstorage.test.ts` guards that.
- */
+// Must be the FIRST import of `vitest.setup.ts`: zustand's persist reads storage when a store
+// module is evaluated. Makes every Node give jsdom files their own storage, as Node 20 does.
 
 const KEYS = ['localStorage', 'sessionStorage'] as const
 
-/** Exported with a `target` so its branches can be tested on any Node. */
 export function installWebStorage(target: object = globalThis): void {
   const scope = target as { jsdom?: { window: Window }; document?: unknown }
   const dom = scope.jsdom

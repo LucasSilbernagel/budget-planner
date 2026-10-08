@@ -1,42 +1,20 @@
-// The gate runner's logic (story 82.1, FR133). The CLI is `run-gates.mjs`; this
-// file holds everything that can be decided without spawning a process, so the
-// web unit suite can pin it (`src/__tests__/gates-lib.test.ts`).
-//
-// ## The rule that matters most
-//
-// A gate is GREEN only when it exited 0 AND its own summary was found AND that
-// summary counted at least one thing AND nothing failed. "Exit 0" alone is not
-// enough: this repo has had a type-check script that exited without compiling
-// anything (the dead `tsc:*` scripts), a web suite that collected `(0 test)`
-// under the wrong vitest binary, and a gate piped through `tail` that reported
-// tail's status. Each of those looked green by exit code. A harness that can
-// fail before it runs anything must prove that it ran.
+// A gate is green only when it exited 0 AND its own summary was found, counted at least
+// one thing, and nothing failed: several harnesses here have exited 0 without running.
 
 import { join } from 'node:path'
 
 const MINUTE = 60_000
 
-/** ANSI colour codes, stripped before any text parsing (an ambient FORCE_COLOR adds them). */
+/** Stripped before parsing: an ambient FORCE_COLOR adds them. */
 const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g')
 
-/** @param {string} text */
 export function stripAnsi(text) {
   return text.replace(ANSI, '')
 }
 
 /**
- * The type-check programs of one package, from its `type-check` script.
- *
- * The script is the single source of truth: `pnpm --filter web type-check` and
- * the runner must check the same programs, so the runner derives them rather
- * than keeping its own copy. Each `&&` part must be a bare `tsc` call; anything
- * else throws, so a changed script fails loudly instead of being skipped.
- *
- * `--diagnostics` is appended because `tsc --noEmit` prints NOTHING on success,
- * which leaves no summary to check. With it, tsc prints a `Files:` line.
- *
- * @param {string} script
- * @returns {string[][]} one argv (without the `tsc` binary) per program
+ * Derived from the package's `type-check` script so both check the same programs.
+ * `--diagnostics` because `tsc --noEmit` prints nothing on success.
  */
 export function typeCheckPrograms(script) {
   if (typeof script !== 'string' || script.trim() === '') {
@@ -52,18 +30,8 @@ export function typeCheckPrograms(script) {
 }
 
 /**
- * Vitest's JSON report, counted from the per-test `assertionResults`.
- *
- * ⚠️ NOT from the top-level `num*` fields. MEASURED on the db suite (vitest
- * 1.6.1, story 82.1): the console said `295 passed | 7 skipped` across 12 files,
- * while the JSON's top level said `numPassedTests: 302, numPendingTests: 0` and
- * `numTotalTestSuites: 51` (describe blocks, not files). The per-test statuses
- * (295 passed, 7 skipped) and `testResults.length` (12) match the console.
- *
- * A file that fails before collecting any test (an import error) has
- * `status: 'failed'` and no assertions, so it is counted as a failure too.
- *
- * @param {string} text
+ * Counted from per-test `assertionResults`, not the top-level `num*` fields, which
+ * disagree with the console. A file failing before collection counts as a failure.
  */
 export function parseVitestJson(text) {
   const report = safeJson(text)
@@ -90,10 +58,6 @@ export function parseVitestJson(text) {
   }
 }
 
-/**
- * Playwright's JSON report. `expected` = passed, `unexpected` = failed.
- * @param {string} text
- */
 export function parsePlaywrightJson(text, projects = null) {
   const report = safeJson(text)
   const stats = report?.stats
@@ -104,8 +68,8 @@ export function parsePlaywrightJson(text, projects = null) {
   const flaky = stats.flaky ?? 0
   const summary = { passed, failed, skipped, flaky, total: passed + failed + skipped + flaky }
   if (!projects) return summary
-  // Story 82.3 review P1: Playwright fails a run only when the TOTAL is zero, so
-  // a requested project that selected nothing would pass unnoticed.
+  // Playwright fails a run only when the TOTAL is zero, so a requested project that
+  // selected nothing would pass unnoticed.
   const seen = new Set()
   const walk = (suite) => {
     for (const spec of suite.specs ?? []) {
@@ -117,58 +81,34 @@ export function parsePlaywrightJson(text, projects = null) {
   return { ...summary, emptyProjects: projects.filter((name) => !seen.has(name)).length }
 }
 
-/**
- * Biome 1.5.3: `Checked 683 file(s) in 502ms` (literally `file(s)`).
- * @param {string} text
- */
+/** Biome 1.5.3: `Checked 683 file(s) in 502ms`. */
 export function parseBiome(text) {
   const match = /Checked (\d+) file(?:\(s\)|s)? in /.exec(stripAnsi(text))
   return match ? { files: Number(match[1]), total: Number(match[1]), failed: 0 } : null
 }
 
-/**
- * `tsc --diagnostics`: a `Files:  1234` line. Absent → the compiler never ran.
- * @param {string} text
- */
+/** No `Files:` line means the compiler never ran. */
 export function parseTscDiagnostics(text) {
   const match = /^Files:\s+(\d+)\s*$/m.exec(stripAnsi(text))
   return match ? { files: Number(match[1]), total: Number(match[1]), failed: 0 } : null
 }
 
-/**
- * `check-client-bundle.mjs` prints this line only when every marker is absent
- * from `dist/client` AND every positive control held.
- * @param {string} text
- */
 export function parseBundleCheck(text) {
   return /^OK: .*all positive controls hold\.\s*$/m.test(stripAnsi(text))
     ? { total: 1, failed: 0 }
     : null
 }
 
-/**
- * A build step has no count to report; its summary is its own success line.
- * `tsc -b` prints nothing on success, so for it exit 0 is the only evidence
- * there is, and the types gate that follows is what proves the output is usable.
- * @param {string} text
- */
+/** `tsc -b` prints nothing on success, so for it exit 0 is the only evidence. */
 export function parseViteBuild(text) {
   return /✓ built in /.test(stripAnsi(text)) ? { total: 1, failed: 0 } : null
 }
 
-/** @param {string} _text */
 export function parseExitOnly(_text) {
   return { total: 1, failed: 0 }
 }
 
-/**
- * Several programs that make up one gate (the type-check programs).
- *
- * The exit code is the first REAL non-zero code; `null` (killed, never
- * started) only when no part has one, so `[killed, exit 2]` still says exit 2.
- *
- * @param {{exitCode: number|null, summary: {files:number}|null, signal?: string|null, timedOut?: boolean, spawnError?: string}[]} parts
- */
+/** The first real non-zero exit code, so `[killed, exit 2]` still says exit 2. */
 export function aggregateParts(parts) {
   const exitCode = parts.every((p) => p.exitCode === 0)
     ? 0
@@ -193,21 +133,8 @@ export function aggregateParts(parts) {
 }
 
 /**
- * GREEN iff exit 0 AND a summary AND something ran AND failed = 0 AND flaky = 0
- * AND the run was not interrupted. Every reason that applies is listed, so
- * "exit 1, no summary" is told apart from "exit 0, no summary" (the second is
- * the dangerous one).
- *
- * "Something ran" means at least one test PASSED for a test summary (one with
- * `passed`): a suite whose every test was skipped exits 0 and ran nothing. For
- * a count-only summary (files checked, programs) it means total > 0.
- *
- * An interrupted gate is never green: vitest and Playwright turn SIGINT into
- * exit 130 or even exit 0 with a partial report, so neither the exit code nor
- * the summary can be trusted after one.
- *
- * @param {{exitCode: number|null, summary: Record<string, number>|null, signal?: string|null, timedOut?: boolean, interrupted?: boolean, spawnError?: string|null}} result
- * @returns {{green: boolean, reasons: string[]}}
+ * A skipped-only suite exits 0 having run nothing, so a test summary needs a pass. An
+ * interrupted gate is never green: SIGINT can yield exit 0 with a partial report.
  */
 export function verdict({
   exitCode,
@@ -237,14 +164,12 @@ export function verdict({
   return { green: reasons.length === 0, reasons }
 }
 
-/** @param {number} ms */
 export function formatDuration(ms) {
   const seconds = Math.round(ms / 1000)
   if (seconds < 60) return `${seconds}s`
   return `${Math.floor(seconds / 60)}m${String(seconds % 60).padStart(2, '0')}s`
 }
 
-/** @param {Record<string, number>|null} summary */
 export function formatCounts(summary) {
   if (!summary) return '-'
   if ('programs' in summary) return `${summary.programs} programs, ${summary.files} files`
@@ -262,10 +187,6 @@ export function formatCounts(summary) {
   return 'ok'
 }
 
-/**
- * One line per gate: mark, id, verdict, exit code, counts, wall time, reasons.
- * @param {{id: string, exitCode: number|null, summary: Record<string, number>|null, ms: number, skipped?: string, signal?: string|null, timedOut?: boolean, interrupted?: boolean, spawnError?: string|null}} result
- */
 export function formatLine(result) {
   if (result.skipped) {
     return `- ${result.id.padEnd(12)} SKIP  ${result.skipped}`
@@ -284,63 +205,18 @@ export function formatLine(result) {
   return green ? line : `${line}  <- ${reasons.join(', ')}`
 }
 
-/**
- * The environment a gate is spawned with: the runner's own, plus the gate's
- * overrides. So an ambient variable (e.g. NODE_OPTIONS) reaches every gate that
- * does not set it.
- *
- * @param {Record<string, string | undefined>} processEnv
- * @param {Record<string, string> | undefined} gateEnv
- */
 export function spawnEnv(processEnv, gateEnv) {
   return { ...processEnv, ...gateEnv }
 }
 
-/**
- * The Playwright projects `pnpm gates` runs. Story 84.2 (FR137) deleted the
- * `@layout` projects and `--layout`: layout is pinned by the screenshot
- * projects below, in CI only.
- */
 const E2E_FLOW_PROJECTS = ['chromium', 'chromium-paid', 'chromium-prod', 'chromium-db']
 
-/**
- * The screenshot projects (story 84.1, FR137, D3). Declared in
- * `playwright.config.ts` and run by CI's plain `playwright test`, but in NO local
- * gate run: their baselines are rendered in CI (`.github/workflows/screenshots.yml`),
- * and CI resolves `system-ui` to DejaVu Sans where a dev box gets Noto Sans, so a
- * local comparison would fail on fonts, not on the change.
- */
+/** CI-only: baselines are CI-rendered, and a dev box's fonts differ. */
 export const E2E_SCREENSHOT_PROJECTS = ['screenshots', 'screenshots-paid']
 
 /**
- * The gate table. Phase A runs one step at a time and WRITES the tree
- * (`packages/*\/dist`, `apps/web/dist`, `src/routeTree.gen.ts`); phase B runs
- * concurrently.
- *
- * ⚠️ Phase B is NOT read-only. e2e's `chromium-prod` server runs `pnpm build` on
- * every run, which EMPTIES and rewrites `apps/web/dist` and re-runs the route
- * generator. That is safe only because no other phase B gate reads either:
- * `dist` is excluded from every tsconfig, from biome and from vitest, and the
- * generator rewrites `routeTree.gen.ts` only when its content changes, via a
- * temp file + rename (MEASURED unchanged across a full e2e run, story 82.1). The
- * bundle check DOES read `dist`, so it runs in phase A, before e2e starts.
- * A new phase B gate that reads `apps/web/dist` must go to phase A as well.
- * ⚠️ Since story 84.4 the `web` gate is a phase B WRITER too: its served-app
- * harness (`src/test/served-app.ts`) boots two in-process Vite dev servers
- * (one per `*.served.test.ts` file) alongside e2e's two `pnpm dev` servers, so
- * four route generators and four vite-plugin-pwa dev instances may touch
- * `src/routeTree.gen.ts`, `.tanstack/` and `dev-dist/` at once. The harness
- * keeps its OWN dep cache (`node_modules/.vite-served-app`; sharing
- * `node_modules/.vite` made the e2e servers re-optimize mid-test, MEASURED at
- * 84.4). Nothing in phase B asserts on `dev-dist/`, so a half-written dev
- * `sw.js` is noise today; a dev e2e that asserts the SW would need to know.
- *
- * Every command is the `project-context.md` › Testing Strategy command, with
- * machine-readable reporters added (they change what is printed, not what runs).
- * No gate sets NODE_OPTIONS, so an ambient one reaches every gate unchanged.
- *
- * @param {{root: string, runDir: string, typeCheckScripts: Record<string, string>}} options
- *   `typeCheckScripts` maps a package dir (relative to root) to its `type-check` script.
+ * Phase B is not read-only: e2e's prod server rebuilds apps/web/dist, so any gate that
+ * reads dist must run in phase A.
  */
 export function buildGates({ root, runDir, typeCheckScripts }) {
   const web = join(root, 'apps/web')
@@ -415,40 +291,31 @@ export function buildGates({ root, runDir, typeCheckScripts }) {
       parse: { from: join(runDir, 'db.json'), fn: parseVitestJson },
     },
     {
-      // Files run in parallel and need no `--localstorage-file` (story 82.2):
-      // `src/test/webstorage.ts` gives each file its own jsdom storage.
       id: 'web',
       phase: 'B',
       cwd: web,
       command: './node_modules/.bin/vitest',
       args: [...vitestArgs(join(runDir, 'web.json')), '--config', 'vitest.config.ts'],
-      // MEASURED on an 8-core box (story 82.2): ~110 s alone in parallel, 179 s
-      // in phase B, 454 s serial. Vitest uses cores - 1 workers, so a small box
-      // runs near the serial time plus contention: 15 min keeps a slow box from
-      // reporting a timeout that reads like interference.
+      // Vitest uses cores - 1 workers, so a small box runs near serial time; 15 min keeps a
+      // slow box from reporting a timeout that reads like interference.
       timeoutMs: 15 * MINUTE,
       parse: { from: join(runDir, 'web.json'), fn: parseVitestJson },
     },
     {
-      // Needs `packages/*/dist`: the dev servers resolve workspace packages
-      // through their package.json `main`, unlike the unit suites (aliased to src).
+      // Needs packages/*/dist: the dev servers resolve workspace packages through their
+      // package.json `main`, unlike the unit suites.
       id: 'e2e',
       phase: 'B',
       needsBuild: true,
-      // :5176 is `chromium-db`'s dev server and :55432 its PGlite socket
-      // (story 87.1; the values are `e2e/helpers/db-harness.ts`'s, pinned
-      // equal by gates-lib.test.ts).
       ports: [5173, 5174, 5175, 5176, 55432],
       cwd: web,
       command: './node_modules/.bin/playwright',
-      // ONE Playwright run: two runs would race for the same server ports.
-      // The screenshot projects are never named here (E2E_SCREENSHOT_PROJECTS).
+      // One Playwright run: two would race for the same server ports.
       args: ['test', '--reporter=line,json', ...e2eProjects.map((name) => `--project=${name}`)],
       env: {
         PLAYWRIGHT_JSON_OUTPUT_FILE: join(runDir, 'e2e.json'),
-        // An ambient PLAYWRIGHT_BASE_URL drops every webServer and the
-        // paid/prod/db projects (playwright.config.ts), so the gate would pass on
-        // fewer tests against some other server. The config tests truthiness.
+        // An ambient PLAYWRIGHT_BASE_URL drops every webServer and the paid/prod/db projects,
+        // so the gate would pass on fewer tests.
         PLAYWRIGHT_BASE_URL: '',
       },
       timeoutMs: 20 * MINUTE,
@@ -461,12 +328,8 @@ export function buildGates({ root, runDir, typeCheckScripts }) {
 }
 
 /**
- * Which gates to run for `--only`. Phase A runs whole when any selected gate
- * needs a build (or is itself a phase A step), because its steps depend on each
+ * Phase A runs whole when any selected gate needs a build: its steps depend on each
  * other in order.
- *
- * @param {ReturnType<typeof buildGates>} gates
- * @param {string[]|null} only
  */
 export function selectGates(gates, only) {
   if (!only) return gates
@@ -480,7 +343,6 @@ export function selectGates(gates, only) {
   return gates.filter((g) => only.includes(g.id) || (needsPhaseA && g.phase === 'A'))
 }
 
-/** `typeCheckPrograms`, with the package named in any error. */
 function typeCheckProgramsOf(dir, script) {
   try {
     return typeCheckPrograms(script)
@@ -489,13 +351,6 @@ function typeCheckProgramsOf(dir, script) {
   }
 }
 
-/**
- * The packages to type-check: every workspace package that HAS a `type-check`
- * script, so a new package cannot be silently left out.
- *
- * @param {{dir: string, scripts?: Record<string, string>}[]} packages
- * @returns {Record<string, string>} dir → type-check script
- */
 export function typeCheckScriptsOf(packages) {
   return Object.fromEntries(
     packages
@@ -512,13 +367,7 @@ export const USAGE = `Usage: pnpm gates [--sequential] [--only <id,id,...>]
 
 Gates: build-pkgs, build-web, bundle (phase A); types, biome, core, db, web, e2e (phase B)`
 
-/**
- * The CLI flags. Throws on anything it does not understand, including a
- * repeated `--only` (the second would otherwise silently replace the first).
- *
- * @param {string[]} argv
- * @returns {{sequential: boolean, only: string[]|null, help: boolean}}
- */
+/** Throws on anything unknown, including a repeated `--only`. */
 export function parseArgs(argv) {
   const options = { sequential: false, only: null, help: false }
   const setOnly = (value) => {
@@ -538,18 +387,8 @@ export function parseArgs(argv) {
 }
 
 /**
- * The lines that say the screenshot projects did not run here (story 84.1, D3),
- * printed with the mode and again under the final verdict, so a GREEN local e2e
- * never reads as covering layout. `changedFiles` are the working tree's changes
- * (tracked + untracked): since story 84.2 deleted the `@layout` tests, a
- * `.tsx`/`.css` change is checked for page layout mainly by the CI screenshots
- * (the only layout-dedicated projects left), so the runner says how to run them
- * before merging (84.2 D4, keeping 82.3 review P4's intent). A warning, not a
- * failure: CI runs the screenshots on every PR to main and every deploy
- * regardless.
- *
- * @param {{e2e: boolean, changedFiles?: string[]}} options
- * @returns {string[]}
+ * Printed with the mode and again under the verdict, so a green local e2e never reads
+ * as covering layout. A warning only: CI runs the screenshots regardless.
  */
 export function screenshotNotice({ e2e, changedFiles = [] }) {
   if (!e2e) return []
@@ -565,14 +404,7 @@ export function screenshotNotice({ e2e, changedFiles = [] }) {
   return lines
 }
 
-/**
- * Every process descended from `pid`, from a `ps -A -o pid=,ppid=` table,
- * whatever its process group.
- *
- * @param {string} psTable
- * @param {number} pid
- * @returns {number[]}
- */
+/** Every descendant of `pid`, whatever its process group. */
 export function treeOf(psTable, pid) {
   const children = new Map()
   for (const line of psTable.trim().split('\n')) {
@@ -595,12 +427,10 @@ export function treeOf(psTable, pid) {
   return found
 }
 
-/** @param {string} path */
 function vitestArgs(path) {
   return ['run', '--reporter=default', '--reporter=json', `--outputFile=${path}`]
 }
 
-/** @param {string} text */
 function safeJson(text) {
   try {
     return JSON.parse(text)

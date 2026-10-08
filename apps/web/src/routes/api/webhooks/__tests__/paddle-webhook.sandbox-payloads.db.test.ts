@@ -1,22 +1,5 @@
 // @vitest-environment node
-/**
- * Paddle webhook replayed on PADDLE-GENERATED payloads (story 94.1, FR152).
- *
- * The sibling `paddle-webhook.db.test.ts` proves the handler's guarantees on
- * payloads WE wrote. This file is a different claim: every fixture under
- * `fixtures/paddle-sandbox/` is the JSON Paddle itself produced in the SANDBOX
- * account (read back from `GET /notifications/{id}` → `payload`, or from a
- * simulation run's events), scrubbed of personal data and otherwise untouched.
- * See `fixtures/paddle-sandbox/MANIFEST.md` for each fixture's provenance.
- *
- * Harness: same as the sibling file (PGlite + the full committed migration
- * chain, `drizzle-orm` NOT mocked, every outcome read back from the DB). The
- * only differences:
- * - each fixture is POSTed as the RAW BYTES read from disk, signed over those
- *   bytes (never a re-serialization, so Biome's JSON formatting cannot matter);
- * - the customer-API lookup can run FOR REAL against a stubbed `fetch` that
- *   returns Paddle's captured `GET /customers/{id}` response (`useRealLookup`).
- */
+// Fixtures are POSTed as raw bytes and signed over those bytes, so JSON formatting can't matter.
 
 import crypto from 'crypto'
 import { readFileSync, readdirSync } from 'node:fs'
@@ -27,7 +10,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 const holder = vi.hoisted(() => ({ db: null as unknown }))
 const lookup = vi.hoisted(() => ({
-  /** When true, the REAL `fetchPaddleCustomerEmail` runs (against stubbed `fetch`). */
   useReal: false,
   stub: null as unknown as (customerId: string) => Promise<string | undefined>,
 }))
@@ -84,7 +66,6 @@ const MIGRATIONS = new URL('../../../../../../../packages/db/migrations/', impor
 const FIXTURES = new URL('fixtures/paddle-sandbox/', import.meta.url)
 
 const SECRET = 'pdl_ntfset_test_secret'
-/** The sandbox catalog (5-3 change log 2026-09-11; re-read 2026-10-04, story 94.1 Task 1.1). */
 const SANDBOX_ANNUAL_PRICE = 'pri_01m292p4a2eb5653a5aqwfz35k'
 const SANDBOX_LIFETIME_PRICE = 'pri_01m292p4qkt0xa4d6zb89pjr7p'
 const SANDBOX_API = 'https://sandbox-api.paddle.com'
@@ -92,7 +73,6 @@ const SANDBOX_API = 'https://sandbox-api.paddle.com'
 let pg: PGlite
 let db: ReturnType<typeof drizzle>
 
-/** The fixture's bytes exactly as committed. */
 function readFixture(name: string): string {
   return readFileSync(fileURLToPath(new URL(name, FIXTURES)), 'utf8')
 }
@@ -101,7 +81,6 @@ function fixtureNames(): string[] {
   return readdirSync(fileURLToPath(FIXTURES)).sort()
 }
 
-/** POST raw bytes, signed `ts=<now>;h1=HMAC(secret, ts:raw)` like Paddle does. */
 function postRaw(raw: string) {
   const ts = Math.floor(Date.now() / 1000)
   const h1 = crypto.createHmac('sha256', SECRET).update(`${ts}:${raw}`).digest('hex')
@@ -114,16 +93,10 @@ function postRaw(raw: string) {
   })
 }
 
-/** Replay a committed fixture through the real handler. */
 function replay(name: string) {
   return postRaw(readFixture(name))
 }
 
-/**
- * Stub `fetch` so the REAL customer lookup reads the captured
- * `GET /customers/{id}` response. Returns the spy so a test can assert the only
- * call was the expected URL (no real network, ever).
- */
 function stubCustomerApi(responses: Record<string, string>) {
   lookup.useReal = true
   return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
@@ -188,7 +161,6 @@ beforeEach(async () => {
   await db.delete(users)
 })
 
-// --- The captured sandbox entities (see MANIFEST.md) ------------------------------
 const CTM_A = 'ctm_01m44c2mpyd87z8cn3z5ptw691'
 const CTM_B = 'ctm_01m44c4g2vdv7cyd2bctn0gj71'
 const CTM_S = 'ctm_01m44c50kqx272q8c72dyfyyza'
@@ -228,17 +200,15 @@ interface Envelope {
   data: Record<string, unknown>
 }
 
-/** The fixture parsed, for reading its own values (never for re-serializing). */
 function parsed(name: string): Envelope {
   return JSON.parse(readFixture(name)) as Envelope
 }
 
-/** `occurred_at` as the handler stores it (ms; Paddle's microseconds truncate). */
+/** Paddle's microsecond `occurred_at` truncated to ms, as the handler stores it. */
 function occurredMs(name: string): number {
   return Date.parse(parsed(name).occurred_at)
 }
 
-/** The REAL customer lookup over the captured `GET /customers/{id}` responses. */
 function realLookup() {
   return stubCustomerApi({
     [CTM_A]: readFixture('customer-A.json'),
@@ -270,7 +240,6 @@ async function refundedSum(customerId: string, transactionId: string): Promise<n
   return Number(row?.total ?? 0)
 }
 
-/** Grant lifetime the way Paddle does it: `transaction.paid`, then `.completed`. */
 async function grantLifetime(paid: string, completed: string) {
   realLookup()
   await expectOk(paid)
@@ -285,13 +254,11 @@ describe('AC 4 — Paddle sandbox payloads through the real handler, outcomes re
     const [row] = await readUser(CTM_S)
     expect(row.subscriptionStatus).toBe('active')
     expect(row.billingInterval).toBe('year')
-    // `GET /customers/{id}` was captured AFTER the email change (Task 2.4), so
-    // Paddle's response carries the new address; the lookup reads `data.email`.
+    // The customer response was captured after the email change, so it carries the new address.
     expect(row.email).toBe(parsed('customer-S.json').data.email)
     expect(row.email).toBe('bp-94-1-s-new@example.test')
     const profiles = await db.select().from(userProfiles).where(eq(userProfiles.userId, row.id))
     expect(profiles).toHaveLength(1)
-    // No real network: one call, to exactly the sandbox customer URL.
     expect(fetchSpy).toHaveBeenCalledTimes(1)
     expect(String(fetchSpy.mock.calls[0][0])).toBe(`${SANDBOX_API}/customers/${CTM_S}`)
   })
@@ -304,9 +271,7 @@ describe('AC 4 — Paddle sandbox payloads through the real handler, outcomes re
     realLookup()
     await expectOk(F.subCreatedS)
     const [before] = await readUser(CTM_S)
-    // These two were already claimed by the first half of this test, so a
-    // re-replay would only prove dedup. Clear the claim table so they are
-    // processed afresh, now against an existing subscriber row.
+    // Clear the claim table so these are processed afresh, not just deduped.
     await db.delete(paddleWebhookEvents)
     await expectOk(F.paidS)
     await expectOk(F.completedS)
@@ -428,8 +393,7 @@ describe('AC 4 — Paddle sandbox payloads through the real handler, outcomes re
   })
 
   it('subscription.activated (real) for a first-seen buyer: active, yearly, email from the REAL lookup', async () => {
-    // Review decision D1: Paddle sends `.activated` alongside `.created`, with the
-    // same `occurred_at`. Either alone must grant (whichever lands first).
+    // Paddle sends `.activated` alongside `.created` with the same occurred_at; either alone must grant.
     realLookup()
     await expectOk(F.subActivatedS)
     const [row] = await readUser(CTM_S)
@@ -440,8 +404,7 @@ describe('AC 4 — Paddle sandbox payloads through the real handler, outcomes re
   })
 
   it('the real subscription.updated{canceled} after subscription.created: canceled, accessEndedAt set', async () => {
-    // Review decision D1: the real `.updated` that accompanies the real cancel
-    // (runbook §3 step 1). Delivered WITHOUT its `.canceled` twin.
+    // The real `.updated` that accompanies a cancel, delivered without its `.canceled` twin.
     realLookup()
     await expectOk(F.subCreatedS)
     await expectOk(F.subUpdatedCanceledS)
@@ -479,7 +442,6 @@ describe('AC 5 — the hazards 5-19 fixed, on the real payloads (re-delivered, n
     await expectOk(F.subCreatedS)
     const [before] = await readUser(CTM_S)
     await expectOk(F.subCreatedS)
-    // "No change to the users row" (runbook §3a step 1), not just no new row.
     expect((await readUser(CTM_S))[0]).toEqual(before)
     const claims = await db
       .select()
@@ -503,12 +465,8 @@ describe('AC 5 — the hazards 5-19 fixed, on the real payloads (re-delivered, n
   })
 
   it('(c) the real created + updated pair for one partial refund counts once and never crosses the bar', async () => {
-    // Two guards make this hold: D-A drops the pending `created`, and the
-    // ledger's `onConflictDoNothing` on the adjustment id. The approved
-    // delivery is sent a SECOND time with its claim cleared (as a redelivery
-    // under a fresh event id would arrive), so it reaches the ledger key
-    // instead of being stopped by delivery dedup (94.1 code review: before
-    // this, the ledger-key mutation stayed green here).
+    // Redelivered with its claim cleared so it reaches the ledger's onConflictDoNothing
+    // instead of being stopped by delivery dedup.
     await grantLifetime(F.paidB, F.completedB)
     await expectOk(F.adjCreatedB)
     await expectOk(F.adjUpdatedB)
@@ -529,8 +487,7 @@ describe('AC 5 — the hazards 5-19 fixed, on the real payloads (re-delivered, n
     // `.paid` arrives last, carrying its earlier occurred_at: no re-grant.
     await expectOk(F.paidA)
     expect((await readUser(CTM_A))[0].subscriptionStatus).toBe('canceled')
-    // And the late replay of `.completed` itself (AC 5(d)), claim cleared so
-    // the watermark, not delivery dedup, is what refuses it.
+    // Claim cleared so the watermark, not delivery dedup, is what refuses it.
     await db.delete(paddleWebhookEvents)
     await expectOk(F.completedA)
     expect((await readUser(CTM_A))[0].subscriptionStatus).toBe('canceled')

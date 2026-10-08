@@ -1,25 +1,3 @@
-/**
- * Sync API Endpoints
- *
- * Server API endpoints for handling synchronization operations.
- * Implements batch processing and conflict detection.
- *
- * Features:
- * - Batch sync operations
- * - Conflict DETECTION (reported to the client; this module does not resolve them)
- * - Authentication validation
- * - Rate limiting
- *
- * ⚠️ There is deliberately NO sync-history or audit-log feature here. One was
- * written, never worked, and was deleted by story 66.1 (FR102, 2026-09-24): the
- * `syncHistory`/`syncAuditLogs` tables were never in `packages/db/src/schema.ts`,
- * `db.execute()` was called with two arguments, and every failure was swallowed.
- * Re-adding one means a schema migration plus drizzle `sql` templates that bind
- * their parameters — a story with its own tests, not a helper dropped in here.
- *
- * Data Sovereignty: ALL data stored in DanubeData PostgreSQL (Germany - EU) for CLOUD Act immunity (NFR1, NFR2)
- */
-
 import { logger } from '@/lib/logger'
 import { hasPaidAccess } from '@/lib/premium/access-statuses'
 import { type DbTx, lockUserProfileSet } from '@/server/api/profile-set-lock'
@@ -45,91 +23,39 @@ import {
 import { and, asc, eq, gt } from 'drizzle-orm'
 import { z } from 'zod'
 
-// ============================================================================
-// Types
-// ============================================================================
-
-/**
- * Request body for batch sync operations
- */
 export interface BatchSyncRequest {
-  /** Array of operations to sync */
   operations: SyncOperation[]
-  /** Client timestamp for request ordering */
   clientTimestamp: number
-  /** Device ID making the request */
   deviceId: string
 }
 
-/**
- * Response for batch sync operations
- */
 export interface BatchSyncResponse {
-  /** Whether the sync was successful */
   success: boolean
-  /** Number of operations processed */
   processedCount: number
-  /** Number of operations that failed */
   failedCount: number
-  /** Number of conflicts detected */
   conflictCount: number
-  /** Array of conflict results */
   conflicts: SyncConflict[]
-  /** Array of failed operation IDs */
   failedOperationIds: string[]
-  /** Server timestamp */
   serverTimestamp: number
-  /** Sync status */
   status: SyncStatus
-  /** Error message if sync failed */
   error?: string
-  /**
-   * Operations the server refused PERMANENTLY (story 75.1). Each is also counted
-   * in `failedCount` and listed in `failedOperationIds`, so a client that does
-   * not read this field behaves exactly as before. The client transport maps a
-   * listed op to `statusCode: 422`, which core drops from the queue.
-   *
-   * Optional only so `server/functions/sync.ts`'s literals keep compiling;
-   * `processBatchSync` always sets it.
-   */
+  // Also counted in failedCount/failedOperationIds, so older clients behave as before.
   rejections?: SyncRejection[]
-  /**
-   * Why the WHOLE request was refused before any operation ran, if it was. The
-   * route maps it to an HTTP status (`routes/api/sync/batch.ts`). An explicit
-   * discriminant, so rewording an `error` string cannot silently change a status.
-   */
+  // An explicit discriminant, so rewording an `error` cannot change the HTTP status.
   refusal?: BatchRefusal
 }
 
-/**
- * A request-level refusal. Only `invalid-request` is PERMANENT (the route answers
- * 400, which core drops). `ownership` answers 401, which core keeps queued: the
- * op may be another account's pending edit (see its arm in `processBatchSync`).
- * `tier` and `rate-limit` keep their 403 / 429 semantics.
- */
+// Only invalid-request is permanent (400). ownership answers 401, which core keeps queued.
 export type BatchRefusal = 'invalid-request' | 'ownership' | 'tier' | 'rate-limit'
 
-/**
- * Outcome of applying one operation. `rejection` is set ONLY for a failure that is
- * positive proof of permanence (see `sync-rejection.ts`); every other failure
- * leaves it unset and is reported exactly as before story 75.1.
- */
 interface OperationResult {
   success: boolean
   error?: string
   rejection?: SyncRejectionReason
 }
 
-/**
- * Turn a caught database error into an {@link OperationResult}.
- *
- * A PERMANENT refusal is logged with the driver detail and returned with a
- * generic `error` plus its `rejection` reason (AC-6: the driver message names
- * tables, columns and constraints, so it goes to the log, never the envelope).
- * Anything else is returned EXACTLY as the catch blocks returned it before story
- * 75.1 — the message, and no `rejection` — so it stays in core's kept-queued
- * bucket.
- */
+// Driver detail goes to the log only. Non-permanent failures keep their message and no
+// rejection, so they stay queued.
 function failureFromError(
   error: unknown,
   context: { entityType: string; entityId?: unknown; userId?: unknown }
@@ -150,48 +76,23 @@ function failureFromError(
   }
 }
 
-/**
- * Conflict information returned to client
- */
 interface SyncConflict {
-  /** Local operation ID */
   localOperationId: string
-  /** Server operation ID */
   serverOperationId: string
-  /** Entity type */
   entityType: string
-  /** Entity ID (uuid string since Story 5-14 — no serial-int ids remain) */
   entityId: string
-  /** Type of conflict */
   conflictType: string
-  /** Suggested resolution */
   resolution?: SyncOperation
 }
 
-// ============================================================================
-// Validation Schemas
-// ============================================================================
-
-/**
- * Zod schemas for entity-specific data validation
- * These ensure data structure matches expected format for each entity type
- */
 const incomeSourceSchema = z.object({
   name: z.string().min(1).max(255),
   amount: z.number().int(),
   frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']),
-  // Story 30.4a: nullable FK to `categories`. Must accept an explicit null —
-  // un-categorizing a row sends null, and updateEntity does a partial .set(), so
-  // the client always forwards the key rather than omitting it.
+  // Accepts explicit null: un-categorizing sends null and updates use a partial .set().
   categoryId: z.string().uuid().nullable().optional(),
-  // Story 34.1a (FR60): explicit display position. This is a VALIDATION gate, not
-  // a stripping one — the per-entity schemas are invoked inside
-  // `syncOperationSchema`'s superRefine, which discards its callback's return
-  // value, so `operation.data` passes through unstripped (verified by probe; see
-  // lib/sync/__tests__/sort-order-gates.test.ts). Declaring the field is what makes
-  // a negative, fractional or over-int32 position get rejected HERE rather than
-  // blowing up at the INSERT. Bounds mirror the client gate in
-  // packages/core/src/sync/types.ts.
+  // Validates, not strips: superRefine discards the parse result, so declaring the field is what
+  // rejects a bad position here rather than at the INSERT.
   sortOrder: z.number().int().min(0).max(2_147_483_647).optional(),
   userId: z.string().uuid(),
 })
@@ -200,40 +101,14 @@ const expenseSchema = z.object({
   name: z.string().min(1).max(255),
   amount: z.number().int(),
   frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']),
-  // Story 30.4a: see incomeSourceSchema above.
   categoryId: z.string().uuid().nullable().optional(),
-  // Story 34.1a (FR60): explicit display position; see incomeSourceSchema above.
   sortOrder: z.number().int().min(0).max(2_147_483_647).optional(),
-  // Story 65.2 (FR101): the "this expense ends before I retire" flag.
-  //
-  // ⚠️ What this declaration buys is VALIDATION, not stripping — the same
-  // correction `sortOrder` records above. `syncOperationSchema` declares `data:
-  // z.record(z.unknown())` and invokes this schema inside a `superRefine`, which
-  // DISCARDS its callback's return value, so `operation.data` reaches
-  // `applyOperation` unstripped and this `.default(false)` never lands. Declaring
-  // it is what makes a non-boolean get rejected HERE rather than at the UPDATE.
-  // ⚠️ Deliberately NOT on `incomeSourceSchema`: `incomeSources` has no such
-  // column, and `updateEntity` spreads `operation.data` straight into `.set()`.
-  //
-  // ⚠️ `.default(false)` is KEPT rather than narrowed to `.optional()`, a call
-  // code review 65.2 raised: the default is provably inert here (the Gate 4 test
-  // pins that `superRefine` discards it), so `.optional()` would state the real
-  // contract more honestly. It stays for symmetry with
-  // `contributionRecordedAsExpense` below, which is the established precedent for
-  // a boolean in this file — a lone exception would read as an oversight. If the
-  // `superRefine` is ever fixed to use its parse result, EVERY default in this
-  // file starts landing on partial updates and they must be reviewed together.
+  // Inert default: superRefine discards the parse. If that changes, every default here starts
+  // landing on partial updates.
   endsBeforeRetirement: z.boolean().default(false),
   userId: z.string().uuid(),
 })
 
-/**
- * Story 30.4a: user-defined income/expense category (FR54).
- *
- * Untrusted-input gate for the category entity. Mirrors core's `categorySchema`
- * but is declared independently, matching this file's existing convention of
- * hand-duplicating the per-entity schemas rather than importing core's.
- */
 const categorySchema = z.object({
   name: z.string().min(1).max(255),
   kind: z.enum(['income', 'expense']),
@@ -242,21 +117,12 @@ const categorySchema = z.object({
 
 const savingsGoalSchema = z.object({
   name: z.string().min(1).max(255),
-  // Optional/nullable (Story 16-1): a positive integer ⇒ goal, null ⇒ account
-  // (no target) — an ABSENT value, never a sentinel 0. (Originally described as
-  // mirroring balanceTracking.maxContributionLimit, dropped by story 49.1 / FR75.)
+  // Positive integer = goal, null = account (no target); never a sentinel 0.
   targetAmount: z.number().int().positive().nullable().optional(),
   currentBalance: z.number().int().default(0),
-  // Story 26.1: per-account allocation. `monthlyAllocation` nullable cents, bounded
-  // to the int32 column range (defense-in-depth: the enforced client gate in
-  // packages/core/src/sync/types.ts already caps it, but this untrusted-input gate
-  // must reject an over-range value rather than let the INSERT overflow).
-  // `allocationMode` defaults to 'automatic' on ingest so a payload omitting it
-  // matches the DB default (the client always emits it — an intentional asymmetry
-  // with the client gate's `.optional()`, not an exact mirror).
+  // Bounded to int32 so an over-range value is refused rather than overflowing the INSERT.
   monthlyAllocation: z.number().int().min(0).max(2_147_483_647).nullable().optional(),
   allocationMode: z.enum(['manual', 'automatic']).default('automatic'),
-  // Story 34.1a (FR60): explicit display position; see incomeSourceSchema above.
   sortOrder: z.number().int().min(0).max(2_147_483_647).optional(),
   userId: z.string().uuid(),
 })
@@ -266,25 +132,12 @@ const balanceTrackingSchema = z.object({
   name: z.string().min(1).max(255),
   currentBalance: z.number().int().default(0),
   monthlyContribution: z.number().int().default(0),
-  // Story 16-2: cadence of the contribution. Defaults to 'monthly' so pre-frequency
-  // paid-tier rows round-trip. Server gate — must mirror the client gate in
-  // packages/core/src/sync/types.ts (syncOperationDataSchema already carries `frequency`).
+  // Defaults to 'monthly' so pre-frequency rows round-trip.
   frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']).default('monthly'),
-  // Story 45.1 (FR72): the user's statement that this contribution is already
-  // recorded as an expense, so the savings distributable pool must not subtract
-  // it twice. Server gate — must mirror the client gate in
-  // packages/core/src/sync/types.ts and the syncBridge payload whitelist.
+  // Already recorded as an expense, so the savings pool must not subtract it twice.
   contributionRecordedAsExpense: z.boolean().default(false),
-  // Story 102.1 (FR169): the expense that pays a debt. Server gate, mirroring the
-  // client gate (`syncOperationDataSchema`) and the syncBridge payload.
-  // ⚠️ `.nullable().optional()`, NOT `.default(null)` (D2): the bridge always
-  // sends the key, and the `superRefine` discards this parse anyway, but a default
-  // would claim that an omitted key clears the link, which a partial `.set()`
-  // never does.
-  // ⚠️ No existence check, ever: the column has no FK on purpose, and a link to
-  // an expense the server does not hold is a normal state (pull is paginated).
+  // No FK and no existence check: a link to an expense the server does not hold yet is normal.
   paymentExpenseId: z.string().uuid().nullable().optional(),
-  // Story 34.1a (FR60): explicit display position; see incomeSourceSchema above.
   sortOrder: z.number().int().min(0).max(2_147_483_647).optional(),
   userId: z.string().uuid(),
 })
@@ -293,59 +146,26 @@ const userProfileSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().max(500).optional(),
   isDefault: z.boolean().default(false),
-  // ⚠⚠ The FULL enum, via core's shared list. This gate carried an 11-value
-  // list until the code review of story 66.2: the `currency` column has held all
-  // 21 values since migration 0001, and `mapProvidedCurrency` in the Paddle
-  // webhook writes any of them. An 11-value list here rejects a legitimate EDIT
-  // to a profile the webhook itself created. Pre-existing; fixed alongside the
-  // pull gate so the two cannot drift apart again.
+  // The full currency enum: the Paddle webhook can create profiles with any of them.
   currency: z.enum(SYNC_CURRENCIES),
-  // Story 54.2 (FR78): the user-chosen avatar emoji.
-  //
-  // ⚠️ This object is a HAND-MAINTAINED DUPLICATE of core's `userProfileSchema`
-  // (packages/core/src/sync/types.ts) — it is not derived from it, so the two
-  // drift silently. Change both.
-  //
-  // ⚠️ This gate VALIDATES but does not STRIP: it is invoked inside
-  // `syncOperationSchema`'s `superRefine`, whose return value zod discards, and
-  // `data` is `z.record(z.unknown())` at the top level. So omitting this line
-  // would not drop `icon` — it would let an over-long value through to the
-  // INSERT, to fail against `varchar(16)` in the database instead of here.
+  // Hand-maintained duplicate of core's userProfileSchema; change both.
   icon: z.string().max(16).nullable().optional(),
   userId: z.string().uuid(),
 })
 
-/**
- * The server gate for a `retirementPlan` op's data (story 99.2, FR161).
- *
- * ⚠️ The plan schema is IMPORTED from core (`retirementPlanSyncSchema`), the same
- * object the client queue gate runs, so the two cannot drift. (The userProfile
- * gate above is a hand copy and documents exactly that drift.) Like every gate in
- * `schemaFor` this one VALIDATES inside `superRefine` and does not strip; the
- * write path (`writeRetirementPlan`) parses again and stores the PARSED plan, so
- * an undeclared key never reaches the jsonb column.
- */
+// Validates only; writeRetirementPlan re-parses and stores the parsed plan, so undeclared keys
+// never reach the jsonb column.
 const retirementPlanOperationSchema = z.object({
   plan: retirementPlanSyncSchema,
   userId: z.string().uuid(),
 })
 
-/**
- * Zod schema for sync operation validation
- * Uses discriminated union to validate data based on entityType
- */
 export const syncOperationSchema = z
   .object({
     id: z.string(),
     type: z.enum(['create', 'update', 'delete']),
-    // ⚠️ Hard-coded, NOT derived from core's SyncEntityType — so adding an entity
-    // type upstream does NOT surface here at compile time. Omitting a value is a
-    // SILENT and unusually destructive defect: this schema is applied via
-    // `z.array(syncOperationSchema)` in batchSyncRequestSchema, so ONE operation
-    // with an unrecognised entityType fails the WHOLE batch (processedCount 0,
-    // failedOperationIds empty). The client then retries the same batch forever
-    // and NO entity's operations ever drain. Keep in lockstep with
-    // SyncEntityType in packages/core/src/sync/types.ts.
+    // Keep in lockstep with core's SyncEntityType: one unknown entityType fails the whole batch
+    // and the client retries it forever.
     entityType: z.enum([
       'incomeSource',
       'expense',
@@ -353,42 +173,24 @@ export const syncOperationSchema = z
       'balanceTracking',
       'userProfile',
       'category',
-      // Story 99.2 (FR161). Pinned BOTH ways against core's union by
-      // `sync-category-gates.test.ts` (AC-5b).
       'retirementPlan',
     ]),
-    // A uuid (story 75.1). Every entity table's `id` is a uuid column and every
-    // client id generator mints a v4-shaped uuid (`lib/uuid.ts`, story 5-14), so a
-    // non-uuid id can never succeed on any path. Before this, `checkConflict`'s
-    // SELECT raised `22P02` and the op became a CONFLICT (`server-check-failed`
-    // or, through `entityExists`, `update-delete`), and a conflict is never
-    // removed from the client queue — a permanent loop. (Since story 79.3 a
-    // failed check is a kept-queued FAILURE, not a conflict.)
-    // Refused here it is a clean 400 that core drops.
+    // Every entity id is a uuid; refusing here is a clean 400 instead of a permanent queue loop.
     entityId: z.string().uuid(),
-    data: z.record(z.unknown()), // Kept for backward compatibility, but validated per-entity below
+    data: z.record(z.unknown()),
     timestamp: z.number(),
     deviceId: z.string(),
     userId: z.string(),
-    // ⚠️ LOAD-BEARING. `z.object` STRIPS undeclared keys and `processBatchSync`
-    // consumes the PARSED output, so before these two were declared every op
-    // reached `applyOperation` with `profileId === undefined`. Every create of a
-    // profile-scoped entity (income, expenses, savings, balances, categories)
-    // then violated `profileId NOT NULL` — nothing the user entered ever reached
-    // the server, and a second device signed in to an empty account.
-    // `profileId` is ownership-checked against the session user in
-    // `applyOperation`; it is not trusted merely because it parses.
+    // Load-bearing: z.object strips undeclared keys and the parsed output is consumed.
+    // profileId is ownership-checked in applyOperation.
     profileId: z.string().uuid().optional(),
     version: z.number().optional(),
     baseVersion: z.number().optional(),
   })
   .superRefine((data, ctx) => {
-    // Validate data structure based on entityType
     const { entityType, data: entityData, type } = data
 
-    // For delete operations, data may be minimal
     if (type === 'delete') {
-      // Delete operations only need userId in data
       if (!entityData['userId']) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -398,17 +200,8 @@ export const syncOperationSchema = z
       return
     }
 
-    // For create/update, validate full structure based on entityType.
-    //
-    // ⚠️⚠️ `safeParse` + `addIssue`, NEVER `.parse()` (story 75.1). A `.parse()`
-    // THROWS out of the refinement, and zod 3 does not catch a throw inside
-    // `superRefine`: `batchSyncRequestSchema.safeParse` itself threw, escaping
-    // `processBatchSync` and the route, so an invalid payload never reached the
-    // "Invalid request" arm below. MEASURED: the route threw a raw `ZodError`,
-    // which the client transport sees as a network failure — RETRYABLE — so the
-    // op left the persisted queue for an in-memory retry and was lost past the
-    // retry budget or on reload. Reported as issues, it is a clean 400 that core
-    // drops.
+    // safeParse + addIssue, never .parse(): a throw escapes superRefine and the client reads
+    // it as a retryable network failure.
     const schemaFor = {
       incomeSource: incomeSourceSchema,
       expense: expenseSchema,
@@ -430,30 +223,13 @@ export const syncOperationSchema = z
     }
   })
 
-/**
- * Zod schema for batch sync request
- */
 export const batchSyncRequestSchema = z.object({
   operations: z.array(syncOperationSchema),
   clientTimestamp: z.number(),
   deviceId: z.string(),
 })
 
-// ============================================================================
-// Database Helper Types
-// ============================================================================
-
-/**
- * Map of entity types to their database tables
- *
- * ⚠️ EXPORTED FOR TESTING (code review 30.4a). This is an enumerated gate: a
- * `SyncEntityType` with no entry here makes `getTable` throw
- * `Unknown entity type` at apply time, so every push of that entity fails while
- * the client sees nothing wrong. It had zero coverage — removing
- * `category: categories` left 240/240 green across `src/server` + `src/lib/sync`.
- * `sync-category-gates.test.ts` now pins the map against the `SyncEntityType`
- * union itself, so a new entity cannot be added to the union without landing here.
- */
+// Exported for a test that pins it against SyncEntityType: a missing entry fails every push silently.
 export const entityTableMap = {
   incomeSource: incomeSources,
   expense: expenses,
@@ -461,20 +237,12 @@ export const entityTableMap = {
   balanceTracking: balanceTracking,
   userProfile: userProfiles,
   category: categories,
-  // Story 99.2: one row per user, `id` = the user's id. No `profileId` column, so
-  // every `'profileId' in table` test below routes a plan op past the profile
-  // checks; `applyOperation` and `checkConflict` give it its own branch.
+  // One row per user, `id` = the user's id, no profileId column.
   retirementPlan: retirementPlans,
 } as const
 
-/**
- * Type for entity table map
- */
 type EntityTableMap = typeof entityTableMap
 
-/**
- * Get the database table for an entity type
- */
 function getTable<T extends keyof EntityTableMap>(entityType: T) {
   const table = entityTableMap[entityType]
   if (!table) {
@@ -483,35 +251,19 @@ function getTable<T extends keyof EntityTableMap>(entityType: T) {
   return table
 }
 
-// ============================================================================
-// Rate Limiting Configuration (Database-backed for data sovereignty)
-// ============================================================================
-
 const RATE_LIMIT_CONFIG = {
-  maxRequests: 100, // Max requests per window
-  windowMs: 60 * 1000, // 1 minute window
+  maxRequests: 100,
+  windowMs: 60 * 1000,
 }
 
-/**
- * Check rate limit for a user using DanubeData PostgreSQL
- * This ensures rate limiting persists across server restarts (NFR1, NFR2).
- *
- * Exported so the pull route shares the same per-user budget as push (review D3);
- * the window is generous (100/min) and a 30s poll is ~2/min, so push and pull
- * coexist comfortably in one bucket.
- */
+// Exported so pull shares push's per-user budget.
 export async function checkRateLimit(
   userId: string
 ): Promise<{ allowed: boolean; remaining: number }> {
-  // Story SEC-2: the per-user sync limiter now shares the ONE atomic DB-backed
-  // primitive (`checkDbRateLimit`, scope `sync`) with the auth limiters — a
-  // single, cross-instance-safe implementation instead of the former inline
-  // read-then-write (which could race and under-count across instances).
   const decision = await checkDbRateLimit({
     scope: 'sync',
     subject: userId,
-    // Populate the FK so account erasure (account.ts deletes rateLimits by
-    // userId) still removes this user's sync counters.
+    // Set so account erasure, which deletes rateLimits by userId, removes these counters.
     userId,
     windowMs: RATE_LIMIT_CONFIG.windowMs,
     maxAttempts: RATE_LIMIT_CONFIG.maxRequests,
@@ -520,11 +272,7 @@ export async function checkRateLimit(
   return { allowed: decision.allowed, remaining: decision.remaining }
 }
 
-// Bounded per-instance in-memory store — the DB-error fallback for the sync
-// limiter ONLY (auth limiters fail closed instead). It is NOT cross-instance by
-// definition; it keeps the paid sync path available during a transient DB outage
-// rather than fail closed, and it still enforces the same window/max (it never
-// silently allows unlimited attempts).
+// DB-error fallback for sync only (auth limiters fail closed): per-instance, same window and max.
 interface RateLimitEntry {
   userId: string
   count: number
@@ -554,23 +302,10 @@ function syncInMemoryFallback(
   return { allowed: true, remaining: RATE_LIMIT_CONFIG.maxRequests - requestCount - 1 }
 }
 
-// ============================================================================
-// Database Operations (DanubeData PostgreSQL)
-// ============================================================================
-
-/**
- * The handle a `db.transaction` callback receives. The lock every transaction
- * below takes first lives in `profile-set-lock.ts` (story 80.1 moved it there so
- * the forecast save shares it).
- */
 type SyncTx = DbTx
 
-/** Where a read or write runs: autocommit on `db`, or inside a transaction. */
 type Executor = typeof db | SyncTx
 
-/**
- * Get entity from database by type and ID
- */
 async function getEntity(
   entityType: keyof EntityTableMap,
   entityId: string,
@@ -583,18 +318,10 @@ async function getEntity(
     let whereClause = and(
       eq(table.userId, userId),
       eq(table.id, entityId),
-      // Soft-deleted rows are treated as absent (Story 4-18): excluded from
-      // conflict checks AND from the app's normal reads so tombstones never
-      // resurface as live entities.
       eq(table.isDeleted, false)
     )
 
-    // Add profileId filter if provided and table has profileId column.
-    // ⚠️ `'profileId' in table`, not `table.profileId`. The runtime behaviour was
-    // always right — `userProfiles` genuinely has no `profileId` column and the
-    // truthiness check skipped it — but READING the property to test for it is
-    // itself the type error on that union member. An `in` check narrows the union,
-    // which also retires the `@ts-expect-error` this used to need.
+    // `in` narrows the union: userProfiles has no profileId column.
     if (profileId && 'profileId' in table) {
       whereClause = and(whereClause, eq(table.profileId, profileId))
     }
@@ -603,16 +330,12 @@ async function getEntity(
 
     return result[0] || null
   } catch (error) {
-    // Sanitize error to avoid exposing sensitive database information
     const sanitizedError = error instanceof Error ? error.message : String(error)
     logger.error('[DB Error] Failed to get entity', { entityType, entityId, error: sanitizedError })
     throw new Error(`Failed to get entity: ${sanitizedError}`)
   }
 }
 
-/**
- * Check if entity exists in database
- */
 async function entityExists(
   entityType: keyof EntityTableMap,
   entityId: string,
@@ -628,9 +351,6 @@ async function entityExists(
   }
 }
 
-/**
- * Whether `profileId` is a live (non-tombstoned) profile owned by `userId`.
- */
 async function profileBelongsToUser(
   profileId: string,
   userId: string,
@@ -650,17 +370,8 @@ async function profileBelongsToUser(
   return rows.length > 0
 }
 
-/**
- * Ids of every live (non-tombstoned) profile the user owns — the authoritative
- * profile list, returned alongside each pull (`/api/sync/changes`).
- *
- * The pull's own `userProfile` changes are NOT a substitute: they are a delta
- * (empty whenever the cursor is past every profile's `updatedAt`) and a capped,
- * paginated page, so a client cannot infer "this profile does not exist on the
- * server" from its absence there. The client uses this list to find profiles it
- * created while sync was not wired, which would otherwise never be uploaded —
- * and every row stamped with them would be rejected as "Profile not found".
- */
+// Pull's userProfile changes are a paginated delta, so absence there does not mean the profile
+// is missing on the server; the client needs this full list.
 export async function getLiveProfileIds(userId: string): Promise<string[]> {
   const rows = await db
     .select({ id: userProfiles.id })
@@ -669,22 +380,7 @@ export async function getLiveProfileIds(userId: string): Promise<string[]> {
   return rows.map((row) => row.id)
 }
 
-/**
- * Whether a TOMBSTONED row with this id exists for this user. `entityExists`
- * treats tombstones as absent, so two operations need this instead:
- *
- * - a CREATE for a deleted id would otherwise reach the INSERT and fail on the
- *   primary key — a 200 envelope with `failedCount > 0` and NO status code, which
- *   the client KEEPS QUEUED, so the op would replay every cycle;
- * - a DELETE for a row that is already tombstoned (story 76.1) — its first
- *   response was lost, or another device deleted it first — would otherwise be a
- *   `delete-update` CONFLICT, which the client never removes from its queue. See
- *   {@link isAlreadyDeleted}.
- *
- * ⚠️ Filters `userId` + `id`, deliberately NOT `profileId`: the requesting user
- * owning the tombstone is the ownership proof, and a row tombstoned by its
- * profile's cascade still names that (now tombstoned) profile.
- */
+// Filters userId + id, not profileId: a cascade-tombstoned row still names its tombstoned profile.
 async function tombstoneExists(
   entityType: keyof EntityTableMap,
   entityId: string,
@@ -699,17 +395,7 @@ async function tombstoneExists(
   return rows.length > 0
 }
 
-/**
- * Whether `operation` is a DELETE the server has already applied (story 76.1,
- * FR121): the row is tombstoned and belongs to the requesting user, so the
- * target state already holds and the op is acknowledged as processed.
- *
- * ⚠️ A tombstone is REQUIRED. A delete for an id with no row for this user —
- * never created, or another user's — is not acknowledged: it keeps its
- * `delete-update` conflict, which stays queued. It is not refused permanently
- * either, because a delete can legitimately arrive before its own create lands
- * (core sends every queued op even when an earlier one for the row failed).
- */
+// A tombstone is required: a delete can legitimately arrive before its own create lands.
 async function isAlreadyDeleted(operation: SyncOperation): Promise<boolean> {
   return (
     operation.type === 'delete' &&
@@ -721,37 +407,8 @@ async function isAlreadyDeleted(operation: SyncOperation): Promise<boolean> {
   )
 }
 
-/**
- * The `.set()` payload for an UPDATE of `data`.
- *
- * The per-entity schemas VALIDATE but do not strip `operation.data`, so drop the
- * identity columns a client must never be able to rewrite: `id` and `profileId`
- * would re-home the row, and `data.userId` is not the session-verified
- * `operation.userId` — spreading it would let a payload move a row into another
- * user's account. Drizzle's defaultNow() only fires on INSERT, so an UPDATE that
- * does not set updatedAt would leave the cursor stale and a delta-by-updatedAt
- * pull would MISS the update (Story 4-18). Always bump updatedAt on UPDATE.
- *
- * ⚠️ `isDeleted` and `createdAt` are dropped too (story 80.1, FR131 rider):
- * - `isDeleted: true` tombstoned the row with NONE of the delete path's rules. For
- *   a profile that skipped `deleteProfileWithChildren`'s cascade (children left
- *   live under a tombstone) and the last-profile rule; for a child, deletion
- *   belongs to the `delete` op. `isDeleted: false` could revive a row that a
- *   cascade tombstoned between `applyOperation`'s checks and this UPDATE. ⚠️
- *   Stripping stops only the REVIVAL: in that window the UPDATE still writes
- *   its other fields onto the tombstone and bumps `updatedAt` (still open in
- *   `deferred-work.md`, "Profile-scoped child UPDATE/DELETE still check profile
- *   liveness outside any transaction").
- * - `createdAt` orders the default repair's successor
- *   (`ensureUserHasDefaultProfile`: the oldest live profile). MEASURED on
- *   `9144e0a`: a string `createdAt` made the UPDATE throw (a kept-queued failure
- *   with no rejection, so the op replayed for ever); now the rest of the update
- *   applies.
- * A legitimate client never sends either key: `toServerPayload`
- * (`lib/sync/syncBridge.ts`) lists its fields, and core's outbound
- * `syncOperationDataSchema` strips undeclared keys. So an extra key is DROPPED,
- * not refused, and no op shape an older client queues is rejected.
- */
+// Strips identity columns plus isDeleted/createdAt, which the delete path and default repair own.
+// updatedAt is bumped: defaultNow() fires only on INSERT, and pull is delta-by-updatedAt.
 function updatePayload(data: Record<string, unknown>, userId: string) {
   const {
     id: _id,
@@ -764,9 +421,6 @@ function updatePayload(data: Record<string, unknown>, userId: string) {
   return { ...fields, userId, updatedAt: new Date() }
 }
 
-/**
- * Create entity in database
- */
 async function createEntity(
   entityType: keyof EntityTableMap,
   data: Record<string, unknown> & { userId: string; profileId?: string },
@@ -774,16 +428,8 @@ async function createEntity(
 ): Promise<OperationResult> {
   try {
     const table = getTable(entityType)
-    // Explicitly stamp updatedAt (Story 4-18). Although the column defaults to
-    // now() on INSERT, a delta-by-updatedAt pull relies on updatedAt being a
-    // real, monotonic value for every mutation; set it here so create/update/
-    // soft-delete are uniform and a freshly created row is always pull-visible.
     const insertData = { ...data, updatedAt: new Date() }
-    // Dynamic table insert: `table` is a union, so its insert type is not one shape.
-    // ⚠️ A cast, not `@ts-expect-error`: adding `retirementPlans` (story 99.2, a
-    // jsonb column) made the union accept this call, the directive became an
-    // error itself, and whether it errors is an accident of the union's members.
-    // (The plan never reaches here: `writeRetirementPlan` has its own INSERT.)
+    // A cast, not @ts-expect-error: whether the union errors here depends on its members.
     await executor.insert(table).values(insertData as never)
     return { success: true }
   } catch (error) {
@@ -791,33 +437,15 @@ async function createEntity(
   }
 }
 
-/**
- * Carries a handled failure out of a transaction callback. Only a THROW rolls a
- * transaction back; a callback that returns normally commits (the same rule
- * `runGuarded` in `routes/api/webhooks/paddle.ts` records).
- */
+// Only a throw rolls a transaction back; a normal return commits.
 class RollbackWith extends Error {
   constructor(readonly result: OperationResult) {
     super(result.error ?? 'rolled back')
   }
 }
 
-/**
- * Create a row in a profile-scoped table so that it can never end up LIVE under
- * a TOMBSTONED profile (story 76.3, FR122(2)).
- *
- * The liveness check used to run outside any transaction, so another device's
- * cascade could sweep the profile between the check and the INSERT, and the row
- * committed afterwards: a live orphan, the exact class story 66.3 removed. Now
- * the lock, the check and the INSERT are ONE transaction: the create either
- * commits before the cascade (which then sweeps it) or sees the cascade's commit
- * and is refused. See {@link lockUserProfileSet} for why the lock is `'share'`.
- *
- * ⚠️ The refusal stays `Profile not found` with NO `rejection`, so it is kept
- * queued: the device's next pull applies the profile's tombstone and drops the
- * op (story 76.2). A permanent rejection would raise 75.2's notice for a row the
- * user can no longer see.
- */
+// Lock, liveness check and INSERT in one transaction, so a concurrent cascade cannot leave a live
+// orphan. The refusal has no rejection: it stays queued until the next pull drops it.
 async function createProfileScopedEntity(
   entityType: keyof EntityTableMap,
   data: Record<string, unknown> & { id: string; userId: string; profileId: string }
@@ -829,16 +457,12 @@ async function createProfileScopedEntity(
       if (!(await profileBelongsToUser(profileId, userId, tx))) {
         return { success: false, error: 'Profile not found' }
       }
-      // `getEntity`, NOT `entityExists`: the latter swallows a failed SELECT as
-      // "absent", and inside a transaction that SELECT has already aborted it, so
-      // the INSERT would report `25P02` instead of the real error. `getEntity`
-      // logs and throws, which rolls back and is classified below.
+      // getEntity, not entityExists: the latter swallows a failed SELECT that has already aborted the transaction.
       if (await getEntity(entityType, entityId, userId, profileId, tx)) {
         return { success: false, error: 'Entity already exists' }
       }
       const result = await createEntity(entityType, data, tx)
       if (!result.success) {
-        // The failed INSERT aborted the transaction; roll it back explicitly.
         throw new RollbackWith(result)
       }
       return result
@@ -851,37 +475,8 @@ async function createProfileScopedEntity(
   }
 }
 
-/**
- * Create a `userProfile` under the per-user WRITER lock (story 80.2, FR130(2)).
- *
- * A profile create WRITES the set of live profiles, and with `isDefault: true`
- * the default seat, so it takes `'no key update'` (like `promoteProfile` and the
- * repair), not a child create's `'share'`. The duplicate check, the seat check and
- * the INSERT run in one transaction behind that lock. Before 80.2 it was the
- * autocommit `createEntity`, which neither the repair nor a promotion waited for.
- *
- * ⚠️ D1 (a), Lucas 2026-09-29: `isDefault: true` while the user already has a
- * live default inserts the profile as NON-default; the current holder keeps the
- * seat. Before, the INSERT hit `userProfiles_one_default_per_user` (23505,
- * non-permanent) and the op was replayed for ever. Both traced sources of such a
- * create are STALE snapshots, never the user's explicit promotion (that is an
- * UPDATE, `promoteProfile`, where the last promotion wins):
- * - a second device re-uploading an erased (or purged) account's old default
- *   through `uploadMissingProfiles` after the account is provisioned again;
- * - a local-only profile promoted while the push bridge was unwired, uploaded
- *   later with its flag.
- * Costs, accepted:
- * - in the second case the device's local choice of default is not honoured; its
- *   next pull brings the row back as non-default;
- * - in the first case the erased account's old default is created LIVE in the new
- *   account, so the second device's queued rows under it now land too (before,
- *   the 23505 kept them all out). Its non-default profiles could already do this;
- *   the root cause is that the client profile store is not keyed by user
- *   (`deferred-work.md`, MED, code review of 80.2; Lucas, 2026-09-29).
- *
- * A 23505 or any other failure thrown inside still rolls back and is classified
- * by `failureFromError` as before (a 23505 stays non-permanent).
- */
+// isDefault on create while a default exists inserts as non-default: such creates come from
+// stale snapshots, never an explicit promotion.
 async function createUserProfile(
   data: Record<string, unknown> & { id: string; userId: string }
 ): Promise<OperationResult> {
@@ -889,11 +484,9 @@ async function createUserProfile(
   try {
     return await db.transaction(async (tx) => {
       await lockUserProfileSet(tx, userId, 'no key update')
-      // `getEntity`, NOT `entityExists` (which swallows a failed SELECT, 79.3).
       if (await getEntity('userProfile', entityId, userId, undefined, tx)) {
         return { success: false, error: 'Entity already exists' }
       }
-      // `=== true` only, matching the update arm's promotion test.
       let isDefault = data['isDefault']
       if (isDefault === true) {
         const seatHolder = await tx
@@ -909,7 +502,6 @@ async function createUserProfile(
           .limit(1)
         if (seatHolder.length > 0) {
           isDefault = false
-          // Ids only: how often D1 fires is otherwise unobservable.
           logger.info('[Sync] profile create inserted non-default: default seat taken', {
             entityType: 'userProfile',
             entityId,
@@ -919,7 +511,6 @@ async function createUserProfile(
       }
       const result = await createEntity('userProfile', { ...data, isDefault }, tx)
       if (!result.success) {
-        // The failed INSERT aborted the transaction; roll it back explicitly.
         throw new RollbackWith(result)
       }
       return result
@@ -932,18 +523,7 @@ async function createUserProfile(
   }
 }
 
-/**
- * Why a `retirementPlan` op can NEVER be applied, or `null` (story 99.2, AC-6c/d).
- *
- * Both refusals carry `rejection: 'invalid'`: the route answers 422 and core DROPS
- * the op. That is the point: the op's own shape is wrong and no replay changes it,
- * so keeping it queued would replay it until the circuit breaker stopped all sync
- * for the account (schema-as-gate trap 5).
- *   - `entityId !== userId` (D3): a plan belongs to its account, and its row id IS
- *     the user's id. Any other id would make a second row (and a 23505) possible.
- *   - `delete`: the plan has no delete op (D5). Without this arm a delete of a
- *     missing row is a `delete-update` CONFLICT, which is never removed.
- */
+// Refused permanently: the op's own shape is wrong (plan id must equal the user id; plans have no delete).
 function retirementPlanRefusal(operation: SyncOperation): OperationResult | null {
   if (operation.entityId !== operation.userId) {
     return {
@@ -958,33 +538,13 @@ function retirementPlanRefusal(operation: SyncOperation): OperationResult | null
   return null
 }
 
-/**
- * Write a `retirementPlan` op (story 99.2, D5): ONE statement, no transaction.
- *
- * - `create` = insert-if-absent (`ON CONFLICT (id) DO NOTHING`), acknowledged
- *   whether or not a row was already there. Story 99.3's first-sign-in seed relies
- *   on it: a seed racing another device's plan leaves the server copy unchanged
- *   (D4, "server wins"). `checkConflict` acknowledges the ordinary case (the row
- *   exists) as `create-create` before this runs; the clause covers the race.
- * - `update` = upsert (`ON CONFLICT (id) DO UPDATE`). Never `update-delete`: an
- *   update for a row the server does not hold yet (a device that never pulled one)
- *   creates it, instead of becoming a conflict that is never removed (AC-6e).
- *
- * ⚠️ The INSERT's values are built HERE, never spread from `operation.data`, so no
- * stray key (`profileId`, which every op carries, or `isDeleted`/`createdAt`)
- * can reach the statement, and the stored plan is the PARSED one (undeclared keys
- * stripped). Whole-plan last-writer-wins (Q5): the update replaces every field.
- *
- * Logs nothing: a plan holds the user's age, life expectancy and income goal.
- */
+// create = insert-if-absent, update = upsert, so nothing gets stuck as a conflict. Values are built
+// here, never spread from op data. Logs nothing: the plan is personal data.
 async function writeRetirementPlan(operation: SyncOperation): Promise<OperationResult> {
   const refusal = retirementPlanRefusal(operation)
   if (refusal) {
     return refusal
   }
-  // Already validated by the request schema's `superRefine`, which does not strip;
-  // parsed again here for the stripped value. A failure is unreachable past that
-  // gate, and refused permanently rather than written.
   const parsed = retirementPlanSyncSchema.safeParse(operation.data['plan'])
   if (!parsed.success) {
     return { success: false, error: 'Invalid retirement plan', rejection: 'invalid' }
@@ -1013,9 +573,6 @@ async function writeRetirementPlan(operation: SyncOperation): Promise<OperationR
   }
 }
 
-/**
- * Update entity in database
- */
 async function updateEntity(
   entityType: keyof EntityTableMap,
   entityId: string,
@@ -1027,17 +584,11 @@ async function updateEntity(
     const table = getTable(entityType)
     let whereClause = and(eq(table.userId, userId), eq(table.id, entityId))
 
-    // Add profileId filter if provided and table has profileId column.
-    // ⚠️ `'profileId' in table`, not `table.profileId`. The runtime behaviour was
-    // always right — `userProfiles` genuinely has no `profileId` column and the
-    // truthiness check skipped it — but READING the property to test for it is
-    // itself the type error on that union member. An `in` check narrows the union,
-    // which also retires the `@ts-expect-error` this used to need.
+    // `in` narrows the union: userProfiles has no profileId column.
     if (profileId && 'profileId' in table) {
       whereClause = and(whereClause, eq(table.profileId, profileId))
     }
 
-    // See `updatePayload` for what is stripped and why `updatedAt` is bumped.
     await db.update(table).set(updatePayload(data, userId)).where(whereClause)
     return { success: true }
   } catch (error) {
@@ -1045,60 +596,8 @@ async function updateEntity(
   }
 }
 
-/**
- * Apply a `userProfile` update that PROMOTES the profile to default: demote the
- * current default and apply the update in ONE transaction, so the last promotion
- * wins (story 76.1, decision D1 — Lucas, 2026-09-28).
- *
- * ## Why the seat can already be taken
- *
- * The only code that CHANGES the default is `profileStore.removeProfile`, which
- * queues a promotion straight after the tombstone of the old default. (Every other
- * update of the current default reaches this function too — `syncBridge` re-sends
- * `isDefault: true` on a rename or currency edit — and is a demote-and-re-promote
- * of the same row: the same end state.) The client sends ONE op per request, so the
- * tombstone arrives alone, and `processBatchSync`'s post-batch repair
- * (`ensureUserHasDefaultProfile`) hands the empty seat to the OLDEST survivor
- * before the promotion arrives. MEASURED at `d54c1a8`: whenever the survivor the
- * device promoted was not the oldest, the promotion then hit
- * `userProfiles_one_default_per_user` (23505), which is deliberately not a
- * permanent refusal (`sync-rejection.ts`), so it stayed queued for ever — on ONE
- * device. A second device that deleted the same default and promoted a different
- * survivor hit the same wall.
- *
- * ⚠️ Last promotion wins, and that is the decision, not an accident: the device's
- * own choice overrides the repair's pick, and of two devices the later one wins.
- * The cost, accepted: a device that has not pulled and re-sends `isDefault: true`
- * for a LIVE profile (`syncBridge` sends `isDefault` on every profile update)
- * takes the seat back. Every successful promotion leaves exactly one live
- * default, and the demoted row's `updatedAt` is bumped so every device's next pull
- * converges.
- *
- * ⚠️⚠️ The target must still be LIVE when the transaction runs (code review 76.1).
- * `entityExists` checked it OUTSIDE the transaction, so another device's delete
- * can land in between. Without the guard below the demotion committed, the flag
- * was written onto a TOMBSTONE, and the account was left with zero live defaults
- * while the op reported success. So the promote only matches a live row, and a
- * miss throws, which rolls the demotion back. The throw carries no SQLSTATE, so
- * the op stays queued (not permanent); on replay `checkConflict` sees the
- * tombstone and reports an `update-delete` conflict. That conflict does not last:
- * the device's next pull delivers the target's tombstone, which is newer than the
- * promotion's `baseVersion`, so pull last-writer-wins drops the promotion
- * (story 76.2; pinned by core's `pull-drops-deleted-profile-ops.test.ts`, "a
- * queued edit of the deleted profile ITSELF is drained by the same pull").
- *
- * ⚠️ Concurrency (story 76.3): the transaction's FIRST statement takes the
- * user's `FOR NO KEY UPDATE` lock ({@link lockUserProfileSet}). Two promotions,
- * a promotion and a profile cascade, or a promotion and the post-batch repair
- * therefore run one after the other, and each one's demotion sees the default
- * the previous one committed. Before the lock, two promotions racing under READ
- * COMMITTED could make the later one fail on `userProfiles_one_default_per_user`,
- * because its demotion's snapshot could not see the winner's new default.
- * REASONED, not measured: PGlite is one connection, so no test here can make two
- * transactions wait on each other (`sync-profile-concurrency.db.test.ts` guards
- * the statement order instead). A 23505 is still not permanent (75.1), so if one
- * ever slips through, the replay takes the seat.
- */
+// Demotes and promotes in one transaction under the user lock: the last promotion wins.
+// The target must still be live, or the throw rolls the demotion back.
 async function promoteProfile(
   profileId: string,
   data: Record<string, unknown>,
@@ -1107,11 +606,7 @@ async function promoteProfile(
   try {
     await db.transaction(async (tx) => {
       await lockUserProfileSet(tx, userId, 'no key update')
-      // ⚠️ No `id <> profileId` exclusion, deliberately: when the target already
-      // holds the seat (a rename re-sending its own flag) it is demoted and
-      // re-promoted inside this transaction — the same end state, and a mutation
-      // adding the exclusion leaves every test green, so it would only be a
-      // condition nothing can observe.
+      // No `id <> profileId` exclusion: re-promoting the current holder is the same end state.
       await tx
         .update(userProfiles)
         .set({ isDefault: false, updatedAt: new Date() })
@@ -1134,7 +629,6 @@ async function promoteProfile(
         )
         .returning({ id: userProfiles.id })
       if (promoted.length === 0) {
-        // Rolls the demotion back — see the docblock.
         throw new Error('Promotion target is no longer a live profile')
       }
     })
@@ -1144,30 +638,10 @@ async function promoteProfile(
   }
 }
 
-/**
- * Restore the "at least one default profile" invariant for one user.
- *
- * No-op unless the user has live profiles and none of them is the default, so
- * it is safe to call after any batch that touched `userProfile`. See the call
- * site for the three push shapes that can empty the set.
- *
- * ⚠️ The successor is the OLDEST live profile, tiebroken by `id`. The tiebreak
- * is load-bearing rather than tidy: `createDefaultProfileForUser` can create
- * profiles inside one transaction, so `createdAt` alone is not a total order and
- * "the oldest" would otherwise mean "whatever the planner returned first" —
- * which can differ between two devices repairing the same account.
- */
+// Oldest live profile, tiebroken by id: createdAt alone is not a total order.
 async function ensureUserHasDefaultProfile(userId: string): Promise<void> {
-  // ⚠️ One transaction behind the user's `FOR NO KEY UPDATE` lock (story 76.3,
-  // deferred-work "the post-batch default repair can race a concurrent
-  // `promoteProfile`"). As three autocommit statements, the repair could read
-  // "no default", lose the seat to another request's promotion, and then throw
-  // 23505 out of `processBatchSync` AFTER the batch had committed: a 500 for a
-  // push that succeeded. The lock serializes it with `promoteProfile`, the
-  // cascade and other repairs (see `lockUserProfileSet`), and since story 80.2
-  // with every other live-path writer of the seat: the sync `userProfile` CREATE
-  // (`createUserProfile`) and `createDefaultProfileForUser`, which until then took
-  // no lock and could beat the repair to the seat with a 23505.
+  // One transaction behind the user lock, so the repair cannot lose the seat to a concurrent
+  // promotion and throw 23505 after the batch committed.
   await db.transaction(async (tx) => {
     await lockUserProfileSet(tx, userId, 'no key update')
 
@@ -1202,21 +676,7 @@ async function ensureUserHasDefaultProfile(userId: string): Promise<void> {
   })
 }
 
-/**
- * Whether the user has live profiles but NO live default: the state
- * {@link ensureUserHasDefaultProfile} repairs (story 79.3).
- *
- * One unlocked, autocommit SELECT. It is NOT a transaction, so the lock-order
- * table on {@link lockUserProfileSet} (`profile-set-lock.ts`) needs no row for it. Unlocked is safe in
- * the SKIP direction: if a default is removed right after this read, that removal
- * was itself a `userProfile` op, whose own batch runs the repair. A `true` is
- * re-checked under the lock by the repair itself.
- *
- * ⚠️ Why a precheck and not the locked repair on every batch: the repair takes
- * the `users` row `FOR NO KEY UPDATE`, which conflicts with the `'share'` lock of
- * every profile-scoped child create, so it would serialize every create of the
- * user behind every other push, for a state that should never exist.
- */
+// Unlocked precheck: running the locked repair on every batch would serialize every child create.
 async function accountLacksLiveDefault(userId: string): Promise<boolean> {
   const live = await db
     .select({ isDefault: userProfiles.isDefault })
@@ -1225,21 +685,7 @@ async function accountLacksLiveDefault(userId: string): Promise<boolean> {
   return live.length > 0 && !live.some((profile) => profile.isDefault)
 }
 
-/**
- * Every profile-scoped CHILD table, in the order `server/api/account.ts`'s erasure transaction
- * deletes them (story 66.3, AC-4/AC-9).
- *
- * ⚠️ The child set is SIX tables, not the four "financial arrays" the epic names.
- * `categories` became profile-scoped in story 30.4a and `forecastingProfiles`
- * (saved forecasts, `routes/forecasting.tsx`) has always been — it is simply not
- * a syncable entity, so no push can express an operation on it and it is easy to
- * miss. `server/functions/profiles.ts` names it in a comment as a child it does
- * not delete.
- *
- * ⚠️ `forecastingProfiles` is listed SEPARATELY below rather than here because it
- * has NO `isDeleted` column (`packages/db/src/schema.ts:568-600`), so it cannot
- * be tombstoned — see {@link deleteProfileWithChildren}.
- */
+// forecastingProfiles has no isDeleted column, so it is hard-deleted separately.
 const PROFILE_CHILD_TABLES = [
   incomeSources,
   expenses,
@@ -1248,61 +694,14 @@ const PROFILE_CHILD_TABLES = [
   balanceTracking,
 ] as const
 
-/** What {@link deleteProfileWithChildren} did (story 76.3). */
 type ProfileDeleteOutcome =
-  /** Tombstoned, with its children. */
   | { kind: 'deleted' }
-  /** Another writer tombstoned it after the pre-checks: the target state holds (76.1). */
   | { kind: 'already-deleted' }
-  /** It is the user's last live profile: nothing was written (66.3, AC-3). */
   | { kind: 'last-profile' }
   | { kind: 'failed'; result: OperationResult }
 
-/**
- * Tombstone a profile AND everything it owns, atomically (story 66.3, AC-4/AC-9).
- *
- * ## The decision this implements
- *
- * Deleting a profile DESTROYS its rows; it does not re-home them onto a survivor
- * (story 66.3, D1). Re-homing MERGES two ledgers and silently moves the
- * survivor's totals — the one outcome profiles exist to prevent. `deleteAccount`
- * (`server/api/account.ts`) is the destroy precedent at this exact shape.
- *
- * ## ⚠️⚠️ Tombstone for five, HARD DELETE for one, and the asymmetry is forced
- *
- * The five tables above are SOFT-deleted, matching {@link deleteEntity} and the
- * rest of the push path: a tombstone is the only thing a delta-by-updatedAt pull
- * can carry, so a hard delete would make the removal invisible to other devices
- * by construction. `forecastingProfiles` has no `isDeleted` column at all, so it
- * is hard-deleted — it is also unsyncable (absent from `entityTableMap`), so
- * there is no pull that could have carried its tombstone anyway.
- *
- * ⚠️ FK ORDER IS NOT LOAD-BEARING HERE, and saying otherwise would be inherited
- * as a false constraint. Every FK in this schema is `ON DELETE NO ACTION`
- * (`grep -n onDelete packages/db/src/schema.ts packages/db/migrations/*.sql`
- * returns zero hits), which is exactly why `deleteUserAccount` must order its
- * HARD deletes — but an UPDATE that sets `isDeleted` removes no row and violates
- * no constraint. The order above is kept only so the two cascades read the same
- * way. The one genuinely constrained statement is the `forecastingProfiles`
- * delete, and it is a leaf: nothing references it.
- *
- * ⚠️ The profile row itself is tombstoned LAST, inside the same transaction, so a
- * failure part-way leaves the profile live rather than orphaning its children
- * behind a deleted parent.
- *
- * ## ⚠️⚠️ The last-profile rule lives INSIDE this transaction (story 76.3)
- *
- * The count used to be a plain SELECT before the transaction, so two devices
- * deleting the two profiles of a 2-profile account both counted 2, both passed,
- * and the account was left with ZERO live profiles, which
- * `ensureUserHasDefaultProfile` cannot repair. Now the transaction takes the
- * user's `FOR NO KEY UPDATE` lock first ({@link lockUserProfileSet}), then
- * re-checks that the target is still live, then counts. So the second delete
- * waits for the first to commit and then counts 1.
- *
- * Returns what happened rather than a finished envelope, so the caller keeps the
- * one place that explains why a refused last-profile delete is ACKNOWLEDGED.
- */
+// Tombstones the profile's rows (a hard delete is invisible to delta pulls). The last-profile
+// count runs inside, after the user lock, so two concurrent deletes cannot leave zero profiles.
 async function deleteProfileWithChildren(
   profileId: string,
   userId: string
@@ -1311,8 +710,7 @@ async function deleteProfileWithChildren(
     return await db.transaction(async (tx): Promise<ProfileDeleteOutcome> => {
       await lockUserProfileSet(tx, userId, 'no key update')
 
-      // Both reads run AFTER the lock, so each sees every delete that committed
-      // while this one waited (READ COMMITTED: a fresh snapshot per statement).
+      // Both reads run after the lock, so each sees deletes that committed while this waited.
       if (!(await profileBelongsToUser(profileId, userId, tx))) {
         return { kind: 'already-deleted' }
       }
@@ -1332,7 +730,7 @@ async function deleteProfileWithChildren(
           .where(and(eq(table.userId, userId), eq(table.profileId, profileId)))
       }
 
-      // ⚠️ HARD delete: no `isDeleted` column exists on this table. See above.
+      // Hard delete: this table has no isDeleted column.
       await tx
         .delete(forecastingProfiles)
         .where(
@@ -1346,13 +744,7 @@ async function deleteProfileWithChildren(
       return { kind: 'deleted' }
     })
   } catch (error) {
-    // ⚠️ The detail goes to the LOG, not into the envelope (code review). The
-    // envelope's `error` is discarded by `processBatchSync` today, so nothing
-    // reaches a user either way — but returning the raw driver text from the one
-    // path this story added, in the same story that closed exactly that leak in
-    // `server/functions/profiles.ts`, is an asymmetry that survives only until
-    // someone renders the envelope. Logging it also means a failed cascade is
-    // observable at all, which it was not.
+    // Driver detail goes to the log, never the envelope.
     logger.error('Profile cascade failed', {
       userId,
       profileId,
@@ -1360,22 +752,12 @@ async function deleteProfileWithChildren(
       constraint: constraintOf(error),
       error,
     })
-    // ⚠️ NEVER classified permanent (story 75.1 code review): the op names only
-    // the profile, and the cascade writes only `isDeleted`/`updatedAt`, so no
-    // failure here can be caused by the op's own data.
+    // Never permanent: the cascade writes only isDeleted/updatedAt, so the op's data cannot cause a failure.
     return { kind: 'failed', result: { success: false, error: 'Failed to delete profile' } }
   }
 }
 
-/**
- * Soft-delete an entity (Story 4-18).
- *
- * A hard `DELETE` removes the row entirely, so a later delta-by-updatedAt pull
- * can never surface it and the deletion is invisible to other devices (AC-3).
- * Instead we set the tombstone flag and bump updatedAt; `getEntity`/`entityExists`
- * and the app's normal reads filter `isDeleted = false`, so the row is absent for
- * all live purposes while remaining discoverable by the pull cursor.
- */
+// Soft delete: a hard DELETE would be invisible to delta-by-updatedAt pulls.
 async function deleteEntity(
   entityType: keyof EntityTableMap,
   entityId: string,
@@ -1386,12 +768,7 @@ async function deleteEntity(
     const table = getTable(entityType)
     let whereClause = and(eq(table.userId, userId), eq(table.id, entityId))
 
-    // Add profileId filter if provided and table has profileId column.
-    // ⚠️ `'profileId' in table`, not `table.profileId`. The runtime behaviour was
-    // always right — `userProfiles` genuinely has no `profileId` column and the
-    // truthiness check skipped it — but READING the property to test for it is
-    // itself the type error on that union member. An `in` check narrows the union,
-    // which also retires the `@ts-expect-error` this used to need.
+    // `in` narrows the union: userProfiles has no profileId column.
     if (profileId && 'profileId' in table) {
       whereClause = and(whereClause, eq(table.profileId, profileId))
     }
@@ -1399,9 +776,7 @@ async function deleteEntity(
     await db.update(table).set({ isDeleted: true, updatedAt: new Date() }).where(whereClause)
     return { success: true }
   } catch (error) {
-    // ⚠️ NEVER classified permanent (story 75.1 code review). A soft-delete writes
-    // only `isDeleted`/`updatedAt`, so its own data cannot violate a CHECK —
-    // whatever failed, the server's state or a transient fault caused it.
+    // Never permanent: a soft delete's own data cannot violate a CHECK.
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error),
@@ -1409,56 +784,37 @@ async function deleteEntity(
   }
 }
 
-/**
- * Apply an operation to the database
- */
 async function applyOperation(operation: SyncOperation): Promise<OperationResult> {
   const entityType = operation.entityType as keyof EntityTableMap
   const entityId = operation.entityId
   const userId = operation.userId
   const profileId = operation.profileId
 
-  // Validate userId is not empty
-  // Permanent: unreachable past the request schema (`userId: z.string()` plus the
-  // ownership loop), but classified anyway so it can never become a replay loop.
+  // Unreachable past the request schema, but permanent so it can never become a replay loop.
   if (!userId) {
     return { success: false, error: 'User ID is required', rejection: 'invalid' }
   }
 
   try {
-    // Story 99.2: the account's retirement plan has its own write path and its own
-    // refusals, BEFORE every check below (none of which applies to it: it has no
-    // tombstones, no delete op and no profile). See `writeRetirementPlan`.
+    // The plan has its own write path: no tombstones, no delete op, no profile.
     if (entityType === 'retirementPlan') {
       return writeRetirementPlan(operation)
     }
 
-    // A create for an id this user already DELETED is a stale replay (e.g. a
-    // device that had not yet pulled the tombstone). Acknowledge it without
-    // resurrecting the row: deletion wins.
+    // A create for an id this user already deleted is a stale replay: acknowledge it, deletion wins.
     if (operation.type === 'create' && (await tombstoneExists(entityType, entityId, userId))) {
       return { success: true }
     }
 
-    // A delete this user's row ALREADY carries (story 76.1). `checkConflict`
-    // acknowledges the ordinary replay before this function runs; this arm is
-    // for a row another writer tombstoned between that check and here. Without
-    // it the delete case below answers `Entity not found`, which stays queued.
-    //
-    // ⚠️⚠️ BEFORE the profile check, not inside the `delete` case: a row
-    // tombstoned by its PROFILE's cascade names a tombstoned profile, so
-    // `profileBelongsToUser` would answer `Profile not found` first — also kept
-    // queued for ever. ⚠️ No sequential test can open this window for real
-    // (PGlite is single-connection); `sync-delete-idempotent.db.test.ts`
-    // simulates the interleaving by stubbing `checkConflict`'s SELECT.
+    // Before the profile check: a cascade-tombstoned row names a tombstoned profile, which would
+    // answer `Profile not found` and stay queued forever.
     if (await isAlreadyDeleted(operation)) {
       return { success: true }
     }
 
-    // Profile-scoped entities must name a live profile the SESSION user owns.
-    // The FK alone only proves the profile exists — for someone.
+    // The FK alone only proves the profile exists, for someone.
     if ('profileId' in getTable(entityType)) {
-      // Permanent: the op's own shape is wrong, and no replay adds a field.
+      // Permanent: the op's own shape is wrong.
       if (!profileId) {
         return {
           success: false,
@@ -1466,15 +822,7 @@ async function applyOperation(operation: SyncOperation): Promise<OperationResult
           rejection: 'invalid',
         }
       }
-      // ⚠️ NOT permanent (story 75.1). The profile's own create may still be
-      // queued or retrying. A remotely DELETED profile is handled on the client
-      // (story 76.2): the pull that applies its tombstone drops these ops, and a
-      // refused profile create drops them too. A server refusal here would
-      // instead raise 75.2's notice for rows the user can no longer see.
-      //
-      // ⚠️ A CREATE checks it again INSIDE its transaction, after the per-user lock
-      // (`createProfileScopedEntity`, story 76.3). A check out here alone let a
-      // concurrent cascade sweep the profile before the INSERT committed.
+      // Not permanent: the profile's own create may still be queued. Creates re-check inside their transaction.
       if (operation.type !== 'create' && !(await profileBelongsToUser(profileId, userId))) {
         return { success: false, error: 'Profile not found' }
       }
@@ -1482,20 +830,8 @@ async function applyOperation(operation: SyncOperation): Promise<OperationResult
 
     switch (operation.type) {
       case 'create': {
-        // `id: entityId` inserts the CLIENT's uuid (Story 5-14). Without it the
-        // row took a fresh `defaultRandom()` id, so the creating device's local
-        // row and the server row never matched: every later update/delete of it
-        // was "Entity not found", and a pull delivered it as a duplicate.
-        //
-        // ⚠️ `isDeleted` and `createdAt` are dropped for the reasons in
-        // `updatePayload` (story 80.1 code review): a create must not insert a
-        // tombstone, and a string `createdAt` made the INSERT throw with no
-        // SQLSTATE, a kept-queued failure replayed for ever (MEASURED on
-        // `9144e0a`). A legitimate client never sends either key.
+        // `id: entityId` keeps the client's uuid so later updates and deletes match the row.
         const { id: _id, isDeleted: _isDeleted, createdAt: _createdAt, ...fields } = operation.data
-        // Profile-scoped: the lock, the profile re-check, the duplicate check and
-        // the INSERT run in one transaction (story 76.3). `profileId` is always
-        // set here: the pre-check above refuses a profile-scoped op without one.
         if (profileId && 'profileId' in getTable(entityType)) {
           return createProfileScopedEntity(entityType, {
             ...fields,
@@ -1504,12 +840,9 @@ async function applyOperation(operation: SyncOperation): Promise<OperationResult
             profileId,
           })
         }
-        // A profile create writes the set of live profiles: writer lock, seat
-        // check (story 80.2).
         if (entityType === 'userProfile') {
           return createUserProfile({ ...fields, id: entityId, userId })
         }
-        // Check if entity already exists
         const exists = await entityExists(entityType, entityId, userId, profileId)
         if (exists) {
           return { success: false, error: 'Entity already exists' }
@@ -1518,15 +851,11 @@ async function applyOperation(operation: SyncOperation): Promise<OperationResult
       }
 
       case 'update': {
-        // Check if entity exists
         const entityExistsForUpdate = await entityExists(entityType, entityId, userId, profileId)
         if (!entityExistsForUpdate) {
           return { success: false, error: 'Entity not found' }
         }
-        // A PROMOTION takes the seat from the current default (story 76.1, D1):
-        // see `promoteProfile` for why the seat is usually already taken.
-        // ⚠️ `=== true` only: `false` and an absent flag keep the plain update,
-        // whose stale-demotion case the post-batch repair handles.
+        // `=== true` only: false or absent keeps the plain update; the post-batch repair handles stale demotions.
         if (entityType === 'userProfile' && operation.data['isDefault'] === true) {
           return promoteProfile(entityId, operation.data, userId)
         }
@@ -1534,81 +863,26 @@ async function applyOperation(operation: SyncOperation): Promise<OperationResult
       }
 
       case 'delete': {
-        // Check if entity exists
         const entityExistsForDelete = await entityExists(entityType, entityId, userId, profileId)
         if (!entityExistsForDelete) {
           return { success: false, error: 'Entity not found' }
         }
 
         if (entityType === 'userProfile') {
-          // ⚠️⚠️ THE LAST-PROFILE RULE, ON THE LIVE PATH (story 66.3, AC-3).
-          //
-          // Both pre-existing guards are OFF this path: `stores/profileStore.ts`
-          // is the client and is bypassable, and the server function
-          // `deleteProfile` (which had zero production callers) was deleted by
-          // story 93.1; the live deletion path is the store -> this sync push.
-          // So until this check, a hand-crafted or REPLAYED push could
-          // tombstone a user's last profile — leaving an account with nowhere to
-          // put data and `reconcileActiveProfile` early-returning on an empty
-          // profile list (`lib/sync/applyServerChanges.ts:316-319`), which
-          // strands `activeProfileId` on an id that no longer exists.
-          //
-          // ⚠️ This is a REFUSAL, and `ensureUserHasDefaultProfile` below stays a
-          // REPAIR. They are not the same kind of rule and must not be merged.
-          // The default-profile invariant is repairable — if a batch leaves the
-          // account with no default, the server picks one and everything
-          // continues — and the first version of that code DID veto, which broke
-          // the legitimate demote-A-then-promote-B sequence (recorded at the
-          // repair's call site, proven by its own positive control). "Zero live
-          // profiles" has no repair: there is nothing left to promote and
-          // inventing a replacement profile would be the server fabricating user
-          // data. So this one refuses and that one repairs.
-          //
-          // ⚠️⚠️ The COUNT runs inside `deleteProfileWithChildren`'s transaction,
-          // after the per-user lock (story 76.3). Counted out here, two devices
-          // deleting the two profiles of a 2-profile account both saw 2 and left
-          // ZERO live profiles.
-          //
-          // ⚠️ NOT `deleteEntity` — the profile's children must go with it
-          // (AC-4/AC-9), in ONE transaction. `deleteEntity` tombstones the named
-          // row and nothing else, which is the defect this story closes.
+          // Last-profile rule: zero live profiles has no repair, so this refuses rather than repairs.
+          // Not deleteEntity: the children must go in the same transaction.
           const outcome = await deleteProfileWithChildren(entityId, userId)
           if (outcome.kind === 'failed') {
             return outcome.result
           }
           if (outcome.kind === 'last-profile') {
-            // ⚠⚠ ACKNOWLEDGED, NOT TOMBSTONED — and the distinction is the whole
-            // point (code review, Lucas's call). The INVARIANT AC-3 exists for is
-            // "an account is never left with zero live profiles", and that holds
-            // here: the transaction wrote nothing, the profile stays live. What changes is
-            // the ENVELOPE.
-            //
-            // ⚠⚠ WHY NOT `success: false`. The first version returned a failure,
-            // and the code review measured where that lands: a `{success:false}`
-            // in a 200 envelope carries NO http status, so
-            // `sendSyncOperation` (`features/api/client.ts`, its `failedCount > 0`
-            // arm) marks it `retryable: false` with no `statusCode`, and core
-            // files it under `unclassifiedFailedOperations`
-            // (`packages/core/src/sync/synchronization.ts`), which it
-            // DELIBERATELY KEEPS QUEUED — removal requires positive proof of
-            // permanence. So the op replays every cycle, `failedCount > 0` every
-            // time, `consecutiveFailures` climbs, the circuit breaker opens and
-            // the drain branch never runs. One refused delete killed all sync for
-            // that account. Before this story the same push SUCCEEDED, so the
-            // permanently-unsatisfiable op was new damage.
-            //
-            // A client asking to delete its last profile is already out of step
-            // with the server (its own guard would have stopped it). Acknowledging
-            // drains the queue; the next pull delivers the real profile list and
-            // corrects the client. Refusing forever corrects nothing.
+            // Acknowledged, not failed: a failure in a 200 envelope stays queued forever and trips the
+            // circuit breaker. The next pull corrects the out-of-step client.
             logger.warn('Refused a delete that would leave the user with no profile', {
               userId,
               entityId,
             })
           }
-          // 'deleted', 'already-deleted' (another writer got there after the
-          // pre-checks: the target state holds, 76.1) and 'last-profile' (above)
-          // are all acknowledged.
           return { success: true }
         }
 
@@ -1616,38 +890,16 @@ async function applyOperation(operation: SyncOperation): Promise<OperationResult
       }
     }
   } catch (error) {
-    // Reached by the pre-checks' SELECTs (`tombstoneExists`, `profileBelongsToUser`,
-    // `entityExists`). Nothing they raise is op-data today — the request schema
-    // now requires a uuid `entityId` (story 75.1), which closed the one `22P02`
-    // route — so this is classified only for uniformity; in practice it keeps the
-    // pre-75.1 message-and-no-rejection shape.
     return failureFromError(error, { entityType, entityId, userId })
   }
 }
 
-/**
- * Check if an operation conflicts with current server state.
- *
- * ⚠️ The existence checks use `getEntity`, NOT `entityExists` (story 79.3):
- * `entityExists` swallows a failed SELECT as "absent", so a transient error
- * (`40001`, a dropped connection) used to become an `update-delete` or
- * `delete-update` CONFLICT, or let a create through unchecked. A conflict is
- * kept queued for ever and 79.2 never escalates it. `getEntity` throws, and the
- * catch below reports a FAILURE instead.
- */
+// getEntity, not entityExists: a swallowed SELECT error would become a conflict, which never dequeues.
 async function checkConflict(operation: SyncOperation): Promise<{
   hasConflict: boolean
   conflictType?: string
   serverData?: Record<string, unknown>
-  /**
-   * The op's target state already holds (story 76.1): a DELETE of a row this
-   * user has already tombstoned. `processBatchSync` counts it as processed.
-   */
   alreadyApplied?: boolean
-  /**
-   * The check itself failed (story 79.3). `processBatchSync` counts the op as
-   * FAILED, exactly like an `applyOperation` failure, and never applies it.
-   */
   failure?: OperationResult
 }> {
   const entityType = operation.entityType as keyof EntityTableMap
@@ -1655,16 +907,12 @@ async function checkConflict(operation: SyncOperation): Promise<{
   const userId = operation.userId
   const profileId = operation.profileId
 
-  // Validate userId is not empty
   if (!userId) {
     return { hasConflict: false }
   }
 
   try {
-    // Story 99.2: a plan op that can never land is a permanent FAILURE (dropped),
-    // never a conflict (kept for ever); an update is an upsert, so it never
-    // conflicts with a missing row (AC-6e). A create falls through to the
-    // ordinary `create-create` acknowledgement below (AC-6f).
+    // A plan op that can never land is a permanent failure, never a conflict; an update is an upsert.
     if (entityType === 'retirementPlan') {
       const refusal = retirementPlanRefusal(operation)
       if (refusal) {
@@ -1677,7 +925,6 @@ async function checkConflict(operation: SyncOperation): Promise<{
 
     switch (operation.type) {
       case 'create': {
-        // Conflict if entity already exists on server
         const serverData = await getEntity(entityType, entityId, userId, profileId)
         if (serverData) {
           return { hasConflict: true, conflictType: 'create-create', serverData }
@@ -1686,7 +933,6 @@ async function checkConflict(operation: SyncOperation): Promise<{
       }
 
       case 'update': {
-        // Conflict if entity doesn't exist on server
         const existsForUpdate = await getEntity(entityType, entityId, userId, profileId)
         if (!existsForUpdate) {
           return { hasConflict: true, conflictType: 'update-delete', serverData: undefined }
@@ -1695,13 +941,9 @@ async function checkConflict(operation: SyncOperation): Promise<{
       }
 
       case 'delete': {
-        // Conflict if entity doesn't exist on server
         const existsForDelete = await getEntity(entityType, entityId, userId, profileId)
         if (!existsForDelete) {
-          // Already tombstoned for THIS user: a replay whose first response was
-          // lost, or a second device deleting the same row (story 76.1). Before,
-          // this was a `delete-update` conflict, which the client never removes
-          // from its queue — so one lost response stopped all sync for good.
+          // Already tombstoned for this user (a lost response or another device). A conflict would never drain.
           if (await isAlreadyDeleted(operation)) {
             return { hasConflict: false, alreadyApplied: true }
           }
@@ -1713,17 +955,7 @@ async function checkConflict(operation: SyncOperation): Promise<{
 
     return { hasConflict: false }
   } catch (error) {
-    // The server state could not be read, so the op is NOT applied (no data
-    // resurrection from a stale update). It is a FAILURE, not a conflict (story
-    // 79.3). Both are kept queued and re-sent on each sync; the difference is
-    // 79.2: core counts a conflict as a SUCCESSFUL attempt, so a conflict is never
-    // escalated to the user, while a failure is, once it keeps failing.
-    // `failureFromError` classifies it like `applyOperation`'s pre-check catch.
-    // ⚠️ An error from `getEntity` arrives WRAPPED (`Failed to get entity: …`, no
-    // SQLSTATE, already logged once by `getEntity`), so it can never be a
-    // rejection. Harmless today: every permanent SQLSTATE comes from a write, not
-    // a SELECT. Only the delete arm's `tombstoneExists` throws the raw error.
-    // Sanitize error to avoid exposing sensitive database information
+    // A failure, not a conflict: core never escalates a conflict to the user, but escalates a failure.
     const sanitizedError = error instanceof Error ? error.message : String(error)
     logger.error('[Conflict Check Error]', { error: sanitizedError })
     return {
@@ -1733,41 +965,14 @@ async function checkConflict(operation: SyncOperation): Promise<{
   }
 }
 
-// ============================================================================
-// Main API Functions
-// ============================================================================
-
-/**
- * Process a batch of sync operations
- *
- * This is the main endpoint for handling client sync requests.
- * It processes operations in order, detects conflicts, and applies changes.
- *
- * @param request - The batch sync request
- * @param user - The authenticated user. Only `id` (the uuid the operations must
- *   belong to) and `subscriptionStatus` (the paid-tier gate) are read, so callers
- *   may pass a session projection rather than a full DB row. NOTE: the session
- *   object exposes the user id as `userId`; callers MUST map it to `id` here or
- *   the per-operation ownership check silently compares against `undefined`.
- * @returns Batch sync response
- */
+// `user.id` must be the uuid: the session calls it `userId`, and an unmapped id makes the
+// ownership check compare against undefined.
 export async function processBatchSync(
   request: BatchSyncRequest,
   user: Pick<User, 'id' | 'subscriptionStatus'>
 ): Promise<BatchSyncResponse> {
-  // Validate request.
-  //
-  // ⚠️⚠️ The REQUEST-LEVEL `invalid-request` refusal below is PERMANENT: the
-  // route answers 400 and core DROPS the op (story 75.1). (`ownership` is NOT
-  // permanent — see its arm.)
-  // That is safe ONLY because the client sends ONE operation per request
-  // (`sendSyncOperation` in `features/api/client.ts` posts `operations:
-  // [operation]`), so refusing the request refuses exactly the op that is wrong.
-  // If the client ever batches several ops per request, one bad op would take its
-  // valid neighbours down with it — at which point these refusals must become
-  // per-operation, like `rejections` below. The same premise makes the route's
-  // oversize 413 (`refusal: 'too-large'`, story 79.3) a verdict on the op: the
-  // client maps it to 422 and drops the op, and that mapping must go too.
+  // Permanent (400) only because the client sends one op per request; batching would require
+  // per-operation refusals.
   const validationResult = batchSyncRequestSchema.safeParse(request)
   if (!validationResult.success) {
     return {
@@ -1786,19 +991,7 @@ export async function processBatchSync(
 
   const { operations } = validationResult.data
 
-  // Tier gating: server-side sync needs PAID ACCESS — `hasPaidAccess`, the one
-  // definition in `lib/premium/access-statuses.ts` (Story 78.3), also called by
-  // the sync routes (`routes/api/sync/batch.ts`, `changes.ts`) and the client
-  // gate (`components/sync/SyncProvider.tsx`). Free and canceled users must not
-  // persist data to the server even with a valid session.
-  //  - `active`    — the ordinary paying subscriber.
-  //  - `past_due`  — a paying customer whose latest charge failed keeps sync
-  //                  during the dunning window. This is why this gate is NOT the
-  //                  premium-features gate (`hasPremiumFeatures`), which excludes
-  //                  it (Story 4-18). Pinned by `sync-push-pull-roundtrip.db.test.ts`.
-  //  - `lifetime`  — a one-time lifetime purchase (Story 25-2); it was MISSING
-  //                  from this gate's own list from 25-2 until 30.4a, so a
-  //                  lifetime buyer's data silently never left the device.
+  // hasPaidAccess, not hasPremiumFeatures: past_due keeps sync during dunning.
   if (!hasPaidAccess(user.subscriptionStatus)) {
     return {
       success: false,
@@ -1814,7 +1007,6 @@ export async function processBatchSync(
     }
   }
 
-  // Verify all operations belong to this user first (fail fast on auth)
   for (const operation of operations) {
     if (operation.userId !== user.id) {
       return {
@@ -1827,19 +1019,13 @@ export async function processBatchSync(
         serverTimestamp: Date.now(),
         status: SyncStatusEnum.FAILED,
         error: 'Unauthorized: Operation user ID mismatch',
-        // ⚠️⚠️ NOT permanent — 401 at the route, which core KEEPS QUEUED (story
-        // 75.1 code review; the story first shipped 422 here, which drops). The
-        // op may be another account's genuine pending edit: the session cookie is
-        // shared across tabs, but `useSync` reads its `userId` once at mount and
-        // nothing listens for a sign-in in another tab. So tab 1 pushes account
-        // A's queue under tab 2's B cookie, and dropping it deletes A's edits.
-        // A 401 keeps them until A signs back in.
+        // Not permanent (401, kept queued): it may be another account's pending edit pushed under the
+        // cookie of a sign-in in another tab.
         refusal: 'ownership',
       }
     }
   }
 
-  // Check rate limit (only after user validation succeeds)
   const rateLimit = await checkRateLimit(user.id)
   if (!rateLimit.allowed) {
     return {
@@ -1863,50 +1049,37 @@ export async function processBatchSync(
   const failedOperationIds: string[] = []
   const rejections: SyncRejection[] = []
 
-  /** Count one op as failed. Shared by the conflict check and `applyOperation`. */
   const recordFailure = (operation: SyncOperation, result: OperationResult) => {
     failedCount++
     failedOperationIds.push(operation.id)
-    // Counted as failed AS WELL, so a client that does not read `rejections`
-    // sees exactly the envelope it saw before story 75.1.
+    // Also counted as failed, so clients that ignore `rejections` see the same envelope.
     if (result.rejection) {
       rejections.push({ operationId: operation.id, reason: result.rejection })
     }
   }
 
-  // Process each operation
   for (const operation of operations) {
-    // Check for conflicts
     const conflictCheck = await checkConflict(operation)
 
-    // The check itself failed (story 79.3): never applied, reported FAILED.
     if (conflictCheck.failure) {
       recordFailure(operation, conflictCheck.failure)
       continue
     }
 
-    // A create whose uuid the server already holds (for this user + profile) is
-    // an ALREADY-APPLIED create — ids are client-generated uuids, so no other
-    // device can have minted it. Typical causes: a lost response, or the
-    // free→paid seed re-enqueueing a row. Acknowledge it as processed. Reported
-    // as a conflict, the client keeps the op queued forever (conflicts are never
-    // removed), and a batch that always contains a conflict never drains the
-    // operations behind it.
+    // Ids are client-generated, so a create the server already holds was already applied (lost
+    // response). Reported as a conflict it would stay queued forever.
     if (conflictCheck.hasConflict && conflictCheck.conflictType === 'create-create') {
       processedCount++
       continue
     }
 
-    // Likewise an ALREADY-APPLIED delete (story 76.1): the row is tombstoned for
-    // this user, so the target state holds. An explicit field rather than another
-    // `conflictType` string, so rewording a conflict type cannot change it.
+    // An explicit field, so rewording a conflictType cannot change it.
     if (conflictCheck.alreadyApplied) {
       processedCount++
       continue
     }
 
     if (conflictCheck.hasConflict) {
-      // Conflict detected - record it
       conflictCount++
       conflicts.push({
         localOperationId: operation.id,
@@ -1919,7 +1092,6 @@ export async function processBatchSync(
       continue
     }
 
-    // Apply the operation
     const result = await applyOperation(operation)
 
     if (result.success) {
@@ -1929,43 +1101,8 @@ export async function processBatchSync(
     }
   }
 
-  // ⚠️⚠️ INVARIANT REPAIR: an account must never end a batch with live profiles
-  // but NO default (story 63.2 code review, HIGH — reproduced against real
-  // PostgreSQL before this existed).
-  //
-  // Three separate pushes can empty the set, and none of them is an error the
-  // client can see:
-  //  1. A device that has not pulled since another device deleted the default
-  //     renames the promoted profile. `syncBridge` sends `isDefault` on EVERY
-  //     profile update and `updateEntity` spreads it into `.set()`, so an
-  //     ordinary RENAME re-sends `isDefault: false` and clears the flag. The
-  //     update arm of `checkConflict` only tests existence — it never compares
-  //     `baseVersion` — so nothing else stops it and the push reports success.
-  //  2. The tombstone of the default arriving ALONE — which is the normal case:
-  //     the client sends one op per request, so the repair below fills the
-  //     seat with the oldest survivor before the paired promotion arrives. The
-  //     promotion then takes the seat (`promoteProfile`, story 76.1). (Before
-  //     76.1 it hit `userProfiles_one_default_per_user` and stayed queued.)
-  //  3. The tombstone lands while its paired promotion is stranded by a
-  //     transient failure (recorded in `deferred-work.md`).
-  //
-  // Zero defaults is silent CORRUPTION, not an error: every consumer resolves
-  // the default as `find(p => p.isDefault) ?? data[0]`, so each device quietly
-  // falls back to an arbitrary profile and the user's data appears to change.
-  //
-  // ⚠️ A REPAIR, deliberately, and NOT a veto on demotion. The first design here
-  // rejected any demotion that would empty the set — which also broke the
-  // legitimate unset-then-set sequence (demote A, promote B in one batch), as
-  // its own positive-control test proved. Repairing after the batch leaves every
-  // valid ordering alone: a batch that ends with a default never triggers it.
-  //
-  // ⚠️ A repair ERROR is logged, never thrown (story 79.3, FR130.3). The ops above
-  // have already committed, so throwing made the route answer 500 for a push that
-  // had landed. But the 500 was also the only thing that re-ran a failed repair
-  // (the client replayed the op, and the replay repaired). So a batch with NO
-  // `userProfile` op repairs too, whenever the lock-free
-  // {@link accountLacksLiveDefault} finds the seat empty. The response is built
-  // from the op counters only, so a failed repair changes nothing on the wire.
+  // Repair, not veto: no batch may end with live profiles but no default. Errors are logged,
+  // not thrown: the ops have already committed.
   try {
     if (
       operations.some((operation) => operation.entityType === 'userProfile') ||
@@ -1982,7 +1119,6 @@ export async function processBatchSync(
 
   const endTime = Date.now()
 
-  // Determine final status
   let status: SyncStatus = SyncStatusEnum.COMPLETED
   if (failedCount > 0) {
     status = SyncStatusEnum.FAILED
@@ -1991,7 +1127,7 @@ export async function processBatchSync(
   }
 
   return {
-    success: failedCount === 0, // Success if no failures (conflicts are OK)
+    success: failedCount === 0,
     processedCount,
     failedCount,
     conflictCount,
@@ -2003,15 +1139,6 @@ export async function processBatchSync(
   }
 }
 
-// ============================================================================
-// Server → Client Pull (Story 4-18)
-// ============================================================================
-
-/**
- * Normalize a Drizzle timestamp value to a Unix epoch in milliseconds.
- * Drizzle may hand back a `Date` (default mode) or an ISO string; both are
- * handled so the pull cursor is always a comparable number.
- */
 function toEpochMs(value: unknown): number {
   if (value instanceof Date) {
     return value.getTime()
@@ -2023,45 +1150,16 @@ function toEpochMs(value: unknown): number {
   return Number.isNaN(parsed) ? 0 : parsed
 }
 
-/**
- * Maximum number of changes returned by a single pull, regardless of the
- * client-requested limit. Bounds the response size (DoS guard).
- */
+// Server-side cap regardless of the client's limit (DoS guard).
 const MAX_PULL_LIMIT = 500
 
-/**
- * Get server-side changes for a user since a cursor (Story 4-18, AC-1/AC-3).
- *
- * Selects rows from every syncable entity table where `updatedAt > since`
- * (full snapshot when `since` is null), INCLUDING soft-deleted tombstones so
- * deletions propagate to other devices (AC-3). Profile-scoped entities are
- * additionally filtered by the active `profileId` to prevent cross-profile
- * leakage; `userProfiles` are scoped by user only.
- *
- * SECURITY: the caller MUST pass the SESSION user id (never a client-supplied
- * userId) — this function trusts `userId` as already-authorized. The result is
- * ordered by `updatedAt` ascending and capped at `limit`, so a client that is
- * behind paginates forward deterministically via its advancing cursor.
- */
-/**
- * Cap a timestamp-sorted change list WITHOUT splitting a run of rows that share
- * the same `updatedAt` across the page boundary (Story 4-18 review P1).
- *
- * The pull cursor is the last returned row's `updatedAt`, and the next pull
- * filters `updatedAt > cursor`. A blind `slice(0, cap)` through a run of rows
- * sharing one `updatedAt` would leave the overflow rows at that timestamp `==
- * cursor` next time, so the strict `>` would skip them FOREVER (silent data
- * loss). So trim back to the last fully-included timestamp. Degenerate case: if
- * the entire first `cap` rows share one timestamp, include that whole timestamp
- * group (may exceed `cap`) so the cursor can still advance instead of stalling.
- */
+// Never split a same-updatedAt run across pages: the next pull's strict `> cursor` would skip the
+// overflow forever. If the whole page is one timestamp, include the full group.
 export function capChangesAtTimestampBoundary(sorted: ServerChange[], cap: number): ServerChange[] {
   if (sorted.length <= cap) {
     return sorted
   }
-  const boundaryRow = sorted[cap] // first EXCLUDED row
-  // Unreachable: the `sorted.length <= cap` branch above already returned, so index
-  // `cap` is in range. Narrowed rather than asserted.
+  const boundaryRow = sorted[cap]
   if (!boundaryRow) {
     return sorted
   }
@@ -2071,8 +1169,6 @@ export function capChangesAtTimestampBoundary(sorted: ServerChange[], cap: numbe
     end--
   }
   if (end === 0) {
-    // The whole page is a single timestamp larger than the cap: include the full
-    // group for that timestamp to guarantee forward progress.
     let i = cap
     while (i < sorted.length && sorted[i]?.updatedAt === boundaryTs) {
       i++
@@ -2082,45 +1178,17 @@ export function capChangesAtTimestampBoundary(sorted: ServerChange[], cap: numbe
   return sorted.slice(0, end)
 }
 
-/**
- * Upper bound on a supplementary exact-timestamp fetch (below). Real
- * financial data essentially never has thousands of rows sharing one
- * millisecond; this is a DoS guard, not an expected ceiling.
- */
+// A DoS guard, not an expected ceiling.
 const MAX_BOUNDARY_GROUP_SIZE = 5000
 
 interface SafeTablePage {
   changes: ServerChange[]
-  /**
-   * The highest `updatedAt` (epoch ms) this table is now KNOWN to be
-   * completely fetched up to and including. `Infinity` when the table had no
-   * more rows beyond what was returned (fully drained by this pull).
-   */
+  // Highest updatedAt this table is fully fetched through; Infinity when drained.
   safeWatermark: number
 }
 
-/**
- * Fetch one entity table's page for a pull, guaranteed never to silently,
- * permanently drop rows at a shared-`updatedAt` boundary (Story 53.1, AC-3;
- * review-hardened — see the story's Review Findings).
- *
- * Two-phase strategy:
- *  1. Over-fetch by one row (`cappedLimit + 1`) so the LAST row's timestamp
- *     reveals whether the page's tail sits inside a still-open group.
- *  2. If the group at that boundary fills the ENTIRE over-fetched window (the
- *     degenerate case `capChangesAtTimestampBoundary` already detects), issue
- *     ONE supplementary query for every row at that exact timestamp
- *     (`fetchExactTimestamp`, bounded by `MAX_BOUNDARY_GROUP_SIZE`) so the
- *     group is returned COMPLETE — not merely "not split mid-group", which is
- *     as far as the pre-existing cross-table-only fix went.
- *
- * `safeWatermark` is this table's own contribution to the GLOBAL pull cursor:
- * `getSyncChanges` takes the MINIMUM watermark across all 7 tables, because a
- * table that stopped early (its own cap, not exhaustion) has UNSEEN rows that
- * a cursor advanced past any other table's later timestamp would skip
- * forever — exactly the cross-table interaction the story's code review
- * found broken in the first version of this fix.
- */
+// Over-fetches one row to detect an open boundary group and fetches it whole if it fills the
+// window. safeWatermark feeds the global cursor (the minimum across tables).
 async function fetchTableChangesSafely<
   Row extends { id: string; updatedAt: Date; isDeleted: boolean },
 >(
@@ -2139,15 +1207,11 @@ async function fetchTableChangesSafely<
 
   const rows = await fetchPage(cappedLimit + 1)
   if (rows.length <= cappedLimit) {
-    // Exhausted: every matching row for this table was returned.
     return { changes: rows.map(toChange), safeWatermark: Number.POSITIVE_INFINITY }
   }
 
-  // rows.length === cappedLimit + 1 here (fetchPage never returns more than
-  // asked), so index `cappedLimit` is the first row we over-fetched to peek at.
   const boundaryRow = rows[cappedLimit]
   if (!boundaryRow) {
-    // Unreachable given the length check above; narrowed rather than asserted.
     return { changes: rows.map(toChange), safeWatermark: Number.POSITIVE_INFINITY }
   }
   const boundaryTs = boundaryRow.updatedAt
@@ -2155,23 +1219,15 @@ async function fetchTableChangesSafely<
 
   const belowBoundary = rows.filter((row) => row.updatedAt.getTime() < boundaryMs)
   if (belowBoundary.length > 0) {
-    // A safe cutoff exists strictly below the boundary timestamp — defer the
-    // whole boundary group to the next pull rather than risk returning it
-    // incomplete.
+    // Defer the whole boundary group rather than return it incomplete.
     const lastSafeRow = belowBoundary[belowBoundary.length - 1]
-    // Unreachable (belowBoundary.length > 0 just checked); narrowed not asserted.
     const safeWatermark = lastSafeRow ? lastSafeRow.updatedAt.getTime() : Number.NEGATIVE_INFINITY
     return { changes: belowBoundary.map(toChange), safeWatermark }
   }
 
-  // Degenerate case: every one of the cappedLimit+1 fetched rows shares the
-  // boundary timestamp, so this fetch alone cannot tell whether more rows
-  // exist at that exact instant. Fetch the true full group.
   const fullGroup = await fetchExactTimestamp(boundaryTs)
   if (fullGroup.length >= MAX_BOUNDARY_GROUP_SIZE) {
-    // Pathological: bail out rather than trust a possibly-incomplete
-    // "complete" group. Defer the whole thing — no forward progress from
-    // this table this round, but no silent loss either.
+    // Defer rather than trust a possibly incomplete group: no progress, but no silent loss.
     logger.error('[getSyncChanges] boundary group exceeds safety cap, deferring', {
       entityType,
       boundaryTs: boundaryTs.toISOString(),
@@ -2182,6 +1238,7 @@ async function fetchTableChangesSafely<
   return { changes: fullGroup.map(toChange), safeWatermark: boundaryMs }
 }
 
+// Callers must pass the session user id: `userId` is trusted as already authorized.
 export async function getSyncChanges(
   userId: string,
   since: number | null,
@@ -2193,18 +1250,9 @@ export async function getSyncChanges(
   const changes: ServerChange[] = []
   const watermarks: number[] = []
 
-  // Profile-scoped entity tables are pulled ONLY when an active profile is known
-  // (Story 4-18 review P3). Without a profileId we must NOT fall back to "all
-  // profiles", or a null / mid-switch active profile would mix other profiles'
-  // rows into the active stores. `userProfiles` is user-scoped and always pulled
-  // (the client needs the profile list before it can choose an active profile).
-  //
-  // ⚠️ Every table below goes through `fetchTableChangesSafely` (Story 53.1,
-  // AC-3), not a bare `.limit()` — see that function's docblock for why a
-  // per-table-only fix (the first version of this story's patch) was still
-  // provably lossy across tables, and how the GLOBAL cursor below is derived.
+  // Profile-scoped tables only with a known profile: falling back to all profiles would mix
+  // other profiles' rows into the active stores.
   if (profileId !== undefined) {
-    // Income sources (profile-scoped)
     const income = await fetchTableChangesSafely(
       'incomeSource',
       (pageLimit) =>
@@ -2237,13 +1285,7 @@ export async function getSyncChanges(
     changes.push(...income.changes)
     watermarks.push(income.safeWatermark)
 
-    // Categories (profile-scoped, Story 30.4a)
-    //
-    // ⚠️ This function is SEVEN hand-written per-entity blocks (story 99.2), not a
-    // table-driven loop. A new field rides along free because select() returns
-    // the whole row — but a new ENTITY reaches no second device at all unless a
-    // block like this is added. Silent: nothing fails, the data simply never
-    // arrives.
+    // Hand-written per-entity blocks: a new entity reaches no other device unless a block is added.
     const category = await fetchTableChangesSafely(
       'category',
       (pageLimit) =>
@@ -2276,7 +1318,6 @@ export async function getSyncChanges(
     changes.push(...category.changes)
     watermarks.push(category.safeWatermark)
 
-    // Expenses (profile-scoped)
     const expense = await fetchTableChangesSafely(
       'expense',
       (pageLimit) =>
@@ -2309,7 +1350,6 @@ export async function getSyncChanges(
     changes.push(...expense.changes)
     watermarks.push(expense.safeWatermark)
 
-    // Savings goals (profile-scoped)
     const savings = await fetchTableChangesSafely(
       'savingsGoal',
       (pageLimit) =>
@@ -2342,7 +1382,6 @@ export async function getSyncChanges(
     changes.push(...savings.changes)
     watermarks.push(savings.safeWatermark)
 
-    // Balance tracking (profile-scoped)
     const balance = await fetchTableChangesSafely(
       'balanceTracking',
       (pageLimit) =>
@@ -2376,7 +1415,6 @@ export async function getSyncChanges(
     watermarks.push(balance.safeWatermark)
   }
 
-  // User profiles (scoped by user only — profiles are not themselves profile-scoped)
   const profiles = await fetchTableChangesSafely(
     'userProfile',
     (pageLimit) =>
@@ -2402,11 +1440,7 @@ export async function getSyncChanges(
   changes.push(...profiles.changes)
   watermarks.push(profiles.safeWatermark)
 
-  // The account's retirement plan (story 99.2): user-scoped like profiles, so it
-  // is pulled whatever the active profile is, and outside the `profileId` branch
-  // above. One row per user at most. Its watermark joins the global minimum like
-  // every other table's; a missing block here is SILENT (the plan simply never
-  // reaches a second device), which is why the PGlite round trip pulls it.
+  // User-scoped like profiles, so pulled whatever the active profile.
   const plans = await fetchTableChangesSafely(
     'retirementPlan',
     (pageLimit) =>
@@ -2432,35 +1466,15 @@ export async function getSyncChanges(
   changes.push(...plans.changes)
   watermarks.push(plans.safeWatermark)
 
-  // The GLOBAL cursor this pull can safely promise is the MINIMUM watermark
-  // across all 7 tables — the tightest constraint wins. A table with a lower
-  // watermark than another has rows this pull never even looked at yet
-  // (its own page ran out before reaching that far); advancing the cursor
-  // past that point would make `gt(updatedAt, cursor)` skip them forever on
-  // the next pull. Some already-safe rows from a faster-draining table may
-  // get re-delivered next pull as a result — harmless, since applying a
-  // change twice is idempotent (`applyServerChangesToStores`).
+  // Minimum watermark across tables: advancing past a table's unread rows would skip them forever.
+  // Re-delivering already-safe rows is harmless (applying a change is idempotent).
   const safeCursor = Math.min(...watermarks)
   const safeChanges =
     safeCursor === Number.POSITIVE_INFINITY
       ? changes
       : changes.filter((c) => c.updatedAt <= safeCursor)
 
-  // Merge across tables, order by the global cursor with a stable id tiebreaker,
-  // then cap WITHOUT splitting a same-timestamp group across the boundary (P1).
-  // (Every table's own page is already safe up to `safeCursor` above; this
-  // second pass bounds the TOTAL response size across all 7 tables combined.)
+  // This second pass bounds the total response size across all tables.
   safeChanges.sort((a, b) => a.updatedAt - b.updatedAt || a.entityId.localeCompare(b.entityId))
   return capChangesAtTimestampBoundary(safeChanges, cappedLimit)
 }
-
-// ============================================================================
-// Exports
-// ============================================================================
-
-// The remaining exported types (`BatchSyncRequest`, `BatchSyncResponse`,
-// `SyncConflict`) are already exported at their declarations; re-exporting them
-// here was a duplicate declaration, not an additional export. Line numbers are
-// deliberately omitted — the previous version of this comment cited five types at
-// five fixed lines, and story 66.1 both deleted two of them (`SyncHistoryEntry`,
-// `SyncAuditLog`) and shifted every line it named.

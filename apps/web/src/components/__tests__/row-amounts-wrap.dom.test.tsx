@@ -1,23 +1,4 @@
-/**
- * Every row money figure on the four finance tables breaks only between digit
- * groups (story 91.1, FR146, AC 2 / AC 6).
- *
- * Below `sm` each row cell inherits `overflow-wrap: anywhere`, which split
- * figures inside a group: measured at 320px under CI's font before 91.1,
- * `$12,345,67` / `8.90` (Savings Current Balance) and `$12,345,6` / `78.90`
- * (Balance). The fix is two halves on the figure's element, and this pins both:
- * the `RESPONSIVE_AMOUNT_CLASS` token (`overflow-wrap: normal`) and a
- * `GroupedAmount` inside it (one `<wbr>` straight after each digit-flanked
- * group separator, text unchanged).
- *
- * ⚠️ jsdom computes no layout: this pins the WIRING, never "it fits". The CI
- * screenshots (`income-320-light`, `savings-320-light`, `balance-320-light`)
- * are the layout guard.
- *
- * ⚠️ Every figure is found by ITERATING its column's cells and compared by the
- * exact expected set, never `[0]`: a page that forgot one cell would otherwise
- * pass on the cells it did wire.
- */
+// jsdom computes no layout: this pins the wiring (amount class + GroupedAmount), never that figures fit.
 
 import { renderWithProviders } from '@/test/utils'
 import type { ReactElement } from 'react'
@@ -60,13 +41,11 @@ function clearStores(): void {
 
 beforeEach(() => {
   clearStores()
-  // Symbol mode, USD: the widest rendering, and the seed CI's shots use.
   useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
 })
 
 afterEach(clearStores)
 
-/** The text runs between `<wbr>`s; a plain string comes back as ONE run. */
 function runsOf(el: Element): string[] {
   const out = ['']
   const walk = (node: Node) => {
@@ -85,22 +64,19 @@ const tokens = (value: string | null | undefined): string[] =>
 
 const AMOUNT_TOKENS = tokens(RESPONSIVE_AMOUNT_CLASS)
 
-/** Whether an element carries EVERY token of the amount class. */
 const isAmount = (el: Element): boolean => {
   const own = tokens(el.getAttribute('class'))
   return AMOUNT_TOKENS.length > 0 && AMOUNT_TOKENS.every((t) => own.includes(t))
 }
 
-/** Every row cell whose mobile label reads `label`, in row order. */
 function cellsLabelled(container: HTMLElement, label: string): HTMLElement[] {
   return [...container.querySelectorAll<HTMLElement>('tbody td')].filter(
     (td) => td.querySelector(':scope > span.uppercase')?.textContent === label
   )
 }
 
-/** The one element in a cell carrying the amount class. The mobile label carries
- * the same `overflow-wrap: normal` token (it must not break mid-word either), so
- * it is excluded by being the cell's label, not by its classes. */
+/** The mobile label carries the same `overflow-wrap: normal` token, so it is excluded by being
+ * the cell's label, not by its classes. */
 function figureIn(td: HTMLElement): HTMLElement {
   const label = td.querySelector(':scope > span.uppercase')
   const figures = [...td.querySelectorAll<HTMLElement>('*')].filter(
@@ -114,7 +90,6 @@ interface PageCase {
   name: string
   seed: () => void
   render: () => ReactElement
-  /** label → the expected runs of each row's figure, in rendered row order */
   figures: Record<string, string[][]>
 }
 
@@ -190,19 +165,15 @@ describe('row money figures wrap only between digit groups (story 91.1)', () => 
         cells.forEach((td, i) => {
           const figure = figureIn(td)
           const runs = expectedRuns[i] as string[]
-          // The `<wbr>` sits straight after each group separator, nowhere else.
           expect(runsOf(figure)).toEqual(runs)
-          // `<wbr>` carries no text: copy-paste and screen readers read the figure.
           expect(figure.textContent).toBe(runs.join(''))
         })
       })
     }
   }
 
-  // ⚠️ The converse, and the one a "consistency" tidy-up would break: the
-  // free-text NAME must keep the cell's inherited `anywhere`. Measured (story
-  // 91.1 arm N1): with the amount class on `/income`'s name, the 138-character
-  // seeded name overflowed its 240px wrapper by 921px at 320px.
+  // The free-text NAME must keep the cell's inherited `anywhere`: with the amount class a long
+  // name overflows its wrapper.
   for (const page of CASES) {
     it(`${page.name} › the free-text Name never carries the amount class`, () => {
       page.seed()
@@ -221,14 +192,8 @@ describe('row money figures wrap only between digit groups (story 91.1)', () => 
     })
   }
 
-  // ⚠️ Story 93.1 (FR149, AC 4): the cases above check only the columns their
-  // `figures` map NAMES, so a NEW money column would ship as a plain string and
-  // nothing would notice. This sweep finds figures by their rendered TEXT, in
-  // every `tbody` cell, whatever the column: any formatted USD figure with a
-  // group separator must sit inside a GroupedAmount (its text split by `<wbr>`).
-  // The count per page is pinned EXACTLY, so a sweep that matches nothing (a
-  // broken regex, an empty render) cannot pass. The seeds are all >= $1,000 by
-  // design, so every figure has a separator; keep them so.
+  // Finds figures by rendered text in every cell, so a new money column can't ship ungrouped.
+  // Seeds are all >= $1,000 so every figure has a separator; the count is pinned exactly.
   const FIGURE = /-?\$\d{1,3}(?:,\d{3})+\.\d{2}/g
   const SWEEP_COUNT: Record<string, number> = {
     Income: 1,
@@ -237,7 +202,6 @@ describe('row money figures wrap only between digit groups (story 91.1)', () => 
     Balance: 2,
   }
 
-  /** The deepest element under `td` whose text still contains `figure`. */
   function deepestHolding(td: HTMLElement, figure: string): HTMLElement {
     let el: HTMLElement = td
     for (;;) {
@@ -259,10 +223,7 @@ describe('row money figures wrap only between digit groups (story 91.1)', () => 
           const figure = match[0]
           found.push(figure)
           const holder = deepestHolding(td, figure)
-          // The holder must be the figure's OWN element: if the figure were a
-          // bare text node of the cell (or shared a wrapper with other text),
-          // the holder would be the cell, and an unrelated <wbr> in it (the
-          // Balance label's, BalancePage.tsx) would fake a split (93.1 review).
+          // The holder must be the figure's own element, or an unrelated <wbr> in the cell fakes a split.
           expect(
             runsOf(holder).join(''),
             `${page.name}: "${figure}" in cell "${td.textContent}" has no element of its own`
@@ -291,8 +252,6 @@ describe('row money figures wrap only between digit groups (story 91.1)', () => 
   })
 
   it('Balance › the "Current Balance/Value" label may break after its slash, and still reads whole', () => {
-    // Story 91.1 D4: measured at 320px, `BALANCE/VALUE` was the widest
-    // unbreakable label (106.5px) and pushed the figure onto two lines.
     useBalanceStore.getState().addBalanceEntry({
       type: 'investment',
       name: 'Brokerage',
