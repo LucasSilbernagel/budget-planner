@@ -81,7 +81,7 @@ export function parsePlaywrightJson(text, projects = null) {
 	return { ...summary, emptyProjects: projects.filter((name) => !seen.has(name)).length }
 }
 
-/** Biome 1.5.3: `Checked 683 file(s) in 502ms`. */
+/** Biome 2: `Checked 793 files in 1978ms`. */
 export function parseBiome(text) {
 	const match = /Checked (\d+) file(?:\(s\)|s)? in /.exec(stripAnsi(text))
 	return match ? { files: Number(match[1]), total: Number(match[1]), failed: 0 } : null

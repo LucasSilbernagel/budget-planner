@@ -249,7 +249,7 @@ export type ServerRowVerdict = { ok: true } | { ok: false; fields: string[] }
 // Issue messages can embed money values, so only path and code leave here.
 export function validateServerRow(change: ServerChange): ServerRowVerdict {
 	// Own-property check: `entityType` comes from the server, and inherited keys like `toString`
-	// would otherwise match. (`Object.hasOwn` needs ES2022.)
+	// would otherwise match.
 	if (!Object.hasOwn(SERVER_ROW_SCHEMAS, change.entityType)) {
 		return { ok: true }
 	}

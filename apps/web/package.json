@@ -12,7 +12,7 @@
 		"preview": "vite preview",
 		"type-check": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.vitest.json && tsc --noEmit -p tsconfig.e2e.json",
 		"lint": "biome check .",
-		"lint:fix": "biome check . --apply",
+		"lint:fix": "biome check . --write",
 		"test": "vitest run --config vitest.config.ts",
 		"test:unit": "vitest run --config vitest.config.ts",
 		"test:watch": "vitest --config vitest.config.ts",
@@ -36,7 +36,7 @@
 		"zustand": "^4.4.7"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "1.5.3",
+		"@biomejs/biome": "2.5.15",
 		"@playwright/test": "^1.61.1",
 		"@tailwindcss/typography": "^0.5.20",
 		"@tanstack/react-start": "^1.168.26",

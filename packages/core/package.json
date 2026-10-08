@@ -9,7 +9,7 @@
 		"build": "tsc",
 		"type-check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
 		"lint": "biome check .",
-		"lint:fix": "biome check . --apply",
+		"lint:fix": "biome check . --write",
 		"test:unit": "vitest run",
 		"test:watch": "vitest"
 	},
@@ -22,7 +22,7 @@
 		"@budget-planner/db": "workspace:*",
 		"@vitest/coverage-v8": "^1.6.1",
 		"typescript": "^5.3.3",
-		"@biomejs/biome": "1.5.3",
+		"@biomejs/biome": "2.5.15",
 		"vitest": "^1.6.1"
 	},
 	"engines": {

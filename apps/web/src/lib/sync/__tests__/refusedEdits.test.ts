@@ -204,7 +204,7 @@ describe('handleRejectedOperations — reverting', () => {
 
 	it('one row that cannot be read gets a fallback notice, and the other rows are still handled', async () => {
 		const d = deps({
-			lookupLocalRow: vi.fn((_type, id: string) => {
+			lookupLocalRow: vi.fn((_type, id: string): undefined => {
 				if (id === 'row-bad') throw new Error('corrupt store')
 				return
 			}),

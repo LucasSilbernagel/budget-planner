@@ -126,7 +126,6 @@ export function createBalanceSortExtractors(
 ): SortKeyExtractors<BalanceRow, BalanceSortKey> {
 	return {
 		// Own-property check: a `type` of 'constructor' would otherwise read an inherited function.
-		// `Object.hasOwn` is unavailable at this `lib` target.
 		type: (row) =>
 			Object.hasOwn(TYPE_SORT_RANK, row.type)
 				? (TYPE_SORT_RANK[row.type] ?? TYPE_SORT_RANK_FALLBACK)

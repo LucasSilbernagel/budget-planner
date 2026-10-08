@@ -9,7 +9,7 @@
 		"build": "tsc",
 		"type-check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
 		"lint": "biome check .",
-		"lint:fix": "biome check . --apply",
+		"lint:fix": "biome check . --write",
 		"test": "vitest run",
 		"test:unit": "vitest run",
 		"test:watch": "vitest",
@@ -33,7 +33,7 @@
 		"@types/node": "^20.11.0",
 		"@types/pg": "^8.10.9",
 		"typescript": "^5.3.3",
-		"@biomejs/biome": "1.5.3",
+		"@biomejs/biome": "2.5.15",
 		"vitest": "^1.6.1"
 	},
 	"engines": {

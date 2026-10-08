@@ -9,7 +9,7 @@
 		"build": "tsc",
 		"type-check": "tsc --noEmit",
 		"lint": "biome check .",
-		"lint:fix": "biome check . --apply"
+		"lint:fix": "biome check . --write"
 	},
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",
@@ -19,7 +19,7 @@
 	"devDependencies": {
 		"@types/node": "^20.11.0",
 		"typescript": "^5.3.3",
-		"@biomejs/biome": "1.5.3"
+		"@biomejs/biome": "2.5.15"
 	},
 	"engines": {
 		"node": ">=24.0.0"

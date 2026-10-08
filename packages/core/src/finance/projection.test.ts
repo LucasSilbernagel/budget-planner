@@ -476,7 +476,7 @@ describe('Summary Statistics', () => {
 		const result = createNetWorthProjection(BASE_INPUT)
 
 		expect(result.summary.startingNetWorthCents).toBe(toCents(100000))
-		expect(result.summary.endingNetWorthCents).toBe(result.timeline.at(-1).netWorthCents)
+		expect(result.summary.endingNetWorthCents).toBe(result.timeline.at(-1)?.netWorthCents)
 		expect(result.summary.totalGrowthCents).toBe(
 			result.summary.endingNetWorthCents - result.summary.startingNetWorthCents
 		)

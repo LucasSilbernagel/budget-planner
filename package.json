@@ -10,7 +10,7 @@
 		"build:packages": "tsc -b packages/core packages/db packages/config",
 		"lint": "biome check . && pnpm validate:tsconfig && pnpm lint:comments",
 		"lint:comments": "node scripts/check-comments.js",
-		"lint:fix": "biome check --apply .",
+		"lint:fix": "biome check --write .",
 		"knip": "knip --no-progress",
 		"format": "biome format --write .",
 		"type-check": "pnpm --filter web type-check",

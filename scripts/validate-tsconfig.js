@@ -64,8 +64,8 @@ function validateTsConfig(filePath) {
 			errors.push('Contains CRLF line endings (should be LF)')
 		}
 
-		if (content.includes('\t')) {
-			errors.push('Contains tabs (should use spaces for indentation)')
+		if (/^ +\S/m.test(content)) {
+			errors.push('Indented with spaces (should use tabs)')
 		}
 
 		if (!content.endsWith('\n')) {

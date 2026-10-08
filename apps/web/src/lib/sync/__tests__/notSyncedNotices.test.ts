@@ -79,7 +79,7 @@ describe('describeNotSyncedRow — naming a row whose edit keeps failing', () =>
 				op({ id: 'b', data: { name: 'Rent 2' }, timestamp: 2_000 }),
 				op({ id: 'c', entityId: 'row-2', data: {} }),
 			],
-			(_entityType, id) => {
+			(_entityType, id): undefined => {
 				if (id === 'row-2') throw new Error('store unavailable')
 				return
 			}
