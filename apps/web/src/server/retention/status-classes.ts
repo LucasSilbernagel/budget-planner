@@ -98,7 +98,7 @@ export function statusIn(statuses: readonly SubscriptionStatus[]): SQL {
  * expression against the OLD row, so `subscriptionStatus` in the CASE is the
  * status BEFORE this write even though the same statement also sets it.
  */
-export function accessEndedAtFor(newStatus: SubscriptionStatus, occurredAt: number): SQL | null {
+function accessEndedAtFor(newStatus: SubscriptionStatus, occurredAt: number): SQL | null {
   if (isEntitledStatus(newStatus)) {
     return null
   }

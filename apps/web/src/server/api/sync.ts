@@ -153,7 +153,7 @@ function failureFromError(
 /**
  * Conflict information returned to client
  */
-export interface SyncConflict {
+interface SyncConflict {
   /** Local operation ID */
   localOperationId: string
   /** Server operation ID */
@@ -2457,8 +2457,6 @@ export async function getSyncChanges(
 // ============================================================================
 // Exports
 // ============================================================================
-
-export { RATE_LIMIT_CONFIG }
 
 // The remaining exported types (`BatchSyncRequest`, `BatchSyncResponse`,
 // `SyncConflict`) are already exported at their declarations; re-exporting them

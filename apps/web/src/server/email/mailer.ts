@@ -28,7 +28,7 @@ const SUBJECT = 'Your Longhand Budget sign-in link'
  * batch of notices in one request — open indefinitely. On expiry `fetch`
  * rejects, and both callers already treat a rejection as a failed send.
  */
-export const BREVO_TIMEOUT_MS = 10_000
+const BREVO_TIMEOUT_MS = 10_000
 
 /**
  * Build the plain-text and HTML bodies for the magic-link email.

@@ -82,32 +82,6 @@ export function calculateMonthlySavingsNeeded(
 }
 
 /**
- * Determine if a savings goal is on track based on time and contributions
- *
- * @param targetAmount - Target amount in cents
- * @param currentBalance - Current balance in cents
- * @param targetDate - Target date as ISO string or Date object
- * @returns true if on track, false otherwise
- */
-export function isOnTrack(
-  targetAmount: number,
-  currentBalance: number,
-  targetDate: string | Date
-): boolean {
-  const targetDateTime =
-    typeof targetDate === 'string' ? new Date(targetDate).getTime() : targetDate.getTime()
-  const now = Date.now()
-  const monthsRemaining = (targetDateTime - now) / (1000 * 60 * 60 * 24 * 30)
-
-  if (monthsRemaining <= 0) return currentBalance >= targetAmount
-
-  const monthlyNeeded = calculateMonthlySavingsNeeded(targetAmount, currentBalance, monthsRemaining)
-  // For now, just check if goal is complete or if there's positive progress
-  // More sophisticated tracking would need contribution history
-  return currentBalance > 0 || monthlyNeeded === 0
-}
-
-/**
  * Get progress status based on percentage
  *
  * @param progress - Progress percentage (0-100)

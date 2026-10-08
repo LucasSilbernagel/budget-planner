@@ -23,9 +23,9 @@ import { json } from '@tanstack/react-start'
 import { type UserSession, getCurrentUserSession } from './paddle'
 
 /** The 503 copy. Fixed text: the resolver's own error can carry driver detail. */
-export const SESSION_UNAVAILABLE_ERROR = 'Your session could not be checked. Try again in a moment.'
+const SESSION_UNAVAILABLE_ERROR = 'Your session could not be checked. Try again in a moment.'
 
-export const AUTHENTICATION_REQUIRED_ERROR = 'Authentication required'
+const AUTHENTICATION_REQUIRED_ERROR = 'Authentication required'
 
 export type PremiumSessionResult =
   | { ok: true; user: UserSession }

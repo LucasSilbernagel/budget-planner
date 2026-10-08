@@ -10,6 +10,7 @@
     "build:packages": "tsc -b packages/core packages/db packages/config",
     "lint": "biome check . && pnpm validate:tsconfig",
     "lint:fix": "biome check --apply .",
+    "knip": "knip --no-progress",
     "format": "biome format --write .",
     "type-check": "pnpm --filter web type-check",
     "type-check:all": "pnpm -r type-check",
@@ -37,6 +38,7 @@
     "@biomejs/biome": "1.5.3",
     "@electric-sql/pglite": "0.5.8",
     "@electric-sql/pglite-socket": "0.2.11",
+    "knip": "^6.40.0",
     "typescript": "^5.3.3",
     "vitest": "^1.6.1"
   }

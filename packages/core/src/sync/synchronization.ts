@@ -22,7 +22,6 @@ import {
 import type {
   ChangesPulledCallback,
   ConflictCallback,
-  ConflictResolutionStrategy,
   ConflictResult,
   ConflictType,
   OperationsRejectedCallback,
@@ -35,7 +34,6 @@ import type {
   SyncConfig,
   SyncEntityType,
   SyncOperation,
-  SyncOperationType,
   SyncResult,
   SyncState,
   SyncStatusCallback,
@@ -2690,7 +2688,6 @@ export function createSynchronizationService(
 
 export type {
   SyncOperation,
-  SyncOperationType,
   SyncEntityType,
   SyncState,
   SyncConfig,
@@ -2698,8 +2695,6 @@ export type {
   SyncStatusCallback,
   ConflictCallback,
   ConflictResult,
-  ConflictType,
-  ConflictResolutionStrategy,
   ServerChange,
   PullResult,
   ChangesPulledCallback,

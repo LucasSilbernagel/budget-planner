@@ -25,7 +25,7 @@ import { and, eq, gt, isNull } from 'drizzle-orm'
 export const LOGIN_TOKEN_TTL_MS = 15 * 60 * 1000
 
 /** CSPRNG token size: 32 bytes = 256 bits of entropy. */
-export const LOGIN_TOKEN_BYTES = 32
+const LOGIN_TOKEN_BYTES = 32
 
 /**
  * Generate a fresh, URL-safe magic-link token (the raw value emailed to the user).

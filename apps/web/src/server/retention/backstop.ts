@@ -37,7 +37,7 @@ import { eq } from 'drizzle-orm'
 import { RETENTION_JOB, runRetentionSweep } from './sweep'
 
 /** At most one heartbeat check per instance per hour. */
-export const CHECK_INTERVAL_MS = 60 * 60 * 1000
+const CHECK_INTERVAL_MS = 60 * 60 * 1000
 
 /** The scheduled run is daily; three missed days means it has stopped. */
 export const STALE_AFTER_MS = 3 * 24 * 60 * 60 * 1000
@@ -45,9 +45,6 @@ export const STALE_AFTER_MS = 3 * 24 * 60 * 60 * 1000
 const gate = createIntervalGate()
 
 /** Test seam: reset the per-instance gate. */
-export function __resetRetentionBackstopGateForTests(): void {
-  gate.lastPassedAt = 0
-}
 
 /**
  * Run the sweep when the heartbeat is stale. Awaitable, for tests and for the

@@ -294,9 +294,6 @@ export function parseFromInput(value: string, locale?: string): number {
   return parseInt(`${cleaned}00`, 10) || 0
 }
 
-// Alias for backward compatibility
-export const parseCurrencyToCents = parseFromInput
-
 /**
  * Strips characters a money field can never legally contain, as the user types (FR46).
  *

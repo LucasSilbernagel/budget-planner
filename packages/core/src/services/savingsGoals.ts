@@ -10,7 +10,6 @@
  * - Database types imported from @budget-planner/db
  */
 
-import type { SavingsGoal as DbSavingsGoal } from '@budget-planner/db'
 import { MAX_MONEY_CENTS } from '../finance/money-limits'
 import { calculateProgress as calculateSavingsGoalProgress } from '../utils/savingsGoalCalculations'
 import { generateUuid } from '../utils/uuid'
@@ -117,46 +116,6 @@ export function isSavingsAccount(goal: {
   targetAmount: number | null
 }): boolean {
   return goal.targetAmount == null
-}
-
-/**
- * Database Savings Goal type (re-exported for convenience)
- * Uses serial IDs and Date objects
- */
-export type DatabaseSavingsGoal = DbSavingsGoal
-
-/**
- * Input type for creating a new savings goal in the database
- */
-export interface CreateSavingsGoalInput {
-  name: string
-  targetAmount: number | null // In cents (null = account, no target)
-  currentBalance: number // In cents
-  allocationMode?: AllocationMode // Story 26.1 (absent ⇒ 'automatic')
-  monthlyAllocation?: number | null // In cents (null = no manual amount)
-  userId?: number // Optional for free tier (null), required for paid tier
-}
-
-/**
- * Input type for updating an existing savings goal
- * Uses number IDs to align with database serial and client-side negative IDs
- */
-export interface UpdateSavingsGoalInput {
-  id: string // uuid PK (Story 5-14) — shared client/server identity
-  name?: string
-  targetAmount?: number | null // In cents (null = clear target → account)
-  currentBalance?: number // In cents
-  allocationMode?: AllocationMode // Story 26.1
-  monthlyAllocation?: number | null // In cents (null = no manual amount)
-}
-
-/**
- * Result type for savings goal operations
- */
-export interface SavingsGoalResult {
-  success: boolean
-  data?: ClientSavingsGoal | DatabaseSavingsGoal
-  error?: string
 }
 
 /**
@@ -473,9 +432,3 @@ export function toClientSavingsGoal(
 // ============================================================================
 // Exports
 // ============================================================================
-
-export {
-  calculateSavingsGoalProgress,
-  getStatusFromProgress as getSavingsGoalStatus,
-  withProgress as withSavingsGoalProgress,
-}

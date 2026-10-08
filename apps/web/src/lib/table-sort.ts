@@ -79,7 +79,7 @@ export type SortDirection = 'asc' | 'desc'
  * `frequency` is not one of the four known cadences. All three collapse to the
  * same rendering (`No target`, `—`, `None`) and to the same ordering: last.
  */
-export type SortValue = string | number | null
+type SortValue = string | number | null
 
 /** The active sort. `null` state (no sort) is represented by the absence of
  * this object, so an unsorted table cannot be confused with one sorted by a

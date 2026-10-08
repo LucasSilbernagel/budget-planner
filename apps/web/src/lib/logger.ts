@@ -18,7 +18,7 @@
 
 import { getConfig } from '@budget-planner/config'
 
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
+type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 export type LogContext = Record<string, unknown>
 
 const LEVEL_PRIORITY: Record<LogLevel, number> = {

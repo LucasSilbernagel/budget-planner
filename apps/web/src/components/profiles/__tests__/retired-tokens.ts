@@ -52,18 +52,3 @@ export const RETIRED_LIGHT_ONLY_TOKENS = [
 export function collectClassTokens(root: HTMLElement): string[] {
   return [root, ...root.querySelectorAll('*')].flatMap((el) => [...el.classList])
 }
-
-/**
- * Assert no retired light-only token survives anywhere in `root`.
- *
- * Takes `expect` from the caller so this file stays a plain helper module rather
- * than importing a test runner into non-test code.
- */
-export function assertNoRetiredTokens(
-  expect: (actual: unknown, message?: string) => { not: { toContain: (v: unknown) => void } },
-  classes: string[]
-): void {
-  for (const retired of RETIRED_LIGHT_ONLY_TOKENS) {
-    expect(classes, `retired light-only token "${retired}" survived`).not.toContain(retired)
-  }
-}

@@ -79,7 +79,7 @@ import { Skeleton } from '../ui/Skeleton'
  */
 const UNCATEGORIZED_VALUE = ''
 
-export const UNCATEGORIZED_LABEL = 'Uncategorized'
+const UNCATEGORIZED_LABEL = 'Uncategorized'
 
 export interface CategoryPickerProps {
   /** Which side of the ledger this form is on; the list is filtered to it. */

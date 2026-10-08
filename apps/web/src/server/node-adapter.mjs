@@ -407,7 +407,7 @@ export function toWebRequest(nodeReq, options = {}) {
  * @param {Encoding | null} [encoding] the client's negotiated encoding
  * @returns {Promise<void>}
  */
-export async function applyWebResponse(nodeRes, webResponse, encoding = null) {
+async function applyWebResponse(nodeRes, webResponse, encoding = null) {
   nodeRes.statusCode = webResponse.status
 
   const setCookies =

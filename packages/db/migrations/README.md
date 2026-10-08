@@ -145,10 +145,9 @@ every row written since the dump.
 
 ## Related
 
-- `packages/db/scripts/migrate-users-to-uuid.ts` — a historical one-off from story
-  4-2 (serial → uuid `users.id`). Its header records its status: **not needed for new
-  setups**. `users.id` has been uuid since `0000`; the four entity-table primary keys
-  were converted later, in `0003`. The `0000_fix_users_id_type_to_uuid.sql` that
-  `0003`'s header cites as its pattern source is this script's never-committed
-  predecessor — it existed on disk before story 5-14 started tracking this directory,
-  and is why `0003` names a file you will not find here.
+- `users.id` has been uuid since `0000`; the four entity-table primary keys were
+  converted later, in `0003`. The `0000_fix_users_id_type_to_uuid.sql` that `0003`'s
+  header cites as its pattern source was a never-committed predecessor of story 4-2's
+  one-off `scripts/migrate-users-to-uuid.ts` (deleted: no setup needs it) — it existed
+  on disk before story 5-14 started tracking this directory, and is why `0003` names a
+  file you will not find here.

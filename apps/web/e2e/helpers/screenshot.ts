@@ -45,14 +45,14 @@ export async function chartsDrawn(page: Page, count: number): Promise<void> {
 }
 
 /** 44 x 44 CSS px, decided for phone targets in story 96.1 (FR156, D1). */
-export const PHONE_TARGET_PX = 44
+const PHONE_TARGET_PX = 44
 
 /**
  * The phone top strip's height (story 96.1, D2): 44px of content plus its 1px
  * bottom border. Pinned outright in each state, never as an equality between
  * two states (an equality cannot catch both drifting together).
  */
-export const PHONE_STRIP_PX = 45
+const PHONE_STRIP_PX = 45
 
 export interface Box {
   x: number

@@ -31,7 +31,7 @@
 import { useEffect, useState } from 'react'
 
 /** The media query the whole app's theme now derives from. */
-export const DARK_SCHEME_QUERY = '(prefers-color-scheme: dark)'
+const DARK_SCHEME_QUERY = '(prefers-color-scheme: dark)'
 
 export function usePrefersDarkScheme(): boolean {
   const [prefersDark, setPrefersDark] = useState(false)
