@@ -1,402 +1,402 @@
 import type { Frequency } from './normalization'
 
 interface FinancialDataPoint {
-  id: string | number
-  name: string
-  amount: number
-  frequency: Frequency
-  category?: string
-  date?: Date
-  type: 'income' | 'expense'
+	id: string | number
+	name: string
+	amount: number
+	frequency: Frequency
+	category?: string
+	date?: Date
+	type: 'income' | 'expense'
 }
 
 interface CategoryAggregate {
-  category: string
-  amount: number
-  type: 'income' | 'expense'
-  count: number
-  color?: string
+	category: string
+	amount: number
+	type: 'income' | 'expense'
+	count: number
+	color?: string
 }
 
 interface RechartsDataItem {
-  name: string
-  value: number
-  type?: 'income' | 'expense'
-  category?: string
-  fill?: string
-  id?: string | number
-  frequency?: Frequency
-  count?: number
-  originalAmount?: number
+	name: string
+	value: number
+	type?: 'income' | 'expense'
+	category?: string
+	fill?: string
+	id?: string | number
+	frequency?: Frequency
+	count?: number
+	originalAmount?: number
 }
 
 interface DrillDownState {
-  level: number
-  path: string[]
-  currentCategory?: string
-  currentType?: 'income' | 'expense'
+	level: number
+	path: string[]
+	currentCategory?: string
+	currentType?: 'income' | 'expense'
 }
 
 const CATEGORY_COLORS = [
-  '#3B82F6',
-  '#10B981',
-  '#EF4444',
-  '#8B5CF6',
-  '#F59E0B',
-  '#EC4899',
-  '#14B8A6',
-  '#6366F1',
-  '#22C55E',
-  '#F97316',
-  '#06B6D4',
-  '#84CC16',
-  '#EAB308',
-  '#A855F7',
-  '#F43F5E',
-  '#1E40AF',
-  '#059669',
+	'#3B82F6',
+	'#10B981',
+	'#EF4444',
+	'#8B5CF6',
+	'#F59E0B',
+	'#EC4899',
+	'#14B8A6',
+	'#6366F1',
+	'#22C55E',
+	'#F97316',
+	'#06B6D4',
+	'#84CC16',
+	'#EAB308',
+	'#A855F7',
+	'#F43F5E',
+	'#1E40AF',
+	'#059669',
 ] as const
 
 const DEFAULT_COLORS = {
-  income: '#10B981',
-  expense: '#EF4444',
-  savings: '#8B5CF6',
-  investment: '#3B82F6',
-  debt: '#DC2626',
+	income: '#10B981',
+	expense: '#EF4444',
+	savings: '#8B5CF6',
+	investment: '#3B82F6',
+	debt: '#DC2626',
 }
 
 function aggregateByCategory(data: FinancialDataPoint[]): CategoryAggregate[] {
-  const validatedData = sanitizeFinancialData(data)
-  const categoryMap = new Map<string, CategoryAggregate>()
+	const validatedData = sanitizeFinancialData(data)
+	const categoryMap = new Map<string, CategoryAggregate>()
 
-  for (const item of validatedData) {
-    const category = item.category ?? item.name
-    const key = `${item.type}:${category}`
+	for (const item of validatedData) {
+		const category = item.category ?? item.name
+		const key = `${item.type}:${category}`
 
-    if (!categoryMap.has(key)) {
-      categoryMap.set(key, {
-        category,
-        amount: 0,
-        type: item.type,
-        count: 0,
-      })
-    }
+		if (!categoryMap.has(key)) {
+			categoryMap.set(key, {
+				category,
+				amount: 0,
+				type: item.type,
+				count: 0,
+			})
+		}
 
-    const aggregate = categoryMap.get(key)
-    if (aggregate) {
-      aggregate.amount += item.amount
-      aggregate.count += 1
-    }
-  }
+		const aggregate = categoryMap.get(key)
+		if (aggregate) {
+			aggregate.amount += item.amount
+			aggregate.count += 1
+		}
+	}
 
-  return Array.from(categoryMap.values())
+	return Array.from(categoryMap.values())
 }
 
 function aggregateByCategoryAndType(
-  data: FinancialDataPoint[]
+	data: FinancialDataPoint[]
 ): Map<'income' | 'expense', CategoryAggregate[]> {
-  const result = new Map<'income' | 'expense', CategoryAggregate[]>()
-  result.set('income', [])
-  result.set('expense', [])
+	const result = new Map<'income' | 'expense', CategoryAggregate[]>()
+	result.set('income', [])
+	result.set('expense', [])
 
-  const validatedData = sanitizeFinancialData(data)
-  const categoryMap = new Map<string, CategoryAggregate>()
+	const validatedData = sanitizeFinancialData(data)
+	const categoryMap = new Map<string, CategoryAggregate>()
 
-  for (const item of validatedData) {
-    const category = item.category ?? item.name
-    const mapKey = `${item.type}:${category}`
+	for (const item of validatedData) {
+		const category = item.category ?? item.name
+		const mapKey = `${item.type}:${category}`
 
-    if (!categoryMap.has(mapKey)) {
-      categoryMap.set(mapKey, {
-        category,
-        amount: 0,
-        type: item.type,
-        count: 0,
-      })
-    }
+		if (!categoryMap.has(mapKey)) {
+			categoryMap.set(mapKey, {
+				category,
+				amount: 0,
+				type: item.type,
+				count: 0,
+			})
+		}
 
-    const aggregate = categoryMap.get(mapKey)
-    if (aggregate) {
-      aggregate.amount += item.amount
-      aggregate.count += 1
-    }
-  }
+		const aggregate = categoryMap.get(mapKey)
+		if (aggregate) {
+			aggregate.amount += item.amount
+			aggregate.count += 1
+		}
+	}
 
-  for (const aggregate of categoryMap.values()) {
-    result.get(aggregate.type)?.push(aggregate)
-  }
+	for (const aggregate of categoryMap.values()) {
+		result.get(aggregate.type)?.push(aggregate)
+	}
 
-  return result
+	return result
 }
 
 function getTopCategories(aggregates: CategoryAggregate[], limit = 10): CategoryAggregate[] {
-  return [...aggregates].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount)).slice(0, limit)
+	return [...aggregates].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount)).slice(0, limit)
 }
 
 function groupSmallCategories(
-  aggregates: CategoryAggregate[],
-  topLimit = 8,
-  otherThreshold = 0.05
+	aggregates: CategoryAggregate[],
+	topLimit = 8,
+	otherThreshold = 0.05
 ): CategoryAggregate[] {
-  if (aggregates.length <= topLimit) {
-    return aggregates
-  }
+	if (aggregates.length <= topLimit) {
+		return aggregates
+	}
 
-  const sorted = [...aggregates].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
-  const topItems = sorted.slice(0, topLimit)
-  const otherItems = sorted.slice(topLimit)
+	const sorted = [...aggregates].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+	const topItems = sorted.slice(0, topLimit)
+	const otherItems = sorted.slice(topLimit)
 
-  const totalAmount = aggregates.reduce((sum, item) => sum + Math.abs(item.amount), 0)
+	const totalAmount = aggregates.reduce((sum, item) => sum + Math.abs(item.amount), 0)
 
-  const otherTotal = otherItems.reduce((sum, item) => sum + Math.abs(item.amount), 0)
+	const otherTotal = otherItems.reduce((sum, item) => sum + Math.abs(item.amount), 0)
 
-  if (otherTotal > 0 && otherTotal / totalAmount >= otherThreshold) {
-    const firstOtherType = otherItems[0]?.type ?? 'expense'
-    topItems.push({
-      category: 'Other',
-      amount: firstOtherType === 'income' ? otherTotal : -otherTotal,
-      type: firstOtherType,
-      count: otherItems.reduce((sum, item) => sum + item.count, 0),
-    })
-  }
+	if (otherTotal > 0 && otherTotal / totalAmount >= otherThreshold) {
+		const firstOtherType = otherItems[0]?.type ?? 'expense'
+		topItems.push({
+			category: 'Other',
+			amount: firstOtherType === 'income' ? otherTotal : -otherTotal,
+			type: firstOtherType,
+			count: otherItems.reduce((sum, item) => sum + item.count, 0),
+		})
+	}
 
-  return topItems
+	return topItems
 }
 
 function toPieChartData(
-  aggregates: CategoryAggregate[],
-  colorMap: Record<string, string> = {}
+	aggregates: CategoryAggregate[],
+	colorMap: Record<string, string> = {}
 ): RechartsDataItem[] {
-  return aggregates.map((agg, index) => ({
-    name: agg.category,
-    value: Math.abs(agg.amount),
-    type: agg.type,
-    category: agg.category,
-    fill: colorMap[agg.category] || CATEGORY_COLORS[index % CATEGORY_COLORS.length],
-    originalAmount: agg.amount,
-    count: agg.count,
-  }))
+	return aggregates.map((agg, index) => ({
+		name: agg.category,
+		value: Math.abs(agg.amount),
+		type: agg.type,
+		category: agg.category,
+		fill: colorMap[agg.category] || CATEGORY_COLORS[index % CATEGORY_COLORS.length],
+		originalAmount: agg.amount,
+		count: agg.count,
+	}))
 }
 
 function toBarChartData(data: FinancialDataPoint[], categoryOrder?: string[]): RechartsDataItem[] {
-  const categoryMap = new Map<string, RechartsDataItem>()
+	const categoryMap = new Map<string, RechartsDataItem>()
 
-  for (const item of data) {
-    const category = item.category ?? item.name
+	for (const item of data) {
+		const category = item.category ?? item.name
 
-    if (!categoryMap.has(category)) {
-      categoryMap.set(category, {
-        name: category,
-        value: 0,
-        type: item.type,
-        category,
-        fill: CATEGORY_COLORS[categoryMap.size % CATEGORY_COLORS.length],
-      })
-    }
+		if (!categoryMap.has(category)) {
+			categoryMap.set(category, {
+				name: category,
+				value: 0,
+				type: item.type,
+				category,
+				fill: CATEGORY_COLORS[categoryMap.size % CATEGORY_COLORS.length],
+			})
+		}
 
-    const chartItem = categoryMap.get(category)
-    if (chartItem) {
-      chartItem.value += Math.abs(item.amount)
-    }
-  }
+		const chartItem = categoryMap.get(category)
+		if (chartItem) {
+			chartItem.value += Math.abs(item.amount)
+		}
+	}
 
-  const result = Array.from(categoryMap.values())
+	const result = Array.from(categoryMap.values())
 
-  if (categoryOrder) {
-    result.sort((a, b) => {
-      const aIndex = categoryOrder.indexOf(a.name)
-      const bIndex = categoryOrder.indexOf(b.name)
-      if (aIndex === -1 && bIndex === -1) return b.value - a.value
-      if (aIndex === -1) return 1
-      if (bIndex === -1) return -1
-      return aIndex - bIndex
-    })
-  } else {
-    result.sort((a, b) => b.value - a.value)
-  }
+	if (categoryOrder) {
+		result.sort((a, b) => {
+			const aIndex = categoryOrder.indexOf(a.name)
+			const bIndex = categoryOrder.indexOf(b.name)
+			if (aIndex === -1 && bIndex === -1) return b.value - a.value
+			if (aIndex === -1) return 1
+			if (bIndex === -1) return -1
+			return aIndex - bIndex
+		})
+	} else {
+		result.sort((a, b) => b.value - a.value)
+	}
 
-  return result
+	return result
 }
 
 function toStackedBarChartData(data: FinancialDataPoint[]): {
-  categories: string[]
-  incomeData: number[]
-  expenseData: number[]
+	categories: string[]
+	incomeData: number[]
+	expenseData: number[]
 } {
-  const categoryMap = new Map<string, { income: number; expense: number }>()
+	const categoryMap = new Map<string, { income: number; expense: number }>()
 
-  for (const item of data) {
-    const category = item.category ?? item.name
+	for (const item of data) {
+		const category = item.category ?? item.name
 
-    if (!categoryMap.has(category)) {
-      categoryMap.set(category, { income: 0, expense: 0 })
-    }
+		if (!categoryMap.has(category)) {
+			categoryMap.set(category, { income: 0, expense: 0 })
+		}
 
-    const categoryData = categoryMap.get(category)
-    if (categoryData) {
-      if (item.type === 'income') {
-        categoryData.income += Math.abs(item.amount)
-      } else {
-        categoryData.expense += Math.abs(item.amount)
-      }
-    }
-  }
+		const categoryData = categoryMap.get(category)
+		if (categoryData) {
+			if (item.type === 'income') {
+				categoryData.income += Math.abs(item.amount)
+			} else {
+				categoryData.expense += Math.abs(item.amount)
+			}
+		}
+	}
 
-  const categories = Array.from(categoryMap.keys())
-  // biome-ignore lint/style/noNonNullAssertion: cat comes from categoryMap.keys(); get() cannot be undefined and ?. would widen the element type to undefined.
-  const incomeData = categories.map((cat) => categoryMap.get(cat)!.income)
-  // biome-ignore lint/style/noNonNullAssertion: cat comes from categoryMap.keys(); get() cannot be undefined and ?. would widen the element type to undefined.
-  const expenseData = categories.map((cat) => categoryMap.get(cat)!.expense)
+	const categories = Array.from(categoryMap.keys())
+	// biome-ignore lint/style/noNonNullAssertion: cat comes from categoryMap.keys(); get() cannot be undefined and ?. would widen the element type to undefined.
+	const incomeData = categories.map((cat) => categoryMap.get(cat)!.income)
+	// biome-ignore lint/style/noNonNullAssertion: cat comes from categoryMap.keys(); get() cannot be undefined and ?. would widen the element type to undefined.
+	const expenseData = categories.map((cat) => categoryMap.get(cat)!.expense)
 
-  return { categories, incomeData, expenseData }
+	return { categories, incomeData, expenseData }
 }
 
 function createDrillDownState(): DrillDownState {
-  return {
-    level: 0,
-    path: [],
-  }
+	return {
+		level: 0,
+		path: [],
+	}
 }
 
 function drillDownToCategory(
-  state: DrillDownState,
-  category: string,
-  type: 'income' | 'expense'
+	state: DrillDownState,
+	category: string,
+	type: 'income' | 'expense'
 ): DrillDownState {
-  return {
-    level: state.level + 1,
-    path: [...state.path, `${type}:${category}`],
-    currentCategory: category,
-    currentType: type,
-  }
+	return {
+		level: state.level + 1,
+		path: [...state.path, `${type}:${category}`],
+		currentCategory: category,
+		currentType: type,
+	}
 }
 
 function drillUp(state: DrillDownState): DrillDownState {
-  if (state.level === 0) {
-    return state
-  }
+	if (state.level === 0) {
+		return state
+	}
 
-  const newPath = state.path.slice(0, -1)
-  const lastEntry = newPath.at(-1)
+	const newPath = state.path.slice(0, -1)
+	const lastEntry = newPath.at(-1)
 
-  return {
-    level: state.level - 1,
-    path: newPath,
-    currentCategory: lastEntry?.split(':')[1],
-    currentType: lastEntry?.split(':')[0] as 'income' | 'expense' | undefined,
-  }
+	return {
+		level: state.level - 1,
+		path: newPath,
+		currentCategory: lastEntry?.split(':')[1],
+		currentType: lastEntry?.split(':')[0] as 'income' | 'expense' | undefined,
+	}
 }
 
 function drillToRoot(): DrillDownState {
-  return {
-    level: 0,
-    path: [],
-  }
+	return {
+		level: 0,
+		path: [],
+	}
 }
 
 function getDataForDrillDownLevel(
-  allData: FinancialDataPoint[],
-  state: DrillDownState
+	allData: FinancialDataPoint[],
+	state: DrillDownState
 ): FinancialDataPoint[] {
-  if (state.level === 0) {
-    return allData
-  }
+	if (state.level === 0) {
+		return allData
+	}
 
-  let filteredData = [...allData]
+	let filteredData = [...allData]
 
-  for (const pathEntry of state.path) {
-    const [type, category] = pathEntry.split(':')
-    filteredData = filteredData.filter(
-      (item) => item.type === type && (item.category ?? item.name) === category
-    )
-  }
+	for (const pathEntry of state.path) {
+		const [type, category] = pathEntry.split(':')
+		filteredData = filteredData.filter(
+			(item) => item.type === type && (item.category ?? item.name) === category
+		)
+	}
 
-  return filteredData
+	return filteredData
 }
 
 function isDrillDownActive(state: DrillDownState): boolean {
-  return state.level > 0
+	return state.level > 0
 }
 
 function getPercentageOfTotal(categoryAmount: number, totalAmount: number): number {
-  if (totalAmount === 0) return 0
-  return (Math.abs(categoryAmount) / Math.abs(totalAmount)) * 100
+	if (totalAmount === 0) return 0
+	return (Math.abs(categoryAmount) / Math.abs(totalAmount)) * 100
 }
 
 function getColorForCategory(
-  _category: string,
-  type: 'income' | 'expense',
-  _index: number
+	_category: string,
+	type: 'income' | 'expense',
+	_index: number
 ): string {
-  return DEFAULT_COLORS[type]
+	return DEFAULT_COLORS[type]
 }
 
 function generateColorMap(categories: string[]): Record<string, string> {
-  const colorMap: Record<string, string> = {}
+	const colorMap: Record<string, string> = {}
 
-  for (let i = 0; i < categories.length; i++) {
-    const category = categories[i]
-    if (
-      typeof category !== 'string' ||
-      category === '' ||
-      category === undefined ||
-      category === null
-    ) {
-      continue
-    }
-    const colorIndex = i % CATEGORY_COLORS.length
-    // biome-ignore lint/style/noNonNullAssertion: colorIndex = i % CATEGORY_COLORS.length is always a valid index; ?. would widen to string | undefined and break the Record<string, string> assignment.
-    colorMap[category] = CATEGORY_COLORS[colorIndex]!
-  }
+	for (let i = 0; i < categories.length; i++) {
+		const category = categories[i]
+		if (
+			typeof category !== 'string' ||
+			category === '' ||
+			category === undefined ||
+			category === null
+		) {
+			continue
+		}
+		const colorIndex = i % CATEGORY_COLORS.length
+		// biome-ignore lint/style/noNonNullAssertion: colorIndex = i % CATEGORY_COLORS.length is always a valid index; ?. would widen to string | undefined and break the Record<string, string> assignment.
+		colorMap[category] = CATEGORY_COLORS[colorIndex]!
+	}
 
-  return colorMap
+	return colorMap
 }
 
 function validateFinancialData(data: FinancialDataPoint[]): boolean {
-  return data.every(
-    (item) =>
-      typeof item?.id === 'string' &&
-      typeof item?.name === 'string' &&
-      typeof item?.amount === 'number' &&
-      Number.isFinite(item?.amount) &&
-      typeof item?.frequency === 'string' &&
-      (item.type === 'income' || item.type === 'expense')
-  )
+	return data.every(
+		(item) =>
+			typeof item?.id === 'string' &&
+			typeof item?.name === 'string' &&
+			typeof item?.amount === 'number' &&
+			Number.isFinite(item?.amount) &&
+			typeof item?.frequency === 'string' &&
+			(item.type === 'income' || item.type === 'expense')
+	)
 }
 
 function sanitizeFinancialData(data: FinancialDataPoint[]): FinancialDataPoint[] {
-  return data.filter(
-    (item) =>
-      typeof item?.id === 'string' &&
-      typeof item?.name === 'string' &&
-      typeof item?.amount === 'number' &&
-      Number.isFinite(item?.amount) &&
-      typeof item?.frequency === 'string' &&
-      (item.type === 'income' || item.type === 'expense')
-  )
+	return data.filter(
+		(item) =>
+			typeof item?.id === 'string' &&
+			typeof item?.name === 'string' &&
+			typeof item?.amount === 'number' &&
+			Number.isFinite(item?.amount) &&
+			typeof item?.frequency === 'string' &&
+			(item.type === 'income' || item.type === 'expense')
+	)
 }
 
-export type { FinancialDataPoint, CategoryAggregate, RechartsDataItem, DrillDownState }
+export type { CategoryAggregate, DrillDownState, FinancialDataPoint, RechartsDataItem }
 
 export {
-  CATEGORY_COLORS,
-  DEFAULT_COLORS,
-  aggregateByCategory,
-  aggregateByCategoryAndType,
-  getTopCategories,
-  groupSmallCategories,
-  toPieChartData,
-  toBarChartData,
-  toStackedBarChartData,
-  createDrillDownState,
-  drillDownToCategory,
-  drillUp,
-  drillToRoot,
-  getDataForDrillDownLevel,
-  isDrillDownActive,
-  getPercentageOfTotal,
-  getColorForCategory,
-  generateColorMap,
-  validateFinancialData,
-  sanitizeFinancialData,
+	aggregateByCategory,
+	aggregateByCategoryAndType,
+	CATEGORY_COLORS,
+	createDrillDownState,
+	DEFAULT_COLORS,
+	drillDownToCategory,
+	drillToRoot,
+	drillUp,
+	generateColorMap,
+	getColorForCategory,
+	getDataForDrillDownLevel,
+	getPercentageOfTotal,
+	getTopCategories,
+	groupSmallCategories,
+	isDrillDownActive,
+	sanitizeFinancialData,
+	toBarChartData,
+	toPieChartData,
+	toStackedBarChartData,
+	validateFinancialData,
 }

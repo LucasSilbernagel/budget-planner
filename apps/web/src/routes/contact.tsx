@@ -1,30 +1,30 @@
-import { ContactForm } from '@/components/contact/contact-form'
 import { createFileRoute } from '@tanstack/react-router'
+import { ContactForm } from '@/components/contact/contact-form'
 
 export const Route = createFileRoute('/contact')({
-  head: () => ({
-    meta: [
-      { title: 'Contact · Longhand Budget' },
-      {
-        name: 'description',
-        content: 'Send feedback or report a bug — your message reaches the developer directly.',
-      },
-    ],
-  }),
-  component: ContactPage,
+	head: () => ({
+		meta: [
+			{ title: 'Contact · Longhand Budget' },
+			{
+				name: 'description',
+				content: 'Send feedback or report a bug — your message reaches the developer directly.',
+			},
+		],
+	}),
+	component: ContactPage,
 })
 
 function ContactPage() {
-  return (
-    <main className="mx-auto max-w-xl px-4 py-10">
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Contact</h1>
-      <p className="mt-2 text-gray-600 dark:text-gray-400">
-        Have feedback or found a bug? Send a message and it will reach the developer directly. Only
-        a message is required — a name and email are optional if you&apos;d like a reply.
-      </p>
-      <div className="mt-6">
-        <ContactForm />
-      </div>
-    </main>
-  )
+	return (
+		<main className="mx-auto max-w-xl px-4 py-10">
+			<h1 className="text-3xl font-bold text-gray-900 dark:text-white">Contact</h1>
+			<p className="mt-2 text-gray-600 dark:text-gray-400">
+				Have feedback or found a bug? Send a message and it will reach the developer directly. Only
+				a message is required — a name and email are optional if you&apos;d like a reply.
+			</p>
+			<div className="mt-6">
+				<ContactForm />
+			</div>
+		</main>
+	)
 }

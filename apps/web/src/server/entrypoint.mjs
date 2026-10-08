@@ -12,5 +12,5 @@ export const MIGRATE_ENTRYPOINT = 'migrate'
  * @returns {'migrate' | 'serve'}
  */
 export function selectEntrypoint(env) {
-  return env['APP_ENTRYPOINT'] === MIGRATE_ENTRYPOINT ? 'migrate' : 'serve'
+	return env['APP_ENTRYPOINT'] === MIGRATE_ENTRYPOINT ? 'migrate' : 'serve'
 }

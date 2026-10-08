@@ -3,8 +3,8 @@
 import { describe, expect, it } from 'vitest'
 
 describe('web Vitest runs in UTC (story 92.1)', () => {
-  it('has a UTC process zone', () => {
-    expect(process.env.TZ).toBe('UTC')
-    expect(new Date('2026-07-01T12:00:00Z').getTimezoneOffset()).toBe(0)
-  })
+	it('has a UTC process zone', () => {
+		expect(process.env.TZ).toBe('UTC')
+		expect(new Date('2026-07-01T12:00:00Z').getTimezoneOffset()).toBe(0)
+	})
 })

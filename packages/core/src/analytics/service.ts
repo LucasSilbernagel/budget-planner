@@ -8,71 +8,71 @@ export type AnalyticsPropertyValue = string | number | boolean
 export type AnalyticsEventProperties = Record<string, AnalyticsPropertyValue>
 
 export interface AnalyticsEvent {
-  name: string
-  metadata: ClientMetadata
-  properties: AnalyticsEventProperties
-  timestamp: number
+	name: string
+	metadata: ClientMetadata
+	properties: AnalyticsEventProperties
+	timestamp: number
 }
 
 // Plain substring, not `\bname\b`: camelCase `*Name` keys have no word boundary at the hump.
 const PII_KEY_PATTERN =
-  /(email|e-?mail|name|phone|mobile|\btel\b|ssn|password|passwd|secret|token|address|\bdob\b|birth|credit|\bcard\b|cvv|iban|account)/i
+	/(email|e-?mail|name|phone|mobile|\btel\b|ssn|password|passwd|secret|token|address|\bdob\b|birth|credit|\bcard\b|cvv|iban|account)/i
 
 const EMAIL_VALUE_PATTERN = /[^\s@]+@[^\s@]+\.[^\s@]+/
 
 export function filterPiiProperties(
-  properties: AnalyticsEventProperties
+	properties: AnalyticsEventProperties
 ): AnalyticsEventProperties {
-  const safe: AnalyticsEventProperties = {}
-  for (const [key, value] of Object.entries(properties)) {
-    if (PII_KEY_PATTERN.test(key)) {
-      continue
-    }
-    if (typeof value === 'string' && EMAIL_VALUE_PATTERN.test(value)) {
-      continue
-    }
-    safe[key] = value
-  }
-  return safe
+	const safe: AnalyticsEventProperties = {}
+	for (const [key, value] of Object.entries(properties)) {
+		if (PII_KEY_PATTERN.test(key)) {
+			continue
+		}
+		if (typeof value === 'string' && EMAIL_VALUE_PATTERN.test(value)) {
+			continue
+		}
+		safe[key] = value
+	}
+	return safe
 }
 
 export interface AnalyticsServiceOptions {
-  metadata?: ClientMetadata
-  now?: () => number
+	metadata?: ClientMetadata
+	now?: () => number
 }
 
 export interface AnalyticsService {
-  track(name: string, properties?: AnalyticsEventProperties): AnalyticsEvent
-  getEvents(): readonly AnalyticsEvent[]
-  setMetadata(metadata: ClientMetadata): void
-  clear(): void
+	track(name: string, properties?: AnalyticsEventProperties): AnalyticsEvent
+	getEvents(): readonly AnalyticsEvent[]
+	setMetadata(metadata: ClientMetadata): void
+	clear(): void
 }
 
 export function createAnalyticsService(options: AnalyticsServiceOptions = {}): AnalyticsService {
-  const now = options.now ?? Date.now
-  let metadata: ClientMetadata = { ...(options.metadata ?? {}) }
-  const events: AnalyticsEvent[] = []
+	const now = options.now ?? Date.now
+	let metadata: ClientMetadata = { ...(options.metadata ?? {}) }
+	const events: AnalyticsEvent[] = []
 
-  return {
-    track(name, properties = {}) {
-      const event: AnalyticsEvent = {
-        name,
-        // Snapshot metadata so later mutations don't rewrite history.
-        metadata: { ...metadata },
-        properties: filterPiiProperties(properties),
-        timestamp: now(),
-      }
-      events.push(event)
-      return event
-    },
-    getEvents() {
-      return [...events]
-    },
-    setMetadata(next) {
-      metadata = { ...next }
-    },
-    clear() {
-      events.length = 0
-    },
-  }
+	return {
+		track(name, properties = {}) {
+			const event: AnalyticsEvent = {
+				name,
+				// Snapshot metadata so later mutations don't rewrite history.
+				metadata: { ...metadata },
+				properties: filterPiiProperties(properties),
+				timestamp: now(),
+			}
+			events.push(event)
+			return event
+		},
+		getEvents() {
+			return [...events]
+		},
+		setMetadata(next) {
+			metadata = { ...next }
+		},
+		clear() {
+			events.length = 0
+		},
+	}
 }

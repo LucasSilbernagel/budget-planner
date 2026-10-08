@@ -51,9 +51,7 @@
 				"noUnknownAtRules": {
 					"level": "error",
 					"options": {
-						"ignore": [
-							"tailwind"
-						]
+						"ignore": ["tailwind"]
 					}
 				}
 			},
@@ -105,11 +103,7 @@
 	},
 	"overrides": [
 		{
-			"includes": [
-				"**/__tests__/**",
-				"**/*.test.ts",
-				"**/*.test.tsx"
-			],
+			"includes": ["**/__tests__/**", "**/*.test.ts", "**/*.test.tsx"],
 			"linter": {
 				"rules": {
 					"suspicious": {
@@ -127,9 +121,7 @@
 			}
 		},
 		{
-			"includes": [
-				"apps/web/src/styles/global.css"
-			],
+			"includes": ["apps/web/src/styles/global.css"],
 			"linter": {
 				"rules": {
 					"complexity": {

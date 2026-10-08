@@ -5,9 +5,9 @@ export const PADDLE_JS_URL: string
 export function cspSha256(text: string): string
 
 export function checkPaddleJs(
-  source: string,
-  pinned: {
-    loaderStyleText: string
-    checkoutFrameOrigins: { production: string; sandbox: string }
-  }
+	source: string,
+	pinned: {
+		loaderStyleText: string
+		checkoutFrameOrigins: { production: string; sandbox: string }
+	}
 ): { problems: string[]; facts: string[] }

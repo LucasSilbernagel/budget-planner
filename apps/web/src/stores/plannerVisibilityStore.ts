@@ -8,9 +8,9 @@ import { persist } from 'zustand/middleware'
 export const PLANNER_VISIBILITY_STORAGE_KEY = 'budget-planner-planner-visibility-v1'
 
 interface PlannerVisibilityState {
-  showRetirementPlanner: boolean
-  setShowRetirementPlanner: (showRetirementPlanner: boolean) => void
-  toggleRetirementPlanner: () => void
+	showRetirementPlanner: boolean
+	setShowRetirementPlanner: (showRetirementPlanner: boolean) => void
+	toggleRetirementPlanner: () => void
 }
 
 const DEFAULT_SHOW_RETIREMENT_PLANNER = true
@@ -20,42 +20,42 @@ const DEFAULT_SHOW_RETIREMENT_PLANNER = true
  * two must agree.
  */
 function coerceVisibility(value: unknown): boolean {
-  return value === false ? false : DEFAULT_SHOW_RETIREMENT_PLANNER
+	return value === false ? false : DEFAULT_SHOW_RETIREMENT_PLANNER
 }
 
 export const usePlannerVisibilityStore = create<PlannerVisibilityState>()(
-  persist(
-    (set) => ({
-      // Deterministic default so the server render and first client paint agree.
-      showRetirementPlanner: DEFAULT_SHOW_RETIREMENT_PLANNER,
+	persist(
+		(set) => ({
+			// Deterministic default so the server render and first client paint agree.
+			showRetirementPlanner: DEFAULT_SHOW_RETIREMENT_PLANNER,
 
-      setShowRetirementPlanner: (showRetirementPlanner) => {
-        set({ showRetirementPlanner })
-      },
+			setShowRetirementPlanner: (showRetirementPlanner) => {
+				set({ showRetirementPlanner })
+			},
 
-      toggleRetirementPlanner: () => {
-        set((state) => ({ showRetirementPlanner: !state.showRetirementPlanner }))
-      },
-    }),
-    {
-      name: PLANNER_VISIBILITY_STORAGE_KEY,
-      skipHydration: true,
-      partialize: (state) => ({ showRetirementPlanner: state.showRetirementPlanner }),
-      merge: (persisted, current) => ({
-        ...current,
-        showRetirementPlanner: coerceVisibility(
-          (persisted as Partial<PlannerVisibilityState> | undefined)?.showRetirementPlanner
-        ),
-      }),
-    }
-  )
+			toggleRetirementPlanner: () => {
+				set((state) => ({ showRetirementPlanner: !state.showRetirementPlanner }))
+			},
+		}),
+		{
+			name: PLANNER_VISIBILITY_STORAGE_KEY,
+			skipHydration: true,
+			partialize: (state) => ({ showRetirementPlanner: state.showRetirementPlanner }),
+			merge: (persisted, current) => ({
+				...current,
+				showRetirementPlanner: coerceVisibility(
+					(persisted as Partial<PlannerVisibilityState> | undefined)?.showRetirementPlanner
+				),
+			}),
+		}
+	)
 )
 
 export const useShowRetirementPlanner = () =>
-  usePlannerVisibilityStore((state) => state.showRetirementPlanner)
+	usePlannerVisibilityStore((state) => state.showRetirementPlanner)
 
 export const useSetShowRetirementPlanner = () =>
-  usePlannerVisibilityStore((state) => state.setShowRetirementPlanner)
+	usePlannerVisibilityStore((state) => state.setShowRetirementPlanner)
 
 export const useToggleRetirementPlanner = () =>
-  usePlannerVisibilityStore((state) => state.toggleRetirementPlanner)
+	usePlannerVisibilityStore((state) => state.toggleRetirementPlanner)

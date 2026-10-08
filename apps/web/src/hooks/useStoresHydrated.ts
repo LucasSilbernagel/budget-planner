@@ -12,17 +12,17 @@ import { useEffect, useState } from 'react'
 let hydratedOnThisClient = false
 
 export function useStoresHydrated(): boolean {
-  const [hydrated, setHydrated] = useState(hydratedOnThisClient)
+	const [hydrated, setHydrated] = useState(hydratedOnThisClient)
 
-  useEffect(() => {
-    hydratedOnThisClient = true
-    setHydrated(true)
-  }, [])
+	useEffect(() => {
+		hydratedOnThisClient = true
+		setHydrated(true)
+	}, [])
 
-  return hydrated
+	return hydrated
 }
 
 /** Call in beforeEach of files that mix render() with renderToString(): render() sets the flag. */
 export function __resetStoresHydratedForTests(): void {
-  hydratedOnThisClient = false
+	hydratedOnThisClient = false
 }

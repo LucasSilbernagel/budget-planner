@@ -3,36 +3,36 @@
  * clobber a consumer's already-resolved client state.
  */
 
-import { type ReactNode, createContext, useContext } from 'react'
+import { createContext, type ReactNode, useContext } from 'react'
 
 export type SeedSubscriptionStatus = 'free' | 'active' | 'past_due' | 'canceled' | 'lifetime' | null
 
 export interface SessionSeed {
-  isAuthenticated: boolean
-  userId: string | null
-  email: string | null
-  subscriptionStatus: SeedSubscriptionStatus
+	isAuthenticated: boolean
+	userId: string | null
+	email: string | null
+	subscriptionStatus: SeedSubscriptionStatus
 }
 
 export const SIGNED_OUT_SEED: Readonly<SessionSeed> = Object.freeze({
-  isAuthenticated: false,
-  userId: null,
-  email: null,
-  subscriptionStatus: null,
+	isAuthenticated: false,
+	userId: null,
+	email: null,
+	subscriptionStatus: null,
 })
 
 const SessionSeedContext = createContext<SessionSeed | null>(null)
 
 export function SessionSeedProvider({
-  seed,
-  children,
+	seed,
+	children,
 }: {
-  seed: SessionSeed | null
-  children: ReactNode
+	seed: SessionSeed | null
+	children: ReactNode
 }) {
-  return <SessionSeedContext.Provider value={seed}>{children}</SessionSeedContext.Provider>
+	return <SessionSeedContext.Provider value={seed}>{children}</SessionSeedContext.Provider>
 }
 
 export function useSessionSeed(): SessionSeed | null {
-  return useContext(SessionSeedContext)
+	return useContext(SessionSeedContext)
 }

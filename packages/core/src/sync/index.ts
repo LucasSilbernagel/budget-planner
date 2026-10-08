@@ -1,52 +1,49 @@
+export type {
+	IndexedDBSyncQueueStorage,
+	OfflineQueueConfig,
+	OfflineStatusCallback,
+	QueueProcessingCallback,
+	SyncNotificationCallback,
+} from './offline'
 export {
-  SynchronizationService,
-  createSynchronizationService,
-  SyncQueue,
-  SyncQueueClosedError,
-  createSyncQueue,
-  LocalStorageSyncQueueStorage,
-  DEFAULT_CONFIG,
+	createOfflineQueueManager,
+	IndexedDBSyncQueueStorageImpl,
+	isBrowserOffline,
+	OfflineQueueManager,
+} from './offline'
+export {
+	createSynchronizationService,
+	createSyncQueue,
+	DEFAULT_CONFIG,
+	LocalStorageSyncQueueStorage,
+	SynchronizationService,
+	SyncQueue,
+	SyncQueueClosedError,
 } from './synchronization'
 
-export { SyncStatus } from './types'
-
-export {
-  OfflineQueueManager,
-  createOfflineQueueManager,
-  IndexedDBSyncQueueStorageImpl,
-  isBrowserOffline,
-} from './offline'
-
 export type {
-  SyncOperation,
-  SyncOperationType,
-  SyncEntityType,
-  SyncState,
-  SyncConfig,
-  SyncResult,
-  SyncQueueStorage,
-  SyncStatusCallback,
-  ConflictCallback,
-  ConflictResult,
-  ConflictType,
-  ConflictResolutionStrategy,
-  ServerChange,
-  PullResult,
-  FetchServerChangesFn,
-  ChangesPulledCallback,
-  OperationsRejectedCallback,
-  OperationsSyncedCallback,
-  RefusedServerChange,
-  ServerChangesRefusedCallback,
-  ServerRowVerdict,
-  ProcessOperationFn,
-  ProcessOperationResult,
+	ChangesPulledCallback,
+	ConflictCallback,
+	ConflictResolutionStrategy,
+	ConflictResult,
+	ConflictType,
+	FetchServerChangesFn,
+	OperationsRejectedCallback,
+	OperationsSyncedCallback,
+	ProcessOperationFn,
+	ProcessOperationResult,
+	PullResult,
+	RefusedServerChange,
+	ServerChange,
+	ServerChangesRefusedCallback,
+	ServerRowVerdict,
+	SyncConfig,
+	SyncEntityType,
+	SyncOperation,
+	SyncOperationType,
+	SyncQueueStorage,
+	SyncResult,
+	SyncState,
+	SyncStatusCallback,
 } from './types'
-
-export type {
-  OfflineQueueConfig,
-  OfflineStatusCallback,
-  QueueProcessingCallback,
-  SyncNotificationCallback,
-  IndexedDBSyncQueueStorage,
-} from './offline'
+export { SyncStatus } from './types'

@@ -2,18 +2,18 @@ import type { ServerChange } from '@budget-planner/core/sync'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/server/api/auth/paddle', () => ({
-  getCurrentUserSession: vi.fn(),
+	getCurrentUserSession: vi.fn(),
 }))
 
 // `hasPaidAccess` is deliberately not mocked, so these cases exercise the real rule.
 vi.mock('@/server/api/sync', () => ({
-  getSyncChanges: vi.fn(),
-  checkRateLimit: vi.fn(),
-  getLiveProfileIds: vi.fn(async () => []),
+	getSyncChanges: vi.fn(),
+	checkRateLimit: vi.fn(),
+	getLiveProfileIds: vi.fn(async () => []),
 }))
 
 vi.mock('@/server/functions/profiles', () => ({
-  createDefaultProfileForUser: vi.fn(),
+	createDefaultProfileForUser: vi.fn(),
 }))
 
 import { getCurrentUserSession } from '@/server/api/auth/paddle'
@@ -26,276 +26,276 @@ type SessionResult = Awaited<ReturnType<typeof getCurrentUserSession>>
 const SESSION_USER_ID = '550e8400-e29b-41d4-a716-446655440000'
 
 function mockSession(result: SessionResult) {
-  ;(getCurrentUserSession as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(result)
+	;(getCurrentUserSession as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(result)
 }
 
 function mockChanges(changes: ServerChange[]) {
-  ;(getSyncChanges as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(changes)
+	;(getSyncChanges as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(changes)
 }
 
 function mockRateLimit(allowed: boolean) {
-  ;(checkRateLimit as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-    allowed,
-    remaining: allowed ? 99 : 0,
-  })
+	;(checkRateLimit as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+		allowed,
+		remaining: allowed ? 99 : 0,
+	})
 }
 
 const paidSession = {
-  success: true,
-  data: { userId: SESSION_USER_ID, subscriptionStatus: 'active' },
+	success: true,
+	data: { userId: SESSION_USER_ID, subscriptionStatus: 'active' },
 } as unknown as SessionResult
 
 const pastDueSession = {
-  success: true,
-  data: { userId: SESSION_USER_ID, subscriptionStatus: 'past_due' },
+	success: true,
+	data: { userId: SESSION_USER_ID, subscriptionStatus: 'past_due' },
 } as unknown as SessionResult
 
 const lifetimeSession = {
-  success: true,
-  data: { userId: SESSION_USER_ID, subscriptionStatus: 'lifetime' },
+	success: true,
+	data: { userId: SESSION_USER_ID, subscriptionStatus: 'lifetime' },
 } as unknown as SessionResult
 
 const canceledSession = {
-  success: true,
-  data: { userId: SESSION_USER_ID, subscriptionStatus: 'canceled' },
+	success: true,
+	data: { userId: SESSION_USER_ID, subscriptionStatus: 'canceled' },
 } as unknown as SessionResult
 
 const freeSession = {
-  success: true,
-  data: { userId: SESSION_USER_ID, subscriptionStatus: 'free' },
+	success: true,
+	data: { userId: SESSION_USER_ID, subscriptionStatus: 'free' },
 } as unknown as SessionResult
 
 const noSession = {
-  success: false,
-  error: 'No user session',
+	success: false,
+	error: 'No user session',
 } as unknown as SessionResult
 
 function getRequest(query = '', headers: Record<string, string> = {}): Request {
-  return new Request(`http://localhost/api/sync/changes${query}`, {
-    method: 'GET',
-    headers,
-  })
+	return new Request(`http://localhost/api/sync/changes${query}`, {
+		method: 'GET',
+		headers,
+	})
 }
 
 const sampleChange: ServerChange = {
-  entityType: 'incomeSource',
-  entityId: '42',
-  data: { id: 42, name: 'Salary', amount: 500000, frequency: 'monthly', isDeleted: false },
-  updatedAt: 1700,
-  isDeleted: false,
+	entityType: 'incomeSource',
+	entityId: '42',
+	data: { id: 42, name: 'Salary', amount: 500000, frequency: 'monthly', isDeleted: false },
+	updatedAt: 1700,
+	isDeleted: false,
 }
 
 describe('GET /api/sync/changes served boundary', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockChanges([])
-    mockRateLimit(true)
-    ;(createDefaultProfileForUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-      success: true,
-      data: { id: 'profile-1', userId: SESSION_USER_ID, isDefault: true },
-    })
-  })
+	beforeEach(() => {
+		vi.clearAllMocks()
+		mockChanges([])
+		mockRateLimit(true)
+		;(createDefaultProfileForUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+			success: true,
+			data: { id: 'profile-1', userId: SESSION_USER_ID, isDefault: true },
+		})
+	})
 
-  it('returns 401 for an unauthenticated request', async () => {
-    mockSession(noSession)
-    const response = await GET({ request: getRequest() })
-    const payload = await response.json()
+	it('returns 401 for an unauthenticated request', async () => {
+		mockSession(noSession)
+		const response = await GET({ request: getRequest() })
+		const payload = await response.json()
 
-    expect(response.status).toBe(401)
-    expect(payload.success).toBe(false)
-    expect(payload.error).toContain('No user session')
-    expect(getSyncChanges).not.toHaveBeenCalled()
-  })
+		expect(response.status).toBe(401)
+		expect(payload.success).toBe(false)
+		expect(payload.error).toContain('No user session')
+		expect(getSyncChanges).not.toHaveBeenCalled()
+	})
 
-  it('returns 401 when the session resolves but has no user', async () => {
-    mockSession({ success: true, data: null } as unknown as SessionResult)
-    const response = await GET({ request: getRequest() })
-    expect(response.status).toBe(401)
-    expect(getSyncChanges).not.toHaveBeenCalled()
-  })
+	it('returns 401 when the session resolves but has no user', async () => {
+		mockSession({ success: true, data: null } as unknown as SessionResult)
+		const response = await GET({ request: getRequest() })
+		expect(response.status).toBe(401)
+		expect(getSyncChanges).not.toHaveBeenCalled()
+	})
 
-  it('returns 403 for an authenticated free-tier user (premium gate)', async () => {
-    mockSession(freeSession)
-    const response = await GET({ request: getRequest() })
-    const payload = await response.json()
+	it('returns 403 for an authenticated free-tier user (premium gate)', async () => {
+		mockSession(freeSession)
+		const response = await GET({ request: getRequest() })
+		const payload = await response.json()
 
-    expect(response.status).toBe(403)
-    expect(payload.success).toBe(false)
-    expect(payload.error).toContain('Premium')
-    expect(getSyncChanges).not.toHaveBeenCalled()
-  })
+		expect(response.status).toBe(403)
+		expect(payload.success).toBe(false)
+		expect(payload.error).toContain('Premium')
+		expect(getSyncChanges).not.toHaveBeenCalled()
+	})
 
-  it('allows a past_due subscriber (sync gate ⊇ calculations gate)', async () => {
-    mockSession(pastDueSession)
-    mockChanges([sampleChange])
-    const response = await GET({ request: getRequest() })
+	it('allows a past_due subscriber (sync gate ⊇ calculations gate)', async () => {
+		mockSession(pastDueSession)
+		mockChanges([sampleChange])
+		const response = await GET({ request: getRequest() })
 
-    expect(response.status).toBe(200)
-    expect(getSyncChanges).toHaveBeenCalledTimes(1)
-  })
+		expect(response.status).toBe(200)
+		expect(getSyncChanges).toHaveBeenCalledTimes(1)
+	})
 
-  it('allows a lifetime buyer (Story 30.4a — untested at this boundary until 78.3)', async () => {
-    mockSession(lifetimeSession)
-    mockChanges([sampleChange])
-    const response = await GET({ request: getRequest() })
+	it('allows a lifetime buyer (Story 30.4a — untested at this boundary until 78.3)', async () => {
+		mockSession(lifetimeSession)
+		mockChanges([sampleChange])
+		const response = await GET({ request: getRequest() })
 
-    expect(response.status).toBe(200)
-    expect(getSyncChanges).toHaveBeenCalledTimes(1)
-  })
+		expect(response.status).toBe(200)
+		expect(getSyncChanges).toHaveBeenCalledTimes(1)
+	})
 
-  it('refuses a canceled subscriber with 403', async () => {
-    mockSession(canceledSession)
-    const response = await GET({ request: getRequest() })
+	it('refuses a canceled subscriber with 403', async () => {
+		mockSession(canceledSession)
+		const response = await GET({ request: getRequest() })
 
-    expect(response.status).toBe(403)
-    expect(getSyncChanges).not.toHaveBeenCalled()
-  })
+		expect(response.status).toBe(403)
+		expect(getSyncChanges).not.toHaveBeenCalled()
+	})
 
-  it('returns 429 when the per-user rate limit is exceeded (review D3)', async () => {
-    mockSession(paidSession)
-    mockRateLimit(false)
-    const response = await GET({ request: getRequest() })
-    const payload = await response.json()
+	it('returns 429 when the per-user rate limit is exceeded (review D3)', async () => {
+		mockSession(paidSession)
+		mockRateLimit(false)
+		const response = await GET({ request: getRequest() })
+		const payload = await response.json()
 
-    expect(response.status).toBe(429)
-    expect(payload.success).toBe(false)
-    expect(payload.error).toContain('Rate limit')
-    expect(getSyncChanges).not.toHaveBeenCalled()
-  })
+		expect(response.status).toBe(429)
+		expect(payload.success).toBe(false)
+		expect(payload.error).toContain('Rate limit')
+		expect(getSyncChanges).not.toHaveBeenCalled()
+	})
 
-  it('returns 200 with the exact client-consumed shape for a paid user', async () => {
-    mockSession(paidSession)
-    mockChanges([sampleChange])
+	it('returns 200 with the exact client-consumed shape for a paid user', async () => {
+		mockSession(paidSession)
+		mockChanges([sampleChange])
 
-    const response = await GET({ request: getRequest('?since=1000') })
-    const payload = await response.json()
+		const response = await GET({ request: getRequest('?since=1000') })
+		const payload = await response.json()
 
-    expect(response.status).toBe(200)
-    expect(payload.success).toBe(true)
-    expect(Array.isArray(payload.changes)).toBe(true)
-    expect(payload.changes).toEqual([sampleChange])
-    expect(payload.changes[0]).toMatchObject({
-      entityType: 'incomeSource',
-      entityId: '42',
-      updatedAt: 1700,
-      isDeleted: false,
-    })
-    expect(payload.lastPullTimestamp).toBe(1700)
-  })
+		expect(response.status).toBe(200)
+		expect(payload.success).toBe(true)
+		expect(Array.isArray(payload.changes)).toBe(true)
+		expect(payload.changes).toEqual([sampleChange])
+		expect(payload.changes[0]).toMatchObject({
+			entityType: 'incomeSource',
+			entityId: '42',
+			updatedAt: 1700,
+			isDeleted: false,
+		})
+		expect(payload.lastPullTimestamp).toBe(1700)
+	})
 
-  it('scopes the delta to the SESSION user id and forwards since/limit/profileId', async () => {
-    mockSession(paidSession)
-    const response = await GET({
-      request: getRequest('?since=1234&limit=25', { 'x-profile-id': 'profile-xyz' }),
-    })
+	it('scopes the delta to the SESSION user id and forwards since/limit/profileId', async () => {
+		mockSession(paidSession)
+		const response = await GET({
+			request: getRequest('?since=1234&limit=25', { 'x-profile-id': 'profile-xyz' }),
+		})
 
-    expect(response.status).toBe(200)
-    expect(getSyncChanges).toHaveBeenCalledWith(SESSION_USER_ID, 1234, 25, 'profile-xyz')
-  })
+		expect(response.status).toBe(200)
+		expect(getSyncChanges).toHaveBeenCalledWith(SESSION_USER_ID, 1234, 25, 'profile-xyz')
+	})
 
-  it('treats an absent since as a full snapshot (null cursor)', async () => {
-    mockSession(paidSession)
-    await GET({ request: getRequest() })
-    expect(getSyncChanges).toHaveBeenCalledWith(SESSION_USER_ID, null, 100, undefined)
-  })
+	it('treats an absent since as a full snapshot (null cursor)', async () => {
+		mockSession(paidSession)
+		await GET({ request: getRequest() })
+		expect(getSyncChanges).toHaveBeenCalledWith(SESSION_USER_ID, null, 100, undefined)
+	})
 
-  it('returns lastPullTimestamp = since when there are no changes', async () => {
-    mockSession(paidSession)
-    mockChanges([])
-    const response = await GET({ request: getRequest('?since=999') })
-    const payload = await response.json()
+	it('returns lastPullTimestamp = since when there are no changes', async () => {
+		mockSession(paidSession)
+		mockChanges([])
+		const response = await GET({ request: getRequest('?since=999') })
+		const payload = await response.json()
 
-    expect(payload.success).toBe(true)
-    expect(payload.changes).toEqual([])
-    expect(payload.lastPullTimestamp).toBe(999)
-  })
+		expect(payload.success).toBe(true)
+		expect(payload.changes).toEqual([])
+		expect(payload.lastPullTimestamp).toBe(999)
+	})
 
-  it('rejects a malformed since with 400 (not a 500)', async () => {
-    mockSession(paidSession)
-    const response = await GET({ request: getRequest('?since=-5') })
-    const payload = await response.json()
+	it('rejects a malformed since with 400 (not a 500)', async () => {
+		mockSession(paidSession)
+		const response = await GET({ request: getRequest('?since=-5') })
+		const payload = await response.json()
 
-    expect(response.status).toBe(400)
-    expect(payload.success).toBe(false)
-    expect(getSyncChanges).not.toHaveBeenCalled()
-  })
+		expect(response.status).toBe(400)
+		expect(payload.success).toBe(false)
+		expect(getSyncChanges).not.toHaveBeenCalled()
+	})
 
-  it('maps an unexpected getSyncChanges failure to 500', async () => {
-    mockSession(paidSession)
-    ;(getSyncChanges as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new Error('db exploded')
-    )
-    const response = await GET({ request: getRequest('?since=1') })
-    const payload = await response.json()
+	it('maps an unexpected getSyncChanges failure to 500', async () => {
+		mockSession(paidSession)
+		;(getSyncChanges as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+			new Error('db exploded')
+		)
+		const response = await GET({ request: getRequest('?since=1') })
+		const payload = await response.json()
 
-    expect(response.status).toBe(500)
-    expect(payload.success).toBe(false)
-    expect(payload.error).toContain('db exploded')
-  })
+		expect(response.status).toBe(500)
+		expect(payload.success).toBe(false)
+		expect(payload.error).toContain('db exploded')
+	})
 
-  describe('default-profile self-heal (post-53.1 incident fix)', () => {
-    it('calls createDefaultProfileForUser with the SESSION user id on every authorized pull', async () => {
-      mockSession(paidSession)
-      await GET({ request: getRequest() })
+	describe('default-profile self-heal (post-53.1 incident fix)', () => {
+		it('calls createDefaultProfileForUser with the SESSION user id on every authorized pull', async () => {
+			mockSession(paidSession)
+			await GET({ request: getRequest() })
 
-      expect(createDefaultProfileForUser).toHaveBeenCalledTimes(1)
-      expect(createDefaultProfileForUser).toHaveBeenCalledWith(SESSION_USER_ID)
-      // Runs before the delta fetch, so a freshly created profile's rows are visible to this pull.
-      const backfillOrder = (createDefaultProfileForUser as unknown as ReturnType<typeof vi.fn>)
-        .mock.invocationCallOrder[0]
-      const fetchOrder = (getSyncChanges as unknown as ReturnType<typeof vi.fn>).mock
-        .invocationCallOrder[0]
-      expect(backfillOrder).toBeLessThan(fetchOrder as number)
-    })
+			expect(createDefaultProfileForUser).toHaveBeenCalledTimes(1)
+			expect(createDefaultProfileForUser).toHaveBeenCalledWith(SESSION_USER_ID)
+			// Runs before the delta fetch, so a freshly created profile's rows are visible to this pull.
+			const backfillOrder = (createDefaultProfileForUser as unknown as ReturnType<typeof vi.fn>)
+				.mock.invocationCallOrder[0]
+			const fetchOrder = (getSyncChanges as unknown as ReturnType<typeof vi.fn>).mock
+				.invocationCallOrder[0]
+			expect(backfillOrder).toBeLessThan(fetchOrder as number)
+		})
 
-    it('is NOT called for an unauthenticated request', async () => {
-      mockSession(noSession)
-      await GET({ request: getRequest() })
-      expect(createDefaultProfileForUser).not.toHaveBeenCalled()
-    })
+		it('is NOT called for an unauthenticated request', async () => {
+			mockSession(noSession)
+			await GET({ request: getRequest() })
+			expect(createDefaultProfileForUser).not.toHaveBeenCalled()
+		})
 
-    it('is NOT called for a free-tier (non-paid) session — the premium gate runs first', async () => {
-      mockSession(freeSession)
-      await GET({ request: getRequest() })
-      expect(createDefaultProfileForUser).not.toHaveBeenCalled()
-    })
+		it('is NOT called for a free-tier (non-paid) session — the premium gate runs first', async () => {
+			mockSession(freeSession)
+			await GET({ request: getRequest() })
+			expect(createDefaultProfileForUser).not.toHaveBeenCalled()
+		})
 
-    it('a backfill failure (returned, not thrown) does not fail the pull — the deadlock this fixes must not become a NEW hard failure', async () => {
-      mockSession(paidSession)
-      mockChanges([sampleChange])
-      ;(createDefaultProfileForUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        success: false,
-        error: 'db unavailable',
-      })
+		it('a backfill failure (returned, not thrown) does not fail the pull — the deadlock this fixes must not become a NEW hard failure', async () => {
+			mockSession(paidSession)
+			mockChanges([sampleChange])
+			;(createDefaultProfileForUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+				success: false,
+				error: 'db unavailable',
+			})
 
-      const response = await GET({ request: getRequest() })
-      const payload = await response.json()
+			const response = await GET({ request: getRequest() })
+			const payload = await response.json()
 
-      expect(response.status).toBe(200)
-      expect(payload.success).toBe(true)
-      expect(getSyncChanges).toHaveBeenCalledTimes(1)
-    })
+			expect(response.status).toBe(200)
+			expect(payload.success).toBe(true)
+			expect(getSyncChanges).toHaveBeenCalledTimes(1)
+		})
 
-    it('a backfill that THROWS does not fail the pull either', async () => {
-      mockSession(paidSession)
-      mockChanges([sampleChange])
-      ;(createDefaultProfileForUser as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-        new Error('unexpected throw')
-      )
+		it('a backfill that THROWS does not fail the pull either', async () => {
+			mockSession(paidSession)
+			mockChanges([sampleChange])
+			;(createDefaultProfileForUser as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+				new Error('unexpected throw')
+			)
 
-      const response = await GET({ request: getRequest() })
-      const payload = await response.json()
+			const response = await GET({ request: getRequest() })
+			const payload = await response.json()
 
-      expect(response.status).toBe(200)
-      expect(payload.success).toBe(true)
-    })
+			expect(response.status).toBe(200)
+			expect(payload.success).toBe(true)
+		})
 
-    it("is idempotent from the route's perspective — called every pull, safe because the underlying function no-ops when a profile already exists", async () => {
-      mockSession(paidSession)
-      await GET({ request: getRequest() })
-      await GET({ request: getRequest() })
+		it("is idempotent from the route's perspective — called every pull, safe because the underlying function no-ops when a profile already exists", async () => {
+			mockSession(paidSession)
+			await GET({ request: getRequest() })
+			await GET({ request: getRequest() })
 
-      expect(createDefaultProfileForUser).toHaveBeenCalledTimes(2)
-    })
-  })
+			expect(createDefaultProfileForUser).toHaveBeenCalledTimes(2)
+		})
+	})
 })

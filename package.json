@@ -1,46 +1,46 @@
 {
-  "name": "budget-planner",
-  "version": "0.0.1",
-  "description": "Longhand Budget: private, EU-hosted budgeting, savings and forecasting",
-  "private": true,
-  "packageManager": "pnpm@10.34.3",
-  "scripts": {
-    "dev": "pnpm --filter web dev",
-    "build": "pnpm --filter web build",
-    "build:packages": "tsc -b packages/core packages/db packages/config",
-    "lint": "biome check . && pnpm validate:tsconfig && pnpm lint:comments",
-    "lint:comments": "node scripts/check-comments.js",
-    "lint:fix": "biome check --apply .",
-    "knip": "knip --no-progress",
-    "format": "biome format --write .",
-    "type-check": "pnpm --filter web type-check",
-    "type-check:all": "pnpm -r type-check",
-    "tsc": "tsc",
-    "tsc:web": "pnpm --filter web tsc --noEmit -p tsconfig.app.json",
-    "tsc:core": "pnpm --filter @budget-planner/core tsc --noEmit",
-    "tsc:db": "pnpm --filter @budget-planner/db tsc --noEmit",
-    "tsc:config": "pnpm --filter @budget-planner/config tsc --noEmit",
-    "validate:tsconfig": "node scripts/validate-tsconfig.js",
-    "test": "pnpm -r run test:unit",
-    "test:unit": "pnpm -r run test:unit",
-    "test:watch": "pnpm -r run test:watch",
-    "test:e2e": "pnpm --filter @budget-planner/web test:e2e",
-    "gates": "node apps/web/scripts/run-gates.mjs"
-  },
-  "engines": {
-    "node": ">=24.0.0"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@biomejs/biome"
-    ]
-  },
-  "devDependencies": {
-    "@biomejs/biome": "2.5.15",
-    "@electric-sql/pglite": "0.5.8",
-    "@electric-sql/pglite-socket": "0.2.11",
-    "knip": "^6.40.0",
-    "typescript": "^5.3.3",
-    "vitest": "^1.6.1"
-  }
+	"name": "budget-planner",
+	"version": "0.0.1",
+	"description": "Longhand Budget: private, EU-hosted budgeting, savings and forecasting",
+	"private": true,
+	"packageManager": "pnpm@10.34.3",
+	"scripts": {
+		"dev": "pnpm --filter web dev",
+		"build": "pnpm --filter web build",
+		"build:packages": "tsc -b packages/core packages/db packages/config",
+		"lint": "biome check . && pnpm validate:tsconfig && pnpm lint:comments",
+		"lint:comments": "node scripts/check-comments.js",
+		"lint:fix": "biome check --apply .",
+		"knip": "knip --no-progress",
+		"format": "biome format --write .",
+		"type-check": "pnpm --filter web type-check",
+		"type-check:all": "pnpm -r type-check",
+		"tsc": "tsc",
+		"tsc:web": "pnpm --filter web tsc --noEmit -p tsconfig.app.json",
+		"tsc:core": "pnpm --filter @budget-planner/core tsc --noEmit",
+		"tsc:db": "pnpm --filter @budget-planner/db tsc --noEmit",
+		"tsc:config": "pnpm --filter @budget-planner/config tsc --noEmit",
+		"validate:tsconfig": "node scripts/validate-tsconfig.js",
+		"test": "pnpm -r run test:unit",
+		"test:unit": "pnpm -r run test:unit",
+		"test:watch": "pnpm -r run test:watch",
+		"test:e2e": "pnpm --filter @budget-planner/web test:e2e",
+		"gates": "node apps/web/scripts/run-gates.mjs"
+	},
+	"engines": {
+		"node": ">=24.0.0"
+	},
+	"pnpm": {
+		"onlyBuiltDependencies": [
+			"@biomejs/biome"
+		]
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.15",
+		"@electric-sql/pglite": "0.5.8",
+		"@electric-sql/pglite-socket": "0.2.11",
+		"knip": "^6.40.0",
+		"typescript": "^5.3.3",
+		"vitest": "^1.6.1"
+	}
 }

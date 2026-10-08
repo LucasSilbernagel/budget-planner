@@ -11,8 +11,8 @@ export const E2E_DB_PORT = 55432
 export const E2E_DATABASE_URL = `postgresql://postgres:postgres@127.0.0.1:${E2E_DB_PORT}/postgres`
 
 export const SEEDED_USER = {
-  email: 'f9-sign-in@example.test',
-  paddleId: 'ctm_e2e_f9_sign_in',
+	email: 'f9-sign-in@example.test',
+	paddleId: 'ctm_e2e_f9_sign_in',
 } as const
 
 /**
@@ -26,32 +26,32 @@ export const MAIL_OUTBOX = join(tmpdir(), 'budget-planner-e2e', 'mail-outbox.jso
  * the dev server from `assertPaddleProductionConfig()`.
  */
 export const FAKE_PADDLE = {
-  environment: 'sandbox',
-  apiKey: 'e2e-fake-paddle-api-key-not-real',
-  clientToken: 'test_e2e_fake_client_token_not_real',
-  webhookSecret: 'e2e-fake-webhook-secret-not-real',
-  monthlyPriceId: 'pri_e2e_fake_monthly',
-  annualPriceId: 'pri_e2e_fake_annual',
-  lifetimePriceId: 'pri_e2e_fake_lifetime',
+	environment: 'sandbox',
+	apiKey: 'e2e-fake-paddle-api-key-not-real',
+	clientToken: 'test_e2e_fake_client_token_not_real',
+	webhookSecret: 'e2e-fake-webhook-secret-not-real',
+	monthlyPriceId: 'pri_e2e_fake_monthly',
+	annualPriceId: 'pri_e2e_fake_annual',
+	lifetimePriceId: 'pri_e2e_fake_lifetime',
 } as const
 
 /** Port 9 on loopback, where nothing listens, so every outbound request is refused locally. */
 export const NO_OUTBOUND_PROXY = 'http://127.0.0.1:9'
 
 export interface OutboxEntry {
-  to: string
-  link: string
+	to: string
+	link: string
 }
 
 export function readOutbox(path: string = MAIL_OUTBOX): OutboxEntry[] {
-  let text: string
-  try {
-    text = readFileSync(path, 'utf8')
-  } catch {
-    return []
-  }
-  return text
-    .split('\n')
-    .filter((line) => line.trim() !== '')
-    .map((line) => JSON.parse(line) as OutboxEntry)
+	let text: string
+	try {
+		text = readFileSync(path, 'utf8')
+	} catch {
+		return []
+	}
+	return text
+		.split('\n')
+		.filter((line) => line.trim() !== '')
+		.map((line) => JSON.parse(line) as OutboxEntry)
 }

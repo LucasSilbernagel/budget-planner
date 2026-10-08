@@ -6,26 +6,26 @@ const PADDLE_JS_URL = 'https://cdn.paddle.com/paddle/v2/paddle.js'
 
 /** Deliberately not the app's fallback labels, so seeing one proves the stub's PricePreview answered. */
 export const STUB_TOTALS = {
-  monthly: '€5.99',
-  annual: '€39.00',
-  lifetime: '€99.00',
+	monthly: '€5.99',
+	annual: '€39.00',
+	lifetime: '€99.00',
 } as const
 
 interface PaddleStubCall {
-  method: string
-  args: unknown[]
+	method: string
+	args: unknown[]
 }
 
 export interface PaddleStub {
-  calls: PaddleStubCall[]
-  paddleRequests: Array<{ url: string; answer: 'stub' | 'aborted' }>
-  checkoutOpens(): Record<string, unknown>[]
+	calls: PaddleStubCall[]
+	paddleRequests: Array<{ url: string; answer: 'stub' | 'aborted' }>
+	checkoutOpens(): Record<string, unknown>[]
 }
 
 const BINDING = '__paddleStubRecord'
 
 function stubScript(priceTotals: Record<string, string>): string {
-  return `(() => {
+	return `(() => {
   const totals = ${JSON.stringify(priceTotals)};
   const record = (method, args) => {
     const fn = window[${JSON.stringify(BINDING)}];
@@ -62,33 +62,33 @@ function stubScript(priceTotals: Record<string, string>): string {
 // Call before the first goto. page.route doesn't see service-worker requests, so the
 // spec must run with `serviceWorkers: 'block'`.
 export async function installPaddleStub(
-  page: Page,
-  priceTotals: Record<string, string>
+	page: Page,
+	priceTotals: Record<string, string>
 ): Promise<PaddleStub> {
-  const stub: PaddleStub = {
-    calls: [],
-    paddleRequests: [],
-    checkoutOpens: () =>
-      stub.calls
-        .filter((call) => call.method === 'Checkout.open')
-        .map((call) => (call.args[0] ?? {}) as Record<string, unknown>),
-  }
-  await page.exposeBinding(BINDING, (_source, call: PaddleStubCall) => {
-    stub.calls.push(call)
-  })
-  await page.route(/^https?:\/\/([a-z0-9-]+\.)*paddle\.com(\/|$)/i, async (route) => {
-    const url = route.request().url()
-    if (url === PADDLE_JS_URL) {
-      stub.paddleRequests.push({ url, answer: 'stub' })
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/javascript; charset=utf-8',
-        body: stubScript(priceTotals),
-      })
-      return
-    }
-    stub.paddleRequests.push({ url, answer: 'aborted' })
-    await route.abort('blockedbyclient')
-  })
-  return stub
+	const stub: PaddleStub = {
+		calls: [],
+		paddleRequests: [],
+		checkoutOpens: () =>
+			stub.calls
+				.filter((call) => call.method === 'Checkout.open')
+				.map((call) => (call.args[0] ?? {}) as Record<string, unknown>),
+	}
+	await page.exposeBinding(BINDING, (_source, call: PaddleStubCall) => {
+		stub.calls.push(call)
+	})
+	await page.route(/^https?:\/\/([a-z0-9-]+\.)*paddle\.com(\/|$)/i, async (route) => {
+		const url = route.request().url()
+		if (url === PADDLE_JS_URL) {
+			stub.paddleRequests.push({ url, answer: 'stub' })
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/javascript; charset=utf-8',
+				body: stubScript(priceTotals),
+			})
+			return
+		}
+		stub.paddleRequests.push({ url, answer: 'aborted' })
+		await route.abort('blockedbyclient')
+	})
+	return stub
 }

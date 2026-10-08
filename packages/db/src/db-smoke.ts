@@ -4,35 +4,35 @@
 import { buildDbSsl, isEuSovereignDbHost, isRelaxedDbEnv } from './client'
 
 export type SmokePreconditions =
-  | { ok: true; host: string; ssl: ReturnType<typeof buildDbSsl> }
-  | { ok: false; reason: string }
+	| { ok: true; host: string; ssl: ReturnType<typeof buildDbSsl> }
+	| { ok: false; reason: string }
 
 export function assessSmokePreconditions(
-  nodeEnv: string | undefined,
-  databaseUrl: string | undefined,
-  caCert: string | undefined
+	nodeEnv: string | undefined,
+	databaseUrl: string | undefined,
+	caCert: string | undefined
 ): SmokePreconditions {
-  if (!databaseUrl) {
-    return {
-      ok: false,
-      reason:
-        'DATABASE_URL is not set. Run this against the provisioned instance; a smoke check with nothing to connect to proves nothing.',
-    }
-  }
+	if (!databaseUrl) {
+		return {
+			ok: false,
+			reason:
+				'DATABASE_URL is not set. Run this against the provisioned instance; a smoke check with nothing to connect to proves nothing.',
+		}
+	}
 
-  let host: string
-  try {
-    host = new URL(databaseUrl).hostname.toLowerCase()
-  } catch {
-    return { ok: false, reason: 'DATABASE_URL is not a parseable URL.' }
-  }
+	let host: string
+	try {
+		host = new URL(databaseUrl).hostname.toLowerCase()
+	} catch {
+		return { ok: false, reason: 'DATABASE_URL is not a parseable URL.' }
+	}
 
-  if (!isRelaxedDbEnv(nodeEnv) && !isEuSovereignDbHost(host)) {
-    return {
-      ok: false,
-      reason: `"${host}" is not a DanubeData EU host (NFR1/NFR2, CLOUD Act immunity). Expected the internal writer name or a *.danubedata.ro host.`,
-    }
-  }
+	if (!isRelaxedDbEnv(nodeEnv) && !isEuSovereignDbHost(host)) {
+		return {
+			ok: false,
+			reason: `"${host}" is not a DanubeData EU host (NFR1/NFR2, CLOUD Act immunity). Expected the internal writer name or a *.danubedata.ro host.`,
+		}
+	}
 
-  return { ok: true, host, ssl: buildDbSsl(nodeEnv, caCert) }
+	return { ok: true, host, ssl: buildDbSsl(nodeEnv, caCert) }
 }

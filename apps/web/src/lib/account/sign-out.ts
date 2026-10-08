@@ -11,11 +11,11 @@ const LOGOUT_TIMEOUT_MS = 10_000
 let inFlight: Promise<void> | null = null
 
 export function resetSignOutStateForTests(): void {
-  inFlight = null
+	inFlight = null
 }
 
 export function returnToSignedOutHome(): void {
-  globalThis.location.assign('/')
+	globalThis.location.assign('/')
 }
 
 /**
@@ -23,26 +23,26 @@ export function returnToSignedOutHome(): void {
  * signed-in page behind it.
  */
 export async function signOut(): Promise<void> {
-  inFlight ??= runSignOut().finally(() => {
-    inFlight = null
-  })
-  return inFlight
+	inFlight ??= runSignOut().finally(() => {
+		inFlight = null
+	})
+	return inFlight
 }
 
 async function runSignOut(): Promise<void> {
-  try {
-    await fetch('/api/auth/logout', {
-      method: 'POST',
-      signal: AbortSignal.timeout(LOGOUT_TIMEOUT_MS),
-    })
-  } catch {
-    // Deliberately empty: the reload is the report.
-  }
-  // Even when the POST failed: the cached pages carry this session.
-  await purgeAppShellCache()
-  try {
-    returnToSignedOutHome()
-  } catch (error) {
-    console.error('Sign-out could not navigate away', error)
-  }
+	try {
+		await fetch('/api/auth/logout', {
+			method: 'POST',
+			signal: AbortSignal.timeout(LOGOUT_TIMEOUT_MS),
+		})
+	} catch {
+		// Deliberately empty: the reload is the report.
+	}
+	// Even when the POST failed: the cached pages carry this session.
+	await purgeAppShellCache()
+	try {
+		returnToSignedOutHome()
+	} catch (error) {
+		console.error('Sign-out could not navigate away', error)
+	}
 }

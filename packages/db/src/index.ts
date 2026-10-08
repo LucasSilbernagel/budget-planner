@@ -1,3 +1,3 @@
-export * from './schema'
-export * from './client'
 export * from './ca-cert'
+export * from './client'
+export * from './schema'

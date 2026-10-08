@@ -1,9 +1,9 @@
-import { server } from '@/mocks/server'
-import { expectNoDarkFill } from '@/test/white-fill-tokens'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { http, HttpResponse } from 'msw'
+import { HttpResponse, http } from 'msw'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { server } from '@/mocks/server'
+import { expectNoDarkFill } from '@/test/white-fill-tokens'
 import { ContactForm } from '../contact-form'
 
 const FORM_ID = 'test-form-id'
@@ -11,255 +11,255 @@ const SUBMIT_URL = `https://submit-form.com/${FORM_ID}`
 const validMessage = 'This is a genuinely useful piece of feedback.'
 
 afterEach(() => {
-  vi.unstubAllEnvs()
+	vi.unstubAllEnvs()
 })
 
 function stubFormId(id: string = FORM_ID) {
-  vi.stubEnv('VITE_FORMSPARK_FORM_ID', id)
+	vi.stubEnv('VITE_FORMSPARK_FORM_ID', id)
 }
 
 describe('ContactForm', () => {
-  it('marks the optional fields with .text-muted, not the sub-AA greys (story 115.2)', () => {
-    stubFormId()
-    render(<ContactForm />)
-    const marks = screen.getAllByText('(optional)')
-    expect(marks).toHaveLength(2)
-    for (const mark of marks) expect([...mark.classList]).toEqual(['text-muted'])
-  })
+	it('marks the optional fields with .text-muted, not the sub-AA greys (story 115.2)', () => {
+		stubFormId()
+		render(<ContactForm />)
+		const marks = screen.getAllByText('(optional)')
+		expect(marks).toHaveLength(2)
+		for (const mark of marks) expect([...mark.classList]).toEqual(['text-muted'])
+	})
 
-  it('keeps the Send message fill at blue-600 in dark too (story 115.1)', () => {
-    stubFormId()
-    render(<ContactForm />)
-    expectNoDarkFill(screen.getByRole('button', { name: /send message/i }))
-  })
+	it('keeps the Send message fill at blue-600 in dark too (story 115.1)', () => {
+		stubFormId()
+		render(<ContactForm />)
+		expectNoDarkFill(screen.getByRole('button', { name: /send message/i }))
+	})
 
-  it('shows an inline field error (not alert) for an empty message', async () => {
-    stubFormId()
-    const user = userEvent.setup()
-    render(<ContactForm />)
+	it('shows an inline field error (not alert) for an empty message', async () => {
+		stubFormId()
+		const user = userEvent.setup()
+		render(<ContactForm />)
 
-    await user.click(screen.getByRole('button', { name: /send message/i }))
+		await user.click(screen.getByRole('button', { name: /send message/i }))
 
-    const error = await screen.findByText(/please enter a message/i)
-    expect(error).toHaveAttribute('role', 'alert')
-    expect(screen.getByLabelText(/message/i)).toHaveAttribute('aria-invalid', 'true')
-  })
+		const error = await screen.findByText(/please enter a message/i)
+		expect(error).toHaveAttribute('role', 'alert')
+		expect(screen.getByLabelText(/message/i)).toHaveAttribute('aria-invalid', 'true')
+	})
 
-  it('shows an inline error for a too-short message', async () => {
-    stubFormId()
-    const user = userEvent.setup()
-    render(<ContactForm />)
+	it('shows an inline error for a too-short message', async () => {
+		stubFormId()
+		const user = userEvent.setup()
+		render(<ContactForm />)
 
-    await user.type(screen.getByLabelText(/message/i), 'too short')
-    await user.click(screen.getByRole('button', { name: /send message/i }))
+		await user.type(screen.getByLabelText(/message/i), 'too short')
+		await user.click(screen.getByRole('button', { name: /send message/i }))
 
-    expect(await screen.findByText(/at least 10 characters/i)).toBeInTheDocument()
-  })
+		expect(await screen.findByText(/at least 10 characters/i)).toBeInTheDocument()
+	})
 
-  it('caps the message at the maximum length via maxLength (the >max branch is unit-tested)', async () => {
-    stubFormId()
-    const user = userEvent.setup()
-    render(<ContactForm />)
+	it('caps the message at the maximum length via maxLength (the >max branch is unit-tested)', async () => {
+		stubFormId()
+		const user = userEvent.setup()
+		render(<ContactForm />)
 
-    const textarea = screen.getByLabelText(/message/i) as HTMLTextAreaElement
-    expect(textarea).toHaveAttribute('maxLength', '2000')
-    await user.click(textarea)
-    await user.paste('a'.repeat(2500))
-    expect(textarea.value.length).toBe(2000)
-  })
+		const textarea = screen.getByLabelText(/message/i) as HTMLTextAreaElement
+		expect(textarea).toHaveAttribute('maxLength', '2000')
+		await user.click(textarea)
+		await user.paste('a'.repeat(2500))
+		expect(textarea.value.length).toBe(2000)
+	})
 
-  it('shows an inline error for a malformed email when one is entered', async () => {
-    stubFormId()
-    const user = userEvent.setup()
-    render(<ContactForm />)
+	it('shows an inline error for a malformed email when one is entered', async () => {
+		stubFormId()
+		const user = userEvent.setup()
+		render(<ContactForm />)
 
-    await user.type(screen.getByLabelText(/message/i), validMessage)
-    await user.type(screen.getByLabelText(/email/i), 'not-an-email')
-    await user.click(screen.getByRole('button', { name: /send message/i }))
+		await user.type(screen.getByLabelText(/message/i), validMessage)
+		await user.type(screen.getByLabelText(/email/i), 'not-an-email')
+		await user.click(screen.getByRole('button', { name: /send message/i }))
 
-    const error = await screen.findByText(/valid email address/i)
-    expect(error).toHaveAttribute('role', 'alert')
-    expect(screen.getByLabelText(/email/i)).toHaveAttribute('aria-invalid', 'true')
-  })
+		const error = await screen.findByText(/valid email address/i)
+		expect(error).toHaveAttribute('role', 'alert')
+		expect(screen.getByLabelText(/email/i)).toHaveAttribute('aria-invalid', 'true')
+	})
 
-  it('does not error when the email is omitted', async () => {
-    stubFormId()
-    const user = userEvent.setup()
-    render(<ContactForm />)
+	it('does not error when the email is omitted', async () => {
+		stubFormId()
+		const user = userEvent.setup()
+		render(<ContactForm />)
 
-    await user.type(screen.getByLabelText(/message/i), validMessage)
-    await user.click(screen.getByRole('button', { name: /send message/i }))
+		await user.type(screen.getByLabelText(/message/i), validMessage)
+		await user.click(screen.getByRole('button', { name: /send message/i }))
 
-    await screen.findByRole('status')
-    expect(screen.queryByText(/valid email address/i)).not.toBeInTheDocument()
-  })
+		await screen.findByRole('status')
+		expect(screen.queryByText(/valid email address/i)).not.toBeInTheDocument()
+	})
 
-  it('renders a hidden honeypot field removed from the a11y tree and tab order', () => {
-    stubFormId()
-    render(<ContactForm />)
+	it('renders a hidden honeypot field removed from the a11y tree and tab order', () => {
+		stubFormId()
+		render(<ContactForm />)
 
-    const honeypot = screen.getByTestId('contact-honeypot')
-    expect(honeypot).toHaveAttribute('name', '_gotcha')
-    expect(honeypot).toHaveAttribute('tabindex', '-1')
-    // jsdom loads no CSS, so assert the class rather than computed visibility.
-    expect(honeypot).toHaveClass('hidden')
-  })
+		const honeypot = screen.getByTestId('contact-honeypot')
+		expect(honeypot).toHaveAttribute('name', '_gotcha')
+		expect(honeypot).toHaveAttribute('tabindex', '-1')
+		// jsdom loads no CSS, so assert the class rather than computed visibility.
+		expect(honeypot).toHaveClass('hidden')
+	})
 
-  it('posts the message payload to submit-form.com and shows a confirmation on success', async () => {
-    stubFormId()
-    let captured: Record<string, unknown> | null = null
-    server.use(
-      http.post(SUBMIT_URL, async ({ request }) => {
-        captured = (await request.json()) as Record<string, unknown>
-        return HttpResponse.json({ success: true }, { status: 200 })
-      })
-    )
+	it('posts the message payload to submit-form.com and shows a confirmation on success', async () => {
+		stubFormId()
+		let captured: Record<string, unknown> | null = null
+		server.use(
+			http.post(SUBMIT_URL, async ({ request }) => {
+				captured = (await request.json()) as Record<string, unknown>
+				return HttpResponse.json({ success: true }, { status: 200 })
+			})
+		)
 
-    const user = userEvent.setup()
-    render(<ContactForm />)
+		const user = userEvent.setup()
+		render(<ContactForm />)
 
-    await user.type(screen.getByLabelText(/name/i), 'Jane')
-    await user.type(screen.getByLabelText(/email/i), 'jane@example.com')
-    await user.type(screen.getByLabelText(/message/i), validMessage)
-    await user.click(screen.getByRole('button', { name: /send message/i }))
+		await user.type(screen.getByLabelText(/name/i), 'Jane')
+		await user.type(screen.getByLabelText(/email/i), 'jane@example.com')
+		await user.type(screen.getByLabelText(/message/i), validMessage)
+		await user.click(screen.getByRole('button', { name: /send message/i }))
 
-    const confirmation = await screen.findByRole('status')
-    expect(confirmation).toHaveTextContent(/your message has been sent/i)
+		const confirmation = await screen.findByRole('status')
+		expect(confirmation).toHaveTextContent(/your message has been sent/i)
 
-    await waitFor(() => expect(captured).not.toBeNull())
-    expect(captured).toEqual({
-      name: 'Jane',
-      email: 'jane@example.com',
-      message: validMessage,
-      _gotcha: '',
-    })
-  })
+		await waitFor(() => expect(captured).not.toBeNull())
+		expect(captured).toEqual({
+			name: 'Jane',
+			email: 'jane@example.com',
+			message: validMessage,
+			_gotcha: '',
+		})
+	})
 
-  it('trims whitespace-padded values before posting', async () => {
-    stubFormId()
-    let captured: Record<string, unknown> | null = null
-    server.use(
-      http.post(SUBMIT_URL, async ({ request }) => {
-        captured = (await request.json()) as Record<string, unknown>
-        return HttpResponse.json({ success: true }, { status: 200 })
-      })
-    )
+	it('trims whitespace-padded values before posting', async () => {
+		stubFormId()
+		let captured: Record<string, unknown> | null = null
+		server.use(
+			http.post(SUBMIT_URL, async ({ request }) => {
+				captured = (await request.json()) as Record<string, unknown>
+				return HttpResponse.json({ success: true }, { status: 200 })
+			})
+		)
 
-    const user = userEvent.setup()
-    render(<ContactForm />)
+		const user = userEvent.setup()
+		render(<ContactForm />)
 
-    await user.type(screen.getByLabelText(/name/i), '  Jane  ')
-    await user.type(screen.getByLabelText(/email/i), '  jane@example.com  ')
-    await user.type(screen.getByLabelText(/message/i), `  ${validMessage}  `)
-    await user.click(screen.getByRole('button', { name: /send message/i }))
+		await user.type(screen.getByLabelText(/name/i), '  Jane  ')
+		await user.type(screen.getByLabelText(/email/i), '  jane@example.com  ')
+		await user.type(screen.getByLabelText(/message/i), `  ${validMessage}  `)
+		await user.click(screen.getByRole('button', { name: /send message/i }))
 
-    await screen.findByRole('status')
-    await waitFor(() => expect(captured).not.toBeNull())
-    expect(captured).toEqual({
-      name: 'Jane',
-      email: 'jane@example.com',
-      message: validMessage,
-      _gotcha: '',
-    })
-  })
+		await screen.findByRole('status')
+		await waitFor(() => expect(captured).not.toBeNull())
+		expect(captured).toEqual({
+			name: 'Jane',
+			email: 'jane@example.com',
+			message: validMessage,
+			_gotcha: '',
+		})
+	})
 
-  it('sets aria-busy on the button while the submission is in flight', async () => {
-    stubFormId()
-    let resolveResponse: (() => void) | undefined
-    server.use(
-      http.post(
-        SUBMIT_URL,
-        () =>
-          new Promise((resolve) => {
-            resolveResponse = () => resolve(HttpResponse.json({ success: true }, { status: 200 }))
-          })
-      )
-    )
+	it('sets aria-busy on the button while the submission is in flight', async () => {
+		stubFormId()
+		let resolveResponse: (() => void) | undefined
+		server.use(
+			http.post(
+				SUBMIT_URL,
+				() =>
+					new Promise((resolve) => {
+						resolveResponse = () => resolve(HttpResponse.json({ success: true }, { status: 200 }))
+					})
+			)
+		)
 
-    const user = userEvent.setup()
-    render(<ContactForm />)
+		const user = userEvent.setup()
+		render(<ContactForm />)
 
-    await user.type(screen.getByLabelText(/message/i), validMessage)
-    await user.click(screen.getByRole('button', { name: /send message/i }))
+		await user.type(screen.getByLabelText(/message/i), validMessage)
+		await user.click(screen.getByRole('button', { name: /send message/i }))
 
-    const button = await screen.findByRole('button', { name: /sending/i })
-    expect(button).toHaveAttribute('aria-busy', 'true')
-    expect(button).toBeDisabled()
+		const button = await screen.findByRole('button', { name: /sending/i })
+		expect(button).toHaveAttribute('aria-busy', 'true')
+		expect(button).toBeDisabled()
 
-    resolveResponse?.()
-    await screen.findByRole('status')
-  })
+		resolveResponse?.()
+		await screen.findByRole('status')
+	})
 
-  it('shows a generic error when the submission fails (non-2xx)', async () => {
-    stubFormId()
-    server.use(http.post(SUBMIT_URL, () => HttpResponse.json({ error: 'nope' }, { status: 500 })))
+	it('shows a generic error when the submission fails (non-2xx)', async () => {
+		stubFormId()
+		server.use(http.post(SUBMIT_URL, () => HttpResponse.json({ error: 'nope' }, { status: 500 })))
 
-    const user = userEvent.setup()
-    render(<ContactForm />)
+		const user = userEvent.setup()
+		render(<ContactForm />)
 
-    await user.type(screen.getByLabelText(/message/i), validMessage)
-    await user.click(screen.getByRole('button', { name: /send message/i }))
+		await user.type(screen.getByLabelText(/message/i), validMessage)
+		await user.click(screen.getByRole('button', { name: /send message/i }))
 
-    expect(
-      await screen.findByText(/something went wrong sending your message/i)
-    ).toBeInTheDocument()
-  })
+		expect(
+			await screen.findByText(/something went wrong sending your message/i)
+		).toBeInTheDocument()
+	})
 
-  it('degrades gracefully (no POST) when the Formspark id is unset', async () => {
-    vi.stubEnv('VITE_FORMSPARK_FORM_ID', '')
-    let posted = false
-    server.use(
-      http.post(/^https?:\/\/submit-form\.com\//, () => {
-        posted = true
-        return HttpResponse.json({ success: true }, { status: 200 })
-      })
-    )
+	it('degrades gracefully (no POST) when the Formspark id is unset', async () => {
+		vi.stubEnv('VITE_FORMSPARK_FORM_ID', '')
+		let posted = false
+		server.use(
+			http.post(/^https?:\/\/submit-form\.com\//, () => {
+				posted = true
+				return HttpResponse.json({ success: true }, { status: 200 })
+			})
+		)
 
-    const user = userEvent.setup()
-    render(<ContactForm />)
+		const user = userEvent.setup()
+		render(<ContactForm />)
 
-    await user.type(screen.getByLabelText(/message/i), validMessage)
-    await user.click(screen.getByRole('button', { name: /send message/i }))
+		await user.type(screen.getByLabelText(/message/i), validMessage)
+		await user.click(screen.getByRole('button', { name: /send message/i }))
 
-    expect(await screen.findByText(/temporarily unavailable/i)).toBeInTheDocument()
-    expect(posted).toBe(false)
-  })
+		expect(await screen.findByText(/temporarily unavailable/i)).toBeInTheDocument()
+		expect(posted).toBe(false)
+	})
 
-  it('drops a filled honeypot without posting (silent success)', async () => {
-    stubFormId()
-    let posted = false
-    server.use(
-      http.post(/^https?:\/\/submit-form\.com\//, () => {
-        posted = true
-        return HttpResponse.json({ success: true }, { status: 200 })
-      })
-    )
+	it('drops a filled honeypot without posting (silent success)', async () => {
+		stubFormId()
+		let posted = false
+		server.use(
+			http.post(/^https?:\/\/submit-form\.com\//, () => {
+				posted = true
+				return HttpResponse.json({ success: true }, { status: 200 })
+			})
+		)
 
-    const user = userEvent.setup()
-    render(<ContactForm />)
+		const user = userEvent.setup()
+		render(<ContactForm />)
 
-    await user.type(screen.getByLabelText(/message/i), validMessage)
-    const honeypot = screen.getByTestId('contact-honeypot')
-    await user.type(honeypot, 'i-am-a-bot')
-    await user.click(screen.getByRole('button', { name: /send message/i }))
+		await user.type(screen.getByLabelText(/message/i), validMessage)
+		const honeypot = screen.getByTestId('contact-honeypot')
+		await user.type(honeypot, 'i-am-a-bot')
+		await user.click(screen.getByRole('button', { name: /send message/i }))
 
-    await screen.findByRole('status')
-    expect(posted).toBe(false)
-  })
+		await screen.findByRole('status')
+		expect(posted).toBe(false)
+	})
 
-  it('lets the user send another message after a success (form stays usable)', async () => {
-    stubFormId()
-    const user = userEvent.setup()
-    render(<ContactForm />)
+	it('lets the user send another message after a success (form stays usable)', async () => {
+		stubFormId()
+		const user = userEvent.setup()
+		render(<ContactForm />)
 
-    await user.type(screen.getByLabelText(/message/i), validMessage)
-    await user.click(screen.getByRole('button', { name: /send message/i }))
-    await screen.findByRole('status')
+		await user.type(screen.getByLabelText(/message/i), validMessage)
+		await user.click(screen.getByRole('button', { name: /send message/i }))
+		await screen.findByRole('status')
 
-    const messageField = screen.getByLabelText(/message/i) as HTMLTextAreaElement
-    expect(messageField.value).toBe('')
-    await user.type(messageField, 'A second, equally useful message.')
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /send message/i })).toBeEnabled()
-  })
+		const messageField = screen.getByLabelText(/message/i) as HTMLTextAreaElement
+		expect(messageField.value).toBe('')
+		await user.type(messageField, 'A second, equally useful message.')
+		expect(screen.queryByRole('status')).not.toBeInTheDocument()
+		expect(screen.getByRole('button', { name: /send message/i })).toBeEnabled()
+	})
 })

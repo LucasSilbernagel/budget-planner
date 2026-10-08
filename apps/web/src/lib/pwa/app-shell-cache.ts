@@ -10,25 +10,25 @@ export const APP_SHELL_PURGE_TIMEOUT_MS = 2_000
 
 /** Never rejects: a failed purge must not stop the user leaving. */
 export async function purgeAppShellCache(
-  timeoutMs: number = APP_SHELL_PURGE_TIMEOUT_MS
+	timeoutMs: number = APP_SHELL_PURGE_TIMEOUT_MS
 ): Promise<void> {
-  let storage: CacheStorage | undefined
-  try {
-    storage = typeof caches === 'undefined' ? undefined : caches
-  } catch {
-    return
-  }
-  if (!storage) return
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    await Promise.race([
-      storage.delete(APP_SHELL_CACHE_NAME),
-      new Promise<void>((resolve) => {
-        timer = setTimeout(resolve, timeoutMs)
-      }),
-    ])
-  } catch {
-  } finally {
-    clearTimeout(timer)
-  }
+	let storage: CacheStorage | undefined
+	try {
+		storage = typeof caches === 'undefined' ? undefined : caches
+	} catch {
+		return
+	}
+	if (!storage) return
+	let timer: ReturnType<typeof setTimeout> | undefined
+	try {
+		await Promise.race([
+			storage.delete(APP_SHELL_CACHE_NAME),
+			new Promise<void>((resolve) => {
+				timer = setTimeout(resolve, timeoutMs)
+			}),
+		])
+	} catch {
+	} finally {
+		clearTimeout(timer)
+	}
 }

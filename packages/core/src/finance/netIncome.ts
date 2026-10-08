@@ -5,44 +5,44 @@ import { calculateTotalMonthlyNormalized } from './normalization'
 export type { NormalizableFinancialItem } from './normalization'
 
 export function calculateNetPeriodIncome(
-  incomeSources: NormalizableFinancialItem[],
-  expenses: NormalizableFinancialItem[]
+	incomeSources: NormalizableFinancialItem[],
+	expenses: NormalizableFinancialItem[]
 ): number {
-  const sources = incomeSources || []
-  const expensesArray = expenses || []
-  const totalNormalizedIncome = calculateTotalMonthlyNormalized(sources)
-  const totalNormalizedExpenses = calculateTotalMonthlyNormalized(expensesArray)
+	const sources = incomeSources || []
+	const expensesArray = expenses || []
+	const totalNormalizedIncome = calculateTotalMonthlyNormalized(sources)
+	const totalNormalizedExpenses = calculateTotalMonthlyNormalized(expensesArray)
 
-  return totalNormalizedIncome - totalNormalizedExpenses
+	return totalNormalizedIncome - totalNormalizedExpenses
 }
 
 export function calculateGrossPeriodIncome(incomeSources: NormalizableFinancialItem[]): number {
-  return calculateTotalMonthlyNormalized(incomeSources || [])
+	return calculateTotalMonthlyNormalized(incomeSources || [])
 }
 
 export function calculateTotalPeriodExpenses(expenses: NormalizableFinancialItem[]): number {
-  return calculateTotalMonthlyNormalized(expenses || [])
+	return calculateTotalMonthlyNormalized(expenses || [])
 }
 
 export interface NetIncomeResult {
-  grossIncome: number
-  totalExpenses: number
-  netIncome: number
-  isSurplus: boolean
+	grossIncome: number
+	totalExpenses: number
+	netIncome: number
+	isSurplus: boolean
 }
 
 export function calculateNetIncomeResult(
-  incomeSources: NormalizableFinancialItem[],
-  expenses: NormalizableFinancialItem[]
+	incomeSources: NormalizableFinancialItem[],
+	expenses: NormalizableFinancialItem[]
 ): NetIncomeResult {
-  const grossIncome = calculateGrossPeriodIncome(incomeSources)
-  const totalExpenses = calculateTotalPeriodExpenses(expenses)
-  const netIncome = grossIncome - totalExpenses
+	const grossIncome = calculateGrossPeriodIncome(incomeSources)
+	const totalExpenses = calculateTotalPeriodExpenses(expenses)
+	const netIncome = grossIncome - totalExpenses
 
-  return {
-    grossIncome,
-    totalExpenses,
-    netIncome,
-    isSurplus: netIncome > 0,
-  }
+	return {
+		grossIncome,
+		totalExpenses,
+		netIncome,
+		isSurplus: netIncome > 0,
+	}
 }

@@ -5,28 +5,28 @@ import type { BillingInterval, SubscriptionStatus } from '@budget-planner/db/src
  * gate that compares the enum.
  */
 export function planLabel(
-  status: SubscriptionStatus,
-  billingInterval: BillingInterval | null | undefined
+	status: SubscriptionStatus,
+	billingInterval: BillingInterval | null | undefined
 ): string {
-  const planName =
-    billingInterval === 'year' ? 'Annual Plan' : billingInterval === 'month' ? 'Monthly Plan' : null
+	const planName =
+		billingInterval === 'year' ? 'Annual Plan' : billingInterval === 'month' ? 'Monthly Plan' : null
 
-  switch (status) {
-    case 'lifetime':
-      return 'Lifetime Plan'
-    case 'active':
-      return planName ?? 'Active'
-    case 'past_due':
-      return planName ? `${planName} · payment overdue` : 'Payment overdue'
-    case 'canceled':
-      return 'Cancelled'
-    case 'free':
-      return 'Free'
-    default: {
-      // `never` fails tsc on a new status; at runtime the unvalidated payload can still carry one.
-      const unhandled: never = status
-      void unhandled
-      return 'Unknown plan'
-    }
-  }
+	switch (status) {
+		case 'lifetime':
+			return 'Lifetime Plan'
+		case 'active':
+			return planName ?? 'Active'
+		case 'past_due':
+			return planName ? `${planName} · payment overdue` : 'Payment overdue'
+		case 'canceled':
+			return 'Cancelled'
+		case 'free':
+			return 'Free'
+		default: {
+			// `never` fails tsc on a new status; at runtime the unvalidated payload can still carry one.
+			const unhandled: never = status
+			void unhandled
+			return 'Unknown plan'
+		}
+	}
 }

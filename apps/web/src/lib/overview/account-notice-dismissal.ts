@@ -12,19 +12,19 @@ export const ACCOUNT_NOTICE_DISMISSED_ATTRIBUTE = 'data-dismiss-account-notice'
 
 /** Fails open: a storage error (Safari private mode) must never hide the box forever. */
 export function wasAccountNoticeDismissed(): boolean {
-  try {
-    return localStorage.getItem(ACCOUNT_NOTICE_DISMISSED_STORAGE_KEY) === DISMISSED_VALUE
-  } catch {
-    return false
-  }
+	try {
+		return localStorage.getItem(ACCOUNT_NOTICE_DISMISSED_STORAGE_KEY) === DISMISSED_VALUE
+	} catch {
+		return false
+	}
 }
 
 export function rememberAccountNoticeDismissal(): void {
-  try {
-    localStorage.setItem(ACCOUNT_NOTICE_DISMISSED_STORAGE_KEY, DISMISSED_VALUE)
-  } catch {
-    // Blocked storage: the dismissal just does not survive this visit.
-  }
+	try {
+		localStorage.setItem(ACCOUNT_NOTICE_DISMISSED_STORAGE_KEY, DISMISSED_VALUE)
+	} catch {
+		// Blocked storage: the dismissal just does not survive this visit.
+	}
 }
 
 /**
@@ -32,8 +32,8 @@ export function rememberAccountNoticeDismissal(): void {
  * One-way: safe only because the dismissal has no undo.
  */
 export function markAccountNoticeDismissedOnDocument(): void {
-  if (typeof document === 'undefined') {
-    return
-  }
-  document.documentElement.setAttribute(ACCOUNT_NOTICE_DISMISSED_ATTRIBUTE, DISMISSED_VALUE)
+	if (typeof document === 'undefined') {
+		return
+	}
+	document.documentElement.setAttribute(ACCOUNT_NOTICE_DISMISSED_ATTRIBUTE, DISMISSED_VALUE)
 }

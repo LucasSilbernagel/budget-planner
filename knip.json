@@ -1,22 +1,22 @@
 {
-  "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignoreBinaries": ["openssl"],
-  "workspaces": {
-    ".": {
-      "entry": ["scripts/*.js"]
-    },
-    "apps/web": {
-      "entry": [
-        "*.mjs",
-        "scripts/*.mjs",
-        "perf/**/*.spec.ts",
-        "playwright.perf.config.ts",
-        "src/test/pwa-register-mock.ts"
-      ],
-      "ignore": ["scripts/*.d.mts"]
-    },
-    "packages/db": {
-      "entry": ["src/*-cli.ts"]
-    }
-  }
+	"$schema": "https://unpkg.com/knip@6/schema.json",
+	"ignoreBinaries": ["openssl"],
+	"workspaces": {
+		".": {
+			"entry": ["scripts/*.js"]
+		},
+		"apps/web": {
+			"entry": [
+				"*.mjs",
+				"scripts/*.mjs",
+				"perf/**/*.spec.ts",
+				"playwright.perf.config.ts",
+				"src/test/pwa-register-mock.ts"
+			],
+			"ignore": ["scripts/*.d.mts"]
+		},
+		"packages/db": {
+			"entry": ["src/*-cli.ts"]
+		}
+	}
 }

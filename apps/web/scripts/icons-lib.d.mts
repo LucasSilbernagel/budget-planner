@@ -10,16 +10,16 @@ export const sourcePath: string
 export const ACCENT: string
 
 export interface SquarePng {
-  readonly size: number
-  readonly name: string
-  readonly opaque?: boolean
+	readonly size: number
+	readonly name: string
+	readonly opaque?: boolean
 }
 export const SQUARE_PNGS: readonly SquarePng[]
 
 export function renderPng(
-  svg: Buffer,
-  size: number,
-  options?: { opaque?: boolean }
+	svg: Buffer,
+	size: number,
+	options?: { opaque?: boolean }
 ): Promise<Buffer>
 export function renderMaskable(svg: Buffer): Promise<Buffer>
 export function buildIco(images: { size: number; data: Buffer }[]): Buffer

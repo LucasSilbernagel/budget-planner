@@ -7,32 +7,32 @@ import { getPaddleConfig, resetConfig } from '@budget-planner/config'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 afterEach(() => {
-  vi.unstubAllEnvs()
-  resetConfig()
+	vi.unstubAllEnvs()
+	resetConfig()
 })
 
 describe('PADDLE_WEBHOOK_MAX_AGE_SECONDS', () => {
-  it.each(['', ' ', 'abc', '0', '-1', '1.5', 'NaN'])(
-    'falls back to the 300s default instead of crashing config load for %j',
-    (value) => {
-      vi.stubEnv('PADDLE_WEBHOOK_MAX_AGE_SECONDS', value)
-      resetConfig()
+	it.each(['', ' ', 'abc', '0', '-1', '1.5', 'NaN'])(
+		'falls back to the 300s default instead of crashing config load for %j',
+		(value) => {
+			vi.stubEnv('PADDLE_WEBHOOK_MAX_AGE_SECONDS', value)
+			resetConfig()
 
-      expect(() => getPaddleConfig()).not.toThrow()
-      expect(getPaddleConfig().webhookMaxAgeSeconds).toBe(300)
-    }
-  )
+			expect(() => getPaddleConfig()).not.toThrow()
+			expect(getPaddleConfig().webhookMaxAgeSeconds).toBe(300)
+		}
+	)
 
-  it('falls back to the 300s default when unset entirely', () => {
-    resetConfig()
+	it('falls back to the 300s default when unset entirely', () => {
+		resetConfig()
 
-    expect(getPaddleConfig().webhookMaxAgeSeconds).toBe(300)
-  })
+		expect(getPaddleConfig().webhookMaxAgeSeconds).toBe(300)
+	})
 
-  it('still honors an explicit configured value', () => {
-    vi.stubEnv('PADDLE_WEBHOOK_MAX_AGE_SECONDS', '600')
-    resetConfig()
+	it('still honors an explicit configured value', () => {
+		vi.stubEnv('PADDLE_WEBHOOK_MAX_AGE_SECONDS', '600')
+		resetConfig()
 
-    expect(getPaddleConfig().webhookMaxAgeSeconds).toBe(600)
-  })
+		expect(getPaddleConfig().webhookMaxAgeSeconds).toBe(600)
+	})
 })

@@ -11,53 +11,53 @@ export const INITIAL_SYNC_PENDING_TIMEOUT_MS = 8000
 const HAS_COMPLETED_INITIAL_PULL_KEY = 'sync:hasCompletedInitialPull'
 
 function hasCompletedInitialPullBefore(): boolean {
-  try {
-    return window.localStorage.getItem(HAS_COMPLETED_INITIAL_PULL_KEY) === '1'
-  } catch {
-    return false
-  }
+	try {
+		return window.localStorage.getItem(HAS_COMPLETED_INITIAL_PULL_KEY) === '1'
+	} catch {
+		return false
+	}
 }
 
 function markInitialPullComplete(): void {
-  try {
-    window.localStorage.setItem(HAS_COMPLETED_INITIAL_PULL_KEY, '1')
-  } catch {}
+	try {
+		window.localStorage.setItem(HAS_COMPLETED_INITIAL_PULL_KEY, '1')
+	} catch {}
 }
 
 export function useIsInitialSyncPending(isCollectionEmpty: boolean): boolean {
-  const { resolved, isPaidSyncSession } = useSyncSessionStatus()
-  const lastPullTimestamp = useLastPullTimestamp()
-  const [timedOut, setTimedOut] = useState(false)
-  // Starts false and reads localStorage in an effect so server and first client render match.
-  const [everCompletedBefore, setEverCompletedBefore] = useState(false)
+	const { resolved, isPaidSyncSession } = useSyncSessionStatus()
+	const lastPullTimestamp = useLastPullTimestamp()
+	const [timedOut, setTimedOut] = useState(false)
+	// Starts false and reads localStorage in an effect so server and first client render match.
+	const [everCompletedBefore, setEverCompletedBefore] = useState(false)
 
-  useEffect(() => {
-    if (hasCompletedInitialPullBefore()) {
-      setEverCompletedBefore(true)
-    }
-  }, [])
+	useEffect(() => {
+		if (hasCompletedInitialPullBefore()) {
+			setEverCompletedBefore(true)
+		}
+	}, [])
 
-  useEffect(() => {
-    if (lastPullTimestamp !== null) {
-      markInitialPullComplete()
-    }
-  }, [lastPullTimestamp])
+	useEffect(() => {
+		if (lastPullTimestamp !== null) {
+			markInitialPullComplete()
+		}
+	}, [lastPullTimestamp])
 
-  const pending =
-    resolved &&
-    isPaidSyncSession &&
-    !everCompletedBefore &&
-    isCollectionEmpty &&
-    lastPullTimestamp === null &&
-    !timedOut
+	const pending =
+		resolved &&
+		isPaidSyncSession &&
+		!everCompletedBefore &&
+		isCollectionEmpty &&
+		lastPullTimestamp === null &&
+		!timedOut
 
-  useEffect(() => {
-    if (!pending) {
-      return
-    }
-    const timer = setTimeout(() => setTimedOut(true), INITIAL_SYNC_PENDING_TIMEOUT_MS)
-    return () => clearTimeout(timer)
-  }, [pending])
+	useEffect(() => {
+		if (!pending) {
+			return
+		}
+		const timer = setTimeout(() => setTimedOut(true), INITIAL_SYNC_PENDING_TIMEOUT_MS)
+		return () => clearTimeout(timer)
+	}, [pending])
 
-  return pending
+	return pending
 }

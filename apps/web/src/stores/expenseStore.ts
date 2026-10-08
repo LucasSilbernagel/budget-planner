@@ -13,56 +13,56 @@ import { EXPENSES_STORAGE_KEY } from './overview-data-storage-keys'
 import { useProfileStore } from './profileStore'
 
 interface ClientExpense {
-  id: string
-  // Null/absent means unscoped (visible under every profile). Not on the input type: an edit must
-  // never re-home a row.
-  profileId?: string | null
-  userId: number | string
-  name: string
-  amount: number
-  frequency: Frequency
-  categoryId: string | null
-  // An order, not an index: deletes leave gaps on purpose.
-  sortOrder?: number
-  /**
-   * Optional with no migration backfill; always read as `=== true` since localStorage is
-   * user-editable and a persisted "false" string is truthy.
-   */
-  endsBeforeRetirement?: boolean
-  createdAt: string
-  updatedAt: string
+	id: string
+	// Null/absent means unscoped (visible under every profile). Not on the input type: an edit must
+	// never re-home a row.
+	profileId?: string | null
+	userId: number | string
+	name: string
+	amount: number
+	frequency: Frequency
+	categoryId: string | null
+	// An order, not an index: deletes leave gaps on purpose.
+	sortOrder?: number
+	/**
+	 * Optional with no migration backfill; always read as `=== true` since localStorage is
+	 * user-editable and a persisted "false" string is truthy.
+	 */
+	endsBeforeRetirement?: boolean
+	createdAt: string
+	updatedAt: string
 }
 
 interface ClientNewExpense {
-  userId?: number
-  name: string
-  amount: number
-  frequency: Frequency
-  categoryId?: string | null
-  endsBeforeRetirement?: boolean
+	userId?: number
+	name: string
+	amount: number
+	frequency: Frequency
+	categoryId?: string | null
+	endsBeforeRetirement?: boolean
 }
 
 interface ExpenseState {
-  expenses: ClientExpense[]
-  addExpense: (expense: ClientNewExpense) => void
-  updateExpense: (id: string, updates: Partial<ClientNewExpense>) => void
-  deleteExpense: (id: string) => void
-  getExpenseById: (id: string) => ClientExpense | undefined
-  getExpensesByFrequency: (frequency: Frequency) => ClientExpense[]
-  /** Monthly-normalized cents; denormalize for display. */
-  getTotalExpenses: () => number
-  getUnreadableExpenseCount: () => number
+	expenses: ClientExpense[]
+	addExpense: (expense: ClientNewExpense) => void
+	updateExpense: (id: string, updates: Partial<ClientNewExpense>) => void
+	deleteExpense: (id: string) => void
+	getExpenseById: (id: string) => ClientExpense | undefined
+	getExpensesByFrequency: (frequency: Frequency) => ClientExpense[]
+	/** Monthly-normalized cents; denormalize for display. */
+	getTotalExpenses: () => number
+	getUnreadableExpenseCount: () => number
 }
 
 const toClientExpense = (newExpense: ClientNewExpense): ClientExpense => ({
-  ...newExpense,
-  // Explicit null so the sync payload never carries undefined.
-  categoryId: newExpense.categoryId ?? null,
-  endsBeforeRetirement: newExpense.endsBeforeRetirement ?? false,
-  userId: newExpense.userId ?? 0,
-  id: generateUUID(),
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
+	...newExpense,
+	// Explicit null so the sync payload never carries undefined.
+	categoryId: newExpense.categoryId ?? null,
+	endsBeforeRetirement: newExpense.endsBeforeRetirement ?? false,
+	userId: newExpense.userId ?? 0,
+	id: generateUUID(),
+	createdAt: new Date().toISOString(),
+	updatedAt: new Date().toISOString(),
 })
 
 /**
@@ -70,104 +70,104 @@ const toClientExpense = (newExpense: ClientNewExpense): ClientExpense => ({
  * close over get() and read live state during hydration, causing a mismatch. Must return a number.
  */
 function totalExpenseFrom(rows: readonly ClientExpense[]): number {
-  return calculateTotalMonthlyNormalized(toNormalizableItems(rows))
+	return calculateTotalMonthlyNormalized(toNormalizableItems(rows))
 }
 
 function expensesByFrequencyFrom(
-  rows: readonly ClientExpense[],
-  frequency: Frequency
+	rows: readonly ClientExpense[],
+	frequency: Frequency
 ): ClientExpense[] {
-  return rows.filter((row) => row.frequency === frequency)
+	return rows.filter((row) => row.frequency === frequency)
 }
 
 function unreadableExpenseCountFrom(rows: readonly ClientExpense[]): number {
-  return countUnreadableRows(rows)
+	return countUnreadableRows(rows)
 }
 export const useExpenseStore = create<ExpenseState>()(
-  persist(
-    (set, get) => ({
-      expenses: [],
+	persist(
+		(set, get) => ({
+			expenses: [],
 
-      addExpense: (newExpense) => {
-        const expense: ClientExpense = {
-          ...toClientExpense(newExpense),
-          sortOrder: nextSortOrder(get().expenses),
-          profileId: useProfileStore.getState().activeProfileId ?? null,
-        }
-        set((state) => ({
-          expenses: sortByDisplayOrder([...state.expenses, expense]),
-        }))
-        syncEntityCreate('expense', expense)
-      },
+			addExpense: (newExpense) => {
+				const expense: ClientExpense = {
+					...toClientExpense(newExpense),
+					sortOrder: nextSortOrder(get().expenses),
+					profileId: useProfileStore.getState().activeProfileId ?? null,
+				}
+				set((state) => ({
+					expenses: sortByDisplayOrder([...state.expenses, expense]),
+				}))
+				syncEntityCreate('expense', expense)
+			},
 
-      updateExpense: (id, updates) => {
-        const previous = get().expenses.find((expense) => expense.id === id)
-        if (!previous) {
-          return
-        }
-        const updated = { ...previous, ...updates, updatedAt: new Date().toISOString() }
-        set((state) => ({
-          expenses: sortByDisplayOrder(
-            state.expenses.map((expense) => (expense.id === id ? updated : expense))
-          ),
-        }))
-        syncEntityUpdate('expense', updated, previous)
-      },
+			updateExpense: (id, updates) => {
+				const previous = get().expenses.find((expense) => expense.id === id)
+				if (!previous) {
+					return
+				}
+				const updated = { ...previous, ...updates, updatedAt: new Date().toISOString() }
+				set((state) => ({
+					expenses: sortByDisplayOrder(
+						state.expenses.map((expense) => (expense.id === id ? updated : expense))
+					),
+				}))
+				syncEntityUpdate('expense', updated, previous)
+			},
 
-      deleteExpense: (id) => {
-        const existing = get().expenses.find((expense) => expense.id === id)
-        set((state) => ({
-          expenses: state.expenses.filter((expense) => expense.id !== id),
-        }))
-        if (existing) {
-          syncEntityDelete('expense', existing)
-        }
-      },
+			deleteExpense: (id) => {
+				const existing = get().expenses.find((expense) => expense.id === id)
+				set((state) => ({
+					expenses: state.expenses.filter((expense) => expense.id !== id),
+				}))
+				if (existing) {
+					syncEntityDelete('expense', existing)
+				}
+			},
 
-      getExpenseById: (id) => {
-        return get().expenses.find((expense) => expense.id === id)
-      },
+			getExpenseById: (id) => {
+				return get().expenses.find((expense) => expense.id === id)
+			},
 
-      getExpensesByFrequency: (frequency) => {
-        return expensesByFrequencyFrom(get().expenses, frequency)
-      },
+			getExpensesByFrequency: (frequency) => {
+				return expensesByFrequencyFrom(get().expenses, frequency)
+			},
 
-      getTotalExpenses: () => {
-        return totalExpenseFrom(get().expenses)
-      },
+			getTotalExpenses: () => {
+				return totalExpenseFrom(get().expenses)
+			},
 
-      getUnreadableExpenseCount: () => {
-        return unreadableExpenseCountFrom(get().expenses)
-      },
-    }),
-    {
-      name: EXPENSES_STORAGE_KEY,
-      skipHydration: true,
-      // migrate runs on ANY version mismatch, including a downgrade, so every step must be idempotent.
-      // The `-v1` in the storage key is part of the key, not this version.
-      version: 3,
-      migrate: (persisted) => {
-        const state = persisted as { expenses?: unknown }
-        // Sanitize before dereferencing rows: a throwing migrate fails rehydration and silently empties the list.
-        const raw = Array.isArray(state?.expenses) ? state.expenses : []
-        const rows = raw.filter(
-          (row): row is ClientExpense => typeof row === 'object' && row !== null
-        )
-        return {
-          // Backfill runs last so the id tiebreaker sees the final uuids, not the legacy ids.
-          expenses: backfillSortOrder(
-            withUuidIds(rows).map((row) => ({
-              ...row,
-              categoryId: row.categoryId ?? null,
-            }))
-          ),
-        }
-      },
-      partialize: (state) => ({
-        expenses: state.expenses,
-      }),
-    }
-  )
+			getUnreadableExpenseCount: () => {
+				return unreadableExpenseCountFrom(get().expenses)
+			},
+		}),
+		{
+			name: EXPENSES_STORAGE_KEY,
+			skipHydration: true,
+			// migrate runs on ANY version mismatch, including a downgrade, so every step must be idempotent.
+			// The `-v1` in the storage key is part of the key, not this version.
+			version: 3,
+			migrate: (persisted) => {
+				const state = persisted as { expenses?: unknown }
+				// Sanitize before dereferencing rows: a throwing migrate fails rehydration and silently empties the list.
+				const raw = Array.isArray(state?.expenses) ? state.expenses : []
+				const rows = raw.filter(
+					(row): row is ClientExpense => typeof row === 'object' && row !== null
+				)
+				return {
+					// Backfill runs last so the id tiebreaker sees the final uuids, not the legacy ids.
+					expenses: backfillSortOrder(
+						withUuidIds(rows).map((row) => ({
+							...row,
+							categoryId: row.categoryId ?? null,
+						}))
+					),
+				}
+			},
+			partialize: (state) => ({
+				expenses: state.expenses,
+			}),
+		}
+	)
 )
 
 /**
@@ -175,28 +175,28 @@ export const useExpenseStore = create<ExpenseState>()(
  * Store methods are deliberately unscoped (sync seeding, purge operate on every row).
  */
 export const useExpenses = (): ClientExpense[] => {
-  const rows = useExpenseStore((state) => state.expenses)
-  const activeProfileId = useProfileStore((state) => state.activeProfileId)
-  return useMemo(() => scopeToActiveProfile(rows, activeProfileId), [rows, activeProfileId])
+	const rows = useExpenseStore((state) => state.expenses)
+	const activeProfileId = useProfileStore((state) => state.activeProfileId)
+	return useMemo(() => scopeToActiveProfile(rows, activeProfileId), [rows, activeProfileId])
 }
 
 export const useTotalExpenses = () => {
-  const activeProfileId = useProfileStore((state) => state.activeProfileId)
-  return useExpenseStore((state) =>
-    totalExpenseFrom(scopeToActiveProfile(state.expenses, activeProfileId))
-  )
+	const activeProfileId = useProfileStore((state) => state.activeProfileId)
+	return useExpenseStore((state) =>
+		totalExpenseFrom(scopeToActiveProfile(state.expenses, activeProfileId))
+	)
 }
 
 export const useUnreadableExpenseCount = () => {
-  const activeProfileId = useProfileStore((state) => state.activeProfileId)
-  return useExpenseStore((state) =>
-    unreadableExpenseCountFrom(scopeToActiveProfile(state.expenses, activeProfileId))
-  )
+	const activeProfileId = useProfileStore((state) => state.activeProfileId)
+	return useExpenseStore((state) =>
+		unreadableExpenseCountFrom(scopeToActiveProfile(state.expenses, activeProfileId))
+	)
 }
 
 export const useExpenseByFrequency = (frequency: Frequency): ClientExpense[] => {
-  const rows = useExpenses()
-  return useMemo(() => expensesByFrequencyFrom(rows, frequency), [rows, frequency])
+	const rows = useExpenses()
+	return useMemo(() => expensesByFrequencyFrom(rows, frequency), [rows, frequency])
 }
 
 // Stores register themselves: the cascade importing them would create an import cycle.

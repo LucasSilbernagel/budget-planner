@@ -3,8 +3,8 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/features/api/client', () => ({
-  fetchServerChangesWithMeta: vi.fn(),
-  sendSyncOperation: vi.fn(),
+	fetchServerChangesWithMeta: vi.fn(),
+	sendSyncOperation: vi.fn(),
 }))
 
 import { IncomePage } from '@/components/IncomePage'
@@ -40,107 +40,107 @@ const fetchMeta = fetchServerChangesWithMeta as unknown as ReturnType<typeof vi.
 const send = sendSyncOperation as unknown as ReturnType<typeof vi.fn>
 
 const B_MAIN_CHANGE: ServerChange = {
-  entityType: 'userProfile',
-  entityId: B_MAIN,
-  data: { id: B_MAIN, userId: ACCOUNT_B, name: 'Main Profile', isDefault: true, currency: 'NONE' },
-  updatedAt: 1000,
-  isDeleted: false,
+	entityType: 'userProfile',
+	entityId: B_MAIN,
+	data: { id: B_MAIN, userId: ACCOUNT_B, name: 'Main Profile', isDefault: true, currency: 'NONE' },
+	updatedAt: 1000,
+	isDeleted: false,
 }
 
 function income(id: string, userId: string | number, name: string) {
-  return {
-    id,
-    userId,
-    profileId: A_SIDE,
-    name,
-    amount: 100_000,
-    frequency: 'monthly' as const,
-    categoryId: null,
-    sortOrder: id === FREE_INCOME ? 1 : 0,
-    createdAt: ISO,
-    updatedAt: ISO,
-  }
+	return {
+		id,
+		userId,
+		profileId: A_SIDE,
+		name,
+		amount: 100_000,
+		frequency: 'monthly' as const,
+		categoryId: null,
+		sortOrder: id === FREE_INCOME ? 1 : 0,
+		createdAt: ISO,
+		updatedAt: ISO,
+	}
 }
 
 function aRow(id: string, extra: Record<string, unknown>) {
-  return { id, userId: ACCOUNT_A, profileId: A_SIDE, createdAt: ISO, updatedAt: ISO, ...extra }
+	return { id, userId: ACCOUNT_A, profileId: A_SIDE, createdAt: ISO, updatedAt: ISO, ...extra }
 }
 
 function sent(): string[] {
-  return send.mock.calls.map(([op]) => {
-    const { type, entityType, entityId, profileId } = op as Record<string, string>
-    return `${type} ${entityType} ${entityId} ${profileId}`
-  })
+	return send.mock.calls.map(([op]) => {
+		const { type, entityType, entityId, profileId } = op as Record<string, string>
+		return `${type} ${entityType} ${entityId} ${profileId}`
+	})
 }
 
 beforeEach(() => {
-  vi.clearAllMocks()
-  resetSyncStore()
-  resetSessionStatusStore()
-  clearSyncBridge()
-  localStorage.clear()
-  localStorage.setItem('sync:hasCompletedInitialPull', '1')
-  localStorage.setItem(A_QUEUE_KEY, A_QUEUE)
+	vi.clearAllMocks()
+	resetSyncStore()
+	resetSessionStatusStore()
+	clearSyncBridge()
+	localStorage.clear()
+	localStorage.setItem('sync:hasCompletedInitialPull', '1')
+	localStorage.setItem(A_QUEUE_KEY, A_QUEUE)
 
-  useProfileStore.setState({
-    profiles: [
-      { id: A_MAIN, userId: ACCOUNT_A, name: 'Their main', isDefault: true, currency: 'NONE' },
-      { id: A_SIDE, userId: ACCOUNT_A, name: 'Their side', isDefault: false, currency: 'NONE' },
-    ],
-    activeProfileId: A_SIDE,
-  })
-  useIncomeStore.setState({
-    incomeSources: [
-      income(A_INCOME, ACCOUNT_A, 'Their salary'),
-      income(FREE_INCOME, 0, 'My salary'),
-    ],
-  })
-  useExpenseStore.setState({
-    expenses: [aRow(A_EXPENSE, { name: 'Their rent', amount: 1, frequency: 'monthly' }) as never],
-  })
-  useSavingsStore.setState({
-    savingsGoals: [aRow(A_SAVINGS, { name: 'Their goal', targetAmount: 1 }) as never],
-  })
-  useBalanceStore.setState({
-    entries: [aRow(A_BALANCE, { type: 'investment', name: 'Their brokerage' }) as never],
-  })
-  useCategoryStore.setState({
-    categories: [aRow(A_CATEGORY, { name: 'Theirs', kind: 'expense', isDeleted: false }) as never],
-  })
+	useProfileStore.setState({
+		profiles: [
+			{ id: A_MAIN, userId: ACCOUNT_A, name: 'Their main', isDefault: true, currency: 'NONE' },
+			{ id: A_SIDE, userId: ACCOUNT_A, name: 'Their side', isDefault: false, currency: 'NONE' },
+		],
+		activeProfileId: A_SIDE,
+	})
+	useIncomeStore.setState({
+		incomeSources: [
+			income(A_INCOME, ACCOUNT_A, 'Their salary'),
+			income(FREE_INCOME, 0, 'My salary'),
+		],
+	})
+	useExpenseStore.setState({
+		expenses: [aRow(A_EXPENSE, { name: 'Their rent', amount: 1, frequency: 'monthly' }) as never],
+	})
+	useSavingsStore.setState({
+		savingsGoals: [aRow(A_SAVINGS, { name: 'Their goal', targetAmount: 1 }) as never],
+	})
+	useBalanceStore.setState({
+		entries: [aRow(A_BALANCE, { type: 'investment', name: 'Their brokerage' }) as never],
+	})
+	useCategoryStore.setState({
+		categories: [aRow(A_CATEGORY, { name: 'Theirs', kind: 'expense', isDeleted: false }) as never],
+	})
 
-  fetchMeta.mockResolvedValue({ changes: [B_MAIN_CHANGE], profileIds: [B_MAIN] })
-  send.mockResolvedValue({ success: true })
+	fetchMeta.mockResolvedValue({ changes: [B_MAIN_CHANGE], profileIds: [B_MAIN] })
+	send.mockResolvedValue({ success: true })
 })
 
 afterEach(() => {
-  cleanup()
-  clearSyncBridge()
+	cleanup()
+	clearSyncBridge()
 })
 
 describe("B's sync on a browser holding A's data (story 86.2, AC 4)", () => {
-  it("removes A's profiles and rows, uploads none of them, and shows none of them", async () => {
-    render(
-      <>
-        <ActiveSync userId={ACCOUNT_B} />
-        <IncomePage />
-      </>
-    )
+	it("removes A's profiles and rows, uploads none of them, and shows none of them", async () => {
+		render(
+			<>
+				<ActiveSync userId={ACCOUNT_B} />
+				<IncomePage />
+			</>
+		)
 
-    await waitFor(() => expect(sent()).toContain(`create incomeSource ${FREE_INCOME} ${B_MAIN}`), {
-      timeout: 6000,
-    })
+		await waitFor(() => expect(sent()).toContain(`create incomeSource ${FREE_INCOME} ${B_MAIN}`), {
+			timeout: 6000,
+		})
 
-    expect(sent().filter((op) => A_IDS.some((id) => op.includes(id)))).toEqual([])
-    expect(useProfileStore.getState().profiles.map((p) => p.id)).toEqual([B_MAIN])
-    expect(useProfileStore.getState().activeProfileId).toBe(B_MAIN)
-    expect(useIncomeStore.getState().incomeSources.map((r) => r.id)).toEqual([FREE_INCOME])
-    expect(useExpenseStore.getState().expenses).toEqual([])
-    expect(useSavingsStore.getState().savingsGoals).toEqual([])
-    expect(useBalanceStore.getState().entries).toEqual([])
-    expect(useCategoryStore.getState().categories).toEqual([])
-    expect(localStorage.getItem(A_QUEUE_KEY)).toBe(A_QUEUE)
+		expect(sent().filter((op) => A_IDS.some((id) => op.includes(id)))).toEqual([])
+		expect(useProfileStore.getState().profiles.map((p) => p.id)).toEqual([B_MAIN])
+		expect(useProfileStore.getState().activeProfileId).toBe(B_MAIN)
+		expect(useIncomeStore.getState().incomeSources.map((r) => r.id)).toEqual([FREE_INCOME])
+		expect(useExpenseStore.getState().expenses).toEqual([])
+		expect(useSavingsStore.getState().savingsGoals).toEqual([])
+		expect(useBalanceStore.getState().entries).toEqual([])
+		expect(useCategoryStore.getState().categories).toEqual([])
+		expect(localStorage.getItem(A_QUEUE_KEY)).toBe(A_QUEUE)
 
-    expect(screen.getByText('My salary')).toBeInTheDocument()
-    expect(screen.queryByText('Their salary')).not.toBeInTheDocument()
-  }, 10_000)
+		expect(screen.getByText('My salary')).toBeInTheDocument()
+		expect(screen.queryByText('Their salary')).not.toBeInTheDocument()
+	}, 10_000)
 })

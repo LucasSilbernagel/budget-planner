@@ -10,7 +10,7 @@ const { files, rawBytes, brBytes, gzipBytes } = await precompressDirectory(clien
 
 const kb = (bytes) => `${(bytes / 1024).toFixed(0)} KB`
 process.stdout.write(
-  `[precompress] ${files} files: ${kb(rawBytes)} raw, ${kb(gzipBytes)} gzip, ${kb(
-    brBytes
-  )} brotli\n`
+	`[precompress] ${files} files: ${kb(rawBytes)} raw, ${kb(gzipBytes)} gzip, ${kb(
+		brBytes
+	)} brotli\n`
 )

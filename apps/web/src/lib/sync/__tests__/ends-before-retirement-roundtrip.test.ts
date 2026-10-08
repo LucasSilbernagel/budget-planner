@@ -13,10 +13,10 @@ import { syncOperationSchema } from '../../../server/api/sync'
 import { useExpenseStore } from '../../../stores/expenseStore'
 import { applyServerChangesToStores } from '../applyServerChanges'
 import {
-  type SyncBridgeHandle,
-  clearSyncBridge,
-  registerSyncBridge,
-  syncEntityUpdate,
+	clearSyncBridge,
+	registerSyncBridge,
+	type SyncBridgeHandle,
+	syncEntityUpdate,
 } from '../syncBridge'
 
 const USER_ID = '11111111-1111-4111-8111-111111111111'
@@ -26,37 +26,37 @@ const ROW_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const MIGRATIONS = new URL('../../../../../../packages/db/migrations/', import.meta.url)
 
 interface JournalEntry {
-  idx: number
-  tag: string
+	idx: number
+	tag: string
 }
 
 const journal = JSON.parse(readFileSync(new URL('meta/_journal.json', MIGRATIONS), 'utf8')) as {
-  entries: JournalEntry[]
+	entries: JournalEntry[]
 }
 
 function statementsFor(tag: string): string[] {
-  return readFileSync(new URL(`${tag}.sql`, MIGRATIONS), 'utf8')
-    .split('--> statement-breakpoint')
-    .map((s) => s.trim())
-    .filter(Boolean)
+	return readFileSync(new URL(`${tag}.sql`, MIGRATIONS), 'utf8')
+		.split('--> statement-breakpoint')
+		.map((s) => s.trim())
+		.filter(Boolean)
 }
 
 let pg: PGlite
 let db: ReturnType<typeof drizzle>
 
 beforeAll(async () => {
-  pg = await PGlite.create()
-  // The whole committed chain, in one transaction, mirroring drizzle's migrator.
-  await pg.exec('BEGIN')
-  for (const entry of journal.entries) {
-    for (const statement of statementsFor(entry.tag)) {
-      await pg.exec(statement)
-    }
-  }
-  await pg.exec('COMMIT')
-  db = drizzle(pg)
+	pg = await PGlite.create()
+	// The whole committed chain, in one transaction, mirroring drizzle's migrator.
+	await pg.exec('BEGIN')
+	for (const entry of journal.entries) {
+		for (const statement of statementsFor(entry.tag)) {
+			await pg.exec(statement)
+		}
+	}
+	await pg.exec('COMMIT')
+	db = drizzle(pg)
 
-  await pg.exec(`
+	await pg.exec(`
     INSERT INTO "users" ("id", "email", "paddleId")
       VALUES ('${USER_ID}', 'roundtrip@example.com', 'ctm_roundtrip_65_2');
     INSERT INTO "userProfiles" ("id", "userId", "name", "currency")
@@ -65,143 +65,143 @@ beforeAll(async () => {
 }, 120_000)
 
 afterAll(async () => {
-  await pg?.close()
+	await pg?.close()
 })
 
 function makeHandle() {
-  return {
-    userId: USER_ID,
-    queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
-    queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
-    queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
-  }
+	return {
+		userId: USER_ID,
+		queueCreate: vi.fn<SyncBridgeHandle['queueCreate']>(async () => {}),
+		queueUpdate: vi.fn<SyncBridgeHandle['queueUpdate']>(async () => {}),
+		queueDelete: vi.fn<SyncBridgeHandle['queueDelete']>(async () => {}),
+	}
 }
 
 let handle: ReturnType<typeof makeHandle>
 
 beforeEach(() => {
-  clearSyncBridge()
-  handle = makeHandle()
-  registerSyncBridge(handle)
+	clearSyncBridge()
+	handle = makeHandle()
+	registerSyncBridge(handle)
 })
 
 const clientRow = (endsBeforeRetirement: boolean | undefined) => ({
-  id: ROW_ID,
-  userId: 0,
-  name: 'Mortgage',
-  amount: 180_000,
-  frequency: 'monthly' as const,
-  categoryId: null,
-  sortOrder: 0,
-  endsBeforeRetirement,
-  createdAt: '2026-01-01T00:00:00.000Z',
-  updatedAt: '2026-01-01T00:00:00.000Z',
+	id: ROW_ID,
+	userId: 0,
+	name: 'Mortgage',
+	amount: 180_000,
+	frequency: 'monthly' as const,
+	categoryId: null,
+	sortOrder: 0,
+	endsBeforeRetirement,
+	createdAt: '2026-01-01T00:00:00.000Z',
+	updatedAt: '2026-01-01T00:00:00.000Z',
 })
 
 async function pushUpdate(endsBeforeRetirement: boolean | undefined): Promise<void> {
-  syncEntityUpdate('expense', clientRow(endsBeforeRetirement))
-  const payload = handle.queueUpdate.mock.calls[0]?.[2]
+	syncEntityUpdate('expense', clientRow(endsBeforeRetirement))
+	const payload = handle.queueUpdate.mock.calls[0]?.[2]
 
-  const parsed = syncOperationSchema.parse({
-    id: '22222222-2222-4222-8222-222222222222',
-    type: 'update' as const,
-    entityType: 'expense' as const,
-    entityId: ROW_ID,
-    data: { ...payload, userId: USER_ID },
-    timestamp: 1_700_000_000_000,
-    deviceId: 'device-a',
-    userId: USER_ID,
-    profileId: PROFILE_ID,
-  })
+	const parsed = syncOperationSchema.parse({
+		id: '22222222-2222-4222-8222-222222222222',
+		type: 'update' as const,
+		entityType: 'expense' as const,
+		entityId: ROW_ID,
+		data: { ...payload, userId: USER_ID },
+		timestamp: 1_700_000_000_000,
+		deviceId: 'device-a',
+		userId: USER_ID,
+		profileId: PROFILE_ID,
+	})
 
-  // `updateEntity`'s own destructuring: drop the identity columns a client must
-  // never be able to rewrite, re-stamp userId and updatedAt.
-  const data = parsed.data as Record<string, unknown>
-  const { id: _id, profileId: _p, userId: _u, ...fields } = data
-  await db
-    .update(expenses)
-    .set({ ...fields, userId: USER_ID, updatedAt: new Date() })
-    .where(and(eq(expenses.userId, USER_ID), eq(expenses.id, ROW_ID)))
+	// `updateEntity`'s own destructuring: drop the identity columns a client must
+	// never be able to rewrite, re-stamp userId and updatedAt.
+	const data = parsed.data as Record<string, unknown>
+	const { id: _id, profileId: _p, userId: _u, ...fields } = data
+	await db
+		.update(expenses)
+		.set({ ...fields, userId: USER_ID, updatedAt: new Date() })
+		.where(and(eq(expenses.userId, USER_ID), eq(expenses.id, ROW_ID)))
 }
 
 async function pullRow() {
-  const rows = await db.select().from(expenses).where(eq(expenses.id, ROW_ID))
-  return rows[0]
+	const rows = await db.select().from(expenses).where(eq(expenses.id, ROW_ID))
+	return rows[0]
 }
 
 /** Through the real pull applier: pullRow's bare SELECT bypasses the pull direction. */
 async function pullIntoStore(): Promise<Record<string, unknown> | undefined> {
-  const row = await pullRow()
-  useExpenseStore.setState({ expenses: [] })
-  applyServerChangesToStores(
-    [
-      {
-        entityType: 'expense',
-        entityId: ROW_ID,
-        data: row as unknown as Record<string, unknown>,
-        updatedAt: Date.now(),
-        isDeleted: false,
-      },
-    ],
-    USER_ID
-  )
-  return useExpenseStore.getState().expenses[0] as unknown as Record<string, unknown>
+	const row = await pullRow()
+	useExpenseStore.setState({ expenses: [] })
+	applyServerChangesToStores(
+		[
+			{
+				entityType: 'expense',
+				entityId: ROW_ID,
+				data: row as unknown as Record<string, unknown>,
+				updatedAt: Date.now(),
+				isDeleted: false,
+			},
+		],
+		USER_ID
+	)
+	return useExpenseStore.getState().expenses[0] as unknown as Record<string, unknown>
 }
 
 describe('endsBeforeRetirement — device A writes, the database answers', () => {
-  it('⚠️ the column exists on a freshly migrated database and defaults FALSE', async () => {
-    await db.insert(expenses).values({
-      id: ROW_ID,
-      userId: USER_ID,
-      profileId: PROFILE_ID,
-      name: 'Mortgage',
-      amount: 180_000,
-      frequency: 'monthly',
-    })
-    // The default keeps every pre-migration row counted in the retirement target.
-    expect((await pullRow())?.endsBeforeRetirement).toBe(false)
-  })
+	it('⚠️ the column exists on a freshly migrated database and defaults FALSE', async () => {
+		await db.insert(expenses).values({
+			id: ROW_ID,
+			userId: USER_ID,
+			profileId: PROFILE_ID,
+			name: 'Mortgage',
+			amount: 180_000,
+			frequency: 'monthly',
+		})
+		// The default keeps every pre-migration row counted in the retirement target.
+		expect((await pullRow())?.endsBeforeRetirement).toBe(false)
+	})
 
-  it('a TICK pushed from device A is what device B pulls back', async () => {
-    await pushUpdate(true)
-    expect((await pullRow())?.endsBeforeRetirement).toBe(true)
-  })
+	it('a TICK pushed from device A is what device B pulls back', async () => {
+		await pushUpdate(true)
+		expect((await pullRow())?.endsBeforeRetirement).toBe(true)
+	})
 
-  it('⚠️⚠️ an UNTICK pushed from device A actually CLEARS it for device B', async () => {
-    // Partial .set(): an omitted key would leave the previous `true` in place.
-    await pushUpdate(true)
-    expect((await pullRow())?.endsBeforeRetirement).toBe(true)
+	it('⚠️⚠️ an UNTICK pushed from device A actually CLEARS it for device B', async () => {
+		// Partial .set(): an omitted key would leave the previous `true` in place.
+		await pushUpdate(true)
+		expect((await pullRow())?.endsBeforeRetirement).toBe(true)
 
-    handle.queueUpdate.mockClear()
-    await pushUpdate(false)
-    expect((await pullRow())?.endsBeforeRetirement).toBe(false)
-  })
+		handle.queueUpdate.mockClear()
+		await pushUpdate(false)
+		expect((await pullRow())?.endsBeforeRetirement).toBe(false)
+	})
 
-  it('⚠️ an UNSTAMPED row (pre-65.2, no key at all) clears rather than leaving a stale true', async () => {
-    // Legacy rows have no key and JSON.stringify drops undefined, so only the bridge's coercion lands `false`.
-    await pushUpdate(true)
-    expect((await pullRow())?.endsBeforeRetirement).toBe(true)
+	it('⚠️ an UNSTAMPED row (pre-65.2, no key at all) clears rather than leaving a stale true', async () => {
+		// Legacy rows have no key and JSON.stringify drops undefined, so only the bridge's coercion lands `false`.
+		await pushUpdate(true)
+		expect((await pullRow())?.endsBeforeRetirement).toBe(true)
 
-    handle.queueUpdate.mockClear()
-    await pushUpdate(undefined)
-    expect((await pullRow())?.endsBeforeRetirement).toBe(false)
-  })
+		handle.queueUpdate.mockClear()
+		await pushUpdate(undefined)
+		expect((await pullRow())?.endsBeforeRetirement).toBe(false)
+	})
 
-  it('⚠️ device B\u2019s STORE receives the flag through the real pull applier', async () => {
-    await pushUpdate(true)
-    expect((await pullIntoStore())?.['endsBeforeRetirement']).toBe(true)
+	it('⚠️ device B\u2019s STORE receives the flag through the real pull applier', async () => {
+		await pushUpdate(true)
+		expect((await pullIntoStore())?.['endsBeforeRetirement']).toBe(true)
 
-    handle.queueUpdate.mockClear()
-    await pushUpdate(false)
-    expect((await pullIntoStore())?.['endsBeforeRetirement']).toBe(false)
-  })
+		handle.queueUpdate.mockClear()
+		await pushUpdate(false)
+		expect((await pullIntoStore())?.['endsBeforeRetirement']).toBe(false)
+	})
 
-  it('the flag does not disturb the rest of the row', async () => {
-    await pushUpdate(true)
-    const row = await pullRow()
-    expect(row?.name).toBe('Mortgage')
-    expect(row?.amount).toBe(180_000)
-    expect(row?.frequency).toBe('monthly')
-    expect(row?.profileId).toBe(PROFILE_ID)
-  })
+	it('the flag does not disturb the rest of the row', async () => {
+		await pushUpdate(true)
+		const row = await pullRow()
+		expect(row?.name).toBe('Mortgage')
+		expect(row?.amount).toBe(180_000)
+		expect(row?.frequency).toBe('monthly')
+		expect(row?.profileId).toBe(PROFILE_ID)
+	})
 })

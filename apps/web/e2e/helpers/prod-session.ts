@@ -11,21 +11,21 @@ export const PROD_E2E_SESSION_SECRET = 'e2e-prod-only-session-secret-0123456789a
 export const PROD_E2E_USER_ID = '11111111-1111-4111-8111-111111111111'
 
 export function signProdSession(userId: string = PROD_E2E_USER_ID): string {
-  const payload = Buffer.from(
-    JSON.stringify({ userId, paddleId: 'ctm_e2e', email: 'e2e-prod@example.test', iat: Date.now() })
-  ).toString('base64url')
-  const signature = crypto
-    .createHmac('sha256', PROD_E2E_SESSION_SECRET)
-    .update(payload)
-    .digest('hex')
-  return `${payload}.${signature}`
+	const payload = Buffer.from(
+		JSON.stringify({ userId, paddleId: 'ctm_e2e', email: 'e2e-prod@example.test', iat: Date.now() })
+	).toString('base64url')
+	const signature = crypto
+		.createHmac('sha256', PROD_E2E_SESSION_SECRET)
+		.update(payload)
+		.digest('hex')
+	return `${payload}.${signature}`
 }
 
 export async function addProdSessionCookie(
-  context: BrowserContext,
-  baseURL: string
+	context: BrowserContext,
+	baseURL: string
 ): Promise<void> {
-  await context.addCookies([
-    { name: 'session', value: signProdSession(), url: baseURL, httpOnly: true, sameSite: 'Lax' },
-  ])
+	await context.addCookies([
+		{ name: 'session', value: signProdSession(), url: baseURL, httpOnly: true, sameSite: 'Lax' },
+	])
 }

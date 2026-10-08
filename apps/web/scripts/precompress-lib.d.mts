@@ -3,8 +3,8 @@
 // `client-bundle-guard-lib.d.mts` precedent).
 
 export function precompressDirectory(dir: string): Promise<{
-  files: number
-  rawBytes: number
-  brBytes: number
-  gzipBytes: number
+	files: number
+	rawBytes: number
+	brBytes: number
+	gzipBytes: number
 }>

@@ -11,50 +11,50 @@ export const routeModules = import.meta.glob('../**/*.{ts,tsx}')
 // Accepts `.ts` too: a redirect- or loader-only route needs no JSX. Route groups, pathless
 // layouts and dot-notation are unsupported and fail loudly.
 export function isPageRouteFile(relPath: string): boolean {
-  const p = relPath.split(sep).join('/').replace(/^\.\//, '')
-  if (!/\.tsx?$/.test(p)) return false
-  if (p === '__root.tsx') return false
-  if (p.startsWith('api/')) return false
-  if (p.includes('__tests__/')) return false
-  if (/\.(test|spec)\./.test(p)) return false
-  // TanStack excludes `-`-prefixed files and directories from routing, so they
-  // are colocated helpers, not pages, and must not be asked for a <title>.
-  if (p.split('/').some((seg) => seg.startsWith('-'))) return false
-  return true
+	const p = relPath.split(sep).join('/').replace(/^\.\//, '')
+	if (!/\.tsx?$/.test(p)) return false
+	if (p === '__root.tsx') return false
+	if (p.startsWith('api/')) return false
+	if (p.includes('__tests__/')) return false
+	if (/\.(test|spec)\./.test(p)) return false
+	// TanStack excludes `-`-prefixed files and directories from routing, so they
+	// are colocated helpers, not pages, and must not be asked for a <title>.
+	if (p.split('/').some((seg) => seg.startsWith('-'))) return false
+	return true
 }
 
 export function toRoutePath(relPath: string): string {
-  const p = relPath.split(sep).join('/').replace(/^\.\//, '')
-  const withoutExt = p.replace(/\.tsx?$/, '')
-  if (withoutExt === 'index') return '/'
-  return `/${withoutExt.replace(/\/index$/, '')}`
+	const p = relPath.split(sep).join('/').replace(/^\.\//, '')
+	const withoutExt = p.replace(/\.tsx?$/, '')
+	if (withoutExt === 'index') return '/'
+	return `/${withoutExt.replace(/\/index$/, '')}`
 }
 
 export function walkRouteFiles(dir: string, acc: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
-    const abs = join(dir, entry)
-    if (lstatSync(abs).isDirectory()) {
-      walkRouteFiles(abs, acc)
-    } else {
-      acc.push(relative(ROUTES_DIR, abs))
-    }
-  }
-  return acc
+	for (const entry of readdirSync(dir)) {
+		const abs = join(dir, entry)
+		if (lstatSync(abs).isDirectory()) {
+			walkRouteFiles(abs, acc)
+		} else {
+			acc.push(relative(ROUTES_DIR, abs))
+		}
+	}
+	return acc
 }
 
 // Keys are relative to this file, so a sibling is `./x.ts`; stripping `../` alone would
 // classify it as a page route.
 export function globKeyToRoutesRel(key: string): string {
-  if (key.startsWith('../')) return key.slice(3)
-  if (key.startsWith('./')) return `${HELPER_DIR_REL}/${key.slice(2)}`
-  return key
+	if (key.startsWith('../')) return key.slice(3)
+	if (key.startsWith('./')) return `${HELPER_DIR_REL}/${key.slice(2)}`
+	return key
 }
 
 // Derived so moving this helper cannot get its siblings classified as routes.
 const HELPER_DIR_REL = relative(ROUTES_DIR, __dirname).split(sep).join('/')
 
 export const globbedPagePaths = Object.keys(routeModules)
-  .map(globKeyToRoutesRel)
-  .filter(isPageRouteFile)
-  .map(toRoutePath)
-  .sort()
+	.map(globKeyToRoutesRel)
+	.filter(isPageRouteFile)
+	.map(toRoutePath)
+	.sort()

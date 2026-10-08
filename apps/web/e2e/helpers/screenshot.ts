@@ -1,4 +1,4 @@
-import { type Locator, type Page, expect } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
 
 /** Fixes browser-rendered dates only; the footer year is server-rendered. */
 export const FIXED_NOW = new Date('2026-08-11T12:00:00.000Z')
@@ -11,10 +11,10 @@ export const SHOT_TIMEOUT = 15_000
  * every shot would turn red on 1 January.
  */
 export async function copyrightYear(page: Page): Promise<Locator[]> {
-  const year = page.locator('footer span').filter({ hasText: /^Copyright \d{4}/ })
-  // A mask that matches nothing masks nothing and passes.
-  await expect(year, 'the copyright-year mask matched no footer text').toHaveCount(1)
-  return [year]
+	const year = page.locator('footer span').filter({ hasText: /^Copyright \d{4}/ })
+	// A mask that matches nothing masks nothing and passes.
+	await expect(year, 'the copyright-year mask matched no footer text').toHaveCount(1)
+	return [year]
 }
 
 /**
@@ -22,7 +22,7 @@ export async function copyrightYear(page: Page): Promise<Locator[]> {
  * `count` is exact, so a missing or extra chart fails with a message.
  */
 export async function chartsDrawn(page: Page, count: number): Promise<void> {
-  await expect(page.locator('.recharts-surface')).toHaveCount(count, { timeout: SHOT_TIMEOUT })
+	await expect(page.locator('.recharts-surface')).toHaveCount(count, { timeout: SHOT_TIMEOUT })
 }
 
 const PHONE_TARGET_PX = 44
@@ -34,10 +34,10 @@ const PHONE_TARGET_PX = 44
 const PHONE_STRIP_PX = 45
 
 export interface Box {
-  x: number
-  y: number
-  width: number
-  height: number
+	x: number
+	y: number
+	width: number
+	height: number
 }
 
 /**
@@ -45,41 +45,41 @@ export interface Box {
  * jsdom loads no Tailwind, so sizes are checked here.
  */
 export async function expectTarget(
-  locator: Locator,
-  label: string,
-  { min = PHONE_TARGET_PX, sides = 'both' }: { min?: number; sides?: 'both' | 'height' } = {}
+	locator: Locator,
+	label: string,
+	{ min = PHONE_TARGET_PX, sides = 'both' }: { min?: number; sides?: 'both' | 'height' } = {}
 ): Promise<Box> {
-  await expect(locator, `${label}: expected exactly one match`).toHaveCount(1)
-  await expect(locator, `${label}: not visible`).toBeVisible()
-  const box = await locator.boundingBox()
-  expect(box, `${label}: no layout box`).not.toBeNull()
-  const b = box as Box
-  expect(b.height, `${label} is ${b.height}px tall, under ${min}`).toBeGreaterThanOrEqual(min)
-  if (sides === 'both') {
-    expect(b.width, `${label} is ${b.width}px wide, under ${min}`).toBeGreaterThanOrEqual(min)
-  }
-  return b
+	await expect(locator, `${label}: expected exactly one match`).toHaveCount(1)
+	await expect(locator, `${label}: not visible`).toBeVisible()
+	const box = await locator.boundingBox()
+	expect(box, `${label}: no layout box`).not.toBeNull()
+	const b = box as Box
+	expect(b.height, `${label} is ${b.height}px tall, under ${min}`).toBeGreaterThanOrEqual(min)
+	if (sides === 'both') {
+		expect(b.width, `${label} is ${b.width}px wide, under ${min}`).toBeGreaterThanOrEqual(min)
+	}
+	return b
 }
 
 export async function expectPhoneStrip(page: Page, width: number): Promise<void> {
-  const strip = page.locator('[data-auth-indicator]')
-  await expect(strip).toHaveCount(1)
-  const box = await strip.boundingBox()
-  expect(box?.height, 'the phone top strip height').toBe(PHONE_STRIP_PX)
-  const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
-  expect(scrollWidth, 'the page scrolls sideways').toBeLessThanOrEqual(width)
+	const strip = page.locator('[data-auth-indicator]')
+	await expect(strip).toHaveCount(1)
+	const box = await strip.boundingBox()
+	expect(box?.height, 'the phone top strip height').toBe(PHONE_STRIP_PX)
+	const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+	expect(scrollWidth, 'the page scrolls sideways').toBeLessThanOrEqual(width)
 }
 
 export async function expectBarCells(page: Page, expectedVisible: number): Promise<void> {
-  const cells = page.locator(
-    'nav[aria-label="Primary"] > ul > li > a, nav[aria-label="Primary"] > ul > li > details > summary'
-  )
-  let visible = 0
-  for (const cell of await cells.all()) {
-    if (!(await cell.isVisible())) continue
-    visible += 1
-    const name = ((await cell.textContent()) ?? '').trim()
-    await expectTarget(cell, `bar cell "${name}"`)
-  }
-  expect(visible, 'visible bottom-bar cells').toBe(expectedVisible)
+	const cells = page.locator(
+		'nav[aria-label="Primary"] > ul > li > a, nav[aria-label="Primary"] > ul > li > details > summary'
+	)
+	let visible = 0
+	for (const cell of await cells.all()) {
+		if (!(await cell.isVisible())) continue
+		visible += 1
+		const name = ((await cell.textContent()) ?? '').trim()
+		await expectTarget(cell, `bar cell "${name}"`)
+	}
+	expect(visible, 'visible bottom-bar cells').toBe(expectedVisible)
 }

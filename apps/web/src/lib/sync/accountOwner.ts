@@ -6,9 +6,9 @@
 const PLACEHOLDER_OWNERS: ReadonlySet<string> = new Set(['', '0', 'temp-user'])
 
 export function isPlaceholderOwner(userId: unknown): boolean {
-  return PLACEHOLDER_OWNERS.has(String(userId ?? ''))
+	return PLACEHOLDER_OWNERS.has(String(userId ?? ''))
 }
 
 export function isOwnedByAnotherAccount(userId: unknown, sessionUserId: string): boolean {
-  return !isPlaceholderOwner(userId) && String(userId) !== sessionUserId
+	return !isPlaceholderOwner(userId) && String(userId) !== sessionUserId
 }

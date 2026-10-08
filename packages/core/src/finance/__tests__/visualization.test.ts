@@ -1,715 +1,721 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  CATEGORY_COLORS,
-  type CategoryAggregate,
-  DEFAULT_COLORS,
-  type DrillDownState,
-  type FinancialDataPoint,
-  aggregateByCategory,
-  aggregateByCategoryAndType,
-  createDrillDownState,
-  drillDownToCategory,
-  drillToRoot,
-  drillUp,
-  generateColorMap,
-  getColorForCategory,
-  getDataForDrillDownLevel,
-  getPercentageOfTotal,
-  getTopCategories,
-  groupSmallCategories,
-  isDrillDownActive,
-  sanitizeFinancialData,
-  toBarChartData,
-  toPieChartData,
-  toStackedBarChartData,
-  validateFinancialData,
+	aggregateByCategory,
+	aggregateByCategoryAndType,
+	CATEGORY_COLORS,
+	type CategoryAggregate,
+	createDrillDownState,
+	DEFAULT_COLORS,
+	type DrillDownState,
+	drillDownToCategory,
+	drillToRoot,
+	drillUp,
+	type FinancialDataPoint,
+	generateColorMap,
+	getColorForCategory,
+	getDataForDrillDownLevel,
+	getPercentageOfTotal,
+	getTopCategories,
+	groupSmallCategories,
+	isDrillDownActive,
+	sanitizeFinancialData,
+	toBarChartData,
+	toPieChartData,
+	toStackedBarChartData,
+	validateFinancialData,
 } from '../visualization.js'
 
 const FIXED_TEST_TIMESTAMP = '2026-06-18T12:00:00Z'
 
 beforeEach(() => {
-  vi.useFakeTimers()
-  vi.setSystemTime(new Date(FIXED_TEST_TIMESTAMP))
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date(FIXED_TEST_TIMESTAMP))
 })
 
 afterEach(() => {
-  vi.useRealTimers()
+	vi.useRealTimers()
 })
 
 const mockFinancialData: FinancialDataPoint[] = [
-  {
-    id: 'inc-1',
-    name: 'Salary',
-    amount: 500000,
-    frequency: 'monthly',
-    category: 'Salary',
-    type: 'income',
-    date: new Date('2026-06-01'),
-  },
-  {
-    id: 'inc-2',
-    name: 'Freelance',
-    amount: 200000,
-    frequency: 'monthly',
-    category: 'Freelance',
-    type: 'income',
-    date: new Date('2026-06-15'),
-  },
-  {
-    id: 'exp-1',
-    name: 'Rent',
-    amount: -150000,
-    frequency: 'monthly',
-    category: 'Housing',
-    type: 'expense',
-    date: new Date('2026-06-01'),
-  },
-  {
-    id: 'exp-2',
-    name: 'Groceries',
-    amount: -60000,
-    frequency: 'monthly',
-    category: 'Food',
-    type: 'expense',
-    date: new Date('2026-06-10'),
-  },
-  {
-    id: 'exp-3',
-    name: 'Utilities',
-    amount: -20000,
-    frequency: 'monthly',
-    category: 'Housing',
-    type: 'expense',
-    date: new Date('2026-05-01'),
-  },
-  {
-    id: 'inc-3',
-    name: 'Bonus',
-    amount: 100000,
-    frequency: 'annually',
-    category: 'Bonus',
-    type: 'income',
-    date: new Date('2026-01-01'),
-  },
+	{
+		id: 'inc-1',
+		name: 'Salary',
+		amount: 500000,
+		frequency: 'monthly',
+		category: 'Salary',
+		type: 'income',
+		date: new Date('2026-06-01'),
+	},
+	{
+		id: 'inc-2',
+		name: 'Freelance',
+		amount: 200000,
+		frequency: 'monthly',
+		category: 'Freelance',
+		type: 'income',
+		date: new Date('2026-06-15'),
+	},
+	{
+		id: 'exp-1',
+		name: 'Rent',
+		amount: -150000,
+		frequency: 'monthly',
+		category: 'Housing',
+		type: 'expense',
+		date: new Date('2026-06-01'),
+	},
+	{
+		id: 'exp-2',
+		name: 'Groceries',
+		amount: -60000,
+		frequency: 'monthly',
+		category: 'Food',
+		type: 'expense',
+		date: new Date('2026-06-10'),
+	},
+	{
+		id: 'exp-3',
+		name: 'Utilities',
+		amount: -20000,
+		frequency: 'monthly',
+		category: 'Housing',
+		type: 'expense',
+		date: new Date('2026-05-01'),
+	},
+	{
+		id: 'inc-3',
+		name: 'Bonus',
+		amount: 100000,
+		frequency: 'annually',
+		category: 'Bonus',
+		type: 'income',
+		date: new Date('2026-01-01'),
+	},
 ]
 
 describe('CATEGORY_COLORS', () => {
-  it('should have at least 10 color options', () => {
-    expect(CATEGORY_COLORS.length).toBeGreaterThanOrEqual(10)
-  })
+	it('should have at least 10 color options', () => {
+		expect(CATEGORY_COLORS.length).toBeGreaterThanOrEqual(10)
+	})
 
-  it('should contain valid hex color codes', () => {
-    for (const color of CATEGORY_COLORS) {
-      expect(color).toMatch(/^#[0-9A-Fa-f]{6}$/)
-    }
-  })
+	it('should contain valid hex color codes', () => {
+		for (const color of CATEGORY_COLORS) {
+			expect(color).toMatch(/^#[0-9A-Fa-f]{6}$/)
+		}
+	})
 })
 
 describe('DEFAULT_COLORS', () => {
-  it('should have colors for all financial types', () => {
-    expect(DEFAULT_COLORS).toHaveProperty('income')
-    expect(DEFAULT_COLORS).toHaveProperty('expense')
-    expect(DEFAULT_COLORS).toHaveProperty('savings')
-    expect(DEFAULT_COLORS).toHaveProperty('investment')
-    expect(DEFAULT_COLORS).toHaveProperty('debt')
-  })
+	it('should have colors for all financial types', () => {
+		expect(DEFAULT_COLORS).toHaveProperty('income')
+		expect(DEFAULT_COLORS).toHaveProperty('expense')
+		expect(DEFAULT_COLORS).toHaveProperty('savings')
+		expect(DEFAULT_COLORS).toHaveProperty('investment')
+		expect(DEFAULT_COLORS).toHaveProperty('debt')
+	})
 
-  it('should use green for income and red for expense', () => {
-    expect(DEFAULT_COLORS.income).toMatch(/^#[0-9A-Fa-f]{6}$/)
-    expect(DEFAULT_COLORS.expense).toMatch(/^#[0-9A-Fa-f]{6}$/)
-  })
+	it('should use green for income and red for expense', () => {
+		expect(DEFAULT_COLORS.income).toMatch(/^#[0-9A-Fa-f]{6}$/)
+		expect(DEFAULT_COLORS.expense).toMatch(/^#[0-9A-Fa-f]{6}$/)
+	})
 })
 
 describe('aggregateByCategory', () => {
-  it('should aggregate data by category', () => {
-    const result = aggregateByCategory(mockFinancialData)
+	it('should aggregate data by category', () => {
+		const result = aggregateByCategory(mockFinancialData)
 
-    expect(result.length).toBeGreaterThanOrEqual(4)
+		expect(result.length).toBeGreaterThanOrEqual(4)
 
-    const salaryAggregate = result.find((a) => a.category === 'Salary')
-    expect(salaryAggregate).toBeDefined()
-    expect(salaryAggregate?.amount).toBe(500000)
-    expect(salaryAggregate?.type).toBe('income')
-    expect(salaryAggregate?.count).toBe(1)
-  })
+		const salaryAggregate = result.find((a) => a.category === 'Salary')
+		expect(salaryAggregate).toBeDefined()
+		expect(salaryAggregate?.amount).toBe(500000)
+		expect(salaryAggregate?.type).toBe('income')
+		expect(salaryAggregate?.count).toBe(1)
+	})
 
-  it('should group multiple items with same category', () => {
-    const result = aggregateByCategory(mockFinancialData)
+	it('should group multiple items with same category', () => {
+		const result = aggregateByCategory(mockFinancialData)
 
-    // Rent + Utilities = -150000 + -20000 = -170000
-    const housingAggregate = result.find((a) => a.category === 'Housing')
-    expect(housingAggregate).toBeDefined()
-    expect(housingAggregate?.amount).toBe(-170000)
-    expect(housingAggregate?.type).toBe('expense')
-    expect(housingAggregate?.count).toBe(2)
-  })
+		// Rent + Utilities = -150000 + -20000 = -170000
+		const housingAggregate = result.find((a) => a.category === 'Housing')
+		expect(housingAggregate).toBeDefined()
+		expect(housingAggregate?.amount).toBe(-170000)
+		expect(housingAggregate?.type).toBe('expense')
+		expect(housingAggregate?.count).toBe(2)
+	})
 
-  it('should use name as category when category is not provided', () => {
-    const dataWithoutCategory: FinancialDataPoint[] = [
-      {
-        id: '1',
-        name: 'Test Item',
-        amount: 10000,
-        frequency: 'monthly',
-        type: 'income',
-      },
-    ]
+	it('should use name as category when category is not provided', () => {
+		const dataWithoutCategory: FinancialDataPoint[] = [
+			{
+				id: '1',
+				name: 'Test Item',
+				amount: 10000,
+				frequency: 'monthly',
+				type: 'income',
+			},
+		]
 
-    const result = aggregateByCategory(dataWithoutCategory)
-    expect(result[0].category).toBe('Test Item')
-  })
+		const result = aggregateByCategory(dataWithoutCategory)
+		expect(result[0].category).toBe('Test Item')
+	})
 
-  it('should handle empty array', () => {
-    const result = aggregateByCategory([])
-    expect(result).toEqual([])
-  })
+	it('should handle empty array', () => {
+		const result = aggregateByCategory([])
+		expect(result).toEqual([])
+	})
 })
 
 describe('aggregateByCategoryAndType', () => {
-  it('should separate aggregates by type (income vs expense)', () => {
-    const result = aggregateByCategoryAndType(mockFinancialData)
+	it('should separate aggregates by type (income vs expense)', () => {
+		const result = aggregateByCategoryAndType(mockFinancialData)
 
-    expect(result.has('income')).toBe(true)
-    expect(result.has('expense')).toBe(true)
+		expect(result.has('income')).toBe(true)
+		expect(result.has('expense')).toBe(true)
 
-    // biome-ignore lint/style/noNonNullAssertion: presence asserted by expect(result.has('income')) above.
-    const incomeAggregates = result.get('income')!
-    // biome-ignore lint/style/noNonNullAssertion: presence asserted by expect(result.has('expense')) above.
-    const expenseAggregates = result.get('expense')!
+		// biome-ignore lint/style/noNonNullAssertion: presence asserted by expect(result.has('income')) above.
+		const incomeAggregates = result.get('income')!
+		// biome-ignore lint/style/noNonNullAssertion: presence asserted by expect(result.has('expense')) above.
+		const expenseAggregates = result.get('expense')!
 
-    expect(incomeAggregates.some((a) => a.category === 'Salary')).toBe(true)
-    expect(incomeAggregates.some((a) => a.category === 'Freelance')).toBe(true)
-    expect(incomeAggregates.some((a) => a.category === 'Bonus')).toBe(true)
+		expect(incomeAggregates.some((a) => a.category === 'Salary')).toBe(true)
+		expect(incomeAggregates.some((a) => a.category === 'Freelance')).toBe(true)
+		expect(incomeAggregates.some((a) => a.category === 'Bonus')).toBe(true)
 
-    expect(expenseAggregates.some((a) => a.category === 'Housing')).toBe(true)
-    expect(expenseAggregates.some((a) => a.category === 'Food')).toBe(true)
-  })
+		expect(expenseAggregates.some((a) => a.category === 'Housing')).toBe(true)
+		expect(expenseAggregates.some((a) => a.category === 'Food')).toBe(true)
+	})
 
-  it('should return empty arrays for types with no data', () => {
-    const incomeOnly: FinancialDataPoint[] = [
-      {
-        id: '1',
-        name: 'Salary',
-        amount: 500000,
-        frequency: 'monthly',
-        category: 'Salary',
-        type: 'income',
-      },
-    ]
+	it('should return empty arrays for types with no data', () => {
+		const incomeOnly: FinancialDataPoint[] = [
+			{
+				id: '1',
+				name: 'Salary',
+				amount: 500000,
+				frequency: 'monthly',
+				category: 'Salary',
+				type: 'income',
+			},
+		]
 
-    const result = aggregateByCategoryAndType(incomeOnly)
-    expect(result.get('income')?.length).toBeGreaterThan(0)
-    expect(result.get('expense')).toEqual([])
-  })
+		const result = aggregateByCategoryAndType(incomeOnly)
+		expect(result.get('income')?.length).toBeGreaterThan(0)
+		expect(result.get('expense')).toEqual([])
+	})
 })
 
 describe('getTopCategories', () => {
-  it('should return top N categories by absolute amount', () => {
-    const aggregates: CategoryAggregate[] = [
-      { category: 'Small', amount: 1000, type: 'income', count: 1 },
-      { category: 'Medium', amount: 10000, type: 'income', count: 1 },
-      { category: 'Large', amount: 100000, type: 'income', count: 1 },
-    ]
+	it('should return top N categories by absolute amount', () => {
+		const aggregates: CategoryAggregate[] = [
+			{ category: 'Small', amount: 1000, type: 'income', count: 1 },
+			{ category: 'Medium', amount: 10000, type: 'income', count: 1 },
+			{ category: 'Large', amount: 100000, type: 'income', count: 1 },
+		]
 
-    const result = getTopCategories(aggregates, 2)
-    expect(result.length).toBe(2)
-    expect(result[0].category).toBe('Large')
-    expect(result[1].category).toBe('Medium')
-  })
+		const result = getTopCategories(aggregates, 2)
+		expect(result.length).toBe(2)
+		expect(result[0].category).toBe('Large')
+		expect(result[1].category).toBe('Medium')
+	})
 
-  it('should default to top 10 when limit not specified', () => {
-    const aggregates: CategoryAggregate[] = Array.from({ length: 15 }, (_, i) => ({
-      category: `Category ${i}`,
-      amount: (i + 1) * 1000,
-      type: 'income',
-      count: 1,
-    }))
+	it('should default to top 10 when limit not specified', () => {
+		const aggregates: CategoryAggregate[] = Array.from({ length: 15 }, (_, i) => ({
+			category: `Category ${i}`,
+			amount: (i + 1) * 1000,
+			type: 'income',
+			count: 1,
+		}))
 
-    const result = getTopCategories(aggregates)
-    expect(result.length).toBe(10)
-  })
+		const result = getTopCategories(aggregates)
+		expect(result.length).toBe(10)
+	})
 
-  it('should return all categories when there are fewer than limit', () => {
-    const aggregates: CategoryAggregate[] = [
-      { category: 'A', amount: 1000, type: 'income', count: 1 },
-      { category: 'B', amount: 2000, type: 'income', count: 1 },
-    ]
+	it('should return all categories when there are fewer than limit', () => {
+		const aggregates: CategoryAggregate[] = [
+			{ category: 'A', amount: 1000, type: 'income', count: 1 },
+			{ category: 'B', amount: 2000, type: 'income', count: 1 },
+		]
 
-    const result = getTopCategories(aggregates, 10)
-    expect(result.length).toBe(2)
-  })
+		const result = getTopCategories(aggregates, 10)
+		expect(result.length).toBe(2)
+	})
 
-  it('should handle negative amounts correctly (absolute value)', () => {
-    const aggregates: CategoryAggregate[] = [
-      { category: 'Small', amount: -1000, type: 'expense', count: 1 },
-      { category: 'Large', amount: -100000, type: 'expense', count: 1 },
-    ]
+	it('should handle negative amounts correctly (absolute value)', () => {
+		const aggregates: CategoryAggregate[] = [
+			{ category: 'Small', amount: -1000, type: 'expense', count: 1 },
+			{ category: 'Large', amount: -100000, type: 'expense', count: 1 },
+		]
 
-    const result = getTopCategories(aggregates, 1)
-    expect(result.length).toBe(1)
-    expect(result[0].category).toBe('Large')
-  })
+		const result = getTopCategories(aggregates, 1)
+		expect(result.length).toBe(1)
+		expect(result[0].category).toBe('Large')
+	})
 })
 
 describe('groupSmallCategories', () => {
-  it('should not group when categories are fewer than limit', () => {
-    const aggregates: CategoryAggregate[] = [
-      { category: 'A', amount: 1000, type: 'income', count: 1 },
-      { category: 'B', amount: 2000, type: 'income', count: 1 },
-    ]
+	it('should not group when categories are fewer than limit', () => {
+		const aggregates: CategoryAggregate[] = [
+			{ category: 'A', amount: 1000, type: 'income', count: 1 },
+			{ category: 'B', amount: 2000, type: 'income', count: 1 },
+		]
 
-    const result = groupSmallCategories(aggregates, 10)
-    expect(result.length).toBe(2)
-    expect(result.some((a) => a.category === 'Other')).toBe(false)
-  })
+		const result = groupSmallCategories(aggregates, 10)
+		expect(result.length).toBe(2)
+		expect(result.some((a) => a.category === 'Other')).toBe(false)
+	})
 
-  it('should group small categories when they exceed threshold', () => {
-    // 9000 + 9 × 100: the small ones are 900 / 9900 ≈ 9% > 5% threshold.
-    const aggregates: CategoryAggregate[] = Array.from({ length: 10 }, (_, i) => ({
-      category: `Category ${i}`,
-      amount: i === 0 ? 9000 : 100,
-      type: 'income' as const,
-      count: 1,
-    }))
+	it('should group small categories when they exceed threshold', () => {
+		// 9000 + 9 × 100: the small ones are 900 / 9900 ≈ 9% > 5% threshold.
+		const aggregates: CategoryAggregate[] = Array.from({ length: 10 }, (_, i) => ({
+			category: `Category ${i}`,
+			amount: i === 0 ? 9000 : 100,
+			type: 'income' as const,
+			count: 1,
+		}))
 
-    const result = groupSmallCategories(aggregates, 1, 0.05)
+		const result = groupSmallCategories(aggregates, 1, 0.05)
 
-    expect(result.length).toBe(2)
-    expect(result.some((a) => a.category === 'Other')).toBe(true)
-  })
+		expect(result.length).toBe(2)
+		expect(result.some((a) => a.category === 'Other')).toBe(true)
+	})
 
-  it('should not group small categories when below threshold', () => {
-    const aggregates: CategoryAggregate[] = Array.from({ length: 10 }, (_, i) => ({
-      category: `Category ${i}`,
-      amount: i === 0 ? 9900 : 10,
-      type: 'income' as const,
-      count: 1,
-    }))
+	it('should not group small categories when below threshold', () => {
+		const aggregates: CategoryAggregate[] = Array.from({ length: 10 }, (_, i) => ({
+			category: `Category ${i}`,
+			amount: i === 0 ? 9900 : 10,
+			type: 'income' as const,
+			count: 1,
+		}))
 
-    // 9 × 10 = 90 of 9990 ≈ 0.9% < 5% threshold.
-    const result = groupSmallCategories(aggregates, 8, 0.05)
+		// 9 × 10 = 90 of 9990 ≈ 0.9% < 5% threshold.
+		const result = groupSmallCategories(aggregates, 8, 0.05)
 
-    expect(result.some((a) => a.category === 'Other')).toBe(false)
-  })
+		expect(result.some((a) => a.category === 'Other')).toBe(false)
+	})
 })
 
 describe('toPieChartData', () => {
-  it('should transform category aggregates to pie chart data', () => {
-    const aggregates: CategoryAggregate[] = [
-      { category: 'Salary', amount: 500000, type: 'income', count: 1 },
-      { category: 'Rent', amount: -150000, type: 'expense', count: 1 },
-    ]
+	it('should transform category aggregates to pie chart data', () => {
+		const aggregates: CategoryAggregate[] = [
+			{ category: 'Salary', amount: 500000, type: 'income', count: 1 },
+			{ category: 'Rent', amount: -150000, type: 'expense', count: 1 },
+		]
 
-    const result = toPieChartData(aggregates)
+		const result = toPieChartData(aggregates)
 
-    expect(result.length).toBe(2)
-    expect(result[0].name).toBe('Salary')
-    expect(result[0].value).toBe(500000)
-    expect(result[0].type).toBe('income')
-    expect(result[0].category).toBe('Salary')
-    expect(result[0].fill).toBeDefined()
-    expect(result[0].originalAmount).toBe(500000)
-    expect(result[0].count).toBe(1)
+		expect(result.length).toBe(2)
+		expect(result[0].name).toBe('Salary')
+		expect(result[0].value).toBe(500000)
+		expect(result[0].type).toBe('income')
+		expect(result[0].category).toBe('Salary')
+		expect(result[0].fill).toBeDefined()
+		expect(result[0].originalAmount).toBe(500000)
+		expect(result[0].count).toBe(1)
 
-    expect(result[1].name).toBe('Rent')
-    expect(result[1].value).toBe(150000)
-    expect(result[1].type).toBe('expense')
-  })
+		expect(result[1].name).toBe('Rent')
+		expect(result[1].value).toBe(150000)
+		expect(result[1].type).toBe('expense')
+	})
 
-  it('should use provided color map for category colors', () => {
-    const aggregates: CategoryAggregate[] = [
-      { category: 'Salary', amount: 500000, type: 'income', count: 1 },
-    ]
+	it('should use provided color map for category colors', () => {
+		const aggregates: CategoryAggregate[] = [
+			{ category: 'Salary', amount: 500000, type: 'income', count: 1 },
+		]
 
-    const colorMap = { Salary: '#FF0000' }
-    const result = toPieChartData(aggregates, colorMap)
+		const colorMap = { Salary: '#FF0000' }
+		const result = toPieChartData(aggregates, colorMap)
 
-    expect(result[0].fill).toBe('#FF0000')
-  })
+		expect(result[0].fill).toBe('#FF0000')
+	})
 
-  it('should use CATEGORY_COLORS when no color map provided', () => {
-    const aggregates: CategoryAggregate[] = [
-      { category: 'A', amount: 1000, type: 'income', count: 1 },
-      { category: 'B', amount: 2000, type: 'income', count: 1 },
-    ]
+	it('should use CATEGORY_COLORS when no color map provided', () => {
+		const aggregates: CategoryAggregate[] = [
+			{ category: 'A', amount: 1000, type: 'income', count: 1 },
+			{ category: 'B', amount: 2000, type: 'income', count: 1 },
+		]
 
-    const result = toPieChartData(aggregates)
-    expect(result[0].fill).toBe(CATEGORY_COLORS[0])
-    expect(result[1].fill).toBe(CATEGORY_COLORS[1])
-  })
+		const result = toPieChartData(aggregates)
+		expect(result[0].fill).toBe(CATEGORY_COLORS[0])
+		expect(result[1].fill).toBe(CATEGORY_COLORS[1])
+	})
 
-  it('should handle empty aggregates', () => {
-    const result = toPieChartData([])
-    expect(result).toEqual([])
-  })
+	it('should handle empty aggregates', () => {
+		const result = toPieChartData([])
+		expect(result).toEqual([])
+	})
 })
 
 describe('toBarChartData', () => {
-  it('should transform financial data to bar chart data', () => {
-    const data: FinancialDataPoint[] = [
-      {
-        id: '1',
-        name: 'A',
-        amount: 1000,
-        frequency: 'monthly',
-        type: 'income',
-        category: 'Category A',
-      },
-      {
-        id: '2',
-        name: 'B',
-        amount: 2000,
-        frequency: 'monthly',
-        type: 'income',
-        category: 'Category A',
-      },
-      {
-        id: '3',
-        name: 'C',
-        amount: 3000,
-        frequency: 'monthly',
-        type: 'expense',
-        category: 'Category B',
-      },
-    ]
+	it('should transform financial data to bar chart data', () => {
+		const data: FinancialDataPoint[] = [
+			{
+				id: '1',
+				name: 'A',
+				amount: 1000,
+				frequency: 'monthly',
+				type: 'income',
+				category: 'Category A',
+			},
+			{
+				id: '2',
+				name: 'B',
+				amount: 2000,
+				frequency: 'monthly',
+				type: 'income',
+				category: 'Category A',
+			},
+			{
+				id: '3',
+				name: 'C',
+				amount: 3000,
+				frequency: 'monthly',
+				type: 'expense',
+				category: 'Category B',
+			},
+		]
 
-    const result = toBarChartData(data)
+		const result = toBarChartData(data)
 
-    expect(result.length).toBe(2)
-    expect(result[0].name).toBe('Category A')
-    expect(result[0].value).toBe(3000)
-    expect(result[1].name).toBe('Category B')
-    expect(result[1].value).toBe(3000)
-  })
+		expect(result.length).toBe(2)
+		expect(result[0].name).toBe('Category A')
+		expect(result[0].value).toBe(3000)
+		expect(result[1].name).toBe('Category B')
+		expect(result[1].value).toBe(3000)
+	})
 
-  it('should sort by value when no category order provided', () => {
-    const data: FinancialDataPoint[] = [
-      { id: '1', name: 'A', amount: 1000, frequency: 'monthly', type: 'income', category: 'Small' },
-      {
-        id: '2',
-        name: 'B',
-        amount: 10000,
-        frequency: 'monthly',
-        type: 'income',
-        category: 'Large',
-      },
-    ]
+	it('should sort by value when no category order provided', () => {
+		const data: FinancialDataPoint[] = [
+			{ id: '1', name: 'A', amount: 1000, frequency: 'monthly', type: 'income', category: 'Small' },
+			{
+				id: '2',
+				name: 'B',
+				amount: 10000,
+				frequency: 'monthly',
+				type: 'income',
+				category: 'Large',
+			},
+		]
 
-    const result = toBarChartData(data)
-    expect(result[0].name).toBe('Large')
-    expect(result[1].name).toBe('Small')
-  })
+		const result = toBarChartData(data)
+		expect(result[0].name).toBe('Large')
+		expect(result[1].name).toBe('Small')
+	})
 
-  it('should respect category order when provided', () => {
-    const data: FinancialDataPoint[] = [
-      { id: '1', name: 'A', amount: 1000, frequency: 'monthly', type: 'income', category: 'B' },
-      { id: '2', name: 'B', amount: 10000, frequency: 'monthly', type: 'income', category: 'A' },
-    ]
+	it('should respect category order when provided', () => {
+		const data: FinancialDataPoint[] = [
+			{ id: '1', name: 'A', amount: 1000, frequency: 'monthly', type: 'income', category: 'B' },
+			{ id: '2', name: 'B', amount: 10000, frequency: 'monthly', type: 'income', category: 'A' },
+		]
 
-    const result = toBarChartData(data, ['A', 'B'])
-    expect(result[0].name).toBe('A')
-    expect(result[1].name).toBe('B')
-  })
+		const result = toBarChartData(data, ['A', 'B'])
+		expect(result[0].name).toBe('A')
+		expect(result[1].name).toBe('B')
+	})
 
-  it('should handle empty data', () => {
-    const result = toBarChartData([])
-    expect(result).toEqual([])
-  })
+	it('should handle empty data', () => {
+		const result = toBarChartData([])
+		expect(result).toEqual([])
+	})
 })
 
 describe('toStackedBarChartData', () => {
-  it('should transform data to stacked bar chart format', () => {
-    const data: FinancialDataPoint[] = [
-      {
-        id: '1',
-        name: 'Salary',
-        amount: 5000,
-        frequency: 'monthly',
-        type: 'income',
-        category: 'Work',
-      },
-      {
-        id: '2',
-        name: 'Bonus',
-        amount: 1000,
-        frequency: 'monthly',
-        type: 'income',
-        category: 'Work',
-      },
-      {
-        id: '3',
-        name: 'Rent',
-        amount: -2000,
-        frequency: 'monthly',
-        type: 'expense',
-        category: 'Work',
-      },
-      {
-        id: '4',
-        name: 'Groceries',
-        amount: -500,
-        frequency: 'monthly',
-        type: 'expense',
-        category: 'Personal',
-      },
-    ]
+	it('should transform data to stacked bar chart format', () => {
+		const data: FinancialDataPoint[] = [
+			{
+				id: '1',
+				name: 'Salary',
+				amount: 5000,
+				frequency: 'monthly',
+				type: 'income',
+				category: 'Work',
+			},
+			{
+				id: '2',
+				name: 'Bonus',
+				amount: 1000,
+				frequency: 'monthly',
+				type: 'income',
+				category: 'Work',
+			},
+			{
+				id: '3',
+				name: 'Rent',
+				amount: -2000,
+				frequency: 'monthly',
+				type: 'expense',
+				category: 'Work',
+			},
+			{
+				id: '4',
+				name: 'Groceries',
+				amount: -500,
+				frequency: 'monthly',
+				type: 'expense',
+				category: 'Personal',
+			},
+		]
 
-    const result = toStackedBarChartData(data)
+		const result = toStackedBarChartData(data)
 
-    expect(result.categories).toEqual(['Work', 'Personal'])
-    expect(result.incomeData).toEqual([6000, 0])
-    expect(result.expenseData).toEqual([2000, 500])
-  })
+		expect(result.categories).toEqual(['Work', 'Personal'])
+		expect(result.incomeData).toEqual([6000, 0])
+		expect(result.expenseData).toEqual([2000, 500])
+	})
 
-  it('should handle empty data', () => {
-    const result = toStackedBarChartData([])
-    expect(result.categories).toEqual([])
-    expect(result.incomeData).toEqual([])
-    expect(result.expenseData).toEqual([])
-  })
+	it('should handle empty data', () => {
+		const result = toStackedBarChartData([])
+		expect(result.categories).toEqual([])
+		expect(result.incomeData).toEqual([])
+		expect(result.expenseData).toEqual([])
+	})
 })
 
 describe('createDrillDownState', () => {
-  it('should create initial drill-down state', () => {
-    const state = createDrillDownState()
+	it('should create initial drill-down state', () => {
+		const state = createDrillDownState()
 
-    expect(state.level).toBe(0)
-    expect(state.path).toEqual([])
-    expect(state.currentCategory).toBeUndefined()
-    expect(state.currentType).toBeUndefined()
-  })
+		expect(state.level).toBe(0)
+		expect(state.path).toEqual([])
+		expect(state.currentCategory).toBeUndefined()
+		expect(state.currentType).toBeUndefined()
+	})
 })
 
 describe('drillDownToCategory', () => {
-  it('should navigate to a category', () => {
-    const initialState = createDrillDownState()
-    const newState = drillDownToCategory(initialState, 'Salary', 'income')
+	it('should navigate to a category', () => {
+		const initialState = createDrillDownState()
+		const newState = drillDownToCategory(initialState, 'Salary', 'income')
 
-    expect(newState.level).toBe(1)
-    expect(newState.path).toEqual(['income:Salary'])
-    expect(newState.currentCategory).toBe('Salary')
-    expect(newState.currentType).toBe('income')
-  })
+		expect(newState.level).toBe(1)
+		expect(newState.path).toEqual(['income:Salary'])
+		expect(newState.currentCategory).toBe('Salary')
+		expect(newState.currentType).toBe('income')
+	})
 
-  it('should navigate to nested category', () => {
-    const initialState: DrillDownState = {
-      level: 1,
-      path: ['income:Salary'],
-      currentCategory: 'Salary',
-      currentType: 'income',
-    }
+	it('should navigate to nested category', () => {
+		const initialState: DrillDownState = {
+			level: 1,
+			path: ['income:Salary'],
+			currentCategory: 'Salary',
+			currentType: 'income',
+		}
 
-    const newState = drillDownToCategory(initialState, 'Bonus', 'income')
+		const newState = drillDownToCategory(initialState, 'Bonus', 'income')
 
-    expect(newState.level).toBe(2)
-    expect(newState.path).toEqual(['income:Salary', 'income:Bonus'])
-    expect(newState.currentCategory).toBe('Bonus')
-    expect(newState.currentType).toBe('income')
-  })
+		expect(newState.level).toBe(2)
+		expect(newState.path).toEqual(['income:Salary', 'income:Bonus'])
+		expect(newState.currentCategory).toBe('Bonus')
+		expect(newState.currentType).toBe('income')
+	})
 })
 
 describe('drillUp', () => {
-  it('should navigate up one level', () => {
-    const state: DrillDownState = {
-      level: 2,
-      path: ['income:Salary', 'expense:Rent'],
-      currentCategory: 'Rent',
-      currentType: 'expense',
-    }
+	it('should navigate up one level', () => {
+		const state: DrillDownState = {
+			level: 2,
+			path: ['income:Salary', 'expense:Rent'],
+			currentCategory: 'Rent',
+			currentType: 'expense',
+		}
 
-    const newState = drillUp(state)
+		const newState = drillUp(state)
 
-    expect(newState.level).toBe(1)
-    expect(newState.path).toEqual(['income:Salary'])
-    expect(newState.currentCategory).toBe('Salary')
-    expect(newState.currentType).toBe('income')
-  })
+		expect(newState.level).toBe(1)
+		expect(newState.path).toEqual(['income:Salary'])
+		expect(newState.currentCategory).toBe('Salary')
+		expect(newState.currentType).toBe('income')
+	})
 
-  it('should not navigate up from root level', () => {
-    const state = createDrillDownState()
-    const newState = drillUp(state)
+	it('should not navigate up from root level', () => {
+		const state = createDrillDownState()
+		const newState = drillUp(state)
 
-    expect(newState.level).toBe(0)
-    expect(newState.path).toEqual([])
-  })
+		expect(newState.level).toBe(0)
+		expect(newState.path).toEqual([])
+	})
 })
 
 describe('drillToRoot', () => {
-  it('should reset to root level', () => {
-    const newState = drillToRoot()
+	it('should reset to root level', () => {
+		const newState = drillToRoot()
 
-    expect(newState.level).toBe(0)
-    expect(newState.path).toEqual([])
-    expect(newState.currentCategory).toBeUndefined()
-    expect(newState.currentType).toBeUndefined()
-  })
+		expect(newState.level).toBe(0)
+		expect(newState.path).toEqual([])
+		expect(newState.currentCategory).toBeUndefined()
+		expect(newState.currentType).toBeUndefined()
+	})
 })
 
 describe('getDataForDrillDownLevel', () => {
-  it('should return all data for root level', () => {
-    const state = createDrillDownState()
-    const result = getDataForDrillDownLevel(mockFinancialData, state)
+	it('should return all data for root level', () => {
+		const state = createDrillDownState()
+		const result = getDataForDrillDownLevel(mockFinancialData, state)
 
-    expect(result).toEqual(mockFinancialData)
-  })
+		expect(result).toEqual(mockFinancialData)
+	})
 
-  it('should filter data for drill-down level', () => {
-    const state: DrillDownState = {
-      level: 1,
-      path: ['income:Salary'],
-    }
+	it('should filter data for drill-down level', () => {
+		const state: DrillDownState = {
+			level: 1,
+			path: ['income:Salary'],
+		}
 
-    const result = getDataForDrillDownLevel(mockFinancialData, state)
+		const result = getDataForDrillDownLevel(mockFinancialData, state)
 
-    expect(result.length).toBe(1)
-    expect(result[0].id).toBe('inc-1')
-    expect(result[0].category).toBe('Salary')
-    expect(result[0].type).toBe('income')
-  })
+		expect(result.length).toBe(1)
+		expect(result[0].id).toBe('inc-1')
+		expect(result[0].category).toBe('Salary')
+		expect(result[0].type).toBe('income')
+	})
 
-  it('should filter data for nested drill-down level', () => {
-    const state: DrillDownState = {
-      level: 1,
-      path: ['expense:Housing'],
-    }
+	it('should filter data for nested drill-down level', () => {
+		const state: DrillDownState = {
+			level: 1,
+			path: ['expense:Housing'],
+		}
 
-    const result = getDataForDrillDownLevel(mockFinancialData, state)
+		const result = getDataForDrillDownLevel(mockFinancialData, state)
 
-    expect(result.length).toBe(2)
-    expect(result.every((item) => item.type === 'expense')).toBe(true)
-    expect(result.every((item) => item.category === 'Housing')).toBe(true)
-  })
+		expect(result.length).toBe(2)
+		expect(result.every((item) => item.type === 'expense')).toBe(true)
+		expect(result.every((item) => item.category === 'Housing')).toBe(true)
+	})
 })
 
 describe('isDrillDownActive', () => {
-  it('should return false for root level', () => {
-    const state = createDrillDownState()
-    expect(isDrillDownActive(state)).toBe(false)
-  })
+	it('should return false for root level', () => {
+		const state = createDrillDownState()
+		expect(isDrillDownActive(state)).toBe(false)
+	})
 
-  it('should return true for any non-root level', () => {
-    const state: DrillDownState = {
-      level: 1,
-      path: ['income:Salary'],
-    }
-    expect(isDrillDownActive(state)).toBe(true)
-  })
+	it('should return true for any non-root level', () => {
+		const state: DrillDownState = {
+			level: 1,
+			path: ['income:Salary'],
+		}
+		expect(isDrillDownActive(state)).toBe(true)
+	})
 })
 
 describe('getPercentageOfTotal', () => {
-  it('should calculate percentage correctly', () => {
-    expect(getPercentageOfTotal(500, 1000)).toBe(50)
-    expect(getPercentageOfTotal(250, 1000)).toBe(25)
-  })
+	it('should calculate percentage correctly', () => {
+		expect(getPercentageOfTotal(500, 1000)).toBe(50)
+		expect(getPercentageOfTotal(250, 1000)).toBe(25)
+	})
 
-  it('should handle negative values correctly', () => {
-    expect(getPercentageOfTotal(-500, -1000)).toBe(50)
-    expect(getPercentageOfTotal(-500, 1000)).toBe(50)
-  })
+	it('should handle negative values correctly', () => {
+		expect(getPercentageOfTotal(-500, -1000)).toBe(50)
+		expect(getPercentageOfTotal(-500, 1000)).toBe(50)
+	})
 
-  it('should return 0 when total is 0', () => {
-    expect(getPercentageOfTotal(500, 0)).toBe(0)
-  })
+	it('should return 0 when total is 0', () => {
+		expect(getPercentageOfTotal(500, 0)).toBe(0)
+	})
 })
 
 describe('getColorForCategory', () => {
-  it('should return income color for income type', () => {
-    const color = getColorForCategory('Any', 'income', 0)
-    expect(color).toBe(DEFAULT_COLORS.income)
-  })
+	it('should return income color for income type', () => {
+		const color = getColorForCategory('Any', 'income', 0)
+		expect(color).toBe(DEFAULT_COLORS.income)
+	})
 
-  it('should return expense color for expense type', () => {
-    const color = getColorForCategory('Any', 'expense', 0)
-    expect(color).toBe(DEFAULT_COLORS.expense)
-  })
+	it('should return expense color for expense type', () => {
+		const color = getColorForCategory('Any', 'expense', 0)
+		expect(color).toBe(DEFAULT_COLORS.expense)
+	})
 })
 
 describe('generateColorMap', () => {
-  it('should generate color map for categories', () => {
-    const categories = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K']
-    const colorMap = generateColorMap(categories)
+	it('should generate color map for categories', () => {
+		const categories = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K']
+		const colorMap = generateColorMap(categories)
 
-    expect(Object.keys(colorMap)).toEqual(categories)
-    expect(colorMap.A).toBe(CATEGORY_COLORS[0])
-    expect(colorMap.B).toBe(CATEGORY_COLORS[1])
-    expect(colorMap.K).toBe(CATEGORY_COLORS[10])
-  })
+		expect(Object.keys(colorMap)).toEqual(categories)
+		expect(colorMap.A).toBe(CATEGORY_COLORS[0])
+		expect(colorMap.B).toBe(CATEGORY_COLORS[1])
+		expect(colorMap.K).toBe(CATEGORY_COLORS[10])
+	})
 
-  it('should handle empty categories array', () => {
-    const colorMap = generateColorMap([])
-    expect(Object.keys(colorMap)).toEqual([])
-  })
+	it('should handle empty categories array', () => {
+		const colorMap = generateColorMap([])
+		expect(Object.keys(colorMap)).toEqual([])
+	})
 })
 
 describe('validateFinancialData', () => {
-  it('should return true for valid data', () => {
-    const validData: FinancialDataPoint[] = [
-      { id: '1', name: 'A', amount: 1000, frequency: 'monthly', type: 'income' },
-      { id: '2', name: 'B', amount: -500, frequency: 'monthly', type: 'expense' },
-    ]
+	it('should return true for valid data', () => {
+		const validData: FinancialDataPoint[] = [
+			{ id: '1', name: 'A', amount: 1000, frequency: 'monthly', type: 'income' },
+			{ id: '2', name: 'B', amount: -500, frequency: 'monthly', type: 'expense' },
+		]
 
-    expect(validateFinancialData(validData)).toBe(true)
-  })
+		expect(validateFinancialData(validData)).toBe(true)
+	})
 
-  it('should return false for data with NaN amount', () => {
-    const invalidData: FinancialDataPoint[] = [
-      { id: '1', name: 'A', amount: Number.NaN, frequency: 'monthly', type: 'income' },
-    ]
+	it('should return false for data with NaN amount', () => {
+		const invalidData: FinancialDataPoint[] = [
+			{ id: '1', name: 'A', amount: Number.NaN, frequency: 'monthly', type: 'income' },
+		]
 
-    expect(validateFinancialData(invalidData)).toBe(false)
-  })
+		expect(validateFinancialData(invalidData)).toBe(false)
+	})
 
-  it('should return false for data with Infinity amount', () => {
-    const invalidData: FinancialDataPoint[] = [
-      { id: '1', name: 'A', amount: Number.POSITIVE_INFINITY, frequency: 'monthly', type: 'income' },
-    ]
+	it('should return false for data with Infinity amount', () => {
+		const invalidData: FinancialDataPoint[] = [
+			{
+				id: '1',
+				name: 'A',
+				amount: Number.POSITIVE_INFINITY,
+				frequency: 'monthly',
+				type: 'income',
+			},
+		]
 
-    expect(validateFinancialData(invalidData)).toBe(false)
-  })
+		expect(validateFinancialData(invalidData)).toBe(false)
+	})
 
-  it('should return false for invalid type', () => {
-    const invalidData: FinancialDataPoint[] = [
-      { id: '1', name: 'A', amount: 1000, frequency: 'monthly', type: 'invalid' as any },
-    ]
+	it('should return false for invalid type', () => {
+		const invalidData: FinancialDataPoint[] = [
+			{ id: '1', name: 'A', amount: 1000, frequency: 'monthly', type: 'invalid' as any },
+		]
 
-    expect(validateFinancialData(invalidData)).toBe(false)
-  })
+		expect(validateFinancialData(invalidData)).toBe(false)
+	})
 
-  it('should return true for empty array', () => {
-    expect(validateFinancialData([])).toBe(true)
-  })
+	it('should return true for empty array', () => {
+		expect(validateFinancialData([])).toBe(true)
+	})
 })
 
 describe('sanitizeFinancialData', () => {
-  it('should remove invalid entries', () => {
-    const mixedData: FinancialDataPoint[] = [
-      { id: '1', name: 'Valid', amount: 1000, frequency: 'monthly', type: 'income' },
-      { id: '2', name: 'Invalid', amount: Number.NaN, frequency: 'monthly', type: 'income' },
-      { id: '3', name: 'Valid Expense', amount: -500, frequency: 'monthly', type: 'expense' },
-    ]
+	it('should remove invalid entries', () => {
+		const mixedData: FinancialDataPoint[] = [
+			{ id: '1', name: 'Valid', amount: 1000, frequency: 'monthly', type: 'income' },
+			{ id: '2', name: 'Invalid', amount: Number.NaN, frequency: 'monthly', type: 'income' },
+			{ id: '3', name: 'Valid Expense', amount: -500, frequency: 'monthly', type: 'expense' },
+		]
 
-    const result = sanitizeFinancialData(mixedData)
-    expect(result.length).toBe(2)
-    expect(result[0].id).toBe('1')
-    expect(result[1].id).toBe('3')
-  })
+		const result = sanitizeFinancialData(mixedData)
+		expect(result.length).toBe(2)
+		expect(result[0].id).toBe('1')
+		expect(result[1].id).toBe('3')
+	})
 
-  it('should return empty array for all invalid data', () => {
-    const invalidData: FinancialDataPoint[] = [
-      { id: '1', name: 'Invalid', amount: Number.NaN, frequency: 'monthly', type: 'income' },
-    ]
+	it('should return empty array for all invalid data', () => {
+		const invalidData: FinancialDataPoint[] = [
+			{ id: '1', name: 'Invalid', amount: Number.NaN, frequency: 'monthly', type: 'income' },
+		]
 
-    const result = sanitizeFinancialData(invalidData)
-    expect(result).toEqual([])
-  })
+		const result = sanitizeFinancialData(invalidData)
+		expect(result).toEqual([])
+	})
 
-  it('should return same array for all valid data', () => {
-    const validData: FinancialDataPoint[] = [
-      { id: '1', name: 'A', amount: 1000, frequency: 'monthly', type: 'income' },
-      { id: '2', name: 'B', amount: -500, frequency: 'monthly', type: 'expense' },
-    ]
+	it('should return same array for all valid data', () => {
+		const validData: FinancialDataPoint[] = [
+			{ id: '1', name: 'A', amount: 1000, frequency: 'monthly', type: 'income' },
+			{ id: '2', name: 'B', amount: -500, frequency: 'monthly', type: 'expense' },
+		]
 
-    const result = sanitizeFinancialData(validData)
-    expect(result).toEqual(validData)
-  })
+		const result = sanitizeFinancialData(validData)
+		expect(result).toEqual(validData)
+	})
 })
