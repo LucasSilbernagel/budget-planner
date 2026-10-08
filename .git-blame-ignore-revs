@@ -1,2 +1,2 @@
-# Tab indentation + Biome 2 import ordering
-7549c4180a570e9b8502037473b7cf6ef5ab3ae6
+# Tab indentation + Biome 2 import ordering (squash of #66, so its lint fixes are skipped too)
+9fa43d5b17954613418f429d9883f457f4cda5c6
