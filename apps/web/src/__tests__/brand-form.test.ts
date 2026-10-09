@@ -124,10 +124,10 @@ const PROSE_FILES = [
 	README,
 ]
 
-const ALL_HITS: Hit[] = [
+const ALL_HITS = [
 	...CODE_FILES.flatMap((f) => codeHits(f, readFileSync(f, 'utf-8'))),
 	...PROSE_FILES.flatMap((f) => proseHits(f, readFileSync(f, 'utf-8'))),
-]
+] satisfies Hit[]
 
 describe('the product name is "Longhand Budget" on every user-visible surface', () => {
 	it('sweeps a non-trivial set of files, including each named root (guards a vacuous pass)', () => {

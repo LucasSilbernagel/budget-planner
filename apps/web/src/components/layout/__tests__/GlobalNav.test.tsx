@@ -10,19 +10,22 @@ import { GlobalNav } from '../GlobalNav'
 
 // Link counts are DOM presence, not reachability: jsdom doesn't hide a closed <details>. Don't
 // "fix" them to the visible count; `toBeVisible()` is the matcher that respects `open`.
-const PRIMARY_TABS: readonly [label: RegExp, href: string][] = [
+const PRIMARY_TABS = [
 	[/^overview$/i, '/'],
 	[/^income$/i, '/income'],
 	[/^expenses$/i, '/expenses'],
 	[/^savings$/i, '/savings'],
-]
+] satisfies readonly [label: RegExp, href: string][]
 
-const MORE_DESTINATIONS: readonly [label: RegExp, href: string][] = [
+const MORE_DESTINATIONS = [
 	[/^balances$/i, '/balance'],
 	[/^retirement$/i, '/retirement'],
-]
+] satisfies readonly [label: RegExp, href: string][]
 
-const SECTIONS: readonly [label: RegExp, href: string][] = [...PRIMARY_TABS, ...MORE_DESTINATIONS]
+const SECTIONS = [...PRIMARY_TABS, ...MORE_DESTINATIONS] satisfies readonly [
+	label: RegExp,
+	href: string,
+][]
 
 // Balances and Retirement have two DOM copies (sheet and `lg` row) and jsdom sees both, so
 // scope role queries with `sheetOf`/`rowCopiesOf`, never `[0]`.
@@ -51,7 +54,7 @@ const COLOUR_FAMILY =
 	/^(bg|text|border|ring|divide|placeholder|caret|accent|outline|decoration|shadow|fill|stroke|from|via|to)-/
 
 /** `max-sm:` typography (`text-[11px]`, `text-center`) shares colour prefixes and must be allowed. */
-const NON_COLOUR: readonly RegExp[] = [
+const NON_COLOUR = [
 	/^text-(left|center|right|justify|start|end)$/,
 	/^text-(xs|sm|base|lg|[2-9]?xl)$/,
 	/^text-\[[^\]]*(px|rem|em|%|ch|vw|vh)\]$/,
@@ -65,7 +68,7 @@ const NON_COLOUR: readonly RegExp[] = [
 	/^decoration-\d+$/,
 	/^outline(-\d+|-none|-dashed|-dotted|-double)?$/,
 	/^(from|via|to)-\d+%$/,
-]
+] satisfies readonly RegExp[]
 
 const isColourUtility = (base: string): boolean =>
 	COLOUR_FAMILY.test(base) && !NON_COLOUR.some((pattern) => pattern.test(base))
@@ -642,12 +645,12 @@ describe('GlobalNav — tier-aware destinations', () => {
 		return [...sheet.querySelectorAll(':scope > li > a')].map((a) => a.textContent?.trim())
 	}
 
-	const PREMIUM: readonly [label: string, href: string][] = [
+	const PREMIUM = [
 		['Forecasting', '/forecasting'],
 		['Profiles', '/profiles'],
 		['Financial Summary', '/financial-summary'],
 		['Categories', '/categories'],
-	]
+	] satisfies readonly [label: string, href: string][]
 
 	const FREE_SHEET = ['Balances', 'Retirement', 'Settings']
 	const PAID_SHEET = [
@@ -739,7 +742,7 @@ describe('GlobalNav — tier-aware destinations', () => {
 	})
 
 	describe('every non-entitled session keeps the free-tier nav', () => {
-		const NOT_ENTITLED: readonly [name: string, seed: SessionSeed | null][] = [
+		const NOT_ENTITLED = [
 			['a free subscriber', seedWith({ subscriptionStatus: 'free' })],
 			['a past_due subscriber', seedWith({ subscriptionStatus: 'past_due' })],
 			['a canceled subscriber', seedWith({ subscriptionStatus: 'canceled' })],
@@ -756,7 +759,7 @@ describe('GlobalNav — tier-aware destinations', () => {
 				'an unauthenticated seed claiming active',
 				{ isAuthenticated: false, userId: null, email: null, subscriptionStatus: 'active' },
 			],
-		]
+		] satisfies readonly [name: string, seed: SessionSeed | null][]
 
 		it.each(NOT_ENTITLED)(
 			'gives %s the unchanged six-destination free nav',

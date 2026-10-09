@@ -69,11 +69,11 @@ export const useSavingsStore = create<SavingsState>()(
 			savingsGoals: [],
 
 			addSavingsGoal: (newGoal: ClientNewSavingsGoal) => {
-				const goal: ClientSavingsGoal = {
+				const goal = {
 					...toClientSavingsGoal(newGoal),
 					sortOrder: nextSortOrder(get().savingsGoals),
 					profileId: useProfileStore.getState().activeProfileId ?? null,
-				}
+				} satisfies ClientSavingsGoal
 				set((state) => ({
 					savingsGoals: sortByDisplayOrder([...state.savingsGoals, goal]),
 				}))
@@ -93,11 +93,11 @@ export const useSavingsStore = create<SavingsState>()(
 				if (previousGoal === undefined) {
 					return
 				}
-				const updatedGoal: ClientSavingsGoal = {
+				const updatedGoal = {
 					...previousGoal,
 					...updates,
 					updatedAt: new Date().toISOString(),
-				}
+				} satisfies ClientSavingsGoal
 
 				set((state) => ({
 					savingsGoals: sortByDisplayOrder([

@@ -17,15 +17,23 @@ const USER = '86868686-8686-4868-8868-868686868686'
 const PROFILE = '22222222-2222-4222-8222-222222222222'
 const STORAGE_KEY = `bp-sync-queue-${USER}`
 
-const ACCEPTED: ProcessOperationResult = { success: true }
-const REFUSED: ProcessOperationResult = {
+const ACCEPTED = { success: true } satisfies ProcessOperationResult
+const REFUSED = {
 	success: false,
 	error: 'refused',
 	retryable: false,
 	statusCode: 422,
-}
-const RETRYABLE: ProcessOperationResult = { success: false, error: 'boom', retryable: true }
-const CONFLICT: ProcessOperationResult = { success: false, conflict: true, error: 'conflict' }
+} satisfies ProcessOperationResult
+const RETRYABLE = {
+	success: false,
+	error: 'boom',
+	retryable: true,
+} satisfies ProcessOperationResult
+const CONFLICT = {
+	success: false,
+	conflict: true,
+	error: 'conflict',
+} satisfies ProcessOperationResult
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 	let resolve: (value: T) => void = () => {}
@@ -308,7 +316,7 @@ describe('SynchronizationService.clearQueue', () => {
 	it('keeps the pull cursor (no re-pull of the whole account)', async () => {
 		const ISO = '2026-09-01T00:00:00.000Z'
 		const INCOME = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
-		const change: ServerChange = {
+		const change = {
 			entityType: 'incomeSource',
 			entityId: INCOME,
 			data: {
@@ -326,7 +334,7 @@ describe('SynchronizationService.clearQueue', () => {
 			},
 			updatedAt: 5_000,
 			isDeleted: false,
-		}
+		} satisfies ServerChange
 		const service = await makeService(
 			vi.fn(async () => ACCEPTED),
 			(async () => [change]) as FetchServerChangesFn

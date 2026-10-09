@@ -11,7 +11,10 @@ import {
 	roundingDriftToleranceCents,
 } from '../normalization'
 
-const PERIODS: Record<Frequency, number> = { weekly: 52, biweekly: 26, monthly: 12, annually: 1 }
+const PERIODS = { weekly: 52, biweekly: 26, monthly: 12, annually: 1 } satisfies Record<
+	Frequency,
+	number
+>
 const FREQUENCIES = Object.keys(PERIODS) as Frequency[]
 
 describe('normalizeToAnnual', () => {

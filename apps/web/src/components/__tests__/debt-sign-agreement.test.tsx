@@ -124,7 +124,7 @@ function readEverySurface(debtSign: 1 | -1): Figures {
 	}
 }
 
-const EXPECTED: Figures = {
+const EXPECTED = {
 	overviewNetWorth: '5,000.00',
 	overviewBarDebts: DEBT_OWED,
 	balanceDebtTotal: '15,000.00',
@@ -132,17 +132,17 @@ const EXPECTED: Figures = {
 	reportNetCents: 500_000,
 	reportDebtsCents: DEBT_OWED,
 	reportDebtRowCents: DEBT_OWED,
-}
+} satisfies Figures
 
 describe('a debt counts as money owed on every surface', () => {
 	beforeEach(() => {
-		const status: PremiumAccessStatus = {
+		const status = {
 			hasAccess: false,
 			subscriptionStatus: 'free',
 			isLoading: false,
 			error: null,
 			isAuthenticated: false,
-		}
+		} satisfies PremiumAccessStatus
 		usePremiumAccess.mockReturnValue({ status })
 	})
 

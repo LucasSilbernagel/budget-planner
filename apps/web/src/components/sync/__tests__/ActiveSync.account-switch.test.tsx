@@ -39,13 +39,13 @@ const ISO = '2026-09-01T00:00:00.000Z'
 const fetchMeta = fetchServerChangesWithMeta as unknown as ReturnType<typeof vi.fn>
 const send = sendSyncOperation as unknown as ReturnType<typeof vi.fn>
 
-const B_MAIN_CHANGE: ServerChange = {
+const B_MAIN_CHANGE = {
 	entityType: 'userProfile',
 	entityId: B_MAIN,
 	data: { id: B_MAIN, userId: ACCOUNT_B, name: 'Main Profile', isDefault: true, currency: 'NONE' },
 	updatedAt: 1000,
 	isDeleted: false,
-}
+} satisfies ServerChange
 
 function income(id: string, userId: string | number, name: string) {
 	return {

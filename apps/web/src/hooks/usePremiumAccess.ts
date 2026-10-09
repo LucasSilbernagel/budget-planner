@@ -27,13 +27,13 @@ export type PremiumAccessCheckResult = {
 	isAuthenticated: boolean
 }
 
-const defaultStatus: PremiumAccessStatus = {
+const defaultStatus = {
 	hasAccess: false,
 	subscriptionStatus: null,
 	isLoading: true,
 	error: null,
 	isAuthenticated: false,
-}
+} satisfies PremiumAccessStatus
 
 /** The same rule as `isEntitledSeed`; exported so entitlement.test can assert parity against it. */
 export function seedToStatus(seed: SessionSeed | null): PremiumAccessStatus {
@@ -105,13 +105,13 @@ export function usePremiumAccess(): {
 			if (held) {
 				return held
 			}
-			const fallbackStatus: PremiumAccessStatus = {
+			const fallbackStatus = {
 				hasAccess: false,
 				subscriptionStatus: 'free',
 				isLoading: false,
 				error: seedFromServer.error,
 				isAuthenticated: false,
-			}
+			} satisfies PremiumAccessStatus
 			setStatus(fallbackStatus)
 			return {
 				hasAccess: false,
@@ -124,13 +124,13 @@ export function usePremiumAccess(): {
 				return held
 			}
 			const errorMessage = error instanceof Error ? error.message : 'Failed to check premium access'
-			const errorStatus: PremiumAccessStatus = {
+			const errorStatus = {
 				hasAccess: false,
 				subscriptionStatus: null,
 				isLoading: false,
 				error: errorMessage,
 				isAuthenticated: false,
-			}
+			} satisfies PremiumAccessStatus
 			setStatus(errorStatus)
 			return {
 				hasAccess: false,

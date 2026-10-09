@@ -20,13 +20,13 @@ import { HomePage } from '../HomePage'
 const TS = '2026-08-15T00:00:00.000Z'
 
 function mockFreeTier(): void {
-	const status: PremiumAccessStatus = {
+	const status = {
 		hasAccess: false,
 		subscriptionStatus: 'free',
 		isLoading: false,
 		error: null,
 		isAuthenticated: false,
-	}
+	} satisfies PremiumAccessStatus
 	usePremiumAccess.mockReturnValue({ status })
 }
 
@@ -191,7 +191,12 @@ describe('net worth agrees across every surface that shows it', () => {
 			],
 		})
 
-		const durations: readonly OverviewDuration[] = ['weekly', 'biweekly', 'monthly', 'annually']
+		const durations = [
+			'weekly',
+			'biweekly',
+			'monthly',
+			'annually',
+		] satisfies readonly OverviewDuration[]
 		for (const duration of durations) {
 			useOverviewDurationStore.setState({ duration })
 

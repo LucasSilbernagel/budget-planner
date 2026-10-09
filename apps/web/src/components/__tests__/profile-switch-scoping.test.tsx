@@ -26,13 +26,13 @@ const A = 'aaaaaaaa-0000-4000-8000-00000000000a'
 const B = 'bbbbbbbb-0000-4000-8000-00000000000b'
 
 function mockTier(): void {
-	const status: PremiumAccessStatus = {
+	const status = {
 		hasAccess: true,
 		subscriptionStatus: 'active',
 		isLoading: false,
 		error: null,
 		isAuthenticated: true,
-	}
+	} satisfies PremiumAccessStatus
 	usePremiumAccess.mockReturnValue({ status })
 }
 

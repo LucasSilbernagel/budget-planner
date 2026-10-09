@@ -34,7 +34,7 @@ function memoryStorage(): SyncQueueStorage {
 	}
 }
 
-const deleteX: SyncOperation = {
+const deleteX = {
 	id: 'delete-X',
 	type: 'delete',
 	entityType: 'userProfile',
@@ -44,7 +44,7 @@ const deleteX: SyncOperation = {
 	deviceId: 'device-b',
 	userId: USER,
 	baseVersion: 500,
-}
+} satisfies SyncOperation
 
 function promoteY(withLink = true): SyncOperation {
 	return {

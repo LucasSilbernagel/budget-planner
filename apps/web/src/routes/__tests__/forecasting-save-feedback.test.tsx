@@ -42,13 +42,13 @@ function aProfile(): Record<string, unknown> {
 }
 
 function mockPaidUser(): void {
-	const status: PremiumAccessStatus = {
+	const status = {
 		hasAccess: true,
 		subscriptionStatus: 'active',
 		isLoading: false,
 		error: null,
 		isAuthenticated: true,
-	}
+	} satisfies PremiumAccessStatus
 	usePremiumAccess.mockReturnValue({ status })
 }
 

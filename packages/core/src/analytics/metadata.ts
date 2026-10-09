@@ -12,7 +12,7 @@ export type ClientMetadata = {
 const MAX_VALUE_LENGTH = 256
 
 // Order matters: the FIRST entry wins for a shared field, so canonical UTM names precede shorthands.
-const PARAM_TO_FIELD: ReadonlyArray<readonly [string, keyof ClientMetadata]> = [
+const PARAM_TO_FIELD = [
 	['utm_source', 'source'],
 	['utm_medium', 'medium'],
 	['utm_campaign', 'campaign'],
@@ -21,7 +21,7 @@ const PARAM_TO_FIELD: ReadonlyArray<readonly [string, keyof ClientMetadata]> = [
 	['referrer', 'referrer'],
 	['ref', 'source'],
 	['source', 'source'],
-]
+] satisfies ReadonlyArray<readonly [string, keyof ClientMetadata]>
 
 export const TRACKED_PARAMS: readonly string[] = PARAM_TO_FIELD.map(([param]) => param)
 

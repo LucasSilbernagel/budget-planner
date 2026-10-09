@@ -25,7 +25,7 @@ describe('ProjectionChart', () => {
 	})
 
 	it('renders the summary from the supplied result', () => {
-		const result: ForecastingResult = {
+		const result = {
 			scenario: { name: 'Scenario', incomeGrowthRate: 0.03, expenseGrowthRate: 0.02 },
 			baseline: [
 				{
@@ -55,7 +55,7 @@ describe('ProjectionChart', () => {
 				totalGrowth: 8400000,
 				averageAnnualGrowth: 840000,
 			},
-		}
+		} satisfies ForecastingResult
 		render(<ProjectionChart result={result} />)
 
 		expect(screen.getByText('Starting Net Worth')).toBeInTheDocument()
@@ -64,7 +64,7 @@ describe('ProjectionChart', () => {
 	})
 
 	it('does not show summary cards alongside the empty state for an empty-arrays result', () => {
-		const result: ForecastingResult = {
+		const result = {
 			scenario: { name: 'Scenario', incomeGrowthRate: 0.03, expenseGrowthRate: 0.02 },
 			baseline: [],
 			projection: [],
@@ -74,7 +74,7 @@ describe('ProjectionChart', () => {
 				totalGrowth: 8400000,
 				averageAnnualGrowth: 840000,
 			},
-		}
+		} satisfies ForecastingResult
 		render(<ProjectionChart result={result} />)
 		expect(screen.getByText(/build a scenario/i)).toBeInTheDocument()
 		expect(screen.queryByText('Starting Net Worth')).toBeNull()

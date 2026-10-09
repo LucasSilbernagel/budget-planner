@@ -28,13 +28,13 @@ const ISO = '2026-09-01T00:00:00.000Z'
 const fetchMeta = fetchServerChangesWithMeta as unknown as ReturnType<typeof vi.fn>
 const send = sendSyncOperation as unknown as ReturnType<typeof vi.fn>
 
-const A_MAIN_CHANGE: ServerChange = {
+const A_MAIN_CHANGE = {
 	entityType: 'userProfile',
 	entityId: A_MAIN,
 	data: { id: A_MAIN, userId: ACCOUNT_A, name: 'Main Profile', isDefault: true, currency: 'NONE' },
 	updatedAt: 1000,
 	isDeleted: false,
-}
+} satisfies ServerChange
 
 function sent(): string[] {
 	return send.mock.calls.map(([op]) => {

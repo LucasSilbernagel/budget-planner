@@ -53,13 +53,13 @@ function savedRow(id: number, name: string): Record<string, unknown> {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 beforeEach(() => {
-	const status: PremiumAccessStatus = {
+	const status = {
 		hasAccess: true,
 		subscriptionStatus: 'active',
 		isLoading: false,
 		error: null,
 		isAuthenticated: true,
-	}
+	} satisfies PremiumAccessStatus
 	usePremiumAccess.mockReturnValue({ status })
 	useProfileStore.setState({ activeProfileId: PROFILE })
 	fetchProfiles.mockResolvedValue({

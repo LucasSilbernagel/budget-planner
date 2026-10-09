@@ -107,13 +107,13 @@ function rows(): [string, number, number][] {
 
 beforeEach(() => {
 	engineCalls.length = 0
-	const status: PremiumAccessStatus = {
+	const status = {
 		hasAccess: true,
 		subscriptionStatus: 'active',
 		isLoading: false,
 		error: null,
 		isAuthenticated: true,
-	}
+	} satisfies PremiumAccessStatus
 	usePremiumAccess.mockReturnValue({ status })
 	useProfileStore.setState({ activeProfileId: PROFILE })
 	// The live store holds a DIFFERENT savings row; a loaded forecast must never show it.

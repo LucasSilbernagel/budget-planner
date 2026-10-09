@@ -7,12 +7,12 @@ import {
 	type ForecastingScenario,
 } from '../forecasting'
 
-const FLAT: ForecastingScenario = {
+const FLAT = {
 	name: 'Scenario',
 	incomeGrowthRate: 0,
 	expenseGrowthRate: 0,
 	oneTimeEvents: [],
-}
+} satisfies ForecastingScenario
 
 const HOUSE = 30_000_000
 
@@ -67,7 +67,7 @@ describe('assets count in net worth', () => {
 	})
 
 	it('stays constant over a long period with growing investments beside it (no multiplier)', () => {
-		const input: ForecastInputData = {
+		const input = {
 			...data(HOUSE),
 			investments: 1_000_007,
 			balanceAccounts: [
@@ -79,7 +79,7 @@ describe('assets count in net worth', () => {
 					annualReturn: 0.07,
 				},
 			],
-		}
+		} satisfies ForecastInputData
 		const result = calculateFinancialForecast(input, FLAT, 30)
 		for (const row of result.projection) {
 			expect(row.assets).toBe(HOUSE)
@@ -88,7 +88,7 @@ describe('assets count in net worth', () => {
 	})
 
 	it('counts against nothing: a debt still subtracts, the asset still adds', () => {
-		const input: ForecastInputData = {
+		const input = {
 			...data(HOUSE),
 			balanceAccounts: [
 				{
@@ -99,7 +99,7 @@ describe('assets count in net worth', () => {
 					contributionRecordedAsExpense: true,
 				},
 			],
-		}
+		} satisfies ForecastInputData
 		const result = calculateFinancialForecast(input, FLAT, 2)
 		expect(result.summary.startingNetWorth).toBe(1_000_000 + HOUSE - 500_000)
 		expect(result.projection.map((row) => row.netWorth)).toEqual([
@@ -167,11 +167,11 @@ describe('assets are validated like every starting figure', () => {
 	})
 
 	it('refuses a projection whose net worth would overflow with the assets (FORECAST_OUT_OF_RANGE)', () => {
-		const huge: ForecastInputData = {
+		const huge = {
 			...data(Number.MAX_VALUE),
 			savings: Number.MAX_VALUE,
 			savingsAccounts: undefined,
-		}
+		} satisfies ForecastInputData
 		expect(() => calculateFinancialForecast(huge, FLAT, 1)).toThrow(FORECAST_OUT_OF_RANGE)
 	})
 })

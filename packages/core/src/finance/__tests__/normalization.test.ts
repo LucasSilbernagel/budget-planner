@@ -162,12 +162,12 @@ describe('Frequency Normalization Engine', () => {
 
 	describe('calculateTotalMonthlyNormalized', () => {
 		it('should calculate total from multiple items with all four frequencies', () => {
-			const items: NormalizableFinancialItem[] = [
+			const items = [
 				{ amount: 10000, frequency: 'weekly' as const },
 				{ amount: 20000, frequency: 'biweekly' as const },
 				{ amount: 50000, frequency: 'monthly' as const },
 				{ amount: 120000, frequency: 'annually' as const },
-			]
+			] satisfies NormalizableFinancialItem[]
 
 			const result = calculateTotalMonthlyNormalized(items)
 			expect(result).toBe(146666)
@@ -179,10 +179,10 @@ describe('Frequency Normalization Engine', () => {
 		})
 
 		it('should handle mixed positive and negative amounts', () => {
-			const items: NormalizableFinancialItem[] = [
+			const items = [
 				{ amount: 10000, frequency: 'monthly' as const },
 				{ amount: -5000, frequency: 'monthly' as const },
-			]
+			] satisfies NormalizableFinancialItem[]
 
 			const result = calculateTotalMonthlyNormalized(items)
 			expect(result).toBe(5000)

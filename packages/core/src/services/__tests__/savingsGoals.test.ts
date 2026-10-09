@@ -19,14 +19,14 @@ import {
 describe('savingsGoals service', () => {
 	describe('Type Definitions', () => {
 		it('should have ClientSavingsGoal interface with required fields', () => {
-			const goal: ClientSavingsGoal = {
+			const goal = {
 				id: 'sg-1',
 				name: 'Vacation Fund',
 				targetAmount: 500000,
 				currentBalance: 250000,
 				createdAt: new Date().toISOString(),
 				updatedAt: new Date().toISOString(),
-			}
+			} satisfies ClientSavingsGoal
 			expect(goal.id).toBe('sg-1')
 			expect(goal.name).toBe('Vacation Fund')
 			expect(goal.targetAmount).toBe(500000)
@@ -34,18 +34,18 @@ describe('savingsGoals service', () => {
 		})
 
 		it('should have ClientNewSavingsGoal interface without ID and timestamps', () => {
-			const newGoal: ClientNewSavingsGoal = {
+			const newGoal = {
 				name: 'Emergency Fund',
 				targetAmount: 1000000,
 				currentBalance: 0,
-			}
+			} satisfies ClientNewSavingsGoal
 			expect(newGoal.name).toBe('Emergency Fund')
 			expect(newGoal.targetAmount).toBe(1000000)
 			expect(newGoal.currentBalance).toBe(0)
 		})
 
 		it('should have SavingsGoalWithProgress interface with progress and status', () => {
-			const goalWithProgress: SavingsGoalWithProgress = {
+			const goalWithProgress = {
 				id: 'sg-1',
 				name: 'Car Down Payment',
 				targetAmount: 2000000,
@@ -54,7 +54,7 @@ describe('savingsGoals service', () => {
 				updatedAt: new Date().toISOString(),
 				progress: 25,
 				status: 'on-track',
-			}
+			} satisfies SavingsGoalWithProgress
 			expect(goalWithProgress.progress).toBe(25)
 			expect(goalWithProgress.status).toBe('on-track')
 		})
@@ -99,14 +99,14 @@ describe('savingsGoals service', () => {
 
 	describe('withProgress', () => {
 		it('should add progress and status to savings goal', () => {
-			const goal: ClientSavingsGoal = {
+			const goal = {
 				id: 'sg-1',
 				name: 'Test Goal',
 				targetAmount: 100000,
 				currentBalance: 60000,
 				createdAt: new Date().toISOString(),
 				updatedAt: new Date().toISOString(),
-			}
+			} satisfies ClientSavingsGoal
 
 			const result = withProgress(goal)
 			expect(result.progress).toBe(60)
@@ -115,14 +115,14 @@ describe('savingsGoals service', () => {
 		})
 
 		it('should return 100% progress for complete goal', () => {
-			const goal: ClientSavingsGoal = {
+			const goal = {
 				id: 'sg-2',
 				name: 'Complete Goal',
 				targetAmount: 100000,
 				currentBalance: 100000,
 				createdAt: new Date().toISOString(),
 				updatedAt: new Date().toISOString(),
-			}
+			} satisfies ClientSavingsGoal
 
 			const result = withProgress(goal)
 			expect(result.progress).toBe(100)
@@ -130,14 +130,14 @@ describe('savingsGoals service', () => {
 		})
 
 		it('should return 0% progress for not started goal', () => {
-			const goal: ClientSavingsGoal = {
+			const goal = {
 				id: 'sg-3',
 				name: 'Not Started Goal',
 				targetAmount: 100000,
 				currentBalance: 0,
 				createdAt: new Date().toISOString(),
 				updatedAt: new Date().toISOString(),
-			}
+			} satisfies ClientSavingsGoal
 
 			const result = withProgress(goal)
 			expect(result.progress).toBe(0)
@@ -147,11 +147,11 @@ describe('savingsGoals service', () => {
 
 	describe('validateSavingsGoal', () => {
 		it('should return empty array for valid input', () => {
-			const input: ClientNewSavingsGoal = {
+			const input = {
 				name: 'Valid Goal',
 				targetAmount: 100000,
 				currentBalance: 50000,
-			}
+			} satisfies ClientNewSavingsGoal
 			expect(validateSavingsGoal(input)).toEqual([])
 		})
 
@@ -255,11 +255,11 @@ describe('savingsGoals service', () => {
 
 	describe('isValidSavingsGoal', () => {
 		it('should return true for valid input', () => {
-			const input: ClientNewSavingsGoal = {
+			const input = {
 				name: 'Valid Goal',
 				targetAmount: 100000,
 				currentBalance: 50000,
-			}
+			} satisfies ClientNewSavingsGoal
 			expect(isValidSavingsGoal(input)).toBe(true)
 		})
 
@@ -279,7 +279,7 @@ describe('savingsGoals service', () => {
 			const older = new Date(now.getTime() - 86400000)
 			const oldest = new Date(now.getTime() - 172800000)
 
-			const goals: ClientSavingsGoal[] = [
+			const goals = [
 				{
 					id: 'sg-1',
 					name: 'Oldest',
@@ -304,7 +304,7 @@ describe('savingsGoals service', () => {
 					createdAt: older.toISOString(),
 					updatedAt: older.toISOString(),
 				},
-			]
+			] satisfies ClientSavingsGoal[]
 
 			const sorted = sortByCreationDate(goals)
 			expect(sorted[0].id).toBe('sg-2')
@@ -316,7 +316,7 @@ describe('savingsGoals service', () => {
 			const now = new Date()
 			const older = new Date(now.getTime() - 86400000)
 
-			const goals: ClientSavingsGoal[] = [
+			const goals = [
 				{
 					id: 'sg-1',
 					name: 'Older',
@@ -333,7 +333,7 @@ describe('savingsGoals service', () => {
 					createdAt: now.toISOString(),
 					updatedAt: now.toISOString(),
 				},
-			]
+			] satisfies ClientSavingsGoal[]
 
 			const originalOrder = [...goals]
 			sortByCreationDate(goals)
@@ -342,7 +342,7 @@ describe('savingsGoals service', () => {
 	})
 
 	describe('filterSavingsGoals', () => {
-		const goals: SavingsGoalWithProgress[] = [
+		const goals = [
 			{
 				id: 'sg-1',
 				name: 'Goal A',
@@ -373,7 +373,7 @@ describe('savingsGoals service', () => {
 				progress: 0,
 				status: 'not-started',
 			},
-		]
+		] satisfies SavingsGoalWithProgress[]
 
 		it('should filter by status', () => {
 			const filtered = filterSavingsGoals(goals, { status: 'complete' })
@@ -430,11 +430,11 @@ describe('savingsGoals service', () => {
 
 	describe('toClientSavingsGoal', () => {
 		it('should add ID and timestamps to new savings goal', () => {
-			const input: ClientNewSavingsGoal = {
+			const input = {
 				name: 'Test Goal',
 				targetAmount: 100000,
 				currentBalance: 50000,
-			}
+			} satisfies ClientNewSavingsGoal
 
 			const result = toClientSavingsGoal(input)
 			expect(result.id).toMatch(UUID_RE)
@@ -447,11 +447,11 @@ describe('savingsGoals service', () => {
 
 		it('should generate different IDs for different calls', () => {
 			resetSavingsGoalTempId()
-			const input: ClientNewSavingsGoal = {
+			const input = {
 				name: 'Test Goal',
 				targetAmount: 100000,
 				currentBalance: 50000,
-			}
+			} satisfies ClientNewSavingsGoal
 
 			const result1 = toClientSavingsGoal(input)
 			const result2 = toClientSavingsGoal(input)
@@ -461,14 +461,14 @@ describe('savingsGoals service', () => {
 	})
 
 	describe('savings accounts (no target)', () => {
-		const account: ClientSavingsGoal = {
+		const account = {
 			id: 'acc-1',
 			name: 'Checking Buffer',
 			targetAmount: null,
 			currentBalance: 42000,
 			createdAt: new Date().toISOString(),
 			updatedAt: new Date().toISOString(),
-		}
+		} satisfies ClientSavingsGoal
 
 		describe('isSavingsAccount', () => {
 			it('returns true when targetAmount is null', () => {
@@ -490,7 +490,11 @@ describe('savingsGoals service', () => {
 			})
 
 			it('still computes numeric progress for a goal', () => {
-				const goal: ClientSavingsGoal = { ...account, targetAmount: 100000, currentBalance: 60000 }
+				const goal = {
+					...account,
+					targetAmount: 100000,
+					currentBalance: 60000,
+				} satisfies ClientSavingsGoal
 				const result = withProgress(goal)
 				expect(result.progress).toBe(60)
 				expect(result.status).toBe('on-track')
@@ -554,7 +558,7 @@ describe('savingsGoals service', () => {
 describe('savingsGoals — allocation fields', () => {
 	describe('Type Definitions', () => {
 		it('ClientSavingsGoal carries optional monthlyAllocation + allocationMode', () => {
-			const manual: ClientSavingsGoal = {
+			const manual = {
 				id: 'sg-1',
 				name: 'Vacation',
 				targetAmount: null,
@@ -563,8 +567,8 @@ describe('savingsGoals — allocation fields', () => {
 				updatedAt: new Date().toISOString(),
 				allocationMode: 'manual',
 				monthlyAllocation: 25000,
-			}
-			const auto: ClientSavingsGoal = {
+			} satisfies ClientSavingsGoal
+			const auto = {
 				id: 'sg-2',
 				name: 'Leftover',
 				targetAmount: null,
@@ -573,7 +577,7 @@ describe('savingsGoals — allocation fields', () => {
 				updatedAt: new Date().toISOString(),
 				allocationMode: 'automatic',
 				monthlyAllocation: null,
-			}
+			} satisfies ClientSavingsGoal
 			expect(manual.allocationMode).toBe('manual')
 			expect(manual.monthlyAllocation).toBe(25000)
 			expect(auto.allocationMode).toBe('automatic')

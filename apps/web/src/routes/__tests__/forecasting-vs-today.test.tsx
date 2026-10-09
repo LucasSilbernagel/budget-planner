@@ -111,7 +111,7 @@ function row(year: number, netWorth: number): YearlyForecast {
 
 function savedRow(inputs: Record<string, unknown> = {}): Record<string, unknown> {
 	const scenario = { name: 'Big plan', incomeGrowthRate: 0, expenseGrowthRate: 0 }
-	const result: ForecastingResult = {
+	const result = {
 		scenario,
 		baseline: Array.from({ length: YEARS }, (_, i) => row(i + 1, 1)),
 		projection: Array.from({ length: YEARS }, (_, i) =>
@@ -123,7 +123,7 @@ function savedRow(inputs: Record<string, unknown> = {}): Record<string, unknown>
 			totalGrowth: STORED_ENDING,
 			averageAnnualGrowth: STORED_ENDING / YEARS,
 		},
-	}
+	} satisfies ForecastingResult
 	return {
 		id: 7,
 		profileId: PROFILE,
@@ -145,13 +145,13 @@ function formatter(): (cents: number) => string {
 }
 
 beforeEach(() => {
-	const status: PremiumAccessStatus = {
+	const status = {
 		hasAccess: true,
 		subscriptionStatus: 'active',
 		isLoading: false,
 		error: null,
 		isAuthenticated: true,
-	}
+	} satisfies PremiumAccessStatus
 	usePremiumAccess.mockReturnValue({ status })
 	useProfileStore.setState({ activeProfileId: PROFILE })
 	seedToday()

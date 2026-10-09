@@ -25,12 +25,12 @@ const point = (netWorth: number) => ({
 	netWorth,
 })
 
-const RESULT: ForecastingResult = {
+const RESULT = {
 	scenario: { name: 'Scenario', incomeGrowthRate: 0.03, expenseGrowthRate: 0.02 },
 	baseline: [point(SUMMARY.startingNetWorth)],
 	projection: [point(SUMMARY.endingNetWorth)],
 	summary: SUMMARY,
-}
+} satisfies ForecastingResult
 
 vi.mock('@budget-planner/core/finance/forecasting', async (importOriginal) => {
 	const real = await importOriginal<typeof import('@budget-planner/core/finance/forecasting')>()
@@ -55,13 +55,13 @@ function figureOf(label: string): HTMLElement {
 	return screen.getByText(label, { selector: 'dt' }).nextElementSibling as HTMLElement
 }
 
-const EXPECTED: [string, string[]][] = [
+const EXPECTED = [
 	['Starting Net Worth', ['$25,', '567,', '900.80']],
 	['Ending Net Worth', ['$310,', '100,', '483.69']],
 	['Total Growth', ['$284,', '532,', '582.89']],
 	['Avg Annual Growth', ['$28,', '453,', '258.29']],
 	['vs. today', ['+$284,', '532,', '582.89']],
-]
+] satisfies [string, string[]][]
 
 beforeEach(() => {
 	useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })

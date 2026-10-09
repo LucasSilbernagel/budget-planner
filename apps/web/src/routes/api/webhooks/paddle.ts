@@ -462,10 +462,10 @@ async function handleLifetimePurchase(
 	}
 
 	const mappedCurrency = mapProvidedCurrency(currency)
-	const lifetimeFields: LifetimeGrantFields = {
+	const lifetimeFields = {
 		...(transactionId ? { lifetimeTransactionId: transactionId } : {}),
 		...(grandTotal === undefined ? {} : { lifetimeGrantTotal: grandTotal }),
-	}
+	} satisfies LifetimeGrantFields
 
 	const existing = await tx
 		.select({ entitlementUpdatedAt: users.entitlementUpdatedAt })
@@ -953,7 +953,7 @@ function parseLowestUnit(value?: string): number | undefined {
 }
 
 /** Statuses meaning the money was actually collected. */
-const COLLECTED_TRANSACTION_STATUSES: readonly string[] = ['completed', 'paid']
+const COLLECTED_TRANSACTION_STATUSES = ['completed', 'paid'] satisfies readonly string[]
 
 /** `grand_total` alone can't show a full discount: it is computed after customer credit. */
 function isFullyDiscounted(data: PaddleEventData): boolean {

@@ -15,18 +15,18 @@ import { GlobalNav } from '../GlobalNav'
 // `router.load()` first: without it the router emits an unresolved Suspense boundary and
 // every assertion passes on empty HTML.
 
-const SIGNED_OUT: SessionSeed = {
+const SIGNED_OUT = {
 	isAuthenticated: false,
 	userId: null,
 	email: null,
 	subscriptionStatus: null,
-}
-const ENTITLED: SessionSeed = {
+} satisfies SessionSeed
+const ENTITLED = {
 	isAuthenticated: true,
 	userId: 'u1',
 	email: 'u1@example.test',
 	subscriptionStatus: 'active',
-}
+} satisfies SessionSeed
 
 /** Renders differently on the server and the client: the designed-RED control. */
 let renderingOnClient = false

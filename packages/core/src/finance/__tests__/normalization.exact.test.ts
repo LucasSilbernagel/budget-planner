@@ -4,7 +4,10 @@
 import { describe, expect, it } from 'vitest'
 import { type Frequency, normalizeToMonthly } from '../normalization'
 
-const PERIODS: Record<Frequency, number> = { weekly: 52, biweekly: 26, monthly: 12, annually: 1 }
+const PERIODS = { weekly: 52, biweekly: 26, monthly: 12, annually: 1 } satisfies Record<
+	Frequency,
+	number
+>
 const FREQUENCIES = Object.keys(PERIODS) as Frequency[]
 
 function exactRound(num: number, den: number): number {

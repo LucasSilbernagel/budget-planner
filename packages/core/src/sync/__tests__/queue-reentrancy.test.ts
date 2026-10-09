@@ -81,7 +81,7 @@ describe('SyncQueue re-entrancy', () => {
 
 	// A throwing `clearQueue` must not leave memory empty while the ops remain on disk.
 	it('keeps the in-memory queue when clearing storage fails', async () => {
-		const failing: SyncQueueStorage = {
+		const failing = {
 			async loadQueue() {
 				return []
 			},
@@ -89,7 +89,7 @@ describe('SyncQueue re-entrancy', () => {
 			async clearQueue() {
 				throw new Error('storage unavailable')
 			},
-		}
+		} satisfies SyncQueueStorage
 		const q = new SyncQueue('user-3', failing)
 		await q.initialize()
 		await q.add(makeOperation('A'))

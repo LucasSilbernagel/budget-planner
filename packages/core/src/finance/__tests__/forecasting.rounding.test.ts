@@ -75,13 +75,13 @@ describe('roundCents — the RD1 sweep', () => {
 describe('roundCents — large magnitudes never do worse than bare Math.round', () => {
 	// Past ~1e13 the float product can't carry the exact fraction, so the bar is no
 	// regression versus bare Math.round, not zero mismatches.
-	const ranges: { label: string; start: bigint }[] = [
+	const ranges = [
 		{ label: '1e13 cents', start: 10_000_000_000_000n },
 		{
 			label: 'MAX_SAFE_INTEGER / 100 (the old balance validator bound, before it became int32)',
 			start: BigInt(Math.floor(Number.MAX_SAFE_INTEGER / 100)) - 200_000n,
 		},
-	]
+	] satisfies { label: string; start: bigint }[]
 	const COUNT = 200_000
 
 	it.each(ranges)(
@@ -106,12 +106,12 @@ describe('roundCents — large magnitudes never do worse than bare Math.round', 
 
 	// These start below the snap cap (~1.126e9 cents), where roundCents differs from
 	// Math.round.
-	const subCap: { label: string; start: bigint; num: bigint; den: bigint }[] = [
+	const subCap = [
 		{ label: '1.5% from 1e8', start: 100_000_000n, num: 15n, den: 1000n },
 		{ label: '1.5% from 1e9', start: 1_000_000_000n, num: 15n, den: 1000n },
 		{ label: '5.555% from 1e9', start: 1_000_000_000n, num: 5555n, den: 100_000n },
 		{ label: '5.5555% from 1e9', start: 1_000_000_000n, num: 55555n, den: 1_000_000n },
-	]
+	] satisfies { label: string; start: bigint; num: bigint; den: bigint }[]
 	it.each(subCap)(
 		'below the cap, matches the integer oracle exactly: $label',
 		({ start, num, den }) => {
@@ -174,7 +174,11 @@ const QUIET_DATA = {
 	savings: 0,
 	investments: 0,
 }
-const FLAT: ForecastingScenario = { name: 'flat', incomeGrowthRate: 0, expenseGrowthRate: 0 }
+const FLAT = {
+	name: 'flat',
+	incomeGrowthRate: 0,
+	expenseGrowthRate: 0,
+} satisfies ForecastingScenario
 
 describe('the engine sites round through roundCents', () => {
 	it('an investment row of 100 at 1.5% closes year 1 at 102, not 101 (stepBalanceRows)', () => {

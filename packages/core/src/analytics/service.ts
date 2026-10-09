@@ -55,13 +55,13 @@ export function createAnalyticsService(options: AnalyticsServiceOptions = {}): A
 
 	return {
 		track(name, properties = {}) {
-			const event: AnalyticsEvent = {
+			const event = {
 				name,
 				// Snapshot metadata so later mutations don't rewrite history.
 				metadata: { ...metadata },
 				properties: filterPiiProperties(properties),
 				timestamp: now(),
-			}
+			} satisfies AnalyticsEvent
 			events.push(event)
 			return event
 		},

@@ -68,7 +68,7 @@ type SolveState =
 	| { status: 'failed'; detail: string | null }
 	| null
 
-const MODEL_COPY: Record<RetirementModel, { label: string; explanation: string }> = {
+const MODEL_COPY = {
 	deplete: {
 		label: 'Deplete by life expectancy',
 		explanation:
@@ -79,7 +79,7 @@ const MODEL_COPY: Record<RetirementModel, { label: string; explanation: string }
 		explanation:
 			'Live off the investment returns forever without touching the principal — your nest egg lasts indefinitely.',
 	},
-}
+} satisfies Record<RetirementModel, { label: string; explanation: string }>
 
 const SOLVER_ERROR_COPY: Record<string, string> = {
 	'Annual return rate must be positive (greater than 0)':

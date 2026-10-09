@@ -365,7 +365,7 @@ export function calculateFinancialForecast(
 			currentInvestments = roundCents(currentInvestments * 1.07)
 		}
 
-		const baselineYear: YearlyForecast = {
+		const baselineYear = {
 			year,
 			income: baselineAnnualIncome,
 			expenses: baselineAnnualExpenses + baselineDebtPaid,
@@ -379,7 +379,7 @@ export function calculateFinancialForecast(
 			// Absent (not `undefined`) without rows, so existing `toEqual`s are unchanged.
 			...(baselineRowBalances ? { debts: currentDebts, balanceAccounts: baselineRowBalances } : {}),
 			...(baseAssets === undefined ? {} : { assets: baseAssets }),
-		}
+		} satisfies YearlyForecast
 		baseline.push(baselineYear)
 	}
 
@@ -458,7 +458,7 @@ export function calculateFinancialForecast(
 			}
 		}
 
-		const yearProjection: YearlyForecast = {
+		const yearProjection = {
 			year,
 			income: annualIncome,
 			expenses: annualExpenses + projDebtPaid,
@@ -473,7 +473,7 @@ export function calculateFinancialForecast(
 			...(rowBalances ? { savingsAccounts: rowBalances, unallocatedSavings } : {}),
 			...(projRowBalances ? { debts: projDebts, balanceAccounts: projRowBalances } : {}),
 			...(assets === undefined ? {} : { assets }),
-		}
+		} satisfies YearlyForecast
 		projection.push(yearProjection)
 	}
 

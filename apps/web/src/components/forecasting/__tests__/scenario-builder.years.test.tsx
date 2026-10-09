@@ -86,7 +86,7 @@ afterEach(() => {
 })
 
 describe('the Projection Period field refuses what the engine cannot run', () => {
-	const invalid: [string, string][] = [
+	const invalid = [
 		["an empty field (Number('') is 0)", ''],
 		['0', '0'],
 		['-3', '-3'],
@@ -94,7 +94,7 @@ describe('the Projection Period field refuses what the engine cannot run', () =>
 		['31', '31'],
 		['1e9 (a finite value that froze the tab)', '1e9'],
 		['1e999', '1e999'],
-	]
+	] satisfies [string, string][]
 
 	for (const [label, typed] of invalid) {
 		it(`${label}: no engine call, an explained message, Save blocked`, async () => {
@@ -219,7 +219,7 @@ describe('one-time event amounts reach the engine finite and in whole cents', ()
 	})
 
 	it('a saved event amount of null (a JSON-flattened NaN/Infinity) or a fraction loads usable', async () => {
-		const saved: SavedForecast = {
+		const saved = {
 			id: 'f-1',
 			name: 'Plan',
 			scenario: {
@@ -240,7 +240,7 @@ describe('one-time event amounts reach the engine finite and in whole cents', ()
 			inputs: { savings: 0, investments: 0, years: 5 },
 			createdAt: ISO,
 			updatedAt: ISO,
-		}
+		} satisfies SavedForecast
 		await renderBuilder(saved)
 
 		expect(engineCalls.at(-1)?.years).toBe(5)

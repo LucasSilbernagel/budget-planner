@@ -30,20 +30,25 @@ function row(id: string, ts: number, extra: Partial<Row> = {}): Row {
 	}
 }
 
-const INCOME_ROWS: Row[] = [row('a', 1), row('b', 5), row('c', 5), row('d', 5)]
+const INCOME_ROWS = [row('a', 1), row('b', 5), row('c', 5), row('d', 5)] satisfies Row[]
 
 // Six rows at t=10, more than the cap+1 window, so only the supplementary fetch sees them all.
-const DEGENERATE_EXPENSE_ROWS: Row[] = [
+const DEGENERATE_EXPENSE_ROWS = [
 	row('e1', 10),
 	row('e2', 10),
 	row('e3', 10),
 	row('e4', 10),
 	row('e5', 10),
 	row('e6', 10),
-]
+] satisfies Row[]
 
-const CROSS_TABLE_INCOME_ROWS: Row[] = [row('old', 1), row('x1', 4), row('x2', 4), row('x3', 4)]
-const CROSS_TABLE_PROFILE_ROWS: Row[] = [row('prof1', 10), row('prof2', 20)]
+const CROSS_TABLE_INCOME_ROWS = [
+	row('old', 1),
+	row('x1', 4),
+	row('x2', 4),
+	row('x3', 4),
+] satisfies Row[]
+const CROSS_TABLE_PROFILE_ROWS = [row('prof1', 10), row('prof2', 20)] satisfies Row[]
 
 type MockState = {
 	incomeRows: Row[]

@@ -11,21 +11,20 @@ import {
 import type { ClientCategory } from '../../stores/categoryStore'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 
-const SECTIONS: { kind: CategoryKind; title: string; description: string; placeholder: string }[] =
-	[
-		{
-			kind: 'income',
-			title: 'Income categories',
-			description: 'Group income sources — for example Employment, Freelance, Dividends.',
-			placeholder: 'e.g. Employment',
-		},
-		{
-			kind: 'expense',
-			title: 'Expense categories',
-			description: 'Group expenses — for example Groceries, Housing, Transport.',
-			placeholder: 'e.g. Groceries',
-		},
-	]
+const SECTIONS = [
+	{
+		kind: 'income',
+		title: 'Income categories',
+		description: 'Group income sources — for example Employment, Freelance, Dividends.',
+		placeholder: 'e.g. Employment',
+	},
+	{
+		kind: 'expense',
+		title: 'Expense categories',
+		description: 'Group expenses — for example Groceries, Housing, Transport.',
+		placeholder: 'e.g. Groceries',
+	},
+] satisfies { kind: CategoryKind; title: string; description: string; placeholder: string }[]
 
 // not-found means the category was deleted elsewhere, which is not a name problem, so focus stays put.
 function isNameError(error: CategoryValidationError): boolean {

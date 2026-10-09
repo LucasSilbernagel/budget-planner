@@ -510,7 +510,7 @@ describe('the Category column is Premium-only', () => {
 		},
 	]
 
-	const NOT_ENTITLED: { label: string; status: Partial<PremiumAccessStatus> }[] = [
+	const NOT_ENTITLED = [
 		{ label: 'free', status: { subscriptionStatus: 'free', isAuthenticated: true } },
 		{ label: 'past_due', status: { subscriptionStatus: 'past_due', isAuthenticated: true } },
 		{ label: 'canceled', status: { subscriptionStatus: 'canceled', isAuthenticated: true } },
@@ -520,13 +520,13 @@ describe('the Category column is Premium-only', () => {
 			label: 'errored',
 			status: { error: 'premium check failed', subscriptionStatus: null, isAuthenticated: false },
 		},
-	]
+	] satisfies { label: string; status: Partial<PremiumAccessStatus> }[]
 
-	const ENTITLED: { label: string; status: Partial<PremiumAccessStatus> }[] = [
+	const ENTITLED = [
 		{ label: 'active', status: { hasAccess: true, subscriptionStatus: 'active' } },
 		// `lifetime` is entitled and easy to drop if the gate is simplified to `status === 'active'`.
 		{ label: 'lifetime', status: { hasAccess: true, subscriptionStatus: 'lifetime' } },
-	]
+	] satisfies { label: string; status: Partial<PremiumAccessStatus> }[]
 
 	for (const page of PAGES) {
 		describe(page.name, () => {

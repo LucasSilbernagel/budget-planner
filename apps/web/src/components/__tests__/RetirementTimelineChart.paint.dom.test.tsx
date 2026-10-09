@@ -109,7 +109,7 @@ type MediaState = { dark: boolean; narrow: boolean }
 
 /** A live `matchMedia` answering the width and colour-scheme queries from one mutable state. */
 function stubLiveMedia(initial: Partial<MediaState> = {}, api: MediaApi = 'modern') {
-	const state: MediaState = { dark: false, narrow: false, ...initial }
+	const state = { dark: false, narrow: false, ...initial } satisfies MediaState
 	const listeners = new Set<() => void>()
 	const matchMedia = vi.fn((query: string) => {
 		const listenerApi =

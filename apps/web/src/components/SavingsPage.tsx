@@ -56,22 +56,22 @@ import { TableSortControl } from './ui/TableSortControl'
 // so unknown values are coerced to 'monthly'.
 const KNOWN_FREQUENCIES = new Set(['weekly', 'biweekly', 'monthly', 'annually'])
 
-const SORT_COLUMN_LABELS: Record<SavingsSortKey, string> = {
+const SORT_COLUMN_LABELS = {
 	name: 'Name',
 	target: 'Target',
 	currentBalance: 'Current Balance',
 	monthlyAllocation: 'Monthly Allocation',
 	progress: 'Progress',
-}
+} satisfies Record<SavingsSortKey, string>
 
 // Module scope: TableSortControl memoises its options on this identity.
-const SAVINGS_SORT_COLUMNS: readonly { key: SavingsSortKey; label: string }[] = [
+const SAVINGS_SORT_COLUMNS = [
 	{ key: 'name', label: SORT_COLUMN_LABELS.name },
 	{ key: 'target', label: SORT_COLUMN_LABELS.target },
 	{ key: 'currentBalance', label: SORT_COLUMN_LABELS.currentBalance },
 	{ key: 'monthlyAllocation', label: SORT_COLUMN_LABELS.monthlyAllocation },
 	{ key: 'progress', label: SORT_COLUMN_LABELS.progress },
-]
+] satisfies readonly { key: SavingsSortKey; label: string }[]
 
 export function SavingsPage() {
 	const savingsGoals = useSavingsGoals()

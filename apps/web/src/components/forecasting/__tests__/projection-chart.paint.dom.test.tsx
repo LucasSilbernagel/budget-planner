@@ -137,7 +137,7 @@ describe('the tooltip', () => {
 
 describe('the "Starting" reference line', () => {
 	it('puts its label above the line, never on it', () => {
-		const seven: ForecastingResult = {
+		const seven = {
 			...result('Buy a house'),
 			baseline: [row(1, 203_400_000), row(2, 225_000_000), row(3, 248_457_568)],
 			projection: [row(1, 203_400_000), row(2, 225_000_000), row(3, 248_457_568)],
@@ -147,7 +147,7 @@ describe('the "Starting" reference line', () => {
 				totalGrowth: 48_457_568,
 				averageAnnualGrowth: 16_152_522,
 			},
-		}
+		} satisfies ForecastingResult
 		const { container } = render(<ProjectionChart result={seven} />)
 		const line = container.querySelector('.recharts-reference-line line') as Element
 		expect(line, 'the line is drawn at the floor').not.toBeNull()

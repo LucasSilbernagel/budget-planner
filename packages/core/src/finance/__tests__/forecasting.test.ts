@@ -24,11 +24,11 @@ const CURRENT_DATA = {
 	investments: 0,
 }
 
-const FLAT: ForecastingScenario = {
+const FLAT = {
 	name: 'flat',
 	incomeGrowthRate: 0,
 	expenseGrowthRate: 0,
-}
+} satisfies ForecastingScenario
 
 const YEARS = 3
 
@@ -474,10 +474,10 @@ describe('calculateFinancialForecast — investment compounding, both loops', ()
 // Contributions only move money between the user's own pots, so per-account rows
 // split `savings` and never change the totals.
 describe('calculateFinancialForecast — savings account rows', () => {
-	const TWO_ROWS: SavingsAccountInput[] = [
+	const TWO_ROWS = [
 		{ balance: 100000, monthlyContribution: 20000 },
 		{ balance: 0, monthlyContribution: 5000 },
-	]
+	] satisfies SavingsAccountInput[]
 
 	const strip = (r: ReturnType<typeof calculateFinancialForecast>) => ({
 		...r,
@@ -501,12 +501,7 @@ describe('calculateFinancialForecast — savings account rows', () => {
 		expect(r.projection.map((p) => p.unallocatedSavings)).toEqual([900000, 1800000, 2700000])
 	})
 
-	const FIXTURES: Array<{
-		label: string
-		rows: SavingsAccountInput[]
-		scenario: ForecastingScenario
-		investments?: number
-	}> = [
+	const FIXTURES = [
 		{ label: 'one row', rows: [{ balance: 100000, monthlyContribution: 12345 }], scenario: FLAT },
 		{
 			label: 'three rows',
@@ -536,7 +531,12 @@ describe('calculateFinancialForecast — savings account rows', () => {
 			},
 			investments: 1_000_007,
 		},
-	]
+	] satisfies Array<{
+		label: string
+		rows: SavingsAccountInput[]
+		scenario: ForecastingScenario
+		investments?: number
+	}>
 
 	for (const { label, rows, scenario, investments } of FIXTURES) {
 		it(`rows + unassigned === savings in every year (${label})`, () => {
@@ -653,7 +653,7 @@ describe('calculateFinancialForecast — savings account rows', () => {
 describe('calculateFinancialForecast — investment and debt rows', () => {
 	// Net 12,000.00/yr. Counted investment 1,200.00/yr; flagged one 50.00/week = 260000/yr;
 	// debt 5,000.00 paying 2,400.00/yr.
-	const MIXED: BalanceAccountInput[] = [
+	const MIXED = [
 		{
 			type: 'investment',
 			annualReturn: 0.07,
@@ -676,7 +676,7 @@ describe('calculateFinancialForecast — investment and debt rows', () => {
 			frequency: 'monthly',
 			contributionRecordedAsExpense: true,
 		},
-	]
+	] satisfies BalanceAccountInput[]
 	const MIXED_DATA = { ...CURRENT_DATA, investments: 1_100_007, balanceAccounts: MIXED }
 
 	it('grows, pays down and moves money between buckets, by hand', () => {
@@ -949,7 +949,7 @@ describe('calculateFinancialForecast — investment and debt rows', () => {
 	})
 
 	it('refuses a negative balance or contribution', () => {
-		const bad: BalanceAccountInput[] = [
+		const bad = [
 			{
 				type: 'investment',
 				annualReturn: 0.07,
@@ -959,7 +959,7 @@ describe('calculateFinancialForecast — investment and debt rows', () => {
 			},
 			{ type: 'debt', balance: -1, contribution: 0, frequency: 'monthly' },
 			{ type: 'debt', balance: 0, contribution: -1, frequency: 'monthly' },
-		]
+		] satisfies BalanceAccountInput[]
 		for (const row of bad) {
 			const investments = row.type === 'investment' ? row.balance : 0
 			expect(() =>
@@ -973,11 +973,11 @@ describe('calculateFinancialForecast — investment and debt rows', () => {
 	})
 
 	it("refuses a non-finite balance or contribution with validateAmount's message", () => {
-		const bad: BalanceAccountInput[] = [
+		const bad = [
 			{ type: 'debt', balance: Number.NaN, contribution: 0, frequency: 'monthly' },
 			{ type: 'debt', balance: 0, contribution: Number.POSITIVE_INFINITY, frequency: 'monthly' },
 			{ type: 'debt', balance: 0, contribution: null as never, frequency: 'monthly' },
-		]
+		] satisfies BalanceAccountInput[]
 		for (const row of bad) {
 			expect(() =>
 				calculateFinancialForecast({ ...CURRENT_DATA, balanceAccounts: [row] }, FLAT, YEARS)
@@ -1439,7 +1439,7 @@ describe('calculateFinancialForecast — per-investment annual return', () => {
 
 	it('refuses a rate outside −100%..100%, not a finite number, or missing', () => {
 		expect(INVESTMENT_RETURN_OUT_OF_RANGE).toBe('Investment returns must be from -100% to 100%')
-		const bad: unknown[] = [
+		const bad = [
 			-1.0001,
 			1.0001,
 			Number.NaN,
@@ -1448,7 +1448,7 @@ describe('calculateFinancialForecast — per-investment annual return', () => {
 			undefined,
 			null,
 			'0.06',
-		]
+		] satisfies unknown[]
 		for (const rate of bad) {
 			expect(
 				() => calculateFinancialForecast(oneRow(100_000, rate), FLAT, YEARS),

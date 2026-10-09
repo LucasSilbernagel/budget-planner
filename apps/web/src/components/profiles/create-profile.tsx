@@ -8,7 +8,10 @@ import { ProfileIconPicker } from './profile-icon-picker'
 
 // Shared by the useState initialiser and the mount-reset effect; resetting to
 // EMPTY_PROFILE_FORM (icon '') would drop the 🏠 pre-selection.
-const INITIAL_CREATE_FORM: ProfileFormState = { ...EMPTY_PROFILE_FORM, icon: DEFAULT_PROFILE_ICON }
+const INITIAL_CREATE_FORM = {
+	...EMPTY_PROFILE_FORM,
+	icon: DEFAULT_PROFILE_ICON,
+} satisfies ProfileFormState
 
 type CreateProfileDialogProps = {
 	onClose: () => void

@@ -82,11 +82,11 @@ export const useIncomeStore = create<IncomeState>()(
 			incomeSources: [],
 
 			addIncomeSource: (newIncomeSource) => {
-				const incomeSource: ClientIncomeSource = {
+				const incomeSource = {
 					...toClientIncomeSource(newIncomeSource),
 					sortOrder: nextSortOrder(get().incomeSources),
 					profileId: useProfileStore.getState().activeProfileId ?? null,
-				}
+				} satisfies ClientIncomeSource
 				set((state) => ({
 					incomeSources: sortByDisplayOrder([...state.incomeSources, incomeSource]),
 				}))

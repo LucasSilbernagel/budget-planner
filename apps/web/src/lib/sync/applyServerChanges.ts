@@ -105,7 +105,7 @@ function applyRetirementPlanChange(change: ServerChange, context: ApplyContext):
 	return true
 }
 
-const ENTITY_BINDINGS: Record<SyncEntityType, EntityBinding> = {
+const ENTITY_BINDINGS = {
 	incomeSource: {
 		kind: 'collection',
 		store: useIncomeStore as unknown as StoreApi,
@@ -144,7 +144,7 @@ const ENTITY_BINDINGS: Record<SyncEntityType, EntityBinding> = {
 		},
 		apply: applyRetirementPlanChange,
 	},
-}
+} satisfies Record<SyncEntityType, EntityBinding>
 
 export function findLocalRow(
 	entityType: SyncEntityType,
@@ -372,7 +372,7 @@ export function applyServerChangesToStores(
 	sessionUserId: string,
 	options: Pick<ApplyContext, 'hasPendingOperation'> = {}
 ): void {
-	const context: ApplyContext = { sessionUserId, ...options }
+	const context = { sessionUserId, ...options } satisfies ApplyContext
 	let appliedProfile = false
 	const touchedOrdered = new Set<SyncEntityType>()
 	for (const change of changes) {

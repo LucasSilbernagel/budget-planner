@@ -108,7 +108,7 @@ describe('nextSortState — the three-state cycle', () => {
 	})
 
 	it('starts a DIFFERENT column at ascending and drops the previous one', () => {
-		const current: SortState<'amount' | 'name'> = { key: 'amount', direction: 'desc' }
+		const current = { key: 'amount', direction: 'desc' } satisfies SortState<'amount' | 'name'>
 		expect(nextSortState(current, 'name')).toEqual({ key: 'name', direction: 'asc' })
 	})
 })
@@ -119,7 +119,7 @@ describe('ariaSortFor', () => {
 	})
 
 	it('reports the direction for the active column only', () => {
-		const current: SortState<'amount' | 'name'> = { key: 'amount', direction: 'asc' }
+		const current = { key: 'amount', direction: 'asc' } satisfies SortState<'amount' | 'name'>
 		expect(ariaSortFor(current, 'amount')).toBe('ascending')
 		expect(ariaSortFor(current, 'name')).toBe('none')
 		expect(ariaSortFor({ key: 'amount', direction: 'desc' } as const, 'amount')).toBe('descending')

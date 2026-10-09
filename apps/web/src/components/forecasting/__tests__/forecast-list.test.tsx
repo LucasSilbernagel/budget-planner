@@ -12,7 +12,7 @@ vi.mock('../../../stores/currencyStore', () => ({
 	useFormattedAmount: () => (cents: number) => (cents / 100).toFixed(2),
 }))
 
-const sampleForecast: SavedForecast = {
+const sampleForecast = {
 	id: 'saved-1',
 	name: 'Retirement Plan',
 	scenario: {
@@ -34,7 +34,7 @@ const sampleForecast: SavedForecast = {
 	inputs: { savings: 500000, investments: 1000000, years: 10 },
 	createdAt: '2026-01-01T00:00:00Z',
 	updatedAt: '2026-01-01T00:00:00Z',
-}
+} satisfies SavedForecast
 
 describe('ForecastList reload affordance', () => {
 	it('renders an Edit action and calls onLoad with the forecast when provided', () => {
@@ -64,7 +64,7 @@ describe('ForecastList reload affordance', () => {
 	})
 
 	it('gives each row its own distinct action names', () => {
-		const second: SavedForecast = { ...sampleForecast, id: 'saved-2', name: 'Sabbatical' }
+		const second = { ...sampleForecast, id: 'saved-2', name: 'Sabbatical' } satisfies SavedForecast
 		render(
 			<ForecastList forecasts={[sampleForecast, second]} onDelete={vi.fn()} onLoad={vi.fn()} />
 		)
@@ -95,7 +95,7 @@ describe('the Edit action looks and reads like an edit', () => {
 })
 
 describe('Total Growth sign', () => {
-	const negativeGrowth: SavedForecast = {
+	const negativeGrowth = {
 		...sampleForecast,
 		id: 'saved-negative',
 		name: 'House deposit',
@@ -108,7 +108,7 @@ describe('Total Growth sign', () => {
 				averageAnnualGrowth: -400000,
 			},
 		},
-	}
+	} satisfies SavedForecast
 
 	it('renders a negative total growth without a "+-" prefix', () => {
 		render(<ForecastList forecasts={[negativeGrowth]} onDelete={vi.fn()} onLoad={vi.fn()} />)
@@ -143,7 +143,7 @@ describe('secondary text on a selected row', () => {
 
 describe('row checkbox selects its row', () => {
 	// The row's onClick toggles too, so the checkbox's onClick must stop propagation or one click toggles twice.
-	const second: SavedForecast = { ...sampleForecast, id: 'saved-2', name: 'House Fund' }
+	const second = { ...sampleForecast, id: 'saved-2', name: 'House Fund' } satisfies SavedForecast
 
 	it('toggles the row once per click on its checkbox', async () => {
 		const user = userEvent.setup()

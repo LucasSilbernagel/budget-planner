@@ -32,7 +32,7 @@ function op(overrides: Partial<SyncOperation>): SyncOperation {
 function deps(overrides: Partial<RefusalHandlerDeps> = {}) {
 	const queued: SyncOperation[] = []
 	const applied: ServerChange[][] = []
-	const base: RefusalHandlerDeps & { queued: SyncOperation[]; applied: ServerChange[][] } = {
+	const base = {
 		queued,
 		applied,
 		queue: {
@@ -53,7 +53,7 @@ function deps(overrides: Partial<RefusalHandlerDeps> = {}) {
 		requestFullRepull: vi.fn(),
 		notify: vi.fn(),
 		...overrides,
-	}
+	} satisfies RefusalHandlerDeps & { queued: SyncOperation[]; applied: ServerChange[][] }
 	return base
 }
 
@@ -256,7 +256,7 @@ describe('handleRejectedOperations — reverting', () => {
 		// The doubles only implement discardBatch; a real SyncQueue's removeBatch keeps the op when the write fails.
 		let failWrites = false
 		const saved = new Map<string, SyncOperation[]>()
-		const storage: SyncQueueStorage = {
+		const storage = {
 			loadQueue: async (userId) => [...(saved.get(userId) ?? [])],
 			saveQueue: async (userId, queue) => {
 				if (failWrites) throw new Error('QuotaExceededError')
@@ -265,7 +265,7 @@ describe('handleRejectedOperations — reverting', () => {
 			clearQueue: async (userId) => {
 				saved.delete(userId)
 			},
-		}
+		} satisfies SyncQueueStorage
 		const queue = new SyncQueue('u', storage)
 		await queue.initialize()
 		await queue.add(op({ id: 'late', entityId: 'row-1' }))

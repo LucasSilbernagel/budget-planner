@@ -21,10 +21,10 @@ type Step = {
 	args: string[]
 }
 
-const STEPS: Step[] = [
+const STEPS = [
 	{ name: 'preflight', bin: 'tsx', args: ['src/migrate-preflight-cli.ts'] },
 	{ name: 'migrate', bin: 'drizzle-kit', args: ['migrate'] },
-]
+] satisfies Step[]
 
 function runStep(step: Step): Promise<number> {
 	console.log(`[migrate-lock] running ${step.name}: ${step.bin} ${step.args.join(' ')}`)

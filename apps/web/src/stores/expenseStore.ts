@@ -89,11 +89,11 @@ export const useExpenseStore = create<ExpenseState>()(
 			expenses: [],
 
 			addExpense: (newExpense) => {
-				const expense: ClientExpense = {
+				const expense = {
 					...toClientExpense(newExpense),
 					sortOrder: nextSortOrder(get().expenses),
 					profileId: useProfileStore.getState().activeProfileId ?? null,
-				}
+				} satisfies ClientExpense
 				set((state) => ({
 					expenses: sortByDisplayOrder([...state.expenses, expense]),
 				}))

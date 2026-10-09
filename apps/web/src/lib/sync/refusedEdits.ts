@@ -19,7 +19,7 @@ export type RefusalHandlerDeps = {
 	markPlanRefused?: (op: SyncOperation) => void
 }
 
-const KIND: Record<SyncEntityType, { kind: string; fallback: string }> = {
+const KIND = {
 	incomeSource: { kind: 'income', fallback: 'An income entry' },
 	expense: { kind: 'expense', fallback: 'An expense' },
 	savingsGoal: { kind: 'savings', fallback: 'A savings entry' },
@@ -28,7 +28,7 @@ const KIND: Record<SyncEntityType, { kind: string; fallback: string }> = {
 	category: { kind: 'category', fallback: 'A category' },
 	// A plan op carries no `name`, so the notice uses the fallback.
 	retirementPlan: { kind: 'retirement plan', fallback: 'Your retirement plan' },
-}
+} satisfies Record<SyncEntityType, { kind: string; fallback: string }>
 
 const BALANCE_KIND: Record<string, { kind: string; fallback: string }> = {
 	investment: { kind: 'investment', fallback: 'An investment' },

@@ -99,7 +99,7 @@ function runBin(
 }
 
 function childEnv(port: number, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
-	const env: NodeJS.ProcessEnv = { ...process.env }
+	const env = { ...process.env } satisfies NodeJS.ProcessEnv
 	for (const name of ['PGOPTIONS', 'DATABASE_CA_CERT', 'PGHOST', 'PGPORT', 'PGSSLMODE']) {
 		Reflect.deleteProperty(env, name)
 	}
@@ -175,13 +175,13 @@ describe('the migrator CLIs send it too', () => {
 
 describe('stepEnv pins PGOPTIONS for the spawned steps (drizzle-kit = C4)', () => {
 	it('sets PGOPTIONS exactly and keeps the rest of the environment', () => {
-		const parent: NodeJS.ProcessEnv = {
+		const parent = {
 			DATABASE_URL: 'postgresql://u:p@budget-planner-prod-rw:5432/d',
 			DATABASE_CA_CERT: '-----BEGIN CERTIFICATE-----x',
 			NODE_ENV: 'production',
 			PATH: '/usr/bin',
 			PGOPTIONS: '-c TimeZone=Europe/Berlin',
-		}
+		} satisfies NodeJS.ProcessEnv
 		const env = stepEnv(parent)
 		expect(env['PGOPTIONS']).toBe(EXPECTED_OPTIONS)
 		expect(env).toEqual({ ...parent, PGOPTIONS: EXPECTED_OPTIONS })

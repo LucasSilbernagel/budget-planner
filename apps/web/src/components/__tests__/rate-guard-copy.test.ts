@@ -30,7 +30,7 @@ const solvableBase = {
 }
 
 describe('rate-guard copy parity with core', () => {
-	const cases: Array<{ name: string; trigger: () => unknown; expectedMessage: string }> = [
+	const cases = [
 		{
 			name: 'solver: non-finite accumulation rate',
 			trigger: () => solveRetirementAccumulation({ ...solvableBase, annualReturnRate: Number.NaN }),
@@ -69,7 +69,7 @@ describe('rate-guard copy parity with core', () => {
 			trigger: () => calculateRequiredNestEgg(6_000_000, 0.06, -1, 65, 90, 'deplete'),
 			expectedMessage: 'Post-retirement return rate must be a non-negative finite number',
 		},
-	]
+	] satisfies Array<{ name: string; trigger: () => unknown; expectedMessage: string }>
 
 	for (const { name, trigger, expectedMessage } of cases) {
 		it(`${name} → core throws the phase-named message, and the planner can render it`, () => {

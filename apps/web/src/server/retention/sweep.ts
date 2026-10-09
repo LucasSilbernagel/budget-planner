@@ -244,7 +244,7 @@ export async function runRetentionSweep(
 	options: RetentionSweepOptions
 ): Promise<RetentionSweepResult> {
 	const dryRun = options.dryRun ?? false
-	const result: RetentionSweepResult = {
+	const result = {
 		dryRun,
 		clocksStarted: 0,
 		noticesDue: 0,
@@ -255,7 +255,7 @@ export async function runRetentionSweep(
 		purgesSkipped: 0,
 		purgeFailures: 0,
 		truncated: false,
-	}
+	} satisfies RetentionSweepResult
 
 	// A dry run writes nothing, so it needs no lease. Its counts are totals, so an
 	// operator sees the real backlog.

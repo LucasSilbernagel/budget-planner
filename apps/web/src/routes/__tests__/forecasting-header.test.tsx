@@ -20,13 +20,13 @@ const ForecastingPage = Route.options.component as () => React.ReactElement
 
 beforeEach(() => {
 	vi.clearAllMocks()
-	const status: PremiumAccessStatus = {
+	const status = {
 		hasAccess: true,
 		subscriptionStatus: 'active',
 		isLoading: false,
 		error: null,
 		isAuthenticated: true,
-	}
+	} satisfies PremiumAccessStatus
 	usePremiumAccess.mockReturnValue({ status })
 })
 

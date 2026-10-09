@@ -56,7 +56,7 @@ function stubServer(page: Page) {
 				const body = request.postDataJSON() as Record<string, unknown>
 				posts.push(body)
 				const now = new Date().toISOString()
-				const row: StoredForecast = {
+				const row = {
 					id: nextId++,
 					userId: PROD_E2E_USER_ID,
 					profileId: String(body['profileId']),
@@ -69,7 +69,7 @@ function stubServer(page: Page) {
 					createdAt: now,
 					updatedAt: now,
 					profileName: 'Personal',
-				}
+				} satisfies StoredForecast
 				forecasts.push(row)
 				return ok(route, row)
 			}

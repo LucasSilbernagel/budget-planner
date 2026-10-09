@@ -26,7 +26,7 @@ import { ActiveSync } from '../ActiveSync'
 
 const USER = '79279279-2792-4792-8792-792792792792'
 
-const STUCK: RefusalNotice = {
+const STUCK = {
 	key: 'expense:row-1',
 	entityType: 'expense',
 	name: 'Rent',
@@ -34,7 +34,7 @@ const STUCK: RefusalNotice = {
 	fallback: 'An expense',
 	outcome: 'not-synced',
 	change: 'update',
-}
+} satisfies RefusalNotice
 
 function syncReturn(isSyncing: boolean) {
 	return {

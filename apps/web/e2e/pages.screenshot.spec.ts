@@ -26,7 +26,7 @@ type Shot = {
 	seed?: boolean
 }
 
-const PAGE_SHOTS: Shot[] = [
+const PAGE_SHOTS = [
 	{ name: 'overview-320-light', path: '/', width: 320, charts: 4 },
 	{ name: 'overview-320-dark', path: '/', width: 320, dark: true, charts: 4 },
 	{ name: 'overview-1280-light', path: '/', width: 1280, charts: 4 },
@@ -41,7 +41,7 @@ const PAGE_SHOTS: Shot[] = [
 	{ name: 'retirement-1280-dark', path: '/retirement', width: 1280, dark: true, charts: 1 },
 	{ name: 'settings-320-light', path: '/settings', width: 320, charts: 0 },
 	{ name: 'savings-320-light', path: '/savings', width: 320, charts: 0 },
-]
+] satisfies Shot[]
 
 async function open(
 	page: Page,

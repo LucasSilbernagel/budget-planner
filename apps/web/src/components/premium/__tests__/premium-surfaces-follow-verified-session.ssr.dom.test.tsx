@@ -28,18 +28,18 @@ vi.mock('../../settings/account-section', () => ({
 	AccountSection: () => <div data-testid="account-section" />,
 }))
 
-const SIGNED_OUT: SessionSeed = {
+const SIGNED_OUT = {
 	isAuthenticated: false,
 	userId: null,
 	email: null,
 	subscriptionStatus: null,
-}
-const ENTITLED: SessionSeed = {
+} satisfies SessionSeed
+const ENTITLED = {
 	isAuthenticated: true,
 	userId: 'u1',
 	email: 'u1@example.test',
 	subscriptionStatus: 'active',
-}
+} satisfies SessionSeed
 
 function GatesPage() {
 	return (

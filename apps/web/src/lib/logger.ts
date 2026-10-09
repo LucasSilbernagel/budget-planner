@@ -3,12 +3,12 @@ import { getConfig } from '@budget-planner/config/schema'
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 export type LogContext = Record<string, unknown>
 
-const LEVEL_PRIORITY: Record<LogLevel, number> = {
+const LEVEL_PRIORITY = {
 	debug: 10,
 	info: 20,
 	warn: 30,
 	error: 40,
-}
+} satisfies Record<LogLevel, number>
 
 const REDACTED = '[REDACTED]'
 const MAX_DEPTH = 6
@@ -17,7 +17,7 @@ const MAX_DEPTH = 6
  * Matched against the normalized key, so `\b` words catch `cardNumber`/`clientIp` but not `recipient`.
  * Money is redacted by key name only: name money-carrying keys with a financial token.
  */
-const REDACT_KEY_PATTERNS: RegExp[] = [
+const REDACT_KEY_PATTERNS = [
 	/pass(word|phrase)?/i,
 	/secret/i,
 	/token/i,
@@ -44,7 +44,7 @@ const REDACT_KEY_PATTERNS: RegExp[] = [
 	/contribution/i,
 	/\bprice\b/i,
 	/deposit/i,
-]
+] satisfies RegExp[]
 
 const EMAIL_RE = /[^\s@]+@[^\s@]+\.[^\s@]+/g
 const BEARER_RE = /\bBearer\s+[\w.\-+/=]+/gi

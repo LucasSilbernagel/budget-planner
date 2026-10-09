@@ -149,7 +149,7 @@ afterEach(() => {
 })
 
 describe('a growth rate outside -100%..+100%, or not a number, is reported on its field', () => {
-	const invalid: [string, string][] = [
+	const invalid = [
 		['an emptied field', ''],
 		['non-numeric text', 'abc'],
 		['-150 (below -100%: the income sign would alternate)', '-150'],
@@ -159,12 +159,12 @@ describe('a growth rate outside -100%..+100%, or not a number, is reported on it
 		['two commas', '2,5,1'],
 		['a grouped number with a decimal comma', '1.000,5'],
 		['a grouped number with a decimal point', '1,000.5'],
-	]
+	] satisfies [string, string][]
 
-	const fields: [string, 'incomeGrowthRate' | 'expenseGrowthRate', string][] = [
+	const fields = [
 		['Income Growth Rate', 'incomeGrowthRate', 'with an income row'],
 		['Expense Growth Rate', 'expenseGrowthRate', 'with NO expense rows'],
-	]
+	] satisfies [string, 'incomeGrowthRate' | 'expenseGrowthRate', string][]
 
 	for (const [label, key, rows] of fields) {
 		for (const [name, typed] of invalid) {
@@ -199,7 +199,7 @@ describe('a growth rate outside -100%..+100%, or not a number, is reported on it
 		}
 	}
 
-	const valid: [string, number][] = [
+	const valid = [
 		['-100', -1],
 		['100', 1],
 		['5', 0.05],
@@ -210,7 +210,7 @@ describe('a growth rate outside -100%..+100%, or not a number, is reported on it
 		['2,5', 0.025],
 		['2,5 %', 0.025],
 		['-2,5', -0.025],
-	]
+	] satisfies [string, number][]
 	for (const [label, key] of [
 		['Income Growth Rate', 'incomeGrowthRate'],
 		['Expense Growth Rate', 'expenseGrowthRate'],
@@ -241,11 +241,11 @@ describe('a growth rate outside -100%..+100%, or not a number, is reported on it
 })
 
 describe('an income or expense amount is reported on its field, never silently zeroed', () => {
-	const invalid: [string, string, string][] = [
+	const invalid = [
 		['a negative', '-5', NEGATIVE_MESSAGE],
 		['one cent over the money limit (109.1, Q1)', OVER_LIMIT, LIMIT_MESSAGE],
 		['malformed text (109.1: replaces the badInput case)', '1.2.3', NOT_A_NUMBER_MESSAGE],
-	]
+	] satisfies [string, string, string][]
 
 	for (const [name, typed, message] of invalid) {
 		it(`${name}: field message, the typed text stays, the last good amount is kept`, async () => {

@@ -172,7 +172,7 @@ describe('deliberately cleared fields', () => {
 })
 
 describe('corrupt, absent and foreign payloads', () => {
-	const CORRUPT_CASES: ReadonlyArray<readonly [string, unknown]> = [
+	const CORRUPT_CASES = [
 		['null', null],
 		['a string', 'not a plan'],
 		['a number', 42],
@@ -188,7 +188,7 @@ describe('corrupt, absent and foreign payloads', () => {
 		['a non-boolean touched flag', { ...SAVED_PLAN, postRetirementTouched: 'yes' }],
 		['a null-prototype object', Object.assign(Object.create(null), { currentAgeInput: 42 })],
 		['unknown extra keys', { ...SAVED_PLAN, injected: 'nope' }],
-	]
+	] satisfies ReadonlyArray<readonly [string, unknown]>
 
 	describe.each([RETIREMENT_PLANNER_VERSION, 0])('at version %i', (version) => {
 		it.each(CORRUPT_CASES)('%s rehydrates without throwing', async (_label, plan) => {

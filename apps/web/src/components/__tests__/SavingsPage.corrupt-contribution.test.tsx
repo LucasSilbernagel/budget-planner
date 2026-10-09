@@ -96,12 +96,12 @@ beforeEach(() => {
 
 afterEach(resetStores)
 
-const CORRUPT: [string, number][] = [
+const CORRUPT = [
 	['NaN', Number.NaN],
 	['Infinity', Number.POSITIVE_INFINITY],
 	['-Infinity', Number.NEGATIVE_INFINITY],
 	['null (a JSON-flattened NaN)', null as unknown as number],
-]
+] satisfies [string, number][]
 
 describe('SavingsPage with a non-finite stored investment contribution', () => {
 	it('positive control: the real solver throws for the raw NaN contribution', () => {

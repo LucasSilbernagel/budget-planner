@@ -69,13 +69,13 @@ async function openProjections() {
 }
 
 beforeEach(() => {
-	const status: PremiumAccessStatus = {
+	const status = {
 		hasAccess: true,
 		subscriptionStatus: 'active',
 		isLoading: false,
 		error: null,
 		isAuthenticated: true,
-	}
+	} satisfies PremiumAccessStatus
 	usePremiumAccess.mockReturnValue({ status })
 	useProfileStore.setState({ activeProfileId: PROFILE })
 	fetchProfiles.mockResolvedValue({

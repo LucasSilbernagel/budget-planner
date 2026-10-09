@@ -9,10 +9,10 @@ import { TableSortControl } from '../TableSortControl'
 
 type Key = 'name' | 'amount' | 'category'
 
-const COLUMNS: readonly { key: Key; label: string }[] = [
+const COLUMNS = [
 	{ key: 'name', label: 'Name' },
 	{ key: 'amount', label: 'Amount' },
-]
+] satisfies readonly { key: Key; label: string }[]
 
 function optionLabels(select: HTMLElement): string[] {
 	return within(select)

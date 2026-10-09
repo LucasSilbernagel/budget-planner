@@ -22,89 +22,89 @@ import {
 
 describe('validateBalanceTracking', () => {
 	it('should fail validation for empty name', () => {
-		const input: Partial<ClientNewBalanceTracking> = {
+		const input = {
 			type: 'investment',
 			name: '',
 			currentBalance: 100000,
 			monthlyContribution: 50000,
-		}
+		} satisfies Partial<ClientNewBalanceTracking>
 		const errors = validateBalanceTracking(input)
 		expect(errors.length).toBeGreaterThan(0)
 		expect(errors.some((e) => e.field === 'name')).toBe(true)
 	})
 
 	it('should fail validation for name exceeding 100 characters', () => {
-		const input: Partial<ClientNewBalanceTracking> = {
+		const input = {
 			type: 'investment',
 			name: 'a'.repeat(101),
 			currentBalance: 100000,
 			monthlyContribution: 50000,
-		}
+		} satisfies Partial<ClientNewBalanceTracking>
 		const errors = validateBalanceTracking(input)
 		expect(errors.length).toBeGreaterThan(0)
 		expect(errors.some((e) => e.field === 'name' && e.message.includes('100'))).toBe(true)
 	})
 
 	it('should fail validation for missing type', () => {
-		const input: Partial<ClientNewBalanceTracking> = {
+		const input = {
 			name: 'Test',
 			currentBalance: 100000,
 			monthlyContribution: 50000,
-		}
+		} satisfies Partial<ClientNewBalanceTracking>
 		const errors = validateBalanceTracking(input)
 		expect(errors.length).toBeGreaterThan(0)
 		expect(errors.some((e) => e.field === 'type')).toBe(true)
 	})
 
 	it('should fail validation for invalid type', () => {
-		const input: Partial<ClientNewBalanceTracking> = {
+		const input = {
 			type: 'invalid' as 'investment' | 'debt',
 			name: 'Test',
 			currentBalance: 100000,
 			monthlyContribution: 50000,
-		}
+		} satisfies Partial<ClientNewBalanceTracking>
 		const errors = validateBalanceTracking(input)
 		expect(errors.length).toBeGreaterThan(0)
 		expect(errors.some((e) => e.field === 'type' && e.message.includes('investment'))).toBe(true)
 	})
 
 	it('should pass validation for both investment and debt types', () => {
-		const investment: ClientNewBalanceTracking = {
+		const investment = {
 			type: 'investment',
 			name: 'Investment',
 			currentBalance: 100000,
 			monthlyContribution: 50000,
 			frequency: 'monthly',
-		}
-		const debt: ClientNewBalanceTracking = {
+		} satisfies ClientNewBalanceTracking
+		const debt = {
 			type: 'debt',
 			name: 'Debt',
 			currentBalance: 100000,
 			monthlyContribution: 50000,
 			frequency: 'weekly',
-		}
+		} satisfies ClientNewBalanceTracking
 		expect(validateBalanceTracking(investment).length).toBe(0)
 		expect(validateBalanceTracking(debt).length).toBe(0)
 	})
 
 	it('should fail validation for missing currentBalance', () => {
-		const input: Partial<ClientNewBalanceTracking> = {
+		const input = {
 			type: 'investment',
 			name: 'Test',
 			monthlyContribution: 50000,
-		}
+		} satisfies Partial<ClientNewBalanceTracking>
 		const errors = validateBalanceTracking(input)
 		expect(errors.length).toBeGreaterThan(0)
 		expect(errors.some((e) => e.field === 'currentBalance')).toBe(true)
 	})
 
 	it('should fail validation for non-integer currentBalance', () => {
-		const input: Partial<ClientNewBalanceTracking> = {
+		const input = {
 			type: 'investment',
 			name: 'Test',
 			currentBalance: 100.5,
 			monthlyContribution: 50000,
-		}
+		} satisfies Partial<ClientNewBalanceTracking>
 		const errors = validateBalanceTracking(input)
 		expect(errors.length).toBeGreaterThan(0)
 		expect(errors.some((e) => e.field === 'currentBalance' && e.message.includes('integer'))).toBe(
@@ -113,13 +113,13 @@ describe('validateBalanceTracking', () => {
 	})
 
 	it('should REFUSE a negative currentBalance for debts', () => {
-		const input: ClientNewBalanceTracking = {
+		const input = {
 			type: 'debt',
 			name: 'Test Debt',
 			currentBalance: -100000,
 			monthlyContribution: 50000,
 			frequency: 'monthly',
-		}
+		} satisfies ClientNewBalanceTracking
 		const errors = validateBalanceTracking(input)
 		expect(errors).toEqual([
 			{
@@ -131,12 +131,12 @@ describe('validateBalanceTracking', () => {
 	})
 
 	it('should fail validation for negative monthlyContribution', () => {
-		const input: Partial<ClientNewBalanceTracking> = {
+		const input = {
 			type: 'investment',
 			name: 'Test',
 			currentBalance: 100000,
 			monthlyContribution: -100,
-		}
+		} satisfies Partial<ClientNewBalanceTracking>
 		const errors = validateBalanceTracking(input)
 		expect(errors.length).toBeGreaterThan(0)
 		expect(
@@ -188,32 +188,32 @@ describe('validateBalanceTracking', () => {
 
 describe('isValidBalanceTracking', () => {
 	it('should return true for valid input', () => {
-		const input: ClientNewBalanceTracking = {
+		const input = {
 			type: 'investment',
 			name: 'Test',
 			currentBalance: 100000,
 			monthlyContribution: 50000,
 			frequency: 'monthly',
-		}
+		} satisfies ClientNewBalanceTracking
 		expect(isValidBalanceTracking(input)).toBe(true)
 	})
 
 	it('should return false for invalid input', () => {
-		const input: Partial<ClientNewBalanceTracking> = {
+		const input = {
 			name: '',
-		}
+		} satisfies Partial<ClientNewBalanceTracking>
 		expect(isValidBalanceTracking(input)).toBe(false)
 	})
 })
 
 describe('validateBalanceTracking - frequency', () => {
-	const base: ClientNewBalanceTracking = {
+	const base = {
 		type: 'investment',
 		name: 'Test',
 		currentBalance: 100000,
 		monthlyContribution: 50000,
 		frequency: 'monthly',
-	}
+	} satisfies ClientNewBalanceTracking
 
 	it('should fail validation when frequency is missing', () => {
 		const { frequency: _omitted, ...withoutFrequency } = base
@@ -316,7 +316,7 @@ describe('withTimeline - frequency normalization', () => {
 	it('feeds the monthly-equivalent contribution into the debt payoff timeline', () => {
 		// Weekly 50000 → 216667/month: ceil(650000/216667) = 3.
 		// An un-normalized 50000 would give ceil(650000/50000) = 13.
-		const entry: ClientBalanceTracking = {
+		const entry = {
 			id: 'test-uuid',
 			type: 'debt',
 			debtSubType: 'loan',
@@ -326,12 +326,12 @@ describe('withTimeline - frequency normalization', () => {
 			frequency: 'weekly',
 			createdAt: '2024-01-01T00:00:00Z',
 			updatedAt: '2024-01-01T00:00:00Z',
-		}
+		} satisfies ClientBalanceTracking
 		expect(withTimeline(entry).debtTimeline).toBe(3)
 	})
 
 	it('does not throw when an entry carries a corrupt frequency', () => {
-		const entry: ClientBalanceTracking = {
+		const entry = {
 			id: 'test-uuid',
 			type: 'debt',
 			debtSubType: 'loan',
@@ -341,7 +341,7 @@ describe('withTimeline - frequency normalization', () => {
 			frequency: 'daily' as unknown as ClientBalanceTracking['frequency'],
 			createdAt: '2024-01-01T00:00:00Z',
 			updatedAt: '2024-01-01T00:00:00Z',
-		}
+		} satisfies ClientBalanceTracking
 		// Coerced to monthly (50000): ceil(100000 / 50000) = 2.
 		expect(() => withTimeline(entry)).not.toThrow()
 		expect(withTimeline(entry).debtTimeline).toBe(2)
@@ -398,7 +398,7 @@ describe('withTimeline - non-finite contribution', () => {
 
 describe('sortByCreationDate', () => {
 	it('should sort entries by creation date (newest first)', () => {
-		const entries: ClientBalanceTracking[] = [
+		const entries = [
 			{
 				id: 'bt-1',
 				type: 'investment',
@@ -429,7 +429,7 @@ describe('sortByCreationDate', () => {
 				createdAt: '2024-03-01T00:00:00Z',
 				updatedAt: '2024-03-01T00:00:00Z',
 			},
-		]
+		] satisfies ClientBalanceTracking[]
 		const sorted = sortByCreationDate(entries)
 		expect(sorted[0].name).toBe('Newest')
 		expect(sorted[1].name).toBe('Middle')
@@ -437,7 +437,7 @@ describe('sortByCreationDate', () => {
 	})
 
 	it('should not mutate original array', () => {
-		const entries: ClientBalanceTracking[] = [
+		const entries = [
 			{
 				id: 'bt-1',
 				type: 'investment',
@@ -458,7 +458,7 @@ describe('sortByCreationDate', () => {
 				createdAt: '2024-02-01T00:00:00Z',
 				updatedAt: '2024-02-01T00:00:00Z',
 			},
-		]
+		] satisfies ClientBalanceTracking[]
 		const originalOrder = [...entries]
 		sortByCreationDate(entries)
 		expect(entries).toEqual(originalOrder)
@@ -471,7 +471,7 @@ describe('sortByCreationDate', () => {
 })
 
 describe('filterBalanceTracking', () => {
-	const entries: BalanceTrackingWithTimeline[] = [
+	const entries = [
 		{
 			id: 'bt-1',
 			type: 'investment',
@@ -502,7 +502,7 @@ describe('filterBalanceTracking', () => {
 			createdAt: '2024-01-01T00:00:00Z',
 			updatedAt: '2024-01-01T00:00:00Z',
 		},
-	]
+	] satisfies BalanceTrackingWithTimeline[]
 
 	it('should filter by type (investment)', () => {
 		const filtered = filterBalanceTracking(entries, { type: 'investment' })
@@ -566,13 +566,13 @@ describe('resetBalanceTrackingTempId', () => {
 
 describe('toClientBalanceTracking', () => {
 	it('should add ID, timestamps, and defaults', () => {
-		const input: ClientNewBalanceTracking = {
+		const input = {
 			type: 'investment',
 			name: 'Test',
 			currentBalance: 100000,
 			monthlyContribution: 50000,
 			frequency: 'monthly',
-		}
+		} satisfies ClientNewBalanceTracking
 		const result = toClientBalanceTracking(input)
 
 		expect(result.id).toMatch(UUID_RE)
@@ -609,7 +609,7 @@ describe('getTypeDisplayProperties', () => {
 
 describe('withTimeline', () => {
 	it('passes the entry through and adds the debt display fields', () => {
-		const entry: ClientBalanceTracking = {
+		const entry = {
 			id: 'bt-1',
 			type: 'investment',
 			name: 'Test',
@@ -618,7 +618,7 @@ describe('withTimeline', () => {
 			frequency: 'monthly',
 			createdAt: '2024-01-01T00:00:00Z',
 			updatedAt: '2024-01-01T00:00:00Z',
-		}
+		} satisfies ClientBalanceTracking
 		const result = withTimeline(entry)
 
 		expect(result.name).toBe('Test')
@@ -635,12 +635,12 @@ describe('Edge Case Handling - Validation', () => {
 
 	describe('NaN and Infinity validation', () => {
 		it('should reject NaN currentBalance', () => {
-			const input: Partial<ClientNewBalanceTracking> = {
+			const input = {
 				type: 'investment',
 				name: 'Test',
 				currentBalance: Number.NaN,
 				monthlyContribution: 50000,
-			}
+			} satisfies Partial<ClientNewBalanceTracking>
 			const errors = validateBalanceTracking(input)
 			expect(errors.length).toBeGreaterThan(0)
 			expect(errors.some((e) => e.field === 'currentBalance' && e.message.includes('finite'))).toBe(
@@ -649,12 +649,12 @@ describe('Edge Case Handling - Validation', () => {
 		})
 
 		it('should reject Infinity currentBalance', () => {
-			const input: Partial<ClientNewBalanceTracking> = {
+			const input = {
 				type: 'investment',
 				name: 'Test',
 				currentBalance: Number.POSITIVE_INFINITY,
 				monthlyContribution: 50000,
-			}
+			} satisfies Partial<ClientNewBalanceTracking>
 			const errors = validateBalanceTracking(input)
 			expect(errors.length).toBeGreaterThan(0)
 			expect(errors.some((e) => e.field === 'currentBalance' && e.message.includes('finite'))).toBe(
@@ -665,12 +665,12 @@ describe('Edge Case Handling - Validation', () => {
 
 	describe('Bounds validation', () => {
 		it('should reject currentBalance above the largest amount that can sync', () => {
-			const input: Partial<ClientNewBalanceTracking> = {
+			const input = {
 				type: 'investment',
 				name: 'Test',
 				currentBalance: Number.MAX_SAFE_INTEGER,
 				monthlyContribution: 50000,
-			}
+			} satisfies Partial<ClientNewBalanceTracking>
 			const errors = validateBalanceTracking(input)
 			expect(errors.length).toBeGreaterThan(0)
 			expect(
@@ -714,7 +714,7 @@ describe('Edge Case Handling - Sorting and Filtering', () => {
 		})
 
 		it('should handle invalid date strings', () => {
-			const entries: ClientBalanceTracking[] = [
+			const entries = [
 				{
 					id: 'bt-1',
 					type: 'investment',
@@ -745,7 +745,7 @@ describe('Edge Case Handling - Sorting and Filtering', () => {
 					createdAt: '2024-03-01T00:00:00Z',
 					updatedAt: '2024-01-01T00:00:00Z',
 				},
-			]
+			] satisfies ClientBalanceTracking[]
 			const result = sortByCreationDate(entries)
 			expect(result.length).toBe(3)
 			expect(result[0].name).toBe('Another Valid')
@@ -759,7 +759,7 @@ describe('Edge Case Handling - Sorting and Filtering', () => {
 	})
 
 	describe('filterBalanceTracking with edge cases', () => {
-		const entries: BalanceTrackingWithTimeline[] = [
+		const entries = [
 			{
 				id: 'bt-1',
 				type: 'investment',
@@ -780,7 +780,7 @@ describe('Edge Case Handling - Sorting and Filtering', () => {
 				createdAt: '2024-01-01T00:00:00Z',
 				updatedAt: '2024-01-01T00:00:00Z',
 			},
-		]
+		] satisfies BalanceTrackingWithTimeline[]
 
 		it('should handle null entries', () => {
 			const result = filterBalanceTracking(null as unknown as BalanceTrackingWithTimeline[], {

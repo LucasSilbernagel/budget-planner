@@ -45,12 +45,12 @@ type ChartConfig = {
 const CHART_TOGGLE_FOCUS_CLASS =
 	'focus:outline-none focus:ring-2 focus:ring-blue-500 forced-colors:focus:outline forced-colors:focus:outline-2'
 
-const DEFAULT_CONFIG: ChartConfig = {
+const DEFAULT_CONFIG = {
 	showGrid: true,
 	showLegend: true,
 	showTooltip: true,
 	animate: true,
-}
+} satisfies ChartConfig
 
 const CHART_COLORS = {
 	baseline: '#3b82f6',

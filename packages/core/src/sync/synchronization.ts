@@ -638,7 +638,7 @@ export class SynchronizationService {
 
 		const validatedData = validateOperationData(data, entityType)
 
-		const operation: SyncOperation = {
+		const operation = {
 			id: generateOperationId(),
 			type: 'create',
 			entityType,
@@ -649,7 +649,7 @@ export class SynchronizationService {
 			userId,
 			// The server requires a profileId on profile-scoped entities.
 			profileId: this.config.profileId,
-		}
+		} satisfies SyncOperation
 
 		await this.queue.add(operation)
 		this.state.pendingOperations = this.queue.getAll()
@@ -683,7 +683,7 @@ export class SynchronizationService {
 
 		const validatedData = validateOperationData(data, entityType)
 
-		const operation: SyncOperation = {
+		const operation = {
 			id: generateOperationId(),
 			type: 'update',
 			entityType,
@@ -698,7 +698,7 @@ export class SynchronizationService {
 			profileId: this.config.profileId,
 			// Only when set, so an op without a link serializes exactly as before.
 			...(dependsOn ? { dependsOn } : {}),
-		}
+		} satisfies SyncOperation
 
 		await this.queue.add(operation)
 		this.state.pendingOperations = this.queue.getAll()
@@ -730,7 +730,7 @@ export class SynchronizationService {
 
 		const validatedData = validateOperationData(data, entityType)
 
-		const operation: SyncOperation = {
+		const operation = {
 			id: generateOperationId(),
 			type: 'delete',
 			entityType,
@@ -743,7 +743,7 @@ export class SynchronizationService {
 			baseVersion,
 			// The server requires a profileId on profile-scoped entities.
 			profileId: this.config.profileId,
-		}
+		} satisfies SyncOperation
 
 		await this.queue.add(operation)
 		this.state.pendingOperations = this.queue.getAll()

@@ -24,13 +24,13 @@ const ForecastingPage = Route.options.component as () => React.ReactElement
 const TAB_NAMES = ['Scenario Builder', 'Projections', 'My Forecasts'] as const
 
 beforeEach(() => {
-	const status: PremiumAccessStatus = {
+	const status = {
 		hasAccess: true,
 		subscriptionStatus: 'active',
 		isLoading: false,
 		error: null,
 		isAuthenticated: true,
-	}
+	} satisfies PremiumAccessStatus
 	usePremiumAccess.mockReturnValue({ status })
 })
 
