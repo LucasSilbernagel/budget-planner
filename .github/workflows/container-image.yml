@@ -54,7 +54,7 @@ jobs:
         run: |
           set -euo pipefail
           docker image inspect "${IMAGE_NAME}:check" --format 'uncompressed .Size: {{.Size}} B'
-          docker pull -q public.ecr.aws/docker/library/node:24-slim > /dev/null
+          docker pull -q public.ecr.aws/docker/library/node:24-slim > /dev/null || true
           mode=""
           if [ -n "${REF}" ]; then mode="--report-only"; fi
           docker save "${IMAGE_NAME}:check" | python3 .github/scripts/image_size.py --base public.ecr.aws/docker/library/node:24-slim ${mode}
