@@ -22,7 +22,7 @@ vi.mock('@/server/api/auth/magic-link', () => ({
 
 import { GET, POST } from '@/routes/api/auth/login/verify'
 import { peekMagicLink, verifyMagicLink } from '@/server/api/auth/magic-link'
-import { hasProbableSession } from '../SyncProvider'
+import { hasProbableSession } from '../sync-session'
 
 const asMock = (fn: unknown) => fn as ReturnType<typeof vi.fn>
 

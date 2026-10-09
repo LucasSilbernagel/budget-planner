@@ -31,7 +31,7 @@ import { type CssRule, cssRules } from '../test/css-rules'
 
 const WEB = resolve(__dirname, '..', '..')
 const GLOBAL_CSS = readFileSync(resolve(WEB, 'src/styles/global.css'), 'utf-8')
-const ROOT_SOURCE = readFileSync(resolve(WEB, 'src/routes/__root.tsx'), 'utf-8')
+const ROOT_SOURCE = readFileSync(resolve(WEB, 'src/components/layout/RootDocument.tsx'), 'utf-8')
 
 function ruleStartingWith(prefix: string): CssRule {
 	const hits = cssRules(GLOBAL_CSS).filter((rule) => rule.selector.startsWith(prefix))
@@ -81,12 +81,12 @@ afterEach(() => {
 	localStorage.clear()
 })
 
-describe('pre-paint suppression — the <head> wiring (__root.tsx)', () => {
+describe('pre-paint suppression — the <head> wiring (RootDocument.tsx)', () => {
 	it('emits all three bootstraps as inline scripts INSIDE <head>, before <HeadContent />, never deferred', () => {
 		// The JSX elements on their own lines, not a `<head>` mention in a comment.
 		const open = ROOT_SOURCE.search(/\n\s*<head>\n/)
 		const close = ROOT_SOURCE.search(/\n\s*<\/head>\n/)
-		expect(open, 'no <head> element in __root.tsx').toBeGreaterThan(-1)
+		expect(open, 'no <head> element in RootDocument.tsx').toBeGreaterThan(-1)
 		expect(close, 'no </head> after <head>').toBeGreaterThan(open)
 		const head = ROOT_SOURCE.slice(open, close)
 		const headContentAt = head.indexOf('<HeadContent />')

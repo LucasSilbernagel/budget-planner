@@ -8,7 +8,7 @@ import {
 	projectionSeriesName,
 	projectionYAxis,
 	SCENARIO_FALLBACK_NAME,
-} from '../projection-chart'
+} from '../projection-chart/chart-helpers'
 
 function resultNamed(name: unknown): ForecastingResult {
 	return {

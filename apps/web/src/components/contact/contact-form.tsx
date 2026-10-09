@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { FormError } from '../ui/FormError'
 import { FormField } from '../ui/FormField'
 import { FormLabel } from '../ui/FormLabel'
+import { getFormId } from './form-id'
 import {
 	type ContactValidationError,
 	MESSAGE_MAX_LENGTH,
@@ -17,11 +18,6 @@ type Status = 'idle' | 'submitting' | 'success' | 'error' | 'unavailable'
 const GENERIC_ERROR = 'Something went wrong sending your message. Please try again.'
 
 const NAME_MAX_LENGTH = 100
-
-// Read at render time so tests can stub it with vi.stubEnv.
-function getFormId(): string {
-	return (import.meta.env.VITE_FORMSPARK_FORM_ID ?? '').trim()
-}
 
 export type ContactFormProps = {
 	className?: string

@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { type SessionSeed, SessionSeedProvider } from '../../../context/session-seed'
+import type { SessionSeed } from '../../../context/session-seed'
+import { SessionSeedProvider } from '../../../context/session-seed-provider'
 import type { PremiumAccessStatus } from '../../../hooks/usePremiumAccess'
 import { expectLockedRowsNamedByVisibleText, lockedName } from '../../../test/locked-name'
 

@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SessionSeedProvider } from '../../../context/session-seed'
+import { SessionSeedProvider } from '../../../context/session-seed-provider'
 import { PREMIUM_BENEFIT_IDS } from '../../../lib/premium/benefits'
 import { PricingPageView } from '../pricing-page'
 

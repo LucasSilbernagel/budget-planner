@@ -20,7 +20,8 @@ vi.mock('@/hooks/useSync', () => ({
 }))
 
 import { useProfileStore } from '@/stores/profileStore'
-import { hasProbableSession, SyncProvider } from '../SyncProvider'
+import { SyncProvider } from '../SyncProvider'
+import { hasProbableSession } from '../sync-session'
 
 const SESSION_USER_ID = '550e8400-e29b-41d4-a716-446655440000'
 const forcePull = vi.fn(async () => undefined)

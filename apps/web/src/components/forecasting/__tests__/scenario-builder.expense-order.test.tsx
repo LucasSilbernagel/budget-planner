@@ -1,7 +1,8 @@
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import type { SavedForecast } from '../../../routes/forecasting'
-import { rowsFromStores, ScenarioBuilder } from '../scenario-builder'
+import type { SavedForecast } from '../saved-forecast'
+import { ScenarioBuilder } from '../scenario-builder'
+import { rowsFromStores } from '../scenario-builder/store-mappers'
 
 vi.mock('../../../stores/currencyStore', () => ({
 	useFormattedAmount: () => (cents: number) => (cents / 100).toFixed(2),

@@ -2,7 +2,7 @@
 // so that one hook is stubbed.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SessionSeedProvider } from '@/context/session-seed'
+import { SessionSeedProvider } from '@/context/session-seed-provider'
 import { renderWithRouter, screen, waitFor, within } from '@/test/utils'
 import { AuthIndicator } from '../../components/auth/auth-indicator'
 import { Route } from '../login'

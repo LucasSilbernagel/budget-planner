@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/cn'
 import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
 import { useNetWorth } from '../hooks/useNetWorth'
+import { useSortHeaderAnnouncements } from '../hooks/useSortHeaderAnnouncements'
 import { useStoresHydrated } from '../hooks/useStoresHydrated'
 import { useTableSort } from '../hooks/useTableSort'
 import { reformatAmountOnBlur } from '../lib/money-input'
@@ -35,15 +36,21 @@ import {
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 import { useExpenses } from '../stores/expenseStore'
 import { useTotalSavings } from '../stores/savingsStore'
+import { FREQUENCY_OPTIONS, frequencyLabel, paymentOptionLabel } from './balance-frequency-labels'
+import { DebtPaymentCell } from './DebtPaymentCell'
+import { PencilIcon } from './icons/PencilIcon'
+import { TrashIcon } from './icons/TrashIcon'
 import { Button } from './ui/Button'
 import { Card } from './ui/Card'
 import { CardHeader } from './ui/CardHeader'
 import { CardTitle } from './ui/CardTitle'
 import { ConfirmDialog } from './ui/ConfirmDialog'
+import { EmptyStateSkeleton } from './ui/EmptyStateSkeleton'
 import { FormError } from './ui/FormError'
 import { FormField } from './ui/FormField'
 import { FormLabel } from './ui/FormLabel'
 import { GroupedAmount } from './ui/GroupedAmount'
+import { LoadingStatus } from './ui/LoadingStatus'
 import { Modal } from './ui/Modal'
 import { ModalFooter } from './ui/ModalFooter'
 import { ModalHeader } from './ui/ModalHeader'
@@ -53,6 +60,7 @@ import { PageContent } from './ui/PageContent'
 import { PageDescription } from './ui/PageDescription'
 import { PageHeader } from './ui/PageHeader'
 import { PageTitle } from './ui/PageTitle'
+import { PendingFigure } from './ui/PendingFigure'
 import {
 	FieldLabel,
 	RESPONSIVE_ACTION_BUTTON_CLASS,
@@ -68,9 +76,7 @@ import {
 	RESPONSIVE_THEAD_CLASS,
 	RESPONSIVE_WRAPPER_CLASS,
 } from './ui/ResponsiveTable'
-import { PencilIcon, TrashIcon } from './ui/RowActionIcons'
-import { EmptyStateSkeleton, LoadingStatus, PendingFigure } from './ui/Skeleton'
-import { SortableColumnHeader, useSortHeaderAnnouncements } from './ui/SortableColumnHeader'
+import { SortableColumnHeader } from './ui/SortableColumnHeader'
 import { TableScrollRegion } from './ui/TableScrollRegion'
 import { TableSortControl } from './ui/TableSortControl'
 
@@ -121,64 +127,8 @@ type _AllTypesHaveAPlaceholder =
 const _placeholderCoverage: _AllTypesHaveAPlaceholder = true
 void _placeholderCoverage
 
-const FREQUENCY_OPTIONS = [
-	{ value: 'weekly', label: 'Weekly' },
-	{ value: 'biweekly', label: 'Bi-weekly' },
-	{ value: 'monthly', label: 'Monthly' },
-	{ value: 'annually', label: 'Annually' },
-] satisfies { value: Frequency; label: string }[]
-
-const frequencyLabel = (frequency: Frequency): string =>
-	FREQUENCY_OPTIONS.find((option) => option.value === frequency)?.label ?? frequency
-
-/** An unreadable amount keeps the "Paid by" line and drops the figure rather than showing NaN. */
-function DebtPaymentCell({
-	expense,
-}: {
-	expense: { name: unknown; amount: unknown; frequency: unknown } | null
-}) {
-	const formatAmount = useFormattedAmount()
-	if (expense === null) {
-		return <div className="text-muted text-sm">Not linked</div>
-	}
-	const name = typeof expense.name === 'string' ? expense.name : ''
-	return (
-		<div>
-			{typeof expense.amount === 'number' && Number.isFinite(expense.amount) && (
-				<>
-					<div className={cn('text-muted text-sm', RESPONSIVE_AMOUNT_CLASS)}>
-						<GroupedAmount text={formatAmount(expense.amount)} />
-					</div>
-					<div className="text-faint text-xs">{untrustedFrequencyLabel(expense.frequency)}</div>
-				</>
-			)}
-			<div className="text-faint text-xs">Paid by {name}</div>
-		</div>
-	)
-}
-
 /** Contains spaces, which no generated uuid has, so it can't be mistaken for an expense id. */
 const PAYMENT_LINK_UNAVAILABLE = 'linked expense unavailable'
-
-/**
- * localStorage is user-editable and frequencyLabel returns the raw value, so a non-string
- * would reach React as a child and throw.
- */
-function untrustedFrequencyLabel(frequency: unknown): string {
-	return typeof frequency === 'string' ? frequencyLabel(frequency as Frequency) : ''
-}
-
-/** An unreadable amount shows the name alone rather than NaN. */
-function paymentOptionLabel(
-	expense: { name: unknown; amount: unknown; frequency: unknown },
-	formatAmount: (cents: number) => string
-): string {
-	const name = typeof expense.name === 'string' ? expense.name : ''
-	const cadence = untrustedFrequencyLabel(expense.frequency)
-	return typeof expense.amount === 'number' && Number.isFinite(expense.amount)
-		? `${name} — ${formatAmount(expense.amount)}${cadence ? ` / ${cadence}` : ''}`
-		: name
-}
 
 const SORT_COLUMN_LABELS = {
 	type: 'Type',

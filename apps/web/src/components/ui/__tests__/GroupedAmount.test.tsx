@@ -7,7 +7,8 @@ import { localeForCurrency } from '@budget-planner/core/format/currency-locale'
 import { render } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { useCurrencyStore } from '../../../stores/currencyStore'
-import { GroupedAmount, groupSeparator, splitAtGroupSeparators } from '../GroupedAmount'
+import { GroupedAmount } from '../GroupedAmount'
+import { groupSeparator, splitAtGroupSeparators } from '../group-separators'
 
 /** The element's children as a token list: text runs, and `|` for each `<wbr>`. */
 function tokens(el: Element): string[] {

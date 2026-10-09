@@ -2,13 +2,13 @@ import { projectAccumulatedNestEgg } from '@budget-planner/core/finance/retireme
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { renderWithProviders, screen } from '@/test/utils'
 import { useCurrencyStore } from '../../stores/currencyStore'
+import { RetirementTimelineChart } from '../RetirementTimelineChart'
+import { CustomTooltip } from '../RetirementTimelineChart/CustomTooltip'
 import {
-	CustomTooltip,
 	getRetirementChartChrome,
 	getRetirementMarkerAge,
 	getRetirementMarkerOffset,
-	RetirementTimelineChart,
-} from '../RetirementTimelineChart'
+} from '../RetirementTimelineChart/chart-helpers'
 
 const BASE_PROPS = {
 	currentSavedCents: 100_000_00,

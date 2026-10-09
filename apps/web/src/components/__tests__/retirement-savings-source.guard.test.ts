@@ -6,7 +6,15 @@ import { describe, expect, it } from 'vitest'
 // The retirement figure must NOT adopt the savings pool's `contributionRecordedAsExpense` skip.
 // Scans raw source: blanking template `${}` interpolations would hide code.
 describe('RetirementAccumulationPlanner — monthly-savings source', () => {
-	const source = readFileSync(join(__dirname, '..', 'RetirementAccumulationPlanner.tsx'), 'utf8')
+	const source = readFileSync(
+		join(
+			__dirname,
+			'..',
+			'RetirementAccumulationPlanner',
+			'RetirementAccumulationPlannerInner.tsx'
+		),
+		'utf8'
+	)
 	const lines = source.split('\n')
 
 	/** Code lines only, tracking block-comment state; string contents are deliberately not parsed. */

@@ -9,6 +9,7 @@ import { useCategoriesForActiveProfile } from '../../hooks/useCategoryLabels'
 import { usePremiumAccess } from '../../hooks/usePremiumAccess'
 import { PremiumLockBadge } from '../premium/PremiumLockBadge'
 import { Skeleton } from '../ui/Skeleton'
+import { InertPickerCaption } from './InertPickerCaption'
 
 // <select> values are strings, so the empty string stands in for null.
 const UNCATEGORIZED_VALUE = ''
@@ -20,13 +21,6 @@ export type CategoryPickerProps = {
 	value: string | null
 	onChange: (categoryId: string | null) => void
 	idPrefix: string
-}
-
-const LABEL_CLASS = 'block text-sm font-medium text-label mb-1'
-
-// A <span>, not a <label>: neither state renders a form control a label could target.
-function InertPickerCaption(): React.ReactElement {
-	return <span className={LABEL_CLASS}>Category</span>
 }
 
 export function CategoryPicker({

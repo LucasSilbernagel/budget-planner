@@ -2,13 +2,14 @@ import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { assertHasFocusRing } from '@/test/responsive-table-tokens'
 import { fireEvent, renderWithProviders, screen } from '@/test/utils'
+import { useSortHeaderAnnouncements } from '../../../hooks/useSortHeaderAnnouncements'
 import {
 	type AriaSortValue,
 	ariaSortFor,
 	nextSortState,
 	type SortState,
 } from '../../../lib/table-sort'
-import { SortableColumnHeader, useSortHeaderAnnouncements } from '../SortableColumnHeader'
+import { SortableColumnHeader } from '../SortableColumnHeader'
 
 function HeaderHarness({
 	ariaSort,

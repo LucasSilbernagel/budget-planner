@@ -2,19 +2,7 @@ import { useState } from 'react'
 import { purgeLocalFinancialData } from '@/lib/account/purge-local-financial-data'
 import { cn } from '@/lib/cn'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
-
-async function fetchCurrentUserId(): Promise<string | undefined> {
-	try {
-		const response = await fetch('/api/auth/me')
-		if (!response.ok) {
-			return undefined
-		}
-		const data = (await response.json()) as { user?: { userId?: string } | null }
-		return data.user?.userId ?? undefined
-	} catch {
-		return undefined
-	}
-}
+import { fetchCurrentUserId } from './fetch-current-user-id'
 
 export function LocalDataSection() {
 	const [isConfirmOpen, setIsConfirmOpen] = useState(false)

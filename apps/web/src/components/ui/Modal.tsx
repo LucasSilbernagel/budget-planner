@@ -1,5 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useRef } from 'react'
 import { cn } from '@/lib/cn'
+import { getFocusableElements } from './focusable-elements'
+import { isTopModal, popModal, pushModal } from './modal-stack'
 
 /**
  * Stacked modals are safe, not supported: the background is not inerted, so a dialog
@@ -28,51 +30,6 @@ export type ModalProps = {
  * `max-h-full`, not `vh`: mobile Safari's `vh` is the large viewport and can exceed the visible area.
  */
 export const MODAL_CARD_CONSTRAINT = 'max-h-full overflow-y-auto overscroll-contain'
-
-/**
- * Shared across instances: only the topmost modal handles Escape, and the body scroll-lock
- * is taken when the stack becomes non-empty and restored when it empties.
- */
-const modalStack: symbol[] = []
-
-/** `body.style.overflow` as it was before the FIRST modal in the stack opened. */
-let overflowBeforeLock: string | null = null
-
-function pushModal(id: symbol): void {
-	if (modalStack.length === 0) {
-		overflowBeforeLock = document.body.style.overflow
-		document.body.style.overflow = 'hidden'
-	}
-	modalStack.push(id)
-}
-
-function popModal(id: symbol): void {
-	const index = modalStack.lastIndexOf(id)
-	if (index !== -1) modalStack.splice(index, 1)
-	if (modalStack.length === 0 && overflowBeforeLock !== null) {
-		document.body.style.overflow = overflowBeforeLock
-		overflowBeforeLock = null
-	}
-}
-
-function isTopModal(id: symbol): boolean {
-	return modalStack.at(-1) === id
-}
-
-const FOCUSABLE_SELECTOR = [
-	'a[href]',
-	'button:not([disabled])',
-	'textarea:not([disabled])',
-	'input:not([disabled])',
-	'select:not([disabled])',
-	'[tabindex]:not([tabindex="-1"])',
-].join(', ')
-
-function getFocusableElements(container: HTMLElement): HTMLElement[] {
-	return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
-		(el) => !el.hidden && el.getAttribute('aria-hidden') !== 'true'
-	)
-}
 
 export function Modal({
 	isOpen,

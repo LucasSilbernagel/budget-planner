@@ -5,7 +5,7 @@ import type React from 'react'
 import { useState } from 'react'
 import { usePremiumAccess } from '../../hooks/usePremiumAccess'
 import { PremiumPrompt } from '../auth/premium-prompt'
-import { SkeletonBlock } from '../ui/Skeleton'
+import { SkeletonBlock } from '../ui/SkeletonBlock'
 import { PremiumLockBadge } from './PremiumLockBadge'
 
 export type PremiumFeatureGateProps = {

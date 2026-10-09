@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useSessionSeed } from '../../context/session-seed'
+import { useSessionSeed } from '../../hooks/useSessionSeed'
 import { isEntitledSeed } from '../../lib/premium/entitlement'
 import { useVerifiedSession } from '../../lib/session/verifiedSession'
 import { AccountSection } from './account-section'

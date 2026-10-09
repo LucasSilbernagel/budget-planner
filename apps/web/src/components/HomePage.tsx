@@ -9,21 +9,20 @@ import type {
 } from '@budget-planner/core/finance/visualization'
 import {
 	aggregateByCategoryAndType,
-	CATEGORY_COLORS,
 	generateColorMap,
 	toPieChartData,
 } from '@budget-planner/core/finance/visualization'
 import { debtOwedCents } from '@budget-planner/core/services/balanceTracking'
-import React, { Suspense, useCallback, useMemo, useState } from 'react'
+import type React from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { cn } from '@/lib/cn'
-import { useSessionSeed } from '../context/session-seed'
 import { resolveCategoryLabel, useCategoryNameMap } from '../hooks/useCategoryLabels'
 import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
 import { useNetWorth } from '../hooks/useNetWorth'
+import { useSessionSeed } from '../hooks/useSessionSeed'
 import { useStoresHydrated } from '../hooks/useStoresHydrated'
 import { buildBalancesBarData } from '../lib/balances-bar-data'
-import { barDomainTicks, categoryChartHeight } from '../lib/chart-axis'
-import { lazyWithRetry } from '../lib/lazy-with-retry'
+import { barDomainTicks } from '../lib/chart-axis'
 import { OVERVIEW_SECTIONS_PENDING_HOOK } from '../lib/overview/no-flash-overview-data-script'
 import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../lib/premium/benefits'
 import { isEntitledSeed } from '../lib/premium/entitlement'
@@ -42,7 +41,15 @@ import {
 	VALID_DURATIONS,
 } from '../stores/overviewDurationStore'
 import { useSavingsGoals } from '../stores/savingsStore'
-import { ErrorBoundary } from './ErrorBoundary'
+import { BreakdownPie } from './home-page/BreakdownPie'
+import { CategoriesFeatureLabel } from './home-page/CategoriesFeatureLabel'
+import { CategoryBarChart } from './home-page/CategoryBarChart'
+import { CustomProfilesFeatureLabel } from './home-page/CustomProfilesFeatureLabel'
+import { LockedTileContent } from './home-page/LockedTileContent'
+import { MultiDeviceSyncLabel } from './home-page/MultiDeviceSyncLabel'
+import { PremiumFeatureLabel } from './home-page/PremiumFeatureLabel'
+import { ReportFeatureLabel } from './home-page/ReportFeatureLabel'
+import { useChartsChunkReady } from './home-page/useChartsChunkReady'
 import { AccountNoticeBox } from './overview/AccountNoticeBox'
 import { PremiumFeatureGate } from './premium/PremiumFeatureGate'
 import { Card } from './ui/Card'
@@ -50,59 +57,14 @@ import { CardHeader } from './ui/CardHeader'
 import { CardTitle } from './ui/CardTitle'
 import { GroupedAmount } from './ui/GroupedAmount'
 import { InfoTooltip } from './ui/InfoTooltip'
+import { LoadingStatus } from './ui/LoadingStatus'
 import { Page } from './ui/Page'
 import { PageContent } from './ui/PageContent'
 import { PageHeader } from './ui/PageHeader'
 import { PageTitle } from './ui/PageTitle'
-import { LoadingStatus, PendingFigure, SKELETON_BAR, SkeletonBlock } from './ui/Skeleton'
-
-// Lazy so Recharts stays off the critical path: route chunks' static imports are awaited before hydration.
-// Every call site must stay inside the `hydrated` branch so no chart renders on the server.
-let chartChunkResolved = false
-
-// Drives aria-busy only: a role="status" region per chart would compete with the page's single announcer.
-function useChartsChunkReady(): boolean {
-	const [ready, setReady] = React.useState(chartChunkResolved)
-
-	React.useEffect(() => {
-		if (chartChunkResolved) {
-			return
-		}
-		let active = true
-		void import('./HomeChartCanvases')
-			.then(() => {
-				chartChunkResolved = true
-				if (active) {
-					setReady(true)
-				}
-			})
-			.catch(() => {
-				// The ErrorBoundary around each canvas owns the failure; this only drives an aria attribute.
-			})
-		return () => {
-			active = false
-		}
-	}, [])
-
-	return ready
-}
-
-// The caller owns the box: keep this `h-full w-full` only.
-function ChartPending(): React.ReactElement {
-	return (
-		<div
-			aria-hidden="true"
-			className={cn(SKELETON_BAR, 'h-full w-full motion-safe:animate-pulse')}
-		/>
-	)
-}
-
-const CategoryBarCanvas = lazyWithRetry(() =>
-	import('./HomeChartCanvases').then((m) => ({ default: m.CategoryBarCanvas }))
-)
-const BreakdownPieCanvas = lazyWithRetry(() =>
-	import('./HomeChartCanvases').then((m) => ({ default: m.BreakdownPieCanvas }))
-)
+import { PendingFigure } from './ui/PendingFigure'
+import { SkeletonBlock } from './ui/SkeletonBlock'
+import { SKELETON_BAR } from './ui/skeleton-classes'
 
 const INCOME_COLOR = '#10B981'
 const EXPENSE_COLOR = '#EF4444'
@@ -716,137 +678,6 @@ export function HomePage() {
 	)
 }
 
-type BreakdownPieProps = {
-	// testid, not the title: the title carries the period suffix and changes with the selector.
-	testId: string
-	title: string
-	data: RechartsDataItem[]
-	// Not necessarily sum(data): Recharts sizes wedges by sum(data), so wedges and legend percentages diverge when they differ.
-	total: number
-	totalDisplay?: string
-	note?: string
-	emptyLabel: string
-	accentClass: string
-	legendValue?: (cents: number) => string
-}
-
-type CategoryBarDatum = { category: string; amount: number; fill: string }
-
-type CategoryBarChartProps = {
-	testId: string
-	data: CategoryBarDatum[]
-	ticks: number[]
-	// Only when every bar is also on the page as text: the balances totals appear nowhere else.
-	hiddenFromScreenReaders?: boolean
-}
-
-function CategoryBarChart({
-	testId,
-	data,
-	ticks,
-	hiddenFromScreenReaders = false,
-}: CategoryBarChartProps): React.ReactElement {
-	return (
-		// On the sized wrapper, not the lazy canvas, so the pending skeleton and error fallback are hidden too.
-		<div
-			style={{ height: categoryChartHeight(data.length) }}
-			data-testid={testId}
-			aria-hidden={hiddenFromScreenReaders || undefined}
-		>
-			<ErrorBoundary
-				fallback={<div className="p-4 text-red-600 dark:text-red-400">Chart error occurred</div>}
-			>
-				<Suspense fallback={<ChartPending />}>
-					<CategoryBarCanvas data={data} ticks={ticks} />
-				</Suspense>
-			</ErrorBoundary>
-		</div>
-	)
-}
-
-function BreakdownPie({
-	testId,
-	title,
-	data,
-	total,
-	totalDisplay,
-	note,
-	emptyLabel,
-	accentClass,
-	legendValue,
-}: BreakdownPieProps): React.ReactElement {
-	const formatAmount = useFormattedAmount()
-	const sorted = [...data].sort((a, b) => b.value - a.value)
-	const formatLegendValue = legendValue ?? formatAmount
-	return (
-		<div data-testid={`breakdown-pie-${testId}`}>
-			<CardHeader className="mb-2 items-baseline gap-2">
-				<CardTitle as="h3" className="text-sm">
-					{title}
-				</CardTitle>
-				{data.length > 0 && (
-					<span
-						data-testid={`breakdown-pie-total-${testId}`}
-						className={cn('text-sm font-semibold', accentClass)}
-					>
-						{totalDisplay ?? formatAmount(total)}
-					</span>
-				)}
-			</CardHeader>
-			{note && (
-				<p
-					data-testid={`breakdown-pie-note-${testId}`}
-					className="mb-2 rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 dark:bg-red-950 dark:text-red-300"
-				>
-					{note}
-				</p>
-			)}
-			{data.length === 0 ? (
-				<Card
-					variant="inset"
-					className="flex h-[240px] items-center justify-center p-6 text-center"
-				>
-					<p className="text-sm text-muted">{emptyLabel}</p>
-				</Card>
-			) : (
-				<>
-					{/* Hidden from screen readers: the list below reads every slice. On the wrapper so the fallbacks are hidden too. */}
-					<div className="h-[240px]" aria-hidden="true">
-						<ErrorBoundary
-							fallback={
-								<div className="p-4 text-red-600 dark:text-red-400">Chart error occurred</div>
-							}
-						>
-							<Suspense fallback={<ChartPending />}>
-								<BreakdownPieCanvas data={data} total={total} />
-							</Suspense>
-						</ErrorBoundary>
-					</div>
-					<ul className="mt-3 space-y-1">
-						{sorted.map((item, index) => (
-							<li
-								key={`${item.type}-${item.name}`}
-								className="flex items-center justify-between gap-2 text-xs"
-							>
-								<span className="flex min-w-0 items-center gap-2">
-									<span
-										className="h-2 w-2 shrink-0 rounded-full"
-										style={{
-											backgroundColor: item.fill || CATEGORY_COLORS[index % CATEGORY_COLORS.length],
-										}}
-									/>
-									<span className="truncate text-body">{item.name}</span>
-								</span>
-								<span className="shrink-0 text-muted">{formatLegendValue(item.value)}</span>
-							</li>
-						))}
-					</ul>
-				</>
-			)}
-		</div>
-	)
-}
-
 // Colour-free: add exactly one background token. surface-inset and surface-interactive both live in
 // @layer components, so declaration order in global.css, not className order, decides the winner.
 const PREMIUM_BOX_BASE =
@@ -854,92 +685,6 @@ const PREMIUM_BOX_BASE =
 
 // The forced-colors outline is needed because ring-* is a box-shadow, which Windows High Contrast discards.
 const PREMIUM_BOX_INTERACTIVE = `${PREMIUM_BOX_BASE} surface-interactive text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2`
-
-// chevronHidden makes the glyph `invisible`, not hidden, to reserve its width so the badges stay aligned.
-// Never pass it to a box the user can activate: the chevron is the touch affordance.
-function LockedTileContent({
-	label,
-	chevronHidden = false,
-}: {
-	label: React.ReactNode
-	chevronHidden?: boolean
-}): React.ReactElement {
-	return (
-		<>
-			<span className="mr-auto">{label}</span>
-			<span
-				aria-hidden="true"
-				className={cn(
-					'order-last pl-2 text-lg leading-none text-accent',
-					chevronHidden && ' invisible'
-				)}
-			>
-				›
-			</span>
-		</>
-	)
-}
-
-// Every situation the subtitle names must be expressible by the engine: recurring items have no start or end year,
-// so no house purchase or early retirement. The subtitle is part of the accessible name; check role-query regexes.
-function PremiumFeatureLabel(): React.ReactElement {
-	return (
-		<span className="flex flex-col">
-			<span className="font-medium text-subheading">Advanced Forecasting</span>
-			<span className="text-sm text-muted">
-				See how a raise, rising bills, a big one-off cost, paying down a loan or saving more each
-				month plays out over the years ahead
-			</span>
-		</span>
-	)
-}
-
-function MultiDeviceSyncLabel(): React.ReactElement {
-	return (
-		<span className="flex flex-col">
-			<span className="font-medium text-subheading">Multi-device sync</span>
-			<span className="text-sm text-muted">
-				Your data securely stored and synced across all your devices
-			</span>
-		</span>
-	)
-}
-
-function CustomProfilesFeatureLabel(): React.ReactElement {
-	return (
-		<span className="flex flex-col">
-			<span className="font-medium text-subheading">Custom Profiles</span>
-			<span className="text-sm text-muted">
-				Keep separate finances — e.g. personal vs. household — and switch without mixing the numbers
-			</span>
-		</span>
-	)
-}
-
-// The report covers budget, current net worth and savings only, and any PDF comes from the browser's print dialog:
-// claim neither a retirement outlook nor a generated PDF.
-function ReportFeatureLabel(): React.ReactElement {
-	return (
-		<span className="flex flex-col">
-			<span className="font-medium text-subheading">Financial summary report</span>
-			<span className="text-sm text-muted">
-				A print-ready summary of your budget, net worth and savings, built in your browser
-			</span>
-		</span>
-	)
-}
-
-// Categories apply to income and expenses only and do not sync; the subtitle must still name the breakdown.
-function CategoriesFeatureLabel(): React.ReactElement {
-	return (
-		<span className="flex flex-col">
-			<span className="font-medium text-subheading">Custom categories</span>
-			<span className="text-sm text-muted">
-				Group your income and expenses your way, and see what each category totals
-			</span>
-		</span>
-	)
-}
 
 // 'none' has no members but is kept so a new benefit must answer premium, activatable and opens-a-page separately.
 type OverviewBenefit =

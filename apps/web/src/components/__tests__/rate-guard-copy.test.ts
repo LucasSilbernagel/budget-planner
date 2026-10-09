@@ -6,7 +6,7 @@ import {
 	solveRetirementAccumulation,
 } from '@budget-planner/core/finance/retirement'
 import { describe, expect, it } from 'vitest'
-import { describeSolverError } from '../RetirementAccumulationPlanner'
+import { describeSolverError } from '../RetirementAccumulationPlanner/solver-helpers'
 
 function thrownBy(fn: () => unknown): Error {
 	try {
