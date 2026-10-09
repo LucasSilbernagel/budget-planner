@@ -15,11 +15,6 @@
 		"format": "biome format --write .",
 		"type-check": "pnpm --filter web type-check",
 		"type-check:all": "pnpm -r type-check",
-		"tsc": "tsc",
-		"tsc:web": "pnpm --filter web tsc --noEmit -p tsconfig.app.json",
-		"tsc:core": "pnpm --filter @budget-planner/core tsc --noEmit",
-		"tsc:db": "pnpm --filter @budget-planner/db tsc --noEmit",
-		"tsc:config": "pnpm --filter @budget-planner/config tsc --noEmit",
 		"validate:tsconfig": "node scripts/validate-tsconfig.js",
 		"test": "pnpm -r run test:unit",
 		"test:unit": "pnpm -r run test:unit",
@@ -29,11 +24,6 @@
 	},
 	"engines": {
 		"node": ">=24.0.0"
-	},
-	"pnpm": {
-		"onlyBuiltDependencies": [
-			"@biomejs/biome"
-		]
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.15",

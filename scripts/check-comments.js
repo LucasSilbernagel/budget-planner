@@ -49,11 +49,14 @@ function collectComments(text, fileName) {
 	return { sf, comments: [...seen.values()].sort((a, b) => a.pos - b.pos) }
 }
 
+// JSDoc type tags are the type system in .mjs files, not prose.
+const JSDOC_TYPE_TAG = /^\s*@(param|returns?|type|typedef|template|satisfies)\s*\{/
+
 function contentLines(raw) {
 	return raw
 		.split('\n')
 		.map((l) => l.replace(/^\s*(\/\*\*?|\*\/|\*|\/\/)?/, '').replace(/\*\/\s*$/, ''))
-		.filter((l) => l.trim() !== '').length
+		.filter((l) => l.trim() !== '' && !JSDOC_TYPE_TAG.test(l)).length
 }
 
 const problems = []

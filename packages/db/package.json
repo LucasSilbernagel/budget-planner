@@ -5,7 +5,6 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "echo 'DB dev script (to be configured)'",
 		"build": "tsc",
 		"type-check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
 		"lint": "biome check .",
@@ -30,14 +29,13 @@
 		"tsx": "^4.7.0"
 	},
 	"devDependencies": {
-		"@types/node": "^20.11.0",
+		"@biomejs/biome": "2.5.15",
+		"@types/node": "^24.19.1",
 		"@types/pg": "^8.10.9",
 		"typescript": "^5.3.3",
-		"@biomejs/biome": "2.5.15",
 		"vitest": "^1.6.1"
 	},
 	"engines": {
 		"node": ">=24.0.0"
-	},
-	"pnpm": {}
+	}
 }

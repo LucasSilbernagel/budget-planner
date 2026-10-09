@@ -44,7 +44,10 @@ const status = {
 	startedAt: new Date().toISOString(),
 }
 
-/** Signalled on shutdown rather than orphaned against production. */
+/**
+ * Signalled on shutdown rather than orphaned against production.
+ * @type {import('node:child_process').ChildProcess | null}
+ */
 let activeChild = null
 
 // Resolved by path: the image runs node with no pnpm shim, so PATH can't find these.

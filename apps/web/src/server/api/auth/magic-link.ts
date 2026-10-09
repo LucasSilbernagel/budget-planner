@@ -35,14 +35,11 @@ export type MagicLinkStage = 'lookup' | 'token' | 'send'
 // Still thrown so the route's rejection handler stays the single failure sink.
 export class MagicLinkStageError extends Error {
 	readonly stage: MagicLinkStage
-	// Assigned by hand: the app's `lib` predates ES2022's `{ cause }`.
-	readonly cause: unknown
 
 	constructor(stage: MagicLinkStage, cause: unknown) {
-		super(`Magic-link request failed at stage '${stage}'`)
+		super(`Magic-link request failed at stage '${stage}'`, { cause })
 		this.name = 'MagicLinkStageError'
 		this.stage = stage
-		this.cause = cause
 	}
 }
 

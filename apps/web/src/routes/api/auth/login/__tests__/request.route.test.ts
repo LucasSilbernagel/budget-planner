@@ -4,11 +4,9 @@ const { checkDbRateLimit, buckets, logger, captureError, MagicLinkStageError } =
 	// Same class shape, so the route's `instanceof` check runs against the constructor the tests throw.
 	class MagicLinkStageError extends Error {
 		readonly stage: string
-		readonly cause: unknown
 		constructor(stage: string, cause: unknown) {
-			super(`Magic-link request failed at stage '${stage}'`)
+			super(`Magic-link request failed at stage '${stage}'`, { cause })
 			this.stage = stage
-			this.cause = cause
 		}
 	}
 	const buckets = new Map<string, number>()

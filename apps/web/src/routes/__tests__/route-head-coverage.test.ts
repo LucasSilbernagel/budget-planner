@@ -61,11 +61,8 @@ function headMetaFor(routePath: string, mod: unknown): MetaEntry[] {
 	try {
 		return head(HEAD_ARGS[routePath] ?? {})?.meta ?? []
 	} catch (cause) {
-		// `Object.assign`, not the `{ cause }` option: the test lib is ES2021 plus ES2022.Object only.
-		throw Object.assign(
-			new Error(
-				`head() threw for ${routePath} — if it reads loaderData, add a HEAD_ARGS fixture for it`
-			),
+		throw new Error(
+			`head() threw for ${routePath} — if it reads loaderData, add a HEAD_ARGS fixture for it`,
 			{ cause }
 		)
 	}

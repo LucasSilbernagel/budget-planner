@@ -5,7 +5,7 @@
 		"jsxImportSource": "react",
 		"module": "ESNext",
 		"moduleResolution": "bundler",
-		"lib": ["ES2021", "ES2022.Object", "DOM", "DOM.Iterable"],
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
 		"allowImportingTsExtensions": false,
 		"allowSyntheticDefaultImports": true,
 		"outDir": "./dist",
