@@ -5,7 +5,7 @@ set -euo pipefail
 
 IMAGE="${1:?usage: verify-image.sh <image-ref> <journal.json>}"
 JOURNAL="${2:?usage: verify-image.sh <image-ref> <journal.json>}"
-PG_IMAGE="${VERIFY_PG_IMAGE:-postgres:18}"
+PG_IMAGE="${VERIFY_PG_IMAGE:-public.ecr.aws/docker/library/postgres:18}"
 NET="bp-verify-net"
 RUN_ID="verify-${GITHUB_RUN_ID:-local}-$$"
 
