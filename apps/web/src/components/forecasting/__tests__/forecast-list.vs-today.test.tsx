@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import type { SavedForecast } from '../../../routes/forecasting'
 import { ForecastList } from '../forecast-list'
+import type { SavedForecast } from '../saved-forecast'
 
 vi.mock('../../../stores/currencyStore', () => ({
 	useFormattedAmount: () => (cents: number) => (cents / 100).toFixed(2),

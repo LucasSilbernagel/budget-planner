@@ -1,4 +1,5 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
+import { errorMessage } from '@/components/auth/login-error-message'
 import { MagicLinkForm } from '@/components/auth/magic-link-form'
 import { Card } from '@/components/ui/Card'
 import { PageTitle } from '@/components/ui/PageTitle'
@@ -36,13 +37,6 @@ export const Route = createFileRoute('/login')({
 	}),
 	component: LoginPage,
 })
-
-function errorMessage(code: string | undefined): string | undefined {
-	if (code === 'invalid_or_expired') {
-		return 'That sign-in link was invalid or has expired. Please request a new one.'
-	}
-	return code ? 'Unable to sign you in. Please request a new link.' : undefined
-}
 
 function LoginPage() {
 	const { error } = Route.useSearch()

@@ -6,7 +6,7 @@ import { getDocPage } from '../../../content/docs'
 import { PRICING_PAGE } from '../../../content/legal'
 import type { PremiumAccessStatus } from '../../../hooks/usePremiumAccess'
 import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../../../lib/premium/benefits'
-import { PREMIUM_FEATURES as PROMPT_COPY } from '../../auth/premium-prompt'
+import { PREMIUM_FEATURES as PROMPT_COPY } from '../../auth/premium-prompt-content'
 import { PREMIUM_FEATURES as PRICING_COPY } from '../../pricing/pricing-page'
 
 // The type system already enforces each TS surface's key set. This adds what tsc can't: keys

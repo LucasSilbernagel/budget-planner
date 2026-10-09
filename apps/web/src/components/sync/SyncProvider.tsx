@@ -1,28 +1,13 @@
 import { type ReactElement, Suspense, useEffect, useState } from 'react'
 import { lazyWithRetry } from '@/lib/lazy-with-retry'
-import { hasPaidAccess } from '@/lib/premium/access-statuses'
 import { accountBoundaryAppliedFor, applyAccountBoundary } from '@/lib/sync/accountBoundary'
 import { setSyncSessionStatus } from '@/lib/sync/sessionStatusStore'
 import { ErrorBoundary } from '../ErrorBoundary'
+import { hasProbableSession, isPaidSyncSession, type SessionUser } from './sync-session'
 
 const ActiveSync = lazyWithRetry(() =>
 	import('./ActiveSync').then((m) => ({ default: m.ActiveSync }))
 )
-
-type SessionUser = {
-	userId: string
-	subscriptionStatus: string
-}
-
-function isPaidSyncSession(user: SessionUser | null): user is SessionUser {
-	return user !== null && hasPaidAccess(user.subscriptionStatus)
-}
-
-// `has_session` is a non-HttpOnly presence marker: the real session cookie is never
-// visible to document.cookie. It is not trusted; /api/auth/me decides.
-export function hasProbableSession(cookieString: string): boolean {
-	return /(?:^|;\s*)has_session=/.test(cookieString)
-}
 
 export function SyncProvider(): ReactElement | null {
 	const [user, setUser] = useState<SessionUser | null>(null)

@@ -8,10 +8,10 @@ import {
 	type SeedSubscriptionStatus,
 	type SessionSeed,
 	SIGNED_OUT_SEED,
-	useSessionSeed,
 } from '../context/session-seed'
 import { hasPremiumFeatures, STATUS_ACCESS } from '../lib/premium/access-statuses'
 import { useVerifiedSession } from '../lib/session/verifiedSession'
+import { useSessionSeed } from './useSessionSeed'
 
 export type PremiumAccessStatus = {
 	hasAccess: boolean

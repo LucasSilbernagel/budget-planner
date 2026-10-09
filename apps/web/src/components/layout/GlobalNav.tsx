@@ -2,10 +2,21 @@ import { Link, useRouterState } from '@tanstack/react-router'
 import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/cn'
-import { useSessionSeed } from '../../context/session-seed'
+import { useSessionSeed } from '../../hooks/useSessionSeed'
 import { isEntitledSeed } from '../../lib/premium/entitlement'
 import { useVerifiedSession } from '../../lib/session/verifiedSession'
 import { useShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
+import { BalanceIcon } from '../icons/BalanceIcon'
+import { CategoriesIcon } from '../icons/CategoriesIcon'
+import { ExpensesIcon } from '../icons/ExpensesIcon'
+import { ForecastingIcon } from '../icons/ForecastingIcon'
+import { HomeIcon } from '../icons/HomeIcon'
+import { IncomeIcon } from '../icons/IncomeIcon'
+import { MoreIcon } from '../icons/MoreIcon'
+import { ProfilesIcon } from '../icons/ProfilesIcon'
+import { ReportIcon } from '../icons/ReportIcon'
+import { RetirementIcon } from '../icons/RetirementIcon'
+import { SavingsIcon } from '../icons/SavingsIcon'
 import { ChevronDownIcon, DISCLOSURE_CHEVRON_CLASS } from '../ui/ChevronDownIcon'
 import { SettingsIcon } from '../ui/SettingsIcon'
 
@@ -28,6 +39,7 @@ type NavItem = {
 	label: string
 	to: NavPath
 	exact?: boolean
+	// Every icon is rendered with `sm:hidden` by its caller; without it the desktop nav grows.
 	Icon: (props: { className: string }) => React.ReactElement
 }
 
@@ -368,227 +380,5 @@ export function GlobalNav() {
 				</li>
 			</ul>
 		</nav>
-	)
-}
-
-// Every icon is rendered with `sm:hidden` by its caller; without it the desktop nav grows.
-
-function HomeIcon({ className }: { className: string }): React.ReactElement {
-	return (
-		<svg
-			aria-hidden="true"
-			className={className}
-			fill="none"
-			stroke="currentColor"
-			viewBox="0 0 24 24"
-			xmlns="http://www.w3.org/2000/svg"
-		>
-			<path
-				strokeLinecap="round"
-				strokeLinejoin="round"
-				strokeWidth={2}
-				d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-			/>
-		</svg>
-	)
-}
-
-function IncomeIcon({ className }: { className: string }): React.ReactElement {
-	return (
-		<svg
-			aria-hidden="true"
-			className={className}
-			fill="none"
-			stroke="currentColor"
-			viewBox="0 0 24 24"
-			xmlns="http://www.w3.org/2000/svg"
-		>
-			<path
-				strokeLinecap="round"
-				strokeLinejoin="round"
-				strokeWidth={2}
-				d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-			/>
-		</svg>
-	)
-}
-
-function ExpensesIcon({ className }: { className: string }): React.ReactElement {
-	return (
-		<svg
-			aria-hidden="true"
-			className={className}
-			fill="none"
-			stroke="currentColor"
-			viewBox="0 0 24 24"
-			xmlns="http://www.w3.org/2000/svg"
-		>
-			<path
-				strokeLinecap="round"
-				strokeLinejoin="round"
-				strokeWidth={2}
-				d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
-			/>
-		</svg>
-	)
-}
-
-function SavingsIcon({ className }: { className: string }): React.ReactElement {
-	return (
-		<svg
-			aria-hidden="true"
-			className={className}
-			fill="none"
-			stroke="currentColor"
-			viewBox="0 0 24 24"
-			xmlns="http://www.w3.org/2000/svg"
-		>
-			<path
-				strokeLinecap="round"
-				strokeLinejoin="round"
-				strokeWidth={2}
-				d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 9v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-			/>
-		</svg>
-	)
-}
-
-function MoreIcon({ className }: { className: string }): React.ReactElement {
-	return (
-		<svg
-			aria-hidden="true"
-			className={className}
-			fill="none"
-			stroke="currentColor"
-			viewBox="0 0 24 24"
-			xmlns="http://www.w3.org/2000/svg"
-		>
-			<path
-				strokeLinecap="round"
-				strokeLinejoin="round"
-				strokeWidth={2}
-				d="M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z"
-			/>
-		</svg>
-	)
-}
-
-function BalanceIcon({ className }: { className: string }): React.ReactElement {
-	return (
-		<svg
-			aria-hidden="true"
-			className={className}
-			fill="none"
-			stroke="currentColor"
-			viewBox="0 0 24 24"
-			xmlns="http://www.w3.org/2000/svg"
-		>
-			<path
-				strokeLinecap="round"
-				strokeLinejoin="round"
-				strokeWidth={2}
-				d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"
-			/>
-		</svg>
-	)
-}
-
-function RetirementIcon({ className }: { className: string }): React.ReactElement {
-	return (
-		<svg
-			aria-hidden="true"
-			className={className}
-			fill="none"
-			stroke="currentColor"
-			viewBox="0 0 24 24"
-			xmlns="http://www.w3.org/2000/svg"
-		>
-			<path
-				strokeLinecap="round"
-				strokeLinejoin="round"
-				strokeWidth={2}
-				d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-			/>
-		</svg>
-	)
-}
-
-function ForecastingIcon({ className }: { className: string }): React.ReactElement {
-	return (
-		<svg
-			aria-hidden="true"
-			className={className}
-			fill="none"
-			stroke="currentColor"
-			viewBox="0 0 24 24"
-			xmlns="http://www.w3.org/2000/svg"
-		>
-			<path
-				strokeLinecap="round"
-				strokeLinejoin="round"
-				strokeWidth={2}
-				d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
-			/>
-		</svg>
-	)
-}
-
-function ProfilesIcon({ className }: { className: string }): React.ReactElement {
-	return (
-		<svg
-			aria-hidden="true"
-			className={className}
-			fill="none"
-			stroke="currentColor"
-			viewBox="0 0 24 24"
-			xmlns="http://www.w3.org/2000/svg"
-		>
-			<path
-				strokeLinecap="round"
-				strokeLinejoin="round"
-				strokeWidth={2}
-				d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-			/>
-		</svg>
-	)
-}
-
-function ReportIcon({ className }: { className: string }): React.ReactElement {
-	return (
-		<svg
-			aria-hidden="true"
-			className={className}
-			fill="none"
-			stroke="currentColor"
-			viewBox="0 0 24 24"
-			xmlns="http://www.w3.org/2000/svg"
-		>
-			<path
-				strokeLinecap="round"
-				strokeLinejoin="round"
-				strokeWidth={2}
-				d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-			/>
-		</svg>
-	)
-}
-
-function CategoriesIcon({ className }: { className: string }): React.ReactElement {
-	return (
-		<svg
-			aria-hidden="true"
-			className={className}
-			fill="none"
-			stroke="currentColor"
-			viewBox="0 0 24 24"
-			xmlns="http://www.w3.org/2000/svg"
-		>
-			<path
-				strokeLinecap="round"
-				strokeLinejoin="round"
-				strokeWidth={2}
-				d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
-			/>
-		</svg>
 	)
 }

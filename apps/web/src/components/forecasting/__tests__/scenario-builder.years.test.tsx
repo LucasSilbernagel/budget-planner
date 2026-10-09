@@ -1,8 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SavedForecast } from '../../../routes/forecasting'
 import { useIncomeStore } from '../../../stores/incomeStore'
 import { useProfileStore } from '../../../stores/profileStore'
+import type { SavedForecast } from '../saved-forecast'
 import { ScenarioBuilder } from '../scenario-builder'
 
 // Engine wrapped: its loop is synchronous, so an unguarded `years` of 1e9 would hang vitest rather than fail.

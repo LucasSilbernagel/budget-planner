@@ -7,10 +7,8 @@ import { useCurrencyStore } from '../../stores/currencyStore'
 import { useExpenseStore } from '../../stores/expenseStore'
 import { useIncomeStore } from '../../stores/incomeStore'
 import { useRetirementPlannerStore } from '../../stores/retirementPlannerStore'
-import {
-	describeSolverError,
-	RetirementAccumulationPlanner,
-} from '../RetirementAccumulationPlanner'
+import { RetirementAccumulationPlanner } from '../RetirementAccumulationPlanner'
+import { describeSolverError } from '../RetirementAccumulationPlanner/solver-helpers'
 
 function resetStores() {
 	useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })

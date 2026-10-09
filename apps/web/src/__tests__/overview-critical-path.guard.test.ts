@@ -265,11 +265,12 @@ describe.each(ENTRIES)('$name synchronous import graph', (subject) => {
 		expect(offenders, `${offenders.join(', ')} ${why}`).toEqual([])
 	})
 
-	it.each(['components/HomeChartCanvases.tsx', 'components/sync/ActiveSync.tsx'])(
-		'%s is NOT on this synchronous path (it is a lazy boundary)',
-		(lazyModule) => {
-			expect(existsSync(join(SRC_ROOT, lazyModule))).toBe(true)
-			expect(files).not.toContain(lazyModule)
-		}
-	)
+	it.each([
+		'components/HomeChartCanvases.tsx',
+		'components/sync/ActiveSync.tsx',
+		'components/sync/ActiveSyncEngine.tsx',
+	])('%s is NOT on this synchronous path (it is a lazy boundary)', (lazyModule) => {
+		expect(existsSync(join(SRC_ROOT, lazyModule))).toBe(true)
+		expect(files).not.toContain(lazyModule)
+	})
 })

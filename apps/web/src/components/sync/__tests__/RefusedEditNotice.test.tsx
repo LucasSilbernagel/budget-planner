@@ -8,7 +8,8 @@ import {
 	reconcileNotSyncedNotices,
 	resetRefusalNotices,
 } from '@/lib/sync/refusalNoticeStore'
-import { noticeHeading, RefusedEditNotice, refusalMessage } from '../RefusedEditNotice'
+import { RefusedEditNotice } from '../RefusedEditNotice'
+import { noticeHeading, refusalMessage } from '../refusal-message'
 
 function notice(overrides: Partial<RefusalNotice> = {}): RefusalNotice {
 	return {

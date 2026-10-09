@@ -8,7 +8,6 @@ import { useMemo, useState } from 'react'
 import {
 	buildFinancialSummary,
 	type FinancialSummaryReportModel,
-	type ReportCashflowRow,
 } from '../../lib/report/build-financial-summary'
 import { useBalanceEntries } from '../../stores/balanceStore'
 import { useFormattedAmount } from '../../stores/currencyStore'
@@ -17,26 +16,23 @@ import { useIncomeSources } from '../../stores/incomeStore'
 import { useSavingsGoals } from '../../stores/savingsStore'
 import { CardHeader } from '../ui/CardHeader'
 import { CardTitle } from '../ui/CardTitle'
-import { GroupedAmount } from '../ui/GroupedAmount'
 import { PageTitle } from '../ui/PageTitle'
-import { RESPONSIVE_SCROLL_SHADOW_CLASS, RESPONSIVE_WRAPPER_CLASS } from '../ui/ResponsiveTable'
 import { TableScrollRegion } from '../ui/TableScrollRegion'
-
-const FREQUENCY_LABELS: Record<string, string> = {
-	weekly: 'Weekly',
-	biweekly: 'Biweekly',
-	monthly: 'Monthly',
-	annually: 'Annually',
-}
-
-// Both members are core Frequency values, so denormalizeFromMonthly is the one conversion rule.
-// Deliberately not the persisted overviewDurationStore: the report always opens monthly.
-type BudgetPeriod = 'monthly' | 'annually'
-
-const BUDGET_PERIOD_LABEL = {
-	monthly: { option: 'Monthly', word: 'Monthly' },
-	annually: { option: 'Annually', word: 'Annual' },
-} satisfies Record<BudgetPeriod, { option: string; word: string }>
+import { BalanceTable } from './FinancialSummaryReport/BalanceTable'
+import { BUDGET_PERIOD_LABEL, type BudgetPeriod } from './FinancialSummaryReport/budget-period'
+import { CashflowTable } from './FinancialSummaryReport/CashflowTable'
+import { emptySectionCopy, formatPercent } from './FinancialSummaryReport/report-format'
+import {
+	NAME_WRAP_CLASS,
+	TABLE_CLASS,
+	TABLE_REGION_CLASS,
+	TD_CLASS,
+	TD_NUMERIC_CLASS,
+	TH_CLASS,
+	TH_NUMERIC_CLASS,
+} from './FinancialSummaryReport/report-table-classes'
+import { TotalRow } from './FinancialSummaryReport/TotalRow'
+import { UnreadableNote } from './FinancialSummaryReport/UnreadableNote'
 
 // Derived from the label record so a new period cannot be silently omitted.
 const BUDGET_PERIODS = Object.keys(BUDGET_PERIOD_LABEL) as readonly BudgetPeriod[]
@@ -44,24 +40,6 @@ const BUDGET_PERIODS = Object.keys(BUDGET_PERIOD_LABEL) as readonly BudgetPeriod
 // Must not contain 'amounts' or 'currency': page-wide guards assert neither word is rendered.
 const BUDGET_PERIOD_LABEL_TEXT = 'Show the budget per'
 
-const TABLE_CLASS = 'min-w-full divide-y divide-gray-200 dark:divide-gray-700'
-
-// A four-column table is wider than a phone card, so it scrolls in its own region.
-// The print: resets keep wide tables unclipped and the shadow gradients off paper.
-const TABLE_REGION_CLASS = cn(
-	RESPONSIVE_WRAPPER_CLASS,
-	RESPONSIVE_SCROLL_SHADOW_CLASS,
-	'mt-3 print:overflow-visible print:bg-none'
-)
-
-// `anywhere` (not break-word) lowers min-content so long names cannot widen tables, on screen or paper;
-// max-sm:min-w keeps ordinary names from splitting mid-word on phones.
-const NAME_WRAP_CLASS = '[overflow-wrap:anywhere] max-sm:min-w-[8rem]'
-
-const TH_CLASS = 'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-label'
-const TH_NUMERIC_CLASS = cn(TH_CLASS, 'text-right')
-const TD_CLASS = 'px-3 py-2 text-sm text-body'
-const TD_NUMERIC_CLASS = cn(TD_CLASS, 'text-right tabular-nums')
 const SECTION_CLASS = 'surface border-default mt-6 rounded-lg border p-4 sm:p-6'
 
 // Shared by both print buttons; a test asserts their class attributes are equal.
@@ -70,122 +48,6 @@ const PRINT_BUTTON_CLASS =
 
 // justify-end keeps the lone button right; flex-wrap and gap-3 are inert but keep both rows one shape.
 const PRINT_ROW_CLASS = 'flex flex-wrap items-center justify-end gap-3'
-
-function formatPercent(percent: number | null): string {
-	return percent === null ? '—' : `${Math.round(percent)}%`
-}
-
-function CashflowTable({
-	caption,
-	rows,
-	period,
-}: {
-	caption: string
-	rows: readonly ReportCashflowRow[]
-	period: BudgetPeriod
-}): React.ReactElement {
-	const format = useFormattedAmount()
-	return (
-		<TableScrollRegion label={`${caption} table`} className={TABLE_REGION_CLASS}>
-			<table className={TABLE_CLASS}>
-				<caption className="text-left text-sm font-medium text-subheading">{caption}</caption>
-				<thead className="surface-inset">
-					<tr>
-						<th scope="col" className={TH_CLASS}>
-							Name
-						</th>
-						<th scope="col" className={TH_NUMERIC_CLASS}>
-							Amount
-						</th>
-						<th scope="col" className={TH_CLASS}>
-							Frequency
-						</th>
-						<th scope="col" className={TH_NUMERIC_CLASS}>
-							{BUDGET_PERIOD_LABEL[period].word}
-						</th>
-					</tr>
-				</thead>
-				<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-					{rows.map((row) => (
-						<tr key={row.id}>
-							{/* Explicit text-left: an unstyled <th> takes the UA default centre and Preflight does not reset it.
-                 Per call site, not on TD_CLASS, which TD_NUMERIC_CLASS extends with text-right. */}
-							<th scope="row" className={cn(TD_CLASS, 'font-normal text-left', NAME_WRAP_CLASS)}>
-								{row.name}
-							</th>
-							{/* What the user entered: unaffected by the period control. */}
-							<td className={TD_NUMERIC_CLASS}>{format(row.amountCents)}</td>
-							<td className={TD_CLASS}>{FREQUENCY_LABELS[row.frequency] ?? row.frequency}</td>
-							{/* At the row's own cadence print what was typed: round-tripping the rounded monthly cents is lossy
-                 (100.00/yr gives 99.96). Accepted cost: the column may differ from the total by a few cents. */}
-							<td className={TD_NUMERIC_CLASS}>
-								{format(
-									period === row.frequency
-										? row.amountCents
-										: denormalizeFromMonthly(row.monthlyCents, period)
-								)}
-							</td>
-						</tr>
-					))}
-				</tbody>
-			</table>
-		</TableScrollRegion>
-	)
-}
-
-function TotalRow({
-	label,
-	value,
-	emphasis = false,
-}: {
-	label: string
-	value: string
-	emphasis?: boolean
-}): React.ReactElement {
-	return (
-		// The label gives up width first so a wrapped value stays right-aligned.
-		<div className="border-default flex items-baseline justify-between gap-4 border-t py-2">
-			<dt
-				className={
-					emphasis
-						? 'shrink-[1000] text-sm font-semibold text-heading'
-						: 'shrink-[1000] text-sm text-label'
-				}
-			>
-				{label}
-			</dt>
-			<dd
-				className={
-					emphasis
-						? 'text-right text-base font-semibold tabular-nums text-heading'
-						: 'text-right text-sm tabular-nums text-body'
-				}
-			>
-				<GroupedAmount text={value} />
-			</dd>
-		</div>
-	)
-}
-
-// Must distinguish 'nothing added' from 'nothing readable', or it contradicts the disclosure below.
-function emptySectionCopy(unreadableCount: number, nothingAdded: string): string {
-	return unreadableCount > 0
-		? 'None of the entries saved for this section could be read, so it has no figures to show.'
-		: nothingAdded
-}
-
-function UnreadableNote({ count }: { count: number }): React.ReactElement | null {
-	if (count === 0) {
-		return null
-	}
-	return (
-		<p className="mt-3 text-sm text-muted">
-			{count === 1
-				? '1 entry could not be read and is not included in these figures.'
-				: `${count} entries could not be read and are not included in these figures.`}
-		</p>
-	)
-}
 
 export type FinancialSummaryReportProps = {
 	// Injected by tests for determinism; production stamps today.
@@ -498,43 +360,5 @@ export function FinancialSummaryReport({
 				)}
 			</article>
 		</main>
-	)
-}
-
-function BalanceTable({
-	caption,
-	rows,
-}: {
-	caption: string
-	rows: readonly { id: string; name: string; balanceCents: number }[]
-}): React.ReactElement {
-	const format = useFormattedAmount()
-	return (
-		<TableScrollRegion label={`${caption} table`} className={TABLE_REGION_CLASS}>
-			<table className={TABLE_CLASS}>
-				<caption className="text-left text-sm font-medium text-subheading">{caption}</caption>
-				<thead className="surface-inset">
-					<tr>
-						<th scope="col" className={TH_CLASS}>
-							Name
-						</th>
-						<th scope="col" className={TH_NUMERIC_CLASS}>
-							Balance
-						</th>
-					</tr>
-				</thead>
-				<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-					{rows.map((row) => (
-						<tr key={row.id}>
-							{/* text-left: same UA-default fix as CashflowTable's row header. */}
-							<th scope="row" className={cn(TD_CLASS, 'font-normal text-left', NAME_WRAP_CLASS)}>
-								{row.name}
-							</th>
-							<td className={TD_NUMERIC_CLASS}>{format(row.balanceCents)}</td>
-						</tr>
-					))}
-				</tbody>
-			</table>
-		</TableScrollRegion>
 	)
 }

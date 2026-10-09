@@ -4,6 +4,7 @@ import {
 	useShowRetirementPlanner,
 	useToggleRetirementPlanner,
 } from '../../stores/plannerVisibilityStore'
+import { SwitchTrack } from './switch-track'
 
 // The accessible name must not contain "dark mode": a settings test filters
 // every switch on /dark mode/i.
@@ -38,24 +39,5 @@ export function RetirementVisibilityToggle({
 			</span>
 			<SwitchTrack on={showRetirementPlanner} />
 		</button>
-	)
-}
-
-function SwitchTrack({ on }: { on: boolean }): React.ReactElement {
-	return (
-		<span
-			aria-hidden="true"
-			className={cn(
-				'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors',
-				on ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
-			)}
-		>
-			<span
-				className={cn(
-					'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
-					on ? 'translate-x-6' : 'translate-x-1'
-				)}
-			/>
-		</span>
 	)
 }

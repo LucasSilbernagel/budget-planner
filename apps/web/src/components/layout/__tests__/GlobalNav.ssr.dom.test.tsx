@@ -9,7 +9,8 @@ import { hydrateRoot } from 'react-dom/client'
 import { renderToString } from 'react-dom/server'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { type SessionSeed, SessionSeedProvider } from '@/context/session-seed'
+import type { SessionSeed } from '@/context/session-seed'
+import { SessionSeedProvider } from '@/context/session-seed-provider'
 import { GlobalNav } from '../GlobalNav'
 
 // `router.load()` first: without it the router emits an unresolved Suspense boundary and

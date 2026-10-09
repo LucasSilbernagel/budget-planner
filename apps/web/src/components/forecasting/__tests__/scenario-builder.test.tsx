@@ -1,11 +1,11 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SavedForecast } from '../../../routes/forecasting'
 import { useBalanceStore } from '../../../stores/balanceStore'
 import { useExpenseStore } from '../../../stores/expenseStore'
 import { useIncomeStore } from '../../../stores/incomeStore'
 import { useProfileStore } from '../../../stores/profileStore'
 import { useSavingsStore } from '../../../stores/savingsStore'
+import type { SavedForecast } from '../saved-forecast'
 import { ScenarioBuilder } from '../scenario-builder'
 
 // Mocked rather than set: the real persist store binds localStorage at import time.

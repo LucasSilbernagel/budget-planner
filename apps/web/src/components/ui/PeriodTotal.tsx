@@ -18,7 +18,7 @@ import {
 } from '../../stores/overviewDurationStore'
 import { GroupedAmount } from './GroupedAmount'
 import { InfoTooltip } from './InfoTooltip'
-import { PendingFigure } from './Skeleton'
+import { PendingFigure } from './PendingFigure'
 
 type PeriodTotalProps = {
 	label: string

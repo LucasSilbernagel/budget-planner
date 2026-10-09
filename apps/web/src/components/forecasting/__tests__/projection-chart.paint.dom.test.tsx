@@ -16,7 +16,8 @@ vi.mock('recharts', async (importOriginal) => {
 	}
 })
 
-const { CustomTooltip, ProjectionChart } = await import('../projection-chart')
+const { CustomTooltip } = await import('../projection-chart/custom-tooltip')
+const { ProjectionChart } = await import('../projection-chart')
 
 const LONG = 'Buy a house in the countryside and retire early with the kids'
 

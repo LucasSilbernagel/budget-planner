@@ -7,7 +7,10 @@ import { type CssRule, cssRules, GLOBAL_CSS, selectorsOf } from '../test/css-rul
 
 // jsdom has no cascade or print media, so this pins the print RULES, not painted colours.
 
-const ROOT_SOURCE = readFileSync(resolve(__dirname, '..', 'routes', '__root.tsx'), 'utf-8')
+const ROOT_SOURCE = readFileSync(
+	resolve(__dirname, '..', 'components', 'layout', 'RootDocument.tsx'),
+	'utf-8'
+)
 const REPORT = '#financial-summary-report'
 
 // `@media print`, `only print`, `screen, print`, `print and (…)`; `not print` excluded.
@@ -65,11 +68,11 @@ describe('print rules: only chrome is suppressed (was e2e report-print:114, :169
 		renderWithRouter(<Footer />)
 		expect(await screen.findByRole('contentinfo')).toHaveAttribute('data-print-hide')
 
-		// `__root.tsx` is a route module, so it is pinned on source: the attribute's element must
-		// still be OPEN when `<GlobalNav` is reached.
+		// `RootDocument` renders the whole <html> document, so it is pinned on source: the attribute's
+		// element must still be OPEN when `<GlobalNav` is reached.
 		const attr = ROOT_SOURCE.search(/\n\s*data-print-hide\n/)
 		const nav = ROOT_SOURCE.indexOf('<GlobalNav', attr)
-		expect(attr, 'no data-print-hide attribute in __root.tsx').toBeGreaterThan(-1)
+		expect(attr, 'no data-print-hide attribute in RootDocument.tsx').toBeGreaterThan(-1)
 		expect(nav, 'no <GlobalNav after the data-print-hide wrapper').toBeGreaterThan(attr)
 		// Depth, not a count comparison: closing the wrapper and opening two unmarked divs keeps
 		// the counts green.

@@ -18,11 +18,8 @@ import {
 	within,
 } from '@/test/utils'
 
-import {
-	type SessionSeed,
-	SessionSeedProvider,
-	SIGNED_OUT_SEED,
-} from '../../../context/session-seed'
+import { type SessionSeed, SIGNED_OUT_SEED } from '../../../context/session-seed'
+import { SessionSeedProvider } from '../../../context/session-seed-provider'
 import {
 	getVerifiedSession,
 	resetVerifiedSessionForTests,

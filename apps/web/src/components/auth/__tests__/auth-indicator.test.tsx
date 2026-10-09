@@ -11,7 +11,8 @@ import { renderToString } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, renderWithRouter, screen, userEvent, waitFor, within } from '@/test/utils'
 
-import { type SessionSeed, SessionSeedProvider } from '../../../context/session-seed'
+import type { SessionSeed } from '../../../context/session-seed'
+import { SessionSeedProvider } from '../../../context/session-seed-provider'
 
 /** Wrapped, not replaced: the real body runs, and the spy proves the menu reaches it. */
 vi.mock('@/lib/account/sign-out', async (importOriginal) => {

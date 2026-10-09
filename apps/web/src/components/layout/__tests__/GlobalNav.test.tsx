@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { type SessionSeed, SessionSeedProvider } from '@/context/session-seed'
+import type { SessionSeed } from '@/context/session-seed'
+import { SessionSeedProvider } from '@/context/session-seed-provider'
 import { fireEvent, renderWithRouter, screen, waitFor, within } from '@/test/utils'
 
 import { usePlannerVisibilityStore } from '../../../stores/plannerVisibilityStore'

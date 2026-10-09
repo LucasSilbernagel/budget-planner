@@ -1,4 +1,3 @@
-import type { BillingInterval, SubscriptionStatus } from '@budget-planner/db/schema'
 import { useEffect, useRef, useState } from 'react'
 import { planLabel } from '@/lib/account/plan-label'
 import { purgeLocalFinancialData } from '@/lib/account/purge-local-financial-data'
@@ -6,28 +5,12 @@ import { returnToSignedOutHome, signOut } from '@/lib/account/sign-out'
 import { hasPaidAccess } from '@/lib/premium/access-statuses'
 import { purgeAppShellCache } from '@/lib/pwa/app-shell-cache'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
-
-type CurrentUser = {
-	userId: string
-	email: string
-	subscriptionStatus: SubscriptionStatus
-	// Optional: an older server mid-deploy omits it; absent reads as "not known".
-	billingInterval?: BillingInterval | null
-}
+import { type CurrentUser, fetchCurrentUser } from './fetch-current-user'
 
 type AuthState =
 	| { status: 'loading' }
 	| { status: 'unauthenticated' }
 	| { status: 'authenticated'; user: CurrentUser }
-
-async function fetchCurrentUser(): Promise<CurrentUser | null> {
-	const response = await fetch('/api/auth/me')
-	if (!response.ok) {
-		return null
-	}
-	const data = (await response.json()) as { user?: CurrentUser | null }
-	return data.user ?? null
-}
 
 export function AccountSection() {
 	const [authState, setAuthState] = useState<AuthState>({ status: 'loading' })

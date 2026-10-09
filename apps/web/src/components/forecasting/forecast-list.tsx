@@ -1,15 +1,18 @@
 import type React from 'react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Card } from '@/components/ui/Card'
-import { CardTitle } from '@/components/ui/CardTitle'
 import { cn } from '@/lib/cn'
+import { useSortHeaderAnnouncements } from '../../hooks/useSortHeaderAnnouncements'
 import { signedAmount } from '../../lib/forecasting/today-baseline'
 import type { AriaSortValue } from '../../lib/table-sort'
-import type { SavedForecast } from '../../routes/forecasting'
 import { useFormattedAmount } from '../../stores/currencyStore'
+import { DeleteIcon } from '../icons/DeleteIcon'
+import { PencilIcon } from '../icons/PencilIcon'
+import { SearchIcon } from '../icons/SearchIcon'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
-import { PencilIcon } from '../ui/RowActionIcons'
-import { useSortHeaderAnnouncements } from '../ui/SortableColumnHeader'
+import { EmptyState } from './empty-state'
+import { formatDate, mutedOnRow, truncate } from './forecast-list-format'
+import type { SavedForecast } from './saved-forecast'
 
 export type ForecastListProps = {
 	forecasts: SavedForecast[]
@@ -26,25 +29,6 @@ const SORT_FIELD_LABELS = {
 	date: 'Created',
 	netWorth: 'Ending Net Worth',
 } satisfies Readonly<Record<SortField, string>>
-
-function formatDate(dateString: string): string {
-	const date = new Date(dateString)
-	return date.toLocaleDateString('en-US', {
-		year: 'numeric',
-		month: 'short',
-		day: 'numeric',
-	})
-}
-
-function truncate(text: string, maxLength: number): string {
-	if (text.length <= maxLength) return text
-	return `${text.slice(0, maxLength)}...`
-}
-
-// On the selected bg-blue-50 row text-muted is 4.44:1, below AA, so it switches to text-body.
-function mutedOnRow(selected: boolean): 'text-body' | 'text-muted' {
-	return selected ? 'text-body' : 'text-muted'
-}
 
 export function ForecastList({
 	forecasts,
@@ -446,81 +430,5 @@ export function ForecastList({
 				}
 			/>
 		</div>
-	)
-}
-
-function EmptyState(): React.ReactElement {
-	return (
-		<Card className="rounded-xl shadow-lg border border-default p-12 text-center">
-			<div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
-				<FolderIcon className="w-8 h-8 text-gray-400" />
-			</div>
-			<CardTitle as="h3" className="mb-2">
-				No Saved Forecasts
-			</CardTitle>
-			<p className="text-muted text-sm mb-4">
-				Create and save your first forecasting scenario to get started.
-			</p>
-			<p className="text-faint text-xs">
-				Saved forecasts are stored securely in DanubeData (Germany - EU)
-			</p>
-		</Card>
-	)
-}
-
-function SearchIcon({ className }: { className: string }): React.ReactElement {
-	return (
-		<svg
-			aria-hidden="true"
-			className={className}
-			fill="none"
-			stroke="currentColor"
-			viewBox="0 0 24 24"
-		>
-			<path
-				strokeLinecap="round"
-				strokeLinejoin="round"
-				strokeWidth={2}
-				d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-			/>
-		</svg>
-	)
-}
-
-function FolderIcon({ className }: { className: string }): React.ReactElement {
-	return (
-		<svg
-			aria-hidden="true"
-			className={className}
-			fill="none"
-			stroke="currentColor"
-			viewBox="0 0 24 24"
-		>
-			<path
-				strokeLinecap="round"
-				strokeLinejoin="round"
-				strokeWidth={2}
-				d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-			/>
-		</svg>
-	)
-}
-
-function DeleteIcon({ className }: { className: string }): React.ReactElement {
-	return (
-		<svg
-			aria-hidden="true"
-			className={className}
-			fill="none"
-			stroke="currentColor"
-			viewBox="0 0 24 24"
-		>
-			<path
-				strokeLinecap="round"
-				strokeLinejoin="round"
-				strokeWidth={2}
-				d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-			/>
-		</svg>
 	)
 }

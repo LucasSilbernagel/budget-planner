@@ -1,16 +1,6 @@
 import type React from 'react'
 import { PremiumFeatureGate } from '../premium/PremiumFeatureGate'
-
-function CategoriesFeatureLabel(): React.ReactElement {
-	return (
-		<span className="text-sm font-medium text-heading">
-			Custom categories
-			<span className="mt-1 block text-sm font-normal text-muted">
-				Your own income and expense groupings
-			</span>
-		</span>
-	)
-}
+import { CategoriesFeatureLabel } from './categories-feature-label'
 
 export function CategoriesSection(): React.ReactElement {
 	return (

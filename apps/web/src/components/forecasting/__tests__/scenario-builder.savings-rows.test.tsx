@@ -4,7 +4,6 @@ import { solveAutomaticAllocations } from '@budget-planner/core/finance/savingsA
 import { fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/test/utils'
-import type { SavedForecast } from '../../../routes/forecasting'
 import { useBalanceStore, useTotalInvestmentBalance } from '../../../stores/balanceStore'
 import { useFormattedAmount } from '../../../stores/currencyStore'
 import { useExpenseStore } from '../../../stores/expenseStore'
@@ -16,6 +15,7 @@ import {
 	useTotalSavings,
 } from '../../../stores/savingsStore'
 import { SavingsPage } from '../../SavingsPage'
+import type { SavedForecast } from '../saved-forecast'
 import { ScenarioBuilder } from '../scenario-builder'
 
 const ISO = '2026-10-05T00:00:00.000Z'

@@ -2,9 +2,9 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import type { SavedForecast } from '../../../routes/forecasting'
-import { PencilIcon } from '../../ui/RowActionIcons'
+import { PencilIcon } from '../../icons/PencilIcon'
 import { ForecastList } from '../forecast-list'
+import type { SavedForecast } from '../saved-forecast'
 
 // getByRole names are full-string: rename these labels without updating the absence test and it passes vacuously.
 

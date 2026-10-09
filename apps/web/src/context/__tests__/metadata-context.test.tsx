@@ -1,6 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MetadataProvider, useAnalytics, useMetadata } from '../metadata-context'
+import { useAnalytics } from '../../hooks/useAnalytics'
+import { useMetadata } from '../../hooks/useMetadata'
+import { MetadataProvider } from '../metadata-provider'
 
 function setUrl(search: string): void {
 	window.history.replaceState({}, '', `/${search}`)

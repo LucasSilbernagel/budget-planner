@@ -1,9 +1,9 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SavedForecast } from '../../../routes/forecasting'
 import { useExpenseStore } from '../../../stores/expenseStore'
 import { useIncomeStore } from '../../../stores/incomeStore'
 import { useProfileStore } from '../../../stores/profileStore'
+import type { SavedForecast } from '../saved-forecast'
 import { ScenarioBuilder } from '../scenario-builder'
 
 // Assert on the recorded engine calls, not the screen: the summary tiles mask NaN with `|| 0`.

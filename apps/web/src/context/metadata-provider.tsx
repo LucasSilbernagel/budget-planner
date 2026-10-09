@@ -8,14 +8,8 @@ import {
 	type AnalyticsService,
 	createAnalyticsService,
 } from '@budget-planner/core/analytics/service'
-import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from 'react'
-
-type MetadataContextValue = {
-	metadata: ClientMetadata
-	analytics: AnalyticsService
-}
-
-const MetadataContext = createContext<MetadataContextValue | null>(null)
+import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { MetadataContext } from './metadata-context'
 
 export function MetadataProvider({ children }: { children: ReactNode }) {
 	const [metadata, setMetadata] = useState<ClientMetadata>({})
@@ -43,20 +37,4 @@ export function MetadataProvider({ children }: { children: ReactNode }) {
 	return (
 		<MetadataContext.Provider value={{ metadata, analytics }}>{children}</MetadataContext.Provider>
 	)
-}
-
-function useMetadataContext(): MetadataContextValue {
-	const ctx = useContext(MetadataContext)
-	if (ctx === null) {
-		throw new Error('useMetadata/useAnalytics must be used within a <MetadataProvider>')
-	}
-	return ctx
-}
-
-export function useMetadata(): ClientMetadata {
-	return useMetadataContext().metadata
-}
-
-export function useAnalytics(): AnalyticsService {
-	return useMetadataContext().analytics
 }

@@ -2,9 +2,10 @@ import { fireEvent, waitFor } from '@testing-library/react'
 import type React from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithRouter, screen } from '@/test/utils'
+import type { SavedForecast } from '../../components/forecasting/saved-forecast'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
 import { useProfileStore } from '../../stores/profileStore'
-import { Route, type SavedForecast } from '../forecasting'
+import { Route } from '../forecasting'
 
 // The builder coerces the same rates itself, so only a stubbed builder can see the mapper's output.
 
@@ -14,6 +15,8 @@ vi.mock('../../components/forecasting/scenario-builder', () => ({
 		received.push(props.initialForecast)
 		return null
 	},
+}))
+vi.mock('../../components/forecasting/scenario-builder/useCurrentForecastData', () => ({
 	useCurrentForecastData: () => ({ ready: false, rows: null, data: null }),
 }))
 
