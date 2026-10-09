@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import type React from 'react'
 import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../../lib/premium/benefits'
+import { CardHeader } from '../ui/CardHeader'
 import { Modal } from '../ui/Modal'
 
 export type PremiumPromptProps = {
@@ -93,7 +94,7 @@ function PremiumPromptContent({
 }: PremiumPromptContentProps): React.ReactElement {
 	return (
 		<div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-800 rounded-xl shadow-lg border border-blue-200 dark:border-gray-700 p-6 max-w-md mx-auto w-full">
-			<div className="flex items-center justify-between mb-4">
+			<CardHeader className="mb-4">
 				<div className="flex items-center">
 					<div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center mr-3">
 						<CrownIcon className="w-6 h-6 text-white" />
@@ -110,7 +111,7 @@ function PremiumPromptContent({
 						<CloseIcon className="w-5 h-5" />
 					</button>
 				)}
-			</div>
+			</CardHeader>
 
 			<div className="mb-4">
 				{featureName && (

@@ -47,8 +47,15 @@ import { useSavingsGoals } from '../stores/savingsStore'
 import { ErrorBoundary } from './ErrorBoundary'
 import { AccountNoticeBox } from './overview/AccountNoticeBox'
 import { PremiumFeatureGate } from './premium/PremiumFeatureGate'
+import { Card } from './ui/Card'
+import { CardHeader } from './ui/CardHeader'
+import { CardTitle } from './ui/CardTitle'
 import { GroupedAmount } from './ui/GroupedAmount'
 import { InfoTooltip } from './ui/InfoTooltip'
+import { Page } from './ui/Page'
+import { PageContent } from './ui/PageContent'
+import { PageHeader } from './ui/PageHeader'
+import { PageTitle } from './ui/PageTitle'
 import { LoadingStatus, PendingFigure, SKELETON_BAR, SkeletonBlock } from './ui/Skeleton'
 
 // Lazy so Recharts stays off the critical path: route chunks' static imports are awaited before hydration.
@@ -367,24 +374,24 @@ export function HomePage() {
 	const balancesBarTicks = barDomainTicks(balancesBarData.map((d) => d.amount))
 
 	return (
-		<div className="min-h-screen surface-sunken p-4 sm:p-8">
-			<div className="max-w-6xl mx-auto">
+		<Page>
+			<PageContent className="max-w-6xl">
 				{/* One announced region for the whole page; every skeleton below is aria-hidden. */}
 				{!hydrated && <LoadingStatus />}
-				<header className="mb-8">
+				<PageHeader>
 					<div>
-						<h1 className="text-3xl font-bold text-heading">Longhand Budget</h1>
+						<PageTitle>Longhand Budget</PageTitle>
 						{/* No trailing period: byte-identical to the login page subtitle. */}
 						<p className="text-lg text-body mt-2">Track your finances with privacy and control</p>
 						{/* Visitors only; the gate lives here so AccountNoticeBox stays auth-blind. */}
 						{!isSignedIn && <AccountNoticeBox />}
 					</div>
-				</header>
+				</PageHeader>
 
 				<main className="space-y-6">
-					<section className="surface rounded-lg shadow-md p-6">
-						<div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-							<h2 className="text-xl font-semibold text-subheading">Financial Overview</h2>
+					<Card as="section">
+						<CardHeader className="mb-4 flex-wrap gap-2">
+							<CardTitle className="text-xl">Financial Overview</CardTitle>
 							<label className="flex items-center gap-1 text-sm text-label">
 								<span className="sr-only">Show income and expenses per</span>
 								<select
@@ -400,9 +407,9 @@ export function HomePage() {
 									))}
 								</select>
 							</label>
-						</div>
+						</CardHeader>
 						<div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-							<div className="surface-inset rounded-lg p-4">
+							<Card variant="inset" className="p-4">
 								<p className="flex items-center gap-1 text-sm text-muted">
 									{`Total Income ${DURATION_LABEL[duration]}`}
 									{incomeConversionApplied && (
@@ -425,8 +432,8 @@ export function HomePage() {
 										<PendingFigure testId="overview-total-income-skeleton" />
 									)}
 								</p>
-							</div>
-							<div className="surface-inset rounded-lg p-4">
+							</Card>
+							<Card variant="inset" className="p-4">
 								<p className="flex items-center gap-1 text-sm text-muted">
 									{`Total Expenses ${DURATION_LABEL[duration]}`}
 									{expensesConversionApplied && (
@@ -448,8 +455,8 @@ export function HomePage() {
 										<PendingFigure testId="overview-total-expenses-skeleton" />
 									)}
 								</p>
-							</div>
-							<div className="surface-inset rounded-lg p-4">
+							</Card>
+							<Card variant="inset" className="p-4">
 								<p className="flex items-center gap-1 text-sm text-muted">
 									Net Worth
 									<InfoTooltip
@@ -492,9 +499,9 @@ export function HomePage() {
 										page, to track this.
 									</p>
 								)}
-							</div>
+							</Card>
 						</div>
-					</section>
+					</Card>
 
 					{/* The pending branch mirrors the resolved-empty card's box model so an empty user sees no shift. No animate-pulse
              on the bars: the wrapping SkeletonBlock pulses, and nesting puts the two out of phase. */}
@@ -504,7 +511,7 @@ export function HomePage() {
 							testId="overview-sections-skeleton"
 							hook={OVERVIEW_SECTIONS_PENDING_HOOK}
 						>
-							<div className="surface-inset rounded-lg p-6 sm:p-8 text-center">
+							<Card variant="inset" className="p-6 sm:p-8 text-center">
 								<p className="mb-1 text-lg font-medium">
 									<span
 										className={cn(
@@ -531,15 +538,13 @@ export function HomePage() {
 										<span className={cn(SKELETON_BAR, 'inline-block h-6 w-28 align-middle')} />
 									</span>
 								</div>
-							</div>
+							</Card>
 						</SkeletonBlock>
 					) : hasData ? (
 						<>
-							<section className="surface rounded-lg shadow-md p-6" aria-busy={!chartsReady}>
-								<div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-									<h2 className="text-xl font-semibold text-subheading">
-										Income vs Expense Breakdown
-									</h2>
+							<Card as="section" aria-busy={!chartsReady}>
+								<CardHeader className="mb-4 flex-wrap gap-2">
+									<CardTitle className="text-xl">Income vs Expense Breakdown</CardTitle>
 									<label className="flex items-center gap-1 text-sm text-label">
 										<span className="sr-only">Show breakdown per</span>
 										<select
@@ -555,7 +560,7 @@ export function HomePage() {
 											))}
 										</select>
 									</label>
-								</div>
+								</CardHeader>
 
 								{/* Only non-integral periods (weekly, biweekly) can make per-entry scaling differ from the cards by a cent.
                    The copy says ENTRY, not category: these pies round per entry, unlike /categories. */}
@@ -591,19 +596,17 @@ export function HomePage() {
 										formatAmount={formatAmount}
 									/>
 								</div>
-							</section>
+							</Card>
 
-							<section className="surface rounded-lg shadow-md p-6" aria-busy={!chartsReady}>
-								<h2 className="text-xl font-semibold text-subheading mb-4">
-									Financial Category Summary
-								</h2>
+							<Card as="section" aria-busy={!chartsReady}>
+								<CardTitle className="text-xl mb-4">Financial Category Summary</CardTitle>
 								{flowsBarData.length > 0 || balancesBarData.length > 0 ? (
 									<div className="space-y-8">
 										{flowsBarData.length > 0 && (
 											<div>
-												<h3 className="text-sm font-semibold text-label mb-2">
+												<CardTitle as="h3" className="text-sm text-label mb-2">
 													Income &amp; expenses {DURATION_LABEL[duration]}
-												</h3>
+												</CardTitle>
 												<CategoryBarChart
 													testId="category-bar-flows"
 													data={flowsBarData}
@@ -619,7 +622,9 @@ export function HomePage() {
 										)}
 										{balancesBarData.length > 0 && (
 											<div>
-												<h3 className="text-sm font-semibold text-label mb-2">Balances</h3>
+												<CardTitle as="h3" className="text-sm text-label mb-2">
+													Balances
+												</CardTitle>
 												<CategoryBarChart
 													testId="category-bar-balances"
 													data={balancesBarData}
@@ -634,18 +639,15 @@ export function HomePage() {
 										)}
 									</div>
 								) : (
-									<div className="surface-inset rounded-lg p-8 text-center">
+									<Card variant="inset" className="p-8 text-center">
 										<p className="text-muted">No financial data to display</p>
-									</div>
+									</Card>
 								)}
-							</section>
+							</Card>
 						</>
 					) : (
-						<section
-							className="surface rounded-lg shadow-md p-4 sm:p-6"
-							data-testid="overview-onboarding"
-						>
-							<div className="surface-inset rounded-lg p-6 sm:p-8 text-center">
+						<Card as="section" className="p-4 sm:p-6" data-testid="overview-onboarding">
+							<Card variant="inset" className="p-6 sm:p-8 text-center">
 								<p className="mb-1 text-lg font-medium text-subheading">Let's set up your budget</p>
 								<p className="mb-6 text-sm text-muted">
 									Add your income and expenses and your financial overview will appear here.
@@ -664,13 +666,13 @@ export function HomePage() {
 										+ Add expense
 									</a>
 								</div>
-							</div>
-						</section>
+							</Card>
+						</Card>
 					)}
 
 					{!reachesPremiumFromNav && (
-						<section className="surface rounded-lg shadow-md p-4 sm:p-6">
-							<h2 className="text-xl font-semibold text-subheading mb-4">Premium Features</h2>
+						<Card as="section" className="p-4 sm:p-6">
+							<CardTitle className="text-xl mb-4">Premium Features</CardTitle>
 
 							{/* Sync has no route, so it opens the upgrade dialog without an href.
                  Each gate needs its own wrapper div: Modal renders without a portal. */}
@@ -727,11 +729,11 @@ export function HomePage() {
 									)
 								})}
 							</div>
-						</section>
+						</Card>
 					)}
 				</main>
-			</div>
-		</div>
+			</PageContent>
+		</Page>
 	)
 }
 
@@ -820,8 +822,10 @@ function BreakdownPie({
 	const formatLegendValue = legendValue ?? formatAmount
 	return (
 		<div data-testid={`breakdown-pie-${testId}`}>
-			<div className="mb-2 flex items-baseline justify-between gap-2">
-				<h3 className="text-sm font-semibold text-subheading">{title}</h3>
+			<CardHeader className="mb-2 items-baseline gap-2">
+				<CardTitle as="h3" className="text-sm">
+					{title}
+				</CardTitle>
 				{data.length > 0 && (
 					<span
 						data-testid={`breakdown-pie-total-${testId}`}
@@ -830,7 +834,7 @@ function BreakdownPie({
 						{totalDisplay ?? formatAmount(total)}
 					</span>
 				)}
-			</div>
+			</CardHeader>
 			{note && (
 				<p
 					data-testid={`breakdown-pie-note-${testId}`}
@@ -840,9 +844,12 @@ function BreakdownPie({
 				</p>
 			)}
 			{data.length === 0 ? (
-				<div className="surface-inset flex h-[240px] items-center justify-center rounded-lg p-6 text-center">
+				<Card
+					variant="inset"
+					className="flex h-[240px] items-center justify-center p-6 text-center"
+				>
 					<p className="text-sm text-muted">{emptyLabel}</p>
-				</div>
+				</Card>
 			) : (
 				<>
 					{/* Hidden from screen readers: the list below reads every slice. On the wrapper so the fallbacks are hidden too. */}

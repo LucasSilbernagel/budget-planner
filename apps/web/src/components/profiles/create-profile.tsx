@@ -3,7 +3,11 @@ import { useProfileManager } from '@/hooks/useActiveProfile'
 import { cn } from '@/lib/cn'
 import { DEFAULT_PROFILE_ICON, isProfileIcon } from '@/lib/profile-appearance'
 import { useProfiles } from '@/stores/profileStore'
+import { FormField } from '../ui/FormField'
+import { FormLabel } from '../ui/FormLabel'
 import { Modal } from '../ui/Modal'
+import { ModalFooter } from '../ui/ModalFooter'
+import { ModalTitle } from '../ui/ModalTitle'
 import { EMPTY_PROFILE_FORM, type ProfileFormState, validateProfileForm } from './profile-form'
 import { ProfileIconPicker } from './profile-icon-picker'
 
@@ -91,9 +95,9 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
 		>
 			<div className="flex items-center justify-between p-6 border-b border-default">
 				<div>
-					<h2 id="create-profile-title" className="text-xl font-bold text-heading">
+					<ModalTitle as="h2" id="create-profile-title" className="text-xl font-bold">
 						Create New Profile
-					</h2>
+					</ModalTitle>
 					<p className="text-body mt-1">Organize your finances for different purposes</p>
 				</div>
 				<button
@@ -149,10 +153,10 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
 							onChange={(icon) => handleChange('icon', icon)}
 						/>
 
-						<div>
-							<label htmlFor="profile-name" className="block text-sm font-medium text-label mb-1">
+						<FormField>
+							<FormLabel htmlFor="profile-name">
 								Profile Name <span className="text-red-500">*</span>
-							</label>
+							</FormLabel>
 							<input
 								id="profile-name"
 								type="text"
@@ -168,15 +172,10 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
 							{errors['name'] && (
 								<p className="text-sm text-red-600 dark:text-red-400 mt-1">{errors['name']}</p>
 							)}
-						</div>
+						</FormField>
 
-						<div>
-							<label
-								htmlFor="profile-description"
-								className="block text-sm font-medium text-label mb-1"
-							>
-								Description
-							</label>
+						<FormField>
+							<FormLabel htmlFor="profile-description">Description</FormLabel>
 							<textarea
 								id="profile-description"
 								value={form.description}
@@ -197,7 +196,7 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
 									{errors['description']}
 								</p>
 							)}
-						</div>
+						</FormField>
 
 						<div className="p-3 bg-blue-50 dark:bg-blue-950/40 rounded-lg">
 							<p className="text-sm text-blue-700 dark:text-blue-300">
@@ -212,7 +211,7 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
 							</div>
 						)}
 
-						<div className="flex items-center justify-end gap-3 pt-2">
+						<ModalFooter className="items-center pt-2">
 							<button
 								type="button"
 								onClick={onClose}
@@ -227,7 +226,7 @@ export function CreateProfileDialog({ onClose }: CreateProfileDialogProps) {
 							>
 								{isSubmitting ? 'Creating...' : 'Create Profile'}
 							</button>
-						</div>
+						</ModalFooter>
 					</>
 				)}
 			</form>

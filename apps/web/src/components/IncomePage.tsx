@@ -21,9 +21,23 @@ import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencySt
 import { useIncomeSources, useIncomeStore, useTotalIncome } from '../stores/incomeStore'
 import { CategoryBadge } from './categories/CategoryBadge'
 import { CategoryPicker } from './categories/CategoryPicker'
+import { Button } from './ui/Button'
+import { Card } from './ui/Card'
+import { CardTitle } from './ui/CardTitle'
 import { ConfirmDialog } from './ui/ConfirmDialog'
+import { FormError } from './ui/FormError'
+import { FormField } from './ui/FormField'
+import { FormLabel } from './ui/FormLabel'
 import { GroupedAmount } from './ui/GroupedAmount'
 import { Modal } from './ui/Modal'
+import { ModalFooter } from './ui/ModalFooter'
+import { ModalHeader } from './ui/ModalHeader'
+import { ModalTitle } from './ui/ModalTitle'
+import { Page } from './ui/Page'
+import { PageContent } from './ui/PageContent'
+import { PageDescription } from './ui/PageDescription'
+import { PageHeader } from './ui/PageHeader'
+import { PageTitle } from './ui/PageTitle'
 import { PeriodTotal } from './ui/PeriodTotal'
 import {
 	FieldLabel,
@@ -242,19 +256,19 @@ export function IncomePage() {
 	const hydrated = storesHydrated && !isInitialSyncPending
 
 	return (
-		<div className="min-h-screen surface-sunken p-4 sm:p-8">
-			<div className="max-w-4xl mx-auto">
+		<Page>
+			<PageContent>
 				{/* One announced region: every skeleton on this page is `aria-hidden`. */}
 				{!hydrated && <LoadingStatus />}
-				<header className="mb-8">
+				<PageHeader>
 					<div>
-						<h1 className="text-3xl font-bold text-heading">Income Sources</h1>
-						<p className="text-body mt-2">Manage your income streams and track your earnings</p>
+						<PageTitle>Income Sources</PageTitle>
+						<PageDescription>Manage your income streams and track your earnings</PageDescription>
 					</div>
-				</header>
+				</PageHeader>
 
 				<main className="space-y-6">
-					<section className="surface rounded-lg shadow-md p-6">
+					<Card as="section">
 						<div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
 							<PeriodTotal
 								label="Total Income"
@@ -275,18 +289,18 @@ export function IncomePage() {
 								+ Add Income Source
 							</button>
 						</div>
-					</section>
+					</Card>
 
-					<section className="surface rounded-lg shadow-md p-6">
-						<h2 className="text-xl font-semibold text-subheading mb-6">Your Income Sources</h2>
+					<Card as="section">
+						<CardTitle className="text-xl mb-6">Your Income Sources</CardTitle>
 
 						{!hydrated ? (
 							<EmptyStateSkeleton testId="income-list-skeleton" />
 						) : incomeSources.length === 0 ? (
-							<div className="surface-inset rounded-lg p-8 text-center">
+							<Card variant="inset" className="p-8 text-center">
 								<p className="text-muted mb-4">No income sources yet</p>
 								<p className="text-sm text-faint">Click "Add Income Source" to get started</p>
-							</div>
+							</Card>
 						) : (
 							<>
 								<TableSortControl
@@ -401,14 +415,14 @@ export function IncomePage() {
 								{sortA11y.nodes}
 							</>
 						)}
-					</section>
+					</Card>
 				</main>
 
 				<Modal isOpen={isModalOpen} onClose={closeModal} labelledBy="income-modal-title">
-					<div className="flex justify-between items-center mb-6">
-						<h3 id="income-modal-title" className="text-lg font-medium text-heading">
+					<ModalHeader>
+						<ModalTitle id="income-modal-title">
 							{editingId !== null ? 'Edit Income Source' : 'Add Income Source'}
-						</h3>
+						</ModalTitle>
 						<button
 							type="button"
 							onClick={closeModal}
@@ -430,13 +444,11 @@ export function IncomePage() {
 								/>
 							</svg>
 						</button>
-					</div>
+					</ModalHeader>
 
 					<form onSubmit={handleSubmit} className="space-y-4" noValidate>
-						<div>
-							<label htmlFor="name" className="block text-sm font-medium text-label mb-1">
-								Name *
-							</label>
+						<FormField>
+							<FormLabel htmlFor="name">Name *</FormLabel>
 							<input
 								type="text"
 								id="name"
@@ -455,21 +467,14 @@ export function IncomePage() {
 								data-testid="income-name-input"
 							/>
 							{hasFieldError('name') && (
-								<p
-									id="income-name-error"
-									className="mt-1 text-sm text-red-600 dark:text-red-400"
-									role="alert"
-									data-testid="income-name-error"
-								>
+								<FormError id="income-name-error" data-testid="income-name-error">
 									{getFieldError('name')}
-								</p>
+								</FormError>
 							)}
-						</div>
+						</FormField>
 
-						<div>
-							<label htmlFor="amount" className="block text-sm font-medium text-label mb-1">
-								Amount *
-							</label>
+						<FormField>
+							<FormLabel htmlFor="amount">Amount *</FormLabel>
 							<div className="relative rounded-md shadow-sm">
 								{mode === 'symbol' && (
 									<div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -511,21 +516,14 @@ export function IncomePage() {
 								deductions.
 							</p>
 							{hasFieldError('amount') && (
-								<p
-									id="income-amount-error"
-									className="mt-1 text-sm text-red-600 dark:text-red-400"
-									role="alert"
-									data-testid="income-amount-error"
-								>
+								<FormError id="income-amount-error" data-testid="income-amount-error">
 									{getFieldError('amount')}
-								</p>
+								</FormError>
 							)}
-						</div>
+						</FormField>
 
-						<div>
-							<label htmlFor="frequency" className="block text-sm font-medium text-label mb-1">
-								Frequency *
-							</label>
+						<FormField>
+							<FormLabel htmlFor="frequency">Frequency *</FormLabel>
 							<select
 								id="frequency"
 								value={frequency}
@@ -539,7 +537,7 @@ export function IncomePage() {
 									</option>
 								))}
 							</select>
-						</div>
+						</FormField>
 
 						<CategoryPicker
 							kind="income"
@@ -548,14 +546,10 @@ export function IncomePage() {
 							idPrefix="income"
 						/>
 
-						<div className="flex justify-end gap-3 pt-4">
-							<button
-								type="button"
-								onClick={closeModal}
-								className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
-							>
+						<ModalFooter>
+							<Button type="button" variant="secondary" onClick={closeModal}>
 								Cancel
-							</button>
+							</Button>
 							<button
 								type="submit"
 								disabled={isSubmitting}
@@ -567,7 +561,7 @@ export function IncomePage() {
 										? 'Save Changes'
 										: 'Add Income Source'}
 							</button>
-						</div>
+						</ModalFooter>
 					</form>
 				</Modal>
 
@@ -584,7 +578,7 @@ export function IncomePage() {
 						</>
 					}
 				/>
-			</div>
-		</div>
+			</PageContent>
+		</Page>
 	)
 }

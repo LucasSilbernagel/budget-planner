@@ -4,6 +4,7 @@ import {
 	rememberAccountNoticeDismissal,
 	wasAccountNoticeDismissed,
 } from '../../lib/overview/account-notice-dismissal'
+import { Card } from '../ui/Card'
 
 // The border is what makes this a box in light mode: `surface-inset` equals the canvas colour there.
 // Keep each <p> sentence a single-line JSX text child: an SSR HTML substring test pins it.
@@ -30,9 +31,10 @@ export function AccountNoticeBox() {
 	}
 
 	return (
-		<div
+		<Card
+			variant="inset"
 			data-account-notice
-			className="surface-inset mt-4 rounded-lg border border-gray-300 p-3 text-sm dark:border-gray-700"
+			className="mt-4 border border-gray-300 p-3 text-sm dark:border-gray-700"
 		>
 			<div className="flex items-start gap-3">
 				<div className="min-w-0 flex-1">
@@ -55,6 +57,6 @@ export function AccountNoticeBox() {
 					</span>
 				</button>
 			</div>
-		</div>
+		</Card>
 	)
 }

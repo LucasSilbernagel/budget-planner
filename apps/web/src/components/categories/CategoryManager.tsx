@@ -2,6 +2,14 @@
 
 import type { CategoryKind } from '@budget-planner/db/schema'
 import { type ReactElement, useRef, useState } from 'react'
+import { Button } from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import { CardTitle } from '@/components/ui/CardTitle'
+import { FormError } from '@/components/ui/FormError'
+import { FormField } from '@/components/ui/FormField'
+import { PageDescription } from '@/components/ui/PageDescription'
+import { PageHeader } from '@/components/ui/PageHeader'
+import { PageTitle } from '@/components/ui/PageTitle'
 import { useCategoriesForActiveProfile } from '../../hooks/useCategoryLabels'
 import {
 	type CategoryValidationError,
@@ -33,14 +41,9 @@ function isNameError(error: CategoryValidationError): boolean {
 
 function ErrorMessage({ error, id }: { error: CategoryValidationError; id: string }): ReactElement {
 	return (
-		<p
-			id={id}
-			role="alert"
-			className="mt-1 text-sm text-red-600 dark:text-red-400"
-			data-testid={`category-error-${error.reason}`}
-		>
+		<FormError id={id} data-testid={`category-error-${error.reason}`}>
 			{error.message}
-		</p>
+		</FormError>
 	)
 }
 
@@ -63,13 +66,13 @@ export function CategoryManager(): ReactElement {
 	return (
 		// Must stay one element: Modal renders in flow, and a parent space-y margin would offset its fixed overlay.
 		<div>
-			<header className="mb-8">
-				<h1 className="text-3xl font-bold text-heading">Categories</h1>
-				<p className="mt-2 text-body">
+			<PageHeader>
+				<PageTitle>Categories</PageTitle>
+				<PageDescription>
 					Create your own categories, then assign them to income sources and expenses. Renaming a
 					category updates every entry that uses it.
-				</p>
-			</header>
+				</PageDescription>
+			</PageHeader>
 
 			{/* tabIndex={-1}: this is the dialog's finalFocusRef; a non-focusable element drops focus to <body>. */}
 			<main className="space-y-6" ref={listRef} tabIndex={-1}>
@@ -194,18 +197,14 @@ function CategorySection({
 	}
 
 	return (
-		<section
-			aria-labelledby={headingId}
-			className="surface rounded-lg shadow-md p-6"
-			data-testid={`category-section-${kind}`}
-		>
-			<h2 id={headingId} className="text-xl font-semibold text-subheading">
+		<Card as="section" aria-labelledby={headingId} data-testid={`category-section-${kind}`}>
+			<CardTitle id={headingId} className="text-xl">
 				{title}
-			</h2>
+			</CardTitle>
 			<p className="mt-1 text-sm text-muted">{description}</p>
 
 			<form onSubmit={handleCreate} className="mt-4 flex flex-wrap items-start gap-2" noValidate>
-				<div className="min-w-[12rem] flex-1">
+				<FormField className="min-w-[12rem] flex-1">
 					<label htmlFor={`categories-${kind}-new`} className="sr-only">
 						New {kind} category name
 					</label>
@@ -222,7 +221,7 @@ function CategorySection({
 						aria-describedby={createError ? createErrorId : undefined}
 						data-testid={`category-new-input-${kind}`}
 					/>
-				</div>
+				</FormField>
 				<button
 					type="submit"
 					className="fill-green rounded-md px-4 py-2 transition-colors hover:bg-green-800"
@@ -234,9 +233,9 @@ function CategorySection({
 			{createError && <ErrorMessage error={createError} id={createErrorId} />}
 
 			{visibleCategories.length === 0 ? (
-				<div className="surface-inset mt-4 rounded-lg p-6 text-center">
+				<Card variant="inset" className="mt-4 p-6 text-center">
 					<p className="text-muted">No {kind} categories yet</p>
-				</div>
+				</Card>
 			) : (
 				<ul className="mt-4 divide-y divide-gray-200 dark:divide-gray-700">
 					{visibleCategories.map((category) => (
@@ -247,7 +246,7 @@ function CategorySection({
 									className="flex flex-wrap items-start gap-2"
 									noValidate
 								>
-									<div className="min-w-[12rem] flex-1">
+									<FormField className="min-w-[12rem] flex-1">
 										<label htmlFor={`categories-edit-${category.id}`} className="sr-only">
 											Rename {category.name}
 										</label>
@@ -262,7 +261,7 @@ function CategorySection({
 											aria-describedby={renameError ? renameErrorId : undefined}
 											data-testid={`category-rename-input-${kind}`}
 										/>
-									</div>
+									</FormField>
 									<button
 										type="submit"
 										className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
@@ -270,13 +269,14 @@ function CategorySection({
 									>
 										Save
 									</button>
-									<button
+									<Button
+										variant="secondary"
 										type="button"
 										onClick={cancelEditing}
-										className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+										className="px-3 text-sm"
 									>
 										Cancel
-									</button>
+									</Button>
 								</form>
 							) : (
 								<div className="flex items-center justify-between gap-3">
@@ -307,6 +307,6 @@ function CategorySection({
 				</ul>
 			)}
 			{renameError && <ErrorMessage error={renameError} id={renameErrorId} />}
-		</section>
+		</Card>
 	)
 }

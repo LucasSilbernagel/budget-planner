@@ -3,6 +3,8 @@
 
 import type { CategoryKind } from '@budget-planner/db/schema'
 import type React from 'react'
+import { FormField } from '@/components/ui/FormField'
+import { FormLabel } from '@/components/ui/FormLabel'
 import { useCategoriesForActiveProfile } from '../../hooks/useCategoryLabels'
 import { usePremiumAccess } from '../../hooks/usePremiumAccess'
 import { PremiumLockBadge } from '../premium/PremiumLockBadge'
@@ -76,10 +78,8 @@ export function CategoryPicker({
 		value && options.some((category) => category.id === value) ? value : UNCATEGORIZED_VALUE
 
 	return (
-		<div>
-			<label htmlFor={selectId} className={LABEL_CLASS}>
-				Category
-			</label>
+		<FormField>
+			<FormLabel htmlFor={selectId}>Category</FormLabel>
 			<select
 				id={selectId}
 				value={selectedValue}
@@ -94,6 +94,6 @@ export function CategoryPicker({
 					</option>
 				))}
 			</select>
-		</div>
+		</FormField>
 	)
 }

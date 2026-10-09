@@ -5,6 +5,9 @@ import { useState } from 'react'
 import { PremiumPrompt } from '@/components/auth/premium-prompt'
 import { CreateProfileDialog } from '@/components/profiles/create-profile'
 import { ProfileList } from '@/components/profiles/profile-list'
+import { PageContent } from '@/components/ui/PageContent'
+import { PageDescription } from '@/components/ui/PageDescription'
+import { PageTitle } from '@/components/ui/PageTitle'
 import { usePremiumAccess } from '@/hooks/usePremiumAccess'
 
 export function ProfilesPage() {
@@ -47,13 +50,13 @@ export function ProfilesPage() {
 
 	return (
 		<main key="premium-content" className="min-h-screen bg-gray-50 p-4 md:p-8 dark:bg-gray-900">
-			<div className="max-w-4xl mx-auto">
+			<PageContent>
 				<div className="flex items-center justify-between mb-8">
 					<div>
-						<h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Profiles</h1>
-						<p className="text-gray-600 mt-1 dark:text-gray-400">
+						<PageTitle className="text-gray-900 dark:text-gray-100">Profiles</PageTitle>
+						<PageDescription className="text-gray-600 mt-1 dark:text-gray-400">
 							Organize your finances with multiple profiles
-						</p>
+						</PageDescription>
 					</div>
 
 					<div className="flex items-center gap-4">
@@ -86,7 +89,7 @@ export function ProfilesPage() {
 						Your profiles are synchronized across all your devices via DanubeData (Germany - EU).
 					</p>
 				</div>
-			</div>
+			</PageContent>
 		</main>
 	)
 }

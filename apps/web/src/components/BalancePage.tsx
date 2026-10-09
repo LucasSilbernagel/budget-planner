@@ -35,9 +35,24 @@ import {
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 import { useExpenses } from '../stores/expenseStore'
 import { useTotalSavings } from '../stores/savingsStore'
+import { Button } from './ui/Button'
+import { Card } from './ui/Card'
+import { CardHeader } from './ui/CardHeader'
+import { CardTitle } from './ui/CardTitle'
 import { ConfirmDialog } from './ui/ConfirmDialog'
+import { FormError } from './ui/FormError'
+import { FormField } from './ui/FormField'
+import { FormLabel } from './ui/FormLabel'
 import { GroupedAmount } from './ui/GroupedAmount'
 import { Modal } from './ui/Modal'
+import { ModalFooter } from './ui/ModalFooter'
+import { ModalHeader } from './ui/ModalHeader'
+import { ModalTitle } from './ui/ModalTitle'
+import { Page } from './ui/Page'
+import { PageContent } from './ui/PageContent'
+import { PageDescription } from './ui/PageDescription'
+import { PageHeader } from './ui/PageHeader'
+import { PageTitle } from './ui/PageTitle'
 import {
 	FieldLabel,
 	RESPONSIVE_ACTION_BUTTON_CLASS,
@@ -434,24 +449,24 @@ export function BalancePage() {
 	const hydrated = storesHydrated && !isInitialSyncPending
 
 	return (
-		<div className="surface-sunken p-4 sm:p-8 min-h-screen">
-			<div className="mx-auto max-w-4xl">
+		<Page>
+			<PageContent>
 				{/* One announced region per page: every skeleton is aria-hidden. */}
 				{!hydrated && <LoadingStatus />}
-				<header className="mb-8">
+				<PageHeader>
 					<div>
-						<h1 className="font-bold text-heading text-3xl">Balance Tracking</h1>
-						<p className="mt-2 text-body">
+						<PageTitle>Balance Tracking</PageTitle>
+						<PageDescription>
 							Monitor your investments, debts and what you own outright, and see your net worth
 							including savings
-						</p>
+						</PageDescription>
 					</div>
-				</header>
+				</PageHeader>
 
 				<main className="space-y-6">
-					<section className="surface shadow-md p-6 rounded-lg">
-						<div className="mb-4 flex flex-wrap items-center justify-between gap-4">
-							<h2 className="font-semibold text-subheading text-xl">Financial Overview</h2>
+					<Card as="section">
+						<CardHeader className="mb-4 flex-wrap gap-4">
+							<CardTitle className="text-xl">Financial Overview</CardTitle>
 							<button
 								ref={addButtonRef}
 								type="button"
@@ -461,11 +476,11 @@ export function BalancePage() {
 							>
 								+ Add Balance Entry
 							</button>
-						</div>
+						</CardHeader>
 						{/* 4-up only from lg: grid columns are minmax(0,1fr), which clip rather than overflow.
                Figures wrap between digit groups (GroupedAmount). */}
 						<div className="gap-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-							<div className="surface-inset p-4 lg:px-3 rounded-lg">
+							<Card variant="inset" className="p-4 lg:px-3">
 								<p className="text-muted text-sm">Total Investments</p>
 								<p
 									className="mt-1 font-bold text-green-600 dark:text-green-400 text-2xl"
@@ -477,10 +492,10 @@ export function BalancePage() {
 										<PendingFigure testId="stat-total-investments-skeleton" />
 									)}
 								</p>
-							</div>
+							</Card>
 							{/* Read-only: savings are entered on /savings, so this card shows the
                  figure and points there rather than offering a second entry path. */}
-							<div className="surface-inset p-4 lg:px-3 rounded-lg">
+							<Card variant="inset" className="p-4 lg:px-3">
 								<p className="text-muted text-sm">
 									Total Savings{' '}
 									<a
@@ -500,8 +515,8 @@ export function BalancePage() {
 										<PendingFigure testId="stat-total-savings-skeleton" />
 									)}
 								</p>
-							</div>
-							<div className="surface-inset p-4 lg:px-3 rounded-lg">
+							</Card>
+							<Card variant="inset" className="p-4 lg:px-3">
 								{/* "Other", since investments and savings beside it are assets too. */}
 								<p className="text-muted text-sm">Other Assets</p>
 								<p
@@ -514,8 +529,8 @@ export function BalancePage() {
 										<PendingFigure testId="stat-total-assets-skeleton" />
 									)}
 								</p>
-							</div>
-							<div className="surface-inset p-4 lg:px-3 rounded-lg">
+							</Card>
+							<Card variant="inset" className="p-4 lg:px-3">
 								<p className="text-muted text-sm">Total Debts</p>
 								<p
 									className="mt-1 font-bold text-red-600 dark:text-red-400 text-2xl"
@@ -527,9 +542,9 @@ export function BalancePage() {
 										<PendingFigure testId="stat-total-debts-skeleton" />
 									)}
 								</p>
-							</div>
+							</Card>
 							{/* Spans the row rather than a fifth card: five peers at max-w-4xl would clip the figure. */}
-							<div className="surface-inset sm:col-span-2 lg:col-span-4 p-4 lg:px-3 rounded-lg">
+							<Card variant="inset" className="sm:col-span-2 lg:col-span-4 p-4 lg:px-3">
 								<p className="text-muted text-sm">Net Worth</p>
 								<p
 									data-testid="stat-net-worth"
@@ -546,27 +561,27 @@ export function BalancePage() {
 										<PendingFigure testId="stat-net-worth-skeleton" />
 									)}
 								</p>
-							</div>
+							</Card>
 						</div>
-					</section>
+					</Card>
 
-					<section className="surface shadow-md p-6 rounded-lg">
-						<h2
+					<Card as="section">
+						<CardTitle
 							ref={listHeadingRef}
 							tabIndex={-1}
-							className="mb-6 font-semibold text-subheading text-xl rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+							className="mb-6 text-xl rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
 						>
 							Your Balance Entries
-						</h2>
+						</CardTitle>
 
 						{/* Pending is a third state: before rehydration the list is empty but not known empty. */}
 						{!hydrated ? (
 							<EmptyStateSkeleton testId="balance-entries-skeleton" />
 						) : balanceEntries.length === 0 ? (
-							<div className="surface-inset p-8 rounded-lg text-center">
+							<Card variant="inset" className="p-8 text-center">
 								<p className="mb-4 text-muted">No balance entries recorded yet</p>
 								<p className="text-faint text-sm">Click "Add Balance Entry" to get started</p>
-							</div>
+							</Card>
 						) : (
 							<>
 								<TableSortControl
@@ -712,7 +727,7 @@ export function BalancePage() {
 								{sortA11y.nodes}
 							</>
 						)}
-					</section>
+					</Card>
 				</main>
 
 				<Modal
@@ -722,10 +737,10 @@ export function BalancePage() {
 					finalFocusRef={addButtonRef}
 					className="bg-white dark:bg-gray-800 dark:text-gray-100 shadow-xl p-6 rounded-lg w-full max-w-md"
 				>
-					<div className="flex justify-between items-center mb-6">
-						<h3 id="balance-modal-title" className="font-medium text-heading text-lg">
+					<ModalHeader>
+						<ModalTitle id="balance-modal-title">
 							{editingId !== null ? 'Edit Balance Entry' : 'Add Balance Entry'}
-						</h3>
+						</ModalTitle>
 						<button
 							type="button"
 							onClick={closeModal}
@@ -747,13 +762,11 @@ export function BalancePage() {
 								/>
 							</svg>
 						</button>
-					</div>
+					</ModalHeader>
 
 					<form onSubmit={handleSubmit} className="space-y-4" noValidate>
-						<div>
-							<label htmlFor="type" className="block mb-1 font-medium text-label text-sm">
-								Type *
-							</label>
+						<FormField>
+							<FormLabel htmlFor="type">Type *</FormLabel>
 							<select
 								id="type"
 								value={type}
@@ -767,12 +780,10 @@ export function BalancePage() {
 									</option>
 								))}
 							</select>
-						</div>
+						</FormField>
 
-						<div>
-							<label htmlFor="name" className="block mb-1 font-medium text-label text-sm">
-								Name *
-							</label>
+						<FormField>
+							<FormLabel htmlFor="name">Name *</FormLabel>
 							<input
 								type="text"
 								id="name"
@@ -793,21 +804,14 @@ export function BalancePage() {
 								data-testid="balance-name-input"
 							/>
 							{hasFieldError('name') && (
-								<p
-									id="balance-name-error"
-									className="mt-1 text-sm text-red-600 dark:text-red-400"
-									role="alert"
-									data-testid="balance-name-error"
-								>
+								<FormError id="balance-name-error" data-testid="balance-name-error">
 									{getFieldError('name')}
-								</p>
+								</FormError>
 							)}
-						</div>
+						</FormField>
 
-						<div>
-							<label htmlFor="currentBalance" className="block mb-1 font-medium text-label text-sm">
-								Current Balance/Value *
-							</label>
+						<FormField>
+							<FormLabel htmlFor="currentBalance">Current Balance/Value *</FormLabel>
 							<div className="relative shadow-sm rounded-md">
 								{mode === 'symbol' && (
 									<div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
@@ -839,14 +843,12 @@ export function BalancePage() {
 								/>
 							</div>
 							{hasFieldError('currentBalance') && (
-								<p
+								<FormError
 									id="balance-current-balance-error"
-									className="mt-1 text-sm text-red-600 dark:text-red-400"
-									role="alert"
 									data-testid="balance-current-balance-error"
 								>
 									{getFieldError('currentBalance')}
-								</p>
+								</FormError>
 							)}
 							{/* Plain <a>, not <Link>: this file has no router and its tests provide none. Debt/asset
                  scoped: it must never read as "entering the same money twice is fine". */}
@@ -880,16 +882,11 @@ export function BalancePage() {
 									works through a full example.
 								</p>
 							)}
-						</div>
+						</FormField>
 
 						{type === 'debt' && (
-							<div>
-								<label
-									htmlFor="paymentExpenseId"
-									className="block mb-1 font-medium text-label text-sm"
-								>
-									Paid by
-								</label>
+							<FormField>
+								<FormLabel htmlFor="paymentExpenseId">Paid by</FormLabel>
 								<select
 									id="paymentExpenseId"
 									value={
@@ -924,18 +921,13 @@ export function BalancePage() {
 										</option>
 									))}
 								</select>
-							</div>
+							</FormField>
 						)}
 
 						{type === 'investment' && (
 							<>
-								<div>
-									<label
-										htmlFor="monthlyContribution"
-										className="block mb-1 font-medium text-label text-sm"
-									>
-										Contribution *
-									</label>
+								<FormField>
+									<FormLabel htmlFor="monthlyContribution">Contribution *</FormLabel>
 									<div className="relative shadow-sm rounded-md">
 										{mode === 'symbol' && (
 											<div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
@@ -973,21 +965,17 @@ export function BalancePage() {
 										/>
 									</div>
 									{hasFieldError('monthlyContribution') && (
-										<p
+										<FormError
 											id="balance-monthly-contribution-error"
-											className="mt-1 text-sm text-red-600 dark:text-red-400"
-											role="alert"
 											data-testid="balance-monthly-contribution-error"
 										>
 											{getFieldError('monthlyContribution')}
-										</p>
+										</FormError>
 									)}
-								</div>
+								</FormField>
 
-								<div>
-									<label htmlFor="frequency" className="block mb-1 font-medium text-label text-sm">
-										Contribution Frequency *
-									</label>
+								<FormField>
+									<FormLabel htmlFor="frequency">Contribution Frequency *</FormLabel>
 									<select
 										id="frequency"
 										value={frequency}
@@ -1002,11 +990,11 @@ export function BalancePage() {
 											</option>
 										))}
 									</select>
-								</div>
+								</FormField>
 
 								{/* Investment-only: a debt's contribution never reaches the distributable pool. */}
 								{type === 'investment' && (
-									<div>
+									<FormField>
 										{/* The field name deliberately doesn't match the label: renaming it is a sync schema change. */}
 										<div className="flex items-start gap-2">
 											<input
@@ -1034,19 +1022,15 @@ export function BalancePage() {
 											Expenses page — so the Savings page doesn't subtract it twice. If it's both,
 											delete the Expenses line.
 										</p>
-									</div>
+									</FormField>
 								)}
 							</>
 						)}
 
-						<div className="flex justify-end gap-3 pt-4">
-							<button
-								type="button"
-								onClick={closeModal}
-								className="hover:bg-gray-50 dark:hover:bg-gray-700 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-200"
-							>
+						<ModalFooter>
+							<Button type="button" variant="secondary" onClick={closeModal}>
 								Cancel
-							</button>
+							</Button>
 							<button
 								type="submit"
 								disabled={isSubmitting}
@@ -1058,7 +1042,7 @@ export function BalancePage() {
 										? 'Save Changes'
 										: 'Add Balance Entry'}
 							</button>
-						</div>
+						</ModalFooter>
 					</form>
 				</Modal>
 
@@ -1075,7 +1059,7 @@ export function BalancePage() {
 						</>
 					}
 				/>
-			</div>
-		</div>
+			</PageContent>
+		</Page>
 	)
 }

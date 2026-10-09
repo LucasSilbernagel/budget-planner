@@ -35,6 +35,12 @@ import type { ClientSavingsGoal } from '@budget-planner/core/services/savingsGoa
 import { Link } from '@tanstack/react-router'
 import type React from 'react'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Button } from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import { CardHeader } from '@/components/ui/CardHeader'
+import { CardTitle } from '@/components/ui/CardTitle'
+import { FormField } from '@/components/ui/FormField'
+import { FormLabel } from '@/components/ui/FormLabel'
 import { cn } from '@/lib/cn'
 import { useIsInitialSyncPending } from '../../hooks/useIsInitialSyncPending'
 import { useStoresHydrated } from '../../hooks/useStoresHydrated'
@@ -1345,8 +1351,8 @@ export function ScenarioBuilder({
 				</div>
 			)}
 
-			<section className="surface-inset rounded-xl p-6 space-y-6">
-				<h3 className="text-lg font-semibold text-subheading">Scenario Settings</h3>
+			<Card as="section" variant="inset" className="rounded-xl p-6 space-y-6">
+				<CardTitle as="h3">Scenario Settings</CardTitle>
 
 				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 					<InputField
@@ -1401,25 +1407,23 @@ export function ScenarioBuilder({
 						error={expenseGrowthValid ? undefined : GROWTH_INVALID_MESSAGE}
 					/>
 				</div>
-			</section>
+			</Card>
 
-			<section
-				className="surface-inset rounded-xl p-6 space-y-4"
+			<Card
+				as="section"
+				variant="inset"
+				className="rounded-xl p-6 space-y-4"
 				aria-labelledby={savingsHeadingId}
 			>
 				{/* Below the heading row: beside it, the row overflowed at 320px. */}
-				<div className="flex items-center justify-between">
-					<h3 id={savingsHeadingId} className="text-lg font-semibold text-subheading">
+				<CardHeader>
+					<CardTitle as="h3" id={savingsHeadingId}>
 						Savings Accounts
-					</h3>
-					<button
-						type="button"
-						onClick={addSavingsAccount}
-						className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-					>
+					</CardTitle>
+					<Button type="button" onClick={addSavingsAccount}>
 						+ Add Account
-					</button>
-				</div>
+					</Button>
+				</CardHeader>
 				<p className="text-muted text-sm">{SAVINGS_WHAT_IF_NOTE}</p>
 
 				{savingsAccounts.length === 0 ? (
@@ -1468,24 +1472,22 @@ export function ScenarioBuilder({
 							</p>
 						)
 					))}
-			</section>
+			</Card>
 
-			<section
-				className="surface-inset rounded-xl p-6 space-y-4"
+			<Card
+				as="section"
+				variant="inset"
+				className="rounded-xl p-6 space-y-4"
 				aria-labelledby={balanceHeadingId}
 			>
-				<div className="flex items-center justify-between">
-					<h3 id={balanceHeadingId} className="text-lg font-semibold text-subheading">
+				<CardHeader>
+					<CardTitle as="h3" id={balanceHeadingId}>
 						Investments &amp; Debts
-					</h3>
-					<button
-						type="button"
-						onClick={addBalanceAccount}
-						className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-					>
+					</CardTitle>
+					<Button type="button" onClick={addBalanceAccount}>
 						+ Add Balance
-					</button>
-				</div>
+					</Button>
+				</CardHeader>
 				<p className="text-muted text-sm">{BALANCE_WHAT_IF_NOTE}</p>
 
 				{balanceAccounts.length === 0 ? (
@@ -1518,21 +1520,22 @@ export function ScenarioBuilder({
 						})}
 					</div>
 				)}
-			</section>
+			</Card>
 
-			<section className="surface-inset rounded-xl p-6 space-y-4" aria-labelledby={assetHeadingId}>
-				<div className="flex items-center justify-between">
-					<h3 id={assetHeadingId} className="text-lg font-semibold text-subheading">
+			<Card
+				as="section"
+				variant="inset"
+				className="rounded-xl p-6 space-y-4"
+				aria-labelledby={assetHeadingId}
+			>
+				<CardHeader>
+					<CardTitle as="h3" id={assetHeadingId}>
 						Assets
-					</h3>
-					<button
-						type="button"
-						onClick={addAssetAccount}
-						className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-					>
+					</CardTitle>
+					<Button type="button" onClick={addAssetAccount}>
 						+ Add Asset
-					</button>
-				</div>
+					</Button>
+				</CardHeader>
 				<p className="text-muted text-sm">{ASSET_WHAT_IF_NOTE}</p>
 
 				{assetAccounts.length === 0 ? (
@@ -1551,19 +1554,15 @@ export function ScenarioBuilder({
 						))}
 					</div>
 				)}
-			</section>
+			</Card>
 
-			<section className="surface-inset rounded-xl p-6 space-y-4">
-				<div className="flex items-center justify-between">
-					<h3 className="text-lg font-semibold text-subheading">Income Sources</h3>
-					<button
-						type="button"
-						onClick={addIncomeItem}
-						className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-					>
+			<Card as="section" variant="inset" className="rounded-xl p-6 space-y-4">
+				<CardHeader>
+					<CardTitle as="h3">Income Sources</CardTitle>
+					<Button type="button" onClick={addIncomeItem}>
 						+ Add Income
-					</button>
-				</div>
+					</Button>
+				</CardHeader>
 
 				<div className="space-y-4">
 					{incomeItems.map((item) => (
@@ -1579,19 +1578,15 @@ export function ScenarioBuilder({
 						/>
 					))}
 				</div>
-			</section>
+			</Card>
 
-			<section className="surface-inset rounded-xl p-6 space-y-4">
-				<div className="flex items-center justify-between">
-					<h3 className="text-lg font-semibold text-subheading">Expense Categories</h3>
-					<button
-						type="button"
-						onClick={addExpenseItem}
-						className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-					>
+			<Card as="section" variant="inset" className="rounded-xl p-6 space-y-4">
+				<CardHeader>
+					<CardTitle as="h3">Expense Categories</CardTitle>
+					<Button type="button" onClick={addExpenseItem}>
 						+ Add Expense
-					</button>
-				</div>
+					</Button>
+				</CardHeader>
 
 				<div className="space-y-4">
 					{expenseItems.map((item) => (
@@ -1607,19 +1602,15 @@ export function ScenarioBuilder({
 						/>
 					))}
 				</div>
-			</section>
+			</Card>
 
-			<section className="surface-inset rounded-xl p-6 space-y-4">
-				<div className="flex items-center justify-between">
-					<h3 className="text-lg font-semibold text-subheading">One-Time Events</h3>
-					<button
-						type="button"
-						onClick={addOneTimeEvent}
-						className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-					>
+			<Card as="section" variant="inset" className="rounded-xl p-6 space-y-4">
+				<CardHeader>
+					<CardTitle as="h3">One-Time Events</CardTitle>
+					<Button type="button" onClick={addOneTimeEvent}>
 						+ Add Event
-					</button>
-				</div>
+					</Button>
+				</CardHeader>
 
 				{oneTimeEvents.length === 0 ? (
 					<p className="text-muted text-sm">No one-time events configured</p>
@@ -1637,11 +1628,13 @@ export function ScenarioBuilder({
 						))}
 					</div>
 				)}
-			</section>
+			</Card>
 
 			{result && (
 				<section className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-6">
-					<h3 className="text-lg font-semibold text-subheading mb-4">Forecast Summary</h3>
+					<CardTitle as="h3" className="mb-4">
+						Forecast Summary
+					</CardTitle>
 
 					<dl className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
 						<StatCard
@@ -1793,10 +1786,8 @@ function InputField({
 	const errorId = `${inputId}-error`
 
 	return (
-		<div>
-			<label htmlFor={inputId} className="block text-sm font-medium text-label mb-1">
-				{label}
-			</label>
+		<FormField>
+			<FormLabel htmlFor={inputId}>{label}</FormLabel>
 			<input
 				ref={inputRef}
 				id={inputId}
@@ -1818,7 +1809,7 @@ function InputField({
 					{error}
 				</p>
 			)}
-		</div>
+		</FormField>
 	)
 }
 
@@ -1893,12 +1884,10 @@ function FinancialItemRow({
 	const amountErrorId = `${amountId}-error`
 
 	return (
-		<div className="surface rounded-lg p-4 shadow-sm border border-default">
+		<Card className="p-4 shadow-sm border border-default">
 			<div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-				<div>
-					<label htmlFor={nameId} className="block text-sm font-medium text-label mb-1">
-						Name
-					</label>
+				<FormField>
+					<FormLabel htmlFor={nameId}>Name</FormLabel>
 					<input
 						id={nameId}
 						type="text"
@@ -1907,12 +1896,10 @@ function FinancialItemRow({
 						className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
 						placeholder="Income/Expense name"
 					/>
-				</div>
+				</FormField>
 
-				<div>
-					<label htmlFor={amountId} className="block text-sm font-medium text-label mb-1">
-						Amount
-					</label>
+				<FormField>
+					<FormLabel htmlFor={amountId}>Amount</FormLabel>
 					<div className="relative">
 						{mode === 'symbol' && (
 							<span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted">
@@ -1941,12 +1928,10 @@ function FinancialItemRow({
 							{amountError}
 						</p>
 					)}
-				</div>
+				</FormField>
 
-				<div>
-					<label htmlFor={frequencyId} className="block text-sm font-medium text-label mb-1">
-						Frequency
-					</label>
+				<FormField>
+					<FormLabel htmlFor={frequencyId}>Frequency</FormLabel>
 					<select
 						id={frequencyId}
 						value={item.frequency}
@@ -1959,7 +1944,7 @@ function FinancialItemRow({
 							</option>
 						))}
 					</select>
-				</div>
+				</FormField>
 
 				<div className="flex justify-end">
 					<button
@@ -1971,7 +1956,7 @@ function FinancialItemRow({
 					</button>
 				</div>
 			</div>
-		</div>
+		</Card>
 	)
 }
 
@@ -2073,13 +2058,11 @@ function OneTimeEventRow({
 	}
 
 	return (
-		<div className="surface rounded-lg p-4 shadow-sm border border-default">
+		<Card className="p-4 shadow-sm border border-default">
 			{/* items-start: the year cell has two lines under its input. */}
 			<div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-start">
-				<div>
-					<label htmlFor={nameId} className="block text-sm font-medium text-label mb-1">
-						Event Name
-					</label>
+				<FormField>
+					<FormLabel htmlFor={nameId}>Event Name</FormLabel>
 					<input
 						id={nameId}
 						type="text"
@@ -2088,12 +2071,10 @@ function OneTimeEventRow({
 						className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
 						placeholder="Bonus, house deposit, etc."
 					/>
-				</div>
+				</FormField>
 
-				<div>
-					<label htmlFor={directionId} className="block text-sm font-medium text-label mb-1">
-						Direction
-					</label>
+				<FormField>
+					<FormLabel htmlFor={directionId}>Direction</FormLabel>
 					<select
 						id={directionId}
 						value={direction}
@@ -2103,12 +2084,10 @@ function OneTimeEventRow({
 						<option value="in">Money in</option>
 						<option value="out">Money out</option>
 					</select>
-				</div>
+				</FormField>
 
-				<div>
-					<label htmlFor={amountId} className="block text-sm font-medium text-label mb-1">
-						Amount
-					</label>
+				<FormField>
+					<FormLabel htmlFor={amountId}>Amount</FormLabel>
 					<div className="relative">
 						{mode === 'symbol' && (
 							<span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted">
@@ -2138,17 +2117,14 @@ function OneTimeEventRow({
 							{amountError}
 						</p>
 					)}
-				</div>
+				</FormField>
 
 				{/* A count from the forecast start, not a calendar year; the calendar year shows beside it. */}
-				<div>
+				<FormField>
 					{/* whitespace-nowrap: under CI's DejaVu Sans this label wraps near 768px and drops the input. */}
-					<label
-						htmlFor={yearId}
-						className="block whitespace-nowrap text-sm font-medium text-label mb-1"
-					>
+					<FormLabel htmlFor={yearId} className="whitespace-nowrap">
 						Years from now
-					</label>
+					</FormLabel>
 					<div className="flex flex-wrap items-center gap-x-2 gap-y-1">
 						<input
 							id={yearId}
@@ -2168,7 +2144,7 @@ function OneTimeEventRow({
 					<p id={yearHelpId} className="mt-1 text-xs text-muted">
 						1 = the first year of your forecast
 					</p>
-				</div>
+				</FormField>
 
 				<div className="flex justify-end md:pt-6">
 					<button
@@ -2180,7 +2156,7 @@ function OneTimeEventRow({
 					</button>
 				</div>
 			</div>
-		</div>
+		</Card>
 	)
 }
 
@@ -2279,10 +2255,8 @@ function RowPercentField({
 }): React.ReactElement {
 	const id = useId()
 	return (
-		<div>
-			<label htmlFor={id} className="block text-sm font-medium text-label mb-1">
-				{label}
-			</label>
+		<FormField>
+			<FormLabel htmlFor={id}>{label}</FormLabel>
 			<input
 				id={id}
 				type="text"
@@ -2300,7 +2274,7 @@ function RowPercentField({
 					{field.error}
 				</p>
 			)}
-		</div>
+		</FormField>
 	)
 }
 
@@ -2316,10 +2290,8 @@ function RowMoneyField({
 	const { mode, currency } = useCurrencyPreferences()
 	const id = useId()
 	return (
-		<div>
-			<label htmlFor={id} className="block text-sm font-medium text-label mb-1">
-				{label}
-			</label>
+		<FormField>
+			<FormLabel htmlFor={id}>{label}</FormLabel>
 			<div className="relative">
 				{mode === 'symbol' && (
 					<span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted">
@@ -2350,7 +2322,7 @@ function RowMoneyField({
 					{field.error}
 				</p>
 			)}
-		</div>
+		</FormField>
 	)
 }
 
@@ -2377,12 +2349,10 @@ function SavingsAccountRow({
 	const rowLabel = rowName === '' ? 'account' : rowName
 
 	return (
-		<div className="surface rounded-lg p-4 shadow-sm border border-default">
+		<Card className="p-4 shadow-sm border border-default">
 			<div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-				<div className="min-w-0">
-					<label htmlFor={nameId} className="block text-sm font-medium text-label mb-1">
-						Account Name
-					</label>
+				<FormField className="min-w-0">
+					<FormLabel htmlFor={nameId}>Account Name</FormLabel>
 					<input
 						id={nameId}
 						type="text"
@@ -2394,7 +2364,7 @@ function SavingsAccountRow({
 						className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
 						placeholder="Savings account or goal"
 					/>
-				</div>
+				</FormField>
 
 				<RowMoneyField label="Balance" rowLabel={rowLabel} field={balance} />
 				<RowMoneyField label="Monthly Contribution" rowLabel={rowLabel} field={contribution} />
@@ -2417,7 +2387,7 @@ function SavingsAccountRow({
 					{outcome.label} <GroupedAmount text={outcome.amount} />
 				</p>
 			)}
-		</div>
+		</Card>
 	)
 }
 
@@ -2464,12 +2434,10 @@ function BalanceAccountRow({
 		'w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm'
 
 	return (
-		<div className="surface rounded-lg p-4 shadow-sm border border-default">
+		<Card className="p-4 shadow-sm border border-default">
 			<div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-				<div className="min-w-0">
-					<label htmlFor={nameId} className="block text-sm font-medium text-label mb-1">
-						Name
-					</label>
+				<FormField className="min-w-0">
+					<FormLabel htmlFor={nameId}>Name</FormLabel>
 					<input
 						id={nameId}
 						type="text"
@@ -2480,12 +2448,10 @@ function BalanceAccountRow({
 						className={selectClass}
 						placeholder="Investment or debt"
 					/>
-				</div>
+				</FormField>
 
-				<div>
-					<label htmlFor={typeId} className="block text-sm font-medium text-label mb-1">
-						Type
-					</label>
+				<FormField>
+					<FormLabel htmlFor={typeId}>Type</FormLabel>
 					<select
 						id={typeId}
 						value={account.type}
@@ -2502,15 +2468,13 @@ function BalanceAccountRow({
 							</option>
 						))}
 					</select>
-				</div>
+				</FormField>
 
 				<RowMoneyField label="Balance" rowLabel={rowLabel} field={balance} />
 				<RowMoneyField label="Contribution" rowLabel={rowLabel} field={contribution} />
 
-				<div>
-					<label htmlFor={frequencyId} className="block text-sm font-medium text-label mb-1">
-						Frequency
-					</label>
+				<FormField>
+					<FormLabel htmlFor={frequencyId}>Frequency</FormLabel>
 					<select
 						id={frequencyId}
 						value={account.frequency}
@@ -2531,7 +2495,7 @@ function BalanceAccountRow({
 							</option>
 						))}
 					</select>
-				</div>
+				</FormField>
 
 				{/* Its own component, so switching to Debt unmounts it and withdraws its validity key. */}
 				{isInvestment && (
@@ -2593,7 +2557,7 @@ count that payment nowhere. */}
 					)}
 				</p>
 			)}
-		</div>
+		</Card>
 	)
 }
 
@@ -2641,12 +2605,10 @@ function AssetAccountRow({
 	const rowLabel = rowName === '' ? 'unnamed asset' : rowName
 
 	return (
-		<div className="surface rounded-lg p-4 shadow-sm border border-default">
+		<Card className="p-4 shadow-sm border border-default">
 			<div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-				<div className="min-w-0">
-					<label htmlFor={nameId} className="block text-sm font-medium text-label mb-1">
-						Name
-					</label>
+				<FormField className="min-w-0">
+					<FormLabel htmlFor={nameId}>Name</FormLabel>
 					<input
 						id={nameId}
 						type="text"
@@ -2657,7 +2619,7 @@ function AssetAccountRow({
 						className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm"
 						placeholder="House, car"
 					/>
-				</div>
+				</FormField>
 
 				{/* "Value", not "Balance", so it is never named like a balance row's field. */}
 				<RowMoneyField label="Value" rowLabel={rowLabel} field={value} />
@@ -2673,7 +2635,7 @@ function AssetAccountRow({
 					</button>
 				</div>
 			</div>
-		</div>
+		</Card>
 	)
 }
 

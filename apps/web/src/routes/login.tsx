@@ -1,5 +1,7 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { MagicLinkForm } from '@/components/auth/magic-link-form'
+import { Card } from '@/components/ui/Card'
+import { PageTitle } from '@/components/ui/PageTitle'
 import { getSessionSeed } from '@/server/api/auth/session-seed'
 
 // Exported because `routeTree.gen.ts` infers `LoginRoute` from `validateSearch`'s
@@ -49,11 +51,11 @@ function LoginPage() {
 		<main className="min-h-screen flex flex-col items-center justify-center surface-sunken p-4">
 			<div className="w-full max-w-md">
 				<div className="text-center mb-8">
-					<h1 className="text-3xl font-bold text-heading">Longhand Budget</h1>
+					<PageTitle>Longhand Budget</PageTitle>
 					<p className="text-body mt-2">Track your finances with privacy and control</p>
 				</div>
 
-				<div className="surface shadow-md rounded-2xl p-6 sm:p-8 border border-default">
+				<Card className="rounded-2xl sm:p-8 border border-default">
 					<div className="text-center">
 						<h2 className="text-2xl font-semibold text-heading mb-2">Sign in</h2>
 						<p className="text-body mb-6">
@@ -64,7 +66,7 @@ function LoginPage() {
 
 					{/* Magic-link login silently no-ops for unknown emails and accounts are only
               created by checkout, so tell newcomers before they type. */}
-					<div className="mb-6 p-4 surface-inset rounded-lg border border-default text-left">
+					<Card variant="inset" className="mb-6 p-4 border border-default text-left">
 						<h3 className="font-medium text-heading mb-1">New here?</h3>
 						<p className="text-sm text-body">
 							This page is for signing back in — an account is created when you subscribe.
@@ -75,7 +77,7 @@ function LoginPage() {
 						>
 							See Premium pricing →
 						</a>
-					</div>
+					</Card>
 
 					<MagicLinkForm initialError={errorMessage(error)} />
 
@@ -93,7 +95,7 @@ function LoginPage() {
 					</div>
 
 					{/* surface-inset, not surface-sunken: nested on the card, so it reads lighter. */}
-					<div className="mt-6 p-4 surface-inset rounded-lg border border-default">
+					<Card variant="inset" className="mt-6 p-4 border border-default">
 						<h3 className="font-medium text-heading mb-1">No account needed</h3>
 						<p className="text-sm text-body">
 							You can also use Longhand Budget without an account. Your data will be stored locally
@@ -105,8 +107,8 @@ function LoginPage() {
 						>
 							Continue without account →
 						</a>
-					</div>
-				</div>
+					</Card>
+				</Card>
 			</div>
 		</main>
 	)

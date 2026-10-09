@@ -1,5 +1,7 @@
 import type React from 'react'
 import { useCallback, useMemo, useRef, useState } from 'react'
+import { Card } from '@/components/ui/Card'
+import { CardTitle } from '@/components/ui/CardTitle'
 import { cn } from '@/lib/cn'
 import { signedAmount } from '../../lib/forecasting/today-baseline'
 import type { AriaSortValue } from '../../lib/table-sort'
@@ -224,7 +226,10 @@ export function ForecastList({
 			{forecasts.length === 0 && <EmptyState />}
 
 			{forecasts.length > 0 && (
-				<div className="surface-inset rounded-xl p-4 flex flex-col md:flex-row gap-4 items-center justify-between">
+				<Card
+					variant="inset"
+					className="rounded-xl p-4 flex flex-col md:flex-row gap-4 items-center justify-between"
+				>
 					<div className="flex-1 min-w-[200px]">
 						<label htmlFor="search" className="sr-only">
 							Search forecasts
@@ -256,7 +261,7 @@ export function ForecastList({
 							Delete Selected
 						</button>
 					</div>
-				</div>
+				</Card>
 			)}
 
 			{filteredForecasts.length > 0 && (
@@ -446,18 +451,20 @@ export function ForecastList({
 
 function EmptyState(): React.ReactElement {
 	return (
-		<div className="surface rounded-xl shadow-lg border border-default p-12 text-center">
+		<Card className="rounded-xl shadow-lg border border-default p-12 text-center">
 			<div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
 				<FolderIcon className="w-8 h-8 text-gray-400" />
 			</div>
-			<h3 className="text-lg font-semibold text-subheading mb-2">No Saved Forecasts</h3>
+			<CardTitle as="h3" className="mb-2">
+				No Saved Forecasts
+			</CardTitle>
 			<p className="text-muted text-sm mb-4">
 				Create and save your first forecasting scenario to get started.
 			</p>
 			<p className="text-faint text-xs">
 				Saved forecasts are stored securely in DanubeData (Germany - EU)
 			</p>
-		</div>
+		</Card>
 	)
 }
 

@@ -1,4 +1,10 @@
 import type { ReactNode } from 'react'
+import { Card } from '../ui/Card'
+import { Page } from '../ui/Page'
+import { PageContent } from '../ui/PageContent'
+import { PageDescription } from '../ui/PageDescription'
+import { PageHeader } from '../ui/PageHeader'
+import { PageTitle } from '../ui/PageTitle'
 
 export type LegalPageLayoutProps = {
 	title: string
@@ -8,20 +14,20 @@ export type LegalPageLayoutProps = {
 
 export function LegalPageLayout({ title, description, children }: LegalPageLayoutProps) {
 	return (
-		<div className="min-h-screen surface-sunken p-4 sm:p-8">
-			<div className="mx-auto max-w-3xl">
-				<header className="mb-8">
+		<Page>
+			<PageContent className="max-w-3xl">
+				<PageHeader>
 					<a href="/" className="text-sm text-accent hover:underline">
 						← Back to app
 					</a>
-					<h1 className="mt-2 text-3xl font-bold text-heading">{title}</h1>
-					{description ? <p className="mt-2 text-body">{description}</p> : null}
-				</header>
+					<PageTitle className="mt-2">{title}</PageTitle>
+					{description ? <PageDescription>{description}</PageDescription> : null}
+				</PageHeader>
 
 				<main>
-					<section className="rounded-lg surface p-6 shadow-md">{children}</section>
+					<Card as="section">{children}</Card>
 				</main>
-			</div>
-		</div>
+			</PageContent>
+		</Page>
 	)
 }

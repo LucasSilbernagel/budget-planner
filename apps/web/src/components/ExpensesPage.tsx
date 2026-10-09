@@ -25,9 +25,23 @@ import { useExpenseStore, useExpenses, useTotalExpenses } from '../stores/expens
 import { useShowRetirementPlanner } from '../stores/plannerVisibilityStore'
 import { CategoryBadge } from './categories/CategoryBadge'
 import { CategoryPicker } from './categories/CategoryPicker'
+import { Button } from './ui/Button'
+import { Card } from './ui/Card'
+import { CardTitle } from './ui/CardTitle'
 import { ConfirmDialog } from './ui/ConfirmDialog'
+import { FormError } from './ui/FormError'
+import { FormField } from './ui/FormField'
+import { FormLabel } from './ui/FormLabel'
 import { GroupedAmount } from './ui/GroupedAmount'
 import { Modal } from './ui/Modal'
+import { ModalFooter } from './ui/ModalFooter'
+import { ModalHeader } from './ui/ModalHeader'
+import { ModalTitle } from './ui/ModalTitle'
+import { Page } from './ui/Page'
+import { PageContent } from './ui/PageContent'
+import { PageDescription } from './ui/PageDescription'
+import { PageHeader } from './ui/PageHeader'
+import { PageTitle } from './ui/PageTitle'
 import { PeriodTotal } from './ui/PeriodTotal'
 import {
 	FieldLabel,
@@ -273,19 +287,19 @@ export function ExpensesPage() {
 	const hydrated = storesHydrated && !isInitialSyncPending
 
 	return (
-		<div className="min-h-screen surface-sunken p-4 sm:p-8">
-			<div className="max-w-4xl mx-auto">
+		<Page>
+			<PageContent>
 				{/* One announced region per page: every skeleton is aria-hidden. */}
 				{!hydrated && <LoadingStatus />}
-				<header className="mb-8">
+				<PageHeader>
 					<div>
-						<h1 className="text-3xl font-bold text-heading">Expenses</h1>
-						<p className="text-body mt-2">Track and categorize your spending</p>
+						<PageTitle>Expenses</PageTitle>
+						<PageDescription>Track and categorize your spending</PageDescription>
 					</div>
-				</header>
+				</PageHeader>
 
 				<main className="space-y-6">
-					<section className="surface rounded-lg shadow-md p-6">
+					<Card as="section">
 						<div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
 							<PeriodTotal
 								label="Total Expenses"
@@ -306,19 +320,19 @@ export function ExpensesPage() {
 								+ Add Expense
 							</button>
 						</div>
-					</section>
+					</Card>
 
-					<section className="surface rounded-lg shadow-md p-6">
-						<h2 className="text-xl font-semibold text-subheading mb-6">Your Expenses</h2>
+					<Card as="section">
+						<CardTitle className="text-xl mb-6">Your Expenses</CardTitle>
 
 						{/* The skeleton mirrors this card's box model, so resolving causes no layout shift. */}
 						{!hydrated ? (
 							<EmptyStateSkeleton testId="expenses-list-skeleton" />
 						) : expenses.length === 0 ? (
-							<div className="surface-inset rounded-lg p-8 text-center">
+							<Card variant="inset" className="p-8 text-center">
 								<p className="text-muted mb-4">No expenses recorded yet</p>
 								<p className="text-sm text-faint">Click "Add Expense" to get started</p>
-							</div>
+							</Card>
 						) : (
 							<>
 								<TableSortControl
@@ -446,14 +460,14 @@ export function ExpensesPage() {
 								{sortA11y.nodes}
 							</>
 						)}
-					</section>
+					</Card>
 				</main>
 
 				<Modal isOpen={isModalOpen} onClose={closeModal} labelledBy="expense-modal-title">
-					<div className="flex justify-between items-center mb-6">
-						<h3 id="expense-modal-title" className="text-lg font-medium text-heading">
+					<ModalHeader>
+						<ModalTitle id="expense-modal-title">
 							{editingId !== null ? 'Edit Expense' : 'Add Expense'}
-						</h3>
+						</ModalTitle>
 						<button
 							type="button"
 							onClick={closeModal}
@@ -475,13 +489,11 @@ export function ExpensesPage() {
 								/>
 							</svg>
 						</button>
-					</div>
+					</ModalHeader>
 
 					<form onSubmit={handleSubmit} className="space-y-4" noValidate>
-						<div>
-							<label htmlFor="name" className="block text-sm font-medium text-label mb-1">
-								Name *
-							</label>
+						<FormField>
+							<FormLabel htmlFor="name">Name *</FormLabel>
 							<input
 								type="text"
 								id="name"
@@ -500,26 +512,19 @@ export function ExpensesPage() {
 								data-testid="expense-name-input"
 							/>
 							{hasFieldError('name') && (
-								<p
-									id="expense-name-error"
-									className="mt-1 text-sm text-red-600 dark:text-red-400"
-									role="alert"
-									data-testid="expense-name-error"
-								>
+								<FormError id="expense-name-error" data-testid="expense-name-error">
 									{getFieldError('name')}
-								</p>
+								</FormError>
 							)}
 							{/* Plain prose, not a <Link>: this page renders without a router in several test suites. */}
 							<p className="mt-1 text-xs text-muted" data-testid="expense-mortgage-hint">
 								Paying off a loan or mortgage? Enter the payment here, and the amount still owed on
 								the Balance Tracking page.
 							</p>
-						</div>
+						</FormField>
 
-						<div>
-							<label htmlFor="amount" className="block text-sm font-medium text-label mb-1">
-								Amount *
-							</label>
+						<FormField>
+							<FormLabel htmlFor="amount">Amount *</FormLabel>
 							<div className="relative rounded-md shadow-sm">
 								{mode === 'symbol' && (
 									<div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -549,21 +554,14 @@ export function ExpensesPage() {
 								/>
 							</div>
 							{hasFieldError('amount') && (
-								<p
-									id="expense-amount-error"
-									className="mt-1 text-sm text-red-600 dark:text-red-400"
-									role="alert"
-									data-testid="expense-amount-error"
-								>
+								<FormError id="expense-amount-error" data-testid="expense-amount-error">
 									{getFieldError('amount')}
-								</p>
+								</FormError>
 							)}
-						</div>
+						</FormField>
 
-						<div>
-							<label htmlFor="frequency" className="block text-sm font-medium text-label mb-1">
-								Frequency *
-							</label>
+						<FormField>
+							<FormLabel htmlFor="frequency">Frequency *</FormLabel>
 							<select
 								id="frequency"
 								value={frequency}
@@ -577,7 +575,7 @@ export function ExpensesPage() {
 									</option>
 								))}
 							</select>
-						</div>
+						</FormField>
 
 						<CategoryPicker
 							kind="expense"
@@ -588,7 +586,7 @@ export function ExpensesPage() {
 
 						{/* Copy avoids "must": the planner needs a prediction, not a commitment. */}
 						{showRetirementPlanner && (
-							<div>
+							<FormField>
 								<div className="flex items-start gap-2">
 									<input
 										type="checkbox"
@@ -608,17 +606,13 @@ export function ExpensesPage() {
 									you'll have paid off, tuition, daycare or a commute. The retirement planner uses
 									it to suggest what your income needs to cover.
 								</p>
-							</div>
+							</FormField>
 						)}
 
-						<div className="flex justify-end gap-3 pt-4">
-							<button
-								type="button"
-								onClick={closeModal}
-								className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
-							>
+						<ModalFooter>
+							<Button type="button" variant="secondary" onClick={closeModal}>
 								Cancel
-							</button>
+							</Button>
 							<button
 								type="submit"
 								disabled={isSubmitting}
@@ -626,7 +620,7 @@ export function ExpensesPage() {
 							>
 								{isSubmitting ? 'Saving...' : editingId !== null ? 'Save Changes' : 'Add Expense'}
 							</button>
-						</div>
+						</ModalFooter>
 					</form>
 				</Modal>
 
@@ -644,7 +638,7 @@ export function ExpensesPage() {
 						</>
 					}
 				/>
-			</div>
-		</div>
+			</PageContent>
+		</Page>
 	)
 }

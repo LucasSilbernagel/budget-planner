@@ -3,19 +3,26 @@ import { cn } from '@/lib/cn'
 import { PRICING_PAGE } from '../../content/legal'
 import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../../lib/premium/benefits'
 import { MarkdownRenderer } from '../docs/markdown-renderer'
+import { Card } from '../ui/Card'
+import { CardTitle } from '../ui/CardTitle'
+import { Page } from '../ui/Page'
+import { PageContent } from '../ui/PageContent'
+import { PageDescription } from '../ui/PageDescription'
+import { PageHeader } from '../ui/PageHeader'
+import { PageTitle } from '../ui/PageTitle'
 import { PremiumCheckoutButton } from './premium-checkout-button'
 
 export function PricingPageView(): React.ReactElement {
 	return (
-		<div className="min-h-screen surface-sunken p-4 sm:p-8">
-			<div className="mx-auto max-w-4xl">
-				<header className="mb-8">
+		<Page>
+			<PageContent>
+				<PageHeader>
 					<a href="/" className="text-sm text-accent hover:underline">
 						← Back to app
 					</a>
-					<h1 className="mt-2 text-3xl font-bold text-heading">{PRICING_PAGE.title}</h1>
-					<p className="mt-2 text-body">{PRICING_PAGE.description}</p>
-				</header>
+					<PageTitle className="mt-2">{PRICING_PAGE.title}</PageTitle>
+					<PageDescription>{PRICING_PAGE.description}</PageDescription>
+				</PageHeader>
 
 				<main className="space-y-8">
 					<section aria-label="Plan comparison" className="grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -50,12 +57,12 @@ export function PricingPageView(): React.ReactElement {
 						charges the equivalent in your local currency at checkout.
 					</p>
 
-					<section className="rounded-lg surface p-6 shadow-md">
+					<Card as="section">
 						<MarkdownRenderer content={PRICING_PAGE.content} />
-					</section>
+					</Card>
 				</main>
-			</div>
-		</div>
+			</PageContent>
+		</Page>
 	)
 }
 
@@ -112,9 +119,9 @@ function PlanCard({
 	recommended = false,
 }: PlanCardProps): React.ReactElement {
 	return (
-		<div
+		<Card
 			className={cn(
-				'relative flex flex-col rounded-2xl border surface p-6 shadow-md',
+				'relative flex flex-col rounded-2xl border',
 				recommended
 					? // A 500-weight ring reads hot on a gray-800 card, so dark drops to 400.
 						'border-blue-500 ring-1 ring-blue-500 dark:border-blue-400 dark:ring-blue-400'
@@ -127,7 +134,7 @@ function PlanCard({
 					Recommended
 				</span>
 			)}
-			<h2 className="text-lg font-semibold text-heading">{name}</h2>
+			<CardTitle className="text-heading">{name}</CardTitle>
 			<div className="mt-2 flex items-baseline gap-1">
 				<span className="text-4xl font-bold text-heading">{price}</span>
 				<span className="text-sm text-muted">{priceSuffix}</span>
@@ -158,7 +165,7 @@ function PlanCard({
 					{ctaLabel}
 				</a>
 			)}
-		</div>
+		</Card>
 	)
 }
 

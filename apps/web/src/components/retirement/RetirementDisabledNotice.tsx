@@ -1,6 +1,8 @@
 import { Link } from '@tanstack/react-router'
 import type React from 'react'
 import { useSetShowRetirementPlanner } from '../../stores/plannerVisibilityStore'
+import { Card } from '../ui/Card'
+import { PageTitle } from '../ui/PageTitle'
 
 // The copy states nothing was deleted: the control that leads here sits next to 'Clear local data'.
 export function RetirementDisabledNotice(): React.ReactElement {
@@ -8,10 +10,10 @@ export function RetirementDisabledNotice(): React.ReactElement {
 
 	return (
 		<main className="min-h-screen surface-sunken py-6 sm:py-12 px-4 sm:px-6 lg:px-8">
-			<div className="max-w-2xl mx-auto surface rounded-2xl shadow-lg p-6 sm:p-8">
-				<h1 className="text-2xl sm:text-3xl font-bold text-heading mb-4">
+			<Card className="max-w-2xl mx-auto rounded-2xl shadow-lg sm:p-8">
+				<PageTitle className="text-2xl sm:text-3xl mb-4">
 					The Retirement planner is turned off
-				</h1>
+				</PageTitle>
 				<p className="text-base text-body mb-4">
 					You hid this planner in Settings, so it has been removed from your navigation and the
 					expense form no longer asks about retirement.
@@ -36,7 +38,7 @@ export function RetirementDisabledNotice(): React.ReactElement {
 						Go to Settings
 					</Link>
 				</div>
-			</div>
+			</Card>
 		</main>
 	)
 }

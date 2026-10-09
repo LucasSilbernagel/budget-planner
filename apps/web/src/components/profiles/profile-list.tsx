@@ -8,6 +8,9 @@ import { cn } from '@/lib/cn'
 import { profileColor, resolveProfileIcon } from '@/lib/profile-appearance'
 import type { ClientProfile } from '@/stores/profileStore'
 import { useHasMultipleProfiles, useProfileError } from '@/stores/profileStore'
+import { Card } from '../ui/Card'
+import { CardHeader } from '../ui/CardHeader'
+import { CardTitle } from '../ui/CardTitle'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { EditProfileDialog } from './edit-profile'
 
@@ -67,15 +70,15 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
 
 	return (
 		<div className="space-y-4">
-			<div className="flex items-center justify-between mb-4">
+			<CardHeader className="mb-4">
 				{/* tabIndex -1 makes the heading a focus target when the confirming card unmounts. */}
-				<h2 ref={headingRef} tabIndex={-1} className="text-lg font-semibold text-heading">
+				<CardTitle ref={headingRef} tabIndex={-1} className="text-heading">
 					Your Profiles
-				</h2>
+				</CardTitle>
 				<span className="text-sm text-muted">
 					{profiles.length} profile{profiles.length !== 1 ? 's' : ''}
 				</span>
-			</div>
+			</CardHeader>
 
 			{/* role=alert so a refusal with no focus change is announced. */}
 			{profileError && (
@@ -143,12 +146,12 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
 			)}
 
 			{!hasMultipleProfiles && (
-				<div className="mt-6 p-4 surface-inset rounded-lg">
+				<Card variant="inset" className="mt-6 p-4">
 					<p className="text-sm text-body">
 						💡 <strong>Tip:</strong> Create additional profiles to organize your finances for
 						different purposes (e.g., personal, business, investments).
 					</p>
-				</div>
+				</Card>
 			)}
 		</div>
 	)

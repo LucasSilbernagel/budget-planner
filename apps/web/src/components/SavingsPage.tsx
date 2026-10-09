@@ -26,9 +26,23 @@ import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencySt
 import { useExpenses } from '../stores/expenseStore'
 import { useIncomeSources } from '../stores/incomeStore'
 import { useSavingsGoals, useSavingsStore, useTotalSavings } from '../stores/savingsStore'
+import { Button } from './ui/Button'
+import { Card } from './ui/Card'
+import { CardTitle } from './ui/CardTitle'
 import { ConfirmDialog } from './ui/ConfirmDialog'
+import { FormError } from './ui/FormError'
+import { FormField } from './ui/FormField'
+import { FormLabel } from './ui/FormLabel'
 import { GroupedAmount } from './ui/GroupedAmount'
 import { Modal } from './ui/Modal'
+import { ModalFooter } from './ui/ModalFooter'
+import { ModalHeader } from './ui/ModalHeader'
+import { ModalTitle } from './ui/ModalTitle'
+import { Page } from './ui/Page'
+import { PageContent } from './ui/PageContent'
+import { PageDescription } from './ui/PageDescription'
+import { PageHeader } from './ui/PageHeader'
+import { PageTitle } from './ui/PageTitle'
 import {
 	FieldLabel,
 	RESPONSIVE_ACTION_BUTTON_CLASS,
@@ -384,23 +398,23 @@ export function SavingsPage() {
 	const hydrated = storesHydrated && !isInitialSyncPending
 
 	return (
-		<div className="surface-sunken p-4 sm:p-8 min-h-screen">
-			<div className="mx-auto max-w-4xl">
+		<Page>
+			<PageContent>
 				{/* One announced region per page: every skeleton is aria-hidden. */}
 				{!hydrated && <LoadingStatus />}
-				<header className="mb-8">
+				<PageHeader>
 					<div>
-						<h1 className="font-bold text-heading text-3xl">Savings Goals</h1>
-						<p className="mt-2 text-body">Track and manage your savings targets</p>
+						<PageTitle>Savings Goals</PageTitle>
+						<PageDescription>Track and manage your savings targets</PageDescription>
 					</div>
-				</header>
+				</PageHeader>
 
 				<main className="space-y-6">
-					<section className="surface shadow-md p-6 rounded-lg">
+					<Card as="section">
 						<div className="flex md:flex-row flex-col md:justify-between md:items-center gap-4">
 							{/* Not normalized: a savings balance is a stock, not a per-period flow. */}
 							<div>
-								<h2 className="font-semibold text-subheading text-xl">Total Savings</h2>
+								<CardTitle className="text-xl">Total Savings</CardTitle>
 								{/* GroupedAmount: at 320px the figure can exceed the card, so it breaks only after a group separator. */}
 								<p
 									data-testid="savings-total"
@@ -619,19 +633,19 @@ export function SavingsPage() {
 								</div>
 							)}
 						</div>
-					</section>
+					</Card>
 
-					<section className="surface shadow-md p-6 rounded-lg">
-						<h2 className="mb-6 font-semibold text-subheading text-xl">Your Savings Goals</h2>
+					<Card as="section">
+						<CardTitle className="mb-6 text-xl">Your Savings Goals</CardTitle>
 
 						{/* Pending is a third state; the skeleton mirrors the card's box model to avoid a shift. */}
 						{!hydrated ? (
 							<EmptyStateSkeleton testId="savings-list-skeleton" />
 						) : savingsGoals.length === 0 ? (
-							<div className="surface-inset p-8 rounded-lg text-center">
+							<Card variant="inset" className="p-8 text-center">
 								<p className="mb-4 text-muted">No savings goals recorded yet</p>
 								<p className="text-faint text-sm">Click "Add Savings Goal" to get started</p>
-							</div>
+							</Card>
 						) : (
 							<>
 								{/* Drives the same sort slice as the headers, so phone and desktop sorts agree. */}
@@ -821,14 +835,14 @@ export function SavingsPage() {
 								{sortA11y.nodes}
 							</>
 						)}
-					</section>
+					</Card>
 				</main>
 
 				<Modal isOpen={isModalOpen} onClose={closeModal} labelledBy="savings-modal-title">
-					<div className="flex justify-between items-center mb-6">
-						<h3 id="savings-modal-title" className="font-medium text-heading text-lg">
+					<ModalHeader>
+						<ModalTitle id="savings-modal-title">
 							{editingId !== null ? 'Edit Savings Goal' : 'Add Savings Goal'}
-						</h3>
+						</ModalTitle>
 						<button
 							type="button"
 							onClick={closeModal}
@@ -850,13 +864,11 @@ export function SavingsPage() {
 								/>
 							</svg>
 						</button>
-					</div>
+					</ModalHeader>
 
 					<form onSubmit={handleSubmit} className="space-y-4" noValidate>
-						<div>
-							<label htmlFor="name" className="block mb-1 font-medium text-label text-sm">
-								Name *
-							</label>
+						<FormField>
+							<FormLabel htmlFor="name">Name *</FormLabel>
 							<input
 								type="text"
 								id="name"
@@ -875,16 +887,11 @@ export function SavingsPage() {
 								data-testid="savings-name-input"
 							/>
 							{hasFieldError('name') && (
-								<p
-									id="savings-name-error"
-									className="mt-1 text-red-600 dark:text-red-400 text-sm"
-									role="alert"
-									data-testid="savings-name-error"
-								>
+								<FormError id="savings-name-error" data-testid="savings-name-error">
 									{getFieldError('name')}
-								</p>
+								</FormError>
 							)}
-						</div>
+						</FormField>
 
 						<div className="flex items-start gap-2">
 							<input
@@ -901,10 +908,8 @@ export function SavingsPage() {
 						</div>
 
 						{!isAccount && (
-							<div>
-								<label htmlFor="targetAmount" className="block mb-1 font-medium text-label text-sm">
-									Target Amount *
-								</label>
+							<FormField>
+								<FormLabel htmlFor="targetAmount">Target Amount *</FormLabel>
 								<div className="relative shadow-sm rounded-md">
 									{mode === 'symbol' && (
 										<div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
@@ -936,22 +941,18 @@ export function SavingsPage() {
 									/>
 								</div>
 								{hasFieldError('targetAmount') && (
-									<p
+									<FormError
 										id="savings-target-amount-error"
-										className="mt-1 text-red-600 dark:text-red-400 text-sm"
-										role="alert"
 										data-testid="savings-target-amount-error"
 									>
 										{getFieldError('targetAmount')}
-									</p>
+									</FormError>
 								)}
-							</div>
+							</FormField>
 						)}
 
-						<div>
-							<label htmlFor="currentBalance" className="block mb-1 font-medium text-label text-sm">
-								Current Balance
-							</label>
+						<FormField>
+							<FormLabel htmlFor="currentBalance">Current Balance</FormLabel>
 							<div className="relative shadow-sm rounded-md">
 								{mode === 'symbol' && (
 									<div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
@@ -982,22 +983,18 @@ export function SavingsPage() {
 								/>
 							</div>
 							{hasFieldError('currentBalance') && (
-								<p
+								<FormError
 									id="savings-current-balance-error"
-									className="mt-1 text-red-600 dark:text-red-400 text-sm"
-									role="alert"
 									data-testid="savings-current-balance-error"
 								>
 									{getFieldError('currentBalance')}
-								</p>
+								</FormError>
 							)}
-						</div>
+						</FormField>
 
 						{/* Rendered for every entry; the account tick affects only the Target field. */}
-						<div>
-							<label htmlFor="allocationMode" className="block mb-1 font-medium text-label text-sm">
-								Monthly Allocation
-							</label>
+						<FormField>
+							<FormLabel htmlFor="allocationMode">Monthly Allocation</FormLabel>
 							<select
 								id="allocationMode"
 								value={allocationMode}
@@ -1013,16 +1010,11 @@ export function SavingsPage() {
 									? 'This entry receives an even share of whatever is left over each month.'
 									: 'This entry gets the fixed amount you set below each month.'}
 							</p>
-						</div>
+						</FormField>
 
 						{allocationMode === 'manual' && (
-							<div>
-								<label
-									htmlFor="monthlyAllocation"
-									className="block mb-1 font-medium text-label text-sm"
-								>
-									Monthly Allocation Amount
-								</label>
+							<FormField>
+								<FormLabel htmlFor="monthlyAllocation">Monthly Allocation Amount</FormLabel>
 								<div className="relative shadow-sm rounded-md">
 									{mode === 'symbol' && (
 										<div className="left-0 absolute inset-y-0 flex items-center pl-3 pointer-events-none">
@@ -1057,26 +1049,20 @@ export function SavingsPage() {
 									/>
 								</div>
 								{hasFieldError('monthlyAllocation') && (
-									<p
+									<FormError
 										id="savings-monthly-allocation-error"
-										className="mt-1 text-red-600 dark:text-red-400 text-sm"
-										role="alert"
 										data-testid="savings-monthly-allocation-error"
 									>
 										{getFieldError('monthlyAllocation')}
-									</p>
+									</FormError>
 								)}
-							</div>
+							</FormField>
 						)}
 
-						<div className="flex justify-end gap-3 pt-4">
-							<button
-								type="button"
-								onClick={closeModal}
-								className="hover:bg-gray-50 dark:hover:bg-gray-700 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-200"
-							>
+						<ModalFooter>
+							<Button type="button" variant="secondary" onClick={closeModal}>
 								Cancel
-							</button>
+							</Button>
 							<button
 								type="submit"
 								disabled={isSubmitting}
@@ -1088,7 +1074,7 @@ export function SavingsPage() {
 										? 'Save Changes'
 										: 'Add Savings Goal'}
 							</button>
-						</div>
+						</ModalFooter>
 					</form>
 				</Modal>
 
@@ -1105,7 +1091,7 @@ export function SavingsPage() {
 						</>
 					}
 				/>
-			</div>
-		</div>
+			</PageContent>
+		</Page>
 	)
 }
