@@ -1,4 +1,12 @@
-export type Frequency = 'weekly' | 'biweekly' | 'monthly' | 'annually'
+import type { Frequency as DbFrequency } from '@budget-planner/db/schema'
+import type { SameMembers } from '../utils/enum-parity'
+
+export const FREQUENCIES = ['weekly', 'biweekly', 'monthly', 'annually'] as const
+
+export type Frequency = (typeof FREQUENCIES)[number]
+
+const _frequencyParity: SameMembers<Frequency, DbFrequency> = true
+void _frequencyParity
 
 export type NormalizableFinancialItem = {
 	amount: number

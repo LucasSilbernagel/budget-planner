@@ -509,6 +509,8 @@ export type BillingInterval = (typeof billingIntervalEnum.enumValues)[number]
 
 export type CategoryKind = (typeof categoryKindEnum.enumValues)[number]
 
+export type AllocationMode = (typeof allocationModeEnum.enumValues)[number]
+
 export const allTables = {
 	users,
 	incomeSources,

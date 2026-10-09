@@ -1,3 +1,4 @@
+import type { CategoryKind } from './categoryKind'
 import type { Frequency } from './normalization'
 
 type FinancialDataPoint = {
@@ -7,13 +8,13 @@ type FinancialDataPoint = {
 	frequency: Frequency
 	category?: string
 	date?: Date
-	type: 'income' | 'expense'
+	type: CategoryKind
 }
 
 type CategoryAggregate = {
 	category: string
 	amount: number
-	type: 'income' | 'expense'
+	type: CategoryKind
 	count: number
 	color?: string
 }
@@ -21,7 +22,7 @@ type CategoryAggregate = {
 type RechartsDataItem = {
 	name: string
 	value: number
-	type?: 'income' | 'expense'
+	type?: CategoryKind
 	category?: string
 	fill?: string
 	id?: string | number
@@ -34,7 +35,7 @@ type DrillDownState = {
 	level: number
 	path: string[]
 	currentCategory?: string
-	currentType?: 'income' | 'expense'
+	currentType?: CategoryKind
 }
 
 const CATEGORY_COLORS = [
@@ -94,8 +95,8 @@ function aggregateByCategory(data: FinancialDataPoint[]): CategoryAggregate[] {
 
 function aggregateByCategoryAndType(
 	data: FinancialDataPoint[]
-): Map<'income' | 'expense', CategoryAggregate[]> {
-	const result = new Map<'income' | 'expense', CategoryAggregate[]>()
+): Map<CategoryKind, CategoryAggregate[]> {
+	const result = new Map<CategoryKind, CategoryAggregate[]>()
 	result.set('income', [])
 	result.set('expense', [])
 
@@ -261,7 +262,7 @@ function createDrillDownState(): DrillDownState {
 function drillDownToCategory(
 	state: DrillDownState,
 	category: string,
-	type: 'income' | 'expense'
+	type: CategoryKind
 ): DrillDownState {
 	return {
 		level: state.level + 1,
@@ -283,7 +284,7 @@ function drillUp(state: DrillDownState): DrillDownState {
 		level: state.level - 1,
 		path: newPath,
 		currentCategory: lastEntry?.split(':')[1],
-		currentType: lastEntry?.split(':')[0] as 'income' | 'expense' | undefined,
+		currentType: lastEntry?.split(':')[0] as CategoryKind | undefined,
 	}
 }
 
@@ -323,11 +324,7 @@ function getPercentageOfTotal(categoryAmount: number, totalAmount: number): numb
 	return (Math.abs(categoryAmount) / Math.abs(totalAmount)) * 100
 }
 
-function getColorForCategory(
-	_category: string,
-	type: 'income' | 'expense',
-	_index: number
-): string {
+function getColorForCategory(_category: string, type: CategoryKind, _index: number): string {
 	return DEFAULT_COLORS[type]
 }
 

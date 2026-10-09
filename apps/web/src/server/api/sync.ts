@@ -1,4 +1,7 @@
+import { CATEGORY_KINDS } from '@budget-planner/core/finance/categoryKind'
+import { FREQUENCIES } from '@budget-planner/core/finance/normalization'
 import { FINANCE_TYPES } from '@budget-planner/core/services/balanceTracking'
+import { ALLOCATION_MODES } from '@budget-planner/core/services/savingsGoals'
 import type { ServerChange, SyncOperation, SyncStatus } from '@budget-planner/core/sync/types'
 import {
 	retirementPlanSyncSchema,
@@ -91,7 +94,7 @@ type SyncConflict = {
 const incomeSourceSchema = z.object({
 	name: z.string().min(1).max(255),
 	amount: z.number().int(),
-	frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']),
+	frequency: z.enum(FREQUENCIES),
 	// Accepts explicit null: un-categorizing sends null and updates use a partial .set().
 	categoryId: z.string().uuid().nullable().optional(),
 	// Validates, not strips: superRefine discards the parse result, so declaring the field is what
@@ -103,7 +106,7 @@ const incomeSourceSchema = z.object({
 const expenseSchema = z.object({
 	name: z.string().min(1).max(255),
 	amount: z.number().int(),
-	frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']),
+	frequency: z.enum(FREQUENCIES),
 	categoryId: z.string().uuid().nullable().optional(),
 	sortOrder: z.number().int().min(0).max(2_147_483_647).optional(),
 	// Inert default: superRefine discards the parse. If that changes, every default here starts
@@ -114,7 +117,7 @@ const expenseSchema = z.object({
 
 const categorySchema = z.object({
 	name: z.string().min(1).max(255),
-	kind: z.enum(['income', 'expense']),
+	kind: z.enum(CATEGORY_KINDS),
 	userId: z.string().uuid(),
 })
 
@@ -125,7 +128,7 @@ const savingsGoalSchema = z.object({
 	currentBalance: z.number().int().default(0),
 	// Bounded to int32 so an over-range value is refused rather than overflowing the INSERT.
 	monthlyAllocation: z.number().int().min(0).max(2_147_483_647).nullable().optional(),
-	allocationMode: z.enum(['manual', 'automatic']).default('automatic'),
+	allocationMode: z.enum(ALLOCATION_MODES).default('automatic'),
 	sortOrder: z.number().int().min(0).max(2_147_483_647).optional(),
 	userId: z.string().uuid(),
 })
@@ -136,7 +139,7 @@ const balanceTrackingSchema = z.object({
 	currentBalance: z.number().int().default(0),
 	monthlyContribution: z.number().int().default(0),
 	// Defaults to 'monthly' so pre-frequency rows round-trip.
-	frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']).default('monthly'),
+	frequency: z.enum(FREQUENCIES).default('monthly'),
 	// Already recorded as an expense, so the savings pool must not subtract it twice.
 	contributionRecordedAsExpense: z.boolean().default(false),
 	// No FK and no existence check: a link to an expense the server does not hold yet is normal.
