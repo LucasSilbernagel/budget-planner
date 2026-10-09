@@ -134,11 +134,10 @@ const frequencyLabel = (frequency: Frequency): string =>
 /** An unreadable amount keeps the "Paid by" line and drops the figure rather than showing NaN. */
 function DebtPaymentCell({
 	expense,
-	formatAmount,
 }: {
 	expense: { name: unknown; amount: unknown; frequency: unknown } | null
-	formatAmount: (cents: number) => string
 }) {
+	const formatAmount = useFormattedAmount()
 	if (expense === null) {
 		return <div className="text-muted text-sm">Not linked</div>
 	}
@@ -676,7 +675,6 @@ export function BalancePage() {
 															) : entry.type === 'debt' ? (
 																<DebtPaymentCell
 																	expense={resolveDebtPaymentExpense(entry, expenses)}
-																	formatAmount={formatAmount}
 																/>
 															) : (
 																<div>

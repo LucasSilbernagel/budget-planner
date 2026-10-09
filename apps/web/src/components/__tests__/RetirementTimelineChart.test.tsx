@@ -189,7 +189,9 @@ describe('getRetirementChartChrome — narrow vs wide', () => {
 
 // Pin the word and the value together: `toContain('41')` also passes against "Year 41".
 describe('CustomTooltip — the header agrees with the axis', () => {
-	const CURRENCY = { mode: 'none', currency: 'NONE', locale: 'en-US' } as const
+	beforeEach(() => {
+		useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
+	})
 
 	function renderTooltip(label: number, overrides: Record<string, unknown> = {}) {
 		return renderWithProviders(
@@ -209,7 +211,6 @@ describe('CustomTooltip — the header agrees with the axis', () => {
 						},
 					},
 				]}
-				{...CURRENCY}
 			/>
 		)
 	}
@@ -223,7 +224,7 @@ describe('CustomTooltip — the header agrees with the axis', () => {
 
 	it('also heads the DEGRADED branch with the age (the easily-missed one)', () => {
 		const { container } = renderWithProviders(
-			<CustomTooltip active label="41" payload={[{ payload: { age: 41 } }]} {...CURRENCY} />
+			<CustomTooltip active label="41" payload={[{ payload: { age: 41 } }]} />
 		)
 
 		expect(container.textContent).toContain('Data unavailable')
@@ -233,7 +234,7 @@ describe('CustomTooltip — the header agrees with the axis', () => {
 
 	it('renders nothing when inactive or empty — unchanged by 44.3', () => {
 		const { container } = renderWithProviders(
-			<CustomTooltip active={false} label="41" payload={[]} {...CURRENCY} />
+			<CustomTooltip active={false} label="41" payload={[]} />
 		)
 		expect(container.textContent).toBe('')
 	})

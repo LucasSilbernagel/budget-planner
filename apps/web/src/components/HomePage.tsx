@@ -19,19 +19,17 @@ import { cn } from '@/lib/cn'
 import { useSessionSeed } from '../context/session-seed'
 import { resolveCategoryLabel, useCategoryNameMap } from '../hooks/useCategoryLabels'
 import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
-import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useNetWorth } from '../hooks/useNetWorth'
 import { useStoresHydrated } from '../hooks/useStoresHydrated'
 import { buildBalancesBarData } from '../lib/balances-bar-data'
 import { barDomainTicks, categoryChartHeight } from '../lib/chart-axis'
-import { useChartColors } from '../lib/chartTheme'
 import { lazyWithRetry } from '../lib/lazy-with-retry'
 import { OVERVIEW_SECTIONS_PENDING_HOOK } from '../lib/overview/no-flash-overview-data-script'
 import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../lib/premium/benefits'
 import { isEntitledSeed } from '../lib/premium/entitlement'
 import { useVerifiedSession } from '../lib/session/verifiedSession'
 import { useBalanceEntries } from '../stores/balanceStore'
-import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
+import { useFormattedAmount } from '../stores/currencyStore'
 import { useExpenses } from '../stores/expenseStore'
 import { useIncomeSources } from '../stores/incomeStore'
 import {
@@ -135,11 +133,6 @@ export function HomePage() {
 	const balanceEntries = useBalanceEntries()
 
 	const formatAmount = useFormattedAmount()
-	const { mode, currency } = useCurrencyPreferences()
-
-	const isNarrowViewport = useIsNarrowViewport()
-
-	const chartColors = useChartColors()
 
 	const netIncomeResult = calculateNetIncomeResult(
 		incomeSources.map((s) => ({ amount: s.amount, frequency: s.frequency })),
@@ -581,8 +574,6 @@ export function HomePage() {
 										note={expenseRatioOverspendNote}
 										emptyLabel="No income to compare against yet"
 										accentClass="text-red-600 dark:text-red-400"
-										isNarrow={isNarrowViewport}
-										formatAmount={formatAmount}
 										legendValue={formatExpenseRatioLegendValue}
 									/>
 									<BreakdownPie
@@ -592,8 +583,6 @@ export function HomePage() {
 										total={totalExpenseChart}
 										emptyLabel="No expenses to break down yet"
 										accentClass="text-red-600 dark:text-red-400"
-										isNarrow={isNarrowViewport}
-										formatAmount={formatAmount}
 									/>
 								</div>
 							</Card>
@@ -611,11 +600,6 @@ export function HomePage() {
 													testId="category-bar-flows"
 													data={flowsBarData}
 													ticks={flowsBarTicks}
-													isNarrow={isNarrowViewport}
-													chartColors={chartColors}
-													formatAmount={formatAmount}
-													mode={mode}
-													currency={currency}
 													hiddenFromScreenReaders
 												/>
 											</div>
@@ -629,11 +613,6 @@ export function HomePage() {
 													testId="category-bar-balances"
 													data={balancesBarData}
 													ticks={balancesBarTicks}
-													isNarrow={isNarrowViewport}
-													chartColors={chartColors}
-													formatAmount={formatAmount}
-													mode={mode}
-													currency={currency}
 												/>
 											</div>
 										)}
@@ -748,8 +727,6 @@ type BreakdownPieProps = {
 	note?: string
 	emptyLabel: string
 	accentClass: string
-	isNarrow: boolean
-	formatAmount: (cents: number) => string
 	legendValue?: (cents: number) => string
 }
 
@@ -759,11 +736,6 @@ type CategoryBarChartProps = {
 	testId: string
 	data: CategoryBarDatum[]
 	ticks: number[]
-	isNarrow: boolean
-	chartColors: ReturnType<typeof useChartColors>
-	formatAmount: (cents: number) => string
-	mode: ReturnType<typeof useCurrencyPreferences>['mode']
-	currency: ReturnType<typeof useCurrencyPreferences>['currency']
 	// Only when every bar is also on the page as text: the balances totals appear nowhere else.
 	hiddenFromScreenReaders?: boolean
 }
@@ -772,11 +744,6 @@ function CategoryBarChart({
 	testId,
 	data,
 	ticks,
-	isNarrow,
-	chartColors,
-	formatAmount,
-	mode,
-	currency,
 	hiddenFromScreenReaders = false,
 }: CategoryBarChartProps): React.ReactElement {
 	return (
@@ -790,15 +757,7 @@ function CategoryBarChart({
 				fallback={<div className="p-4 text-red-600 dark:text-red-400">Chart error occurred</div>}
 			>
 				<Suspense fallback={<ChartPending />}>
-					<CategoryBarCanvas
-						data={data}
-						ticks={ticks}
-						isNarrow={isNarrow}
-						chartColors={chartColors}
-						formatAmount={formatAmount}
-						mode={mode}
-						currency={currency}
-					/>
+					<CategoryBarCanvas data={data} ticks={ticks} />
 				</Suspense>
 			</ErrorBoundary>
 		</div>
@@ -814,10 +773,9 @@ function BreakdownPie({
 	note,
 	emptyLabel,
 	accentClass,
-	isNarrow,
-	formatAmount,
 	legendValue,
 }: BreakdownPieProps): React.ReactElement {
+	const formatAmount = useFormattedAmount()
 	const sorted = [...data].sort((a, b) => b.value - a.value)
 	const formatLegendValue = legendValue ?? formatAmount
 	return (
@@ -860,12 +818,7 @@ function BreakdownPie({
 							}
 						>
 							<Suspense fallback={<ChartPending />}>
-								<BreakdownPieCanvas
-									data={data}
-									total={total}
-									isNarrow={isNarrow}
-									formatAmount={formatAmount}
-								/>
+								<BreakdownPieCanvas data={data} total={total} />
 							</Suspense>
 						</ErrorBoundary>
 					</div>

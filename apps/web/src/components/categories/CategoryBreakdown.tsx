@@ -72,10 +72,6 @@ export function CategoryBreakdown(): ReactElement {
 	const expenses = useExpenses()
 	const categoryNames = useCategoryNameMap()
 	const duration = useOverviewDuration()
-	const formatAmount = useFormattedAmount()
-	const { mode, currency } = useCurrencyPreferences()
-	const isNarrow = useIsNarrowViewport()
-	const chartColors = useChartColors()
 	const headingId = useId()
 
 	// categoryNames must stay in both dependency lists, or a rename leaves stale labels.
@@ -130,11 +126,6 @@ export function CategoryBreakdown(): ReactElement {
 						rows={income.rows}
 						totalCents={income.totalCents}
 						duration={duration}
-						formatAmount={formatAmount}
-						isNarrow={isNarrow}
-						chartColors={chartColors}
-						mode={mode}
-						currency={currency}
 					/>
 					<BreakdownSide
 						side="expense"
@@ -143,11 +134,6 @@ export function CategoryBreakdown(): ReactElement {
 						rows={expense.rows}
 						totalCents={expense.totalCents}
 						duration={duration}
-						formatAmount={formatAmount}
-						isNarrow={isNarrow}
-						chartColors={chartColors}
-						mode={mode}
-						currency={currency}
 					/>
 				</div>
 			) : (
@@ -170,11 +156,6 @@ type BreakdownSideProps = {
 	rows: CategoryBreakdownRow[]
 	totalCents: number
 	duration: OverviewDuration
-	formatAmount: (cents: number) => string
-	isNarrow: boolean
-	chartColors: ReturnType<typeof useChartColors>
-	mode: ReturnType<typeof useCurrencyPreferences>['mode']
-	currency: ReturnType<typeof useCurrencyPreferences>['currency']
 }
 
 // Each side is its own whole, so shares never use a combined denominator.
@@ -185,12 +166,8 @@ function BreakdownSide({
 	rows,
 	totalCents,
 	duration,
-	formatAmount,
-	isNarrow,
-	chartColors,
-	mode,
-	currency,
 }: BreakdownSideProps): ReactElement {
+	const formatAmount = useFormattedAmount()
 	const headingId = useId()
 	const heading = `${title} ${DURATION_LABEL[duration]}`
 
@@ -300,16 +277,7 @@ function BreakdownSide({
 				</p>
 			)}
 
-			<BreakdownBarChart
-				rows={rows}
-				colors={colors}
-				isNarrow={isNarrow}
-				chartColors={chartColors}
-				formatAmount={formatAmount}
-				mode={mode}
-				currency={currency}
-				testId={`breakdown-${side}-chart`}
-			/>
+			<BreakdownBarChart rows={rows} colors={colors} testId={`breakdown-${side}-chart`} />
 		</div>
 	)
 }
@@ -317,25 +285,15 @@ function BreakdownSide({
 type BreakdownBarChartProps = {
 	rows: CategoryBreakdownRow[]
 	colors: Record<string, string>
-	isNarrow: boolean
-	chartColors: ReturnType<typeof useChartColors>
-	formatAmount: (cents: number) => string
-	mode: ReturnType<typeof useCurrencyPreferences>['mode']
-	currency: ReturnType<typeof useCurrencyPreferences>['currency']
 	testId: string
 }
 
 // The axis domain comes from this side only, or large income would crush every expense bar.
-function BreakdownBarChart({
-	rows,
-	colors,
-	isNarrow,
-	chartColors,
-	formatAmount,
-	mode,
-	currency,
-	testId,
-}: BreakdownBarChartProps): ReactElement {
+function BreakdownBarChart({ rows, colors, testId }: BreakdownBarChartProps): ReactElement {
+	const isNarrow = useIsNarrowViewport()
+	const chartColors = useChartColors()
+	const formatAmount = useFormattedAmount()
+	const { mode, currency } = useCurrencyPreferences()
 	const ticks = barDomainTicks(rows.map((row) => row.totalCents))
 	// Narrowed rather than cast: noUncheckedIndexedAccess widens the index read, and domain needs [number, number].
 	const domainMin = ticks[0] ?? 0

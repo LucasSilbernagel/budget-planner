@@ -78,14 +78,13 @@ function formatPercent(percent: number | null): string {
 function CashflowTable({
 	caption,
 	rows,
-	format,
 	period,
 }: {
 	caption: string
 	rows: readonly ReportCashflowRow[]
-	format: (cents: number) => string
 	period: BudgetPeriod
 }): React.ReactElement {
+	const format = useFormattedAmount()
 	return (
 		<TableScrollRegion label={`${caption} table`} className={TABLE_REGION_CLASS}>
 			<table className={TABLE_CLASS}>
@@ -298,7 +297,6 @@ export function FinancialSummaryReport({
 										<CashflowTable
 											caption="Income"
 											rows={model.budget.income}
-											format={format}
 											period={budgetPeriod}
 										/>
 									)}
@@ -306,7 +304,6 @@ export function FinancialSummaryReport({
 										<CashflowTable
 											caption="Expenses"
 											rows={model.budget.expenses}
-											format={format}
 											period={budgetPeriod}
 										/>
 									)}
@@ -360,17 +357,13 @@ export function FinancialSummaryReport({
 										Where your balances stand today. This is not a projection.
 									</p>
 									{model.netWorth.investments.length > 0 && (
-										<BalanceTable
-											caption="Investments"
-											rows={model.netWorth.investments}
-											format={format}
-										/>
+										<BalanceTable caption="Investments" rows={model.netWorth.investments} />
 									)}
 									{model.netWorth.assets.length > 0 && (
-										<BalanceTable caption="Assets" rows={model.netWorth.assets} format={format} />
+										<BalanceTable caption="Assets" rows={model.netWorth.assets} />
 									)}
 									{model.netWorth.debts.length > 0 && (
-										<BalanceTable caption="Debts" rows={model.netWorth.debts} format={format} />
+										<BalanceTable caption="Debts" rows={model.netWorth.debts} />
 									)}
 									<dl className="mt-4">
 										<TotalRow
@@ -511,12 +504,11 @@ export function FinancialSummaryReport({
 function BalanceTable({
 	caption,
 	rows,
-	format,
 }: {
 	caption: string
 	rows: readonly { id: string; name: string; balanceCents: number }[]
-	format: (cents: number) => string
 }): React.ReactElement {
+	const format = useFormattedAmount()
 	return (
 		<TableScrollRegion label={`${caption} table`} className={TABLE_REGION_CLASS}>
 			<table className={TABLE_CLASS}>
