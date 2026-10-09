@@ -243,23 +243,3 @@ export function getSessionSecret(): string {
 	)
 	return DEV_FALLBACK_SESSION_SECRET
 }
-
-export const APP_CONFIG = {
-	DEFAULT_CURRENCY: 'USD',
-	STORAGE_PREFIX: 'budget-planner',
-	API_BASE_PATH: '/api',
-} as const
-
-export const CURRENCY = {
-	NONE: 'NONE',
-	USD: 'USD',
-	EUR: 'EUR',
-	GBP: 'GBP',
-} as const
-
-export const APP_METADATA = {
-	GITHUB_REPO: 'lucassilbernagel/budget-planner',
-	GITHUB_ISSUES_URL: 'https://github.com/lucassilbernagel/budget-planner/issues',
-	NAME: 'Longhand Budget',
-	DESCRIPTION: 'Privacy-first budget & retirement planner',
-} as const

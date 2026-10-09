@@ -10,8 +10,11 @@ import { dirname, join } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
-import server from './dist/server/server.js'
 import { createRequestListener } from './src/server/node-adapter.mjs'
+
+// A computed specifier keeps tsc from type-checking the generated bundle.
+/** @type {{ default: { fetch: (request: Request) => Response | Promise<Response> } }} */
+const { default: server } = await import(new URL('./dist/server/server.js', import.meta.url).href)
 
 const here = dirname(fileURLToPath(import.meta.url))
 const clientDir = join(here, 'dist', 'client')

@@ -4,12 +4,12 @@ This guide covers setting up your local development environment for Longhand Bud
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) 20.12 or later.
-  The repository pins Node 20 via `.nvmrc`, and every workspace declares `engines.node: ">=20.12.0"`.
+- [Node.js](https://nodejs.org/) 24.
+  The repository pins Node 24 via `.nvmrc`, and every workspace declares `engines.node: ">=24.0.0"`.
 - [pnpm](https://pnpm.io/) 10.34.3.
   The version is pinned by the `packageManager` field in the root `package.json`, which is the single source of truth for both local installs and CI.
   `pnpm-lock.yaml` is `lockfileVersion: 9.0`, so pnpm 8 and older will fail `pnpm install --frozen-lockfile`.
-- [PostgreSQL](https://www.postgresql.org/) 15.x (for server-side features)
+- [PostgreSQL](https://www.postgresql.org/) 18 to match production (only for server-side features)
 - [Git](https://git-scm.com/)
 
 ## Quick Start
@@ -36,19 +36,18 @@ Note that `pnpm build` at the root builds `apps/web` only, not the other package
 **Option A: Docker (Recommended for Cross-Platform)**
 
 ```bash
-# Run PostgreSQL 15 container
 # Replace YOUR_POSTGRES_PASSWORD with a strong password
 docker run --name budget-planner-db \
   -e POSTGRES_PASSWORD=YOUR_POSTGRES_PASSWORD \
   -e POSTGRES_USER=budget-planner-user \
   -e POSTGRES_DB=budget-planner-dev \
-  -p 5432:5432 -d postgres:15
+  -p 5432:5432 -d postgres:18
 
 # Verify it's running
 docker ps
 ```
 
-> **Note (AC-2):** Docker's `POSTGRES_USER` is created as a superuser. For closer
+> **Note:** Docker's `POSTGRES_USER` is created as a superuser. For closer
 > parity with production (dedicated, minimal-permission role), prefer the Homebrew or
 > native options below, or create a separate non-superuser role inside the container.
 
@@ -56,10 +55,10 @@ docker ps
 
 ```bash
 # Install PostgreSQL
-brew install postgresql@15
-brew services start postgresql@15
+brew install postgresql@18
+brew services start postgresql@18
 
-# Create database and user (UTF-8 encoding per AC-2)
+# Create database and user
 createuser -P budget-planner-user   # when prompted, answer "no" to superuser
 createdb -O budget-planner-user -E UTF8 -T template0 budget-planner-dev
 ```
@@ -69,9 +68,9 @@ createdb -O budget-planner-user -E UTF8 -T template0 budget-planner-dev
 ```bash
 # Install PostgreSQL
 sudo apt update
-sudo apt install postgresql-15
+sudo apt install postgresql-18   # may need the PGDG apt repository
 
-# Create user and database (UTF-8 encoding per AC-2)
+# Create user and database
 sudo -u postgres createuser -P budget-planner-user   # answer "no" to superuser
 sudo -u postgres createdb -O budget-planner-user -E UTF8 -T template0 budget-planner-dev
 ```
@@ -147,27 +146,13 @@ See `packages/db/migrations/README.md` for what the preflight refuses and why.
 # Connect and list tables
 psql -h localhost -U budget-planner-user -d budget-planner-dev -c "\dt"
 
-# Expected output:
-#                    List of relations
-#  Schema |      Name       | Type  |        Owner
-# --------+-----------------+-------+---------------------
-#  public | balanceTracking     | table | budget-planner-user
-#  public | categories          | table | budget-planner-user
-#  public | expenses            | table | budget-planner-user
-#  public | forecastingProfiles | table | budget-planner-user
-#  public | incomeSources       | table | budget-planner-user
-#  public | loginTokens         | table | budget-planner-user
-#  public | rateLimits          | table | budget-planner-user
-#  public | savingsGoals        | table | budget-planner-user
-#  public | userProfiles        | table | budget-planner-user
-#  public | users           | table | budget-planner-user
+# Expect the 14 tables listed under Database Schema below.
 ```
 
 ### 7. Run the Development Server
 
 ```bash
 # Start the TanStack Start development server
-cd apps/web
 pnpm dev
 
 # The application should be available at http://localhost:5173
@@ -187,24 +172,13 @@ These features work entirely in the browser without a database connection:
 ### Paid Tier Features (Server-Side)
 
 These features require the PostgreSQL database:
-- User authentication by emailed magic link (app-owned; Paddle handles billing only, per ADR-003)
+- User authentication by emailed magic link (app-owned; Paddle handles billing only)
 - Multi-device data synchronization
 - Server-side persistence
 - Premium forecasting
 - Custom user profiles
 
-**Note:** For local development of paid tier features, use your local PostgreSQL database. For production, the application will use DanubeData PostgreSQL (Germany - EU) per [ADR-001](../_bmad-output/planning-artifacts/adr/ADR-001-danubedata-full-stack-migration.md).
-
-### Database Seeding (Optional)
-
-To seed your local database with test data:
-
-```bash
-# Create a seed script (packages/db/scripts/seed.ts)
-# Then run:
-cd packages/db
-DATABASE_URL=postgresql://budget-planner-user:CHANGE_ME_TO_YOUR_PASSWORD@localhost:5432/budget-planner-dev pnpm exec tsx scripts/seed.ts
-```
+**Note:** For local development of paid tier features, use your local PostgreSQL database. For production, the application will use DanubeData PostgreSQL (Germany - EU).
 
 ## Common Commands
 
@@ -250,7 +224,7 @@ pnpm test
 # Run linting and tsconfig validation
 pnpm lint
 
-# Type-check every package (not run in CI; run it before opening a pull request)
+# Type-check every package (CI runs the same check)
 pnpm type-check:all
 ```
 
@@ -263,8 +237,8 @@ pnpm --filter web dev
 # Build for production
 pnpm --filter web build
 
-# Preview the production build locally
-pnpm --filter web preview
+# Serve the production build the way production does (node server-entry.mjs)
+pnpm --filter web start
 ```
 
 ## Troubleshooting
@@ -292,7 +266,7 @@ pnpm --filter web preview
    docker start budget-planner-db
    
    # Homebrew
-   brew services start postgresql@15
+   brew services start postgresql@18
    
    # Native
    sudo systemctl start postgresql
@@ -460,12 +434,12 @@ budget-planner/
 │   └── web/                   # TanStack Start application (SSR, Streaming)
 │       ├── src/              # Source code
 │       ├── public/           # Static assets
-│       └── .env              # Environment variables
+│       └── .env              # Environment variables (from .env.example)
 ├── packages/
 │   ├── core/                 # Shared finance, calculation, format, and sync utilities
 │   ├── db/                   # Database schema and ORM (Drizzle)
-│   │   ├── src/              # Database client, schema, migrations
-│   │   └── .env              # Database-specific env vars
+│   │   ├── src/              # Database client, schema, migration tooling
+│   │   └── migrations/       # Drizzle SQL migrations and journal
 │   └── config/               # Centralized configuration
 └── docs/                     # Documentation
 ```
@@ -478,8 +452,8 @@ budget-planner/
 | React | React 19 | UI components |
 | Styling | Tailwind CSS | Utility-first styling |
 | State Management | Zustand | Transient UI state |
-| Backend | TanStack Start Server Functions | RPC-style API |
-| Database | PostgreSQL 15.x | Data persistence |
+| Backend | TanStack Start server routes | `/api/*` handlers (`createFileRoute` + `server.handlers`) |
+| Database | PostgreSQL 18 | Data persistence |
 | ORM | Drizzle ORM | TypeScript-first database access |
 | Package Manager | pnpm | Workspaces, dependency management |
 | Testing | Vitest, MSW, Playwright | Unit, mock, E2E testing |
@@ -493,12 +467,16 @@ The application uses the following tables:
 - **incomeSources** - Income sources (salary, freelance, etc.)
 - **expenses** - Expense tracking
 - **savingsGoals** - Savings targets and progress
-- **balanceTracking** - Investments, debts, and things owned outright (the `asset` type, added by FR70)
+- **balanceTracking** - Investments, debts, and things owned outright
 - **userProfiles** - Custom user profiles (paid tier)
 - **categories** - Custom income and expense categories (paid tier)
 - **forecastingProfiles** - Saved what-if forecasting scenarios (paid tier)
+- **retirementPlans** - Synced retirement-planner inputs
 - **loginTokens** - Single-use magic-link login tokens
 - **rateLimits** - API rate limiting
+- **paddleWebhookEvents** - Received Paddle webhook events (idempotency)
+- **paddleAdjustments** - Paddle refunds, credits and chargebacks
+- **jobRuns** - Leases and last-completion times for scheduled jobs
 
 The authoritative list is `packages/db/src/schema.ts`; check there rather than against this list if the two disagree.
 
@@ -513,7 +491,7 @@ The application uses different databases for development and production:
 
 **Production:**
 - DanubeData PostgreSQL (Germany - EU)
-- Ensures CLOUD Act immunity (NFR1, NFR2)
+- Keeps data out of US CLOUD Act reach
 - Internal DNS with ~0.4ms latency
 
 `DATABASE_URL` is not the only difference between environments.
@@ -524,18 +502,11 @@ See the environment-variable table in the [README](../README.md#environment-vari
 
 This project enforces strict data sovereignty requirements:
 
-- **NFR1: Zero US Data Residency** - All data must remain in EU
-- **NFR2: EU-Based Hosting** - All providers must be EU-incorporated with EU data centers
+- **Zero US data residency** - all data must remain in the EU.
+- **EU-based hosting** - all providers must be EU-incorporated with EU data centers.
 
-**Development:** Local PostgreSQL keeps all data on your machine (satisfies NFR1, NFR2)
+**Development:** Local PostgreSQL keeps all data on your machine.
 
-**Production:** DanubeData PostgreSQL in Falkenstein, Germany (satisfies NFR1, NFR2)
+**Production:** DanubeData PostgreSQL in Falkenstein, Germany.
 
 **Important:** Never use US-based database providers (AWS RDS, Firebase, Supabase US region, etc.) for this project.
-
-## Additional Resources
-
-- [Project Context](../_bmad-output/project-context.md) - Critical rules and patterns
-- [Architecture Decision Document](../_bmad-output/planning-artifacts/architecture.md) - Technical architecture
-- [ADR-001: DanubeData Full Stack Migration](../_bmad-output/planning-artifacts/adr/ADR-001-danubedata-full-stack-migration.md) - Infrastructure decisions
-- [Epic 5: Production Deployment & Infrastructure](../_bmad-output/planning-artifacts/epics.md#epic-5-production-deployment--infrastructure-danubedata-full-stack) - Current epic details

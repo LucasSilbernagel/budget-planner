@@ -34,43 +34,40 @@ The Biome configuration is defined in `biome.json` at the repository root:
 
 ### Base Configuration (Root)
 
-The root `tsconfig.json` serves as the base configuration for the entire monorepo:
+The root `tsconfig.json` holds the shared compiler options and lists every workspace as a project reference. It compiles nothing itself (`"files": []`). Abridged:
 
 ```json
 {
   "compilerOptions": {
-    "target": "ES2021",
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "baseUrl": ".",
     "rootDir": ".",
+    "paths": { "@budget-planner/core": ["./packages/core/src"] },
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "skipLibCheck": true
   },
-  "include": ["apps/**/*", "packages/**/*"],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "**/*.test.ts",
-    "**/*.test.tsx",
-    "**/*.spec.ts",
-    "**/*.spec.tsx"
+  "files": [],
+  "references": [
+    { "path": "./apps/web" },
+    { "path": "./packages/db" },
+    { "path": "./packages/config" },
+    { "path": "./packages/core" }
   ]
 }
 ```
 
 **Required fields for root config:**
-- `rootDir`: Must be set to "." for proper module resolution
-- `baseUrl`: Must be set to "." for path aliases
+- `rootDir`: Must be set to "."
 - `strict`: Must be `true`
 - `esModuleInterop`: Must be `true`
 - `skipLibCheck`: Must be `true` (for monorepo performance)
 
 ### Package Configurations
 
-Each package (`packages/*`) should extend the root configuration and add package-specific settings:
+Each package (`packages/*`) extends the root configuration and add package-specific settings:
 
 ```json
 {
@@ -105,12 +102,20 @@ Each package (`packages/*`) should extend the root configuration and add package
 
 ### Application Configurations
 
-Application configs (e.g., `apps/web/tsconfig.json`) follow similar rules to package configs:
+`apps/web/tsconfig.json` is itself a solution file (`"files": []`) referencing four configs, all run by `pnpm --filter web type-check`:
+
+- `tsconfig.app.json` - application source (shown below)
+- `tsconfig.vitest.json` - unit tests
+- `tsconfig.e2e.json` - Playwright specs
+- `tsconfig.node.json` - Node-side `*.mjs` entry and script files (type-checked only where a file opts in with `// @ts-check`) plus `vite.config.ts`; targets ES2023 with `nodenext` resolution
+
+`tsconfig.app.json`, abridged:
 
 ```json
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "jsxImportSource": "react",
     "outDir": "./dist",
@@ -159,19 +164,17 @@ Child configs inherit compiler options from their parent via the `extends` field
 
 ### Module Resolution
 
-All configs use `moduleResolution: "bundler"` which requires TypeScript 5.0+. This is compatible with the project's TypeScript version (5.3.3).
+All configs use `moduleResolution: "bundler"` which requires TypeScript 5.0+. The project uses TypeScript ^5.3.3. `tsconfig.node.json` is the exception: it uses `nodenext`.
 
 ## Validation
 
 Run the validation script to check all tsconfig files:
 
 ```bash
-npm run validate:tsconfig
-# or
-node scripts/validate-tsconfig.js
+pnpm validate:tsconfig
 ```
 
-This script checks for:
+CI and `pnpm lint` run it. It checks for:
 - Valid JSON syntax
 - Valid `extends` references
 - Presence of required fields
@@ -206,11 +209,3 @@ This script checks for:
 **Symptom**: Biome linter reports formatting issues.
 
 **Fix**: Run `pnpm lint:fix` or `pnpm biome check . --write` to auto-format files.
-
-## Changelog
-
-| Date | Change | Author |
-|------|--------|--------|
-| 2026-06-20 | Added tsconfig guidelines document | Vibe |
-| 2026-06-20 | Added rootDir to root tsconfig.json | Vibe |
-| 2026-06-20 | Standardized exclude patterns across all configs | Vibe |

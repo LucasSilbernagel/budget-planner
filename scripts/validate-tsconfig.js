@@ -33,13 +33,11 @@ const installedTypeScriptVersion = getInstalledTypeScriptVersion()
 
 function findTsConfigFiles(dir) {
 	const results = []
-	const files = fs.readdirSync(dir)
-
-	for (const file of files) {
+	for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+		const file = entry.name
 		const fullPath = path.join(dir, file)
-		const stat = fs.statSync(fullPath)
 
-		if (stat.isDirectory()) {
+		if (entry.isDirectory()) {
 			if (file === 'node_modules' || file === '.git' || file === 'dist') {
 				continue
 			}

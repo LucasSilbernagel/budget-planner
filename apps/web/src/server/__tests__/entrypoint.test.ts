@@ -53,7 +53,7 @@ describe('module graph (AC-2: the migrate path is unreachable from a serving con
 	})
 
 	it('the serve branch is the only one that loads the built application server', () => {
-		expect(serveEntry).toMatch(/from\s+['"]\.\/dist\/server\/server\.js['"]/)
+		expect(serveEntry).toMatch(/['"]\.\/dist\/server\/server\.js['"]/)
 		expect(migrateEntry).not.toMatch(/dist\/server\/server\.js/)
 	})
 

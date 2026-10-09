@@ -36,6 +36,7 @@ const ENCODING_SUFFIX = { br: '.br', gzip: '.gz' }
 
 /**
  * Brotli when accepted at least as strongly as gzip; `q=0` refuses, `*` covers unnamed codings.
+ * @param {string | string[] | undefined} header
  * @returns {Encoding | null}
  */
 export function negotiateEncoding(header) {
@@ -179,6 +180,7 @@ function cacheControlFor(pathname) {
 
 /**
  * @param {string} pathname may be percent-encoded
+ * @param {string} clientDir
  * @returns {Promise<StaticAsset | null>}
  */
 export async function resolveStaticAsset(pathname, clientDir) {
@@ -250,6 +252,8 @@ function firstForwardedValue(value) {
 /**
  * Honors X-Forwarded-Proto/Host from the TLS edge so request.url has the public scheme and host.
  * @param {import('node:http').IncomingMessage} nodeReq
+ * @param {{ protocol?: string }} [options]
+ * @returns {Request}
  */
 export function toWebRequest(nodeReq, options = {}) {
 	const protocol =
@@ -273,9 +277,8 @@ export function toWebRequest(nodeReq, options = {}) {
 	/** @type {RequestInit} */
 	const init = { method, headers }
 	if (method !== 'GET' && method !== 'HEAD') {
-		// `duplex: 'half'` is required for a streaming body (not yet in the lib DOM types).
 		init.body = /** @type {ReadableStream} */ (Readable.toWeb(nodeReq))
-		// @ts-expect-error duplex is valid at runtime but missing from RequestInit
+		// Required for a streaming request body.
 		init.duplex = 'half'
 	}
 	return new Request(url, init)
@@ -284,6 +287,8 @@ export function toWebRequest(nodeReq, options = {}) {
 /**
  * Set-Cookie is written as discrete headers: Headers.forEach comma-joins them, corrupting cookies.
  * @param {import('node:http').ServerResponse} nodeRes
+ * @param {Response} webResponse
+ * @param {Encoding | null} [encoding]
  */
 async function applyWebResponse(nodeRes, webResponse, encoding = null) {
 	nodeRes.statusCode = webResponse.status
@@ -351,6 +356,8 @@ function isEligibleForCompression(webResponse) {
 
 /**
  * On a non-ended result the stream is left paused with the rest unread, for the caller to pipe on.
+ * @param {import('node:stream').Readable} source
+ * @param {number} min
  * @returns {Promise<{ chunks: Uint8Array[], ended: boolean }>}
  */
 function readHead(source, min) {
@@ -401,6 +408,8 @@ function onStreamDone(err) {
 /**
  * @param {import('node:http').ServerResponse} nodeRes
  * @param {StaticAsset} asset
+ * @param {boolean} isHead
+ * @param {Encoding | null} encoding
  */
 function serveStaticFile(nodeRes, asset, isHead, encoding) {
 	const variant = encoding ? asset.variants[encoding] : undefined
@@ -423,6 +432,7 @@ function serveStaticFile(nodeRes, asset, isHead, encoding) {
 
 /** @param {{ fetchHandler: (request: Request) => Promise<Response> | Response, clientDir: string }} args */
 export function createRequestListener({ fetchHandler, clientDir }) {
+	/** @type {(nodeReq: import('node:http').IncomingMessage, nodeRes: import('node:http').ServerResponse) => Promise<void>} */
 	return async function listener(nodeReq, nodeRes) {
 		try {
 			const method = nodeReq.method ?? 'GET'

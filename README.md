@@ -96,7 +96,7 @@ The app also serves 17 `/api/*` routes for authentication, sync, calculations, w
 - **Language:** TypeScript.
 - **Database:** Drizzle ORM with PostgreSQL.
 - **Billing:** Paddle Billing.
-- **Tooling:** Biome (lint/format), Vitest (unit), Playwright (end-to-end), MSW (network mocking).
+- **Tooling:** Biome (lint/format, tabs), knip (unused code), Vitest (unit), Playwright (end-to-end), MSW (network mocking).
 - **Monorepo:** pnpm workspaces.
 
 Note that `apps/web` runs Vitest 3 while the root and the other packages run Vitest 1, so `pnpm test` spans two majors.
@@ -105,7 +105,7 @@ Note that `apps/web` runs Vitest 3 while the root and the other packages run Vit
 
 ### Prerequisites
 
-- **Node.js 20.12+.**
+- **Node.js 24.**
   The repository pins Node 24 via `.nvmrc`, and every workspace declares `engines.node: ">=24.0.0"`.
 - **pnpm 10.34.3.**
   The version is pinned by the `packageManager` field in the root `package.json`, which is the single source of truth for both local installs and CI.
@@ -180,9 +180,10 @@ Run these from the repository root unless noted otherwise.
   This builds `apps/web` only, not the other packages.
 - `pnpm --filter web start` - Serve the production build (runs `node server-entry.mjs`); see [Deployment](#deployment-and-data-sovereignty).
 - `pnpm --filter web preview` - Preview the production build with Vite.
-- `pnpm lint` - Run Biome checks and validate the TypeScript project references.
+- `pnpm lint` - Run Biome, validate the tsconfig files, and check comment rules (`lint:comments`).
 - `pnpm lint:fix` - Apply Biome autofixes.
 - `pnpm format` - Format the codebase with Biome.
+- `pnpm knip` - Report unused files, exports, and dependencies (needs a prior web build for `routeTree.gen.ts`).
 - `pnpm type-check` - Type-check the web app.
 - `pnpm type-check:all` - Type-check every workspace package.
 - `pnpm test` / `pnpm test:unit` - Run the unit test suites (Vitest).
@@ -199,29 +200,18 @@ Database scripts live in the `packages/db` workspace:
 - `( set -a; . ./.env; set +a; pnpm --filter db db:migrate:preflight && pnpm --filter db db:migrate )` - Classify the target database, then apply pending migrations. The subshell loads the root `.env`, which the preflight does not read itself. Never run `db:migrate` without the preflight in front of it; see `packages/db/migrations/README.md`.
 - `pnpm --filter db db:studio` - Open Drizzle Studio.
 
-### Scripts to avoid
-
-The root `package.json` also defines `tsc`, `tsc:web`, `tsc:core`, `tsc:db`, and `tsc:config`.
-**None of them type-check anything.**
-The four `tsc:*` scripts delegate to a `tsc` script that no workspace package defines, so they exit with `ERR_PNPM_RECURSIVE_RUN_NO_SCRIPT` before running the compiler; piping their output through a grep for `error TS` therefore reports zero errors on a codebase that has not been checked at all.
-Bare `pnpm tsc` compiles nothing either, because the root `tsconfig.json` uses project references with an empty `files` array.
-
-Use `pnpm --filter <package> type-check` instead, or `pnpm type-check:all` for every package at once.
-
 ## Continuous Integration
 
-`.github/workflows/ci.yml` runs on pull requests into `main`, on Node 24, in three jobs.
-Pushes to `main` run the same jobs through `.github/workflows/deploy.yml`, which calls `ci.yml` as a reusable workflow:
+`.github/workflows/ci.yml` runs on pull requests into `main`, on Node 24:
 
-1. **Lint** - `pnpm biome check .` and `pnpm validate:tsconfig`.
-2. **Unit tests** - `pnpm test:unit`.
-   No database is required; Paddle is mocked with MSW and the database client connects lazily.
+1. **Lint** - `pnpm biome check .`, `pnpm validate:tsconfig`, `pnpm lint:comments`, `scripts/validate-deploy-workflow.py`, a production web build checked by `check-client-bundle.mjs`, then `pnpm knip`.
+2. **Unit tests** - Vitest, with the web suite split across two shards; no database required.
 3. **E2E tests** - Playwright against Chromium, with the HTML report uploaded as an artifact.
 
-CI does not run a full type-check, a production build, or a deployment.
-`validate:tsconfig` checks config-file sanity only, not types.
-The workflow excludes the type-check because of a backlog of pre-existing type errors that would have failed the pipeline.
-That backlog has since been cleared, so `pnpm type-check:all` is worth running locally before you push - nothing in CI will catch a type error for you.
+Pushes to `main` run `.github/workflows/deploy.yml`, which calls `ci.yml` as a reusable workflow, adds a type-check of every package, and builds and deploys the container image.
+The type-check does not run on pull requests, so run `pnpm type-check:all` before you push.
+
+To skip bulk-reformat commits in `git blame`, run `git config blame.ignoreRevsFile .git-blame-ignore-revs`.
 
 ## Deployment and Data Sovereignty
 
@@ -229,7 +219,7 @@ The app builds to a single TanStack Start SSR server.
 `pnpm build` emits `dist/server/server.js` (a web-standard fetch handler) and the `dist/client/` assets.
 `pnpm --filter web start` then runs `node server-entry.mjs`, a thin self-listening `node:http` wrapper that binds `$PORT` (default 8080), serves `dist/client/`, and delegates SSR and `/api/*` to the built handler.
 
-The intended production topology (see `_bmad-output/planning-artifacts/adr/ADR-001-danubedata-full-stack-migration.md`) is:
+The production topology is:
 
 - **App server:** DanubeData Rapids SSR (Falkenstein, Germany / EU).
 - **Database:** DanubeData PostgreSQL (Germany / EU).
@@ -241,17 +231,14 @@ The data model is EU-only with a zero-US-residency posture.
 The free tier stores everything client-side (localStorage / IndexedDB) with no account and no server calls.
 The paid tier syncs data to the EU-hosted PostgreSQL database behind authenticated sessions.
 
-Two scoped exceptions to the zero-US-residency rule are documented as ADRs:
+There are two scoped exceptions to the zero-US-residency rule:
 
-- **Contact form (ADR-004).** The in-app contact form uses Formspark, which stores submissions in Ireland (EU) but relies on a US-owned cloud subprocessor (AWS), leaving it exposed to the US CLOUD Act.
+- **Contact form.** The in-app contact form uses Formspark, which stores submissions in Ireland (EU) but relies on a US-owned cloud subprocessor (AWS), leaving it exposed to the US CLOUD Act.
   It only ever transmits free-text feedback, never financial data.
-  See `_bmad-output/planning-artifacts/adr/ADR-004-contact-form-formspark-exception.md`.
-- **Analytics (ADR-005).** The app loads cookieless, open-source counter.dev analytics from `cdn.counter.dev`, whose hosted server location is not documented as EU-only.
+- **Analytics.** The app loads cookieless, open-source counter.dev analytics from `cdn.counter.dev`, whose hosted server location is not documented as EU-only.
   It sets no cookie, stores no persistent identifier, and builds no cross-site profile, which is why the no-tracker claim above still holds; it counts visits with a single non-identifying marker held in the browser, and carries no financial data.
-  See `_bmad-output/planning-artifacts/adr/ADR-005-analytics-counterdev.md`.
 
 Because neither exception sets a cookie or stores anything requiring consent, the app ships no cookie-consent banner.
-That determination is recorded in `_bmad-output/planning-artifacts/adr/ADR-006-cookie-consent-gdpr-determination.md`.
 
 ## Project Structure
 
@@ -263,7 +250,7 @@ budget-planner/
 │   └── web/                 # TanStack Start SSR app (frontend + /api/* server routes)
 │       ├── e2e/             # Playwright specs
 │       ├── public/          # Static assets, icons, robots.txt
-│       ├── scripts/         # Icon and service-worker generation
+│       ├── scripts/         # Build, icon, service-worker, and bundle-check scripts
 │       └── src/
 │           ├── routes/      # File-based routes (pages and /api server routes)
 │           ├── components/  # Page and UI components
@@ -276,8 +263,7 @@ budget-planner/
 │   ├── db/                  # Drizzle schema, migrations, and PostgreSQL client (@budget-planner/db)
 │   └── config/              # Zod-validated configuration (@budget-planner/config)
 ├── docs/                    # Contributor documentation
-├── scripts/                 # Repo tooling, including validate-tsconfig
-├── _bmad-output/            # Planning and implementation artifacts (BMAD)
+├── scripts/                 # Repo tooling: tsconfig, comment, and deploy-workflow validators
 ├── .github/workflows/       # CI
 ├── pnpm-workspace.yaml
 └── package.json

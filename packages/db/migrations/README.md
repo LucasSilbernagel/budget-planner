@@ -15,8 +15,7 @@ and `0020_giant_black_bird.sql` are hand-authored or hand-amended where drizzle-
 - `meta/_journal.json` — the source of truth for what this **repository defines**
   and in what order. (What a given *database* has actually applied lives in its own
   `__drizzle_migrations` table — the two are not the same question.) Read the
-  journal rather than trusting a list in prose; an out-of-date prose list in this
-  file is one of the two things story `cleanup-3` was opened to fix.
+  journal rather than trusting a list in prose.
 - `meta/NNNN_snapshot.json` — the schema snapshot each migration was generated
   against. `drizzle-kit generate` diffs `schema.ts` against the **lexically last**
   file in `meta/` whose name does not start with `_`, so a deleted or renumbered
@@ -24,7 +23,7 @@ and `0020_giant_black_bird.sql` are hand-authored or hand-amended where drizzle-
   from another branch), silently yields a wrong next migration. (drizzle-kit
   refuses junk files and prevId collisions itself, but exits 0 while doing so.)
   Nothing but snapshots and `_journal.json` may live in `meta/`;
-  `migration-chain.test.ts` enforces that (story 78.1). It checks each snapshot's
+  `migration-chain.test.ts` enforces that. It checks each snapshot's
   identity and chain, not its content.
 
 What *is* machine-checked:
@@ -88,7 +87,7 @@ The `&&` is load-bearing: the preflight is only a gate if a non-zero exit actual
 stops the migrate step. The subshell exists because `migrate-preflight-cli.ts` reads
 the real environment only; `drizzle-kit` loads `.env` through `drizzle.config.ts`,
 the preflight does not. Without it the preflight exits 1 with "DATABASE_URL is not
-set" and the migrate never runs (measured, story 78.1 review). `. ./.env` is shell
+set" and the migrate never runs. `. ./.env` is shell
 syntax: quote any value containing spaces, `$` or quotes.
 
 `db:migrate:preflight` exits 0 when it classifies the target as `empty` or
@@ -97,7 +96,7 @@ syntax: quote any value containing spaces, `$` or quotes.
 databases were push-built; if you hit that exit, see the "push-built" guidance in
 `docs/production-database-runbook.md` rather than forcing the migration. The
 preflight validates `DATABASE_URL` under the same EU-sovereignty and TLS policy the
-application uses (NFR1, NFR2). See `packages/db/src/migrate-preflight-cli.ts`.
+application uses. See `packages/db/src/migrate-preflight-cli.ts`.
 
 ## Applying migrations — production
 
@@ -118,9 +117,9 @@ state that is already gone.
 
 The `migrate` job in `.github/workflows/deploy.yml` runs this automatically when
 `packages/db/migrations/` changes — but every deploy job is gated on the
-`DEPLOY_ENABLED` repository variable. **While `DEPLOY_ENABLED` is unset, applying
-migrations is a manual step**; the automated path is built and switched off, not
-absent. Either way, a migration being committed here never means it has been applied.
+`DEPLOY_ENABLED` repository variable (currently on). If it is ever unset, applying
+migrations becomes a manual step. Either way, a migration being committed here
+never means it has been applied.
 
 ## Rolling back
 
@@ -147,7 +146,5 @@ every row written since the dump.
 
 - `users.id` has been uuid since `0000`; the four entity-table primary keys were
   converted later, in `0003`. The `0000_fix_users_id_type_to_uuid.sql` that `0003`'s
-  header cites as its pattern source was a never-committed predecessor of story 4-2's
-  one-off `scripts/migrate-users-to-uuid.ts` (deleted: no setup needs it) — it existed
-  on disk before story 5-14 started tracking this directory, and is why `0003` names a
-  file you will not find here.
+  header cites as its pattern source was never committed (a predecessor of a since-deleted
+  one-off users-to-uuid script), which is why `0003` names a file you will not find here.

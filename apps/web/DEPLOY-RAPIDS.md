@@ -1,23 +1,19 @@
 # Deploying budget-planner to DanubeData Rapids
 
-**Story 5-2 — Configure DanubeData Rapids for backend logic.**
-
 This runbook configures the **Rapids runtime/platform** so the TanStack Start
 SSR app (`apps/web`) runs correctly: a self-listening container, the Knative
 service definition, runtime secret injection, and internal-DNS connectivity to
-PostgreSQL. EU-only, zero US residency (NFR1/NFR2), full CLOUD Act immunity.
+PostgreSQL. EU-only, zero US residency, full CLOUD Act immunity.
 
 > **Scope boundaries (do not duplicate):**
-> - **5-2 (here):** Rapids runtime — entrypoint, service def, secrets, DB connectivity.
-> - **4-16:** the deploy/release workflow (`.github/workflows/deploy.yml`).
-> - **4-17:** provision the managed PostgreSQL tier (owns the DB-host allowlist decision).
-> - **5-3:** Paddle production. **5-4:** production CI/CD. **5-5:** monitoring. **5-6:** the cutover.
-
-Legend: **[CODE]** done in-repo now · **[OPS]** needs the DanubeData account · **[VERIFY]** needs the live service.
+> - **Here:** Rapids runtime — entrypoint, service def, secrets, DB connectivity.
+> - **`.github/DEPLOY_RUNBOOK.md`:** the deploy/release workflow (`.github/workflows/deploy.yml`).
+> - **`docs/production-database-runbook.md`:** the managed PostgreSQL tier and the DB-host allowlist decision.
+> - **`docs/paddle-production-verification-runbook.md`:** Paddle production. **`docs/go-live-checklist.md`:** the launch gate.
 
 ---
 
-## 1. Server entrypoint (AC-1) — **[CODE], done**
+## 1. Server entrypoint
 
 `vite build` emits `apps/web/dist/server/server.js` as a web-standard
 `fetch(Request) => Response` handler **with no socket listener**, and it does
@@ -25,7 +21,7 @@ Legend: **[CODE]** done in-repo now · **[OPS]** needs the DanubeData account ·
 must listen on `$PORT`. The self-listening process is:
 
 - **`apps/web/server-entry.mjs`** — the entrypoint the container always starts. A
-  dispatcher since Story 5.18: it reads `APP_ENTRYPOINT` once at boot and
+  dispatcher: it reads `APP_ENTRYPOINT` once at boot and
   dynamically imports one of the two branches below. Nothing else lives here.
 - **`apps/web/serve-entry.mjs`** — the normal path (`APP_ENTRYPOINT` unset or
   anything but `migrate`). Binds `process.env.PORT` (default `8080`) on
@@ -35,8 +31,8 @@ must listen on `$PORT`. The self-listening process is:
   Applies database migrations from inside the cluster and reports a terminal
   verdict on a token-gated `/migrate-status`; it never loads the application
   server, so that process has no routes at all. Used exclusively by the deploy
-  pipeline's `migrate` job, which creates the container, reads the verdict and
-  deletes it. See `.github/DEPLOY_RUNBOOK.md` §4. **Never set `APP_ENTRYPOINT` on
+  pipeline's `migrate` job, which updates the container, reads the verdict, then
+  empties it and scales it to zero. See `.github/DEPLOY_RUNBOOK.md` §4. **Never set `APP_ENTRYPOINT` on
   the serving container.**
 - **`apps/web/src/server/node-adapter.mjs`** — zero-dependency `node:http` ⇄
   web-`fetch` adapter (static file serving + Request/Response conversion,
@@ -49,7 +45,7 @@ no transpile step (`node server-entry.mjs` runs the `.mjs` directly). Approach
 plugin offers no documented self-listening preset at the pinned version (ADR-001
 flags Rapids/Start server tooling as thinly documented).
 
-### Two build fixes this story had to make for the server to boot at all
+### Two build fixes the server needs to boot at all
 
 Booting the production build for the first time surfaced two defects that made
 **every** request 500 (not just DB routes):
@@ -90,12 +86,12 @@ headers (`x-content-type-options`, `x-frame-options`, …) present on responses.
 
 ---
 
-## 2. Rapids service definition (AC-2) — **[CODE]** manifest + **[OPS]** apply
+## 2. Rapids service definition
 
 - **`apps/web/Dockerfile`** — builds the workspace and runs
   `node apps/web/server-entry.mjs`. Build context is the **monorepo root**:
   `docker build -f apps/web/Dockerfile -t budget-planner-web .`
-  Since story ops-1 the runtime stage is **slim**: `node:24-slim` + a
+  The runtime stage is **slim**: `node:24-slim` + a
   `pnpm install --prod` of `@budget-planner/web` and `@budget-planner/db` + the
   built `dist/` (with its precompressed `.br`/`.gz` siblings) + the entry files
   + `packages/db`'s migrate payload (`drizzle.config.ts`, `migrations/`, the
@@ -116,13 +112,13 @@ headers (`x-content-type-options`, `x-frame-options`, …) present on responses.
   `$PORT` 8080, and `/api/health` readiness + liveness probes.
 
 **Readiness uses `/api/health`** (process-up, no DB) so scale-from-zero is not
-gated on the database. `/api/ready` (Story 5-5) does the deeper dependency check
+gated on the database. `/api/ready` does the deeper dependency check
 and is for monitoring, not the scale-up gate.
 
 **Auto-TLS** is enabled at the Knative cluster/domain level, not a per-service
 field — configure the domain mapping at provisioning.
 
-> ⚠️⚠️ **Corrected by story 4-16: this manifest is never applied.** The
+> ⚠️⚠️ **This manifest is never applied.** The
 > DanubeData CLI drives Rapids through a REST API with flag-based commands
 > (`rapids apply --name/--image/--tag/--port/--health-check-path/--profile/
 > --min-scale/--max-scale`) and has **no manifest (`-f`) option**. There is no
@@ -130,10 +126,8 @@ field — configure the domain mapping at provisioning.
 > shape, and several of its fields have no CLI equivalent at all — see its header
 > and `DEPLOY_RUNBOOK.md` §5.
 
-**[OPS] blocked-on-account:**
-1. Create the DanubeData account + project in **Falkenstein, Germany** (shared
-   gate with 4-16, 4-17). ✅ Done 2026-09-03; 4-17 verified the project is in
-   `fsn1` (Falkenstein).
+**Ops setup (done; kept for a rebuild):**
+1. Create the DanubeData account + project in **Falkenstein, Germany** (`fsn1`).
 2. Push the image to the DanubeData registry. The prefix is
    `cr.danubedata.ro/budgetplanner795` — set as the `DANUBEDATA_REGISTRY`
    repository variable; the pipeline appends `/budget-planner-web:<sha>`.
@@ -145,12 +139,11 @@ field — configure the domain mapping at provisioning.
 
 ---
 
-## 3. Runtime environment & secrets (AC-3)
+## 3. Runtime environment & secrets
 
 Validated by `packages/config/src/schema.ts` (Zod) and read by
 `packages/db/src/client.ts`. **Secrets are injected as Rapids platform secrets —
-never committed.** Coordinate injection **once** across 5-2 / 4-16 / 4-17 / 5-3
-so each value is set a single time.
+never committed.** Set each value once.
 
 ### Runtime secrets / env (injected into the Rapids service)
 
@@ -158,19 +151,19 @@ so each value is set a single time.
 |---|---|---|
 | `NODE_ENV` | **yes** | Set explicitly to `production`. **Unset → schema default `development` → session secret fails OPEN.** Only `development`/`production`/`test` are valid; `staging`/`preview` are rejected by the enum. |
 | `DATABASE_URL` | yes (paid tier) | DanubeData PostgreSQL host. Must satisfy the allowlist in `client.ts` — see §4. |
-| `DATABASE_CA_CERT` | **yes (paid tier)** | Read directly from `process.env` in `client.ts` (not in the Zod schema — easy to miss). The DanubeData chain is **self-signed**, so without it `getPool()` fails `SELF_SIGNED_CERT_IN_CHAIN` and no query runs (Story 5.17). On Rapids, **base64-encode the PEM** (`base64 -w0 ca.pem`) before pasting — `normalizeCaCert()` decodes it at every read site. |
+| `DATABASE_CA_CERT` | **yes (paid tier)** | Read directly from `process.env` in `client.ts` (not in the Zod schema — easy to miss). The DanubeData chain is **self-signed**, so without it `getPool()` fails `SELF_SIGNED_CERT_IN_CHAIN` and no query runs. On Rapids, **base64-encode the PEM** (`base64 -w0 ca.pem`) before pasting — `normalizeCaCert()` decodes it at every read site. |
 | `SESSION_SECRET` | **yes** | HMAC key for signed sessions. **≥32 chars and ≥8 distinct chars** or auth fails closed (outside dev). Generate: `openssl rand -hex 32`. Rotating it invalidates all sessions. |
 | `SITE_URL` | **yes** | Public **https** origin (default is `http://localhost:5173`). Magic-link emails build absolute URLs from it; a non-https/localhost value throws in production. |
-| `PADDLE_ENVIRONMENT` | 5-3 | `sandbox` \| `production`. Selects `api.paddle.com` vs `sandbox-api.paddle.com` and gates `assertPaddleProductionConfig()`. |
-| `PADDLE_API_KEY` | 5-3 | Server-side Billing REST API key (`pdl_live_…`). Runtime secret. |
-| `PADDLE_CLIENT_TOKEN` | 5-3 | Browser token for Paddle.js checkout (`live_…`). Safe to expose to the client. |
-| `PADDLE_WEBHOOK_SECRET` | 5-3 | `pdl_ntfset_…` — HMAC key for the `Paddle-Signature` header. Runtime secret. |
-| `PADDLE_MONTHLY_PRICE_ID` / `PADDLE_ANNUAL_PRICE_ID` / `PADDLE_LIFETIME_PRICE_ID` | 5-3, 5-20 | Live Paddle price IDs for the €5.99/mo, €39/yr and €99 lifetime plans. **All three are required in production**, and all three **must differ** (`assertPaddleProductionConfig` throws otherwise). ⚠️ These are Rapids **runtime** env vars — `deploy.yml` passes no `PADDLE_*` value at all, so adding or changing one is a Rapids env update on the service, **not** a GitHub secret and **not** something a redeploy will pick up. |
+| `PADDLE_ENVIRONMENT` | yes (paid tier) | `sandbox` \| `production`. Selects `api.paddle.com` vs `sandbox-api.paddle.com` and gates `assertPaddleProductionConfig()`. |
+| `PADDLE_API_KEY` | yes (paid tier) | Server-side Billing REST API key (`pdl_live_…`). Runtime secret. |
+| `PADDLE_CLIENT_TOKEN` | yes (paid tier) | Browser token for Paddle.js checkout (`live_…`). Safe to expose to the client. |
+| `PADDLE_WEBHOOK_SECRET` | yes (paid tier) | `pdl_ntfset_…` — HMAC key for the `Paddle-Signature` header. Runtime secret. |
+| `PADDLE_MONTHLY_PRICE_ID` / `PADDLE_ANNUAL_PRICE_ID` / `PADDLE_LIFETIME_PRICE_ID` | yes (paid tier) | Live Paddle price IDs for the €5.99/mo, €39/yr and €99 lifetime plans. **All three are required in production**, and all three **must differ** (`assertPaddleProductionConfig` throws otherwise). ⚠️ These are Rapids **runtime** env vars — `deploy.yml` passes no `PADDLE_*` value at all, so adding or changing one is a Rapids env update on the service, **not** a GitHub secret and **not** something a redeploy will pick up. |
 | `PADDLE_WEBHOOK_MAX_AGE_SECONDS` | optional | Webhook timestamp-freshness window. Default `300`. |
-| ~~`PADDLE_VENDOR_ID` / `PADDLE_PUBLIC_KEY`~~ | — | **Removed in Story 5-3** — Paddle Classic vars, unused by Billing. Do not set. |
-| `EMAIL_API_KEY` | 5-16 | Magic-link email (EU provider). Runtime secret. |
-| `RETENTION_SWEEP_TOKEN` | **73.2** | Bearer token for `POST /api/internal/retention-sweep`. **≥32 chars and ≥8 distinct chars** (the `SESSION_SECRET` floor) or the endpoint refuses every call (503). Must equal the GitHub `production` environment secret of the same name. Generate: `openssl rand -hex 32`. Runtime secret. See `.github/DEPLOY_RUNBOOK.md` §9. |
-| `EMAIL_FROM` | **5-3** | Defaults to the verified Longhand sender `hello@longhandbudget.com`; override only if the Brevo-verified address changes. |
+| ~~`PADDLE_VENDOR_ID` / `PADDLE_PUBLIC_KEY`~~ | — | **Removed** — Paddle Classic vars, unused by Billing. Do not set. |
+| `EMAIL_API_KEY` | yes (paid tier) | Magic-link email (EU provider). Runtime secret. |
+| `RETENTION_SWEEP_TOKEN` | yes | Bearer token for `POST /api/internal/retention-sweep`. **≥32 chars and ≥8 distinct chars** (the `SESSION_SECRET` floor) or the endpoint refuses every call (503). Must equal the GitHub `production` environment secret of the same name. Generate: `openssl rand -hex 32`. Runtime secret. See `.github/DEPLOY_RUNBOOK.md` §9. |
+| `EMAIL_FROM` | optional | Defaults to the verified Longhand sender `hello@longhandbudget.com`; override only if the Brevo-verified address changes. |
 | `PORT` / `HOST` | platform | `PORT` injected by Knative (entry defaults 8080 / `0.0.0.0`). |
 
 Generate the session secret:
@@ -181,13 +174,13 @@ openssl rand -hex 32   # 64 hex chars → satisfies the ≥32 / ≥8-distinct fl
 
 ---
 
-## 4. Internal-DNS connectivity to PostgreSQL (AC-4) — owned by **Story 4-17 AC-2**
+## 4. Internal-DNS connectivity to PostgreSQL
 
 Rapids reaches PostgreSQL over DanubeData **internal DNS** — a **bare hostname**
 that `isEuSovereignDbHost()` in `packages/db/src/client.ts` would reject as a
 suffix, so it is admitted by **exact match** instead.
 
-**RESOLVED by Story 4-17 AC-2 (option b):** there is no external endpoint to
+**Decision:** there is no external endpoint to
 choose — both dashboard endpoints are the CloudNativePG rw/ro split, and ADR-001
 forbids external paths — so `EU_DB_INTERNAL_HOSTS` lists the verified internal
 writer name (`budget-planner-prod-rw` + its `.svc.cluster.local` FQDN), each by
@@ -196,37 +189,31 @@ anti-substring anchoring and trailing-dot handling are unchanged. Set
 `DATABASE_URL`'s host to one of those names. TLS is enforced
 (`rejectUnauthorized: true`, CA-validated via `DATABASE_CA_CERT`).
 
-**[VERIFY] blocked-on-service:** from inside the deployed runtime, confirm
-`testDbConnection()` returns `true` over internal DNS with CA-validated TLS.
+`/api/ready` returning `{"status":"ready"}` confirms the connection over internal DNS
+with CA-validated TLS.
 
 ---
 
-## 5. In-runtime verification (AC-5) — **[VERIFY]**, blocked-on-service
+## 5. Post-deploy verification
 
-Once the service is live, confirm on the **deployed** instance (verify the
-**hydrated** response, not just SSR HTML — Story 4-11 lesson):
+On the **deployed** instance (verify the **hydrated** response, not just SSR HTML):
 
-- [ ] SSR pages render.
-- [ ] `/api/webhooks/paddle` (5-3) and `/api/sync/*` (4-18/5-15) execute
-      server-side. (`/api/auth/paddle/*` was the dead OAuth stub — deleted by
-      5-3's AC-1; `/api/calculations/*` (5-12) had no caller and was deleted
-      2026-10-02.)
-- [ ] The global security-headers middleware (`apps/web/src/start.ts`, 5-8
-      AC-14) is present on a **live** response (confirms `start.ts` is bundled +
-      executed by this runtime). *Verified locally during AC-1 boot;
-      re-confirm on Rapids.*
-- [ ] The premium gate is server-enforced (forged/tampered session cookies
-      rejected before DB access — 5-7/5-8/5-10 regression).
-- [ ] All traffic and data stay in the EU (NFR1/NFR2).
+- SSR pages render.
+- `/api/webhooks/paddle` and `/api/sync/*` execute server-side.
+- The global security-headers middleware (`apps/web/src/start.ts`) is present on
+  a **live** response.
+- The premium gate is server-enforced (forged/tampered session cookies rejected
+  before DB access).
+- All traffic and data stay in the EU.
+
+The launch-gate record of these checks is `docs/go-live-checklist.md`.
 
 ---
 
-## Files this story added/changed
+## Key files
 
-- `apps/web/server-entry.mjs` — self-listening entrypoint (AC-1).
-- `apps/web/src/server/node-adapter.mjs` — `node:http` ⇄ fetch adapter (AC-1).
-- `apps/web/src/server/__tests__/node-adapter.test.ts` — adapter unit/integration tests.
-- `apps/web/pg-native-stub.mjs` + `vite.config.ts` alias — fix the `pg-native` boot crash (AC-1).
-- `apps/web/package.json` — `start` script; `build` pins `NODE_ENV=production` (AC-1).
-- `apps/web/Dockerfile`, `.dockerignore`, `apps/web/rapids-service.yaml` — image + Knative service (AC-2).
-- `apps/web/DEPLOY-RAPIDS.md` — this runbook (AC-2/AC-3/AC-4/AC-5).
+- `apps/web/server-entry.mjs`, `serve-entry.mjs`, `migrate-entry.mjs` — entrypoint and its two branches.
+- `apps/web/src/server/node-adapter.mjs` — `node:http` ⇄ fetch adapter.
+- `apps/web/pg-native-stub.mjs` + `vite.config.ts` alias — fix the `pg-native` boot crash.
+- `apps/web/package.json` — `start` script; `build` pins `NODE_ENV=production`.
+- `apps/web/Dockerfile`, root `.dockerignore`, `apps/web/rapids-service.yaml` — image + Knative service.

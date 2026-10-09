@@ -10,7 +10,11 @@ import { timingSafeEqual } from 'node:crypto'
 const DEFAULT_HEALTH_PATH = '/healthz'
 const STATUS_PATH = '/migrate-status'
 
-/** timingSafeEqual throws on differing lengths (a 500), so length is checked first. */
+/**
+ * timingSafeEqual throws on differing lengths (a 500), so length is checked first.
+ * @param {string} presented
+ * @param {string} expected
+ */
 function tokenMatches(presented, expected) {
 	const a = Buffer.from(presented, 'utf8')
 	const b = Buffer.from(expected, 'utf8')
@@ -38,6 +42,7 @@ function readBearer(header) {
  * instead of crash-looping, never migrates, serves no status endpoint.
  */
 export function createIdleHealthListener({ healthPath = DEFAULT_HEALTH_PATH } = {}) {
+	/** @type {import('node:http').RequestListener} */
 	return (request, response) => {
 		let pathname
 		try {

@@ -1,20 +1,20 @@
 # Production database runbook — DanubeData managed PostgreSQL
 
-Operator guide for provisioning, wiring and verifying the production database
-(Story 4.17). Everything here is **manual ops** performed by the operator; the
+Operator guide for provisioning, wiring and verifying the production database.
+Everything here is **manual ops** performed by the operator; the
 repo-side work it depends on is already merged.
 
-**Location:** Falkenstein, Germany (EU only). Zero US residency — NFR1, NFR2,
-[ADR-001](../_bmad-output/planning-artifacts/adr/ADR-001-danubedata-full-stack-migration.md).
+**Location:** Falkenstein, Germany (EU only). Zero US residency.
 
 ---
 
 ## 1. Provision the instance
 
-1. Create / confirm the DanubeData account and project. *(Shared gate with
-   stories 4.16 and 5.2 — do this once.)*
+1. Create / confirm the DanubeData account and project. *(Shared with the
+   Rapids and deploy setup — do this once.)*
 2. Create a **managed PostgreSQL** instance in **Falkenstein, DE**. Pick a
-   PostgreSQL version supported by `pg@^8.11` and Drizzle ORM 0.32.
+   PostgreSQL version supported by `pg@^8.11` and Drizzle ORM 0.32 (production
+   runs PostgreSQL 18).
 3. **Choose the smallest tier** (the live instance is the `micro` class,
    €12.99/mo — 1 GB / 10 GB). Pre-launch there are no users and no load, and this
    is the project's only fixed infrastructure cost. Scale when real traffic
@@ -71,7 +71,7 @@ running app needs none. Splitting them means a SQL-injection bug or a leaked
 app credential cannot alter or drop the schema. No application code changes for
 this — both roles are reached through `DATABASE_URL`, just with different values
 in different places: the Rapids **service** gets the `bp_app` string, the
-migration **Job** (Story 5.17) gets the `bp_migrator` string.
+migration **Job** gets the `bp_migrator` string.
 
 Generate two passwords with `openssl rand -hex 24` — hex avoids connection-string
 escaping problems with `@`, `/`, `#` and `:`.
@@ -126,7 +126,7 @@ keeps migrations off the public internet is **ADR-001 policy** ("no external
 connections, no SSH tunnels in production"), which is a decision, not a wall.
 Treat enabling it as an ADR amendment, not a workaround.
 
-Since Story 5.18 there is also a code-level backstop, so the policy no longer
+There is also a code-level backstop, so the policy no longer
 rests on nobody typing the command: `buildMigrationCredentials` refuses any
 migration target that is not an in-cluster writer name (`isInClusterDbHost`), so
 even with the toggle on, a migration pointed at the public endpoint fails closed
@@ -195,13 +195,13 @@ reads no `.env` file.
 > that — the port moved again with **no re-provision in between** (last one
 > 2026-09-05; the port still changed on 2026-09-14) — so nothing pinned ahead of
 > time could stay correct, and 2026-09-14 replaced the pin with a live read.
-> **Story 5.18 then removed the public path entirely (2026-09-15):** the `migrate`
+> **Moving the migration in-cluster then removed the public path entirely (2026-09-15):** the `migrate`
 > job composes `DATABASE_URL` from the fixed in-cluster writer
 > (`budget-planner-prod-rw.budgetplanner795.svc.cluster.local:5432`) plus
 > `DATABASE_MIGRATOR_USER` / `DATABASE_MIGRATOR_PASSWORD` / `DATABASE_NAME`.
 > There is nothing to discover, and a future public-port change is irrelevant.
 
-> ✅ **The migration runs at `verify-full`, with nothing waived (Story 5.18,
+> ✅ **The migration runs at `verify-full`, with nothing waived (since
 > 2026-09-15).** DanubeData issues the database certificate for **in-cluster SANs
 > only** (`budget-planner-prod-rw[.budgetplanner795[.svc[.cluster.local]]]`, plus
 > `-r`/`-ro`). Migrations now run inside the cluster, so the name dialled is a name
@@ -252,8 +252,8 @@ reads no `.env` file.
 > are verified. The real defect is that the vendor prints secrets and offers no
 > rotation; treat the hook as a backstop for mechanical slips, not as permission
 > to relax the habit of never asking a CLI to print a credential. The
-> instance still holds no application schema (the `migrate` job has never run:
-> `vars.DEPLOY_ENABLED` is unset), so delete-and-re-provision is still free.
+> instance still holds no application schema (at the time the `migrate` job had never
+> run), so delete-and-re-provision is still free.
 >
 > ✅ **DONE 2026-09-05.** Instance `01a06f32-eaf3-7210-ae1b-671277cdcf24` was
 > deleted and replaced by `01a0739f-dccd-73ca-a10d-a15b68bd8ee5` (created
@@ -275,7 +275,7 @@ reads no `.env` file.
 > ⚠️ **Do not run `danube db get`** — that is what leaked it. Use `danube db ls`,
 > which shows the same instance details without credentials.
 
-> ✅ **`DATABASE_CA_CERT` reaches `drizzle-kit`** (closed 2026-09, was Story 5.17 AC-4).
+> ✅ **`DATABASE_CA_CERT` reaches `drizzle-kit`** (closed 2026-09).
 > `packages/db/drizzle.config.ts` now decomposes `DATABASE_URL` via
 > `buildMigrationCredentials(NODE_ENV, url, normalizeCaCert(DATABASE_CA_CERT), …)`,
 > so the connection that actually applies the schema carries the same CA
@@ -285,7 +285,7 @@ reads no `.env` file.
 > to pass silently gave up CA verification on the one connection that can rewrite
 > the schema.
 
-> 🕐 **Every connection runs with session `TimeZone=UTC`** (story ops-2, 2026-10).
+> 🕐 **Every connection runs with session `TimeZone=UTC`** (since 2026-10).
 > The `createdAt`/`updatedAt` columns are `timestamp WITHOUT time zone`: a DB-side
 > `now()` (a `defaultNow()` default, or `SET "updatedAt" = now()` in a migration)
 > stores the SESSION zone's wall time, while the app writes UTC
@@ -326,7 +326,7 @@ migrations)**. `migration-chain.test.ts` proves the journal and the `.sql` files
 agree; the live replay still has to happen against the instance.
 
 **Who runs it:** the `migrate` job in `.github/workflows/deploy.yml`, **inside
-the cluster** — per **Story 5.18**, 2026-09-15. Never from a laptop.
+the cluster** (since 2026-09-15). Never from a laptop.
 
 **Where it runs, and why there.** DanubeData Rapids has **no run-to-completion
 primitive and no way to override a container's command** — `rapids create` /
@@ -387,7 +387,7 @@ nothing depends on reading them.
 instance must show only the `.svc.cluster.local` form, before, during and after a
 release.
 
-> ✅ **The ADR-001 time-boxed public-DNS exception is RETIRED (2026-09-15).**
+> ✅ **The time-boxed public-DNS exception is RETIRED (2026-09-15).**
 > From 2026-09-03 this section described a `danube db dns enable` → migrate →
 > `disable` window run from the GitHub runner. It expired on its own terms once
 > the database held real user data, and its ADR section has been deleted. Do not
@@ -406,8 +406,8 @@ danube rapids ls     # budget-planner-migrator should show 0 replicas
 ```
 
 The migration connects as **`bp_migrator`** (§1.1) — the DDL-capable role — over
-the CA-validated path added in Story 5.17 AC-4, now at **`verify-full`**: the
-in-cluster name it dials is the name on the certificate, so Story 5.17's
+the CA-validated path, at **`verify-full`**: the
+in-cluster name it dials is the name on the certificate, so the earlier
 `verify-ca` hostname waiver was deleted rather than left switched off.
 
 The preflight runs immediately before the migration, inside the same container and
@@ -431,8 +431,8 @@ It classifies the target as `empty` / `journaled` / `push-built` / `inconsistent
 Re-running a migration is safe: `drizzle-kit migrate` is journal-driven and the
 preflight re-runs first, so a repeat applies nothing.
 
-Applying the chain also closes Story 5.8 AC-11: `users.sessionsRevokedAt`
-exists, so logout revocation stops failing open.
+Applying the chain also creates `users.sessionsRevokedAt`, without which logout
+revocation fails open.
 
 ## 5. Verify
 
@@ -446,7 +446,7 @@ can reach the database — not merely that a socket opened. It refuses to run
 without a `DATABASE_URL` rather than reporting a vacuous success, and it is
 deliberately not wired into any CI job.
 
-Then confirm, per Story 4.17 AC-5 and Story 5.17 AC-6:
+Then confirm:
 
 - the applied schema matches `packages/db/src/schema.ts` (`drizzle-kit generate`
   emits no new migration);

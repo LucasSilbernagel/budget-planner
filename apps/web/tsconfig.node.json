@@ -1,0 +1,19 @@
+{
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"composite": true,
+		"rootDir": ".",
+		"tsBuildInfoFile": "./tsconfig.node.tsbuildinfo",
+		"target": "ES2023",
+		"lib": ["ES2023"],
+		"module": "nodenext",
+		"moduleResolution": "nodenext",
+		"allowJs": true,
+		"checkJs": false,
+		"types": ["node"],
+		"noPropertyAccessFromIndexSignature": false,
+		"noUncheckedIndexedAccess": false
+	},
+	"include": ["*.mjs", "scripts/*.mjs", "src/server/*.mjs", "vite.config.ts"],
+	"exclude": ["node_modules", "dist"]
+}

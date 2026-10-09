@@ -1,7 +1,7 @@
 // Shared by vite-plugin-pwa (dev) and the post-build Workbox generateSW step: under
 // TanStack Start's multi-environment build the plugin never emits a production sw.js.
 
-/** @type {import('vite-plugin-pwa').ManifestOptions} */
+/** @type {Partial<import('vite-plugin-pwa').ManifestOptions>} */
 export const pwaManifest = {
 	// `short_name` is coupled to InstallPrompt's "Install <short_name>" copy.
 	name: 'Longhand Budget',
@@ -27,6 +27,7 @@ export const pwaGlobPatterns = ['**/*.{js,css,svg,png,ico,webmanifest,woff,woff2
 
 // Cache used only when the network request fails. Deliberately no networkTimeoutSeconds:
 // a timeout fallback could serve another session's cached document.
+/** @type {import('workbox-build').RuntimeCaching[]} */
 export const pwaRuntimeCaching = [
 	{
 		urlPattern: ({ request, url }) =>

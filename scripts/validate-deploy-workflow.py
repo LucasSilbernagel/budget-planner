@@ -26,7 +26,12 @@ IMAGE_SIZE_HELPER = ".github/scripts/image_size.py"
 VERIFY_IMAGE_HELPER = ".github/scripts/verify-image.sh"
 REGISTRY_REPORT_HELPER = ".github/scripts/registry-report.sh"
 WEB_PACKAGE = "apps/web/package.json"
-WEB_TYPECHECK_CONFIGS = ("tsconfig.app.json", "tsconfig.vitest.json", "tsconfig.e2e.json")
+WEB_TYPECHECK_CONFIGS = (
+    "tsconfig.app.json",
+    "tsconfig.vitest.json",
+    "tsconfig.e2e.json",
+    "tsconfig.node.json",
+)
 PACKAGE_TYPECHECK_CONFIGS = ("tsconfig.json", "tsconfig.test.json")
 # package -> (package.json, the deploy step's exact `run`, configs its script must name)
 TYPECHECK_SCRIPTS = {

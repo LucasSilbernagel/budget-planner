@@ -5,7 +5,6 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "echo 'Core dev script (to be configured)'",
 		"build": "tsc",
 		"type-check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
 		"lint": "biome check .",
@@ -27,6 +26,5 @@
 	},
 	"engines": {
 		"node": ">=24.0.0"
-	},
-	"pnpm": {}
+	}
 }
