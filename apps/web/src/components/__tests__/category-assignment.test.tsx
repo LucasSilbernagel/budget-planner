@@ -379,8 +379,8 @@ describe('the free tier: a locked picker, and CRUD that still works', () => {
 		expect(screen.getAllByRole('dialog')).toHaveLength(1)
 	})
 
-	// jsdom reports an unprevented anchor activation as a "Not implemented: navigation"
-	// console error; Modal stops propagation, so a window listener cannot see the click.
+	// Modal stops propagation, so only a capture-phase listener sees the click; read
+	// `defaultPrevented` once dispatch has finished.
 	for (const { Page, prefix, addButton } of [
 		{ Page: ExpensesPage, prefix: 'expense', addButton: '+ Add Expense' },
 		{ Page: IncomePage, prefix: 'income', addButton: '+ Add Income Source' },
@@ -393,19 +393,19 @@ describe('the free tier: a locked picker, and CRUD that still works', () => {
 			const link = within(screen.getByTestId(`${prefix}-category-locked`)).getByRole('link')
 			expect(link).toHaveAttribute('href', '/pricing')
 
-			const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+			const clicks: MouseEvent[] = []
+			const record = (event: MouseEvent) => clicks.push(event)
+			window.addEventListener('click', record, { capture: true })
 			try {
 				await user.click(link)
-				const navigations = consoleError.mock.calls.filter((args) =>
-					String(args[0]).includes('Not implemented: navigation')
-				)
-				expect(
-					navigations,
-					'the browser default (navigate to /pricing) must not be prevented'
-				).toHaveLength(1)
 			} finally {
-				consoleError.mockRestore()
+				window.removeEventListener('click', record, { capture: true })
 			}
+			expect(clicks).toHaveLength(1)
+			expect(
+				clicks[0]?.defaultPrevented,
+				'the browser default (navigate to /pricing) must not be prevented'
+			).toBe(false)
 
 			expect(screen.getAllByRole('dialog')).toHaveLength(1)
 			expect(screen.queryByRole('dialog', { name: /go premium/i })).toBeNull()

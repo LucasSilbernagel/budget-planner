@@ -1,5 +1,3 @@
-// Vitest 1.6 threads ignore `test.env.TZ` for the zone; the config sets `process.env.TZ` instead.
-
 import { describe, expect, it } from 'vitest'
 
 describe('db Vitest runs in UTC', () => {

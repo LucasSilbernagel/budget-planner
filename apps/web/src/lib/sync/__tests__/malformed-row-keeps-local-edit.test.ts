@@ -3,8 +3,8 @@
 
 import type { SynchronizationService } from '@budget-planner/core/sync/synchronization'
 import { createSynchronizationService } from '@budget-planner/core/sync/synchronization'
-import type { ServerChange } from '@budget-planner/core/sync/types'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { FetchServerChangesFn, ServerChange } from '@budget-planner/core/sync/types'
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 import { useIncomeStore } from '../../../stores/incomeStore'
 import { applyServerChangesToStores, reportRefusedServerChanges } from '../applyServerChanges'
 
@@ -49,7 +49,7 @@ function serverRow(amount: unknown): ServerChange {
 
 describe('a malformed server row does not discard the local edit (web chain)', () => {
 	let service: SynchronizationService
-	let fetchServerChanges: ReturnType<typeof vi.fn>
+	let fetchServerChanges: Mock<FetchServerChangesFn>
 	let warn: ReturnType<typeof vi.spyOn>
 
 	beforeEach(async () => {

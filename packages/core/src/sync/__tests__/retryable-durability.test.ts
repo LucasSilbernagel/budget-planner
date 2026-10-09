@@ -88,8 +88,8 @@ describe('Retryable durability and refused-op discard', () => {
 	let queue: SyncQueue
 	let service: SynchronizationService
 	let resultFor: Map<string, ProcessOperationResult>
-	let processOperation: Mock<Parameters<ProcessOperationFn>, ReturnType<ProcessOperationFn>>
-	let fetchServerChanges: Mock<Parameters<FetchServerChangesFn>, ReturnType<FetchServerChangesFn>>
+	let processOperation: Mock<ProcessOperationFn>
+	let fetchServerChanges: Mock<FetchServerChangesFn>
 
 	const sentIds = (): string[] => processOperation.mock.calls.map(([sent]) => sent.id)
 

@@ -10,6 +10,12 @@ const { version: appVersion } = JSON.parse(
 	readFileSync(resolve(__dirname, './package.json'), 'utf-8')
 ) as { version: string }
 
+const domTests = [
+	'src/**/*.{test,spec}.tsx',
+	'src/**/components/**/*.{test,spec}.ts',
+	'src/**/*.dom.test.ts',
+]
+
 // Default `node` so server-only modules (the db package throws when `window` exists) import.
 export default defineConfig({
 	plugins: [react()],
@@ -40,14 +46,24 @@ export default defineConfig({
 	test: {
 		globals: true,
 		environment: 'node',
-		environmentMatchGlobs: [
-			['src/**/*.{tsx,jsx}', 'jsdom'],
-			['src/**/components/**', 'jsdom'],
-			['**/*.dom.test.{ts,tsx}', 'jsdom'],
-		],
 		setupFiles: ['./vitest.setup.ts'],
-		include: ['src/**/*.{test,spec}.{ts,tsx}'],
 		exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
+		projects: [
+			{
+				test: {
+					name: 'node',
+					include: ['src/**/*.{test,spec}.{ts,tsx}'],
+					exclude: domTests,
+				},
+			},
+			{
+				test: {
+					name: 'jsdom',
+					environment: 'jsdom',
+					include: domTests,
+				},
+			},
+		],
 		// pg.Pool connects lazily, so this dummy URL opens no connection.
 		env: {
 			DATABASE_URL: 'postgres://test:test@localhost:5432/budget_planner_test',

@@ -207,7 +207,7 @@ describe('G4: the LENIENT pull gate', () => {
 describe('G5: a plan op is never stranded by a deleted profile', () => {
 	let queue: SyncQueue
 	let service: SynchronizationService
-	let fetchServerChanges: Mock<[since: number | null], Promise<ServerChange[]>>
+	let fetchServerChanges: Mock<(since: number | null) => Promise<ServerChange[]>>
 
 	const planOp = (id: string): SyncOperation => ({
 		id,

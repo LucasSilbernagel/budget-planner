@@ -5,14 +5,14 @@ import { screen, within } from '@testing-library/react'
 import { act } from 'react'
 import { hydrateRoot } from 'react-dom/client'
 import { renderToString } from 'react-dom/server'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 import { __resetStoresHydratedForTests } from '../../../hooks/useStoresHydrated'
 import { useBalanceStore } from '../../../stores/balanceStore'
 import { useExpenseStore } from '../../../stores/expenseStore'
 import { useIncomeStore } from '../../../stores/incomeStore'
 import { useProfileStore } from '../../../stores/profileStore'
 import { useSavingsStore } from '../../../stores/savingsStore'
-import { ScenarioBuilder } from '../scenario-builder'
+import { ScenarioBuilder, type ScenarioBuilderProps } from '../scenario-builder'
 
 vi.mock('../../../stores/currencyStore', () => ({
 	useFormattedAmount: () => (cents: number) => (cents / 100).toFixed(2),
@@ -101,7 +101,7 @@ afterEach(async () => {
 })
 
 async function hydrateAfterTyping(
-	onSave: ReturnType<typeof vi.fn>,
+	onSave: Mock<ScenarioBuilderProps['onSave']>,
 	typeBeforeHydration: (server: ReturnType<typeof within>) => void
 ) {
 	const element = <ScenarioBuilder onSave={onSave} />
@@ -121,7 +121,7 @@ function typeRaw(input: HTMLElement, text: string): void {
 	;(input as HTMLInputElement).value = text
 }
 
-async function saveAndRead(onSave: ReturnType<typeof vi.fn>) {
+async function saveAndRead(onSave: Mock<ScenarioBuilderProps['onSave']>) {
 	const saveButton = await screen.findByRole(
 		'button',
 		{ name: /save forecast/i },
@@ -136,7 +136,7 @@ async function saveAndRead(onSave: ReturnType<typeof vi.fn>) {
 
 describe('typing before hydration is kept', () => {
 	it('keeps a Scenario Name typed before hydration, on screen and in the save', async () => {
-		const onSave = vi.fn().mockResolvedValue({ success: true })
+		const onSave = vi.fn<ScenarioBuilderProps['onSave']>().mockResolvedValue({ success: true })
 		await hydrateAfterTyping(onSave, (server) => {
 			typeRaw(server.getByLabelText('Scenario Name'), 'Holiday plan')
 			typeRaw(server.getByLabelText('Description'), 'Two weeks away')
@@ -152,7 +152,7 @@ describe('typing before hydration is kept', () => {
 	})
 
 	it('does NOT adopt money typed before hydration: the server markup has no money field, the seed fills the rows', async () => {
-		const onSave = vi.fn().mockResolvedValue({ success: true })
+		const onSave = vi.fn<ScenarioBuilderProps['onSave']>().mockResolvedValue({ success: true })
 		await hydrateAfterTyping(onSave, (server) => {
 			expect(server.queryByLabelText(/^Balance for /)).toBeNull()
 			expect(server.queryByLabelText(/^Contribution for /)).toBeNull()
@@ -170,7 +170,7 @@ describe('typing before hydration is kept', () => {
 	})
 
 	it('turns browser autofill/form restore off on every money row field once seeded', async () => {
-		const onSave = vi.fn().mockResolvedValue({ success: true })
+		const onSave = vi.fn<ScenarioBuilderProps['onSave']>().mockResolvedValue({ success: true })
 		await hydrateAfterTyping(onSave, () => {})
 
 		const fields = screen.getAllByLabelText(/^(Balance|Contribution|Monthly Contribution) for /)
@@ -179,7 +179,7 @@ describe('typing before hydration is kept', () => {
 	})
 
 	it('keeps the years and growth rates typed before hydration', async () => {
-		const onSave = vi.fn().mockResolvedValue({ success: true })
+		const onSave = vi.fn<ScenarioBuilderProps['onSave']>().mockResolvedValue({ success: true })
 		await hydrateAfterTyping(onSave, (server) => {
 			typeRaw(server.getByLabelText('Projection Period (years)'), '25')
 			typeRaw(server.getByLabelText('Income Growth Rate'), '4')
@@ -198,7 +198,7 @@ describe('typing before hydration is kept', () => {
 	})
 
 	it('still seeds and keeps the defaults when nothing was typed (control)', async () => {
-		const onSave = vi.fn().mockResolvedValue({ success: true })
+		const onSave = vi.fn<ScenarioBuilderProps['onSave']>().mockResolvedValue({ success: true })
 		await hydrateAfterTyping(onSave, () => {})
 
 		expect(screen.getByLabelText('Scenario Name')).toHaveValue('My Financial Forecast')

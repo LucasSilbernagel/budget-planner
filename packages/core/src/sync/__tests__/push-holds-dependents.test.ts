@@ -65,7 +65,7 @@ describe('push honours dependsOn', () => {
 	let queue: SyncQueue
 	let service: SynchronizationService
 	let results: Map<string, ProcessOperationResult>
-	let processOperation: Mock<Parameters<ProcessOperationFn>, ReturnType<ProcessOperationFn>>
+	let processOperation: Mock<ProcessOperationFn>
 	let rejected: string[][]
 
 	const queuedIds = () => queue.getAll().map((o) => o.id)

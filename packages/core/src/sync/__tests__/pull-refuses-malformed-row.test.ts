@@ -85,7 +85,7 @@ describe('pull() refuses a malformed server row before LWW can drop the local ed
 	let storage: ReturnType<typeof createStorage>
 	let queue: SyncQueue
 	let service: SynchronizationService
-	let fetchServerChanges: Mock<[since: number | null], Promise<ServerChange[]>>
+	let fetchServerChanges: Mock<(since: number | null) => Promise<ServerChange[]>>
 	let conflicts: ConflictResult[]
 	let pulled: ServerChange[][]
 	let refusedCalls: RefusedServerChange[][]
