@@ -60,7 +60,7 @@ function op(id: string): SyncOperation {
 	}
 }
 
-const MUTATORS: [string, (queue: SyncQueue) => Promise<unknown>][] = [
+const MUTATORS = [
 	['add', (q) => q.add(op('c'))],
 	['addBatch', (q) => q.addBatch([op('c'), op('d')])],
 	['remove', (q) => q.remove('a')],
@@ -69,7 +69,7 @@ const MUTATORS: [string, (queue: SyncQueue) => Promise<unknown>][] = [
 	['removeByEntity', (q) => q.removeByEntity('incomeSource', 'entity-a')],
 	['clear', (q) => q.clear()],
 	['dequeue', (q) => q.dequeue()],
-]
+] satisfies [string, (queue: SyncQueue) => Promise<unknown>][]
 
 describe('SyncQueue.close()', () => {
 	let storage: TestStorage

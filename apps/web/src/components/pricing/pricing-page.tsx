@@ -58,13 +58,13 @@ export function PricingPageView(): React.ReactElement {
 	)
 }
 
-const FREE_FEATURES: readonly string[] = [
+const FREE_FEATURES = [
 	'Track income, expenses, savings goals, and balances',
 	'Net income and savings-capacity calculations',
 	'Income-vs-expense and balances breakdown charts',
 	'Retirement modelling',
 	'Private local storage — your data never leaves your device',
-]
+] satisfies readonly string[]
 
 // Claim only what ships: no side-by-side forecast comparison, and categories never sync,
 // so the EU-storage line stays on sync only.

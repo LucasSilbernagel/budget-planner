@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { assessMigrateSafety, type DbShape } from '../migrate-preflight'
 
-const journaled: DbShape = { hasJournalTable: true, journalRowCount: 17, userTableCount: 12 }
-const empty: DbShape = { hasJournalTable: false, journalRowCount: 0, userTableCount: 0 }
-const pushBuilt: DbShape = { hasJournalTable: false, journalRowCount: 0, userTableCount: 12 }
+const journaled = {
+	hasJournalTable: true,
+	journalRowCount: 17,
+	userTableCount: 12,
+} satisfies DbShape
+const empty = { hasJournalTable: false, journalRowCount: 0, userTableCount: 0 } satisfies DbShape
+const pushBuilt = {
+	hasJournalTable: false,
+	journalRowCount: 0,
+	userTableCount: 12,
+} satisfies DbShape
 
 describe('assessMigrateSafety — safe targets', () => {
 	it('allows a journal-tracked database', () => {

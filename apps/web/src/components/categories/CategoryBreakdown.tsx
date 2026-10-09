@@ -37,7 +37,7 @@ import { ErrorBoundary } from '../ErrorBoundary'
 // A user can name a real category "Uncategorized", so the residual row is marked by data-uncategorized.
 const UNCATEGORIZED_LABEL = 'Uncategorized'
 
-const FREQUENCIES: readonly Frequency[] = ['weekly', 'biweekly', 'monthly', 'annually']
+const FREQUENCIES = ['weekly', 'biweekly', 'monthly', 'annually'] satisfies readonly Frequency[]
 
 type IncomeRow = ReturnType<typeof useIncomeSources>[number]
 type ExpenseRow = ReturnType<typeof useExpenses>[number]

@@ -55,7 +55,7 @@ describe('Schema Compilation', () => {
 describe('Type Generation', () => {
 	it('should have User type with correct properties', () => {
 		// Checked at compile time by the package's type-check.
-		const userExample: User = {
+		const userExample = {
 			id: '550e8400-e29b-41d4-a716-446655440000',
 			email: 'test@example.com',
 			paddleId: 'paddle_123',
@@ -73,7 +73,7 @@ describe('Type Generation', () => {
 			retentionNoticeAttemptedAt: null,
 			createdAt: new Date(),
 			updatedAt: new Date(),
-		}
+		} satisfies User
 
 		expect(userExample.id).toBeDefined()
 		expect(userExample.email).toBeDefined()
@@ -101,13 +101,13 @@ describe('Type Generation', () => {
 	})
 
 	it('should have Currency enum type', () => {
-		const currencies: Currency[] = ['NONE', 'USD', 'EUR', 'GBP', 'JPY']
+		const currencies = ['NONE', 'USD', 'EUR', 'GBP', 'JPY'] satisfies Currency[]
 		expect(currencies).toContain('NONE')
 		expect(currencies).toContain('USD')
 	})
 
 	it('should have SubscriptionStatus enum type', () => {
-		const statuses: SubscriptionStatus[] = ['free', 'active', 'past_due', 'canceled']
+		const statuses = ['free', 'active', 'past_due', 'canceled'] satisfies SubscriptionStatus[]
 		expect(statuses).toContain('free')
 		expect(statuses).toContain('active')
 		expect(statuses).toContain('past_due')

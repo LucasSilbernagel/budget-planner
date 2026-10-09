@@ -27,7 +27,7 @@ const POLL_INTERVAL_MS = 30_000
 const fetchMeta = fetchServerChangesWithMeta as unknown as ReturnType<typeof vi.fn>
 const send = sendSyncOperation as unknown as ReturnType<typeof vi.fn>
 
-const SERVER_INCOME: ServerChange = {
+const SERVER_INCOME = {
 	entityType: 'incomeSource',
 	entityId: SERVER_ROW,
 	data: {
@@ -42,7 +42,7 @@ const SERVER_INCOME: ServerChange = {
 	},
 	updatedAt: 1000,
 	isDeleted: false,
-}
+} satisfies ServerChange
 
 beforeEach(() => {
 	vi.useFakeTimers({ shouldAdvanceTime: true })

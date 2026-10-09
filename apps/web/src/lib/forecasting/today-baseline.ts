@@ -9,12 +9,12 @@ import {
 	type YearlyForecast,
 } from '@budget-planner/core/finance/forecasting'
 
-const FLAT: ForecastingScenario = {
+const FLAT = {
 	name: 'Today',
 	incomeGrowthRate: 0,
 	expenseGrowthRate: 0,
 	oneTimeEvents: [],
-}
+} satisfies ForecastingScenario
 
 export function todayBaseline(
 	data: ForecastInputData | null,

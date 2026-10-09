@@ -10,14 +10,14 @@ type FooterLink = {
 	to: FooterPath
 }
 
-const FOOTER_LINKS: readonly FooterLink[] = [
+const FOOTER_LINKS = [
 	{ label: 'Pricing', to: '/pricing' },
 	{ label: 'Documentation', to: '/docs' },
 	{ label: 'Terms of Service', to: '/terms' },
 	{ label: 'Privacy Policy', to: '/privacy' },
 	{ label: 'Refund Policy', to: '/refund' },
 	{ label: 'Contact', to: '/contact' },
-]
+] satisfies readonly FooterLink[]
 
 // An inline `<a>` ignores min-height; as a grid item it is blockified.
 const LINK_CLASS =

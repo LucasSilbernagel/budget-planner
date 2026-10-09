@@ -449,7 +449,7 @@ export function solveRetirementAccumulation(
 
 	const savedPerYearCents = Math.max(0, monthlySavingsCents) * 12
 
-	const notReachable: RetirementAccumulationResult = {
+	const notReachable = {
 		reachable: false,
 		savedPerYearCents,
 		monthsToRetirement: null,
@@ -457,7 +457,7 @@ export function solveRetirementAccumulation(
 		earliestRetirementAge: null,
 		projectedNestEggCents: null,
 		requiredNestEggCents: null,
-	}
+	} satisfies RetirementAccumulationResult
 
 	if (currentAge >= lifeExpectancy) {
 		return notReachable

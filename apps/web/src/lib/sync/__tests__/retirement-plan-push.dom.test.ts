@@ -106,7 +106,7 @@ afterEach(() => {
 })
 
 describe('only the user-intent setters push', () => {
-	const intent: [string, () => void][] = [
+	const intent = [
 		['setCurrentAgeInput', () => store().setCurrentAgeInput('41')],
 		['setLifeExpectancyInput', () => store().setLifeExpectancyInput('87')],
 		['setDesiredIncomeInput', () => store().setDesiredIncomeInput('55,000.00')],
@@ -116,7 +116,7 @@ describe('only the user-intent setters push', () => {
 		['setAnnualReturnInput', () => store().setAnnualReturnInput('5.5')],
 		['setPostRetirementReturn', () => store().setPostRetirementReturn('3.0')],
 		['setModel', () => store().setModel('perpetual')],
-	]
+	] satisfies [string, () => void][]
 
 	it.each(intent)(
 		'%s queues ONE update of the whole plan, under the account id',

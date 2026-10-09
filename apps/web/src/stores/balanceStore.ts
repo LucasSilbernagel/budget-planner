@@ -53,11 +53,11 @@ export const useBalanceStore = create<BalanceState>()(
 					return null
 				}
 
-				const newEntry: ClientBalanceTracking = {
+				const newEntry = {
 					...toClientBalanceTracking(data),
 					sortOrder: nextSortOrder(get().entries),
 					profileId: useProfileStore.getState().activeProfileId ?? null,
-				}
+				} satisfies ClientBalanceTracking
 
 				set((state) => ({
 					entries: sortByDisplayOrder([...state.entries, newEntry]),

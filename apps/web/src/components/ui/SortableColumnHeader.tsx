@@ -96,11 +96,11 @@ export type SortHeaderAnnouncements = {
 	nodes: ReactElement
 }
 
-const SORT_DESCRIPTIONS: Readonly<Record<AriaSortValue, string>> = {
+const SORT_DESCRIPTIONS = {
 	ascending: 'Sortable column, sorted ascending',
 	descending: 'Sortable column, sorted descending',
 	none: 'Sortable column, not sorted',
-}
+} satisfies Readonly<Record<AriaSortValue, string>>
 
 const SORT_DESCRIPTION_STATES = Object.keys(SORT_DESCRIPTIONS) as AriaSortValue[]
 

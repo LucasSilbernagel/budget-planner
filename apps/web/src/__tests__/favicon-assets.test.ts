@@ -88,14 +88,14 @@ function extractIcoEntries(ico: Buffer, label: string): { size: number; data: Bu
 }
 
 // One list drives every check, so removing an entry also fails the count.
-const RASTERS: { name: string; render: (svg: Buffer) => Promise<Buffer> }[] = [
+const RASTERS = [
 	...SQUARE_PNGS.map((entry) => ({
 		name: entry.name,
 		render: (svg: Buffer) => renderPng(svg, entry.size, { opaque: entry.opaque }),
 	})),
 	{ name: 'icon-512-maskable.png', render: renderMaskable },
 	{ name: 'favicon.ico', render: renderIco },
-]
+] satisfies { name: string; render: (svg: Buffer) => Promise<Buffer> }[]
 
 let svg: Buffer
 

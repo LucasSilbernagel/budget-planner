@@ -77,13 +77,13 @@ function getRequest(query = '', headers: Record<string, string> = {}): Request {
 	})
 }
 
-const sampleChange: ServerChange = {
+const sampleChange = {
 	entityType: 'incomeSource',
 	entityId: '42',
 	data: { id: 42, name: 'Salary', amount: 500000, frequency: 'monthly', isDeleted: false },
 	updatedAt: 1700,
 	isDeleted: false,
-}
+} satisfies ServerChange
 
 describe('GET /api/sync/changes served boundary', () => {
 	beforeEach(() => {

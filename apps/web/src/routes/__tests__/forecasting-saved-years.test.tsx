@@ -73,13 +73,13 @@ function savedRow(years: unknown): Record<string, unknown> {
 beforeEach(() => {
 	engineYears.length = 0
 	engineSavings.length = 0
-	const status: PremiumAccessStatus = {
+	const status = {
 		hasAccess: true,
 		subscriptionStatus: 'active',
 		isLoading: false,
 		error: null,
 		isAuthenticated: true,
-	}
+	} satisfies PremiumAccessStatus
 	usePremiumAccess.mockReturnValue({ status })
 	useProfileStore.setState({ activeProfileId: PROFILE })
 	fetchProfiles.mockResolvedValue({

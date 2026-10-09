@@ -2,7 +2,7 @@ import type { SyncOperation } from '@budget-planner/core/sync/types'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { sendSyncOperation } from '../client'
 
-const operation: SyncOperation = {
+const operation = {
 	id: 'op-1',
 	type: 'create',
 	entityType: 'incomeSource',
@@ -11,7 +11,7 @@ const operation: SyncOperation = {
 	timestamp: 1690,
 	deviceId: 'device-1',
 	userId: 'u-1',
-}
+} satisfies SyncOperation
 
 function stubFetch(impl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) {
 	vi.stubGlobal('fetch', vi.fn(impl))

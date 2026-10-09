@@ -571,11 +571,11 @@ type TabNavigationProps = {
 	disabled?: boolean
 }
 
-const tabs: { id: ForecastingTab; label: string }[] = [
+const tabs = [
 	{ id: 'scenarios', label: 'Scenario Builder' },
 	{ id: 'projections', label: 'Projections' },
 	{ id: 'saved', label: 'My Forecasts' },
-]
+] satisfies { id: ForecastingTab; label: string }[]
 
 // Static ids are safe: the page renders one tab strip, and they stay SSR-stable.
 const tabId = (tab: ForecastingTab): string => `forecasting-tab-${tab}`

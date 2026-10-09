@@ -358,7 +358,7 @@ describe('a user with nothing recorded gets an empty builder', () => {
 describe('a loaded forecast still seeds from the saved scenario', () => {
 	const savedIncome = [{ name: 'Saved Income', amount: 111_100, frequency: 'monthly' as const }]
 	const savedExpenses = [{ name: 'Saved Expense', amount: 222_200, frequency: 'monthly' as const }]
-	const savedForecast: SavedForecast = {
+	const savedForecast = {
 		id: 'saved-1',
 		name: 'March Plan',
 		description: 'Saved months ago',
@@ -380,7 +380,7 @@ describe('a loaded forecast still seeds from the saved scenario', () => {
 		inputs: { savings: 333_300, investments: 444_400, years: 15 },
 		createdAt: '2026-03-01T00:00:00Z',
 		updatedAt: '2026-03-01T00:00:00Z',
-	}
+	} satisfies SavedForecast
 
 	it('does NOT re-baseline to the live stores', () => {
 		fillStores()
@@ -401,7 +401,7 @@ describe('a loaded forecast still seeds from the saved scenario', () => {
 
 	it('falls back to zero, not to the live stores, for an older row with no saved inputs', () => {
 		fillStores()
-		const olderRow: SavedForecast = { ...savedForecast, inputs: undefined }
+		const olderRow = { ...savedForecast, inputs: undefined } satisfies SavedForecast
 
 		render(<ScenarioBuilder onSave={vi.fn()} initialForecast={olderRow} />)
 

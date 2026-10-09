@@ -190,7 +190,7 @@ describe('ScenarioBuilder reload hydration', () => {
 	const savedIncome = [{ name: 'Consulting', amount: 800000, frequency: 'monthly' as const }]
 	const savedExpenses = [{ name: 'Rent', amount: 250000, frequency: 'monthly' as const }]
 	const savedEvents = [{ year: 3, amount: 1000000, name: 'Bonus' }]
-	const savedForecast: SavedForecast = {
+	const savedForecast = {
 		id: 'saved-1',
 		name: 'My Saved Plan',
 		description: 'A loaded scenario',
@@ -212,7 +212,7 @@ describe('ScenarioBuilder reload hydration', () => {
 		inputs: { savings: 1234500, investments: 6789000, years: 15 },
 		createdAt: '2026-01-01T00:00:00Z',
 		updatedAt: '2026-01-01T00:00:00Z',
-	}
+	} satisfies SavedForecast
 
 	it('seeds every field from a loaded forecast, including savings/investments/years', () => {
 		render(<ScenarioBuilder onSave={vi.fn()} initialForecast={savedForecast} />)
@@ -227,7 +227,7 @@ describe('ScenarioBuilder reload hydration', () => {
 	})
 
 	it('defaults savings/investments/years for an older saved row with no persisted inputs', () => {
-		const olderRow: SavedForecast = { ...savedForecast, inputs: undefined }
+		const olderRow = { ...savedForecast, inputs: undefined } satisfies SavedForecast
 		render(<ScenarioBuilder onSave={vi.fn()} initialForecast={olderRow} />)
 
 		// A loaded forecast falls back to zero, never the live stores, or an old scenario would re-base to today's figures.
@@ -421,7 +421,7 @@ describe('One-time events can be an outflow', () => {
 
 	it('a saved NEGATIVE event reloads as money out, showing its magnitude', () => {
 		const deposit = [{ year: 2, amount: -4000000, name: 'Deposit' }]
-		const withCost: SavedForecast = {
+		const withCost = {
 			id: 'saved-cost',
 			name: 'House deposit',
 			scenario: {
@@ -439,7 +439,7 @@ describe('One-time events can be an outflow', () => {
 			inputs: { savings: 0, investments: 0, years: 10 },
 			createdAt: '2026-01-01T00:00:00Z',
 			updatedAt: '2026-01-01T00:00:00Z',
-		}
+		} satisfies SavedForecast
 
 		render(<ScenarioBuilder onSave={vi.fn()} initialForecast={withCost} />)
 

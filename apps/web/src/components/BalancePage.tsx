@@ -58,7 +58,7 @@ import { SortableColumnHeader, useSortHeaderAnnouncements } from './ui/SortableC
 import { TableScrollRegion } from './ui/TableScrollRegion'
 import { TableSortControl } from './ui/TableSortControl'
 
-const TYPE_OPTIONS: { value: FinanceType; label: string; color: string }[] = [
+const TYPE_OPTIONS = [
 	{
 		value: 'investment',
 		label: 'Investment',
@@ -75,7 +75,7 @@ const TYPE_OPTIONS: { value: FinanceType; label: string; color: string }[] = [
 		label: 'Asset',
 		color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
 	},
-]
+] satisfies { value: FinanceType; label: string; color: string }[]
 
 /**
  * `Exclude`, not `satisfies readonly FinanceType[]`: a short list is assignable, so a
@@ -105,12 +105,12 @@ type _AllTypesHaveAPlaceholder =
 const _placeholderCoverage: _AllTypesHaveAPlaceholder = true
 void _placeholderCoverage
 
-const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
+const FREQUENCY_OPTIONS = [
 	{ value: 'weekly', label: 'Weekly' },
 	{ value: 'biweekly', label: 'Bi-weekly' },
 	{ value: 'monthly', label: 'Monthly' },
 	{ value: 'annually', label: 'Annually' },
-]
+] satisfies { value: Frequency; label: string }[]
 
 const frequencyLabel = (frequency: Frequency): string =>
 	FREQUENCY_OPTIONS.find((option) => option.value === frequency)?.label ?? frequency
@@ -165,22 +165,22 @@ function paymentOptionLabel(
 		: name
 }
 
-const SORT_COLUMN_LABELS: Record<BalanceSortKey, string> = {
+const SORT_COLUMN_LABELS = {
 	type: 'Type',
 	name: 'Name',
 	// The key, sort key, DOM id and testids stay `currentBalance`: renaming the label is a
 	// copy change, renaming the value a sync change.
 	currentBalance: 'Current Balance/Value',
 	contribution: 'Contribution',
-}
+} satisfies Record<BalanceSortKey, string>
 
 /** Module scope: TableSortControl memoises its options on this identity. */
-const BALANCE_SORT_COLUMNS: readonly { key: BalanceSortKey; label: string }[] = [
+const BALANCE_SORT_COLUMNS = [
 	{ key: 'type', label: SORT_COLUMN_LABELS.type },
 	{ key: 'name', label: SORT_COLUMN_LABELS.name },
 	{ key: 'currentBalance', label: SORT_COLUMN_LABELS.currentBalance },
 	{ key: 'contribution', label: SORT_COLUMN_LABELS.contribution },
-]
+] satisfies readonly { key: BalanceSortKey; label: string }[]
 
 export function BalancePage() {
 	const balanceEntries = useBalanceEntries()

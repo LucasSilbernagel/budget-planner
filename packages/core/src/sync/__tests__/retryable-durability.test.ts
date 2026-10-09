@@ -27,7 +27,7 @@ type TestStorage = SyncQueueStorage & {
 
 function createStorage(): TestStorage {
 	const stored = new Map<string, SyncOperation[]>()
-	const storage: TestStorage = {
+	const storage = {
 		failWrites: false,
 		writes: 0,
 		async loadQueue(userId) {
@@ -47,7 +47,7 @@ function createStorage(): TestStorage {
 			stored.delete(userId)
 		},
 		persistedIds: () => (stored.get(USER) ?? []).map((op) => op.id),
-	}
+	} satisfies TestStorage
 	return storage
 }
 
@@ -71,17 +71,17 @@ async function reload(storage: TestStorage): Promise<string[]> {
 	return fresh.getAll().map((o) => o.id)
 }
 
-const RETRYABLE: ProcessOperationResult = {
+const RETRYABLE = {
 	success: false,
 	error: 'Network error',
 	retryable: true,
-}
-const REFUSED: ProcessOperationResult = {
+} satisfies ProcessOperationResult
+const REFUSED = {
 	success: false,
 	error: 'refused',
 	retryable: false,
 	statusCode: 422,
-}
+} satisfies ProcessOperationResult
 
 describe('Retryable durability and refused-op discard', () => {
 	let storage: TestStorage

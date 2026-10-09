@@ -9,21 +9,21 @@ export type ChartColors = {
 	tooltipText: string
 }
 
-const LIGHT_CHART_COLORS: ChartColors = {
+const LIGHT_CHART_COLORS = {
 	axis: '#6b7280', // gray-500
 	grid: '#e5e7eb', // gray-200
 	tooltipBg: '#ffffff',
 	tooltipBorder: '#e5e7eb', // gray-200
 	tooltipText: '#111827', // gray-900
-}
+} satisfies ChartColors
 
-const DARK_CHART_COLORS: ChartColors = {
+const DARK_CHART_COLORS = {
 	axis: '#9ca3af', // gray-400
 	grid: '#374151', // gray-700
 	tooltipBg: '#1f2937', // gray-800
 	tooltipBorder: '#374151', // gray-700
 	tooltipText: '#f3f4f6', // gray-100
-}
+} satisfies ChartColors
 
 export function useChartColors(): ChartColors {
 	return usePrefersDarkScheme() ? DARK_CHART_COLORS : LIGHT_CHART_COLORS

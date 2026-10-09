@@ -6,21 +6,21 @@ export type NormalizableFinancialItem = {
 }
 
 // Inexact in float (`26 / 12`), so normalizeToMonthly uses PERIODS_PER_YEAR instead.
-const FREQUENCY_MULTIPLIERS: Record<Frequency, number> = {
+const FREQUENCY_MULTIPLIERS = {
 	weekly: 52 / 12,
 	biweekly: 26 / 12,
 	monthly: 1,
 	annually: 1 / 12,
-}
+} satisfies Record<Frequency, number>
 
 // Integer periods per year: multiply, then divide once, so a half cent rounds the same at every
 // amount (`× (26 / 12)` doesn't). `amount × 52` is exact below MAX_SAFE_INTEGER / 100.
-const PERIODS_PER_YEAR: Record<Frequency, number> = {
+const PERIODS_PER_YEAR = {
 	weekly: 52,
 	biweekly: 26,
 	monthly: 12,
 	annually: 1,
-}
+} satisfies Record<Frequency, number>
 
 export function validateFrequency(frequency: unknown): asserts frequency is Frequency {
 	if (typeof frequency !== 'string' || !(frequency in FREQUENCY_MULTIPLIERS)) {

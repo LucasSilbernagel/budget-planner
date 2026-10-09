@@ -232,15 +232,15 @@ describe('purgeLocalFinancialData', () => {
 
 	// The real notice store: mocking it would let a missing reset pass.
 	describe('refusal notices', () => {
-		const refused: RefusalNotice = {
+		const refused = {
 			key: 'incomeSource:gone',
 			entityType: 'incomeSource',
 			name: 'Salary',
 			kind: 'income',
 			fallback: 'An income entry',
 			outcome: 'removed',
-		}
-		const notSynced: RefusalNotice = {
+		} satisfies RefusalNotice
+		const notSynced = {
 			key: 'expense:stuck',
 			entityType: 'expense',
 			name: 'Rent',
@@ -248,7 +248,7 @@ describe('purgeLocalFinancialData', () => {
 			fallback: 'An expense',
 			outcome: 'not-synced',
 			change: 'update',
-		}
+		} satisfies RefusalNotice
 		afterEach(() => {
 			resetRefusalNotices()
 		})

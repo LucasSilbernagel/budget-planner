@@ -12,7 +12,7 @@ import { EditProfileDialog } from '../edit-profile'
 
 const SESSION_USER_ID = '550e8400-e29b-41d4-a716-446655440000'
 
-const MAIN: ClientProfile = {
+const MAIN = {
 	id: 'main',
 	userId: SESSION_USER_ID,
 	name: 'Main Profile',
@@ -21,9 +21,9 @@ const MAIN: ClientProfile = {
 	currency: 'NONE',
 	createdAt: '2026-01-01T00:00:00.000Z',
 	updatedAt: '2026-01-01T00:00:00.000Z',
-}
+} satisfies ClientProfile
 
-const BUSINESS: ClientProfile = {
+const BUSINESS = {
 	id: 'biz',
 	userId: SESSION_USER_ID,
 	name: 'Business',
@@ -32,7 +32,7 @@ const BUSINESS: ClientProfile = {
 	currency: 'EUR',
 	createdAt: '2026-02-01T00:00:00.000Z',
 	updatedAt: '2026-02-01T00:00:00.000Z',
-}
+} satisfies ClientProfile
 
 const seed = () => {
 	useProfileStore.setState({ profiles: [MAIN, BUSINESS], activeProfileId: 'main' })
@@ -277,7 +277,7 @@ describe('EditProfileDialog', () => {
 		it('refuses to edit the un-synced placeholder profile while sync is active', async () => {
 			// The bootstrap profile (userId '') is unknown to the server: an update is rejected
 			// and the next pull drops it, losing the rename.
-			const placeholder: ClientProfile = { ...MAIN, id: 'placeholder', userId: '' }
+			const placeholder = { ...MAIN, id: 'placeholder', userId: '' } satisfies ClientProfile
 			useProfileStore.setState({ profiles: [placeholder], activeProfileId: 'placeholder' })
 			const handle = {
 				userId: SESSION_USER_ID,
@@ -304,7 +304,7 @@ describe('EditProfileDialog', () => {
 		})
 
 		it('still edits the placeholder profile on the free tier (no sync)', async () => {
-			const placeholder: ClientProfile = { ...MAIN, id: 'placeholder', userId: '' }
+			const placeholder = { ...MAIN, id: 'placeholder', userId: '' } satisfies ClientProfile
 			useProfileStore.setState({ profiles: [placeholder], activeProfileId: 'placeholder' })
 			const user = userEvent.setup()
 			renderWithProviders(<EditProfileDialog profileId="placeholder" onClose={() => {}} />)
@@ -454,7 +454,7 @@ describe('EditProfileDialog', () => {
 		})
 
 		it('stores an icon locally on the free tier, with no sync bridge registered', async () => {
-			const placeholder: ClientProfile = { ...MAIN, id: 'placeholder', userId: '' }
+			const placeholder = { ...MAIN, id: 'placeholder', userId: '' } satisfies ClientProfile
 			useProfileStore.setState({ profiles: [placeholder], activeProfileId: 'placeholder' })
 			expect(isSyncActive()).toBe(false)
 			const user = userEvent.setup()
@@ -563,7 +563,7 @@ describe('EditProfileDialog', () => {
 		})
 
 		it('refuses an icon-only edit of the un-synced placeholder while sync is active', async () => {
-			const placeholder: ClientProfile = { ...MAIN, id: 'placeholder', userId: '' }
+			const placeholder = { ...MAIN, id: 'placeholder', userId: '' } satisfies ClientProfile
 			useProfileStore.setState({ profiles: [placeholder], activeProfileId: 'placeholder' })
 			const handle = {
 				userId: SESSION_USER_ID,

@@ -278,11 +278,11 @@ type Condition = {
 
 // No modelled-network arm: emulateNetworkConditions measurably contributed nothing
 // through this harness.
-const CONDITIONS: Condition[] = [
+const CONDITIONS = [
 	{ name: 'cpu 1x, loopback, warm cache', cpu: 1, network: null, coldCache: false },
 	{ name: 'cpu 4x, loopback, warm cache', cpu: 4, network: null, coldCache: false },
 	{ name: 'cpu 4x, loopback, cold cache', cpu: 4, network: null, coldCache: true },
-]
+] satisfies Condition[]
 
 async function applyCondition(page: Page, condition: Condition): Promise<void> {
 	const client = await page.context().newCDPSession(page)

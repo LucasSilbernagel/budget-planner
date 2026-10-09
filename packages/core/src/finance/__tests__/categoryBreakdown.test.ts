@@ -13,10 +13,10 @@ describe('buildCategoryBreakdown', () => {
 	describe('grouping and frequency normalization', () => {
 		it('merges two items sharing a categoryId into one frequency-normalized row', () => {
 			// weekly 10000 → round(43333.33…) = 43333; + monthly 50000 = 93333.
-			const items: CategoryBreakdownItem[] = [
+			const items = [
 				{ categoryId: 'cat-a', amount: 10000, frequency: 'weekly' },
 				{ categoryId: 'cat-a', amount: 50000, frequency: 'monthly' },
-			]
+			] satisfies CategoryBreakdownItem[]
 
 			const result = buildCategoryBreakdown(items, NAMES, OPTIONS)
 
@@ -29,10 +29,10 @@ describe('buildCategoryBreakdown', () => {
 		})
 
 		it('does NOT sum raw entered amounts (the bug the overview pies once shipped)', () => {
-			const items: CategoryBreakdownItem[] = [
+			const items = [
 				{ categoryId: 'cat-a', amount: 10000, frequency: 'weekly' },
 				{ categoryId: 'cat-b', amount: 10000, frequency: 'annually' },
-			]
+			] satisfies CategoryBreakdownItem[]
 
 			const result = buildCategoryBreakdown(items, NAMES, OPTIONS)
 
@@ -42,10 +42,10 @@ describe('buildCategoryBreakdown', () => {
 		})
 
 		it('keeps two items in DIFFERENT categories as two rows', () => {
-			const items: CategoryBreakdownItem[] = [
+			const items = [
 				{ categoryId: 'cat-a', amount: 50000, frequency: 'monthly' },
 				{ categoryId: 'cat-b', amount: 30000, frequency: 'monthly' },
-			]
+			] satisfies CategoryBreakdownItem[]
 
 			const result = buildCategoryBreakdown(items, NAMES, OPTIONS)
 
@@ -56,10 +56,10 @@ describe('buildCategoryBreakdown', () => {
 
 	describe('cadence', () => {
 		it('expresses every total at the requested cadence', () => {
-			const items: CategoryBreakdownItem[] = [
+			const items = [
 				{ categoryId: 'cat-a', amount: 10000, frequency: 'weekly' },
 				{ categoryId: 'cat-a', amount: 50000, frequency: 'monthly' },
-			]
+			] satisfies CategoryBreakdownItem[]
 
 			const monthly = buildCategoryBreakdown(items, NAMES, { ...OPTIONS, cadence: 'monthly' })
 			const annually = buildCategoryBreakdown(items, NAMES, { ...OPTIONS, cadence: 'annually' })
@@ -136,11 +136,11 @@ describe('buildCategoryBreakdown', () => {
 		})
 
 		it('reconciles at monthly and annually too', () => {
-			const items: CategoryBreakdownItem[] = [
+			const items = [
 				{ categoryId: 'cat-a', amount: 10000, frequency: 'weekly' },
 				{ categoryId: 'cat-b', amount: 30000, frequency: 'biweekly' },
 				{ categoryId: null, amount: 50000, frequency: 'monthly' },
-			]
+			] satisfies CategoryBreakdownItem[]
 
 			for (const cadence of ['monthly', 'annually'] as const) {
 				const result = buildCategoryBreakdown(items, NAMES, { ...OPTIONS, cadence })
@@ -155,11 +155,11 @@ describe('buildCategoryBreakdown', () => {
 
 	describe('shares', () => {
 		it('sums same-sign shares to 100%', () => {
-			const items: CategoryBreakdownItem[] = [
+			const items = [
 				{ categoryId: 'cat-a', amount: 60000, frequency: 'monthly' },
 				{ categoryId: 'cat-b', amount: 30000, frequency: 'monthly' },
 				{ categoryId: 'cat-c', amount: 10000, frequency: 'monthly' },
-			]
+			] satisfies CategoryBreakdownItem[]
 
 			const result = buildCategoryBreakdown(items, NAMES, OPTIONS)
 
@@ -169,10 +169,10 @@ describe('buildCategoryBreakdown', () => {
 		})
 
 		it('returns the UNROUNDED share float (display quantizes, the math does not)', () => {
-			const items: CategoryBreakdownItem[] = [
+			const items = [
 				{ categoryId: 'cat-a', amount: 10000, frequency: 'monthly' },
 				{ categoryId: 'cat-b', amount: 20000, frequency: 'monthly' },
-			]
+			] satisfies CategoryBreakdownItem[]
 
 			const result = buildCategoryBreakdown(items, NAMES, OPTIONS)
 
@@ -184,10 +184,10 @@ describe('buildCategoryBreakdown', () => {
 
 		it('yields 200%/100% for a mixed-sign pair — documented, not accidental', () => {
 			// Math.abs on both sides means opposite-sign shares don't sum to 100.
-			const items: CategoryBreakdownItem[] = [
+			const items = [
 				{ categoryId: 'cat-a', amount: 10000, frequency: 'monthly' },
 				{ categoryId: 'cat-b', amount: -5000, frequency: 'monthly' },
-			]
+			] satisfies CategoryBreakdownItem[]
 
 			const result = buildCategoryBreakdown(items, NAMES, OPTIONS)
 
@@ -199,10 +199,10 @@ describe('buildCategoryBreakdown', () => {
 		})
 
 		it('yields 0% for every row when opposite signs cancel EXACTLY', () => {
-			const items: CategoryBreakdownItem[] = [
+			const items = [
 				{ categoryId: 'cat-a', amount: 10000, frequency: 'monthly' },
 				{ categoryId: 'cat-b', amount: -10000, frequency: 'monthly' },
-			]
+			] satisfies CategoryBreakdownItem[]
 
 			const result = buildCategoryBreakdown(items, NAMES, OPTIONS)
 
@@ -212,10 +212,10 @@ describe('buildCategoryBreakdown', () => {
 		})
 
 		it('yields unbounded shares when opposite signs NEARLY cancel', () => {
-			const items: CategoryBreakdownItem[] = [
+			const items = [
 				{ categoryId: 'cat-a', amount: 10000, frequency: 'monthly' },
 				{ categoryId: 'cat-b', amount: -9999, frequency: 'monthly' },
-			]
+			] satisfies CategoryBreakdownItem[]
 
 			const result = buildCategoryBreakdown(items, NAMES, OPTIONS)
 
@@ -233,10 +233,10 @@ describe('buildCategoryBreakdown', () => {
 		})
 
 		it('gives every row a 0 share when the side totals 0 cents — never NaN', () => {
-			const items: CategoryBreakdownItem[] = [
+			const items = [
 				{ categoryId: 'cat-a', amount: 0, frequency: 'monthly' },
 				{ categoryId: 'cat-b', amount: 0, frequency: 'weekly' },
-			]
+			] satisfies CategoryBreakdownItem[]
 
 			const result = buildCategoryBreakdown(items, NAMES, OPTIONS)
 
@@ -249,10 +249,10 @@ describe('buildCategoryBreakdown', () => {
 		})
 
 		it('collapses every uncategorized item into ONE 100% row', () => {
-			const items: CategoryBreakdownItem[] = [
+			const items = [
 				{ categoryId: null, amount: 10000, frequency: 'monthly' },
 				{ categoryId: undefined, amount: 20000, frequency: 'monthly' },
-			]
+			] satisfies CategoryBreakdownItem[]
 
 			const result = buildCategoryBreakdown(items, NAMES, OPTIONS)
 
@@ -266,10 +266,10 @@ describe('buildCategoryBreakdown', () => {
 
 		it('folds a DANGLING categoryId into Uncategorized and never leaks the raw id', () => {
 			const danglingId = '9f1c2b7e-0000-4aaa-8bbb-ccccdddd1111'
-			const items: CategoryBreakdownItem[] = [
+			const items = [
 				{ categoryId: danglingId, amount: 10000, frequency: 'monthly' },
 				{ categoryId: null, amount: 5000, frequency: 'monthly' },
-			]
+			] satisfies CategoryBreakdownItem[]
 
 			const result = buildCategoryBreakdown(items, NAMES, OPTIONS)
 
@@ -284,9 +284,9 @@ describe('buildCategoryBreakdown', () => {
 
 		it('folds a BLANK resolved name into Uncategorized rather than a blank-labelled row', () => {
 			const names = new Map([['cat-blank', '   ']])
-			const items: CategoryBreakdownItem[] = [
+			const items = [
 				{ categoryId: 'cat-blank', amount: 10000, frequency: 'monthly' },
-			]
+			] satisfies CategoryBreakdownItem[]
 
 			const result = buildCategoryBreakdown(items, names, OPTIONS)
 
@@ -300,9 +300,9 @@ describe('buildCategoryBreakdown', () => {
 
 		it('trims a padded category name rather than keying on the padding', () => {
 			const names = new Map([['cat-pad', '  Groceries  ']])
-			const items: CategoryBreakdownItem[] = [
+			const items = [
 				{ categoryId: 'cat-pad', amount: 10000, frequency: 'monthly' },
-			]
+			] satisfies CategoryBreakdownItem[]
 
 			const result = buildCategoryBreakdown(items, names, OPTIONS)
 
@@ -311,9 +311,9 @@ describe('buildCategoryBreakdown', () => {
 		})
 
 		it('enumerates ROWS, not categories — an unused category produces no row', () => {
-			const items: CategoryBreakdownItem[] = [
+			const items = [
 				{ categoryId: 'cat-a', amount: 10000, frequency: 'monthly' },
-			]
+			] satisfies CategoryBreakdownItem[]
 
 			const result = buildCategoryBreakdown(items, NAMES, OPTIONS)
 
@@ -325,11 +325,11 @@ describe('buildCategoryBreakdown', () => {
 
 	describe('ordering', () => {
 		it('sorts by descending magnitude and keeps Uncategorized LAST even when largest', () => {
-			const items: CategoryBreakdownItem[] = [
+			const items = [
 				{ categoryId: null, amount: 90000, frequency: 'monthly' },
 				{ categoryId: 'cat-a', amount: 10000, frequency: 'monthly' },
 				{ categoryId: 'cat-b', amount: 50000, frequency: 'monthly' },
-			]
+			] satisfies CategoryBreakdownItem[]
 
 			const result = buildCategoryBreakdown(items, NAMES, OPTIONS)
 
@@ -338,10 +338,10 @@ describe('buildCategoryBreakdown', () => {
 		})
 
 		it('sorts by MAGNITUDE, so a large negative row outranks a small positive one', () => {
-			const items: CategoryBreakdownItem[] = [
+			const items = [
 				{ categoryId: 'cat-a', amount: 1000, frequency: 'monthly' },
 				{ categoryId: 'cat-b', amount: -80000, frequency: 'monthly' },
-			]
+			] satisfies CategoryBreakdownItem[]
 
 			const result = buildCategoryBreakdown(items, NAMES, OPTIONS)
 
@@ -353,10 +353,10 @@ describe('buildCategoryBreakdown', () => {
 				['cat-z', 'Zebra'],
 				['cat-al', 'Alpha'],
 			])
-			const items: CategoryBreakdownItem[] = [
+			const items = [
 				{ categoryId: 'cat-z', amount: 50000, frequency: 'monthly' },
 				{ categoryId: 'cat-al', amount: 50000, frequency: 'monthly' },
-			]
+			] satisfies CategoryBreakdownItem[]
 
 			const result = buildCategoryBreakdown(items, names, OPTIONS)
 
@@ -369,10 +369,10 @@ describe('buildCategoryBreakdown', () => {
 				['cat-zzz', 'Groceries'],
 				['cat-aaa', 'Groceries'],
 			])
-			const forward: CategoryBreakdownItem[] = [
+			const forward = [
 				{ categoryId: 'cat-zzz', amount: 50000, frequency: 'monthly' },
 				{ categoryId: 'cat-aaa', amount: 50000, frequency: 'monthly' },
-			]
+			] satisfies CategoryBreakdownItem[]
 			const reversed = [...forward].reverse()
 
 			const a = buildCategoryBreakdown(forward, names, OPTIONS)
@@ -393,17 +393,17 @@ describe('buildCategoryBreakdown', () => {
 		})
 
 		it('throws on a non-finite amount', () => {
-			const items: CategoryBreakdownItem[] = [
+			const items = [
 				{ categoryId: 'cat-a', amount: Number.NaN, frequency: 'monthly' },
-			]
+			] satisfies CategoryBreakdownItem[]
 
 			expect(() => buildCategoryBreakdown(items, NAMES, OPTIONS)).toThrow()
 		})
 
 		it('throws on an unknown cadence', () => {
-			const items: CategoryBreakdownItem[] = [
+			const items = [
 				{ categoryId: 'cat-a', amount: 10000, frequency: 'monthly' },
-			]
+			] satisfies CategoryBreakdownItem[]
 
 			expect(() =>
 				buildCategoryBreakdown(items, NAMES, {

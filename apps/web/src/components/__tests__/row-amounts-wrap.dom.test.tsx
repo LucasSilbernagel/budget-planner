@@ -93,7 +93,7 @@ type PageCase = {
 	figures: Record<string, string[][]>
 }
 
-const CASES: PageCase[] = [
+const CASES = [
 	{
 		name: 'Income',
 		seed: () => {
@@ -149,7 +149,7 @@ const CASES: PageCase[] = [
 			Contribution: [['$456,', '789.00']],
 		},
 	},
-]
+] satisfies PageCase[]
 
 describe('row money figures wrap only between digit groups', () => {
 	for (const page of CASES) {

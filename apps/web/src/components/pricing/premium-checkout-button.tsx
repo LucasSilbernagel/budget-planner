@@ -24,11 +24,11 @@ type CheckoutConfig = {
 	lifetimePriceId: string | null
 }
 
-const FALLBACK_LABEL: Record<Plan, string> = {
+const FALLBACK_LABEL = {
 	monthly: '€5.99/mo',
 	annual: '€39/yr',
 	lifetime: '€99',
-}
+} satisfies Record<Plan, string>
 
 // These states have nothing to buy, and checkout risks a duplicate charge. `canceled` is
 // excluded: that subscription has ended, so checkout is how they resubscribe.
@@ -167,11 +167,11 @@ function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
 	}, [config])
 
 	const handleCheckout = async () => {
-		const priceIdForPlan: Record<Plan, string | null | undefined> = {
+		const priceIdForPlan = {
 			monthly: config?.monthlyPriceId,
 			annual: config?.annualPriceId,
 			lifetime: config?.lifetimePriceId,
-		}
+		} satisfies Record<Plan, string | null | undefined>
 		const priceId = priceIdForPlan[plan]
 		if (!config?.isConfigured || !config.clientToken || !priceId) {
 			setStatus('error')
@@ -197,7 +197,7 @@ function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
 		}
 	}
 
-	const planOptions: ReadonlyArray<{ id: Plan; label: string; disabled: boolean }> = [
+	const planOptions = [
 		{
 			id: 'monthly',
 			label: `Monthly · ${localizedPrice.monthly?.total ?? FALLBACK_LABEL.monthly}`,
@@ -213,7 +213,7 @@ function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
 			label: `Lifetime · ${localizedPrice.lifetime?.total ?? FALLBACK_LABEL.lifetime}`,
 			disabled: !config?.lifetimePriceId,
 		},
-	]
+	] satisfies ReadonlyArray<{ id: Plan; label: string; disabled: boolean }>
 	const enabledPlanIds = planOptions.filter((o) => !o.disabled).map((o) => o.id)
 	const radioRefs = useRef<Partial<Record<Plan, HTMLButtonElement | null>>>({})
 

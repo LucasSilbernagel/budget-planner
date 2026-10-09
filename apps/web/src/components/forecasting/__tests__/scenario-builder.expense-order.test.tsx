@@ -44,7 +44,7 @@ describe('expense row order', () => {
 	})
 
 	it('loads a saved forecast highest monthly equivalent first', () => {
-		const saved: SavedForecast = {
+		const saved = {
 			id: 'saved-1',
 			name: 'Plan',
 			scenario: {
@@ -63,7 +63,7 @@ describe('expense row order', () => {
 			},
 			createdAt: NOW,
 			updatedAt: NOW,
-		}
+		} satisfies SavedForecast
 		render(<ScenarioBuilder onSave={vi.fn()} initialForecast={saved} />)
 
 		const section = screen.getByRole('heading', { name: 'Expense Categories' }).parentElement

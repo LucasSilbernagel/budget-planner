@@ -29,10 +29,10 @@ const FREQUENCY_LABELS: Record<string, string> = {
 // Deliberately not the persisted overviewDurationStore: the report always opens monthly.
 type BudgetPeriod = 'monthly' | 'annually'
 
-const BUDGET_PERIOD_LABEL: Record<BudgetPeriod, { option: string; word: string }> = {
+const BUDGET_PERIOD_LABEL = {
 	monthly: { option: 'Monthly', word: 'Monthly' },
 	annually: { option: 'Annually', word: 'Annual' },
-}
+} satisfies Record<BudgetPeriod, { option: string; word: string }>
 
 // Derived from the label record so a new period cannot be silently omitted.
 const BUDGET_PERIODS = Object.keys(BUDGET_PERIOD_LABEL) as readonly BudgetPeriod[]

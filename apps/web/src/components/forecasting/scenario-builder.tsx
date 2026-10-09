@@ -131,14 +131,14 @@ type ScenarioFormData = {
 }
 
 // No demo rows: a user with nothing recorded gets an empty builder.
-const DEFAULT_FORM: ScenarioFormData = {
+const DEFAULT_FORM = {
 	name: 'My Financial Forecast',
 	description: 'Projecting my financial situation over the next 10 years',
 	// Zero: the builder invents no growth by default.
 	incomeGrowthRate: 0,
 	expenseGrowthRate: 0,
 	years: DEFAULT_FORECAST_YEARS,
-}
+} satisfies ScenarioFormData
 
 // NO_PROFILE and PROFILE_ERROR copy must stay distinct: a failed fetch does not mean "create a profile".
 const NO_PROFILE_NOTICE =

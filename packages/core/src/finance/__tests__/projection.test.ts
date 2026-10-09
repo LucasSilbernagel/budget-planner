@@ -10,14 +10,14 @@ import {
 
 const toCents = (dollars: number): number => Math.round(dollars * 100)
 
-const BASE_INPUT: NetWorthProjectionInput = {
+const BASE_INPUT = {
 	currentAssetsCents: toCents(100000),
 	currentLiabilitiesCents: toCents(0),
 	monthlyNetIncomeCents: toCents(5000),
 	assetReturnRate: 0.07,
 	incomeGrowthRate: 0.03,
 	timeHorizon: '10y',
-}
+} satisfies NetWorthProjectionInput
 
 describe('Projection Input Validation', () => {
 	it('should accept valid input without throwing', () => {
@@ -60,32 +60,32 @@ describe('Projection Input Validation', () => {
 	})
 
 	it('should throw error for custom time horizon without customYears', () => {
-		const invalidInput: NetWorthProjectionInput = {
+		const invalidInput = {
 			...BASE_INPUT,
 			timeHorizon: 'custom',
-		}
+		} satisfies NetWorthProjectionInput
 		expect(() => createNetWorthProjection(invalidInput)).toThrow(
 			'Custom years must be provided for custom time horizon'
 		)
 	})
 
 	it('should throw error for custom time horizon with zero years', () => {
-		const invalidInput: NetWorthProjectionInput = {
+		const invalidInput = {
 			...BASE_INPUT,
 			timeHorizon: 'custom',
 			customYears: 0,
-		}
+		} satisfies NetWorthProjectionInput
 		expect(() => createNetWorthProjection(invalidInput)).toThrow(
 			'Custom time horizon must be positive'
 		)
 	})
 
 	it('should throw error for custom time horizon exceeding 50 years', () => {
-		const invalidInput: NetWorthProjectionInput = {
+		const invalidInput = {
 			...BASE_INPUT,
 			timeHorizon: 'custom',
 			customYears: 51,
-		}
+		} satisfies NetWorthProjectionInput
 		expect(() => createNetWorthProjection(invalidInput)).toThrow(
 			'Custom time horizon cannot exceed 50 years'
 		)
@@ -94,10 +94,10 @@ describe('Projection Input Validation', () => {
 
 describe('Basic Projection Calculations', () => {
 	it('should create a projection with 1 year horizon', () => {
-		const input: NetWorthProjectionInput = {
+		const input = {
 			...BASE_INPUT,
 			timeHorizon: '1y',
-		}
+		} satisfies NetWorthProjectionInput
 
 		const result = createNetWorthProjection(input)
 
@@ -106,10 +106,10 @@ describe('Basic Projection Calculations', () => {
 	})
 
 	it('should create a projection with 5 year horizon', () => {
-		const input: NetWorthProjectionInput = {
+		const input = {
 			...BASE_INPUT,
 			timeHorizon: '5y',
-		}
+		} satisfies NetWorthProjectionInput
 
 		const result = createNetWorthProjection(input)
 
@@ -125,11 +125,11 @@ describe('Basic Projection Calculations', () => {
 	})
 
 	it('should create a projection with custom time horizon', () => {
-		const input: NetWorthProjectionInput = {
+		const input = {
 			...BASE_INPUT,
 			timeHorizon: 'custom',
 			customYears: 3,
-		}
+		} satisfies NetWorthProjectionInput
 
 		const result = createNetWorthProjection(input)
 
@@ -145,14 +145,14 @@ describe('Basic Projection Calculations', () => {
 	})
 
 	it('should calculate assets compounding correctly over time', () => {
-		const input: NetWorthProjectionInput = {
+		const input = {
 			currentAssetsCents: toCents(10000),
 			currentLiabilitiesCents: toCents(0),
 			monthlyNetIncomeCents: toCents(0),
 			assetReturnRate: 0.12,
 			incomeGrowthRate: 0,
 			timeHorizon: '1y',
-		}
+		} satisfies NetWorthProjectionInput
 
 		const result = createNetWorthProjection(input)
 
@@ -169,14 +169,14 @@ describe('Basic Projection Calculations', () => {
 
 describe('Compound Interest Accuracy', () => {
 	it('should correctly calculate compound interest with monthly compounding', () => {
-		const input: NetWorthProjectionInput = {
+		const input = {
 			currentAssetsCents: toCents(1000),
 			currentLiabilitiesCents: toCents(0),
 			monthlyNetIncomeCents: toCents(0),
 			assetReturnRate: 0.12,
 			incomeGrowthRate: 0,
 			timeHorizon: '1y',
-		}
+		} satisfies NetWorthProjectionInput
 
 		const result = createNetWorthProjection(input)
 		const endingNetWorth = result.timeline[12].netWorthCents / 100
@@ -188,14 +188,14 @@ describe('Compound Interest Accuracy', () => {
 	})
 
 	it('should handle zero return rate correctly', () => {
-		const input: NetWorthProjectionInput = {
+		const input = {
 			currentAssetsCents: toCents(10000),
 			currentLiabilitiesCents: toCents(0),
 			monthlyNetIncomeCents: toCents(1000),
 			assetReturnRate: 0,
 			incomeGrowthRate: 0,
 			timeHorizon: '1y',
-		}
+		} satisfies NetWorthProjectionInput
 
 		const result = createNetWorthProjection(input)
 
@@ -205,7 +205,7 @@ describe('Compound Interest Accuracy', () => {
 	})
 
 	it('should handle negative return rate correctly', () => {
-		const input: NetWorthProjectionInput = {
+		const input = {
 			currentAssetsCents: toCents(10000),
 			currentLiabilitiesCents: toCents(0),
 			monthlyNetIncomeCents: toCents(0),
@@ -213,7 +213,7 @@ describe('Compound Interest Accuracy', () => {
 			incomeGrowthRate: 0,
 			timeHorizon: 'custom',
 			customYears: 2,
-		}
+		} satisfies NetWorthProjectionInput
 
 		const result = createNetWorthProjection(input)
 
@@ -226,14 +226,14 @@ describe('Compound Interest Accuracy', () => {
 
 describe('Edge Cases', () => {
 	it('should handle zero starting assets', () => {
-		const input: NetWorthProjectionInput = {
+		const input = {
 			currentAssetsCents: toCents(0),
 			currentLiabilitiesCents: toCents(0),
 			monthlyNetIncomeCents: toCents(1000),
 			assetReturnRate: 0.07,
 			incomeGrowthRate: 0,
 			timeHorizon: '1y',
-		}
+		} satisfies NetWorthProjectionInput
 
 		const result = createNetWorthProjection(input)
 
@@ -242,14 +242,14 @@ describe('Edge Cases', () => {
 	})
 
 	it('should handle zero monthly net income', () => {
-		const input: NetWorthProjectionInput = {
+		const input = {
 			currentAssetsCents: toCents(10000),
 			currentLiabilitiesCents: toCents(0),
 			monthlyNetIncomeCents: toCents(0),
 			assetReturnRate: 0.07,
 			incomeGrowthRate: 0,
 			timeHorizon: '1y',
-		}
+		} satisfies NetWorthProjectionInput
 
 		const result = createNetWorthProjection(input)
 
@@ -257,14 +257,14 @@ describe('Edge Cases', () => {
 	})
 
 	it('should handle liabilities correctly', () => {
-		const input: NetWorthProjectionInput = {
+		const input = {
 			currentAssetsCents: toCents(100000),
 			currentLiabilitiesCents: toCents(50000),
 			monthlyNetIncomeCents: toCents(5000),
 			assetReturnRate: 0.07,
 			incomeGrowthRate: 0,
 			timeHorizon: '1y',
-		}
+		} satisfies NetWorthProjectionInput
 
 		const result = createNetWorthProjection(input)
 
@@ -274,14 +274,14 @@ describe('Edge Cases', () => {
 	})
 
 	it('should handle -100% return rate (everything goes to zero)', () => {
-		const input: NetWorthProjectionInput = {
+		const input = {
 			currentAssetsCents: toCents(10000),
 			currentLiabilitiesCents: toCents(0),
 			monthlyNetIncomeCents: toCents(0),
 			assetReturnRate: -1,
 			incomeGrowthRate: 0,
 			timeHorizon: '1y',
-		}
+		} satisfies NetWorthProjectionInput
 
 		const result = createNetWorthProjection(input)
 
@@ -290,7 +290,7 @@ describe('Edge Cases', () => {
 })
 
 describe('Assets/Liabilities Separation', () => {
-	const DEBT_DOMINATED: NetWorthProjectionInput = {
+	const DEBT_DOMINATED = {
 		currentAssetsCents: toCents(1000),
 		currentLiabilitiesCents: toCents(300000),
 		monthlyNetIncomeCents: toCents(0),
@@ -298,7 +298,7 @@ describe('Assets/Liabilities Separation', () => {
 		incomeGrowthRate: 0,
 		timeHorizon: 'custom',
 		customYears: 10,
-	}
+	} satisfies NetWorthProjectionInput
 
 	it('does not diverge exponentially when liabilities exceed assets', () => {
 		const result = createNetWorthProjection(DEBT_DOMINATED)
@@ -368,7 +368,7 @@ describe('Assets/Liabilities Separation', () => {
 		expect(difference).toBeLessThan(toCents(90000))
 	})
 
-	const SPENDING_DEFICIT: NetWorthProjectionInput = {
+	const SPENDING_DEFICIT = {
 		currentAssetsCents: toCents(50000),
 		currentLiabilitiesCents: toCents(200000),
 		monthlyNetIncomeCents: toCents(-500),
@@ -376,7 +376,7 @@ describe('Assets/Liabilities Separation', () => {
 		incomeGrowthRate: 0,
 		timeHorizon: 'custom',
 		customYears: 30,
-	}
+	} satisfies NetWorthProjectionInput
 
 	it('does not compound a negative asset balance', () => {
 		const result = createNetWorthProjection(SPENDING_DEFICIT)
@@ -487,14 +487,14 @@ describe('Summary Statistics', () => {
 	})
 
 	it('should handle division by zero for growth percentage', () => {
-		const input: NetWorthProjectionInput = {
+		const input = {
 			currentAssetsCents: toCents(0),
 			currentLiabilitiesCents: toCents(0),
 			monthlyNetIncomeCents: toCents(1000),
 			assetReturnRate: 0.07,
 			incomeGrowthRate: 0,
 			timeHorizon: '1y',
-		}
+		} satisfies NetWorthProjectionInput
 
 		const result = createNetWorthProjection(input)
 

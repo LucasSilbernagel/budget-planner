@@ -31,8 +31,8 @@ describe('isValidGrowthRate', () => {
 		expect(GROWTH_RATE_OUT_OF_RANGE).toBe(GROWTH_MESSAGE)
 	})
 
-	const valid: unknown[] = [-1, 0, 1, 0.05, -0.5]
-	const invalid: [string, unknown][] = [
+	const valid = [-1, 0, 1, 0.05, -0.5] satisfies unknown[]
+	const invalid = [
 		['-1.0001', -1.0001],
 		['1.0001', 1.0001],
 		['NaN', Number.NaN],
@@ -41,7 +41,7 @@ describe('isValidGrowthRate', () => {
 		['null', null],
 		['undefined', undefined],
 		["'0.05' (a string)", '0.05'],
-	]
+	] satisfies [string, unknown][]
 	for (const v of valid) {
 		it(`accepts ${String(v)}`, () => expect(isValidGrowthRate(v)).toBe(true))
 	}
@@ -51,7 +51,7 @@ describe('isValidGrowthRate', () => {
 })
 
 describe('the engine refuses an out-of-range or non-numeric growth rate', () => {
-	const bad: [string, unknown][] = [
+	const bad = [
 		['NaN (an emptied field)', Number.NaN],
 		['Infinity', Number.POSITIVE_INFINITY],
 		['-Infinity', Number.NEGATIVE_INFINITY],
@@ -59,7 +59,7 @@ describe('the engine refuses an out-of-range or non-numeric growth rate', () => 
 		["'0.05' (a string)", '0.05'],
 		['-1.0001 (below -100%: the sign alternates)', -1.0001],
 		['1.0001 (above +100%)', 1.0001],
-	]
+	] satisfies [string, unknown][]
 
 	for (const [label, rate] of bad) {
 		it(`income growth ${label} throws the growth message`, () => {
@@ -140,12 +140,12 @@ describe('the engine accepts the boundaries', () => {
 })
 
 describe('the engine refuses a non-finite starting balance', () => {
-	const bad: [string, unknown][] = [
+	const bad = [
 		['NaN', Number.NaN],
 		['Infinity', Number.POSITIVE_INFINITY],
 		['-Infinity', Number.NEGATIVE_INFINITY],
 		['null', null],
-	]
+	] satisfies [string, unknown][]
 	for (const field of ['savings', 'investments'] as const) {
 		for (const [label, value] of bad) {
 			it(`${field} ${label} throws the amount message, not "too large to project"`, () => {

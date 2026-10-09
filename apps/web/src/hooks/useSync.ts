@@ -146,7 +146,7 @@ export type UseSyncReturn = {
 	reset: () => void
 }
 
-const initialState: SyncStoreState = {
+const initialState = {
 	status: SyncStatusEnum.PENDING,
 	isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
 	pendingCount: 0,
@@ -158,7 +158,7 @@ const initialState: SyncStoreState = {
 	lastError: undefined,
 	isSyncing: false,
 	retryCount: 0,
-}
+} satisfies SyncStoreState
 
 const createSyncStore = () =>
 	create<SyncStore>()(

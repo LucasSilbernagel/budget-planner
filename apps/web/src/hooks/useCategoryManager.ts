@@ -54,10 +54,10 @@ function validate(
 	return null
 }
 
-const NOT_FOUND: CategoryValidationError = {
+const NOT_FOUND = {
 	reason: 'not-found',
 	message: 'Category not found',
-}
+} satisfies CategoryValidationError
 
 // Not profile-scoped: `deleteCategory` un-assigns from every local row, so count the same set.
 function countRowsUsing(id: string): number {
@@ -126,12 +126,12 @@ function deleteCategory(id: string): { affectedRowCount: number } {
 	return { affectedRowCount: affectedIncome.length + affectedExpenses.length }
 }
 
-const CATEGORY_MANAGER: UseCategoryManagerResult = {
+const CATEGORY_MANAGER = {
 	createCategory,
 	renameCategory,
 	deleteCategory,
 	countRowsUsing,
-}
+} satisfies UseCategoryManagerResult
 
 export function useCategoryManager(): UseCategoryManagerResult {
 	return CATEGORY_MANAGER

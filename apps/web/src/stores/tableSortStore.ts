@@ -14,12 +14,12 @@ export const TABLE_SORT_STORAGE_KEY = 'budget-planner-table-sort-v1'
 export const TABLE_SORT_VERSION = 1
 
 /** Single source of the valid table set; TABLE_SORT_IDS derives from these keys. */
-const DEFAULT_SORTS: Record<TableSortId, SortState<string> | null> = {
+const DEFAULT_SORTS = {
 	income: null,
 	expenses: null,
 	savings: null,
 	balance: null,
-}
+} satisfies Record<TableSortId, SortState<string> | null>
 
 export const TABLE_SORT_IDS = Object.keys(DEFAULT_SORTS) as readonly TableSortId[]
 

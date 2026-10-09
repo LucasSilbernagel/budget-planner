@@ -35,16 +35,21 @@ const EXPENSE_FIXTURE = [
 	{ id: 'exp-insurance', name: 'Insurance', amount: 90_000, frequency: 'annually' as const },
 ]
 
-const EXPECTED: Record<OverviewDuration, { income: string; expenses: string }> = {
+const EXPECTED = {
 	weekly: { income: '1,161.54', expenses: '563.46' },
 	biweekly: { income: '2,323.08', expenses: '1,126.92' },
 	monthly: { income: '5,033.33', expenses: '2,441.67' },
 	annually: { income: '60,399.96', expenses: '29,300.04' },
-}
+} satisfies Record<OverviewDuration, { income: string; expenses: string }>
 
 const EXPECTED_NET_WORTH = '273,000.00'
 
-const DURATIONS: readonly OverviewDuration[] = ['weekly', 'biweekly', 'monthly', 'annually']
+const DURATIONS = [
+	'weekly',
+	'biweekly',
+	'monthly',
+	'annually',
+] satisfies readonly OverviewDuration[]
 
 function exactMoney(testId: string): string {
 	return (screen.getByTestId(testId).textContent ?? '').trim()
@@ -58,13 +63,13 @@ function formatCents(cents: number): string {
 }
 
 function mockFreeTier(): void {
-	const status: PremiumAccessStatus = {
+	const status = {
 		hasAccess: false,
 		subscriptionStatus: 'free',
 		isLoading: false,
 		error: null,
 		isAuthenticated: false,
-	}
+	} satisfies PremiumAccessStatus
 	usePremiumAccess.mockReturnValue({ status })
 }
 

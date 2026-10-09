@@ -3,12 +3,12 @@ import { type BalancesBarColors, buildBalancesBarData } from '../balances-bar-da
 
 /** Amounts are hand-computed and mutually distinct so no assertion passes by coincidence. */
 
-const COLORS: BalancesBarColors = {
+const COLORS = {
 	savings: '#SAV',
 	investment: '#INV',
 	asset: '#AST',
 	debt: '#DBT',
-}
+} satisfies BalancesBarColors
 
 const TOTALS = {
 	savingsCents: 300_000,

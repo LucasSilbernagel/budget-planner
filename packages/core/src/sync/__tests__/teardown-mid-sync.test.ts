@@ -17,15 +17,23 @@ const INCOME_X = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const ISO = '2026-09-01T00:00:00.000Z'
 const STORAGE_KEY = `bp-sync-queue-${USER}`
 
-const ACCEPTED: ProcessOperationResult = { success: true }
-const REFUSED: ProcessOperationResult = {
+const ACCEPTED = { success: true } satisfies ProcessOperationResult
+const REFUSED = {
 	success: false,
 	error: 'refused',
 	retryable: false,
 	statusCode: 422,
-}
-const RETRYABLE: ProcessOperationResult = { success: false, error: 'boom', retryable: true }
-const UNCLASSIFIED: ProcessOperationResult = { success: false, error: 'batch', retryable: false }
+} satisfies ProcessOperationResult
+const RETRYABLE = {
+	success: false,
+	error: 'boom',
+	retryable: true,
+} satisfies ProcessOperationResult
+const UNCLASSIFIED = {
+	success: false,
+	error: 'batch',
+	retryable: false,
+} satisfies ProcessOperationResult
 
 type Deferred<T> = {
 	promise: Promise<T>

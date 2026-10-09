@@ -16,13 +16,13 @@ type StoreApi = {
 	setState: (partial: Record<string, unknown>) => void
 }
 
-const ROW_STORES: readonly { store: StoreApi; collection: string }[] = [
+const ROW_STORES = [
 	{ store: useIncomeStore as unknown as StoreApi, collection: 'incomeSources' },
 	{ store: useExpenseStore as unknown as StoreApi, collection: 'expenses' },
 	{ store: useSavingsStore as unknown as StoreApi, collection: 'savingsGoals' },
 	{ store: useBalanceStore as unknown as StoreApi, collection: 'entries' },
 	{ store: useCategoryStore as unknown as StoreApi, collection: 'categories' },
-]
+] satisfies readonly { store: StoreApi; collection: string }[]
 
 export function dropAnotherAccountsLocalData(sessionUserId: string): void {
 	const { profiles, activeProfileId } = useProfileStore.getState()

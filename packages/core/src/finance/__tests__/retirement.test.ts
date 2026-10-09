@@ -18,10 +18,10 @@ import {
 describe('Retirement Modeler', () => {
 	describe('calculateRetirementRequirement', () => {
 		it('should calculate required assets for $5000/month income at 6% return', () => {
-			const input: RetirementInput = {
+			const input = {
 				monthlyIncome: 500000,
 				annualReturnRate: 0.06,
-			}
+			} satisfies RetirementInput
 
 			const result = calculateRetirementRequirement(input, { mode: 'symbol', currency: 'USD' })
 
@@ -34,10 +34,10 @@ describe('Retirement Modeler', () => {
 		})
 
 		it('should calculate required assets for $1000/month income at 4% return', () => {
-			const input: RetirementInput = {
+			const input = {
 				monthlyIncome: 100000,
 				annualReturnRate: 0.04,
-			}
+			} satisfies RetirementInput
 
 			const result = calculateRetirementRequirement(input, { mode: 'symbol', currency: 'USD' })
 
@@ -46,10 +46,10 @@ describe('Retirement Modeler', () => {
 		})
 
 		it('should calculate required assets for $2500/month income at 5% return', () => {
-			const input: RetirementInput = {
+			const input = {
 				monthlyIncome: 250000,
 				annualReturnRate: 0.05,
-			}
+			} satisfies RetirementInput
 
 			const result = calculateRetirementRequirement(input)
 
@@ -58,10 +58,10 @@ describe('Retirement Modeler', () => {
 		})
 
 		it('should throw error for zero return rate', () => {
-			const input: RetirementInput = {
+			const input = {
 				monthlyIncome: 500000,
 				annualReturnRate: 0,
-			}
+			} satisfies RetirementInput
 
 			expect(() => calculateRetirementRequirement(input)).toThrow(
 				'Annual return rate must be positive (greater than 0)'
@@ -69,10 +69,10 @@ describe('Retirement Modeler', () => {
 		})
 
 		it('should throw error for negative return rate', () => {
-			const input: RetirementInput = {
+			const input = {
 				monthlyIncome: 500000,
 				annualReturnRate: -0.05,
-			}
+			} satisfies RetirementInput
 
 			expect(() => calculateRetirementRequirement(input)).toThrow(
 				'Annual return rate must be positive (greater than 0)'
@@ -80,10 +80,10 @@ describe('Retirement Modeler', () => {
 		})
 
 		it('should handle edge case: very high return rate (12%)', () => {
-			const input: RetirementInput = {
+			const input = {
 				monthlyIncome: 500000,
 				annualReturnRate: 0.12,
-			}
+			} satisfies RetirementInput
 
 			const result = calculateRetirementRequirement(input)
 
@@ -91,10 +91,10 @@ describe('Retirement Modeler', () => {
 		})
 
 		it('should handle edge case: very low return rate (1%)', () => {
-			const input: RetirementInput = {
+			const input = {
 				monthlyIncome: 500000,
 				annualReturnRate: 0.01,
-			}
+			} satisfies RetirementInput
 
 			const result = calculateRetirementRequirement(input)
 
@@ -152,12 +152,12 @@ describe('Retirement Modeler', () => {
 
 	describe('calculateCompoundingProjection', () => {
 		it('should calculate single year projection with no contribution', () => {
-			const input: CompoundingInput = {
+			const input = {
 				principal: 1000000,
 				annualContribution: 0,
 				annualReturnRate: 0.05,
 				years: 1,
-			}
+			} satisfies CompoundingInput
 
 			const result = calculateCompoundingProjection(input)
 
@@ -169,12 +169,12 @@ describe('Retirement Modeler', () => {
 		})
 
 		it('should calculate multi-year projection with annual contributions', () => {
-			const input: CompoundingInput = {
+			const input = {
 				principal: 1000000,
 				annualContribution: 120000,
 				annualReturnRate: 0.05,
 				years: 2,
-			}
+			} satisfies CompoundingInput
 
 			const result = calculateCompoundingProjection(input)
 
@@ -192,12 +192,12 @@ describe('Retirement Modeler', () => {
 		})
 
 		it('should return empty array for zero years', () => {
-			const input: CompoundingInput = {
+			const input = {
 				principal: 1000000,
 				annualContribution: 0,
 				annualReturnRate: 0.05,
 				years: 0,
-			}
+			} satisfies CompoundingInput
 
 			const result = calculateCompoundingProjection(input)
 
@@ -205,12 +205,12 @@ describe('Retirement Modeler', () => {
 		})
 
 		it('should throw error for zero return rate', () => {
-			const input: CompoundingInput = {
+			const input = {
 				principal: 1000000,
 				annualContribution: 100000,
 				annualReturnRate: 0,
 				years: 2,
-			}
+			} satisfies CompoundingInput
 
 			expect(() => calculateCompoundingProjection(input)).toThrow(
 				'Annual return rate must be positive (greater than 0)'
@@ -218,12 +218,12 @@ describe('Retirement Modeler', () => {
 		})
 
 		it('should throw error for negative return rate', () => {
-			const input: CompoundingInput = {
+			const input = {
 				principal: 1000000,
 				annualContribution: 0,
 				annualReturnRate: -0.05,
 				years: 1,
-			}
+			} satisfies CompoundingInput
 
 			expect(() => calculateCompoundingProjection(input)).toThrow(
 				'Annual return rate must be positive (greater than 0)'
@@ -231,12 +231,12 @@ describe('Retirement Modeler', () => {
 		})
 
 		it('should throw error for negative years', () => {
-			const input: CompoundingInput = {
+			const input = {
 				principal: 1000000,
 				annualContribution: 0,
 				annualReturnRate: 0.05,
 				years: -1,
-			}
+			} satisfies CompoundingInput
 
 			expect(() => calculateCompoundingProjection(input)).toThrow(
 				'Number of years must be non-negative'
@@ -246,10 +246,10 @@ describe('Retirement Modeler', () => {
 
 	describe('Mathematical Validation - Zero Tolerance', () => {
 		it('should pass exact validation: Safe Withdrawal Model formula', () => {
-			const input: RetirementInput = {
+			const input = {
 				monthlyIncome: 400000,
 				annualReturnRate: 0.06,
-			}
+			} satisfies RetirementInput
 
 			const result = calculateRetirementRequirement(input)
 			expect(result.requiredAssets).toBe(80000000)
@@ -261,12 +261,12 @@ describe('Retirement Modeler', () => {
 		})
 
 		it('should pass exact validation: compounding with no contribution', () => {
-			const input: CompoundingInput = {
+			const input = {
 				principal: 1000000,
 				annualContribution: 0,
 				annualReturnRate: 0.1,
 				years: 2,
-			}
+			} satisfies CompoundingInput
 
 			const result = calculateCompoundingProjection(input)
 			expect(result.length).toBe(2)
@@ -274,12 +274,12 @@ describe('Retirement Modeler', () => {
 		})
 
 		it('should pass exact validation: compounding with contribution', () => {
-			const input: CompoundingInput = {
+			const input = {
 				principal: 1000000,
 				annualContribution: 100000,
 				annualReturnRate: 0.1,
 				years: 2,
-			}
+			} satisfies CompoundingInput
 
 			const result = calculateCompoundingProjection(input)
 			expect(result.length).toBe(2)
@@ -300,24 +300,24 @@ describe('Retirement Modeler', () => {
 		})
 
 		it('should handle zero principal in compounding', () => {
-			const input: CompoundingInput = {
+			const input = {
 				principal: 0,
 				annualContribution: 100000,
 				annualReturnRate: 0.05,
 				years: 1,
-			}
+			} satisfies CompoundingInput
 
 			const result = calculateCompoundingProjection(input)
 			expect(result[0].endingBalance).toBe(100000)
 		})
 
 		it('should handle zero contribution in compounding', () => {
-			const input: CompoundingInput = {
+			const input = {
 				principal: 1000000,
 				annualContribution: 0,
 				annualReturnRate: 0.05,
 				years: 1,
-			}
+			} satisfies CompoundingInput
 
 			const result = calculateCompoundingProjection(input)
 			expect(result[0].endingBalance).toBe(1050000)
@@ -357,12 +357,12 @@ describe('Retirement Modeler', () => {
 		})
 
 		it('should throw error for very large years parameter (1000 years)', () => {
-			const input: CompoundingInput = {
+			const input = {
 				principal: 1000000,
 				annualContribution: 0,
 				annualReturnRate: 0.05,
 				years: 1000,
-			}
+			} satisfies CompoundingInput
 
 			expect(() => calculateCompoundingProjection(input)).toThrow(
 				'Number of years must not exceed 100'
@@ -428,12 +428,12 @@ describe('Retirement Modeler', () => {
 		})
 
 		it('annual equivalence holds across representative values and rates', () => {
-			const cases: Array<{ annualCents: number; rate: number }> = [
+			const cases = [
 				{ annualCents: 12000000, rate: 0.04 },
 				{ annualCents: 3000000, rate: 0.05 },
 				{ annualCents: 1000000, rate: 0.07 },
 				{ annualCents: 999999, rate: 0.06 },
-			]
+			] satisfies Array<{ annualCents: number; rate: number }>
 
 			for (const { annualCents, rate } of cases) {
 				const viaHelper = calculateRequiredAssets(toMonthlyIncomeCents(annualCents, 'annual'), rate)
@@ -657,7 +657,7 @@ describe('Retirement Accumulation Solver', () => {
 	})
 
 	describe('solveRetirementAccumulation', () => {
-		const baseInput: RetirementAccumulationInput = {
+		const baseInput = {
 			currentAge: 35,
 			currentSavedCents: 5_954_100,
 			monthlySavingsCents: 179_900,
@@ -666,7 +666,7 @@ describe('Retirement Accumulation Solver', () => {
 			desiredAnnualIncomeCents: 4_000_000,
 			lifeExpectancy: 80,
 			model: 'deplete',
-		}
+		} satisfies RetirementAccumulationInput
 
 		it('always reports saved-per-year = monthly × 12', () => {
 			const result = solveRetirementAccumulation(baseInput)
@@ -822,7 +822,10 @@ describe('Retirement Accumulation Solver', () => {
 		})
 
 		it('terminates on a non-physical life expectancy without hanging (perpetual is age-independent)', () => {
-			const perpetualBase: RetirementAccumulationInput = { ...baseInput, model: 'perpetual' }
+			const perpetualBase = {
+				...baseInput,
+				model: 'perpetual',
+			} satisfies RetirementAccumulationInput
 			const normal = solveRetirementAccumulation(perpetualBase)
 			const huge = solveRetirementAccumulation({ ...perpetualBase, lifeExpectancy: 1_000_000 })
 
@@ -832,7 +835,7 @@ describe('Retirement Accumulation Solver', () => {
 		})
 
 		describe('two-rate solving', () => {
-			const sweepBase: RetirementAccumulationInput = {
+			const sweepBase = {
 				currentAge: 35,
 				currentSavedCents: 5_954_100,
 				monthlySavingsCents: 179_900,
@@ -841,7 +844,7 @@ describe('Retirement Accumulation Solver', () => {
 				desiredAnnualIncomeCents: 6_000_000,
 				lifeExpectancy: 90,
 				model: 'deplete',
-			}
+			} satisfies RetirementAccumulationInput
 
 			it('equal rates reproduce the shipped single-rate solve exactly', () => {
 				const result = solveRetirementAccumulation(sweepBase)
@@ -906,7 +909,7 @@ describe('Retirement Accumulation Solver', () => {
 			it('a low enough post-retirement rate alone makes retirement unreachable', () => {
 				// Perpetual, because its requirement (annual / rate) grows without bound as the rate
 				// falls; deplete stays reachable across the legal range.
-				const perpetual: RetirementAccumulationInput = { ...sweepBase, model: 'perpetual' }
+				const perpetual = { ...sweepBase, model: 'perpetual' } satisfies RetirementAccumulationInput
 
 				const reachable = solveRetirementAccumulation(perpetual)
 				expect(reachable.reachable).toBe(true)

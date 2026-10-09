@@ -60,14 +60,14 @@ const generateUUID = (): string => {
 	})
 }
 
-const DEFAULT_PROFILE: ClientProfile = {
+const DEFAULT_PROFILE = {
 	id: generateUUID(),
 	userId: '',
 	name: 'Main Profile',
 	description: 'Your primary financial profile',
 	isDefault: true,
 	currency: 'NONE',
-}
+} satisfies ClientProfile
 
 export const useProfileStore = create<ProfileState>()(
 	persist(
@@ -186,7 +186,7 @@ export const useProfileStore = create<ProfileState>()(
 					if (promoted) {
 						// Must be queued, not just set, or the server is left with zero defaults. dependsOn lets core
 						// drop the promotion if the tombstone loses.
-						const promotedRow: ClientProfile = { ...promoted, isDefault: true }
+						const promotedRow = { ...promoted, isDefault: true } satisfies ClientProfile
 						syncEntityUpdate('userProfile', promotedRow, promoted, {
 							dependsOn: { entityType: 'userProfile', entityId: target.id, type: 'delete' },
 						})

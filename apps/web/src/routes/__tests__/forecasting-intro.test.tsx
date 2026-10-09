@@ -40,14 +40,14 @@ type MetaEntry = {
 }
 
 function mockStatus(overrides: Partial<PremiumAccessStatus>): void {
-	const status: PremiumAccessStatus = {
+	const status = {
 		hasAccess: false,
 		subscriptionStatus: null,
 		isLoading: false,
 		error: null,
 		isAuthenticated: false,
 		...overrides,
-	}
+	} satisfies PremiumAccessStatus
 	usePremiumAccess.mockReturnValue({ status })
 }
 
@@ -99,11 +99,11 @@ describe('the /forecasting page intro', () => {
 		expect(screen.getByRole('tab', { name: /my forecasts/i })).toBeInTheDocument()
 
 		// jsdom applies no Tailwind and only the active tab renders its description, so check each in turn.
-		const descriptionByTab: [RegExp, string][] = [
+		const descriptionByTab = [
 			[/scenario builder/i, 'Create and model financial scenarios'],
 			[/projections/i, 'View forecast visualizations'],
 			[/my forecasts/i, 'Saved scenarios and results'],
-		]
+		] satisfies [RegExp, string][]
 		for (const [tabName, description] of descriptionByTab) {
 			fireEvent.click(screen.getByRole('tab', { name: tabName }))
 			expect(screen.queryByText(description), `"${description}" must be gone`).toBeNull()

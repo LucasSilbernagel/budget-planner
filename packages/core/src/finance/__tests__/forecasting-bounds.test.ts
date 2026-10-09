@@ -105,18 +105,22 @@ const DATA = {
 	savings: 0,
 	investments: 0,
 }
-const FLAT: ForecastingScenario = { name: 'bounds', incomeGrowthRate: 0, expenseGrowthRate: 0 }
+const FLAT = {
+	name: 'bounds',
+	incomeGrowthRate: 0,
+	expenseGrowthRate: 0,
+} satisfies ForecastingScenario
 
 describe('years the engine refuses (in-process)', () => {
 	// Safe in-process only because none of these loops forever on an unguarded engine.
-	const refused: [string, unknown][] = [
+	const refused = [
 		["0 (an emptied field: Number('') is 0)", 0],
 		['-1', -1],
 		['2.5 (a fraction)', 2.5],
 		['31 (one past the maximum)', 31],
 		['NaN', Number.NaN],
 		["the string '10'", '10'],
-	]
+	] satisfies [string, unknown][]
 	for (const [label, years] of refused) {
 		it(`refuses ${label}`, () => {
 			expect(() => calculateFinancialForecast(DATA, FLAT, years as number)).toThrow(RANGE_MESSAGE)
@@ -144,7 +148,7 @@ describe('years the engine accepts', () => {
 })
 
 describe('isValidForecastYears', () => {
-	const cases: [unknown, boolean][] = [
+	const cases = [
 		[1, true],
 		[30, true],
 		[1.0, true],
@@ -159,7 +163,7 @@ describe('isValidForecastYears', () => {
 		['10', false],
 		[null, false],
 		[undefined, false],
-	]
+	] satisfies [unknown, boolean][]
 	for (const [value, expected] of cases) {
 		it(`${String(value)} -> ${expected}`, () => {
 			expect(isValidForecastYears(value)).toBe(expected)

@@ -30,35 +30,35 @@ type NavItem = {
 	Icon: (props: { className: string }) => React.ReactElement
 }
 
-const PRIMARY_TABS: readonly NavItem[] = [
+const PRIMARY_TABS = [
 	{ label: 'Overview', to: '/', exact: true, Icon: HomeIcon },
 	{ label: 'Income', to: '/income', Icon: IncomeIcon },
 	{ label: 'Expenses', to: '/expenses', Icon: ExpensesIcon },
 	{ label: 'Savings', to: '/savings', Icon: SavingsIcon },
-]
+] satisfies readonly NavItem[]
 
-const MORE_DESTINATIONS: readonly NavItem[] = [
+const MORE_DESTINATIONS = [
 	// Deliberately shorter than the page's H1: the desktop row is width-critical.
 	{ label: 'Balances', to: '/balance', Icon: BalanceIcon },
 	{ label: 'Retirement', to: '/retirement', Icon: RetirementIcon },
 	// Settings is not here: this list is also PROMOTED_PATHS. Its phone-only row is rendered separately.
-]
+] satisfies readonly NavItem[]
 
 // Labels are deliberately shorter than the benefit names elsewhere; don't align them.
-const PREMIUM_DESTINATIONS: readonly NavItem[] = [
+const PREMIUM_DESTINATIONS = [
 	{ label: 'Forecasting', to: '/forecasting', Icon: ForecastingIcon },
 	{ label: 'Profiles', to: '/profiles', Icon: ProfilesIcon },
 	{ label: 'Financial Summary', to: '/financial-summary', Icon: ReportIcon },
 	{ label: 'Categories', to: '/categories', Icon: CategoriesIcon },
-]
+] satisfies readonly NavItem[]
 
 // Exported for the route parity test: this nav is a paid user's only route to these pages.
 export const PREMIUM_NAV_ROUTES: readonly string[] = PREMIUM_DESTINATIONS.map((item) => item.to)
 
-const MORE_DESTINATIONS_ENTITLED: readonly NavItem[] = [
+const MORE_DESTINATIONS_ENTITLED = [
 	...MORE_DESTINATIONS,
 	...PREMIUM_DESTINATIONS,
-]
+] satisfies readonly NavItem[]
 
 // The mobile variants are separate strings, not appended overrides: Tailwind source order
 // decides conflicts, not className order.

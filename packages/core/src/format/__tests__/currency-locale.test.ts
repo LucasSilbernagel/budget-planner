@@ -8,7 +8,7 @@ describe('localeForCurrency', () => {
 	})
 
 	describe('maps every supported currency to its regional locale', () => {
-		const cases: readonly [string, string][] = [
+		const cases = [
 			['USD', 'en-US'],
 			['EUR', 'de-DE'], // largest eurozone economy
 			['GBP', 'en-GB'],
@@ -21,7 +21,7 @@ describe('localeForCurrency', () => {
 			['BRL', 'pt-BR'],
 			['ZAR', 'en-ZA'],
 			['MXN', 'es-MX'],
-		]
+		] satisfies readonly [string, string][]
 
 		for (const [currency, locale] of cases) {
 			it(`${currency} → ${locale}`, () => {

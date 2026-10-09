@@ -360,14 +360,7 @@ describe('Nav + account row, the per-width Settings route', () => {
 	const widthScope = (a: Element): Element => a.closest('li[data-nav-settings]') ?? a
 	const has = (el: Element, token: string) => el.classList.contains(token)
 
-	const CASES: readonly {
-		name: string
-		seed: SessionSeed | null
-		me: Me | null | 'pending'
-		path: string
-		openPanel: boolean
-		desktopRoute: boolean
-	}[] = [
+	const CASES = [
 		{
 			name: 'signed out',
 			seed: SIGNED_OUT_SEED,
@@ -408,7 +401,14 @@ describe('Nav + account row, the per-width Settings route', () => {
 			openPanel: false,
 			desktopRoute: false,
 		},
-	]
+	] satisfies readonly {
+		name: string
+		seed: SessionSeed | null
+		me: Me | null | 'pending'
+		path: string
+		openPanel: boolean
+		desktopRoute: boolean
+	}[]
 
 	it.each(CASES)(
 		'a phone has exactly one Settings route and a desktop keeps its own: $name',

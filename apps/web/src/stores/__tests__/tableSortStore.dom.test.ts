@@ -152,7 +152,7 @@ describe('tableSortStore — corrupt, absent and unknown payloads', () => {
 		expect(useTableSortStore.getState().sorts).toEqual(EMPTY)
 	})
 
-	const CORRUPT_CASES: ReadonlyArray<readonly [string, unknown]> = [
+	const CORRUPT_CASES = [
 		['sorts is a string', 'income'],
 		['sorts is an array', [{ key: 'name', direction: 'asc' }]],
 		['sorts is null', null],
@@ -168,7 +168,7 @@ describe('tableSortStore — corrupt, absent and unknown payloads', () => {
 			{ ...EMPTY, income: { key: 'amount', direction: 'sideways' } },
 		],
 		['a slice direction is uppercase', { ...EMPTY, income: { key: 'amount', direction: 'ASC' } }],
-	]
+	] satisfies ReadonlyArray<readonly [string, unknown]>
 
 	describe.each([TABLE_SORT_VERSION, 0])('at version %i', (version) => {
 		it.each(CORRUPT_CASES)('%s falls back to manual order', async (_label, sorts) => {

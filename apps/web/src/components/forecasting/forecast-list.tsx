@@ -18,11 +18,11 @@ export type ForecastListProps = {
 
 type SortField = 'name' | 'date' | 'netWorth'
 
-const SORT_FIELD_LABELS: Readonly<Record<SortField, string>> = {
+const SORT_FIELD_LABELS = {
 	name: 'Name',
 	date: 'Created',
 	netWorth: 'Ending Net Worth',
-}
+} satisfies Readonly<Record<SortField, string>>
 
 function formatDate(dateString: string): string {
 	const date = new Date(dateString)

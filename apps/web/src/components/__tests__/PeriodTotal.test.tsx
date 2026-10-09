@@ -62,12 +62,12 @@ const MIXED_EXPENSES = [
 	},
 ]
 
-const PERIOD_WORD: Record<'weekly' | 'biweekly' | 'monthly' | 'annually', string> = {
+const PERIOD_WORD = {
 	weekly: 'week',
 	biweekly: '2 weeks',
 	monthly: 'month',
 	annually: 'year',
-}
+} satisfies Record<'weekly' | 'biweekly' | 'monthly' | 'annually', string>
 
 const incomeSelector = () => screen.getByRole('combobox', { name: /show income per/i })
 const expenseSelector = () => screen.getByRole('combobox', { name: /show expenses per/i })

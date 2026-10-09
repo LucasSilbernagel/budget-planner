@@ -23,13 +23,13 @@ import { HomePage, OVERVIEW_BENEFITS } from '../../HomePage'
 import { PricingPageView } from '../../pricing/pricing-page'
 
 function mockFreeTier(): void {
-	const status: PremiumAccessStatus = {
+	const status = {
 		hasAccess: false,
 		subscriptionStatus: 'free',
 		isLoading: false,
 		error: null,
 		isAuthenticated: true,
-	}
+	} satisfies PremiumAccessStatus
 	usePremiumAccess.mockReturnValue({ status })
 }
 
@@ -60,21 +60,21 @@ function summarySentenceOfPricingMd(): string {
 	return summary
 }
 
-const FEATURES_MD_ANCHORS: Record<PremiumBenefitId, string> = {
+const FEATURES_MD_ANCHORS = {
 	sync: 'multi-device sync',
 	forecasting: 'advanced forecasting',
 	profiles: 'custom profiles',
 	report: 'financial summary report',
 	categories: 'custom categories',
-}
+} satisfies Record<PremiumBenefitId, string>
 
-const PRICING_MD_ANCHORS: Record<PremiumBenefitId, string> = {
+const PRICING_MD_ANCHORS = {
 	sync: 'multi-device sync',
 	forecasting: 'advanced forecasting',
 	profiles: 'custom profiles',
 	report: 'financial summary report',
 	categories: 'custom categories with a per-category breakdown',
-}
+} satisfies Record<PremiumBenefitId, string>
 
 describe('the canonical Premium benefit set is the same on every surface', () => {
 	it('has no duplicate ids and a stable order', () => {
@@ -149,11 +149,7 @@ describe('the canonical Premium benefit set is the same on every surface', () =>
 
 	it('points each openable benefit at its own route', () => {
 		// Written out independently: an expectation derived from OVERVIEW_BENEFITS can never fail.
-		const EXPECTED: Record<
-			PremiumBenefitId,
-			| { activation: 'prompt'; featureName: string }
-			| { activation: 'route'; href: string; featureName: string }
-		> = {
+		const EXPECTED = {
 			sync: { activation: 'prompt', featureName: 'Multi-device sync' },
 			forecasting: {
 				activation: 'route',
@@ -167,7 +163,11 @@ describe('the canonical Premium benefit set is the same on every surface', () =>
 				featureName: 'Financial Summary Report',
 			},
 			categories: { activation: 'route', href: '/categories', featureName: 'Custom Categories' },
-		}
+		} satisfies Record<
+			PremiumBenefitId,
+			| { activation: 'prompt'; featureName: string }
+			| { activation: 'route'; href: string; featureName: string }
+		>
 
 		for (const id of PREMIUM_BENEFIT_IDS) {
 			const benefit = OVERVIEW_BENEFITS[id]

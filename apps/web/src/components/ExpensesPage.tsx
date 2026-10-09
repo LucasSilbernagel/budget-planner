@@ -49,19 +49,19 @@ import { SortableColumnHeader, useSortHeaderAnnouncements } from './ui/SortableC
 import { TableScrollRegion } from './ui/TableScrollRegion'
 import { TableSortControl } from './ui/TableSortControl'
 
-const FREQUENCY_OPTIONS: { value: Frequency; label: string }[] = [
+const FREQUENCY_OPTIONS = [
 	{ value: 'weekly', label: 'Weekly' },
 	{ value: 'biweekly', label: 'Bi-weekly' },
 	{ value: 'monthly', label: 'Monthly' },
 	{ value: 'annually', label: 'Annually' },
-]
+] satisfies { value: Frequency; label: string }[]
 
-const SORT_COLUMN_LABELS: Record<FlowSortKey, string> = {
+const SORT_COLUMN_LABELS = {
 	name: 'Name',
 	amount: 'Amount',
 	frequency: 'Frequency',
 	category: 'Category',
-}
+} satisfies Record<FlowSortKey, string>
 
 export function ExpensesPage() {
 	const expenses = useExpenses()

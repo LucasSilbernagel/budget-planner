@@ -89,12 +89,12 @@ export function useProfileManager() {
 			})
 		}
 
-		const newProfile: ClientProfile = {
+		const newProfile = {
 			...profileData,
 			id: generateUUID(),
 			createdAt: new Date().toISOString(),
 			updatedAt: new Date().toISOString(),
-		}
+		} satisfies ClientProfile
 
 		addProfile(newProfile)
 		return newProfile

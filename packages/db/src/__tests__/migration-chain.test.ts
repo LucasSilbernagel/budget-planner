@@ -201,7 +201,7 @@ describe('migration snapshots', () => {
 
 	it('treats a key-reordered, _meta-changed copy as the same schema (what --custom writes)', () => {
 		const original = readSnapshot(migrationsDir, 20)
-		const reordered: Snapshot = {
+		const reordered = {
 			...(JSON.parse(
 				JSON.stringify(original, (_key, value: unknown) =>
 					value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -210,7 +210,7 @@ describe('migration snapshots', () => {
 				)
 			) as Snapshot),
 			_meta: { columns: { a: 'b' }, schemas: {}, tables: {} },
-		}
+		} satisfies Snapshot
 		expect(JSON.stringify(reordered), 'the reorder must actually change the bytes').not.toBe(
 			JSON.stringify(original)
 		)

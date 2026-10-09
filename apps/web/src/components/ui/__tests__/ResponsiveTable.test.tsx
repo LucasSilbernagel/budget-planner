@@ -39,7 +39,7 @@ describe('ResponsiveTable class layer', () => {
 	describe('desktop classes are preserved verbatim', () => {
 		// `max-lg:px-4` is listed explicitly: it is the 640-1024px width budget, and dev fonts are
 		// narrow enough that deleting it would only fail on CI.
-		const cases: [string, string, string[]][] = [
+		const cases = [
 			['wrapper', RESPONSIVE_WRAPPER_CLASS, ['overflow-x-auto']],
 			[
 				'table',
@@ -61,7 +61,7 @@ describe('ResponsiveTable class layer', () => {
 				RESPONSIVE_STACKED_CELL_CLASS,
 				['px-6', 'max-lg:px-4', 'py-4', 'whitespace-nowrap'],
 			],
-		]
+		] satisfies [string, string, string[]][]
 
 		for (const [name, value, expected] of cases) {
 			it(`${name} keeps exactly its pre-31.2 desktop classes`, () => {

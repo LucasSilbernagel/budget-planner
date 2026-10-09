@@ -57,7 +57,7 @@ type BridgeModule = typeof import('../../../lib/sync/syncBridge')
 const QUEUE_KEY = `bp-sync-queue-${USER}`
 
 /** Every field differs from its default, so a dropped field cannot pass by luck. */
-const PLAN: Plan = {
+const PLAN = {
 	currentAgeInput: '41',
 	lifeExpectancyInput: '87',
 	desiredIncomeInput: '55.000,00',
@@ -69,7 +69,7 @@ const PLAN: Plan = {
 	postRetirementReturnInput: '3.0',
 	postRetirementTouched: true,
 	model: 'perpetual',
-}
+} satisfies Plan
 
 let pg: PGlite
 let db: ReturnType<typeof drizzle>

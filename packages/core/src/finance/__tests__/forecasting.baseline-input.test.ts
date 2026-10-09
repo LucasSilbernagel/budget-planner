@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { calculateFinancialForecast, type ForecastingScenario } from '../forecasting'
 
-const FLAT: ForecastingScenario = {
+const FLAT = {
 	name: 'Scenario',
 	incomeGrowthRate: 0,
 	expenseGrowthRate: 0,
 	oneTimeEvents: [],
-}
+} satisfies ForecastingScenario
 
 function data(contribution: number) {
 	return {

@@ -6,20 +6,24 @@ const USER = '11111111-1111-4111-8111-111111111863'
 const PROFILE = '22222222-2222-4222-8222-222222222863'
 const STORAGE_KEY = `bp-sync-queue-${USER}`
 
-const ACCEPTED: ProcessOperationResult = { success: true }
-const REFUSED: ProcessOperationResult = {
+const ACCEPTED = { success: true } satisfies ProcessOperationResult
+const REFUSED = {
 	success: false,
 	error: 'refused',
 	retryable: false,
 	statusCode: 422,
-}
-const KEPT_QUEUED: ProcessOperationResult = {
+} satisfies ProcessOperationResult
+const KEPT_QUEUED = {
 	success: false,
 	error: 'Profile not found',
 	retryable: false,
-}
-const CONFLICT: ProcessOperationResult = { success: false, conflict: true }
-const RETRYABLE: ProcessOperationResult = { success: false, error: 'boom', retryable: true }
+} satisfies ProcessOperationResult
+const CONFLICT = { success: false, conflict: true } satisfies ProcessOperationResult
+const RETRYABLE = {
+	success: false,
+	error: 'boom',
+	retryable: true,
+} satisfies ProcessOperationResult
 
 type Deferred<T> = {
 	promise: Promise<T>

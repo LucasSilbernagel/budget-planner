@@ -21,14 +21,14 @@ vi.mock('../../auth/premium-prompt', () => ({
 import { PremiumFeatureGate } from '../PremiumFeatureGate'
 
 function mockStatus(overrides: Partial<PremiumAccessStatus>): void {
-	const status: PremiumAccessStatus = {
+	const status = {
 		hasAccess: false,
 		subscriptionStatus: null,
 		isLoading: false,
 		error: null,
 		isAuthenticated: false,
 		...overrides,
-	}
+	} satisfies PremiumAccessStatus
 	usePremiumAccess.mockReturnValue({ status })
 }
 

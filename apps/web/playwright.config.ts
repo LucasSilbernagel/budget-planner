@@ -102,7 +102,7 @@ process.env['E2E_RUN_STARTED_AT'] = String(Date.now())
 const dbBaseURL = `http://localhost:${DB_SERVER_PORT}`
 
 // The teardown checks exactly these ports (via the env), so it can't drift.
-const DEV_SERVERS: ReadonlyArray<readonly [number, DevServerEnv]> = [
+const DEV_SERVERS = [
 	[5173, { sessionSeed: '' }],
 	[PAID_PORT, { sessionSeed: PAID_SESSION_SEED }],
 	[
@@ -134,7 +134,7 @@ const DEV_SERVERS: ReadonlyArray<readonly [number, DevServerEnv]> = [
 			},
 		},
 	],
-]
+] satisfies ReadonlyArray<readonly [number, DevServerEnv]>
 
 /** Listed first so it is up before :5176 starts; never reused, so every run is fresh. */
 const dbServer = {

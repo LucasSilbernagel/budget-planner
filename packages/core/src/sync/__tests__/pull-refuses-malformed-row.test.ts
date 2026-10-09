@@ -129,11 +129,11 @@ describe('pull() refuses a malformed server row before LWW can drop the local ed
 			expect(result.success).toBe(true)
 			expect(result.lastPullTimestamp).toBe(2_000)
 
-			const expected: RefusedServerChange = {
+			const expected = {
 				entityType: 'incomeSource',
 				entityId: INCOME_X,
 				fields: ['amount:invalid_type'],
-			}
+			} satisfies RefusedServerChange
 			expect(result.refused).toEqual([expected])
 			expect(refusedCalls).toEqual([[expected]])
 

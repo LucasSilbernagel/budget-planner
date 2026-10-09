@@ -64,7 +64,12 @@ export type BalanceTrackingFilter = {
 	search?: string
 }
 
-const VALID_FREQUENCIES: readonly Frequency[] = ['weekly', 'biweekly', 'monthly', 'annually']
+const VALID_FREQUENCIES = [
+	'weekly',
+	'biweekly',
+	'monthly',
+	'annually',
+] satisfies readonly Frequency[]
 
 /** Unknown frequency is coerced to 'monthly': `normalizeToMonthly` throws, and this runs
  * during render with no error boundary. */
@@ -97,16 +102,7 @@ export function getTypeDisplayProperties(type: FinanceType):
 		return undefined
 	}
 
-	const properties: Record<
-		FinanceType,
-		{
-			theme: 'success' | 'danger'
-			icon: string
-			label: string
-			colorClass: string
-			bgColorClass: string
-		}
-	> = {
+	const properties = {
 		investment: {
 			theme: 'success' as const,
 			icon: '↗',
@@ -129,7 +125,16 @@ export function getTypeDisplayProperties(type: FinanceType):
 			colorClass: 'text-amber-600 dark:text-amber-400',
 			bgColorClass: 'bg-amber-100 dark:bg-amber-900/30',
 		},
-	}
+	} satisfies Record<
+		FinanceType,
+		{
+			theme: 'success' | 'danger'
+			icon: string
+			label: string
+			colorClass: string
+			bgColorClass: string
+		}
+	>
 	return properties[type]
 }
 

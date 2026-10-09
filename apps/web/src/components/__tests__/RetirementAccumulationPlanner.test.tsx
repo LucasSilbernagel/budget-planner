@@ -1209,7 +1209,7 @@ describe('RetirementAccumulationPlanner — the monthly figure stops blaming inc
 	afterEach(resetStores)
 
 	it('never ties the Monthly Savings card to income or expenses, in any state', () => {
-		const states: [string, () => void][] = [
+		const states = [
 			['no investment accounts', () => undefined],
 			[
 				'accounts with no contribution set',
@@ -1234,7 +1234,7 @@ describe('RetirementAccumulationPlanner — the monthly figure stops blaming inc
 						],
 					}),
 			],
-		]
+		] satisfies [string, () => void][]
 
 		for (const [label, seed] of states) {
 			resetStores()

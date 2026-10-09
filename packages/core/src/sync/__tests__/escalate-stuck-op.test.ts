@@ -55,7 +55,11 @@ function op(id: string, overrides: Partial<SyncOperation> = {}): SyncOperation {
 	}
 }
 
-const RETRYABLE: ProcessOperationResult = { success: false, error: 'HTTP 503', retryable: true }
+const RETRYABLE: ProcessOperationResult = {
+	success: false,
+	error: 'HTTP 503',
+	retryable: true,
+}
 /** The 200 envelope with `failedCount > 0` and no status. */
 const UNCLASSIFIED: ProcessOperationResult = {
 	success: false,
@@ -355,7 +359,7 @@ describe('escalating an op that keeps failing', () => {
 	})
 
 	describe('escalation does not release the pull cursor', () => {
-		const suppressedAndOther: ServerChange[] = [
+		const suppressedAndOther = [
 			{
 				entityType: 'incomeSource',
 				entityId: 'entity-stuck',
@@ -370,7 +374,7 @@ describe('escalating an op that keeps failing', () => {
 				updatedAt: 6_000,
 				isDeleted: false,
 			},
-		]
+		] satisfies ServerChange[]
 
 		it('control: a NON-escalated queued op holds the cursor at the same place', async () => {
 			await queue.add(op('stuck', { timestamp: 5_000 }))
@@ -390,7 +394,7 @@ describe('escalating an op that keeps failing', () => {
 			await failTimes('stuck', 4)
 			expect(escalatedIds()).toEqual(['stuck'])
 
-			const changes: ServerChange[] = [
+			const changes = [
 				{
 					// Older than the queued edit: the local edit wins, so this is suppressed.
 					entityType: 'incomeSource',
@@ -406,7 +410,7 @@ describe('escalating an op that keeps failing', () => {
 					updatedAt: 6_000,
 					isDeleted: false,
 				},
-			]
+			] satisfies ServerChange[]
 			fetchServerChanges.mockResolvedValue(changes)
 
 			await service.pull()

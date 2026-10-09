@@ -24,12 +24,12 @@ function marked(): string | null {
 
 const ROW = { id: 'row-1' }
 
-const WRITERS: [string, () => void][] = [
+const WRITERS = [
 	['an income source', () => useIncomeStore.setState({ incomeSources: [ROW] } as never)],
 	['an expense', () => useExpenseStore.setState({ expenses: [ROW] } as never)],
 	['a savings goal', () => useSavingsStore.setState({ savingsGoals: [ROW] } as never)],
 	['a balance entry', () => useBalanceStore.setState({ entries: [ROW] } as never)],
-]
+] satisfies [string, () => void][]
 
 function emptyAllStores(): void {
 	useIncomeStore.setState({ incomeSources: [] } as never)

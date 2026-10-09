@@ -7,21 +7,21 @@ const base = {
 	updatedAt: new Date('2026-01-01').toISOString(),
 }
 
-const goal: ClientSavingsGoal = {
+const goal = {
 	id: 'goal-1',
 	name: 'Vacation',
 	targetAmount: 100000,
 	currentBalance: 60000,
 	...base,
-}
+} satisfies ClientSavingsGoal
 
-const account: ClientSavingsGoal = {
+const account = {
 	id: 'acc-1',
 	name: 'Checking Buffer',
 	targetAmount: null,
 	currentBalance: 250000,
 	...base,
-}
+} satisfies ClientSavingsGoal
 
 beforeEach(() => {
 	localStorage.clear()

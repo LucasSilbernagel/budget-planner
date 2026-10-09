@@ -723,7 +723,7 @@ describe('calculateDistributablePool — the two populations', () => {
 // Assert Σ allocations against the pool, never a constant: a constant passes when pool
 // and split are wrong together.
 describe('solveAutomaticAllocations — invariants hold across the 45.1 matrix', () => {
-	const cases: Array<{ name: string; input: Parameters<typeof solveAutomaticAllocations>[0] }> = [
+	const cases = [
 		{
 			name: 'flagged, single automatic account',
 			input: {
@@ -772,7 +772,7 @@ describe('solveAutomaticAllocations — invariants hold across the 45.1 matrix',
 				savingsAccounts: [automatic('a'), automatic('b')],
 			},
 		},
-	]
+	] satisfies Array<{ name: string; input: Parameters<typeof solveAutomaticAllocations>[0] }>
 
 	for (const { name, input } of cases) {
 		it(`preserves the total exactly — ${name}`, () => {

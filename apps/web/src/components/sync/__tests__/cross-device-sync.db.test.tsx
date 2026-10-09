@@ -601,7 +601,7 @@ const PLAN_ACCOUNTS = {
 
 type Plan = import('@/stores/retirementPlannerStore').RetirementPlan
 
-const AUTHORED: Plan = {
+const AUTHORED = {
 	currentAgeInput: '42',
 	lifeExpectancyInput: '88',
 	desiredIncomeInput: '55,000.00',
@@ -613,7 +613,7 @@ const AUTHORED: Plan = {
 	postRetirementReturnInput: '3.25',
 	postRetirementTouched: true,
 	model: 'perpetual',
-}
+} satisfies Plan
 
 const plan = () => planStore.useRetirementPlannerStore.getState()
 

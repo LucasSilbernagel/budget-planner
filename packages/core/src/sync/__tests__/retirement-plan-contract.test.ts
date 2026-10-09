@@ -220,7 +220,7 @@ describe('G5: a plan op is never stranded by a deleted profile', () => {
 		userId: USER,
 		profileId: PROFILE,
 	})
-	const childOp: SyncOperation = {
+	const childOp = {
 		id: 'child',
 		type: 'update',
 		entityType: 'incomeSource',
@@ -230,7 +230,7 @@ describe('G5: a plan op is never stranded by a deleted profile', () => {
 		deviceId: 'device-b',
 		userId: USER,
 		profileId: PROFILE,
-	}
+	} satisfies SyncOperation
 
 	beforeEach(async () => {
 		fetchServerChanges = vi.fn(async (_since: number | null) => [] as ServerChange[])

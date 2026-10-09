@@ -17,7 +17,7 @@ function computeSignature(encodedPayload: string, secret: string): string {
 
 export function signSession(payload: Omit<SessionPayload, 'iat'>): string {
 	const secret = getSessionSecret()
-	const fullPayload: SessionPayload = { ...payload, iat: Date.now() }
+	const fullPayload = { ...payload, iat: Date.now() } satisfies SessionPayload
 	const encodedPayload = Buffer.from(JSON.stringify(fullPayload)).toString('base64url')
 	const signature = computeSignature(encodedPayload, secret)
 	return `${encodedPayload}.${signature}`
