@@ -9,7 +9,7 @@ const source = (): string => readFileSync(SESSION_SEED, 'utf8')
 
 const ENV_KEY = 'E2E_SESSION_SEED'
 
-describe('getSessionSeed dev-only override (story 58.1, AC-9)', () => {
+describe('getSessionSeed dev-only override', () => {
 	it('gates the override on the DEV build, with the build flag evaluated FIRST', () => {
 		// One contiguous expression: two substrings far apart would pass while ungated.
 		expect(source()).toContain(`import.meta.env.DEV && process.env['${ENV_KEY}']`)

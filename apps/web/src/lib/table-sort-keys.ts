@@ -37,7 +37,7 @@ function normalizedOrNull(amount: unknown, frequency: unknown): number | null {
 
 export type FlowSortKey = 'name' | 'amount' | 'frequency' | 'category'
 
-interface FlowRow {
+type FlowRow = {
 	name: string
 	amount: number
 	frequency: string
@@ -65,7 +65,7 @@ export function createFlowSortExtractors(
 
 export type SavingsSortKey = 'name' | 'target' | 'currentBalance' | 'monthlyAllocation' | 'progress'
 
-interface SavingsRow {
+type SavingsRow = {
 	id: string
 	name: string
 	targetAmount: number | null
@@ -95,7 +95,7 @@ export function createSavingsSortExtractors(
 
 export type BalanceSortKey = 'type' | 'name' | 'currentBalance' | 'contribution'
 
-export interface BalanceRow {
+export type BalanceRow = {
 	type: string
 	name: string
 	currentBalance: number

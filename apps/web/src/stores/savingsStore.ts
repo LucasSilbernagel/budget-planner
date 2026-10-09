@@ -15,7 +15,7 @@ import { withUuidIds } from '../lib/uuid'
 import { SAVINGS_GOALS_STORAGE_KEY } from './overview-data-storage-keys'
 import { useProfileStore } from './profileStore'
 
-interface SavingsState {
+type SavingsState = {
 	savingsGoals: ClientSavingsGoal[]
 
 	addSavingsGoal: (goal: ClientNewSavingsGoal) => ClientSavingsGoal

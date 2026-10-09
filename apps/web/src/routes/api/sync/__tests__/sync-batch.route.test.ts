@@ -132,7 +132,7 @@ describe('POST /api/sync/batch served boundary', () => {
 		expect(processBatchSync).toHaveBeenCalledTimes(1)
 	})
 
-	it('allows a lifetime buyer (Story 30.4a — untested at this boundary until 78.3)', async () => {
+	it('allows a lifetime buyer ', async () => {
 		mockSession(lifetimeSession)
 		const response = await POST({ request: postRequest(sampleBatch) })
 
@@ -262,7 +262,7 @@ describe('POST /api/sync/batch served boundary', () => {
 		expect(response.status).toBe(status)
 	})
 
-	it('does NOT pick a status from the error TEXT (story 75.1)', async () => {
+	it('does NOT pick a status from the error TEXT', async () => {
 		mockSession(paidSession)
 		mockBatchResult({
 			success: false,

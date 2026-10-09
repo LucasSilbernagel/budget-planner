@@ -133,7 +133,7 @@ describe('store selectors during hydration', () => {
 	})
 })
 
-describe('useTotalAssetBalance hydration parity (Story 43.4)', () => {
+describe('useTotalAssetBalance hydration parity', () => {
 	it('derives from the state argument, so SSR and first client render agree', async () => {
 		useBalanceStore.setState({ entries: [] })
 		localStorage.setItem(

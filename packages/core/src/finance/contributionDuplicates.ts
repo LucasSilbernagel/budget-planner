@@ -4,23 +4,23 @@
 import type { NormalizableFinancialItem } from './netIncome'
 import { normalizeToMonthly } from './normalization'
 
-export interface DuplicateCandidateExpense extends NormalizableFinancialItem {
+export type DuplicateCandidateExpense = NormalizableFinancialItem & {
 	id: string
 	name: string
 }
 
-export interface DuplicateCandidateContribution extends NormalizableFinancialItem {
+export type DuplicateCandidateContribution = NormalizableFinancialItem & {
 	id: string
 	name: string
 	recordedAsExpense?: boolean
 }
 
-export interface ContributionDuplicateInput {
+export type ContributionDuplicateInput = {
 	expenses: DuplicateCandidateExpense[]
 	investmentContributions: DuplicateCandidateContribution[]
 }
 
-export interface ContributionDuplicateCandidate {
+export type ContributionDuplicateCandidate = {
 	expenseId: string
 	expenseName: string
 	contributionId: string

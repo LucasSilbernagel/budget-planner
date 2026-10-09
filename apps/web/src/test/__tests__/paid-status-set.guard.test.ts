@@ -276,7 +276,7 @@ describe('findStatusSetCopies — catches every historical spelling', () => {
 	})
 })
 
-describe('guard: the status sets are defined once (Story 78.3)', () => {
+describe('guard: the status sets are defined once', () => {
 	it('finds no hand-written status set outside lib/premium/access-statuses.ts', () => {
 		const offenders: string[] = []
 		const allowedSeen: Record<string, number> = {}

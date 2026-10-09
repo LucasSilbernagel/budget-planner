@@ -80,7 +80,7 @@ afterEach(() => {
 	vi.unstubAllGlobals()
 })
 
-describe('AuthIndicator — server HTML, signed out (story 69.2, JS off)', () => {
+describe('AuthIndicator — server HTML, signed out (JS off)', () => {
 	it.each(['/', '/income'])(
 		'serves the Settings gear on %s as a real link outside the live region',
 		async (path) => {
@@ -95,7 +95,7 @@ describe('AuthIndicator — server HTML, signed out (story 69.2, JS off)', () =>
 	)
 })
 
-describe('AuthIndicator — server HTML on /login (story 69.2 D3)', () => {
+describe('AuthIndicator — server HTML on /login', () => {
 	it('serves no gear on /login, while / serves one (contrast)', async () => {
 		const { row: onHome } = await serverHtml(SIGNED_OUT, '/')
 		expect(onHome.querySelectorAll('a[href="/settings"]')).toHaveLength(1)
@@ -107,7 +107,7 @@ describe('AuthIndicator — server HTML on /login (story 69.2 D3)', () => {
 	})
 })
 
-describe('AuthIndicator — server HTML, signed in (stories 59.3, 69.3)', () => {
+describe('AuthIndicator — server HTML, signed in', () => {
 	it('paints the account trigger collapsed in the first frame, with no panel', async () => {
 		const { html, row } = await serverHtml(ENTITLED, '/')
 		const trigger = row.querySelector('button[aria-label="Account menu"]')
@@ -169,7 +169,7 @@ async function hydrateSignedIn(withMismatch: boolean) {
 	}
 }
 
-describe('AuthIndicator — hydrating the signed-in cluster (story 69.3 review)', () => {
+describe('AuthIndicator — hydrating the signed-in cluster', () => {
 	/**
 	 * Designed RED: React 19 tolerates extra nodes directly under the hydration root, so this
 	 * proves the harness can see a mismatch at all.
@@ -242,7 +242,7 @@ async function hydrateSignedOutAt(path: string, withMismatch: boolean) {
 	}
 }
 
-describe('AuthIndicator — hydrating the signed-out strip on /login (story 41.3)', () => {
+describe('AuthIndicator — hydrating the signed-out strip on /login', () => {
 	it('reports a mismatch when the server and client trees differ (control)', async () => {
 		const { recoverable, cleanup } = await hydrateSignedOutAt('/login', true)
 		try {
@@ -288,7 +288,7 @@ describe('AuthIndicator — hydrating the signed-out strip on /login (story 41.3
  * The verified-session store is a module singleton: a write during a server render would
  * leak one user's tier into the next request's nav.
  */
-describe('AuthIndicator — a server render never writes the verified session (story 99.1)', () => {
+describe('AuthIndicator — a server render never writes the verified session', () => {
 	afterEach(() => {
 		resetVerifiedSessionForTests()
 	})

@@ -29,7 +29,7 @@ async function addIncomeSource(page: Page, name: string) {
 const readIncomeStorage = (page: Page) =>
 	page.evaluate((key) => window.localStorage.getItem(key) ?? '', INCOME_KEY)
 
-test.describe('Clear local data (story 17-2)', () => {
+test.describe('Clear local data', () => {
 	test('wipes seeded local data and the wipe persists across a reload', async ({ page }) => {
 		// Several full dev page loads, each hydrating slowly under concurrent gates.
 		test.setTimeout(60_000)

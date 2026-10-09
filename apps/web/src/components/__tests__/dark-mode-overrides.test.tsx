@@ -8,7 +8,7 @@ import { EditProfileDialog } from '../profiles/edit-profile'
 
 // Overriding Modal's className drops its `dark:bg-gray-800`, so these modals must
 // supply their own dark surface.
-describe('override-modal dark surfaces (story 11-2, AC-3)', () => {
+describe('override-modal dark surfaces', () => {
 	beforeEach(() => {
 		useBalanceStore.setState({ entries: [] })
 	})
@@ -23,7 +23,7 @@ describe('override-modal dark surfaces (story 11-2, AC-3)', () => {
 		expect(dialog.className).toContain('dark:bg-gray-800')
 	})
 
-	it('gives the edit-profile modal card a dark surface (story 54.1)', () => {
+	it('gives the edit-profile modal card a dark surface', () => {
 		useProfileStore.setState({
 			profiles: [{ id: 'p1', userId: 'u1', name: 'Main', isDefault: true, currency: 'NONE' }],
 			activeProfileId: 'p1',
@@ -33,7 +33,7 @@ describe('override-modal dark surfaces (story 11-2, AC-3)', () => {
 		expect(dialog.className).toContain('dark:bg-gray-800')
 	})
 
-	it('gives both icon-picker states a dark variant (story 54.2)', () => {
+	it('gives both icon-picker states a dark variant', () => {
 		useProfileStore.setState({
 			profiles: [{ id: 'p1', userId: 'u1', name: 'Main', isDefault: true, currency: 'NONE' }],
 			activeProfileId: 'p1',
@@ -53,7 +53,7 @@ describe('override-modal dark surfaces (story 11-2, AC-3)', () => {
 	})
 
 	// Border width differs between states, so selection does not rely on colour alone.
-	it('distinguishes the selected icon by border width, not colour alone (story 54.2)', () => {
+	it('distinguishes the selected icon by border width, not colour alone', () => {
 		useProfileStore.setState({
 			profiles: [{ id: 'p1', userId: 'u1', name: 'Main', isDefault: true, currency: 'NONE' }],
 			activeProfileId: 'p1',

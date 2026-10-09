@@ -16,7 +16,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
 
-interface JournalEntry {
+type JournalEntry = {
 	idx: number
 	tag: string
 	when: number
@@ -85,7 +85,7 @@ describe('migration chain', () => {
 
 const ROOT_SNAPSHOT_PREV_ID = '00000000-0000-0000-0000-000000000000'
 
-interface Snapshot {
+type Snapshot = {
 	id: string
 	prevId: string
 	dialect: string

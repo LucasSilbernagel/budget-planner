@@ -18,7 +18,7 @@ const BIN_DIR = path.join(PACKAGE_ROOT, 'node_modules', '.bin')
 
 type StartupParams = Record<string, string>
 
-interface StartupStub {
+type StartupStub = {
 	port: number
 	captures: StartupParams[]
 	close: () => Promise<void>
@@ -125,13 +125,13 @@ afterEach(async () => {
 	stub = null
 })
 
-describe('DB_SESSION_OPTIONS (D1)', () => {
+describe('DB_SESSION_OPTIONS', () => {
 	it('is the one UTC startup option', () => {
 		expect(DB_SESSION_OPTIONS).toBe(EXPECTED_OPTIONS)
 	})
 })
 
-describe('AC-1: the app pool sends TimeZone=UTC on every connection', () => {
+describe('the app pool sends TimeZone=UTC on every connection', () => {
 	it('getPool() (via testDbConnection) puts the option in the StartupMessage', async () => {
 		stub = await startStartupStub()
 		const savedUrl = process.env['DATABASE_URL']
@@ -160,7 +160,7 @@ describe('AC-1: the app pool sends TimeZone=UTC on every connection', () => {
 	})
 })
 
-describe('AC-2(a): the migrator CLIs send it too', () => {
+describe('the migrator CLIs send it too', () => {
 	for (const cli of ['src/migrate-preflight-cli.ts', 'src/migrate-lock-cli.ts']) {
 		it(`${cli} puts the option in the StartupMessage`, async () => {
 			stub = await startStartupStub()
@@ -173,7 +173,7 @@ describe('AC-2(a): the migrator CLIs send it too', () => {
 	}
 })
 
-describe('AC-2(b): stepEnv pins PGOPTIONS for the spawned steps (drizzle-kit = C4)', () => {
+describe('stepEnv pins PGOPTIONS for the spawned steps (drizzle-kit = C4)', () => {
 	it('sets PGOPTIONS exactly and keeps the rest of the environment', () => {
 		const parent: NodeJS.ProcessEnv = {
 			DATABASE_URL: 'postgresql://u:p@budget-planner-prod-rw:5432/d',
@@ -189,7 +189,7 @@ describe('AC-2(b): stepEnv pins PGOPTIONS for the spawned steps (drizzle-kit = C
 	})
 })
 
-describe('AC-2(c): library-behaviour pin for drizzle-kit migrate', () => {
+describe('library-behaviour pin for drizzle-kit migrate', () => {
 	// drizzle-kit strips an `options` key, and pg falls back to PGOPTIONS only without one. The
 	// config carries a different value, so either change shows up in the capture.
 	it('PGOPTIONS reaches the wire; an `options` key in dbCredentials does not', async () => {

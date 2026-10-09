@@ -111,7 +111,7 @@ export function CategoryManager(): ReactElement {
 	)
 }
 
-interface CategorySectionProps {
+type CategorySectionProps = {
 	kind: CategoryKind
 	title: string
 	description: string

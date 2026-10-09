@@ -158,7 +158,7 @@ describe('syncBridge — paid tier (handle registered)', () => {
 		}
 	})
 
-	it('defaults a missing savings allocationMode to automatic and sends monthlyAllocation: null (Story 26.1)', () => {
+	it('defaults a missing savings allocationMode to automatic and sends monthlyAllocation: null', () => {
 		syncEntityCreate('savingsGoal', {
 			id: 's2',
 			name: 'Leftover',
@@ -171,7 +171,7 @@ describe('syncBridge — paid tier (handle registered)', () => {
 		expect(payload.monthlyAllocation).toBeNull()
 	})
 
-	it('a manual→automatic UPDATE forwards monthlyAllocation: null so the server clears the stale amount (Story 26.1, review P1)', () => {
+	it('a manual→automatic UPDATE forwards monthlyAllocation: null so the server clears the stale amount', () => {
 		// The UPDATE must carry the explicit null, or the partial `.set()` leaves the stale 30000¢.
 		syncEntityUpdate(
 			'savingsGoal',
@@ -228,7 +228,7 @@ describe('syncBridge — paid tier (handle registered)', () => {
 		)
 	})
 
-	it('defaults a missing frequency to monthly in the payload (Story 16-2)', () => {
+	it('defaults a missing frequency to monthly in the payload', () => {
 		syncEntityCreate(
 			'balanceTracking',
 			row({
@@ -304,7 +304,7 @@ describe('syncBridge — paid tier (handle registered)', () => {
 	})
 })
 
-describe('syncBridge — an asset row reaches the queue (Story 43.4, gate 2 falsifier)', () => {
+describe('syncBridge — an asset row reaches the queue (gate 2 falsifier)', () => {
 	beforeEach(() => {
 		registerSyncBridge(handle)
 	})
@@ -386,7 +386,7 @@ describe('syncBridge — an asset row reaches the queue (Story 43.4, gate 2 fals
 	})
 })
 
-describe('toServerPayload — retirementPlan (story 99.2)', () => {
+describe('toServerPayload — retirementPlan', () => {
 	const PLAN = {
 		currentAgeInput: '',
 		lifeExpectancyInput: '87',

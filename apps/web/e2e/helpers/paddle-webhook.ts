@@ -8,7 +8,7 @@ function paddleSignature(rawBody: string, secret: string, ts: number): string {
 	return `ts=${ts};h1=${h1}`
 }
 
-export interface SubscriptionCreated {
+export type SubscriptionCreated = {
 	customerId: string
 	/** Inline, which keeps the server off Paddle's customer API. */
 	email: string

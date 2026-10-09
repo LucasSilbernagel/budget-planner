@@ -108,7 +108,7 @@ function textOf(page: () => React.ReactElement, linked: boolean): string {
 	return text
 }
 
-describe('a debt payment link changes no expense figure (Story 102.1, AC-9)', () => {
+describe('a debt payment link changes no expense figure', () => {
 	beforeEach(resetStores)
 	afterEach(resetStores)
 

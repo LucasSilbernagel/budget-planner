@@ -81,7 +81,7 @@ function incomeChange(
 	}
 }
 
-describe('pull() refuses a malformed server row before LWW can drop the local edit (story 75.4)', () => {
+describe('pull() refuses a malformed server row before LWW can drop the local edit', () => {
 	let storage: ReturnType<typeof createStorage>
 	let queue: SyncQueue
 	let service: SynchronizationService
@@ -118,7 +118,7 @@ describe('pull() refuses a malformed server row before LWW can drop the local ed
 		vi.restoreAllMocks()
 	})
 
-	describe('AC-1/AC-2: the recorded repro', () => {
+	describe('the recorded repro', () => {
 		it('keeps the local edit queued when a STRING amount loses it LWW', async () => {
 			await queue.add(localUpdate('local-x'))
 			fetchServerChanges.mockResolvedValueOnce([incomeChange({ amount: '500000' })])
@@ -206,7 +206,7 @@ describe('pull() refuses a malformed server row before LWW can drop the local ed
 		})
 	})
 
-	describe('AC-4: cursor and suppression semantics', () => {
+	describe('cursor and suppression semantics', () => {
 		it('ADVANCES the cursor past a refused row with no queued op (66.2 decision)', async () => {
 			fetchServerChanges.mockResolvedValueOnce([incomeChange({ amount: '500000' })])
 

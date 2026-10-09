@@ -27,8 +27,8 @@ function data(contribution: number) {
 	}
 }
 
-describe('calculateFinancialForecast with a separate baseline (story 107.1)', () => {
-	it('projects the baseline from the baseline data and the projection from the scenario data (AC-3)', () => {
+describe('calculateFinancialForecast with a separate baseline', () => {
+	it('projects the baseline from the baseline data and the projection from the scenario data', () => {
 		const result = calculateFinancialForecast(data(300000), FLAT, 10, data(50000))
 
 		expect(result.baseline.at(-1)?.netWorth).toBe(47862714)

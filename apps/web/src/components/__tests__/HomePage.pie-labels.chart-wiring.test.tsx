@@ -8,7 +8,7 @@ import { useBalanceStore, useExpenseStore, useIncomeStore, useSavingsStore } fro
 import { useCategoryStore } from '../../stores/categoryStore'
 import { useCurrencyStore } from '../../stores/currencyStore'
 
-interface CapturedPie {
+type CapturedPie = {
 	label: unknown
 	labelLine: unknown
 }
@@ -94,8 +94,8 @@ beforeEach(() => {
 	})
 })
 
-describe('BreakdownPie in-plot slice labels (story 36.2)', () => {
-	it('AC-1: hands BOTH pies `label={false}`, so no in-plot text can paint', async () => {
+describe('BreakdownPie in-plot slice labels', () => {
+	it('hands BOTH pies `label={false}`, so no in-plot text can paint', async () => {
 		render(<HomePage />)
 
 		await waitFor(() => expect(captured.pies).toHaveLength(2))
@@ -105,7 +105,7 @@ describe('BreakdownPie in-plot slice labels (story 36.2)', () => {
 		}
 	})
 
-	it('AC-1: keeps `labelLine={false}` on BOTH pies', async () => {
+	it('keeps `labelLine={false}` on BOTH pies', async () => {
 		render(<HomePage />)
 
 		await waitFor(() => expect(captured.pies).toHaveLength(2))
@@ -116,7 +116,7 @@ describe('BreakdownPie in-plot slice labels (story 36.2)', () => {
 	})
 })
 
-describe('pie tooltip zero-total guard (story 36.2, re-pinning story 32.3)', () => {
+describe('pie tooltip zero-total guard', () => {
 	it('emits no "NaN" when every slice is zero', async () => {
 		useIncomeStore.setState({
 			incomeSources: [row('i1', 'Salary', 0), row('i2', 'Freelance', 0)],
@@ -137,8 +137,8 @@ describe('pie tooltip zero-total guard (story 36.2, re-pinning story 32.3)', () 
 	})
 })
 
-describe('pie tooltip content (was e2e, story 84.5)', () => {
-	it('each pie reads the slice as a $ amount AND its own share (was e2e :360, :412)', async () => {
+describe('pie tooltip content', () => {
+	it('each pie reads the slice as a $ amount AND its own share', async () => {
 		const pinned = useCurrencyStore.getState()
 		useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
 		try {

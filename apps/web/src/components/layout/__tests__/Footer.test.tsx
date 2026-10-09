@@ -8,7 +8,7 @@ describe('Footer', () => {
 		expect(await screen.findByRole('contentinfo')).toBeInTheDocument()
 	})
 
-	it('no longer displays the build version (story 21-1)', async () => {
+	it('no longer displays the build version', async () => {
 		renderWithRouter(<Footer />)
 		const footer = await screen.findByRole('contentinfo')
 		expect(footer).not.toHaveTextContent(/\bv\d+\.\d+\.\d+/)
@@ -21,13 +21,13 @@ describe('Footer', () => {
 		expect(screen.queryByText(/solubudget/i)).toBeNull()
 	})
 
-	it('renders the global in-app contact link (story 9-1)', async () => {
+	it('renders the global in-app contact link', async () => {
 		renderWithRouter(<Footer />)
 		const link = await screen.findByRole('link', { name: /^contact$/i })
 		expect(link).toHaveAttribute('href', '/contact')
 	})
 
-	it('no longer exposes the old GitHub feedback link (story 9-1)', async () => {
+	it('no longer exposes the old GitHub feedback link', async () => {
 		renderWithRouter(<Footer />)
 		await screen.findByRole('contentinfo')
 		expect(
@@ -35,7 +35,7 @@ describe('Footer', () => {
 		).not.toBeInTheDocument()
 	})
 
-	it('renders the global documentation link (story 4-10)', async () => {
+	it('renders the global documentation link', async () => {
 		renderWithRouter(<Footer />)
 		const link = await screen.findByRole('link', { name: /documentation/i })
 		expect(link).toHaveAttribute('href', '/docs')
@@ -46,13 +46,13 @@ describe('Footer', () => {
 		[/terms of service/i, '/terms'],
 		[/privacy policy/i, '/privacy'],
 		[/refund policy/i, '/refund'],
-	])('links to the %s compliance page (story 5-13)', async (name, href) => {
+	])('links to the %s compliance page', async (name, href) => {
 		renderWithRouter(<Footer />)
 		const link = await screen.findByRole('link', { name })
 		expect(link).toHaveAttribute('href', href)
 	})
 
-	it('marks the current footer page with aria-current="page" (story 21-1)', async () => {
+	it('marks the current footer page with aria-current="page"', async () => {
 		renderWithRouter(<Footer />, { path: '/pricing' })
 		const pricing = await screen.findByRole('link', { name: /^pricing$/i })
 		expect(pricing).toHaveAttribute('aria-current', 'page')
@@ -61,13 +61,13 @@ describe('Footer', () => {
 		)
 	})
 
-	it('marks the Documentation link current on /docs (story 21-1)', async () => {
+	it('marks the Documentation link current on /docs', async () => {
 		renderWithRouter(<Footer />, { path: '/docs' })
 		const docs = await screen.findByRole('link', { name: /documentation/i })
 		expect(docs).toHaveAttribute('aria-current', 'page')
 	})
 
-	it('marks Documentation current on a /docs sub-page (story 60.2)', async () => {
+	it('marks Documentation current on a /docs sub-page', async () => {
 		renderWithRouter(<Footer />, { path: '/docs/getting-started' })
 		// Await the assertion's own subject: a <Link> renders its href before active state resolves.
 		expect(
@@ -75,7 +75,7 @@ describe('Footer', () => {
 		).toBeInTheDocument()
 	})
 
-	it('does not mark Documentation current on a path that merely starts with the same characters (story 60.2)', async () => {
+	it('does not mark Documentation current on a path that merely starts with the same characters', async () => {
 		renderWithRouter(<Footer />, { path: '/docsomething' })
 		const footer = await screen.findByRole('contentinfo')
 		expect(within(footer).getByRole('link', { name: /documentation/i })).not.toHaveAttribute(
@@ -84,7 +84,7 @@ describe('Footer', () => {
 	})
 
 	// Pin the total first: one marked link would also pass if the siblings stopped rendering.
-	it('marks exactly one of the seven footer links current on a /docs sub-page (story 60.2)', async () => {
+	it('marks exactly one of the seven footer links current on a /docs sub-page', async () => {
 		renderWithRouter(<Footer />, { path: '/docs/getting-started' })
 		const footer = await screen.findByRole('contentinfo')
 		const links = within(footer).getAllByRole('link')
@@ -94,13 +94,13 @@ describe('Footer', () => {
 		expect(marked[0]).toHaveAccessibleName(/documentation/i)
 	})
 
-	it('displays a copyright notice for the current year (story 6-9)', async () => {
+	it('displays a copyright notice for the current year', async () => {
 		renderWithRouter(<Footer />)
 		const year = new Date().getFullYear()
 		expect(await screen.findByText(new RegExp(`Copyright ${year}`))).toBeInTheDocument()
 	})
 
-	it('separates the copyright group from the legal-link cluster (story 21-1)', async () => {
+	it('separates the copyright group from the legal-link cluster', async () => {
 		renderWithRouter(<Footer />)
 		const copyright = await screen.findByText(/Copyright \d{4}/)
 		const tokens = copyright.className.split(/\s+/)
@@ -109,7 +109,7 @@ describe('Footer', () => {
 		expect(tokens).toContain('sm:mt-0')
 	})
 
-	it('links the author name to their website in a new tab (story 6-9)', async () => {
+	it('links the author name to their website in a new tab', async () => {
 		renderWithRouter(<Footer />)
 		const link = await screen.findByRole('link', {
 			name: /lucas silbernagel.*opens in a new tab/i,
@@ -120,7 +120,7 @@ describe('Footer', () => {
 		expect(link).toHaveTextContent('Lucas Silbernagel')
 	})
 
-	it('groups the legal links in a cluster that dissolves at >=640px (story 18-2)', async () => {
+	it('groups the legal links in a cluster that dissolves at >=640px', async () => {
 		renderWithRouter(<Footer />)
 		const contact = await screen.findByRole('link', { name: /^contact$/i })
 		const group = contact.parentElement
@@ -135,7 +135,7 @@ describe('Footer', () => {
 	})
 
 	// Class tokens: jsdom applies no Tailwind.
-	it('lays the legal links out as a two-column grid of 44px phone targets (story 96.1)', async () => {
+	it('lays the legal links out as a two-column grid of 44px phone targets', async () => {
 		renderWithRouter(<Footer />)
 		const contact = await screen.findByRole('link', { name: /^contact$/i })
 		const group = contact.parentElement as HTMLElement

@@ -46,7 +46,7 @@ function SortDescendingIcon() {
 	)
 }
 
-interface SortableColumnHeaderProps {
+type SortableColumnHeaderProps = {
 	/** Becomes the `<th>`'s entire text content and the button's accessible name. */
 	label: string
 	ariaSort: AriaSortValue
@@ -83,12 +83,12 @@ export function SortableColumnHeader({
 	)
 }
 
-export interface SortAnnouncementState {
+export type SortAnnouncementState = {
 	label: string
 	direction: 'asc' | 'desc'
 }
 
-export interface SortHeaderAnnouncements {
+export type SortHeaderAnnouncements = {
 	describedBy: (ariaSort: AriaSortValue) => string
 	/** Call from a header's click handler, BEFORE it changes the sort. */
 	markActivated: () => void

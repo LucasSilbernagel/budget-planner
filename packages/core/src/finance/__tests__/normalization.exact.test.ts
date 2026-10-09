@@ -24,7 +24,7 @@ function exactRoundBig(num: bigint, den: bigint): number {
 const SWEEP_SIZE = 2_000_000
 const NEGATIVE_SWEEP_SIZE = 200_000
 
-describe('normalizeToMonthly — exact against an integer oracle (AC-3)', () => {
+describe('normalizeToMonthly — exact against an integer oracle', () => {
 	it.each(FREQUENCIES)(
 		'matches the oracle for every amount in 0..1,999,999 at %s',
 		(frequency) => {
@@ -58,7 +58,7 @@ describe('normalizeToMonthly — exact against an integer oracle (AC-3)', () => 
 	)
 })
 
-describe('normalizeToMonthly — exact at the validator bound (AC-4)', () => {
+describe('normalizeToMonthly — exact at the validator bound', () => {
 	// Money caps at MAX_SAFE_INTEGER / 100, so amount × 52 must stay below 2^53 there.
 	const BOUND = Math.floor(Number.MAX_SAFE_INTEGER / 100)
 

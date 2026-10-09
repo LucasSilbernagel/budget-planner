@@ -64,7 +64,7 @@ describe('Synchronization Service', () => {
 			expect(deviceId.startsWith('device-')).toBe(true)
 		})
 
-		it('should generate a cryptographic (crypto.randomUUID) device ID, not Math.random (Story 5.8)', () => {
+		it('should generate a cryptographic (crypto.randomUUID) device ID, not Math.random', () => {
 			const deviceId = service.getDeviceId()
 			const uuidV4 = /^device-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 			expect(deviceId).toMatch(uuidV4)

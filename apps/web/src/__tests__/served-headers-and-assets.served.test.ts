@@ -49,7 +49,7 @@ function metaNonce(html: string): string | undefined {
 	return html.match(/<meta property="csp-nonce" content="([^"]*)"/)?.[1]
 }
 
-describe('the document response headers (was e2e security-headers AC-1)', () => {
+describe('the document response headers', () => {
 	it('carries a strict Content-Security-Policy and the hardening headers', async () => {
 		const response = await app.get('/')
 		expect(response.status).toBe(200)
@@ -123,7 +123,7 @@ describe('the document response headers (was e2e security-headers AC-1)', () => 
 	}
 })
 
-describe('the counter.dev analytics tag (story 117.1)', () => {
+describe('the counter.dev analytics tag', () => {
 	it('is served once on /, deferred, with its data-id and the request nonce', async () => {
 		const response = await app.get('/')
 		expect(response.status).toBe(200)

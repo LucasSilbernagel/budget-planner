@@ -10,7 +10,7 @@ import {
 	type RetirementModel,
 } from '@budget-planner/core'
 
-export interface RetirementPlan {
+export type RetirementPlan = {
 	/** `''` is "cleared", which is not the same as absent. */
 	currentAgeInput: string
 	lifeExpectancyInput: string

@@ -69,7 +69,7 @@ describe('sendMagicLinkEmail', () => {
 		expect(bodyStr).toContain(link)
 	})
 
-	describe('Brevo messageId (Story 74.1, AC-5)', () => {
+	describe('Brevo messageId', () => {
 		const LINK = 'https://app.test/api/auth/login/verify?token=x'
 
 		it('returns the messageId from a 2xx body', async () => {
@@ -103,7 +103,7 @@ describe('sendMagicLinkEmail', () => {
 	})
 })
 
-describe('the dev-only e2e mail outbox (story 87.1, D2)', () => {
+describe('the dev-only e2e mail outbox', () => {
 	const dirs: string[] = []
 	const outboxDir = () => {
 		const dir = mkdtempSync(join(tmpdir(), 'mail-outbox-'))
@@ -167,7 +167,7 @@ describe('the dev-only e2e mail outbox (story 87.1, D2)', () => {
 	})
 })
 
-describe('sendRetentionNoticeEmail (Story 73.2, AC-4)', () => {
+describe('sendRetentionNoticeEmail', () => {
 	function capture() {
 		const captured: { body: Record<string, unknown> | null } = { body: null }
 		server.use(

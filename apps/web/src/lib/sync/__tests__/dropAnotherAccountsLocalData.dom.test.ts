@@ -39,7 +39,7 @@ beforeEach(() => {
 	useIncomeStore.setState({ incomeSources: [] })
 })
 
-describe('dropAnotherAccountsLocalData — kept profiles (story 86.2)', () => {
+describe('dropAnotherAccountsLocalData — kept profiles', () => {
 	it("makes the session's DEFAULT profile active when A's was, and moves kept rows onto it", () => {
 		useProfileStore.setState({
 			profiles: [
@@ -88,7 +88,7 @@ describe('dropAnotherAccountsLocalData — kept profiles (story 86.2)', () => {
 	})
 })
 
-describe('the D4 residual, MEASURED (story 86.2, AC 6 / G6)', () => {
+describe('a row created before its first pull, MEASURED', () => {
 	afterEach(() => {
 		clearSyncBridge()
 	})

@@ -5,7 +5,7 @@ import { useProfileStore } from '@/stores/profileStore'
 import { renderWithProviders, screen, userEvent } from '@/test/utils'
 import { CreateProfileDialog } from '../create-profile'
 
-describe('CreateProfileDialog form (story 54.1)', () => {
+describe('CreateProfileDialog form', () => {
 	afterEach(() => {
 		useProfileStore.getState().reset()
 	})
@@ -57,7 +57,7 @@ describe('CreateProfileDialog form (story 54.1)', () => {
 	})
 })
 
-describe('CreateProfileDialog viewport fit (story 31.3)', () => {
+describe('CreateProfileDialog viewport fit', () => {
 	const cardTokens = () => {
 		renderWithProviders(<CreateProfileDialog onClose={() => {}} />)
 		return screen.getByRole('dialog').className.split(/\s+/).filter(Boolean)
@@ -76,7 +76,7 @@ describe('CreateProfileDialog viewport fit (story 31.3)', () => {
 	})
 })
 
-describe('CreateProfileDialog icon picker (story 98.1)', () => {
+describe('CreateProfileDialog icon picker', () => {
 	afterEach(() => {
 		clearSyncBridge()
 		useProfileStore.getState().reset()

@@ -58,7 +58,7 @@ afterEach(() => {
 	document.cookie = 'has_session=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
 })
 
-describe('SyncProvider applies the account boundary on a verified session (story 90.1)', () => {
+describe('SyncProvider applies the account boundary on a verified session', () => {
 	it('signed out ({ user: null } with a 200): removes A’s rows', async () => {
 		stubMe({ user: null })
 		render(<SyncProvider />)

@@ -3,7 +3,7 @@ import privacy from './privacy.md?raw'
 import refund from './refund.md?raw'
 import terms from './terms.md?raw'
 
-export interface LegalPage {
+export type LegalPage = {
 	readonly slug: string
 	readonly title: string
 	readonly description: string

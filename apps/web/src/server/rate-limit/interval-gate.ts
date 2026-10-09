@@ -3,7 +3,7 @@
  * so callers piggyback on requests and the first one after a wake passes.
  */
 
-export interface IntervalGate {
+export type IntervalGate = {
 	/** 0 = never passed, so the first call passes. */
 	lastPassedAt: number
 }

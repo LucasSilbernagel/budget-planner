@@ -168,7 +168,7 @@ describe('code review 75.2 fixes', () => {
 	})
 })
 
-describe('the not-synced notice (story 79.2, FR128)', () => {
+describe('the not-synced notice', () => {
 	const stuck = (overrides: Partial<RefusalNotice> = {}): RefusalNotice =>
 		notice({ outcome: 'not-synced', change: 'update', ...overrides })
 
@@ -321,7 +321,7 @@ describe('the not-synced notice (story 79.2, FR128)', () => {
 	})
 })
 
-describe('a refused retirement plan edit (story 99.2, D9)', () => {
+describe('a refused retirement plan edit', () => {
 	it.each(['removed', 'changed-back'] as const)(
 		'says the plan is still on this device, never that it was %s',
 		(outcome) => {

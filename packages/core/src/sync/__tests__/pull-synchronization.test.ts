@@ -22,7 +22,7 @@ function serverChange(overrides: Partial<ServerChange> = {}): ServerChange {
 	}
 }
 
-describe('SynchronizationService.pull (Story 4-18)', () => {
+describe('SynchronizationService.pull', () => {
 	let service: SynchronizationService
 	let fetchServerChanges: Mock<Parameters<FetchServerChangesFn>, ReturnType<FetchServerChangesFn>>
 
@@ -82,7 +82,7 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
 		expect(result.applied[0].entityId).toBe('srv-9')
 	})
 
-	it('preserves a NEWER queued local edit against an older server change (AC-2)', async () => {
+	it('preserves a NEWER queued local edit against an older server change', async () => {
 		vi.setSystemTime(5000)
 		await service.queueUpdate(
 			'incomeSource',
@@ -212,7 +212,7 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
 		expect(service.getState().lastPullTimestamp).toBe(50)
 	})
 
-	it('forcePull is an alias for pull (AC-5 manual trigger)', async () => {
+	it('forcePull is an alias for pull (manual trigger)', async () => {
 		fetchServerChanges.mockResolvedValue([serverChange({ updatedAt: 123 })])
 		const result = await service.forcePull()
 		expect(result.changesPulledCount).toBe(1)
@@ -267,7 +267,7 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
 		expect(fetchServerChanges).toHaveBeenLastCalledWith(null)
 	})
 
-	it('does NOT advance the cursor past a suppressed change (review D2)', async () => {
+	it('does NOT advance the cursor past a suppressed change', async () => {
 		vi.setSystemTime(5000)
 		await service.queueUpdate('incomeSource', 'srv-1', { name: 'local', amount: 1 }, testUserId)
 		fetchServerChanges.mockResolvedValue([serverChange({ entityId: 'srv-1', updatedAt: 1000 })])
@@ -281,7 +281,7 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
 		expect(service.getState().lastPullTimestamp).toBeNull()
 	})
 
-	it('caps the cursor below the earliest suppressed change, not past it (review D2)', async () => {
+	it('caps the cursor below the earliest suppressed change, not past it', async () => {
 		vi.setSystemTime(5000)
 		await service.queueUpdate('incomeSource', 'srv-2', { name: 'local', amount: 1 }, testUserId)
 		fetchServerChanges.mockResolvedValue([
@@ -296,7 +296,7 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
 		expect(result.lastPullTimestamp).toBe(100)
 	})
 
-	it('surfaces a discarded local op in conflictOperations so the UI count reflects it (review D4)', async () => {
+	it('surfaces a discarded local op in conflictOperations so the UI count reflects it', async () => {
 		vi.setSystemTime(1000)
 		await service.queueUpdate(
 			'incomeSource',
@@ -313,7 +313,7 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
 		expect(service.getState().conflictOperations[0].entityId).toBe('srv-1')
 	})
 
-	it('baseVersion (causal) overrides wall-clock — local wins when change <= base, despite an OLDER op timestamp (review D1)', async () => {
+	it('baseVersion (causal) overrides wall-clock — local wins when change <= base, despite an OLDER op timestamp', async () => {
 		vi.setSystemTime(100)
 		await service.queueUpdate(
 			'incomeSource',
@@ -339,7 +339,7 @@ describe('SynchronizationService.pull (Story 4-18)', () => {
 		).toBe(true)
 	})
 
-	it('baseVersion (causal) overrides wall-clock — server wins when change > base, despite a NEWER op timestamp (review D1)', async () => {
+	it('baseVersion (causal) overrides wall-clock — server wins when change > base, despite a NEWER op timestamp', async () => {
 		vi.setSystemTime(9000)
 		await service.queueUpdate(
 			'incomeSource',

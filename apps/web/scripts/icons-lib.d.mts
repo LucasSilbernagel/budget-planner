@@ -9,7 +9,7 @@ export const publicDir: string
 export const sourcePath: string
 export const ACCENT: string
 
-export interface SquarePng {
+export type SquarePng = {
 	readonly size: number
 	readonly name: string
 	readonly opaque?: boolean

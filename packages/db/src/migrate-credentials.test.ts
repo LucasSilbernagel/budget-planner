@@ -111,7 +111,7 @@ describe('the public endpoint is refused for migrations', () => {
 	})
 })
 
-describe('no TLS downgrade is reachable (Story 5.18, AC-4)', () => {
+describe('no TLS downgrade is reachable', () => {
 	const CA = 'CA-PEM'
 	const IN_CLUSTER = 'postgresql://bp_migrator:s@budget-planner-prod-rw:5432/pgdb'
 
@@ -138,7 +138,7 @@ describe('no TLS downgrade is reachable (Story 5.18, AC-4)', () => {
 })
 
 // Those call sites aren't reachable from a unit test, so assert at the source level.
-describe('the retired waiver has no surviving call site (Story 5.18, AC-4)', () => {
+describe('the retired waiver has no surviving call site', () => {
 	const read = (file: string) => readFileSync(new URL(file, import.meta.url), 'utf8')
 
 	it.each([

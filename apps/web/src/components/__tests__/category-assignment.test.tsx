@@ -63,7 +63,7 @@ afterEach(() => {
 	})
 })
 
-describe('IncomePage category assignment (AC-1)', () => {
+describe('IncomePage category assignment', () => {
 	it('persists the chosen category to the row and shows it in the table', async () => {
 		const user = userEvent.setup()
 		premium()
@@ -176,7 +176,7 @@ describe('IncomePage category assignment (AC-1)', () => {
 	})
 })
 
-describe('ExpensesPage category assignment (AC-1)', () => {
+describe('ExpensesPage category assignment', () => {
 	it('persists the chosen category to the row and shows it in the table', async () => {
 		const user = userEvent.setup()
 		premium()
@@ -292,7 +292,7 @@ describe('ExpensesPage EDIT round-trip — the sibling the first pass never test
 	})
 })
 
-describe('a dangling reference in the table (AC-3)', () => {
+describe('a dangling reference in the table', () => {
 	function seedExpenseRow(categoryId: string | null): void {
 		useExpenseStore.setState({
 			expenses: [
@@ -346,8 +346,8 @@ describe('a dangling reference in the table (AC-3)', () => {
 	})
 })
 
-describe('the free tier: a locked picker, and CRUD that still works (AC-4, AC-5)', () => {
-	it('41.2 AC-1/AC-3: the locked picker inside the Add Expense modal is a link OUT to /pricing, and opens no second dialog', async () => {
+describe('the free tier: a locked picker, and CRUD that still works', () => {
+	it('the locked picker inside the Add Expense modal is a link OUT to /pricing, and opens no second dialog', async () => {
 		const user = userEvent.setup()
 		free()
 		render(<ExpensesPage />)
@@ -367,7 +367,7 @@ describe('the free tier: a locked picker, and CRUD that still works (AC-4, AC-5)
 		expect(screen.queryByRole('dialog', { name: /go premium/i })).not.toBeInTheDocument()
 	})
 
-	it('41.2 AC-2: the income form carries the identical locked link, from the same component', async () => {
+	it('the income form carries the identical locked link, from the same component', async () => {
 		const user = userEvent.setup()
 		free()
 		render(<IncomePage />)
@@ -431,7 +431,7 @@ describe('the free tier: a locked picker, and CRUD that still works (AC-4, AC-5)
 	})
 })
 
-describe('the Category column is Premium-only (story 33.3, FR57)', () => {
+describe('the Category column is Premium-only', () => {
 	function seedIncomeRow(categoryId: string | null): void {
 		useIncomeStore.setState({
 			incomeSources: [

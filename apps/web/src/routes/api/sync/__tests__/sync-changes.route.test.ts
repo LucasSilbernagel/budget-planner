@@ -134,7 +134,7 @@ describe('GET /api/sync/changes served boundary', () => {
 		expect(getSyncChanges).toHaveBeenCalledTimes(1)
 	})
 
-	it('allows a lifetime buyer (Story 30.4a — untested at this boundary until 78.3)', async () => {
+	it('allows a lifetime buyer', async () => {
 		mockSession(lifetimeSession)
 		mockChanges([sampleChange])
 		const response = await GET({ request: getRequest() })
@@ -151,7 +151,7 @@ describe('GET /api/sync/changes served boundary', () => {
 		expect(getSyncChanges).not.toHaveBeenCalled()
 	})
 
-	it('returns 429 when the per-user rate limit is exceeded (review D3)', async () => {
+	it('returns 429 when the per-user rate limit is exceeded', async () => {
 		mockSession(paidSession)
 		mockRateLimit(false)
 		const response = await GET({ request: getRequest() })

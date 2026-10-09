@@ -21,7 +21,7 @@ const PRICING_PATH = '/pricing' as const
 
 const SETTINGS_PATH = '/settings' as const
 
-interface CurrentUser {
+type CurrentUser = {
 	userId: string
 	email: string
 	subscriptionStatus: string

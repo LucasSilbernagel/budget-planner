@@ -420,7 +420,7 @@ async function serverDefaultProfile(userId: string): Promise<string | undefined>
 	return rows.rows[0]?.id
 }
 
-describe('two accounts on one browser (story 86.3, real engine, real routes, real PostgreSQL)', () => {
+describe('two accounts on one browser (real engine, real routes, real PostgreSQL)', () => {
 	beforeAll(async () => {
 		const db = holder.db as ReturnType<typeof drizzle>
 		await db.insert(users).values([
@@ -683,7 +683,7 @@ async function loadDevice(snapshot: Record<string, string>): Promise<void> {
 	}
 }
 
-describe('the retirement plan follows the account (story 99.3, real engine, real routes, real PostgreSQL)', () => {
+describe('the retirement plan follows the account (real engine, real routes, real PostgreSQL)', () => {
 	beforeAll(async () => {
 		const db = holder.db as ReturnType<typeof drizzle>
 		await db.insert(users).values(
@@ -701,7 +701,7 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
 		rtl.cleanup()
 	})
 
-	it('AC-1: device A edits every field; a fresh device B shows the identical plan after its first sync', async () => {
+	it('device A edits every field; a fresh device B shows the identical plan after its first sync', async () => {
 		const id = PLAN_ACCOUNTS.aToB
 		freshDevice()
 		signIn(id)
@@ -733,7 +733,7 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
 		expect(plan().ownerUserId).toBe(id)
 	}, 90_000)
 
-	it('AC-7: a device with an UNCLAIMED local plan signs in to an account that has one: the server plan wins', async () => {
+	it('a device with an UNCLAIMED local plan signs in to an account that has one: the server plan wins', async () => {
 		const id = PLAN_ACCOUNTS.unclaimed
 		await putServerPlan(id, AUTHORED)
 		freshDevice()
@@ -748,7 +748,7 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
 		expect(await serverPlan(id)).toEqual(AUTHORED)
 	}, 60_000)
 
-	it('AC-7: on a browser that synced BEFORE 99.3 (profile already reconciled at mount), the reconcile still waits for the initial pull, so the server plan wins', async () => {
+	it('on a browser that synced BEFORE 99.3 (profile already reconciled at mount), the reconcile still waits for the initial pull, so the server plan wins', async () => {
 		const id = PLAN_ACCOUNTS.reconciled
 		freshDevice()
 		signIn(id)
@@ -777,7 +777,7 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
 		expect(planOpsFor(id)).toHaveLength(opsBefore)
 	}, 60_000)
 
-	it('AC-7: the first device of an account with NO server plan uploads its local plan once', async () => {
+	it('the first device of an account with NO server plan uploads its local plan once', async () => {
 		const id = PLAN_ACCOUNTS.firstDevice
 		freshDevice()
 		planStore.useRetirementPlannerStore.setState({ plan: { ...AUTHORED } })
@@ -820,7 +820,7 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
 		['an AUTHORED income (the locale re-expression effect)', 'authored'],
 		['a never-authored income seeded from the income rows (the seed effect)', 'seeded'],
 	] as const)(
-		'AC-3: two devices with DIFFERENT currencies on /retirement, %s, settle to ZERO plan ops over 3 pull cycles each, with the same desired-income magnitude',
+		'two devices with DIFFERENT currencies on /retirement, %s, settle to ZERO plan ops over 3 pull cycles each, with the same desired-income magnitude',
 		async (_, kind) => {
 			const id = kind === 'authored' ? PLAN_ACCOUNTS.currencies : PLAN_ACCOUNTS.currenciesSeed
 			const { RetirementAccumulationPlanner } = await import(
@@ -901,7 +901,7 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
 		180_000
 	)
 
-	it('AC-9: Clear local data resets the local plan and pushes nothing; the server copy comes back in the same session and on the next load', async () => {
+	it('Clear local data resets the local plan and pushes nothing; the server copy comes back in the same session and on the next load', async () => {
 		const id = PLAN_ACCOUNTS.clearLocal
 		const { purgeLocalFinancialData } = await import('@/lib/account/purge-local-financial-data')
 		freshDevice()
@@ -928,7 +928,7 @@ describe('the retirement plan follows the account (story 99.3, real engine, real
 		expect(planOpsFor(id)).toEqual([`create retirementPlan ${id}`])
 	}, 90_000)
 
-	it('AC-8: a returning owner whose PARKED plan is stale ends on the server copy after the initial pull', async () => {
+	it('a returning owner whose PARKED plan is stale ends on the server copy after the initial pull', async () => {
 		const id = PLAN_ACCOUNTS.returningOwner
 		const other = PLAN_ACCOUNTS.parkedOther
 		await putServerPlan(id, AUTHORED)

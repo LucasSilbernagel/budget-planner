@@ -262,8 +262,8 @@ afterEach(() => {
 	resetSyncStore()
 })
 
-describe('a profile deleted on another device (story 76.2)', () => {
-	it('AC-1: its queued child ops leave this device’s queue in the pull that brings the tombstone', async () => {
+describe('a profile deleted on another device', () => {
+	it('its queued child ops leave this device’s queue in the pull that brings the tombstone', async () => {
 		await db.insert(userProfiles).values([
 			{ id: MAIN, userId: USER, name: 'Main', isDefault: true, updatedAt: OLD },
 			{ id: P, userId: USER, name: 'Side', isDefault: false, updatedAt: OLD },
@@ -316,7 +316,7 @@ describe('a profile deleted on another device (story 76.2)', () => {
 		expect(document.querySelectorAll('[role="alert"]')).toHaveLength(0)
 	}, 60_000)
 
-	it('AC-4: a deletion that LOST last-writer-wins does not move the default, and leaves one local default', async () => {
+	it('a deletion that LOST last-writer-wins does not move the default, and leaves one local default', async () => {
 		await db.insert(userProfiles).values([
 			{ id: MAIN, userId: USER, name: 'Main', isDefault: true, updatedAt: OLD },
 			{ id: Y, userId: USER, name: 'Travel', isDefault: false, updatedAt: OLD },
@@ -380,7 +380,7 @@ describe('a profile deleted on another device (story 76.2)', () => {
 		expect(await serverDefaults()).toEqual(['Travel'])
 	})
 
-	it("AC-2 convergence: deleting the ACTIVE default promotes the repair's own pick, so the returning tombstone changes nothing", async () => {
+	it("convergence: deleting the ACTIVE default promotes the repair's own pick, so the returning tombstone changes nothing", async () => {
 		// Archive is the oldest, with local createdAt matching the server's, so a
 		// first-in-store-order pick (Travel) fails below.
 		await db.insert(userProfiles).values([
@@ -455,7 +455,7 @@ describe('a profile deleted on another device (story 76.2)', () => {
 		expect(batchAnswers.join(' ')).not.toMatch(/update-delete/)
 	}, 60_000)
 
-	it('AC-2 trap control: a promotion stamped with the deleted profile survives the tombstone and wins the seat', async () => {
+	it('trap control: a promotion stamped with the deleted profile survives the tombstone and wins the seat', async () => {
 		// Trap control: A promoted Travel before deleting P, so no server repair runs; B's
 		// queued promotion of Archive must survive the pull and win the seat.
 		await db.insert(userProfiles).values([

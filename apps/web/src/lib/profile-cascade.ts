@@ -3,12 +3,12 @@
  * Imports no store (stores register here) to avoid a cycle that deadlocks concurrent imports.
  */
 
-interface CascadeStore {
+type CascadeStore = {
 	getState: () => Record<string, unknown>
 	setState: (partial: Record<string, unknown>) => void
 }
 
-interface CascadeBinding {
+type CascadeBinding = {
 	store: CascadeStore
 	collection: string
 }

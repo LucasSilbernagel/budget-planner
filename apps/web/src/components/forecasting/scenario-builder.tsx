@@ -45,13 +45,13 @@ import { GroupedAmount } from '../ui/GroupedAmount'
 
 const DEBOUNCE_DELAY_MS = 500
 
-export interface LocalFinancialItem extends NormalizableFinancialItem {
+export type LocalFinancialItem = NormalizableFinancialItem & {
 	id: string
 	name: string
 }
 
 // Never written back to the savings store: the row is the scenario's own copy.
-interface LocalSavingsAccount {
+type LocalSavingsAccount = {
 	id: string
 	name: string
 	balance: number
@@ -59,7 +59,7 @@ interface LocalSavingsAccount {
 }
 
 // balance is a positive magnitude for both types; contribution is at frequency cadence (the engine normalises).
-interface LocalBalanceAccount {
+type LocalBalanceAccount = {
 	id: string
 	name: string
 	type: 'investment' | 'debt'
@@ -73,20 +73,20 @@ interface LocalBalanceAccount {
 }
 
 // A constant: no growth and no contribution.
-interface LocalAssetAccount {
+type LocalAssetAccount = {
 	id: string
 	name: string
 	balance: number
 }
 
-interface OneTimeEvent {
+type OneTimeEvent = {
 	id: string
 	year: number
 	amount: number // In cents
 	name: string
 }
 
-export interface ScenarioBuilderProps {
+export type ScenarioBuilderProps = {
 	onSave: (data: {
 		name: string
 		description?: string
@@ -113,7 +113,7 @@ type SaveAvailability =
 	| { kind: 'none' }
 	| { kind: 'error' }
 
-interface ScenarioFormData {
+type ScenarioFormData = {
 	name: string
 	description: string
 	incomeGrowthRate: number
@@ -380,7 +380,7 @@ function debtPaymentFromExpense(expense: { amount: unknown; frequency: unknown }
 	}
 }
 
-export interface ForecastRows {
+export type ForecastRows = {
 	incomeItems: LocalFinancialItem[]
 	expenseItems: LocalFinancialItem[]
 	savingsAccounts: LocalSavingsAccount[]
@@ -1701,7 +1701,7 @@ export function ScenarioBuilder({
 	)
 }
 
-interface InputFieldProps {
+type InputFieldProps = {
 	label: string
 	value: string | number
 	onChange: (value: string | number) => void
@@ -1812,7 +1812,7 @@ function InputField({
 	)
 }
 
-interface FinancialItemRowProps {
+type FinancialItemRowProps = {
 	item: LocalFinancialItem
 	frequencyOptions: { value: string; label: string }[]
 	onUpdate: (field: keyof LocalFinancialItem, value: string | number) => void
@@ -1963,7 +1963,7 @@ function FinancialItemRow({
 	)
 }
 
-interface OneTimeEventRowProps {
+type OneTimeEventRowProps = {
 	event: OneTimeEvent
 	onUpdate: (id: string, field: keyof OneTimeEvent, value: string | number) => void
 	onDelete: (id: string) => void
@@ -2170,7 +2170,7 @@ function OneTimeEventRow({
 	)
 }
 
-interface SavingsAccountRowProps {
+type SavingsAccountRowProps = {
 	account: LocalSavingsAccount
 	position: number
 	onUpdate: (
@@ -2405,7 +2405,7 @@ function SavingsAccountRow({
 	)
 }
 
-interface BalanceAccountRowProps {
+type BalanceAccountRowProps = {
 	account: LocalBalanceAccount
 	position: number
 	onUpdate: <K extends Exclude<keyof LocalBalanceAccount, 'id'>>(
@@ -2602,7 +2602,7 @@ function AnnualReturnField({
 	return <RowPercentField label="Annual return" rowLabel={rowLabel} field={rate} />
 }
 
-interface AssetAccountRowProps {
+type AssetAccountRowProps = {
 	account: LocalAssetAccount
 	position: number
 	onUpdate: (id: string, field: 'name' | 'balance', value: string | number) => void
@@ -2662,7 +2662,7 @@ function AssetAccountRow({
 }
 
 // GroupedAmount: large amounts overrun these cards, so they may break only after a group separator.
-interface StatCardProps {
+type StatCardProps = {
 	label: string
 	value: string
 	highlight?: boolean

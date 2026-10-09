@@ -128,7 +128,7 @@ afterEach(() => {
 	vi.clearAllMocks()
 })
 
-describe('ScenarioBuilder amount prefix (bug-3 AC-1)', () => {
+describe('ScenarioBuilder amount prefix', () => {
 	it('shows no currency symbol on amount inputs in currency-less mode', () => {
 		mockCurrency.mode = 'none'
 		render(<ScenarioBuilder onSave={vi.fn()} />)
@@ -145,7 +145,7 @@ describe('ScenarioBuilder amount prefix (bug-3 AC-1)', () => {
 	})
 })
 
-describe('ScenarioBuilder savings/investments parsing (bug-3 AC-2)', () => {
+describe('ScenarioBuilder savings/investments parsing', () => {
 	async function inputsAfterTyping(typed: string) {
 		const onSave = vi.fn().mockResolvedValue({ success: true })
 		render(<ScenarioBuilder onSave={onSave} />)
@@ -172,7 +172,7 @@ describe('ScenarioBuilder savings/investments parsing (bug-3 AC-2)', () => {
 		expect((await inputsAfterTyping('12345.67')).investments).toBe(1234567)
 	})
 
-	it('reads a GROUPED value again, now the field is text (story 109.1)', async () => {
+	it('reads a GROUPED value again, now the field is text', async () => {
 		expect((await inputsAfterTyping('12,345.67')).investments).toBe(1234567)
 	})
 
@@ -186,7 +186,7 @@ describe('ScenarioBuilder savings/investments parsing (bug-3 AC-2)', () => {
 	})
 })
 
-describe('ScenarioBuilder reload hydration (bug-3 AC-4)', () => {
+describe('ScenarioBuilder reload hydration', () => {
 	const savedIncome = [{ name: 'Consulting', amount: 800000, frequency: 'monthly' as const }]
 	const savedExpenses = [{ name: 'Rent', amount: 250000, frequency: 'monthly' as const }]
 	const savedEvents = [{ year: 3, amount: 1000000, name: 'Bonus' }]
@@ -240,7 +240,7 @@ describe('ScenarioBuilder reload hydration (bug-3 AC-4)', () => {
 	})
 })
 
-describe('ScenarioBuilder money inputs reject non-numeric characters (story 28-1)', () => {
+describe('ScenarioBuilder money inputs reject non-numeric characters', () => {
 	it('filters the savings row money fields: decimal text inputs that drop a letter', () => {
 		render(<ScenarioBuilder onSave={vi.fn()} />)
 
@@ -295,7 +295,7 @@ describe('ScenarioBuilder money inputs reject non-numeric characters (story 28-1
 	})
 })
 
-describe('One-time events can be an outflow (story forecast-1, AC-1/AC-3)', () => {
+describe('One-time events can be an outflow', () => {
 	function addAnEvent(): void {
 		fireEvent.click(screen.getByRole('button', { name: /add event/i }))
 	}
@@ -311,7 +311,7 @@ describe('One-time events can be an outflow (story forecast-1, AC-1/AC-3)', () =
 	const eventDirection = (): HTMLElement => within(eventRow()).getByLabelText(/direction/i)
 	const eventName = (): HTMLElement => within(eventRow()).getByLabelText(/event name/i)
 
-	it('AC-1: sends a NEGATIVE amount once the direction is set to money out', async () => {
+	it('sends a NEGATIVE amount once the direction is set to money out', async () => {
 		const onSave = vi.fn().mockResolvedValue({ success: true })
 		render(<ScenarioBuilder onSave={onSave} />)
 		addAnEvent()
@@ -330,7 +330,7 @@ describe('One-time events can be an outflow (story forecast-1, AC-1/AC-3)', () =
 		expect(scenario.oneTimeEvents[0].amount).toBe(-500000)
 	})
 
-	it('AC-1: keeps a POSITIVE amount when the direction is money in', async () => {
+	it('keeps a POSITIVE amount when the direction is money in', async () => {
 		const onSave = vi.fn().mockResolvedValue({ success: true })
 		render(<ScenarioBuilder onSave={onSave} />)
 		addAnEvent()
@@ -345,7 +345,7 @@ describe('One-time events can be an outflow (story forecast-1, AC-1/AC-3)', () =
 		expect(onSave.mock.calls[0][0].scenario.oneTimeEvents[0].amount).toBe(500000)
 	})
 
-	it('AC-1: flipping direction AFTER typing re-signs the existing amount', async () => {
+	it('flipping direction AFTER typing re-signs the existing amount', async () => {
 		const onSave = vi.fn().mockResolvedValue({ success: true })
 		render(<ScenarioBuilder onSave={onSave} />)
 		addAnEvent()
@@ -363,7 +363,7 @@ describe('One-time events can be an outflow (story forecast-1, AC-1/AC-3)', () =
 		expect(onSave.mock.calls[0][0].scenario.oneTimeEvents[0].amount).toBe(-25000)
 	})
 
-	it('AC-1: flipping BACK to money in re-signs positive (the out -> in path)', async () => {
+	it('flipping BACK to money in re-signs positive (the out -> in path)', async () => {
 		const onSave = vi.fn().mockResolvedValue({ success: true })
 		render(<ScenarioBuilder onSave={onSave} />)
 		addAnEvent()
@@ -380,7 +380,7 @@ describe('One-time events can be an outflow (story forecast-1, AC-1/AC-3)', () =
 		expect(onSave.mock.calls[0][0].scenario.oneTimeEvents[0].amount).toBe(25000)
 	})
 
-	it('AC-1: the persisted event keeps its exact shape — no direction field leaks', async () => {
+	it('the persisted event keeps its exact shape — no direction field leaks', async () => {
 		const onSave = vi.fn().mockResolvedValue({ success: true })
 		render(<ScenarioBuilder onSave={onSave} />)
 		addAnEvent()
@@ -402,7 +402,7 @@ describe('One-time events can be an outflow (story forecast-1, AC-1/AC-3)', () =
 		})
 	})
 
-	it('AC-1: a direction chosen BEFORE typing still applies (the amount-0 trap)', async () => {
+	it('a direction chosen BEFORE typing still applies (the amount-0 trap)', async () => {
 		const onSave = vi.fn().mockResolvedValue({ success: true })
 		render(<ScenarioBuilder onSave={onSave} />)
 		addAnEvent()
@@ -419,7 +419,7 @@ describe('One-time events can be an outflow (story forecast-1, AC-1/AC-3)', () =
 		expect(onSave.mock.calls[0][0].scenario.oneTimeEvents[0].amount).toBe(-75000)
 	})
 
-	it('AC-1: a saved NEGATIVE event reloads as money out, showing its magnitude', () => {
+	it('a saved NEGATIVE event reloads as money out, showing its magnitude', () => {
 		const deposit = [{ year: 2, amount: -4000000, name: 'Deposit' }]
 		const withCost: SavedForecast = {
 			id: 'saved-cost',
@@ -486,7 +486,7 @@ describe('One-time events can be an outflow (story forecast-1, AC-1/AC-3)', () =
 		expect(screen.getAllByLabelText(/^frequency$/i).length).toBeGreaterThanOrEqual(4)
 	})
 
-	it('AC-3: income and expense amounts never take a negative (refused on the field since 81.1)', () => {
+	it('income and expense amounts never take a negative (refused on the field since 81.1)', () => {
 		render(<ScenarioBuilder onSave={vi.fn()} />)
 
 		const incomeSection = screen
@@ -503,7 +503,7 @@ describe('One-time events can be an outflow (story forecast-1, AC-1/AC-3)', () =
 		expect(salaryAmount).not.toHaveAttribute('aria-invalid')
 	})
 
-	it('AC-3: the one-time-event row does NOT give income rows a direction control', () => {
+	it('the one-time-event row does NOT give income rows a direction control', () => {
 		const { container } = render(<ScenarioBuilder onSave={vi.fn()} />)
 		addAnEvent()
 

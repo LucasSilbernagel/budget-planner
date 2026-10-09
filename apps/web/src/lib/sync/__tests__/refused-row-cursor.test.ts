@@ -37,7 +37,7 @@ function incomeChange(id: string, amount: unknown, updatedAt: number): ServerCha
 	}
 }
 
-describe('AC-4: the pull cursor when a row is refused', () => {
+describe('the pull cursor when a row is refused', () => {
 	let service: SynchronizationService
 	let fetchServerChanges: ReturnType<typeof vi.fn>
 	let warn: ReturnType<typeof vi.spyOn>

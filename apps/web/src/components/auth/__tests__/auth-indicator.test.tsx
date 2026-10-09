@@ -122,7 +122,7 @@ function renderWithNavigableRouter() {
 }
 
 describe('AuthIndicator', () => {
-	it('shows a "Sign in" link to /login and no account info when signed out — AC-2', async () => {
+	it('shows a "Sign in" link to /login and no account info when signed out', async () => {
 		stubFetch({ user: null })
 		renderWithRouter(<AuthIndicator />)
 
@@ -132,7 +132,7 @@ describe('AuthIndicator', () => {
 		expect(screen.queryByText(/@/)).not.toBeInTheDocument()
 	})
 
-	it('fails closed to the signed-out affordance if the session fetch rejects — AC-4', async () => {
+	it('fails closed to the signed-out affordance if the session fetch rejects', async () => {
 		stubFetch({ fail: true })
 		renderWithRouter(<AuthIndicator />)
 
@@ -140,7 +140,7 @@ describe('AuthIndicator', () => {
 		expect(screen.queryByText(/premium/i)).not.toBeInTheDocument()
 	})
 
-	it('shows the email and a Premium marker for an active subscription — AC-1, AC-3', async () => {
+	it('shows the email and a Premium marker for an active subscription', async () => {
 		stubFetch({
 			user: { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'active' },
 		})
@@ -154,7 +154,7 @@ describe('AuthIndicator', () => {
 	})
 
 	it.each(['free', 'past_due', 'canceled'])(
-		'shows the email but NO Premium marker for a %s subscription — AC-3',
+		'shows the email but NO Premium marker for a %s subscription',
 		async (subscriptionStatus) => {
 			stubFetch({
 				user: { userId: 'user-1', email: 'user@example.com', subscriptionStatus },
@@ -169,7 +169,7 @@ describe('AuthIndicator', () => {
 		}
 	)
 
-	it('keeps a stable indicator container through loading → resolved (no layout collapse) — AC-5', async () => {
+	it('keeps a stable indicator container through loading → resolved (no layout collapse)', async () => {
 		// The container must exist (height reserved) before the session resolves.
 		let resolveFetch: (value: Response) => void = () => {}
 		global.fetch = vi.fn((input: RequestInfo | URL) => {
@@ -192,7 +192,7 @@ describe('AuthIndicator', () => {
 		expect(screen.getByRole('status')).toBe(indicator)
 	})
 
-	it('re-resolves on navigation so it does not show a stale identity after sign-out — AC-1', async () => {
+	it('re-resolves on navigation so it does not show a stale identity after sign-out', async () => {
 		let currentUser: unknown = {
 			userId: 'user-1',
 			email: 'user@example.com',
@@ -222,7 +222,7 @@ describe('AuthIndicator', () => {
 		expect(screen.queryByText(/premium/i)).not.toBeInTheDocument()
 	})
 
-	it('treats a user object without an email as signed-out (no render crash) — AC-2 defensive', async () => {
+	it('treats a user object without an email as signed-out (no render crash)', async () => {
 		// Contract drift: a payload missing `email` must not white-screen the app root.
 		stubFetch({ user: { userId: 'user-1', subscriptionStatus: 'active' } })
 		renderWithRouter(<AuthIndicator />)
@@ -247,9 +247,7 @@ describe('AuthIndicator', () => {
 		expect(row, 'the outer row carries `data-auth-indicator`').not.toBeNull()
 		expect(row.contains(accountStatus()), 'the status region sits inside the row').toBe(true)
 		const rowTokens = [...row.classList]
-		expect(rowTokens, 'the strip can shrink below its content again (69.3 D4)').not.toContain(
-			'sm:min-w-0'
-		)
+		expect(rowTokens, 'the strip can shrink below its content again').not.toContain('sm:min-w-0')
 		expect(rowTokens).not.toContain('min-w-0')
 		expect(rowTokens, 'a wrapped cluster would lose its right alignment').toContain('sm:ml-auto')
 		const copies = screen.getAllByText('a.long.address@example.test')
@@ -258,7 +256,7 @@ describe('AuthIndicator', () => {
 	})
 })
 
-describe('AuthIndicator — "Upgrade" affordance (UX review, 2026-09-14)', () => {
+describe('AuthIndicator — "Upgrade" affordance', () => {
 	it('offers "Upgrade" to /pricing alongside "Sign in" when signed out', async () => {
 		stubFetch({ user: null })
 		renderWithRouter(<AuthIndicator />)
@@ -276,7 +274,7 @@ describe('AuthIndicator — "Upgrade" affordance (UX review, 2026-09-14)', () =>
 		expect(screen.queryByRole('link', { name: 'Upgrade' })).not.toBeInTheDocument()
 	})
 
-	it('hides "Upgrade" on /login too — that page keeps its deliberately-empty strip (story 41.3)', async () => {
+	it('hides "Upgrade" on /login too — that page keeps its deliberately-empty strip', async () => {
 		stubFetch({ user: null })
 		renderWithRouter(<AuthIndicator />, { path: '/login' })
 
@@ -300,8 +298,8 @@ describe('AuthIndicator — "Upgrade" affordance (UX review, 2026-09-14)', () =>
 	})
 })
 
-describe('AuthIndicator — SSR seed (story UX-1)', () => {
-	it('paints the email + Premium marker for an active seed while the refetch is pending — AC-2, AC-3', async () => {
+describe('AuthIndicator — SSR seed', () => {
+	it('paints the email + Premium marker for an active seed while the refetch is pending', async () => {
 		stubFetchPending()
 		renderSeeded({
 			isAuthenticated: true,
@@ -318,7 +316,7 @@ describe('AuthIndicator — SSR seed (story UX-1)', () => {
 		expect(screen.queryByRole('link', { name: /sign in/i })).not.toBeInTheDocument()
 	})
 
-	it('paints the email but NO Premium marker for a free seed while the refetch is pending — AC-3', async () => {
+	it('paints the email but NO Premium marker for a free seed while the refetch is pending', async () => {
 		stubFetchPending()
 		renderSeeded({
 			isAuthenticated: true,
@@ -333,7 +331,7 @@ describe('AuthIndicator — SSR seed (story UX-1)', () => {
 		expect(screen.queryByText(/premium/i)).not.toBeInTheDocument()
 	})
 
-	it('paints the "Sign in" affordance for a signed-out seed while the refetch is pending — AC-2', async () => {
+	it('paints the "Sign in" affordance for a signed-out seed while the refetch is pending', async () => {
 		stubFetchPending()
 		renderSeeded({
 			isAuthenticated: false,
@@ -371,8 +369,8 @@ async function serverRenderAt(path: string): Promise<string> {
 	return renderToString(<RouterProvider router={router} />)
 }
 
-describe('AuthIndicator — the sign-in page (story 41.3, UX-DR51)', () => {
-	it('drops the "Sign in" link on /login and leaves the status region empty — AC-1, AC-3', async () => {
+describe('AuthIndicator — the sign-in page', () => {
+	it('drops the "Sign in" link on /login and leaves the status region empty', async () => {
 		stubFetch({ user: null })
 		renderWithRouter(<AuthIndicator />, { path: '/login' })
 
@@ -386,7 +384,7 @@ describe('AuthIndicator — the sign-in page (story 41.3, UX-DR51)', () => {
 		expect(screen.getByRole('status', { name: /account status/i })).toBe(indicator)
 	})
 
-	it('still offers the "Sign in" link on a route that is not /login — AC-2', async () => {
+	it('still offers the "Sign in" link on a route that is not /login', async () => {
 		stubFetch({ user: null })
 		renderWithRouter(<AuthIndicator />, { path: '/pricing' })
 
@@ -396,7 +394,7 @@ describe('AuthIndicator — the sign-in page (story 41.3, UX-DR51)', () => {
 		expect(indicator.contains(signIn)).toBe(true)
 	})
 
-	it('drops the link on /login?error=… too, where a failed sign-in lands — AC-1', async () => {
+	it('drops the link on /login?error=… too, where a failed sign-in lands', async () => {
 		// `location.pathname` excludes the search string, so the exact match holds.
 		stubFetch({ user: null })
 		renderWithRouter(<AuthIndicator />, { path: '/login?error=invalid_or_expired' })
@@ -409,7 +407,7 @@ describe('AuthIndicator — the sign-in page (story 41.3, UX-DR51)', () => {
 	})
 
 	it.each(['/Login', '/LOGIN', '/lOgIn'])(
-		'drops the link on %s too — route matching is case-insensitive, the pathname is not — AC-1',
+		'drops the link on %s too — route matching is case-insensitive, the pathname is not',
 		async (path) => {
 			// Routes match case-insensitively but pathname keeps the typed case, so `/Login`
 			// serves the sign-in page.
@@ -424,7 +422,7 @@ describe('AuthIndicator — the sign-in page (story 41.3, UX-DR51)', () => {
 		}
 	)
 
-	it('renders no "Sign in" affordance on /login from a signed-out seed — AC-1', async () => {
+	it('renders no "Sign in" affordance on /login from a signed-out seed', async () => {
 		// Doesn't prove there's no first-paint flash: effects flush before findByRole resolves.
 		// The server-render test carries that claim.
 		stubFetchPending()
@@ -438,7 +436,7 @@ describe('AuthIndicator — the sign-in page (story 41.3, UX-DR51)', () => {
 		expect(screen.queryByRole('link', { name: /sign in/i })).not.toBeInTheDocument()
 	})
 
-	it('server-renders /login with the strip but WITHOUT the "Sign in" link — AC-1, no first-paint flash', async () => {
+	it('server-renders /login with the strip but WITHOUT the "Sign in" link — no first-paint flash', async () => {
 		// The first-paint assertion: renderToString runs no effects (hence no fetch stub). The
 		// `/` arm is the positive control.
 
@@ -451,7 +449,7 @@ describe('AuthIndicator — the sign-in page (story 41.3, UX-DR51)', () => {
 		expect(homeHtml).toContain('Account status')
 	})
 
-	it('leaves the loading placeholder untouched on /login — AC-4', async () => {
+	it('leaves the loading placeholder untouched on /login', async () => {
 		// The route check is for the unauthenticated branch only; loading still renders.
 		stubFetchPending()
 		renderWithRouter(<AuthIndicator />, { path: '/login' })
@@ -461,7 +459,7 @@ describe('AuthIndicator — the sign-in page (story 41.3, UX-DR51)', () => {
 		expect(screen.queryByRole('link', { name: /sign in/i })).not.toBeInTheDocument()
 	})
 
-	it('shows the authenticated state on /login exactly as elsewhere — AC-4, AC-5', async () => {
+	it('shows the authenticated state on /login exactly as elsewhere', async () => {
 		// No route guards exist, so an authenticated user genuinely reaches /login.
 		stubFetchPending()
 		renderSeeded(
@@ -480,7 +478,7 @@ describe('AuthIndicator — the sign-in page (story 41.3, UX-DR51)', () => {
 		expect(screen.queryByRole('link', { name: /sign in/i })).not.toBeInTheDocument()
 	})
 
-	it('flips the affordance on client-side navigation into and out of /login — AC-6', async () => {
+	it('flips the affordance on client-side navigation into and out of /login', async () => {
 		// The strip never remounts, so a branch read only at mount would pass first-paint
 		// tests and still be wrong after navigating.
 		stubFetch({ user: null })
@@ -507,7 +505,7 @@ describe('AuthIndicator — the sign-in page (story 41.3, UX-DR51)', () => {
  * The panel renders only while open, which makes the absence assertions meaningful. jsdom
  * has no layout or media queries: structure, ARIA, behaviour and class tokens only.
  */
-describe('AuthIndicator — account menu (story 59.3)', () => {
+describe('AuthIndicator — account menu', () => {
 	const USER = { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'active' }
 	const trigger = () => screen.getByRole('button', { name: 'Account menu' })
 	const panel = () => {
@@ -876,7 +874,7 @@ describe('AuthIndicator — account menu (story 59.3)', () => {
  * Class tokens only (jsdom applies no Tailwind), via classList membership, since
  * `max-sm:min-h-[44px]` contains `min-h-[44px]`.
  */
-describe('AuthIndicator — phone tap targets (story 96.1)', () => {
+describe('AuthIndicator — phone tap targets', () => {
 	const PHONE_TARGET_TOKENS = [
 		'max-sm:inline-flex',
 		'max-sm:min-h-[44px]',
@@ -944,7 +942,7 @@ describe('AuthIndicator — phone tap targets (story 96.1)', () => {
  * Navigation, so outside the live region: marked current on /settings, hidden on /login,
  * >= 640px only. jsdom has no layout, so size is asserted as class tokens.
  */
-describe('AuthIndicator — the signed-out Settings gear (story 69.2)', () => {
+describe('AuthIndicator — the signed-out Settings gear', () => {
 	const gear = () => screen.queryByRole('link', { name: 'Settings' })
 
 	it.each(['/', '/income', '/pricing'])(
@@ -974,7 +972,7 @@ describe('AuthIndicator — the signed-out Settings gear (story 69.2)', () => {
 		}
 	)
 
-	it('marks the gear current on /settings rather than dropping it (UX-DR28)', async () => {
+	it('marks the gear current on /settings rather than dropping it', async () => {
 		stubFetch({ user: null })
 		renderWithRouter(<AuthIndicator />, { path: '/settings' })
 		await screen.findByRole('link', { name: /sign in/i })
@@ -983,7 +981,7 @@ describe('AuthIndicator — the signed-out Settings gear (story 69.2)', () => {
 
 	// Anti-vacuity: the strip is empty here, so resolution is proven by the region settling
 	// with no children.
-	it('renders no gear on /login, which keeps its empty strip (story 41.3, D3)', async () => {
+	it('renders no gear on /login, which keeps its empty strip', async () => {
 		stubFetch({ user: null })
 		renderWithRouter(<AuthIndicator />, { path: '/login' })
 		const indicator = await findAccountStatus()
@@ -1023,7 +1021,7 @@ describe('AuthIndicator — the signed-out Settings gear (story 69.2)', () => {
  * A client render leaves <noscript> empty in React 19, so this proves only that no live
  * second gear exists with JavaScript on; the server half is in the SSR test.
  */
-describe('AuthIndicator — the signed-in JS-off Settings gear (story 69.3, D3)', () => {
+describe('AuthIndicator — the signed-in JS-off Settings gear', () => {
 	it('renders a <noscript> in the signed-in cluster, holding no live link', async () => {
 		stubFetch({
 			user: { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'active' },

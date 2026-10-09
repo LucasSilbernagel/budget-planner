@@ -97,7 +97,7 @@ describe('zustand selectors', () => {
 			offenders.length === 0
 				? ''
 				: [
-						'A selector that calls a state method reads LIVE state during hydration and makes React discard the tree (story 38.1).',
+						'A selector that calls a state method reads LIVE state during hydration and makes React discard the tree.',
 						"Read the row's array from the selector argument instead, via the store's pure `*From()` helper:",
 						'',
 						offenders.join('\n'),

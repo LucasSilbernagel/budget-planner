@@ -19,7 +19,7 @@ const BASE_PROPS = {
 	earliestRetirementAge: 45,
 }
 
-describe('RetirementTimelineChart — controlled child (story 29.1)', () => {
+describe('RetirementTimelineChart — controlled child', () => {
 	beforeEach(() => {
 		useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
 	})
@@ -33,7 +33,7 @@ describe('RetirementTimelineChart — controlled child (story 29.1)', () => {
 		expect(screen.getByText('Projection Summary:')).toBeInTheDocument()
 	})
 
-	it('owns no inputs of its own — every shared field now lives in the planner (AC-1)', () => {
+	it('owns no inputs of its own — every shared field now lives in the planner', () => {
 		renderWithProviders(<RetirementTimelineChart {...BASE_PROPS} />)
 
 		for (const label of [
@@ -62,7 +62,7 @@ describe('RetirementTimelineChart — controlled child (story 29.1)', () => {
 
 	// The expected figure comes from core's monthly-compounded function; the annually compounding
 	// `calculateCompoundingProjection` would give a different nest egg.
-	it('plots the solver’s own monthly-compounded curve, to the cent (AC-2)', () => {
+	it('plots the solver’s own monthly-compounded curve, to the cent', () => {
 		renderWithProviders(<RetirementTimelineChart {...BASE_PROPS} />)
 
 		const expectedCents = projectAccumulatedNestEgg(
@@ -127,7 +127,7 @@ describe('RetirementTimelineChart — controlled child (story 29.1)', () => {
 
 // Recharts renders no SVG under jsdom's zero-size container, so the marker decision is a pure
 // function tested directly.
-describe('getRetirementMarkerOffset (story 29.1)', () => {
+describe('getRetirementMarkerOffset', () => {
 	it('places the marker at the solver’s derived age, in years from now', () => {
 		expect(getRetirementMarkerOffset(62, 40, 30)).toBe(22)
 	})
@@ -152,7 +152,7 @@ describe('getRetirementMarkerOffset (story 29.1)', () => {
 	})
 })
 
-describe('getRetirementChartChrome — narrow vs wide (story 24.1)', () => {
+describe('getRetirementChartChrome — narrow vs wide', () => {
 	it('drops the axis titles and shrinks the chrome on narrow viewports', () => {
 		const narrow = getRetirementChartChrome(true)
 		const wide = getRetirementChartChrome(false)
@@ -188,7 +188,7 @@ describe('getRetirementChartChrome — narrow vs wide (story 24.1)', () => {
 })
 
 // Pin the word and the value together: `toContain('41')` also passes against "Year 41".
-describe('CustomTooltip — the header agrees with the axis (story 44.3)', () => {
+describe('CustomTooltip — the header agrees with the axis', () => {
 	const CURRENCY = { mode: 'none', currency: 'NONE', locale: 'en-US' } as const
 
 	function renderTooltip(label: number, overrides: Record<string, unknown> = {}) {
@@ -214,14 +214,14 @@ describe('CustomTooltip — the header agrees with the axis (story 44.3)', () =>
 		)
 	}
 
-	it('heads the tooltip with the AGE, not the word "Year" (AC-3)', () => {
+	it('heads the tooltip with the AGE, not the word "Year"', () => {
 		const { container } = renderTooltip(41)
 
 		expect(container.textContent).toContain('Age 41')
 		expect(container.textContent).not.toContain('Year 41')
 	})
 
-	it('also heads the DEGRADED branch with the age (AC-3, the easily-missed one)', () => {
+	it('also heads the DEGRADED branch with the age (the easily-missed one)', () => {
 		const { container } = renderWithProviders(
 			<CustomTooltip active label="41" payload={[{ payload: { age: 41 } }]} {...CURRENCY} />
 		)
@@ -239,7 +239,7 @@ describe('CustomTooltip — the header agrees with the axis (story 44.3)', () =>
 	})
 })
 
-describe('getRetirementMarkerAge (story 44.3)', () => {
+describe('getRetirementMarkerAge', () => {
 	it('converts the years-from-now offset into the age the axis plots', () => {
 		expect(getRetirementMarkerAge(22, 40)).toBe(62)
 	})

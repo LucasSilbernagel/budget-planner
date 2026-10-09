@@ -49,7 +49,7 @@ async function addExpense(
 const hint = (): string =>
 	(screen.getByTestId('desired-income-ending-expenses').textContent ?? '').replace(/\s+/g, ' ')
 
-describe('a marked expense reaches the retirement planner through storage (was e2e, story 84.5)', () => {
+describe('a marked expense reaches the retirement planner through storage', () => {
 	beforeEach(reset)
 	afterEach(reset)
 

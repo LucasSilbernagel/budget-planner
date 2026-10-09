@@ -1,0 +1,6 @@
+language js(typescript)
+
+TsInterfaceDeclaration(id=$name, extends_clause=$bases) where {
+	$bases <: not .,
+	register_diagnostic(span=$name, message="Use a type alias with an intersection, not interface extends.")
+}

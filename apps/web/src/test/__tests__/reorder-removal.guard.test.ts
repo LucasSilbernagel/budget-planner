@@ -76,7 +76,7 @@ const SELF = join(WEB_ROOT, 'src', 'test', '__tests__', 'reorder-removal.guard.t
 
 const FILES = SCANNED_ROOTS.flatMap((root) => walk(join(WEB_ROOT, root))).filter((f) => f !== SELF)
 
-describe('manual row reordering is removed (story 48.2, UX-DR54)', () => {
+describe('manual row reordering is removed', () => {
 	it('⚠️ POSITIVE CONTROL: the sweep actually walks both trees', () => {
 		for (const root of SCANNED_ROOTS) {
 			const inRoot = FILES.filter((f) => f.startsWith(join(WEB_ROOT, root)))
@@ -115,7 +115,7 @@ describe('manual row reordering is removed (story 48.2, UX-DR54)', () => {
 			referencesInCode(inRegex, 'applyRowMove'),
 			'a /* inside a regex literal hides a live reference from the sweep'
 		).toHaveLength(1)
-		expect(referencesInCode('  // story 48.2 removed planRowMove', 'planRowMove')).toEqual([])
+		expect(referencesInCode('  // removed planRowMove', 'planRowMove')).toEqual([])
 		expect(referencesInCode('   * `applyRowMove` is deleted', 'applyRowMove')).toEqual([])
 	})
 

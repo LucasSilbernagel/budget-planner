@@ -26,7 +26,7 @@ describe('POST /api/account/delete', () => {
 		await expect(res.json()).resolves.toEqual({ success: true })
 	})
 
-	it('also clears has_session (Story 53.1)', async () => {
+	it('also clears has_session', async () => {
 		asMock(deleteUserAccount).mockResolvedValue({ success: true })
 		const res = await POST({ request: req() })
 		const setCookies = res.headers.getSetCookie()
@@ -35,7 +35,7 @@ describe('POST /api/account/delete', () => {
 		)
 	})
 
-	it('adds Secure to both cleared cookies in production (parity with logout.ts, Story 53.1 review)', async () => {
+	it('adds Secure to both cleared cookies in production (parity with logout.ts)', async () => {
 		vi.stubEnv('NODE_ENV', 'production')
 		asMock(deleteUserAccount).mockResolvedValue({ success: true })
 		const res = await POST({ request: req() })

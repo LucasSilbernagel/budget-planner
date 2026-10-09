@@ -15,7 +15,7 @@ export type ForecastWire = Omit<ForecastingProfileOutput, 'createdAt' | 'updated
 	updatedAt: string
 }
 
-export interface ProfileWire {
+export type ProfileWire = {
 	id: string
 	isDefault: boolean
 	name?: string

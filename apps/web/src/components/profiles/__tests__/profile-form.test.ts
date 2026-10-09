@@ -15,7 +15,7 @@ const profile = (id: string, name: string): ClientProfile => ({
 
 const PROFILES = [profile('main', 'Main Profile'), profile('biz', 'Business')]
 
-describe('validateProfileForm (story 54.1)', () => {
+describe('validateProfileForm', () => {
 	it('requires a name', () => {
 		expect(validateProfileForm(EMPTY_PROFILE_FORM, PROFILES, null)['name']).toBe(
 			'Profile name is required'

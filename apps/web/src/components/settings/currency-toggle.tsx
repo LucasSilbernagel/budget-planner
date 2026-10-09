@@ -4,7 +4,7 @@ import { useCurrencyStore } from '../../stores/currencyStore'
 
 const SELECTABLE_CURRENCIES = getSupportedCurrencies().filter((code: string) => code !== 'NONE')
 
-export interface CurrencyToggleProps {
+export type CurrencyToggleProps = {
 	className?: string
 }
 

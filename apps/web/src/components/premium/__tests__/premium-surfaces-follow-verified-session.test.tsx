@@ -294,7 +294,7 @@ describe('AC 1: a definitive premium answer unlocks every reader', () => {
 	})
 })
 
-describe('AC 2: a definitive not-entitled answer over an entitled seed locks (symmetric, 99.1 D1)', () => {
+describe('a definitive not-entitled answer over an entitled seed locks (symmetric)', () => {
 	const NOT_ENTITLED_ANSWERS = [
 		{
 			name: 'signed out',

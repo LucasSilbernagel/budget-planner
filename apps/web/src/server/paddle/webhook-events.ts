@@ -10,7 +10,7 @@ import { logger } from '@/lib/logger'
 /** Derived from the client so it can't drift when the query builder changes shape. */
 export type WebhookTx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
-export interface WebhookEventMeta {
+export type WebhookEventMeta = {
 	eventId: string
 	eventType: string
 	customerId?: string

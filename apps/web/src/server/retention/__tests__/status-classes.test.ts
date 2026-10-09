@@ -9,7 +9,7 @@ import {
 
 const ENUM = [...subscriptionStatusEnum.enumValues].sort()
 
-describe('retention status classification (Story 73.2)', () => {
+describe('retention status classification', () => {
 	it('classifies every enum value, and nothing else', () => {
 		expect(Object.keys(STATUS_CLASS).sort()).toEqual(ENUM)
 	})

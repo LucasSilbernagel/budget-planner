@@ -36,7 +36,7 @@ function paddleJs(
 	].join('\n')
 }
 
-describe('checkPaddleJs (sec-4 D2)', () => {
+describe('checkPaddleJs', () => {
 	it('finds nothing wrong in a paddle.js that matches every pinned internal', () => {
 		const { problems, facts } = checkPaddleJs(paddleJs(), PINNED)
 		expect(problems).toEqual([])
@@ -97,7 +97,7 @@ describe('checkPaddleJs (sec-4 D2)', () => {
 		expect(problems[0]).toContain('isLoaded')
 	})
 
-	it('fails when the ProfitWell isLoaded guard is gone (the D1 stub would stop working)', () => {
+	it('fails when the ProfitWell isLoaded guard is gone (the window.profitwell stub would stop working)', () => {
 		const { problems } = checkPaddleJs(
 			paddleJs({ guard: 'null===(t=window.profitwell)||void 0===t?void 0:t.isReady' }),
 			PINNED

@@ -47,7 +47,7 @@ describe('Modal', () => {
 		expect(screen.getByRole('dialog', { name: 'Add income source' })).toBeInTheDocument()
 	})
 
-	it('closes on Escape (AC-2)', async () => {
+	it('closes on Escape', async () => {
 		const user = userEvent.setup()
 		const onClose = vi.fn()
 		renderWithProviders(
@@ -59,7 +59,7 @@ describe('Modal', () => {
 		expect(onClose).toHaveBeenCalledTimes(1)
 	})
 
-	it('closes on overlay (outside) click (AC-1)', async () => {
+	it('closes on overlay (outside) click', async () => {
 		const user = userEvent.setup()
 		const onClose = vi.fn()
 		renderWithProviders(
@@ -72,7 +72,7 @@ describe('Modal', () => {
 		expect(onClose).toHaveBeenCalledTimes(1)
 	})
 
-	it('does NOT close when clicking inside the content (AC-1)', async () => {
+	it('does NOT close when clicking inside the content', async () => {
 		const user = userEvent.setup()
 		const onClose = vi.fn()
 		renderWithProviders(
@@ -97,7 +97,7 @@ describe('Modal', () => {
 		expect(onClose).not.toHaveBeenCalled()
 	})
 
-	it('moves focus to the dialog container on open, not the close button (AC-3)', () => {
+	it('moves focus to the dialog container on open, not the close button', () => {
 		renderWithProviders(
 			<Modal isOpen onClose={() => {}} ariaLabel="Test">
 				<Body />
@@ -108,7 +108,7 @@ describe('Modal', () => {
 		expect(screen.getByRole('dialog')).toHaveFocus()
 	})
 
-	it('honors initialFocusRef over the container default (AC-3)', () => {
+	it('honors initialFocusRef over the container default', () => {
 		function Harness() {
 			const ref = useRef<HTMLButtonElement>(null)
 			return (
@@ -124,7 +124,7 @@ describe('Modal', () => {
 		expect(screen.getByRole('button', { name: 'Last' })).toHaveFocus()
 	})
 
-	it('traps Tab focus within the dialog and wraps at the edges (AC-3)', async () => {
+	it('traps Tab focus within the dialog and wraps at the edges', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(
 			<Modal isOpen onClose={() => {}} ariaLabel="Test">
@@ -142,7 +142,7 @@ describe('Modal', () => {
 		expect(first).toHaveFocus()
 	})
 
-	it('restores focus to the triggering element on close (AC-3)', async () => {
+	it('restores focus to the triggering element on close', async () => {
 		const user = userEvent.setup()
 
 		function Harness() {
@@ -171,7 +171,7 @@ describe('Modal', () => {
 })
 
 // jsdom loads no CSS: these prove class tokens, structure and inline styles only.
-describe('Modal viewport fit (story 31.3)', () => {
+describe('Modal viewport fit', () => {
 	function Body() {
 		return (
 			<>
@@ -181,11 +181,11 @@ describe('Modal viewport fit (story 31.3)', () => {
 		)
 	}
 
-	it('pins the constraint string exactly (AC-2)', () => {
+	it('pins the constraint string exactly', () => {
 		expect(MODAL_CARD_CONSTRAINT).toBe('max-h-full overflow-y-auto overscroll-contain')
 	})
 
-	it('applies all three constraint tokens to the card with the default className (AC-1, AC-2)', () => {
+	it('applies all three constraint tokens to the card with the default className', () => {
 		renderWithProviders(
 			<Modal isOpen onClose={() => {}} ariaLabel="Test">
 				<Body />
@@ -197,7 +197,7 @@ describe('Modal viewport fit (story 31.3)', () => {
 		expect(card).toContain('overscroll-contain')
 	})
 
-	it('keeps the constraint when a caller overrides className (AC-1)', () => {
+	it('keeps the constraint when a caller overrides className', () => {
 		renderWithProviders(
 			<Modal isOpen onClose={() => {}} ariaLabel="Test" className="custom-thing">
 				<Body />
@@ -210,7 +210,7 @@ describe('Modal viewport fit (story 31.3)', () => {
 		expect(card).toContain('overscroll-contain')
 	})
 
-	it('leaves the overlay layout classes untouched (AC-6)', () => {
+	it('leaves the overlay layout classes untouched', () => {
 		renderWithProviders(
 			<Modal isOpen onClose={() => {}} ariaLabel="Test">
 				<Body />
@@ -224,7 +224,7 @@ describe('Modal viewport fit (story 31.3)', () => {
 		expect(overlay).toContain('justify-center')
 	})
 
-	it('keeps the card a direct child of the overlay — no wrapper, no portal (AC-9)', () => {
+	it('keeps the card a direct child of the overlay — no wrapper, no portal', () => {
 		const { container } = renderWithProviders(
 			<Modal isOpen onClose={() => {}} ariaLabel="Test">
 				<Body />
@@ -238,7 +238,7 @@ describe('Modal viewport fit (story 31.3)', () => {
 		expect(container.contains(dialog)).toBe(true)
 	})
 
-	it('locks body scroll while open and restores the previous value on close (AC-8)', () => {
+	it('locks body scroll while open and restores the previous value on close', () => {
 		document.body.style.overflow = 'scroll'
 		// `finally`: a failure would otherwise leave `overflow: scroll` on the shared jsdom body.
 		try {
@@ -389,7 +389,7 @@ describe('Modal stacking safety (41.1 review)', () => {
 
 // Events are dispatched explicitly so the sequence matches a real cross-element drag
 // (down on A, up on B, click on their common ancestor).
-describe('Modal drag dismissal (story 31.3, AC-7)', () => {
+describe('Modal drag dismissal', () => {
 	function setup() {
 		const onClose = vi.fn()
 		renderWithProviders(

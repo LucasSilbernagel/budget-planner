@@ -57,7 +57,7 @@ VALUES ('${USER1}','investment','401k', 300000, 10000);
 
 const describeIfDb = TEST_DB_URL ? describe : describe.skip
 
-describeIfDb('Migration 0000→0003 on a populated DB (Story 5-14)', () => {
+describeIfDb('Migration 0000→0003 on a populated DB', () => {
 	const schema = `mig_test_${Math.random().toString(36).slice(2, 10)}`
 	let client: Client
 
@@ -95,7 +95,7 @@ describeIfDb('Migration 0000→0003 on a populated DB (Story 5-14)', () => {
 		return r.rows[0]?.data_type
 	}
 
-	it('AC-2: preserves every row (no data loss)', async () => {
+	it('preserves every row (no data loss)', async () => {
 		expect(await count('users')).toBe(2)
 		// Includes the default auto-created for user2.
 		expect(await count('userProfiles')).toBe(3)
@@ -132,7 +132,7 @@ describeIfDb('Migration 0000→0003 on a populated DB (Story 5-14)', () => {
 		).toBe(2)
 	})
 
-	it('AC-1: the four entity PKs are now uuid', async () => {
+	it('the four entity PKs are now uuid', async () => {
 		expect(await idType('incomeSources')).toBe('uuid')
 		expect(await idType('expenses')).toBe('uuid')
 		expect(await idType('savingsGoals')).toBe('uuid')
@@ -140,7 +140,7 @@ describeIfDb('Migration 0000→0003 on a populated DB (Story 5-14)', () => {
 		expect(await idType('userProfiles')).toBe('uuid')
 	})
 
-	it('AC-2: every row got a non-null, distinct uuid id', async () => {
+	it('every row got a non-null, distinct uuid id', async () => {
 		const r = await client.query(
 			`SELECT count(*)::int AS total, count(DISTINCT id)::int AS distinct_ids,
               count(*) FILTER (WHERE id IS NULL)::int AS nulls
@@ -151,7 +151,7 @@ describeIfDb('Migration 0000→0003 on a populated DB (Story 5-14)', () => {
 		expect(r.rows[0].nulls).toBe(0)
 	})
 
-	it("AC-3: profileId backfilled to each row's own default profile with no orphans", async () => {
+	it("profileId backfilled to each row's own default profile with no orphans", async () => {
 		const allDefault = await client.query(
 			`SELECT bool_and(i."profileId" = dp.id) AS ok
        FROM "incomeSources" i
@@ -172,12 +172,12 @@ describeIfDb('Migration 0000→0003 on a populated DB (Story 5-14)', () => {
 		expect(orphanUser.rows[0].n).toBe(0)
 	})
 
-	it('AC-2: monetary values are intact after conversion', async () => {
+	it('monetary values are intact after conversion', async () => {
 		const r = await client.query(`SELECT amount FROM "incomeSources" WHERE name = 'Salary'`)
 		expect(r.rows[0].amount).toBe(500000)
 	})
 
-	it('AC-1: a client-supplied uuid insert succeeds', async () => {
+	it('a client-supplied uuid insert succeeds', async () => {
 		await client.query(
 			`INSERT INTO "incomeSources" (id, "userId", "profileId", name, amount, frequency)
        SELECT '99999999-9999-9999-9999-999999999999', "userId", "profileId", 'ClientRow', 12345, 'monthly'

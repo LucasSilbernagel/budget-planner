@@ -44,8 +44,8 @@ function tokens(el: Element): string[] {
 	return (el.getAttribute('class') ?? '').split(/\s+/).filter(Boolean)
 }
 
-describe('forecasting tab strip below 640 px (story 91.3)', () => {
-	it('gives an inactive tab AA-contrast text in both themes (story 115.2)', async () => {
+describe('forecasting tab strip below 640 px', () => {
+	it('gives an inactive tab AA-contrast text in both themes', async () => {
 		// gray-500/gray-400 fell below AA's 4.5:1 on the strip; gray-600/gray-300 pass.
 		const inactive = (await renderTabs()).filter((button) => !tokens(button).includes('shadow-sm'))
 		expect(inactive).toHaveLength(2)
@@ -115,7 +115,7 @@ describe('forecasting tab strip below 640 px (story 91.3)', () => {
 	})
 })
 
-describe('tab semantics (story 120.2)', () => {
+describe('tab semantics', () => {
 	function selected(): string[] {
 		return screen
 			.getAllByRole('tab')

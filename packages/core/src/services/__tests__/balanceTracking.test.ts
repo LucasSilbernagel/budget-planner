@@ -124,7 +124,7 @@ describe('validateBalanceTracking', () => {
 		)
 	})
 
-	it('should REFUSE a negative currentBalance for debts (Story 103.1)', () => {
+	it('should REFUSE a negative currentBalance for debts', () => {
 		const input: ClientNewBalanceTracking = {
 			type: 'debt',
 			name: 'Test Debt',
@@ -201,7 +201,7 @@ describe('isValidBalanceTracking', () => {
 	})
 })
 
-describe('validateBalanceTracking - frequency (Story 16-2)', () => {
+describe('validateBalanceTracking - frequency', () => {
 	const base: ClientNewBalanceTracking = {
 		type: 'investment',
 		name: 'Test',
@@ -234,7 +234,7 @@ describe('validateBalanceTracking - frequency (Story 16-2)', () => {
 	)
 })
 
-describe('monthlyContributionCents (Story 16-2)', () => {
+describe('monthlyContributionCents', () => {
 	// weekly ×52/12, biweekly ×26/12, monthly ×1, annually ×1/12, then Math.round
 	it('normalizes a weekly contribution to its monthly equivalent', () => {
 		expect(monthlyContributionCents({ monthlyContribution: 50000, frequency: 'weekly' })).toBe(
@@ -268,7 +268,7 @@ describe('monthlyContributionCents (Story 16-2)', () => {
 		expect(monthlyContributionCents(legacy)).toBe(50000)
 	})
 
-	it('coerces an unrecognized frequency to monthly instead of throwing (review E1)', () => {
+	it('coerces an unrecognized frequency to monthly instead of throwing', () => {
 		const corrupt = {
 			monthlyContribution: 50000,
 			frequency: 'daily' as unknown as ClientBalanceTracking['frequency'],
@@ -278,7 +278,7 @@ describe('monthlyContributionCents (Story 16-2)', () => {
 	})
 })
 
-describe('annualContributionCents (story 111.1)', () => {
+describe('annualContributionCents', () => {
 	// `monthlyContributionCents(...) × 12` would give 260004 / 2600004 / 600000 / 50004.
 	it.each([
 		['weekly', 5000, 260_000],
@@ -304,7 +304,7 @@ describe('annualContributionCents (story 111.1)', () => {
 })
 
 // Debts with a debtSubType: the only branch that still reads the normalized contribution.
-describe('withTimeline - frequency normalization (Story 16-2)', () => {
+describe('withTimeline - frequency normalization', () => {
 	it('feeds the monthly-equivalent contribution into the debt payoff timeline', () => {
 		// Weekly 50000 → 216667/month: ceil(650000/216667) = 3.
 		// An un-normalized 50000 would give ceil(650000/50000) = 13.
@@ -322,7 +322,7 @@ describe('withTimeline - frequency normalization (Story 16-2)', () => {
 		expect(withTimeline(entry).debtTimeline).toBe(3)
 	})
 
-	it('does not throw when an entry carries a corrupt frequency (review E1)', () => {
+	it('does not throw when an entry carries a corrupt frequency', () => {
 		const entry: ClientBalanceTracking = {
 			id: 'test-uuid',
 			type: 'debt',
@@ -626,7 +626,7 @@ describe('Edge Case Handling - Validation', () => {
 	})
 
 	describe('NaN and Infinity validation', () => {
-		it('AC 2 - should reject NaN currentBalance', () => {
+		it('should reject NaN currentBalance', () => {
 			const input: Partial<ClientNewBalanceTracking> = {
 				type: 'investment',
 				name: 'Test',
@@ -640,7 +640,7 @@ describe('Edge Case Handling - Validation', () => {
 			)
 		})
 
-		it('AC 2 - should reject Infinity currentBalance', () => {
+		it('should reject Infinity currentBalance', () => {
 			const input: Partial<ClientNewBalanceTracking> = {
 				type: 'investment',
 				name: 'Test',
@@ -799,7 +799,7 @@ describe('Edge Case Handling - Sorting and Filtering', () => {
 	})
 })
 
-describe('validateBalanceTracking — the asset type (Story 43.4, FR70/D2)', () => {
+describe('validateBalanceTracking — the asset type', () => {
 	const assetInput = (overrides: Record<string, unknown> = {}) => ({
 		type: 'asset' as const,
 		name: 'Condo',
@@ -814,7 +814,7 @@ describe('validateBalanceTracking — the asset type (Story 43.4, FR70/D2)', () 
 		expect(result).toEqual([])
 	})
 
-	it('REJECTS an asset carrying a contribution (D2 enforced on every write path)', () => {
+	it('REJECTS an asset carrying a contribution (enforced on every write path)', () => {
 		const errors = validateBalanceTracking(assetInput({ monthlyContribution: 50_000 }))
 		expect(errors).toHaveLength(1)
 		expect(errors[0]?.field).toBe('monthlyContribution')
@@ -831,7 +831,7 @@ describe('validateBalanceTracking — the asset type (Story 43.4, FR70/D2)', () 
 	})
 })
 
-describe('validateBalanceTracking — contributionRecordedAsExpense (Story 45.1, FR72/D8)', () => {
+describe('validateBalanceTracking — contributionRecordedAsExpense', () => {
 	const row = (overrides: Record<string, unknown> = {}) => ({
 		type: 'investment' as const,
 		name: 'TFSA',
@@ -864,7 +864,7 @@ describe('validateBalanceTracking — contributionRecordedAsExpense (Story 45.1,
 		expect(errors[0]?.message).toMatch(/already recorded as an expense/i)
 	})
 
-	it('REJECTS an asset row carrying the flag, alongside the D2 contribution error', () => {
+	it('REJECTS an asset row carrying the flag, alongside the asset contribution error', () => {
 		// Two independent rules fire here; assert both so neither can mask the other.
 		const errors = validateBalanceTracking(
 			row({ type: 'asset', contributionRecordedAsExpense: true })
@@ -890,7 +890,7 @@ describe('validateBalanceTracking — contributionRecordedAsExpense (Story 45.1,
 	})
 })
 
-describe('validateBalanceTracking — paymentExpenseId (Story 102.1, FR169/AC-6)', () => {
+describe('validateBalanceTracking — paymentExpenseId', () => {
 	const EXPENSE_ID = '44444444-4444-4444-8444-444444444444'
 	const row = (overrides: Record<string, unknown> = {}) => ({
 		type: 'debt' as const,
@@ -937,7 +937,7 @@ describe('validateBalanceTracking — paymentExpenseId (Story 102.1, FR169/AC-6)
 	})
 })
 
-describe('validateBalanceTracking — a balance is never negative (Story 103.1, FR171/AC-1, D3)', () => {
+describe('validateBalanceTracking — a balance is never negative', () => {
 	const row = (type: FinanceType, currentBalance: number) => ({
 		type,
 		name: 'Row',
@@ -953,7 +953,7 @@ describe('validateBalanceTracking — a balance is never negative (Story 103.1, 
 		}
 	})
 
-	it('REFUSES a negative balance on every type (D3), with one currentBalance error', () => {
+	it('REFUSES a negative balance on every type, with one currentBalance error', () => {
 		for (const type of ['investment', 'debt', 'asset'] as const) {
 			expect(validateBalanceTracking(row(type, -1))).toEqual([
 				{ field: 'currentBalance', message: 'Current balance cannot be negative', value: -1 },
@@ -971,7 +971,7 @@ describe('validateBalanceTracking — a balance is never negative (Story 103.1, 
 	})
 })
 
-describe('debtOwedCents (Story 103.1, FR171/AC-2, D1)', () => {
+describe('debtOwedCents', () => {
 	it('reads a debt as the positive amount owed, whatever its stored sign', () => {
 		expect(debtOwedCents(400_000)).toBe(400_000)
 		expect(debtOwedCents(-400_000)).toBe(400_000)
@@ -986,7 +986,7 @@ describe('debtOwedCents (Story 103.1, FR171/AC-2, D1)', () => {
 	})
 })
 
-describe('resolveDebtPaymentExpense (Story 102.1, FR169/AC-5)', () => {
+describe('resolveDebtPaymentExpense', () => {
 	const expenses = [
 		{ id: 'e-1', name: 'Car payment', amount: 45_000, frequency: 'monthly' as const },
 		{ id: 'e-2', name: 'Rent', amount: 150_000, frequency: 'monthly' as const },

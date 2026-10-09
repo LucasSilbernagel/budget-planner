@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { PGlite } from '@electric-sql/pglite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-interface JournalEntry {
+type JournalEntry = {
 	idx: number
 	tag: string
 }
@@ -83,7 +83,7 @@ async function outcomeOf(sql: string, params: unknown[] = []): Promise<string> {
 	}
 }
 
-describe('CHECK constraints are enforced by the database (story 66.5)', () => {
+describe('CHECK constraints are enforced by the database', () => {
 	it('users_email_not_empty refuses an empty email', async () => {
 		expect(
 			await outcomeOf(`INSERT INTO "users" (email, "paddleId") VALUES ('', 'pad_empty_email')`)
@@ -137,7 +137,7 @@ describe('CHECK constraints are enforced by the database (story 66.5)', () => {
 		).toBe('savingsGoals_targetAmount_positive')
 	})
 
-	it('savingsGoals_targetAmount_positive ACCEPTS null (a goal-less savings account, story 16-1)', async () => {
+	it('savingsGoals_targetAmount_positive ACCEPTS null (a goal-less savings account)', async () => {
 		// A CHECK passes when its predicate is NULL, so this can't prove the `IS NULL OR` arm exists;
 		// only the predicate text comparison in the replay test can.
 		expect(

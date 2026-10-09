@@ -9,7 +9,7 @@ import gettingStarted from './getting-started.md?raw'
 import howTotalsAreCalculated from './how-totals-are-calculated.md?raw'
 import whereAMortgageBelongs from './where-a-mortgage-belongs.md?raw'
 
-export interface DocPage {
+export type DocPage = {
 	readonly slug: string
 	readonly title: string
 	readonly description: string

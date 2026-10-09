@@ -6,7 +6,7 @@ function ch(updatedAt: number, entityId: string): ServerChange {
 	return { entityType: 'incomeSource', entityId, data: {}, updatedAt, isDeleted: false }
 }
 
-describe('capChangesAtTimestampBoundary (Story 4-18 review P1)', () => {
+describe('capChangesAtTimestampBoundary', () => {
 	it('returns the list unchanged when within the cap', () => {
 		const list = [ch(1, 'a'), ch(2, 'b')]
 		expect(capChangesAtTimestampBoundary(list, 5)).toHaveLength(2)

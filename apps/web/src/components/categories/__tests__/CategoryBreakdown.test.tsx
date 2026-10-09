@@ -82,7 +82,7 @@ beforeEach(() => {
 })
 
 describe('CategoryBreakdown', () => {
-	describe('grouping by categoryId (AC-1)', () => {
+	describe('grouping by categoryId', () => {
 		it('merges EXPENSES sharing one category into a single row with a count-correct total', () => {
 			seed({
 				categories: [category({ id: 'cat-groceries', name: 'Groceries' })],
@@ -152,7 +152,7 @@ describe('CategoryBreakdown', () => {
 		})
 	})
 
-	describe('separate wholes (AC-2)', () => {
+	describe('separate wholes', () => {
 		it('measures an EXPENSE share against the expense total, not a combined one', () => {
 			seed({
 				categories: [
@@ -201,7 +201,7 @@ describe('CategoryBreakdown', () => {
 		})
 	})
 
-	describe('cadence follows the global overview preference (AC-3)', () => {
+	describe('cadence follows the global overview preference', () => {
 		it('re-expresses EXPENSE totals when the preference changes', () => {
 			seed({
 				categories: [category({ id: 'cat-a', name: 'Groceries' })],
@@ -264,7 +264,7 @@ describe('CategoryBreakdown', () => {
 		})
 	})
 
-	describe('empty and degenerate states (AC-4)', () => {
+	describe('empty and degenerate states', () => {
 		it('shows a whole-section empty state when there is no income and no expenses', () => {
 			render(<CategoryBreakdown />)
 

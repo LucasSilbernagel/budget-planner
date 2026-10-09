@@ -60,19 +60,19 @@ async function servedHead(path: string, status = 200) {
 	return { title: titles[0], description: descriptions[0], html: response.body }
 }
 
-describe('per-route metadata in the served head (was e2e page-metadata, story 40.1)', () => {
-	it('the Overview is titled by its page name alone (story 95.1, FR154)', async () => {
+describe('per-route metadata in the served head', () => {
+	it('the Overview is titled by its page name alone', async () => {
 		const { title } = await servedHead('/')
 		expect(title).toBe('Overview · Longhand Budget')
 	})
 
-	it('the premium summary page is Financial Summary at /financial-summary (story 95.2, FR155)', async () => {
+	it('the premium summary page is Financial Summary at /financial-summary', async () => {
 		const { title, description } = await servedHead('/financial-summary')
 		expect(title).toBe('Financial Summary · Longhand Budget')
 		expect(description).toBe('A printable summary of your income, expenses, savings and net worth.')
 	})
 
-	it('a route that had no head before story 40.1 names itself', async () => {
+	it('a route without its own head entry still names itself', async () => {
 		const { title, description } = await servedHead('/income')
 		expect(title).toBe('Income · Longhand Budget')
 		expect(description).toBe(
@@ -113,7 +113,7 @@ describe('per-route metadata in the served head (was e2e page-metadata, story 40
 	})
 })
 
-describe('the global not-found page (was e2e not-found, story 6-4)', () => {
+describe('the global not-found page', () => {
 	it('serves a real HTTP 404, not a soft-200', async () => {
 		expect((await app.get('/this-route-does-not-exist')).status).toBe(404)
 	})
@@ -139,7 +139,7 @@ describe('the global not-found page (was e2e not-found, story 6-4)', () => {
 	})
 })
 
-describe('the docs not-found route (was e2e docs-not-found, story 39-1)', () => {
+describe('the docs not-found route', () => {
 	const UNKNOWN_DOC = '/docs/this-doc-does-not-exist'
 
 	it('an unknown slug serves a real HTTP 404', async () => {
@@ -197,7 +197,7 @@ const GATED_ROUTES = [
 	},
 ] as const satisfies readonly { path: GatedPath; skeletons: readonly string[] }[]
 
-describe('loading state: the server response (was e2e loading-state, story 38.2)', () => {
+describe('loading state: the server response', () => {
 	for (const { path, skeletons } of GATED_ROUTES) {
 		it(`${path} serves skeletons, not a confident zero`, async () => {
 			const response = await app.get(path)
@@ -233,7 +233,7 @@ describe('loading state: the server response (was e2e loading-state, story 38.2)
 
 	// The seed seam reads `E2E_SESSION_SEED` per request; a leak would make every later test
 	// in this file a signed-in render.
-	it('a signed-in FREE session is served no account notice on / (story 95.1, D2)', async () => {
+	it('a signed-in FREE session is served no account notice on /', async () => {
 		process.env['E2E_SESSION_SEED'] = JSON.stringify({
 			isAuthenticated: true,
 			userId: 'u-95-1',

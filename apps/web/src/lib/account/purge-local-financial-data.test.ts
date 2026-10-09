@@ -143,7 +143,7 @@ describe('purgeLocalFinancialData', () => {
 		expect(h.queueClear).not.toHaveBeenCalled()
 	})
 
-	describe('with a live sync service registered (story 86.1)', () => {
+	describe('with a live sync service registered', () => {
 		it('clears the queue THROUGH the live service for that user, not a fresh queue', async () => {
 			const clearQueue = vi.fn().mockResolvedValue(undefined)
 			unregister = registerSyncPurgeHandle({ userId: 'user-9', clearQueue })
@@ -200,7 +200,7 @@ describe('purgeLocalFinancialData', () => {
 		})
 	})
 
-	it('removes the retirement plans parked for other accounts, and nothing else (story 90.1, D4)', async () => {
+	it('removes the retirement plans parked for other accounts, and nothing else', async () => {
 		const items = new Map<string, string>([
 			['budget-planner-retirement-planner-v1:aaaa', '{}'],
 			['budget-planner-retirement-planner-v1:bbbb', '{}'],
@@ -231,7 +231,7 @@ describe('purgeLocalFinancialData', () => {
 	})
 
 	// The real notice store: mocking it would let a missing reset pass.
-	describe('refusal notices (story 92.1)', () => {
+	describe('refusal notices', () => {
 		const refused: RefusalNotice = {
 			key: 'incomeSource:gone',
 			entityType: 'incomeSource',

@@ -189,7 +189,7 @@ function incomeSortControlValue(): string {
 	return (screen.getByRole('combobox', { name: 'Sort income sources' }) as HTMLSelectElement).value
 }
 
-describe('Savings and Balance persist their own sorts (AC-8)', () => {
+describe('Savings and Balance persist their own sorts', () => {
 	const NAMES = ['Zeta', 'Alpha', 'Mid']
 	const MANUAL = ['Zeta', 'Alpha', 'Mid']
 	const BY_NAME = ['Alpha', 'Mid', 'Zeta']
@@ -231,7 +231,7 @@ describe('Savings and Balance persist their own sorts (AC-8)', () => {
 	})
 })
 
-describe('a persisted sort is applied on a fresh mount (AC-1)', () => {
+describe('a persisted sort is applied on a fresh mount', () => {
 	it('opens sorted by the persisted column and direction', async () => {
 		seedIncome()
 		seedPersistedSort({ income: { key: 'name', direction: 'asc' } })
@@ -270,7 +270,7 @@ describe('a persisted sort is applied on a fresh mount (AC-1)', () => {
 	})
 })
 
-describe('the sort is scoped to one table (AC-4)', () => {
+describe('the sort is scoped to one table', () => {
 	it('a stored Income sort does not reorder Expenses', async () => {
 		seedIncome()
 		seedExpenses()
@@ -305,7 +305,7 @@ describe('the sort is scoped to one table (AC-4)', () => {
 	})
 })
 
-describe('clearing returns to manual order, and the manual order survives (AC-2, AC-3)', () => {
+describe('clearing returns to manual order, and the manual order survives', () => {
 	it('clearing a persisted sort restores the manual order', async () => {
 		seedIncome()
 		seedPersistedSort({ income: { key: 'name', direction: 'asc' } })
@@ -320,7 +320,7 @@ describe('clearing returns to manual order, and the manual order survives (AC-2,
 		expect(renderedOrder()).toEqual(MANUAL_ORDER)
 	})
 
-	it('a persisted sort NEVER rewrites sortOrder (AC-2)', async () => {
+	it('a persisted sort NEVER rewrites sortOrder', async () => {
 		seedIncome()
 		const before = useIncomeStore.getState().incomeSources.map((r) => [r.name, r.sortOrder])
 
@@ -350,7 +350,7 @@ describe('clearing returns to manual order, and the manual order survives (AC-2,
 	})
 })
 
-describe('a rehydrated sort enqueues no sync operation (AC-2)', () => {
+describe('a rehydrated sort enqueues no sync operation', () => {
 	it('is inert on a PAID session', async () => {
 		// Seed BEFORE registering: `seedIncome()` legitimately enqueues four creates.
 		seedIncome()
@@ -378,7 +378,7 @@ describe('a rehydrated sort enqueues no sync operation (AC-2)', () => {
 	})
 })
 
-describe('a persisted sort on the Premium-only Category column (AC-6)', () => {
+describe('a persisted sort on the Premium-only Category column', () => {
 	function category(overrides: Partial<ClientCategory> & { id: string }): ClientCategory {
 		return {
 			userId: 0,
@@ -465,7 +465,7 @@ describe('a persisted sort on the Premium-only Category column (AC-6)', () => {
 	})
 })
 
-describe('a persisted key that names a PROTOTYPE member (AC-5)', () => {
+describe('a persisted key that names a PROTOTYPE member', () => {
 	/** `extractors[key]` walks the prototype chain, so a persisted `'toString'` must still degrade. */
 	const PROTOTYPE_KEYS = ['toString', 'constructor', 'valueOf', 'hasOwnProperty', '__proto__']
 
@@ -492,7 +492,7 @@ describe('a persisted key that names a PROTOTYPE member (AC-5)', () => {
 	})
 })
 
-describe('no first-paint flash from manual order into the persisted sort (AC-10)', () => {
+describe('no first-paint flash from manual order into the persisted sort', () => {
 	/**
 	 * RTL flushes effects before any assertion, hiding a flash. `Profiler.onRender` fires per commit,
 	 * so the first commit containing a table must already be sorted.
@@ -552,7 +552,7 @@ describe('no first-paint flash from manual order into the persisted sort (AC-10)
 })
 
 /** These start from a real click or choice and cross the reload chain, so they cover the write half. */
-describe('a sort survives the reload chain (was e2e, story 84.5)', () => {
+describe('a sort survives the reload chain', () => {
 	function nameHeader(): HTMLElement {
 		return screen.getByRole('columnheader', { name: 'Name' })
 	}
@@ -575,7 +575,7 @@ describe('a sort survives the reload chain (was e2e, story 84.5)', () => {
 		expect(nameHeader()).toHaveAttribute('aria-sort', 'ascending')
 	})
 
-	it('a restored sort is DESCRIBED on the header but never ANNOUNCED (story 120.1, D2)', async () => {
+	it('a restored sort is DESCRIBED on the header but never ANNOUNCED', async () => {
 		// The live region speaks only for a header click in this mount; a restored sort stays silent.
 		const user = userEvent.setup()
 		seedIncome()

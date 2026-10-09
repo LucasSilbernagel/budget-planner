@@ -4,7 +4,7 @@ import crypto from 'node:crypto'
 import { getSessionSecret } from '@budget-planner/config'
 
 // `iat` is HMAC-protected, so a client cannot back-date it past a revocation watermark.
-export interface SessionPayload {
+export type SessionPayload = {
 	userId: string
 	paddleId: string
 	email: string

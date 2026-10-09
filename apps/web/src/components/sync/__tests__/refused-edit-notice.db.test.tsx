@@ -226,7 +226,7 @@ afterEach(() => {
 	resetSyncStore()
 })
 
-describe('a refused edit is named and reverted (story 75.2)', () => {
+describe('a refused edit is named and reverted', () => {
 	it('names a refused UPDATE and changes the local value back to the server value', async () => {
 		useSavingsStore.setState({ savingsGoals: [localGoal(GOAL, 'Emergency fund', -1)] as never })
 		const bad = queuedOp({})

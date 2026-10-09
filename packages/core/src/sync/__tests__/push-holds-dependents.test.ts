@@ -61,7 +61,7 @@ function promoteY(withLink = true): SyncOperation {
 	}
 }
 
-describe('push honours dependsOn (story 76.2 code review)', () => {
+describe('push honours dependsOn', () => {
 	let queue: SyncQueue
 	let service: SynchronizationService
 	let results: Map<string, ProcessOperationResult>

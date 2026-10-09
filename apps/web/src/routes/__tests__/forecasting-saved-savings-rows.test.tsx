@@ -141,7 +141,7 @@ afterEach(() => {
 	vi.clearAllMocks()
 })
 
-describe('a v2 forecast reloads its rows exactly (AC-11)', () => {
+describe('a v2 forecast reloads its rows exactly', () => {
 	it('names, balances, contributions and order', async () => {
 		const call = await loadPlan(
 			{
@@ -169,7 +169,7 @@ describe('a v2 forecast reloads its rows exactly (AC-11)', () => {
 	})
 })
 
-describe('a v1 forecast reopens as one Savings row that changes no figure (AC-12)', () => {
+describe('a v1 forecast reopens as one Savings row that changes no figure', () => {
 	it('becomes ONE row named Savings, and projects exactly as the same inputs without savings rows', async () => {
 		const call = await loadPlan({ savings: 123_400, investments: 50_000, years: 7 })
 
@@ -207,7 +207,7 @@ describe('a v1 forecast reopens as one Savings row that changes no figure (AC-12
 		expect(call.data.savings).toBe(0)
 	})
 
-	it('a pre-bug-3 row with no inputs still reloads at 0', async () => {
+	it('a legacy row with no inputs still reloads at 0', async () => {
 		const call = await loadPlan(undefined)
 		expect(rows()).toEqual([])
 		expect(call.data.savings).toBe(0)
@@ -215,7 +215,7 @@ describe('a v1 forecast reopens as one Savings row that changes no figure (AC-12
 	})
 })
 
-describe('corrupt saved rows (AC-13)', () => {
+describe('corrupt saved rows', () => {
 	it('ignores a savingsAccounts that is not an array and falls back to the v1 total', async () => {
 		const call = await loadPlan(
 			{ savings: 123_400, investments: 50_000, years: 7, savingsAccounts: 'oops' },
@@ -250,7 +250,7 @@ describe('corrupt saved rows (AC-13)', () => {
 
 	// Stays green without the mapper's recompute (the builder derives savings itself);
 	// the NaN-total case below pins the mapper.
-	it('trusts the ROWS when they disagree with the saved total (D7)', async () => {
+	it('trusts the ROWS when they disagree with the saved total', async () => {
 		const call = await loadPlan(
 			{
 				savings: 999,

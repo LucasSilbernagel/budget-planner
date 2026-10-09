@@ -117,7 +117,7 @@ afterEach(() => {
 	clearSyncBridge()
 })
 
-describe("B's sync on a browser holding A's data (story 86.2, AC 4)", () => {
+describe("B's sync on a browser holding A's data", () => {
 	it("removes A's profiles and rows, uploads none of them, and shows none of them", async () => {
 		render(
 			<>

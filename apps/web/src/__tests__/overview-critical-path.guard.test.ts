@@ -246,7 +246,7 @@ describe('matchesBanned — module identity, not string equality', () => {
 	})
 })
 
-describe.each(ENTRIES)('$name synchronous import graph (story 38.3)', (subject) => {
+describe.each(ENTRIES)('$name synchronous import graph', (subject) => {
 	const closure = staticClosure(subject.entry)
 	const files = [...closure.keys()].map((f) => relative(SRC_ROOT, f))
 

@@ -71,7 +71,7 @@ function profileChange(
 	}
 }
 
-describe('pull() lets go of a remotely deleted profile’s queued ops (story 76.2)', () => {
+describe('pull() lets go of a remotely deleted profile’s queued ops', () => {
 	let storage: ReturnType<typeof createStorage>
 	let queue: SyncQueue
 	let service: SynchronizationService
@@ -106,7 +106,7 @@ describe('pull() lets go of a remotely deleted profile’s queued ops (story 76.
 		vi.restoreAllMocks()
 	})
 
-	describe('AC-1/AC-3: an APPLIED profile tombstone', () => {
+	describe('an APPLIED profile tombstone', () => {
 		it('drops the queued child ops stamped with that profile, in the same pull, before onChangesPulled', async () => {
 			await queue.add(op('child-create', { type: 'create', profileId: P, entityId: ROW }))
 			await queue.add(op('child-update', { profileId: P, baseVersion: 500 }))
@@ -170,7 +170,7 @@ describe('pull() lets go of a remotely deleted profile’s queued ops (story 76.
 		})
 	})
 
-	describe('AC-2: the predicate is strict', () => {
+	describe('the predicate is strict', () => {
 		it('keeps ops for another profile, an unstamped op, and every userProfile op for another profile', async () => {
 			await queue.add(op('child-in-P', { profileId: P }))
 			await queue.add(op('child-in-Q', { profileId: Q, entityId: X }))
@@ -230,7 +230,7 @@ describe('pull() lets go of a remotely deleted profile’s queued ops (story 76.
 		})
 	})
 
-	describe('AC-4: the delete + promotion pair (D1 = A, one-way)', () => {
+	describe('the delete + promotion pair (one-way dependency)', () => {
 		const deleteX = () =>
 			op('delete-X', {
 				type: 'delete',
@@ -297,7 +297,7 @@ describe('pull() lets go of a remotely deleted profile’s queued ops (story 76.
 			expect(result.droppedDependents).toEqual([])
 		})
 
-		it('a promotion queued before this story (no dependsOn) behaves exactly as before', async () => {
+		it('a promotion queued without dependsOn behaves exactly as before', async () => {
 			await queue.add(deleteX())
 			await queue.add(promoteY(false))
 			fetchServerChanges.mockResolvedValueOnce([profileChange(X, { isDefault: true })])
@@ -323,7 +323,7 @@ describe('pull() lets go of a remotely deleted profile’s queued ops (story 76.
 		})
 	})
 
-	describe('AC-6: the public entry point', () => {
+	describe('the public entry point', () => {
 		it('discardOperationsForDeletedProfile applies the same strict predicate', async () => {
 			await queue.add(op('child-in-P', { profileId: P }))
 			await queue.add(op('child-in-Q', { profileId: Q, entityId: X }))

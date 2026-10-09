@@ -54,7 +54,7 @@ describe('SavingsPage inline validation', () => {
 		expect(screen.getByRole('dialog')).toBeInTheDocument()
 	})
 
-	it('clears the error after correction and a valid submit succeeds (AC-3)', async () => {
+	it('clears the error after correction and a valid submit succeeds', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<SavingsPage />)
 
@@ -76,7 +76,7 @@ describe('SavingsPage inline validation', () => {
 	})
 })
 
-describe('SavingsPage — savings accounts (Story 16-1)', () => {
+describe('SavingsPage — savings accounts', () => {
 	beforeEach(() => {
 		useSavingsStore.setState({ savingsGoals: [] })
 	})
@@ -136,7 +136,7 @@ describe('SavingsPage — savings accounts (Story 16-1)', () => {
 	})
 })
 
-describe('SavingsPage — monthly allocation (Story 26.1)', () => {
+describe('SavingsPage — monthly allocation', () => {
 	beforeEach(() => {
 		useSavingsStore.setState({ savingsGoals: [] })
 	})
@@ -217,7 +217,7 @@ describe('SavingsPage — monthly allocation (Story 26.1)', () => {
 	})
 })
 
-describe('SavingsPage — leftover allocation split (Story 26.3)', () => {
+describe('SavingsPage — leftover allocation split', () => {
 	const ISO = '2026-01-01T00:00:00.000Z'
 
 	// Fully-typed store fixtures (the shared makeIncomeSource/makeExpense factories
@@ -280,7 +280,7 @@ describe('SavingsPage — leftover allocation split (Story 26.3)', () => {
 	beforeEach(resetStores)
 	afterEach(resetStores)
 
-	it('shows the leftover summary and each account’s effective allocation (AC-1, AC-2)', () => {
+	it('shows the leftover summary and each account’s effective allocation', () => {
 		// net 350000 − 50000 contribution − 130000 manual = pool 170000 / 2 automatic = 85000 each.
 		// Fixed and automatic amounts differ, so a manual/automatic swap fails.
 		useIncomeStore.setState({ incomeSources: [incomeRow(500000)] })
@@ -328,7 +328,7 @@ describe('SavingsPage — leftover allocation split (Story 26.3)', () => {
 		expect(screen.getByTestId('savings-allocation-c')).toHaveTextContent(/0\.33/)
 	})
 
-	it('shows 0 for automatic accounts and a calm note when over-committed (AC-4)', () => {
+	it('shows 0 for automatic accounts and a calm note when over-committed', () => {
 		// net 50000; manual 100000 exceeds it → pool floors to 0; autos get 0.
 		useIncomeStore.setState({ incomeSources: [incomeRow(200000)] })
 		useExpenseStore.setState({ expenses: [expenseRow(150000)] })
@@ -346,7 +346,7 @@ describe('SavingsPage — leftover allocation split (Story 26.3)', () => {
 		expect(note).not.toHaveTextContent(/automatic accounts/)
 	})
 
-	it('states there are no automatic accounts when every account is manual (AC-2)', () => {
+	it('states there are no automatic accounts when every account is manual', () => {
 		useIncomeStore.setState({ incomeSources: [incomeRow(500000)] })
 		useSavingsStore.setState({
 			savingsGoals: [
@@ -364,7 +364,7 @@ describe('SavingsPage — leftover allocation split (Story 26.3)', () => {
 		expect(screen.queryByTestId('savings-overcommitted-note')).not.toBeInTheDocument()
 	})
 
-	it('recomputes the automatic share live when income changes (AC-3)', () => {
+	it('recomputes the automatic share live when income changes', () => {
 		useIncomeStore.setState({ incomeSources: [incomeRow(100000)] })
 		useSavingsStore.setState({
 			savingsGoals: [savingsRow({ id: 'auto-1', allocationMode: 'automatic' })],
@@ -410,7 +410,7 @@ describe('SavingsPage — leftover allocation split (Story 26.3)', () => {
 	})
 })
 
-describe('SavingsPage — target-less entries are allocated like goals (Story 72.1, reverses FR98)', () => {
+describe('SavingsPage — target-less entries are allocated like goals', () => {
 	const ISO = '2026-01-01T00:00:00.000Z'
 	const accountRow = (over: {
 		id: string
@@ -485,7 +485,7 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
 		expect(screen.getByTestId('savings-monthly-allocation-input')).toHaveValue('250.00')
 	})
 
-	it('the mode helper speaks of an ENTRY, for accounts too (AC-12, D3)', async () => {
+	it('the mode helper speaks of an ENTRY, for accounts too', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<SavingsPage />)
 		await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
@@ -500,7 +500,7 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
 		expect(dialog).not.toHaveTextContent(/This goal (receives|gets)/)
 	})
 
-	it('⚠️ persists manual / 25000 for an account (AC-4)', async () => {
+	it('⚠️ persists manual / 25000 for an account', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<SavingsPage />)
 		await user.click(screen.getByRole('button', { name: '+ Add Savings Goal' }))
@@ -524,7 +524,7 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
 		})
 	})
 
-	it('⚠️ reverses FR98: an automatic account takes an even share beside a goal', () => {
+	it('⚠️ an automatic account takes an even share beside a goal', () => {
 		// The pool of 500.00 is split over 2 automatic rows ⇒ 250.00 each.
 		useIncomeStore.setState({ incomeSources: [salary(500_00)] })
 		useSavingsStore.setState({ savingsGoals: [goalRow('goal-1'), accountRow({ id: 'acct-1' })] })
@@ -538,7 +538,7 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
 		)
 	})
 
-	it('⚠️ an account stored as manual 300.00 shows 300.00 and a Fixed pill (AC-7)', () => {
+	it('⚠️ an account stored as manual 300.00 shows 300.00 and a Fixed pill', () => {
 		useSavingsStore.setState({
 			savingsGoals: [
 				accountRow({ id: 'acct-1', allocationMode: 'manual', monthlyAllocation: 300_00 }),
@@ -573,7 +573,7 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
 		expect(summary).not.toHaveTextContent(/don.t receive allocations/i)
 	})
 
-	it('all-manual accounts get the D3 remedy: set an ENTRY to Automatic', () => {
+	it('all-manual accounts are told to set an ENTRY to Automatic', () => {
 		// 500.00 − 100.00 fixed = 400.00 left over, nothing automatic to receive it.
 		useIncomeStore.setState({ incomeSources: [salary(500_00)] })
 		useSavingsStore.setState({
@@ -591,7 +591,7 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
 		expect(summary).not.toHaveTextContent(/don.t receive allocations/i)
 	})
 
-	it('an empty page gets the D3 remedy: add a savings goal OR ACCOUNT', () => {
+	it('an empty page is told to add a savings goal OR ACCOUNT', () => {
 		useIncomeStore.setState({ incomeSources: [salary(500_00)] })
 		renderWithProviders(<SavingsPage />)
 
@@ -601,7 +601,7 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
 		expect(summary).not.toHaveTextContent(/Set an entry/i)
 	})
 
-	it('⚠️ refuses a NEGATIVE manual amount on an account with a visible error (AC-5)', async () => {
+	it('⚠️ refuses a NEGATIVE manual amount on an account with a visible error', async () => {
 		// A leading '-' is legal in `sanitizeMoneyInput`, so this is typeable.
 		const user = userEvent.setup()
 		renderWithProviders(<SavingsPage />)
@@ -634,7 +634,7 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
 		expect(useSavingsStore.getState().savingsGoals).toHaveLength(0)
 	})
 
-	it('⚠️ editing an account opens with its STORED manual / 300.00 (AC-6)', () => {
+	it('⚠️ editing an account opens with its STORED manual / 300.00', () => {
 		useSavingsStore.setState({
 			savingsGoals: [
 				accountRow({ id: 'acct-1', allocationMode: 'manual', monthlyAllocation: 300_00 }),
@@ -648,7 +648,7 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
 		expect(screen.getByTestId('savings-monthly-allocation-input')).toHaveValue('300.00')
 	})
 
-	it('⚠️ an UNTOUCHED Save of a manual account keeps manual / 30000 (the AC-6 trap)', async () => {
+	it('⚠️ an UNTOUCHED Save of a manual account keeps manual / 30000 (not reset to automatic)', async () => {
 		// The discriminating input: prefill and reset-to-automatic diverge only when the user changes nothing.
 		const user = userEvent.setup()
 		useSavingsStore.setState({
@@ -670,7 +670,7 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
 		})
 	})
 
-	it('⚠️ the breakdown’s fixed-allocation line includes a manual ACCOUNT (AC-10)', () => {
+	it('⚠️ the breakdown’s fixed-allocation line includes a manual ACCOUNT', () => {
 		// Fixed line = 100.00 + 300.00 = 400.00.
 		useIncomeStore.setState({ incomeSources: [salary(500_00)] })
 		useSavingsStore.setState({
@@ -689,7 +689,7 @@ describe('SavingsPage — target-less entries are allocated like goals (Story 72
 		expect(screen.getByTestId('savings-allocation-goal-1')).toHaveTextContent('100.00')
 	})
 
-	it('⚠️ D1: stored target-less rows resume with their stored mode, no data change (AC-14)', async () => {
+	it('⚠️ stored target-less rows resume with their stored mode, no data change', async () => {
 		// One row per stored shape: legacy (keys absent, backfilled by migrate), chosen (manual 300.00),
 		// forced (automatic/null). 1,000.00 − 300.00 = 700.00 over 2 automatic ⇒ 350.00 each.
 		localStorage.setItem(
@@ -850,7 +850,7 @@ describe('SavingsPage form controls have a visible focus ring', () => {
 	})
 })
 
-describe('SavingsPage mobile card presentation (story 31.2)', () => {
+describe('SavingsPage mobile card presentation', () => {
 	const ISO_31_2 = '2026-01-01T00:00:00.000Z'
 
 	beforeEach(() => {
@@ -920,7 +920,7 @@ describe('SavingsPage mobile card presentation (story 31.2)', () => {
 		expect(within(row).getByTestId('savings-progress-na-acct-1')).toHaveTextContent('N/A')
 	})
 
-	it('labels every field on the card (AC-4)', () => {
+	it('labels every field on the card', () => {
 		renderWithProviders(<SavingsPage />)
 		const row = rowFor('Vacation')
 
@@ -954,7 +954,7 @@ describe('SavingsPage mobile card presentation (story 31.2)', () => {
 		expect(screen.getAllByText('Vacation')).toHaveLength(1)
 	})
 
-	it('declares the shared card classes on the table, body and rows (AC-8)', () => {
+	it('declares the shared card classes on the table, body and rows', () => {
 		const { container } = renderWithProviders(<SavingsPage />)
 		const table = container.querySelector('table') as HTMLElement
 
@@ -964,7 +964,7 @@ describe('SavingsPage mobile card presentation (story 31.2)', () => {
 		expect([...rowFor('Vacation').classList]).toContain('max-sm:block')
 	})
 
-	it('every row Edit/Delete button carries a focus ring with a colour (AC-5)', () => {
+	it('every row Edit/Delete button carries a focus ring with a colour', () => {
 		renderWithProviders(<SavingsPage />)
 		const row = rowFor('Vacation')
 		for (const label of ['Edit Vacation', 'Delete Vacation']) {
@@ -972,7 +972,7 @@ describe('SavingsPage mobile card presentation (story 31.2)', () => {
 		}
 	})
 
-	it('declares a >= 44px mobile tap target on each row action, scoped to max-sm (AC-6)', () => {
+	it('declares a >= 44px mobile tap target on each row action, scoped to max-sm', () => {
 		renderWithProviders(<SavingsPage />)
 		const row = rowFor('Vacation')
 		for (const label of ['Edit Vacation', 'Delete Vacation']) {
@@ -980,7 +980,7 @@ describe('SavingsPage mobile card presentation (story 31.2)', () => {
 		}
 	})
 
-	it('offers exactly Edit and Delete in a row action cell (48.2 AC-1, AC-15)', () => {
+	it('offers exactly Edit and Delete in a row action cell', () => {
 		renderWithProviders(<SavingsPage />)
 		const cell = rowFor('Vacation').querySelector('td:last-child') as HTMLElement
 		expect(
@@ -990,7 +990,7 @@ describe('SavingsPage mobile card presentation (story 31.2)', () => {
 		).toEqual(['Edit Vacation', 'Delete Vacation'])
 	})
 
-	it('renders each row action as an aria-hidden icon with no visible label (50.1 AC-1, AC-3, AC-9)', () => {
+	it('renders each row action as an aria-hidden icon with no visible label', () => {
 		renderWithProviders(<SavingsPage />)
 		const cell = rowFor('Vacation').querySelector('td:last-child') as HTMLElement
 		const geometry = ['Edit Vacation', 'Delete Vacation'].map((label) =>
@@ -1000,7 +1000,7 @@ describe('SavingsPage mobile card presentation (story 31.2)', () => {
 		expect(geometry[0], 'Edit and Delete render the same glyph').not.toBe(geometry[1])
 	})
 
-	it('introduces no retired surface/text tokens in the table region (AC-7)', () => {
+	it('introduces no retired surface/text tokens in the table region', () => {
 		const { container } = renderWithProviders(<SavingsPage />)
 		const table = container.querySelector('table') as HTMLElement
 		expect(collectRetiredTokenViolations(table)).toEqual([])
@@ -1152,7 +1152,7 @@ describe('SavingsPage — sort by column (34.2)', () => {
 		}) as HTMLSelectElement
 	}
 
-	it('offers the mobile sort control whether or not a sort is active (48.1 AC-1)', async () => {
+	it('offers the mobile sort control whether or not a sort is active', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<SavingsPage />)
 
@@ -1163,7 +1163,7 @@ describe('SavingsPage — sort by column (34.2)', () => {
 		expect(sortControl().value).toBe('name:asc')
 	})
 
-	it('sorts from the mobile control and drives the SAME state as the headers (48.1 AC-2)', async () => {
+	it('sorts from the mobile control and drives the SAME state as the headers', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<SavingsPage />)
 
@@ -1175,7 +1175,7 @@ describe('SavingsPage — sort by column (34.2)', () => {
 		expect(header('Name')).toHaveAttribute('aria-sort', 'descending')
 	})
 
-	it('returns to manual order from the mobile control (48.1 AC-4)', async () => {
+	it('returns to manual order from the mobile control', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<SavingsPage />)
 
@@ -1193,7 +1193,7 @@ describe('SavingsPage — sort by column (34.2)', () => {
 		expect(collectRetiredTokenViolations(table)).toEqual([])
 	})
 
-	it('enqueues NOTHING on a PAID session — sorting is read-only over the store (AC-8)', async () => {
+	it('enqueues NOTHING on a PAID session — sorting is read-only over the store', async () => {
 		// Registered spies on the PAID tier (which has a sync path), so `not.toHaveBeenCalled()` can fail.
 		const spies = {
 			userId: '550e8400-e29b-41d4-a716-446655440000',
@@ -1264,7 +1264,7 @@ describe('SavingsPage — sort by column (34.2)', () => {
 	})
 })
 
-describe('SavingsPage — page structure (story 51.1)', () => {
+describe('SavingsPage — page structure', () => {
 	const NOW = '2026-01-01T00:00:00.000Z'
 	const goal = (id: string, name: string, currentBalance: number, targetAmount: number | null) => ({
 		id,
@@ -1279,7 +1279,7 @@ describe('SavingsPage — page structure (story 51.1)', () => {
 		useSavingsStore.setState({ savingsGoals: [] })
 	})
 
-	it('renders exactly two sections — the summary and then the goals table (AC-1, AC-2)', () => {
+	it('renders exactly two sections — the summary and then the goals table', () => {
 		useSavingsStore.setState({ savingsGoals: [goal('a', 'Vacation', 300_00, 900_00)] })
 		const { container } = renderWithProviders(<SavingsPage />)
 
@@ -1294,7 +1294,7 @@ describe('SavingsPage — page structure (story 51.1)', () => {
 		expect(sections[1].querySelector('table')).not.toBeNull()
 	})
 
-	it('still renders its three headings and an interactive add-goal control (AC-18)', async () => {
+	it('still renders its three headings and an interactive add-goal control', async () => {
 		const user = userEvent.setup()
 		useSavingsStore.setState({ savingsGoals: [goal('a', 'Vacation', 300_00, 900_00)] })
 		renderWithProviders(<SavingsPage />)
@@ -1309,7 +1309,7 @@ describe('SavingsPage — page structure (story 51.1)', () => {
 	})
 
 	// No `$`: the unit suite renders amounts currency-less.
-	it('renders the summed Total Savings headline figure (AC-18)', () => {
+	it('renders the summed Total Savings headline figure', () => {
 		useSavingsStore.setState({
 			savingsGoals: [goal('a', 'Vacation', 300_00, 900_00), goal('b', 'Roof', 1_050_00, null)],
 		})
@@ -1319,7 +1319,7 @@ describe('SavingsPage — page structure (story 51.1)', () => {
 		expect(screen.getByText('1,350.00')).toBeInTheDocument()
 	})
 
-	it('renders no Savings at a Glance section, heading or chart testid (AC-1, AC-6)', () => {
+	it('renders no Savings at a Glance section, heading or chart testid', () => {
 		useSavingsStore.setState({ savingsGoals: [goal('a', 'Vacation', 300_00, 900_00)] })
 		renderWithProviders(<SavingsPage />)
 
@@ -1333,7 +1333,7 @@ describe('SavingsPage — page structure (story 51.1)', () => {
 	})
 })
 
-describe('SavingsPage — an asset never feeds the distributable pool (Story 43.4, D2)', () => {
+describe('SavingsPage — an asset never feeds the distributable pool', () => {
 	const ISO2 = '2026-01-01T00:00:00.000Z'
 	const assetRow = (monthlyContribution: number, id = 'asset-1') => ({
 		id,
@@ -1380,7 +1380,7 @@ describe('SavingsPage — an asset never feeds the distributable pool (Story 43.
 	})
 })
 
-describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () => {
+describe('SavingsPage — leftover breakdown and contribution double-counting', () => {
 	const ISO = '2026-01-01T00:00:00.000Z'
 
 	const incomeRow = (amount: number, id = 'inc-1') => ({
@@ -1464,7 +1464,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
 		expect(screen.getByTestId('breakdown-contribution-inv-1')).toBeInTheDocument()
 	})
 
-	it('AC-8(a): the breakdown itemises each contribution (story 47.1: no toggle)', () => {
+	it('the breakdown itemises each contribution (no toggle)', () => {
 		seedReproduction()
 		renderWithProviders(<SavingsPage />)
 		openBreakdown()
@@ -1478,7 +1478,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
 		)
 	})
 
-	it('AC-8(c): the breakdown arithmetic matches the pool it explains', () => {
+	it('the breakdown arithmetic matches the pool it explains', () => {
 		seedReproduction()
 		renderWithProviders(<SavingsPage />)
 		openBreakdown()
@@ -1500,7 +1500,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
 		expect(leftover).toBe(200_000)
 	})
 
-	it('AC-8(c): the breakdown RECONCILES when the pool clamps to zero', () => {
+	it('the breakdown RECONCILES when the pool clamps to zero', () => {
 		// `distributablePool` floors at 0; over-committed, the plain subtraction would not add up to
 		// the displayed "Left over".
 		useIncomeStore.setState({ incomeSources: [incomeRow(100_000)] })
@@ -1523,7 +1523,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
 		expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/0\.00/)
 	})
 
-	it('AC-8(c): no clamp rows appear when the pool is positive', () => {
+	it('no clamp rows appear when the pool is positive', () => {
 		// Acceptance partner: the clamp rows must be ABSENT in the ordinary case,
 		// so the guard above cannot pass by rendering them unconditionally.
 		seedReproduction()
@@ -1533,7 +1533,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
 		expect(screen.queryByTestId('breakdown-clamp')).not.toBeInTheDocument()
 	})
 
-	it('AC-8(c): a corrupt manual allocation does not render NaN in the breakdown', () => {
+	it('a corrupt manual allocation does not render NaN in the breakdown', () => {
 		// The solver guards with `Number.isFinite`; `?? 0` does not intercept NaN.
 		useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
 		useExpenseStore.setState({ expenses: [] })
@@ -1558,7 +1558,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
 		expect(screen.queryByTestId('breakdown-raw')).not.toBeInTheDocument()
 	})
 
-	it('AC-2 via the UI: an unflagged row still deducts twice (the different-money user)', () => {
+	it('via the UI: an unflagged row still deducts twice (the different-money user)', () => {
 		seedReproduction(false)
 		renderWithProviders(<SavingsPage />)
 		openBreakdown()
@@ -1566,7 +1566,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
 		expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,000\.00/)
 	})
 
-	it('AC-12: a same-amount, similar-name pair is HIGHLIGHTED', () => {
+	it('a same-amount, similar-name pair is HIGHLIGHTED', () => {
 		seedReproduction()
 		renderWithProviders(<SavingsPage />)
 		openBreakdown()
@@ -1575,7 +1575,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
 		)
 	})
 
-	it('AC-6/D2 (47.1 review): a flagged row whose expense line SURVIVES is warned, not reassured', () => {
+	it('a flagged row whose expense line SURVIVES is warned, not reassured', () => {
 		// `findContributionDuplicateCandidates` skips flagged rows, so the component re-runs the detector
 		// with flags cleared just for this cue.
 		seedReproduction(true)
@@ -1590,7 +1590,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
 		)
 	})
 
-	it('AC-6/D3 (47.1 review): a flagged row with NO surviving expense gets the plain note and an undo pointer', () => {
+	it('a flagged row with NO surviving expense gets the plain note and an undo pointer', () => {
 		useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
 		useExpenseStore.setState({ expenses: [expenseRow(12_345, 'Groceries')] })
 		useBalanceStore.setState({ entries: [investmentRow(50_000, 'TFSA', 'inv-1', true)] })
@@ -1604,7 +1604,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
 		expect(row).toHaveTextContent(/Change\s+this\s+on\s+its\s+Balance\s+Tracking\s+entry/i)
 	})
 
-	it('AC-7 (story 47.1): the duplicate hint points at the control’s real home', () => {
+	it('the duplicate hint points at the control’s real home', () => {
 		seedReproduction()
 		renderWithProviders(<SavingsPage />)
 		openBreakdown()
@@ -1616,14 +1616,14 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
 		expect(hint.textContent).not.toMatch(/tick\s+this/i)
 	})
 
-	it('AC-2 (story 47.1): /savings never says "net" — a page-wide ban is safe here', () => {
+	it('/savings never says "net" — a page-wide ban is safe here', () => {
 		seedReproduction()
 		const { container } = renderWithProviders(<SavingsPage />)
 		openBreakdown()
 		expect(container.textContent).not.toMatch(/\bnet\b/i)
 	})
 
-	it('AC-12: a COINCIDENTAL same-amount match is not highlighted and moves no number', () => {
+	it('a COINCIDENTAL same-amount match is not highlighted and moves no number', () => {
 		// $500 rent and a $500 contribution match on amount but are unrelated.
 		useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
 		useExpenseStore.setState({ expenses: [expenseRow(50_000, 'Rent')] })
@@ -1636,7 +1636,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
 		expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,000\.00/)
 	})
 
-	it('AC-12: a highlighted pair the user never acts on leaves the pool alone', () => {
+	it('a highlighted pair the user never acts on leaves the pool alone', () => {
 		seedReproduction()
 		renderWithProviders(<SavingsPage />)
 		openBreakdown()
@@ -1644,7 +1644,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
 		expect(screen.getByTestId('savings-leftover-summary')).toHaveTextContent(/2,000\.00/)
 	})
 
-	it('AC-8(c): an itemised line shows the NORMALIZED monthly value, not the raw amount', () => {
+	it('an itemised line shows the NORMALIZED monthly value, not the raw amount', () => {
 		// Non-monthly cadence: 11538c/wk × 52/12 = 49998, visibly not 11538.
 		useIncomeStore.setState({ incomeSources: [incomeRow(300_000)] })
 		useExpenseStore.setState({ expenses: [] })
@@ -1702,7 +1702,7 @@ describe('SavingsPage — leftover breakdown and the FR72 fix (Story 45.1)', () 
 	})
 })
 
-describe('SavingsPage — leftover breakdown disclosure affordance (Story 51.2)', () => {
+describe('SavingsPage — leftover breakdown disclosure affordance', () => {
 	const disclosure = () => screen.getByRole('button', { name: 'How is this worked out?' })
 	const tokensOf = (el: Element) => [...el.classList]
 
@@ -1718,7 +1718,7 @@ describe('SavingsPage — leftover breakdown disclosure affordance (Story 51.2)'
 
 	// No seeding: the control renders behind `hydrated`, which is data-independent.
 
-	it('reads as a control when closed — accent colour and a PERSISTENT underline (AC-1)', () => {
+	it('reads as a control when closed — accent colour and a PERSISTENT underline', () => {
 		renderWithProviders(<SavingsPage />)
 		const tokens = tokensOf(disclosure())
 		expect(tokens).toContain('text-accent')
@@ -1732,7 +1732,7 @@ describe('SavingsPage — leftover breakdown disclosure affordance (Story 51.2)'
 		expect(tokens).toContain('dark:hover:text-blue-200')
 	})
 
-	it('does not take the weight of a primary action (AC-2)', () => {
+	it('does not take the weight of a primary action', () => {
 		renderWithProviders(<SavingsPage />)
 		const tokens = tokensOf(disclosure())
 		expect(tokens).toContain('text-xs')
@@ -1745,7 +1745,7 @@ describe('SavingsPage — leftover breakdown disclosure affordance (Story 51.2)'
 		expect(bases.filter((t) => /^p[xy]?-([2-9]|1[0-9])$/.test(t))).toEqual([])
 	})
 
-	it('leaves the element, its ARIA wiring and the conditional body untouched (AC-3)', () => {
+	it('leaves the element, its ARIA wiring and the conditional body untouched', () => {
 		renderWithProviders(<SavingsPage />)
 		const button = disclosure()
 		expect(button.tagName).toBe('BUTTON')
@@ -1758,7 +1758,7 @@ describe('SavingsPage — leftover breakdown disclosure affordance (Story 51.2)'
 		expect(document.getElementById('savings-leftover-breakdown-body')).not.toBeNull()
 	})
 
-	it('rotates its chevron to match breakdownOpen, asserted in BOTH states (AC-4)', () => {
+	it('rotates its chevron to match breakdownOpen, asserted in BOTH states', () => {
 		renderWithProviders(<SavingsPage />)
 		const button = disclosure()
 		// `getAttribute`/`classList`: on an SVGElement `className` is an SVGAnimatedString.
@@ -1771,7 +1771,7 @@ describe('SavingsPage — leftover breakdown disclosure affordance (Story 51.2)'
 		expect(tokensOf(chevron())).not.toContain('rotate-180')
 	})
 
-	it('hides the chevron from the accessible name and gives it real geometry (AC-5)', () => {
+	it('hides the chevron from the accessible name and gives it real geometry', () => {
 		renderWithProviders(<SavingsPage />)
 		const button = disclosure()
 		const icons = button.querySelectorAll('svg')
@@ -1789,7 +1789,7 @@ describe('SavingsPage — leftover breakdown disclosure affordance (Story 51.2)'
 		expect(iconTokens).toContain('w-3')
 	})
 
-	it('keeps the accessible name the 45.1 block locates it by, chevron and all (AC-6)', () => {
+	it('keeps the accessible name the 45.1 block locates it by, chevron and all', () => {
 		renderWithProviders(<SavingsPage />)
 		const byName = screen.getAllByRole('button', { name: 'How is this worked out?' })
 		expect(byName).toHaveLength(1)
@@ -1798,14 +1798,14 @@ describe('SavingsPage — leftover breakdown disclosure affordance (Story 51.2)'
 		expect(byName[0].textContent?.trim()).toBe('How is this worked out?')
 	})
 
-	it('declares a mobile-only 44px target and the flex box that makes it real (AC-8)', () => {
+	it('declares a mobile-only 44px target and the flex box that makes it real', () => {
 		renderWithProviders(<SavingsPage />)
 		assertHasMobileTapTarget(disclosure(), 'the leftover breakdown disclosure')
 		// Without a flex display the text and glyph don't centre in the min-height box.
 		expect(tokensOf(disclosure())).toContain('inline-flex')
 	})
 
-	it('restores a focus ring after killing the native outline (AC-9)', () => {
+	it('restores a focus ring after killing the native outline', () => {
 		renderWithProviders(<SavingsPage />)
 		// `focus:outline-none` without a ring would remove the button's only focus indicator.
 		assertHasFocusRing(disclosure(), 'the leftover breakdown disclosure')

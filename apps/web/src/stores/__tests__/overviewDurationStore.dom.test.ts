@@ -63,7 +63,7 @@ describe('overviewDurationStore', () => {
 	})
 })
 
-describe('overviewDurationStore — biweekly as the fourth duration (story 32.1, FR58)', () => {
+describe('overviewDurationStore — biweekly as the fourth duration', () => {
 	it('setDuration accepts biweekly', () => {
 		useOverviewDurationStore.getState().setDuration('biweekly')
 		expect(useOverviewDurationStore.getState().duration).toBe('biweekly')

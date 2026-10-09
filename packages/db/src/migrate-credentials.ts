@@ -11,7 +11,7 @@ import {
 
 type MigrationDbSsl = ReturnType<typeof buildDbSsl>
 
-export interface MigrationCredentials {
+export type MigrationCredentials = {
 	host: string
 	port: number
 	user: string
@@ -27,7 +27,7 @@ export function buildMigrationCredentials(
 ): MigrationCredentials {
 	if (!databaseUrl) {
 		throw new Error(
-			'DATABASE_URL is not configured. Migrations require DanubeData PostgreSQL in Germany (EU) for CLOUD Act immunity (NFR1, NFR2).'
+			'DATABASE_URL is not configured. Migrations require DanubeData PostgreSQL in Germany (EU) for CLOUD Act immunity.'
 		)
 	}
 
@@ -43,7 +43,7 @@ export function buildMigrationCredentials(
 	if (!isRelaxedDbEnv(nodeEnv)) {
 		if (!isEuSovereignDbHost(host)) {
 			throw new Error(
-				`Refusing to migrate: "${host}" is not a DanubeData (Germany - EU) host, required for CLOUD Act immunity (NFR1, NFR2). Expected the internal writer name or a *.danubedata.ro host.`
+				`Refusing to migrate: "${host}" is not a DanubeData (Germany - EU) host, required for CLOUD Act immunity. Expected the internal writer name or a *.danubedata.ro host.`
 			)
 		}
 
@@ -51,7 +51,7 @@ export function buildMigrationCredentials(
 		// the retired DNS window was reopened.
 		if (!isInClusterDbHost(host)) {
 			throw new Error(
-				`Refusing to migrate over the public endpoint "${host}". Migrations run in-cluster only, over internal DNS (ADR-001; the time-boxed public-DNS exception was retired by Story 5.18). Expected budget-planner-prod-rw[.budgetplanner795.svc.cluster.local].`
+				`Refusing to migrate over the public endpoint "${host}". Migrations run in-cluster only, over internal DNS (the public-DNS exception is retired). Expected budget-planner-prod-rw[.budgetplanner795.svc.cluster.local].`
 			)
 		}
 	}

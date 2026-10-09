@@ -4,7 +4,7 @@ import { Route } from '../contact'
 
 const ContactPage = Route.options.component as () => React.ReactElement
 
-describe('/contact landmarks (story 116.1)', () => {
+describe('/contact landmarks', () => {
 	it('is exactly one <main> landmark, holding the page heading', async () => {
 		renderWithRouter(<ContactPage />)
 

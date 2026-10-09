@@ -14,7 +14,7 @@ async function expectCurrentBalanceRejection(promise: Promise<unknown>): Promise
 	})
 }
 
-describe('per-entity currentBalance bound at the queue gate (story 66.5)', () => {
+describe('per-entity currentBalance bound at the queue gate', () => {
 	let service: SynchronizationService
 	const userId = 'test-user-66-5'
 

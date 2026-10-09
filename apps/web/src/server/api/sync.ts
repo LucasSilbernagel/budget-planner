@@ -23,13 +23,13 @@ import type { SyncRejection, SyncRejectionReason } from '@/server/api/sync-rejec
 import { constraintOf, permanentRejectionReason, sqlStateOf } from '@/server/api/sync-rejection'
 import { checkDbRateLimit } from '@/server/rate-limit/db-window'
 
-export interface BatchSyncRequest {
+export type BatchSyncRequest = {
 	operations: SyncOperation[]
 	clientTimestamp: number
 	deviceId: string
 }
 
-export interface BatchSyncResponse {
+export type BatchSyncResponse = {
 	success: boolean
 	processedCount: number
 	failedCount: number
@@ -48,7 +48,7 @@ export interface BatchSyncResponse {
 // Only invalid-request is permanent (400). ownership answers 401, which core keeps queued.
 export type BatchRefusal = 'invalid-request' | 'ownership' | 'tier' | 'rate-limit'
 
-interface OperationResult {
+type OperationResult = {
 	success: boolean
 	error?: string
 	rejection?: SyncRejectionReason
@@ -76,7 +76,7 @@ function failureFromError(
 	}
 }
 
-interface SyncConflict {
+type SyncConflict = {
 	localOperationId: string
 	serverOperationId: string
 	entityType: string
@@ -273,7 +273,7 @@ export async function checkRateLimit(
 }
 
 // DB-error fallback for sync only (auth limiters fail closed): per-instance, same window and max.
-interface RateLimitEntry {
+type RateLimitEntry = {
 	userId: string
 	count: number
 	resetTime: number
@@ -1181,7 +1181,7 @@ export function capChangesAtTimestampBoundary(sorted: ServerChange[], cap: numbe
 // A DoS guard, not an expected ceiling.
 const MAX_BOUNDARY_GROUP_SIZE = 5000
 
-interface SafeTablePage {
+type SafeTablePage = {
 	changes: ServerChange[]
 	// Highest updatedAt this table is fully fetched through; Infinity when drained.
 	safeWatermark: number

@@ -12,7 +12,7 @@ import { generateUUID, withUuidIds } from '../lib/uuid'
 import { EXPENSES_STORAGE_KEY } from './overview-data-storage-keys'
 import { useProfileStore } from './profileStore'
 
-interface ClientExpense {
+type ClientExpense = {
 	id: string
 	// Null/absent means unscoped (visible under every profile). Not on the input type: an edit must
 	// never re-home a row.
@@ -33,7 +33,7 @@ interface ClientExpense {
 	updatedAt: string
 }
 
-interface ClientNewExpense {
+type ClientNewExpense = {
 	userId?: number
 	name: string
 	amount: number
@@ -42,7 +42,7 @@ interface ClientNewExpense {
 	endsBeforeRetirement?: boolean
 }
 
-interface ExpenseState {
+type ExpenseState = {
 	expenses: ClientExpense[]
 	addExpense: (expense: ClientNewExpense) => void
 	updateExpense: (id: string, updates: Partial<ClientNewExpense>) => void

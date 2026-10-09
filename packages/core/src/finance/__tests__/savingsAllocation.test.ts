@@ -337,10 +337,10 @@ describe('solveAutomaticAllocations', () => {
 	})
 })
 
-describe('target-less entries are allocated like goals (Story 72.1, reverses FR98)', () => {
+describe('target-less entries are allocated like goals', () => {
 	const income = [{ amount: 600_000, frequency: 'monthly' as const }]
 
-	it('an automatic target-less entry RECEIVES an even share (reverses FR98)', () => {
+	it('an automatic target-less entry RECEIVES an even share', () => {
 		// pool 600_000, no deductions; 2 automatic rows ⇒ 600_000 / 2 = 300_000 each.
 		const result = solveAutomaticAllocations({
 			incomeSources: income,
@@ -352,7 +352,7 @@ describe('target-less entries are allocated like goals (Story 72.1, reverses FR9
 		expect(result.automaticAccountCount).toBe(2)
 	})
 
-	it('⚠️ THE STORY IN ONE ASSERTION (reverses FR98): adding a target-less entry halves a goal’s share', () => {
+	it('adding a target-less entry halves a goal’s share', () => {
 		// Pool 50_000c: without the account the goal takes it all; with it, 25_000c each.
 		const withoutAccount = solveAutomaticAllocations({
 			incomeSources: [{ amount: 50_000, frequency: 'monthly' }],
@@ -405,7 +405,7 @@ describe('target-less entries are allocated like goals (Story 72.1, reverses FR9
 		expect(result.allocations).toEqual({ goal: 300_000, acct: 300_000 })
 	})
 
-	it('an all-target-less page SPLITS the pool among its automatic entries (AC-9)', () => {
+	it('an all-target-less page SPLITS the pool among its automatic entries', () => {
 		// 600_000 − 100_000 (c, manual) = 500_000 over a, b ⇒ 250_000 each.
 		const result = solveAutomaticAllocations({
 			incomeSources: income,
@@ -418,7 +418,7 @@ describe('target-less entries are allocated like goals (Story 72.1, reverses FR9
 		expect(result.allocations).toEqual({ a: 250_000, b: 250_000 })
 	})
 
-	it('leftover cents are shared across goals AND target-less entries, creating none (AC-9)', () => {
+	it('leftover cents are shared across goals AND target-less entries, creating none', () => {
 		// pool 100c over 3 automatic rows: floor(100 / 3) = 33, remainder 1, handed
 		// to the FIRST row in input order ⇒ 34 / 33 / 33, summing to exactly 100.
 		const result = solveAutomaticAllocations({
@@ -433,7 +433,7 @@ describe('target-less entries are allocated like goals (Story 72.1, reverses FR9
 		expect(sum).toBe(result.distributablePool)
 	})
 
-	it('target-less entries that are ALL manual: pool reported, no recipients, no division (AC-9)', () => {
+	it('target-less entries that are ALL manual: pool reported, no recipients, no division', () => {
 		// 600_000 − 100_000 − 50_000 = 450_000; zero automatic rows ⇒ empty
 		// `allocations` and a count of 0.
 		const result = solveAutomaticAllocations({
@@ -462,7 +462,7 @@ describe('target-less entries are allocated like goals (Story 72.1, reverses FR9
 
 // The unflagged arm is the regression fence: a user with an expense and a contribution
 // for different money must see the pool unchanged.
-describe('calculateDistributablePool — recordedAsExpense (Story 45.1, FR72)', () => {
+describe('calculateDistributablePool — recordedAsExpense', () => {
 	// income 300000c, expense 50000c ("TFSA contribution"), contribution 50000c; only the
 	// flag varies.
 	const scenario = (recordedAsExpense?: boolean) => ({
@@ -488,7 +488,7 @@ describe('calculateDistributablePool — recordedAsExpense (Story 45.1, FR72)', 
 		)
 	})
 
-	it('case 1 — flagged: the same money is deducted ONCE (the FR72 reproduction)', () => {
+	it('case 1 — flagged: the same money is deducted ONCE (the double-deduction reproduction)', () => {
 		// net 250000; the flagged contribution is not subtracted again.
 		expect(calculateDistributablePool(scenario(true))).toBe(250_000)
 	})
@@ -625,7 +625,7 @@ describe('calculateDistributablePool — recordedAsExpense (Story 45.1, FR72)', 
 
 // Payroll-deducted users have no expense row (income is already take-home); these
 // cases cover that shape.
-describe('calculateDistributablePool — the two populations (Story 47.1, FR73)', () => {
+describe('calculateDistributablePool — the two populations', () => {
 	it('shape B — payroll-deducted: take-home income, no expense row, flagged → nothing subtracted', () => {
 		// The $500 never reached take-home income, so it must not be subtracted.
 		// net 250000; flagged skipped; pool 250000.

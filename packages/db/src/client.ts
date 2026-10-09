@@ -61,7 +61,7 @@ export function buildDbSsl(
 	return caCert ? { rejectUnauthorized: true, ca: caCert } : { rejectUnauthorized: true }
 }
 
-export interface AppDbCredentials {
+export type AppDbCredentials = {
 	host: string
 	port: number
 	user: string
@@ -104,7 +104,7 @@ export function buildAppDbCredentials(
 
 	if (!isRelaxedDbEnv(nodeEnv) && !isEuSovereignDbHost(host)) {
 		throw new Error(
-			`Production DATABASE_URL must use DanubeData (Germany - EU) hosting for CLOUD Act immunity (NFR1, NFR2). Detected host: ${host}. Expected an EU DanubeData host (e.g. *.danubedata.ro).`
+			`Production DATABASE_URL must use DanubeData (Germany - EU) hosting for CLOUD Act immunity. Detected host: ${host}. Expected an EU DanubeData host (e.g. *.danubedata.ro).`
 		)
 	}
 
@@ -129,7 +129,7 @@ function getPool(): Pool {
 		if (!databaseUrl) {
 			throw new Error(
 				'DATABASE_URL is not configured. ' +
-					'All database operations require DanubeData PostgreSQL in Germany (EU) for CLOUD Act immunity (NFR1, NFR2).'
+					'All database operations require DanubeData PostgreSQL in Germany (EU) for CLOUD Act immunity.'
 			)
 		}
 

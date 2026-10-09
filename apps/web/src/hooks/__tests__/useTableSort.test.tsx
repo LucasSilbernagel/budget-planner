@@ -6,7 +6,7 @@ import { useTableSort } from '../useTableSort'
 
 /** `useTableSortStore` is a module singleton shared across test files, so reset it locally. */
 
-interface Row {
+type Row = {
 	id: string
 	amount: number
 	name: string
@@ -125,7 +125,7 @@ describe('useTableSort', () => {
 		expect(ids(result.current.rows)).toEqual(['a', 'b', 'c'])
 	})
 
-	it('select() sets an exact column and direction, without cycling (48.1 AC-2)', () => {
+	it('select() sets an exact column and direction, without cycling', () => {
 		const { result } = renderHook(() => useTableSort('income', rows, extractors))
 
 		act(() => result.current.select({ key: 'amount', direction: 'desc' }))
@@ -134,7 +134,7 @@ describe('useTableSort', () => {
 		expect(ids(result.current.rows)).toEqual(['a', 'c', 'b'])
 	})
 
-	it('select() re-selecting the SAME column and direction is idempotent (48.1 AC-2)', () => {
+	it('select() re-selecting the SAME column and direction is idempotent', () => {
 		const { result } = renderHook(() => useTableSort('income', rows, extractors))
 		act(() => result.current.select({ key: 'name', direction: 'asc' }))
 		act(() => result.current.select({ key: 'name', direction: 'asc' }))
@@ -142,7 +142,7 @@ describe('useTableSort', () => {
 		expect(ids(result.current.rows)).toEqual(['b', 'c', 'a'])
 	})
 
-	it('select(null) returns to manual order and the INPUT ARRAY ITSELF (48.1 AC-4)', () => {
+	it('select(null) returns to manual order and the INPUT ARRAY ITSELF', () => {
 		const { result } = renderHook(() => useTableSort('income', rows, extractors))
 		act(() => result.current.select({ key: 'amount', direction: 'asc' }))
 		expect(result.current.state).not.toBeNull()
@@ -152,7 +152,7 @@ describe('useTableSort', () => {
 		expect(result.current.rows).toBe(rows)
 	})
 
-	it('select() persists through the SAME store slice a header click writes (48.1 AC-3)', () => {
+	it('select() persists through the SAME store slice a header click writes', () => {
 		const { result } = renderHook(() => useTableSort('income', rows, extractors))
 		act(() => result.current.select({ key: 'amount', direction: 'desc' }))
 
@@ -162,7 +162,7 @@ describe('useTableSort', () => {
 		expect(useTableSortStore.getState().sorts.income).toBeNull()
 	})
 
-	it('select() writes ONE table and leaves the others alone (48.1 AC-3)', () => {
+	it('select() writes ONE table and leaves the others alone', () => {
 		const { result } = renderHook(() => useTableSort('income', rows, extractors))
 		act(() => result.current.select({ key: 'name', direction: 'asc' }))
 
@@ -173,7 +173,7 @@ describe('useTableSort', () => {
 		expect(sorts.balance).toBeNull()
 	})
 
-	it('a key selected through select() still degrades when its extractor goes (48.1 AC-2)', () => {
+	it('a key selected through select() still degrades when its extractor goes', () => {
 		// If the control wrote the store directly, bypassing `effectiveState`, only this test would fail.
 		const { result, rerender } = renderHook(
 			({ keys }: { keys: SortKeyExtractors<Row, Key> }) => useTableSort('income', rows, keys),

@@ -66,7 +66,7 @@ function NavAccountRow() {
 	)
 }
 
-describe('Nav + account row (story 19-3)', () => {
+describe('Nav + account row', () => {
 	it('keeps exactly one Primary nav landmark holding exactly the six section links', async () => {
 		renderWithRouter(<NavAccountRow />)
 
@@ -112,7 +112,7 @@ describe('Nav + account row (story 19-3)', () => {
 		expect(status.contains(signIn)).toBe(true)
 	})
 
-	it('keeps the "Sign in" affordance OUT of the element that BECOMES the mobile fixed-bottom bar (story 13-2 crowding guard)', async () => {
+	it('keeps the "Sign in" affordance OUT of the element that BECOMES the mobile fixed-bottom bar (crowding guard)', async () => {
 		renderWithRouter(<NavAccountRow />)
 
 		const nav = await screen.findByRole('navigation', { name: /primary/i })
@@ -128,7 +128,7 @@ describe('Nav + account row (story 19-3)', () => {
 		expect(status.contains(signIn)).toBe(true)
 	})
 
-	it('keeps the "Sign in" affordance OUT of the mobile "More" sheet too (story 31.5)', async () => {
+	it('keeps the "Sign in" affordance OUT of the mobile "More" sheet too', async () => {
 		renderWithRouter(<NavAccountRow />)
 
 		const nav = await screen.findByRole('navigation', { name: /primary/i })
@@ -146,7 +146,7 @@ describe('Nav + account row (story 19-3)', () => {
 	})
 })
 
-describe('Nav + account row, signed in (story 59.3)', () => {
+describe('Nav + account row, signed in', () => {
 	const USER = { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'free' as const }
 
 	it('keeps the account menu and its Sign out out of the nav and out of the More sheet', async () => {
@@ -200,7 +200,7 @@ describe('Nav + account row, signed in (story 59.3)', () => {
 	})
 })
 
-describe('Nav + account row, two disclosures (story 59.3)', () => {
+describe('Nav + account row, two disclosures', () => {
 	const FREE_USER = { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'free' }
 
 	function renderSignedIn(subscriptionStatus: 'free' | 'active') {
@@ -312,7 +312,7 @@ describe('Nav + account row, two disclosures (story 59.3)', () => {
 
 // jsdom sees every route at once, so the per-width rule is pinned as complementary tokens.
 // React 19 renders <noscript> children on the server only, so that gear comes from server HTML.
-describe('Nav + account row, the per-width Settings route (story 96.3)', () => {
+describe('Nav + account row, the per-width Settings route', () => {
 	const FREE = { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'free' as const }
 	const PAID = { ...FREE, subscriptionStatus: 'active' as const }
 	type Me = { userId: string; email: string; subscriptionStatus: 'free' | 'active' }
@@ -452,7 +452,7 @@ describe('Nav + account row, the per-width Settings route (story 96.3)', () => {
 	)
 })
 
-describe('Nav + account row, the nav follows the verified session (story 99.1)', () => {
+describe('Nav + account row, the nav follows the verified session', () => {
 	const PAID = { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'active' }
 	type Me = typeof PAID
 

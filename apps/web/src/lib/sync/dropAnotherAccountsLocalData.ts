@@ -11,7 +11,7 @@ import { useProfileStore } from '../../stores/profileStore'
 import { useSavingsStore } from '../../stores/savingsStore'
 import { isOwnedByAnotherAccount } from './accountOwner'
 
-interface StoreApi {
+type StoreApi = {
 	getState: () => Record<string, unknown>
 	setState: (partial: Record<string, unknown>) => void
 }

@@ -1,7 +1,7 @@
 import { usePrefersDarkScheme } from '../hooks/usePrefersDarkScheme'
 
 /** Recharts' default strokes and fills are only legible on a light canvas. */
-export interface ChartColors {
+export type ChartColors = {
 	axis: string
 	grid: string
 	tooltipBg: string

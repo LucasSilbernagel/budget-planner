@@ -21,7 +21,7 @@ const KEPT_QUEUED: ProcessOperationResult = {
 const CONFLICT: ProcessOperationResult = { success: false, conflict: true }
 const RETRYABLE: ProcessOperationResult = { success: false, error: 'boom', retryable: true }
 
-interface Deferred<T> {
+type Deferred<T> = {
 	promise: Promise<T>
 	resolve: (value: T) => void
 }
@@ -58,7 +58,7 @@ function persistedIds(): string[] {
 	return raw ? (JSON.parse(raw) as SyncOperation[]).map((o) => o.id) : []
 }
 
-describe('onOperationsSynced (story 86.3)', () => {
+describe('onOperationsSynced', () => {
 	const services: SynchronizationService[] = []
 
 	async function makeService(

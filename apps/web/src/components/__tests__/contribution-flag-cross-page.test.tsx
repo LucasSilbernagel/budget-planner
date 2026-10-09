@@ -81,7 +81,7 @@ async function addTfsaViaForm(
 	await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 }
 
-describe('contribution flag — Balance form to Savings pool (Story 47.1, AC-16)', () => {
+describe('contribution flag — Balance form to Savings pool', () => {
 	beforeEach(resetStores)
 	afterEach(resetStores)
 

@@ -289,7 +289,7 @@ describe('Edge Cases', () => {
 	})
 })
 
-describe('Assets/Liabilities Separation (FR47)', () => {
+describe('Assets/Liabilities Separation', () => {
 	const DEBT_DOMINATED: NetWorthProjectionInput = {
 		currentAssetsCents: toCents(1000),
 		currentLiabilitiesCents: toCents(300000),
@@ -300,7 +300,7 @@ describe('Assets/Liabilities Separation (FR47)', () => {
 		customYears: 10,
 	}
 
-	it('does not diverge exponentially when liabilities exceed assets (FR47)', () => {
+	it('does not diverge exponentially when liabilities exceed assets', () => {
 		const result = createNetWorthProjection(DEBT_DOMINATED)
 
 		expect(result.summary.startingNetWorthCents).toBe(toCents(-299000))
@@ -312,7 +312,7 @@ describe('Assets/Liabilities Separation (FR47)', () => {
 		expect(result.summary.endingNetWorthCents).toBeGreaterThan(toCents(-300000))
 	})
 
-	it('compounds the assets alone, at the full return rate (FR47)', () => {
+	it('compounds the assets alone, at the full return rate', () => {
 		const result = createNetWorthProjection(DEBT_DOMINATED)
 
 		// $1,000 at 7% for 10 years = $1,967.15. Ranged: the model rounds to whole cents monthly.
@@ -321,7 +321,7 @@ describe('Assets/Liabilities Separation (FR47)', () => {
 		expect(finalAssets).toBeLessThan(196_800)
 	})
 
-	it('holds liabilities flat at every point in the timeline (FR47)', () => {
+	it('holds liabilities flat at every point in the timeline', () => {
 		const result = createNetWorthProjection(DEBT_DOMINATED)
 
 		expect(result.timeline).toHaveLength(121)
@@ -330,7 +330,7 @@ describe('Assets/Liabilities Separation (FR47)', () => {
 		}
 	})
 
-	it('projects a debts-only position as a flat line at the liability (FR47)', () => {
+	it('projects a debts-only position as a flat line at the liability', () => {
 		const result = createNetWorthProjection({
 			...DEBT_DOMINATED,
 			currentAssetsCents: toCents(0),
@@ -341,7 +341,7 @@ describe('Assets/Liabilities Separation (FR47)', () => {
 		}
 	})
 
-	it('projects an assets-only position identically to the same assets carrying debt (FR47)', () => {
+	it('projects an assets-only position identically to the same assets carrying debt', () => {
 		const assetsOnly = createNetWorthProjection({
 			...DEBT_DOMINATED,
 			currentLiabilitiesCents: toCents(0),
@@ -354,7 +354,7 @@ describe('Assets/Liabilities Separation (FR47)', () => {
 		)
 	})
 
-	it('applies contributions to assets in a net-negative position (FR47)', () => {
+	it('applies contributions to assets in a net-negative position', () => {
 		const withContributions = createNetWorthProjection({
 			...DEBT_DOMINATED,
 			monthlyNetIncomeCents: toCents(500),
@@ -378,7 +378,7 @@ describe('Assets/Liabilities Separation (FR47)', () => {
 		customYears: 30,
 	}
 
-	it('does not compound a negative asset balance (FR47, review finding)', () => {
+	it('does not compound a negative asset balance', () => {
 		const result = createNetWorthProjection(SPENDING_DEFICIT)
 
 		let checkedMonths = 0
@@ -395,7 +395,7 @@ describe('Assets/Liabilities Separation (FR47)', () => {
 		expect(checkedMonths).toBeGreaterThan(50)
 	})
 
-	it('keeps a spending deficit linear rather than geometric (FR47, review finding)', () => {
+	it('keeps a spending deficit linear rather than geometric', () => {
 		const result = createNetWorthProjection(SPENDING_DEFICIT)
 		const finalAssets = result.timeline[360]?.assetsCents ?? Number.NaN
 
@@ -405,7 +405,7 @@ describe('Assets/Liabilities Separation (FR47)', () => {
 		expect(finalAssets).toBeGreaterThan(toCents(-150000))
 	})
 
-	it('projects a zero return rate as flat assets plus contributions (FR47)', () => {
+	it('projects a zero return rate as flat assets plus contributions', () => {
 		const result = createNetWorthProjection({
 			...DEBT_DOMINATED,
 			assetReturnRate: 0,

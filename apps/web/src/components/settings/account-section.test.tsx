@@ -55,7 +55,7 @@ afterEach(() => {
 })
 
 describe('AccountSection', () => {
-	it('renders nothing for an unauthenticated visitor (no delete control) — AC-4', async () => {
+	it('renders nothing for an unauthenticated visitor (no delete control)', async () => {
 		stubFetch({ user: null })
 		const { container } = render(<AccountSection />)
 
@@ -76,7 +76,7 @@ describe('AccountSection', () => {
 		expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument()
 	})
 
-	it('confirms via a themed dialog, erases, purges local data (with userId), and signs out — AC-5', async () => {
+	it('confirms via a themed dialog, erases, purges local data (with userId), and signs out', async () => {
 		stubFetch({
 			user: { userId: 'user-42', email: 'user@example.com', subscriptionStatus: 'active' },
 			deleteOk: true,
@@ -146,7 +146,7 @@ describe('AccountSection', () => {
 	})
 })
 
-describe('AccountSection — deletion forfeits paid time (5-19 AC-6)', () => {
+describe('AccountSection — deletion forfeits paid time', () => {
 	it.each(['active', 'past_due', 'lifetime'])(
 		'warns a %s subscriber that paid time is forfeited, in both the panel and the dialog',
 		async (subscriptionStatus) => {
@@ -184,7 +184,7 @@ describe('AccountSection — deletion forfeits paid time (5-19 AC-6)', () => {
 	)
 })
 
-describe('AccountSection — plan label (Story 70.1)', () => {
+describe('AccountSection — plan label', () => {
 	it.each([
 		['active', 'year', 'Annual Plan'],
 		['active', 'month', 'Monthly Plan'],
@@ -201,7 +201,7 @@ describe('AccountSection — plan label (Story 70.1)', () => {
 		expect(await screen.findByText(label)).toBeInTheDocument()
 	})
 
-	it('falls back to "Active" when the server omits billingInterval (AC-6 / rolling deploy)', async () => {
+	it('falls back to "Active" when the server omits billingInterval (rolling deploy)', async () => {
 		stubFetch({ user: { userId: 'u1', email: 'user@example.com', subscriptionStatus: 'active' } })
 		render(<AccountSection />)
 
@@ -226,7 +226,7 @@ describe('AccountSection — plan label (Story 70.1)', () => {
 })
 
 // Asserted by class token, not substring: `/bg-/` would match `hover:bg-gray-100`.
-describe('AccountSection — Sign out affordance (Story 70.2)', () => {
+describe('AccountSection — Sign out affordance', () => {
 	async function renderSignOut() {
 		stubFetch({
 			user: { userId: 'user-1', email: 'user@example.com', subscriptionStatus: 'free' },

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-export interface LegalPageLayoutProps {
+export type LegalPageLayoutProps = {
 	title: string
 	description?: string
 	children: ReactNode

@@ -291,7 +291,7 @@ afterEach(() => {
 	rtl.cleanup()
 })
 
-describe('the forecasting page against the real routes (story 83.1)', () => {
+describe('the forecasting page against the real routes', () => {
 	it('saves a forecast into the database, lists it, and deletes it', async () => {
 		const view = renderWithRouter(<ForecastingPage />)
 
@@ -363,8 +363,8 @@ describe('the forecasting page against the real routes (story 83.1)', () => {
 	})
 })
 
-describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
-	it('Load → change → Save updates the SAME row with a PUT, not a POST that 409s (AC-1, AC-2)', async () => {
+describe('editing a saved forecast saves over it', () => {
+	it('Load → change → Save updates the SAME row with a PUT, not a POST that 409s', async () => {
 		const view = renderWithRouter(<ForecastingPage />)
 		await pressSave(view)
 		expect(await view.findByTestId('save-success', {}, { timeout: 5000 })).toBeTruthy()
@@ -411,7 +411,7 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
 		])
 	}, 20_000)
 
-	it('re-saving a forecast this builder just CREATED updates it too (AC-3)', async () => {
+	it('re-saving a forecast this builder just CREATED updates it too', async () => {
 		const view = renderWithRouter(<ForecastingPage />)
 		await pressSave(view)
 		await view.findByTestId('save-success', {}, { timeout: 5000 })
@@ -453,7 +453,7 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
 		expect(served).toEqual([...OPENING, 'POST /api/forecasts → 409'])
 	}, 20_000)
 
-	it('a loaded forecast saved under a NEW name is a new forecast; the original is kept (D2(c))', async () => {
+	it('a loaded forecast saved under a NEW name is a new forecast; the original is kept', async () => {
 		const { view, first } = await saveThenLoad()
 		setName(view, 'Plan B')
 		await setIncomeGrowth(view, '4')
@@ -496,7 +496,7 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
 		])
 	}, 20_000)
 
-	it('deleting the loaded forecast in My Forecasts drops it as the target: the next Save creates (AC-6)', async () => {
+	it('deleting the loaded forecast in My Forecasts drops it as the target: the next Save creates', async () => {
 		const { view, first } = await saveThenLoad()
 		rtl.fireEvent.click(view.getByRole('tab', { name: /My Forecasts/ }))
 		rtl.fireEvent.click(await view.findByRole('button', { name: 'Delete My Financial Forecast' }))
@@ -526,7 +526,7 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
 		])
 	}, 20_000)
 
-	it('a BULK delete that includes the loaded forecast drops it as the target too (AC-6)', async () => {
+	it('a BULK delete that includes the loaded forecast drops it as the target too', async () => {
 		const { view, first } = await saveThenLoad()
 		rtl.fireEvent.click(view.getByRole('tab', { name: /My Forecasts/ }))
 		rtl.fireEvent.click(await view.findByRole('checkbox', { name: 'Select all' }))
@@ -557,7 +557,7 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
 		])
 	}, 20_000)
 
-	it('a PUT that answers 404 (deleted on another device) says so, and the next Save creates it (AC-6, D3)', async () => {
+	it('a PUT that answers 404 (deleted on another device) says so, and the next Save creates it', async () => {
 		const { view, first } = await saveThenLoad()
 		await db.delete(forecastingProfiles)
 		await pressSave(view)
@@ -592,7 +592,7 @@ describe('editing a saved forecast saves over it (story 97.1, FR157)', () => {
 	}, 20_000)
 })
 
-describe('savings rows round-trip through the real routes (story 100.1, AC-11)', () => {
+describe('savings rows round-trip through the real routes', () => {
 	const ISO = '2026-10-05T00:00:00.000Z'
 
 	async function seedSavingsRows() {
@@ -633,7 +633,7 @@ describe('savings rows round-trip through the real routes (story 100.1, AC-11)',
 		useSavingsStore.setState({ savingsGoals: [] })
 	})
 
-	it('POST and PUT store the current version (FORECAST_SAVE_VERSION: 6 since story 114.1) with the rows and their sum, and Load brings the rows back', async () => {
+	it('POST and PUT store the current version (FORECAST_SAVE_VERSION: 6) with the rows and their sum, and Load brings the rows back', async () => {
 		await seedSavingsRows()
 		const view = renderWithRouter(<ForecastingPage />)
 		await pressSave(view)
@@ -685,7 +685,7 @@ describe('savings rows round-trip through the real routes (story 100.1, AC-11)',
 	}, 20_000)
 })
 
-describe('investment/debt rows round-trip through the real routes (story 100.2, AC-12, AC-13)', () => {
+describe('investment/debt rows round-trip through the real routes', () => {
 	const ISO = '2026-10-05T00:00:00.000Z'
 
 	afterEach(async () => {
@@ -877,7 +877,7 @@ describe('investment/debt rows round-trip through the real routes (story 100.2, 
 	}, 30_000)
 })
 
-describe('asset rows round-trip through the real routes (story 114.1, AC-9, AC-10)', () => {
+describe('asset rows round-trip through the real routes', () => {
 	const ISO = '2026-10-06T00:00:00.000Z'
 
 	afterEach(async () => {

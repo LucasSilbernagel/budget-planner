@@ -7,7 +7,7 @@ export type SortDirection = 'asc' | 'desc'
 
 type SortValue = string | number | null
 
-export interface SortState<Key extends string> {
+export type SortState<Key extends string> = {
 	key: Key
 	direction: SortDirection
 }

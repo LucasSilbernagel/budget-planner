@@ -5,7 +5,7 @@ export type OverviewDuration = 'weekly' | 'biweekly' | 'monthly' | 'annually'
 
 export const OVERVIEW_DURATION_STORAGE_KEY = 'budget-planner-overview-duration-prefs-v1'
 
-interface OverviewDurationState {
+type OverviewDurationState = {
 	duration: OverviewDuration
 	setDuration: (duration: OverviewDuration) => void
 }

@@ -6,7 +6,7 @@ import {
 
 // The accessible name must not contain "dark mode": a settings test filters
 // every switch on /dark mode/i.
-export interface RetirementVisibilityToggleProps {
+export type RetirementVisibilityToggleProps = {
 	className?: string
 	describedBy?: string
 }

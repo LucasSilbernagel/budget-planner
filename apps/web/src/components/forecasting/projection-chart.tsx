@@ -25,7 +25,7 @@ import { useCurrencyPreferences, useFormattedAmount } from '../../stores/currenc
 import { ErrorBoundary } from '../ErrorBoundary'
 import { GroupedAmount } from '../ui/GroupedAmount'
 
-interface ChartDataPoint {
+type ChartDataPoint = {
 	year: number
 	baselineNetWorth: number
 	scenarioNetWorth: number
@@ -33,7 +33,7 @@ interface ChartDataPoint {
 	scenarioIncome: number
 }
 
-interface ChartConfig {
+type ChartConfig = {
 	showGrid: boolean
 	showLegend: boolean
 	showTooltip: boolean
@@ -68,7 +68,7 @@ export function projectionSeriesName(result: ForecastingResult | null): string {
 	return trimmed ? trimmed : SCENARIO_FALLBACK_NAME
 }
 
-export interface ProjectionChartChrome {
+export type ProjectionChartChrome = {
 	yAxisWidth: number
 	tickFontSize: number
 	marginLeft: number
@@ -182,7 +182,7 @@ function convertToChartData(result: ForecastingResult | null): ChartDataPoint[] 
 	return data
 }
 
-interface CustomTooltipProps {
+type CustomTooltipProps = {
 	active?: boolean
 	payload?: Array<{
 		name: string
@@ -226,7 +226,7 @@ export function CustomTooltip({
 	)
 }
 
-export interface ProjectionChartProps {
+export type ProjectionChartProps = {
 	result: ForecastingResult | null
 }
 
@@ -449,7 +449,7 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
 }
 
 // GroupedAmount: large amounts overflow these narrow cards, so they may break only after a group separator.
-interface SummaryCardProps {
+type SummaryCardProps = {
 	label: string
 	value: string
 	change: number

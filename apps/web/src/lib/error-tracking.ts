@@ -2,14 +2,14 @@
 
 import { redact } from './logger'
 
-export interface ScrubbedEvent {
+export type ScrubbedEvent = {
 	error: { name: string; message: string }
 	context?: Record<string, unknown>
 }
 
 type ErrorTransport = (event: ScrubbedEvent) => void
 
-interface InitOptions {
+type InitOptions = {
 	dsn: string | undefined
 	transport: ErrorTransport
 }

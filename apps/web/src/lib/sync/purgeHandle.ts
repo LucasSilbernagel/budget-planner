@@ -3,7 +3,7 @@
  * Registered when the service is created, earlier than the sync bridge.
  */
 
-export interface SyncPurgeHandle {
+export type SyncPurgeHandle = {
 	userId: string
 	clearQueue: () => Promise<void>
 }

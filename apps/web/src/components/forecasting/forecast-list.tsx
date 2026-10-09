@@ -8,7 +8,7 @@ import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { PencilIcon } from '../ui/RowActionIcons'
 import { useSortHeaderAnnouncements } from '../ui/SortableColumnHeader'
 
-export interface ForecastListProps {
+export type ForecastListProps = {
 	forecasts: SavedForecast[]
 	onDelete: (id: string) => void
 	onLoad?: (forecast: SavedForecast) => void

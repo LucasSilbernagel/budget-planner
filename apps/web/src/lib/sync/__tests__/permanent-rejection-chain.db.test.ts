@@ -163,7 +163,7 @@ afterEach(() => {
 	service = undefined
 })
 
-describe('a never-acceptable op leaves the queue (story 75.1)', () => {
+describe('a never-acceptable op leaves the queue', () => {
 	it('drops an update the database refuses with a CHECK violation (23514)', async () => {
 		const bad = queuedOp({})
 		seedQueue([bad])
@@ -180,7 +180,7 @@ describe('a never-acceptable op leaves the queue (story 75.1)', () => {
 		expect(sync.getState().rejectedOperations.map((op) => op.id)).toContain(bad.id)
 	})
 
-	it('does not put the driver message, table or constraint name on the wire (AC-6)', async () => {
+	it('does not put the driver message, table or constraint name on the wire', async () => {
 		seedQueue([queuedOp({})])
 		const sync = await startService()
 		await sync.forceSync()
@@ -245,7 +245,7 @@ describe('a never-acceptable op leaves the queue (story 75.1)', () => {
 		expect(sync.getState().failedOperations.map((o) => o.id)).not.toContain(op.id)
 	})
 
-	it('KEEPS an op whose conflict CHECK fails transiently (40001) — a failure, not a conflict (story 79.3)', async () => {
+	it('KEEPS an op whose conflict CHECK fails transiently (40001) — a failure, not a conflict', async () => {
 		// A failed existence check must be a kept, escalated failure, not an update-delete conflict.
 		let fired = 0
 		const select = vi.spyOn(db, 'select').mockImplementationOnce(() => {
@@ -300,7 +300,7 @@ describe('a never-acceptable op leaves the queue (story 75.1)', () => {
 		expect(sync.getState().rejectedOperations.map((op) => op.id)).toContain(bad.id)
 	})
 
-	it('drops an op whose request is over the size limit (HTTP 413 + `too-large`, story 79.3)', async () => {
+	it('drops an op whose request is over the size limit (HTTP 413 + `too-large`)', async () => {
 		// Exceeding 512 KiB needs an undeclared key: per-entity schemas bound declared strings but don't strip extras.
 		const huge = queuedOp({
 			data: {
@@ -344,7 +344,7 @@ describe('a never-acceptable op leaves the queue (story 75.1)', () => {
 		expect(sync.getState().rejectedOperations.map((op) => op.id)).not.toContain(foreign.id)
 	})
 
-	it("drops a refused CREATE together with the row's queued follow-up (code review D1)", async () => {
+	it("drops a refused CREATE together with the row's queued follow-up", async () => {
 		// Without sweeping the queue the update gets update-delete for a never-created row: a permanent conflict.
 		const goal = '40000000-0000-4000-8000-0000000000b1'
 		const create = queuedOp({
@@ -375,7 +375,7 @@ describe('a never-acceptable op leaves the queue (story 75.1)', () => {
 	})
 })
 
-describe('processBatchSync classification (story 75.1, AC-1/AC-3)', () => {
+describe('processBatchSync classification', () => {
 	function push(op: SyncOperation) {
 		return processBatchSync(
 			{ operations: [op], clientTimestamp: Date.now(), deviceId: 'device-1' },
@@ -427,7 +427,7 @@ describe('processBatchSync classification (story 75.1, AC-1/AC-3)', () => {
 		expect(result.error).toMatch(/Invalid uuid/)
 	})
 
-	it('does NOT reject "Profile not found" — the profile may still be syncing (the ops of a deleted profile are dropped by the pull, story 76.2)', async () => {
+	it('does NOT reject "Profile not found" — the profile may still be syncing (the ops of a deleted profile are dropped by the pull)', async () => {
 		// A CREATE, so `checkConflict` passes and `applyOperation` reaches the profile
 		// check (an UPDATE would be reported as an update-delete conflict first).
 		const op = queuedOp({

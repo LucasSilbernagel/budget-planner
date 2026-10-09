@@ -16,7 +16,7 @@ afterEach(() => {
 })
 
 describe('RetirementVisibilityToggle', () => {
-	it('renders a switch that is checked by default (AC-1)', () => {
+	it('renders a switch that is checked by default', () => {
 		render(<RetirementVisibilityToggle />)
 		expect(toggle()).toHaveAttribute('aria-checked', 'true')
 	})

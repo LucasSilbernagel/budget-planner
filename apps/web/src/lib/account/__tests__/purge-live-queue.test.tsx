@@ -81,7 +81,7 @@ beforeEach(() => {
 	send.mockResolvedValue(ACCEPTED)
 })
 
-describe('purgeLocalFinancialData with a live sync service (story 86.1)', () => {
+describe('purgeLocalFinancialData with a live sync service', () => {
 	it('a new edit after the purge does not write the purged ops back (AC 1 i)', async () => {
 		const sync = mountSync()
 		await sync.result.current.queueCreate('incomeSource', ROW_A, INCOME)
@@ -111,7 +111,7 @@ describe('purgeLocalFinancialData with a live sync service (story 86.1)', () => 
 		sync.unmount()
 	})
 
-	it('a refusal that lands after the purge is neither reverted nor named (AC 3, D2)', async () => {
+	it('a refusal that lands after the purge is neither reverted nor named', async () => {
 		const release = holdNextPush()
 		const sync = mountSync()
 		await sync.result.current.queueUpdate('incomeSource', ROW_A, { ...INCOME, amount: 2000 })
@@ -167,7 +167,7 @@ describe('purgeLocalFinancialData with a live sync service (story 86.1)', () => 
 	})
 })
 
-describe('account deletion with a live sync service (story 86.1, AC 2)', () => {
+describe('account deletion with a live sync service', () => {
 	const assign = vi.fn()
 	const originalFetch = global.fetch
 

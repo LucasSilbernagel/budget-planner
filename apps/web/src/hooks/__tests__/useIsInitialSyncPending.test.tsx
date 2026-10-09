@@ -62,7 +62,7 @@ describe('useIsInitialSyncPending', () => {
 		expect(result.current).toBe(false)
 	})
 
-	it('AC-6: is false for a device that has synced before (localStorage flag), even though THIS session has no pull yet', () => {
+	it('is false for a device that has synced before (localStorage flag), even though THIS session has no pull yet', () => {
 		window.localStorage.setItem(STORAGE_KEY, '1')
 		useSyncSessionStatus.mockReturnValue(status({ resolved: true, isPaidSyncSession: true }))
 		useLastPullTimestamp.mockReturnValue(null)
@@ -93,7 +93,7 @@ describe('useIsInitialSyncPending', () => {
 		expect(window.localStorage.getItem(STORAGE_KEY)).toBe('1')
 	})
 
-	it('AC-6: is false when the calling page already has local data, even on a never-synced device with no pull yet', () => {
+	it('is false when the calling page already has local data, even on a never-synced device with no pull yet', () => {
 		useSyncSessionStatus.mockReturnValue(status({ resolved: true, isPaidSyncSession: true }))
 		useLastPullTimestamp.mockReturnValue(null)
 

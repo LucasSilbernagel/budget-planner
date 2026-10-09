@@ -21,7 +21,7 @@ const INDEXABLE_ROUTES = [
 
 const NON_PAGE_DISALLOWS = new Set(['/api/'])
 
-interface Robots {
+type Robots = {
 	disallows: string[]
 	allows: string[]
 	sitemaps: string[]
@@ -106,7 +106,7 @@ const sitemapXml = readFileSync(resolve(PUBLIC_DIR, 'sitemap.xml'), 'utf8')
 const robots = parseRobots(robotsText)
 const locs = parseSitemapLocs(sitemapXml)
 
-describe('the parsers read what the files actually say (story seo-1)', () => {
+describe('the parsers read what the files actually say', () => {
 	// Without these, an empty parse would make every loop below vacuous.
 	it('robots.txt uses only the grammar this test models', () => {
 		expect(robots.unmodelled).toEqual([])
@@ -121,7 +121,7 @@ describe('the parsers read what the files actually say (story seo-1)', () => {
 	})
 })
 
-describe('every page route is classified in robots.txt (story seo-1, AC-1/AC-4)', () => {
+describe('every page route is classified in robots.txt', () => {
 	for (const routePath of globbedPagePaths) {
 		it(`${routePath} is either indexable or disallowed — and not both`, () => {
 			const indexable = (INDEXABLE_ROUTES as readonly string[]).includes(routePath)
@@ -156,7 +156,7 @@ describe('every page route is classified in robots.txt (story seo-1, AC-1/AC-4)'
 	})
 })
 
-describe('sitemap.xml lists exactly the indexable pages (story seo-1, AC-2/AC-3/AC-4)', () => {
+describe('sitemap.xml lists exactly the indexable pages', () => {
 	it('is a sitemaps.org 0.9 urlset, whole document', () => {
 		expect(withoutXmlComments(sitemapXml)).toMatch(SITEMAP_SHAPE)
 	})

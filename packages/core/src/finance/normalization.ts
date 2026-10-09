@@ -1,6 +1,6 @@
 export type Frequency = 'weekly' | 'biweekly' | 'monthly' | 'annually'
 
-export interface NormalizableFinancialItem {
+export type NormalizableFinancialItem = {
 	amount: number
 	frequency: Frequency
 }

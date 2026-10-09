@@ -4,7 +4,7 @@ import { getSessionSeed } from '@/server/api/auth/session-seed'
 
 // Exported because `routeTree.gen.ts` infers `LoginRoute` from `validateSearch`'s
 // return type and cannot name a type that is module-private (TS4023).
-export interface LoginSearch {
+export type LoginSearch = {
 	error?: string
 }
 

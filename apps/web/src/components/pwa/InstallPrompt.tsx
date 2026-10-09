@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 // Chromium-only, and absent from the DOM lib types.
-interface BeforeInstallPromptEvent extends Event {
+type BeforeInstallPromptEvent = Event & {
 	readonly platforms: string[]
 	readonly userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
 	prompt(): Promise<void>

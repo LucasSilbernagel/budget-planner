@@ -160,7 +160,7 @@ afterEach(() => {
 	service = undefined
 })
 
-describe('a replayed profile delete (story 76.1)', () => {
+describe('a replayed profile delete', () => {
 	it('is answered 200 / processed both times through the route, leaving one live default', async () => {
 		const first = await postBatch(profileDelete('op-first'))
 		// A fresh op id: acknowledged because the row is tombstoned, not because of op-id dedupe.

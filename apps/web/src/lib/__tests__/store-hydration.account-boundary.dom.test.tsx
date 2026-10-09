@@ -110,7 +110,7 @@ afterEach(() => {
 	clearMarkerCookie()
 })
 
-describe("StoreHydration removes the previous account's data before first paint (story 90.1)", () => {
+describe("StoreHydration removes the previous account's data before first paint", () => {
 	it('signed out: none of A’s synced rows or profiles, and not A’s plan; free rows stay', () => {
 		leaveAccountAsDataBehind()
 		render(<StoreHydration seed={{ ...SIGNED_OUT_SEED }} />)
@@ -192,7 +192,7 @@ describe("StoreHydration removes the previous account's data before first paint 
 	})
 })
 
-describe('the retirement plan follows its owner (story 90.1, D1)', () => {
+describe('the retirement plan follows its owner', () => {
 	it('parks A’s plan when someone else’s session loads, and gives it back when A signs in again', () => {
 		leaveAccountAsDataBehind()
 		render(<StoreHydration seed={{ ...SIGNED_OUT_SEED }} />)
@@ -235,7 +235,7 @@ describe('the retirement plan follows its owner (story 90.1, D1)', () => {
 		expect(localStorage.getItem(`${RETIREMENT_PLANNER_STORAGE_KEY}:${ACCOUNT_A}`)).not.toBeNull()
 	})
 
-	it('a plan edited while signed out does not hide the returning owner’s parked plan (review R-D2 (a))', () => {
+	it('a plan edited while signed out does not hide the returning owner’s parked plan', () => {
 		leaveAccountAsDataBehind()
 		render(<StoreHydration seed={{ ...SIGNED_OUT_SEED }} />)
 		useRetirementPlannerStore.getState().setCurrentAgeInput('25')

@@ -18,7 +18,7 @@ type _FinanceTypeCoverage =
 const _financeTypeCoverage: _FinanceTypeCoverage = true
 void _financeTypeCoverage
 
-export interface ClientBalanceTracking {
+export type ClientBalanceTracking = {
 	id: string
 	// Null/absent means unscoped (visible under every profile). Not on ClientNew*: an edit
 	// must never re-home a row.
@@ -41,7 +41,7 @@ export interface ClientBalanceTracking {
 	originalBalance?: number
 }
 
-export interface ClientNewBalanceTracking {
+export type ClientNewBalanceTracking = {
 	type: FinanceType
 	name: string
 	currentBalance: number
@@ -53,14 +53,14 @@ export interface ClientNewBalanceTracking {
 	originalBalance?: number
 }
 
-export interface BalanceTrackingWithTimeline extends ClientBalanceTracking {
+export type BalanceTrackingWithTimeline = ClientBalanceTracking & {
 	debtProgress?: number | null
 	debtProgressLabel?: string
 	debtTimeline?: number | null
 	debtTimelineLabel?: string
 }
 
-export interface BalanceTrackingFilter {
+export type BalanceTrackingFilter = {
 	type?: FinanceType
 	search?: string
 }
@@ -165,7 +165,7 @@ export function withTimeline(entry: ClientBalanceTracking): BalanceTrackingWithT
 	}
 }
 
-export interface ValidationError {
+export type ValidationError = {
 	field: string
 	message: string
 	value: unknown

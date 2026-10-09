@@ -18,7 +18,7 @@ export type LockOutcome =
 	| { acquired: true }
 	| { acquired: false; reason: 'timeout' | 'error'; detail: string }
 
-interface LockClient {
+type LockClient = {
 	query(sql: string, values?: unknown[]): Promise<unknown>
 }
 

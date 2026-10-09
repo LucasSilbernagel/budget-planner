@@ -50,7 +50,7 @@ describe('isValidGrowthRate', () => {
 	}
 })
 
-describe('the engine refuses an out-of-range or non-numeric growth rate (AC-3)', () => {
+describe('the engine refuses an out-of-range or non-numeric growth rate', () => {
 	const bad: [string, unknown][] = [
 		['NaN (an emptied field)', Number.NaN],
 		['Infinity', Number.POSITIVE_INFINITY],
@@ -118,7 +118,7 @@ describe('the engine refuses an out-of-range or non-numeric growth rate (AC-3)',
 	})
 })
 
-describe('the engine accepts the boundaries (AC-3)', () => {
+describe('the engine accepts the boundaries', () => {
 	it('-100% stops the income from year 1, with every summary figure finite', () => {
 		const r = calculateFinancialForecast(DATA, scenario(-1, 0), 10)
 		expect(r.projection[0]?.income).toBe(0)
@@ -139,7 +139,7 @@ describe('the engine accepts the boundaries (AC-3)', () => {
 	})
 })
 
-describe('the engine refuses a non-finite starting balance (AC-3, 77.1 review rider)', () => {
+describe('the engine refuses a non-finite starting balance', () => {
 	const bad: [string, unknown][] = [
 		['NaN', Number.NaN],
 		['Infinity', Number.POSITIVE_INFINITY],

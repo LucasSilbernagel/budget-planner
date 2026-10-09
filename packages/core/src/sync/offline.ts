@@ -10,7 +10,7 @@ export type SyncNotificationCallback = (
 	type: 'info' | 'success' | 'warning' | 'error'
 ) => void
 
-export interface OfflineQueueConfig {
+export type OfflineQueueConfig = {
 	storage?: SyncQueueStorage
 
 	maxRetries?: number
@@ -28,7 +28,7 @@ export interface OfflineQueueConfig {
 	processOperation?: ProcessOperationFn
 }
 
-export interface IndexedDBSyncQueueStorage extends SyncQueueStorage {}
+export type IndexedDBSyncQueueStorage = SyncQueueStorage
 
 type RequiredOfflineQueueConfig = Required<Omit<OfflineQueueConfig, 'processOperation'>>
 

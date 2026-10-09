@@ -36,14 +36,14 @@ describe('LEGAL_PAGES', () => {
 		}
 	})
 
-	it('contains no unresolved DRAFT banner or bracketed placeholder (10-3 AC-1)', () => {
+	it('contains no unresolved DRAFT banner or bracketed placeholder', () => {
 		for (const page of LEGAL_PAGES) {
 			expect(page.content).not.toMatch(/DRAFT — pending legal review/)
 			expect(page.content).not.toMatch(/\[(?:DATE|PRICE|CONFIRM)\b[^\]]*\]/)
 		}
 	})
 
-	it('refers to the product as "Longhand Budget", never the retired brands (stories 27-3, brand-1)', () => {
+	it('refers to the product as "Longhand Budget", never the retired brands', () => {
 		for (const page of LEGAL_PAGES) {
 			expect(page.content).not.toContain('Budget Planner')
 			expect(page.description).not.toContain('Budget Planner')
@@ -53,7 +53,7 @@ describe('LEGAL_PAGES', () => {
 		expect(getLegalPage('terms')?.description).toContain('Longhand Budget')
 	})
 
-	it('every legal page carries a visible last-updated date (AC-5)', () => {
+	it('every legal page carries a visible last-updated date', () => {
 		for (const page of LEGAL_PAGES) {
 			expect(page.content).toMatch(/_Last updated: \d{1,2} \w+ \d{4}_/)
 		}
@@ -70,7 +70,7 @@ describe('getLegalPage', () => {
 	})
 })
 
-describe('privacy page: retention period (story 73.1)', () => {
+describe('privacy page: retention period', () => {
 	const RETENTION_HEADING = /^## How long we keep your data$/gm
 
 	function retentionSection(): string {
@@ -132,7 +132,7 @@ describe('privacy page: retention period (story 73.1)', () => {
 		expect(lapsed).not.toMatch(/payment is being retried|lifetime license/)
 	})
 
-	it('says, in the Premium sync section, that the retirement plan is synced (story 99.3, D8)', () => {
+	it('says, in the Premium sync section, that the retirement plan is synced', () => {
 		const content = PRIVACY_PAGE.content
 		const start = content.search(/^## Premium tier: EU-hosted sync$/m)
 		expect(start, 'privacy.md has no "## Premium tier: EU-hosted sync" section').toBeGreaterThan(-1)
@@ -167,13 +167,13 @@ describe('privacy page: retention period (story 73.1)', () => {
 	})
 })
 
-describe('pricing page content (AC-4)', () => {
+describe('pricing page content', () => {
 	it('discloses Paddle as the Merchant of Record', () => {
 		expect(PRICING_PAGE.content).toMatch(/Paddle/)
 		expect(PRICING_PAGE.content).toMatch(/Merchant of Record/i)
 	})
 
-	it('states the finalized EUR pricing — three plans (stories 25-2, 5-20)', () => {
+	it('states the finalized EUR pricing — three plans', () => {
 		expect(PRICING_PAGE.content).toMatch(/€39 per year/)
 		expect(PRICING_PAGE.content).toMatch(/€99/)
 		expect(PRICING_PAGE.content).toMatch(/lifetime/i)
@@ -186,7 +186,7 @@ describe('pricing page content (AC-4)', () => {
 		expect(PRICING_PAGE.content).not.toMatch(/€10\b/)
 	})
 
-	it('de-duplicates the plan comparison — prose carries billing/legal only, not the card feature lists (story 20-4, CONTENT-L)', () => {
+	it('de-duplicates the plan comparison — prose carries billing/legal only, not the card feature lists', () => {
 		expect(PRICING_PAGE.content).toMatch(/### Billing & payments/)
 		expect(PRICING_PAGE.content).not.toMatch(/### Free/)
 		expect(PRICING_PAGE.content).not.toMatch(/### Premium/)
@@ -194,14 +194,14 @@ describe('pricing page content (AC-4)', () => {
 		expect(PRICING_PAGE.content).not.toMatch(/Track income, expenses/i)
 	})
 
-	it('keeps forecasting benefit detail out of the prose (stories 20-1, 20-4, 30-2)', () => {
+	it('keeps forecasting benefit detail out of the prose', () => {
 		expect(PRICING_PAGE.content).not.toMatch(/reloadable/i)
 
 		expect(PRICING_PAGE.content).not.toMatch(/side[\s-]by[\s-]side/i)
 	})
 })
 
-describe('privacy page: the retention warning email is disclosed (story 73.2)', () => {
+describe('privacy page: the retention warning email is disclosed', () => {
 	it('names the retention warning in the Brevo section, and still only the address', () => {
 		const content = PRIVACY_PAGE.content
 		const start = content.search(/^## Sign-in and account emails$/m)
@@ -215,7 +215,7 @@ describe('privacy page: the retention warning email is disclosed (story 73.2)', 
 	})
 })
 
-describe('privacy page: display preferences (story 95.1)', () => {
+describe('privacy page: display preferences', () => {
 	function displayPreferencesBullet(): string {
 		const lines = PRIVACY_PAGE.content
 			.split('\n')

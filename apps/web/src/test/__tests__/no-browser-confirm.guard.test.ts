@@ -25,7 +25,7 @@ function stripComments(source: string): string {
 	return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
 }
 
-describe('AC-4 guard: no browser confirm() in destructive flows', () => {
+describe('guard: no browser confirm() in destructive flows', () => {
 	it('finds no surviving confirm()/window.confirm() call in web source', () => {
 		const offenders: string[] = []
 		for (const file of collectSourceFiles(SRC_ROOT)) {
@@ -39,7 +39,7 @@ describe('AC-4 guard: no browser confirm() in destructive flows', () => {
 	})
 })
 
-describe('AC-4 guard: no browser alert() in form validation (story 6-8)', () => {
+describe('guard: no browser alert() in form validation', () => {
 	it('finds no surviving alert()/window.alert() call in web source', () => {
 		const offenders: string[] = []
 		for (const file of collectSourceFiles(SRC_ROOT)) {

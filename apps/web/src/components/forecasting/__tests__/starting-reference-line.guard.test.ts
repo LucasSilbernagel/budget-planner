@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 // A source guard because Recharts lays out nothing in jsdom. Rows report CLOSING balances,
 // so row 0 is not the starting net worth.
-describe('ProjectionChart — "Starting" reference line (story forecast-2)', () => {
+describe('ProjectionChart — "Starting" reference line', () => {
 	const source = readFileSync(join(__dirname, '..', 'projection-chart.tsx'), 'utf8')
 
 	const codeLines = (() => {

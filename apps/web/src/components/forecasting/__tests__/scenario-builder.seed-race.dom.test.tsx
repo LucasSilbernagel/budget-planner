@@ -127,7 +127,7 @@ describe('edits made while the seed is still pending survive it', () => {
 		expect(screen.getByLabelText('Balance for Index fund')).toHaveValue('9,876.00')
 	})
 
-	it('keeps a savings row the user added and is typing in, and does not add the store rows on top (D8)', () => {
+	it('keeps a savings row the user added and is typing in, and does not add the store rows on top', () => {
 		const { rerender } = render(<ScenarioBuilder onSave={onSave} />)
 
 		fireEvent.click(screen.getByRole('button', { name: '+ Add Account' }))
@@ -147,7 +147,7 @@ describe('edits made while the seed is still pending survive it', () => {
 		expect(within(savings).getAllByRole('button', { name: /^Remove / })).toHaveLength(1)
 	})
 
-	it('keeps an investment/debt row the user added and is typing in, and does not add the store rows on top (D8)', () => {
+	it('keeps an investment/debt row the user added and is typing in, and does not add the store rows on top', () => {
 		const { rerender } = render(<ScenarioBuilder onSave={onSave} />)
 
 		fireEvent.click(screen.getByRole('button', { name: '+ Add Balance' }))
@@ -166,7 +166,7 @@ describe('edits made while the seed is still pending survive it', () => {
 		expect(within(balances).getAllByRole('button', { name: /^Remove / })).toHaveLength(1)
 	})
 
-	it('keeps an annual return typed on a row added before the seed (story 100.3)', () => {
+	it('keeps an annual return typed on a row added before the seed', () => {
 		const { rerender } = render(<ScenarioBuilder onSave={onSave} />)
 
 		fireEvent.click(screen.getByRole('button', { name: '+ Add Balance' }))
@@ -214,7 +214,7 @@ describe('edits made while the seed is still pending survive it', () => {
 	})
 })
 
-describe('the linked expense moves only with the debt row that carries it (story 102.2)', () => {
+describe('the linked expense moves only with the debt row that carries it', () => {
 	function addLinkedDebt(): void {
 		useExpenseStore.setState({
 			expenses: [

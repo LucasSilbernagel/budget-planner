@@ -17,7 +17,7 @@ afterEach(() => {
 })
 
 describe('ACCOUNT_NOTICE_DISMISSED_STORAGE_KEY', () => {
-	it('is the dedicated overview key and NOT the PWA install key (AC-2)', () => {
+	it('is the dedicated overview key and NOT the PWA install key', () => {
 		expect(ACCOUNT_NOTICE_DISMISSED_STORAGE_KEY).toBe('bp-overview-account-notice-dismissed')
 		expect(ACCOUNT_NOTICE_DISMISSED_STORAGE_KEY).not.toBe('bp-pwa-install-dismissed')
 	})
@@ -81,7 +81,7 @@ describe('wasAccountNoticeDismissed', () => {
 		expect(wasAccountNoticeDismissed()).toBe(false)
 	})
 
-	it('fails open (false, no throw) when the store throws on read (AC-3)', () => {
+	it('fails open (false, no throw) when the store throws on read', () => {
 		vi.spyOn(globalThis.localStorage, 'getItem').mockImplementation(() => {
 			throw new Error('SecurityError: access denied')
 		})
@@ -102,7 +102,7 @@ describe('rememberAccountNoticeDismissal', () => {
 		expect(wasAccountNoticeDismissed()).toBe(true)
 	})
 
-	it('swallows a blocked/full store rather than throwing (AC-3)', () => {
+	it('swallows a blocked/full store rather than throwing', () => {
 		vi.spyOn(globalThis.localStorage, 'setItem').mockImplementation(() => {
 			throw new Error('QuotaExceededError')
 		})

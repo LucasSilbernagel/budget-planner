@@ -25,13 +25,13 @@ const SELECT_CLASS = [
 	'focus:outline-none focus:ring-2 focus:ring-blue-500',
 ].join(' ')
 
-interface SortOption<Key extends string> {
+type SortOption<Key extends string> = {
 	value: string
 	label: string
 	state: SortState<Key> | null
 }
 
-interface TableSortControlProps<Key extends string> {
+type TableSortControlProps<Key extends string> = {
 	label: string
 	/** Only the columns the table actually renders; an unavailable column would silently degrade to manual order. */
 	columns: readonly { key: Key; label: string }[]

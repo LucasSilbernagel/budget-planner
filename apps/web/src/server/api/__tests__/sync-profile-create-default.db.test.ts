@@ -158,7 +158,7 @@ beforeEach(async () => {
 	vi.mocked(logger.info).mockClear()
 })
 
-describe('a profile create asking for a TAKEN default seat (AC-2, D1)', () => {
+describe('a profile create asking for a TAKEN default seat', () => {
 	beforeEach(async () => {
 		await db
 			.insert(userProfiles)
@@ -226,7 +226,7 @@ describe('a profile create asking for a TAKEN default seat (AC-2, D1)', () => {
 	})
 })
 
-describe('a profile create asking for a FREE default seat (AC-2 control)', () => {
+describe('a profile create asking for a FREE default seat (control)', () => {
 	// Each seed has an older live non-default profile so the post-batch repair
 	// cannot mask a wrong seat check by promoting Q.
 	const R = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
@@ -264,7 +264,7 @@ describe('a profile create asking for a FREE default seat (AC-2 control)', () =>
 	})
 })
 
-describe('every profile create takes the writer lock first (AC-3)', () => {
+describe('every profile create takes the writer lock first', () => {
 	beforeEach(async () => {
 		await db
 			.insert(userProfiles)

@@ -477,7 +477,7 @@ describe('DELETE /api/forecasts', () => {
 	})
 })
 
-describe('PUT /api/forecasts (story 97.1, FR157)', () => {
+describe('PUT /api/forecasts', () => {
 	const GONE =
 		'This forecast was deleted, so it was not saved. Save again to keep it as a new forecast.'
 	const DUPLICATE = 'A forecast with this name already exists for this profile.'

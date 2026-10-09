@@ -17,8 +17,19 @@ const PROCESS_REF = [
 	/\bAC-?\d+\b/,
 	/\bUX-DR\d+\b/,
 	/\bBUG-[A-Z0-9]+\b/,
-	/\b[\w-]+\.(tsx?|jsx?|mjs|cjs):\d+/,
+	/(?<![#\w])D\d{1,2}\b/,
+	/\bADR-?\d+\b/,
+	/\b(bug|ops|sec|ux|cleanup|brand)-\d+\b/,
 ]
+const FILE_LINE_REF = /\b[\w-]+\.(tsx?|jsx?|mjs|cjs):\d+/
+const STRING_KINDS = new Set([
+	ts.SyntaxKind.StringLiteral,
+	ts.SyntaxKind.NoSubstitutionTemplateLiteral,
+	ts.SyntaxKind.TemplateHead,
+	ts.SyntaxKind.TemplateMiddle,
+	ts.SyntaxKind.TemplateTail,
+	ts.SyntaxKind.JsxText,
+])
 
 const root = path.resolve(__dirname, '..')
 const args = process.argv.slice(2)
@@ -40,13 +51,15 @@ function collectComments(text, fileName) {
 	const add = (ranges) => {
 		for (const r of ranges ?? []) seen.set(r.pos, r)
 	}
+	const strings = []
 	const visit = (node) => {
 		add(ts.getLeadingCommentRanges(text, node.pos))
 		add(ts.getTrailingCommentRanges(text, node.end))
+		if (STRING_KINDS.has(node.kind)) strings.push(node)
 		for (const child of node.getChildren(sf)) visit(child)
 	}
 	visit(sf)
-	return { sf, comments: [...seen.values()].sort((a, b) => a.pos - b.pos) }
+	return { sf, strings, comments: [...seen.values()].sort((a, b) => a.pos - b.pos) }
 }
 
 // JSDoc type tags are the type system in .mjs files, not prose.
@@ -62,7 +75,7 @@ function contentLines(raw) {
 const problems = []
 for (const file of files) {
 	const text = fs.readFileSync(path.join(root, file), 'utf8')
-	const { sf, comments } = collectComments(text, file)
+	const { sf, strings, comments } = collectComments(text, file)
 	const lineOf = (pos) => sf.getLineAndCharacterOfPosition(pos).line + 1
 	const groups = []
 	for (const c of comments) {
@@ -87,15 +100,23 @@ for (const file of files) {
 		const line = lineOf(g.pos)
 		const n = contentLines(g.raw)
 		if (n > MAX_LINES) problems.push(`${file}:${line}  comment is ${n} lines (max ${MAX_LINES})`)
-		const ref = PROCESS_REF.find((re) => re.test(g.raw))
+		const ref = [...PROCESS_REF, FILE_LINE_REF].find((re) => re.test(g.raw))
 		if (ref) problems.push(`${file}:${line}  process/file reference: ${g.raw.match(ref)[0]}`)
+	}
+	for (const node of strings) {
+		const ref = PROCESS_REF.find((re) => re.test(node.text))
+		if (ref) {
+			problems.push(
+				`${file}:${lineOf(node.getStart(sf))}  process reference in string: ${node.text.match(ref)[0]}`
+			)
+		}
 	}
 }
 
 if (problems.length > 0) {
 	console.error(problems.join('\n'))
 	console.error(
-		`\n${problems.length} comment problem(s). Delete comments the code already explains; keep only short notes on non-obvious behaviour, without story/epic/FR/AC or file:line references.`
+		`\n${problems.length} problem(s). Delete comments the code already explains; keep only short notes on non-obvious behaviour. No story/epic/FR/AC/decision ids in comments, strings or test titles, and no file:line references in comments.`
 	)
 	process.exit(1)
 }

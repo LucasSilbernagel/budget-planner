@@ -210,7 +210,7 @@ describe('POST /api/auth/login/verify (consume + sign in)', () => {
 		signSpy.mockRestore()
 	})
 
-	it('rate-limits the consume endpoint per IP (10/60s via the shared store, AC-2)', async () => {
+	it('rate-limits the consume endpoint per IP (10/60s via the shared store)', async () => {
 		let last: Response | undefined
 		for (let i = 0; i < 11; i++) {
 			last = await postVerify({ token: 't', csrf: 'm' }, 'ml_csrf=m', CLIENT_IP)

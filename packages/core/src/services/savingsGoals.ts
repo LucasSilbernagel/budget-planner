@@ -2,7 +2,7 @@ import { MAX_MONEY_CENTS } from '../finance/money-limits'
 import { calculateProgress as calculateSavingsGoalProgress } from '../utils/savingsGoalCalculations'
 import { generateUuid } from '../utils/uuid'
 
-export interface ClientSavingsGoal {
+export type ClientSavingsGoal = {
 	id: string
 	// Null/absent means unscoped (visible under every profile). Not on ClientNew*: an edit
 	// must never re-home a row.
@@ -23,7 +23,7 @@ export interface ClientSavingsGoal {
 	status?: SavingsGoalStatus
 }
 
-export interface ClientNewSavingsGoal {
+export type ClientNewSavingsGoal = {
 	name: string
 	targetAmount: number | null
 	currentBalance: number
@@ -40,7 +40,7 @@ export function resolveAllocationMode(goal: { allocationMode?: AllocationMode })
 	return goal.allocationMode ?? 'automatic'
 }
 
-export interface SavingsGoalWithProgress extends ClientSavingsGoal {
+export type SavingsGoalWithProgress = ClientSavingsGoal & {
 	progress: number | null
 	status: SavingsGoalStatus
 }
@@ -49,7 +49,7 @@ export function isSavingsAccount(goal: { targetAmount: number | null }): boolean
 	return goal.targetAmount == null
 }
 
-export interface SavingsGoalFilter {
+export type SavingsGoalFilter = {
 	status?: SavingsGoalStatus
 	search?: string
 }
@@ -83,7 +83,7 @@ export function withProgress(savingsGoal: ClientSavingsGoal): SavingsGoalWithPro
 	}
 }
 
-export interface ValidationError {
+export type ValidationError = {
 	field: string
 	message: string
 	value: unknown

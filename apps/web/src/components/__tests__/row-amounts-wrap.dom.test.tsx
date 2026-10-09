@@ -86,7 +86,7 @@ function figureIn(td: HTMLElement): HTMLElement {
 	return figures[0] as HTMLElement
 }
 
-interface PageCase {
+type PageCase = {
 	name: string
 	seed: () => void
 	render: () => ReactElement
@@ -151,7 +151,7 @@ const CASES: PageCase[] = [
 	},
 ]
 
-describe('row money figures wrap only between digit groups (story 91.1)', () => {
+describe('row money figures wrap only between digit groups', () => {
 	for (const page of CASES) {
 		for (const [label, expectedRuns] of Object.entries(page.figures)) {
 			it(`${page.name} › every "${label}" figure is a GroupedAmount inside the amount class`, () => {

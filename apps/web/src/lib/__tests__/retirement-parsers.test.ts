@@ -61,7 +61,7 @@ describe('parsePercentageToDecimal', () => {
 		expect(() => parsePercentageToDecimal('1.2.3')).toThrow(/multiple decimal points/)
 	})
 
-	it('reads a single decimal comma as the point (story 110.1, D3)', () => {
+	it('reads a single decimal comma as the point', () => {
 		expect(parsePercentageToDecimal('2,5')).toBeCloseTo(0.025, 10)
 		expect(parsePercentageToDecimal('2,5%')).toBeCloseTo(0.025, 10)
 		expect(parsePercentageToDecimal(' 2,5 % ')).toBeCloseTo(0.025, 10)

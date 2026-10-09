@@ -27,7 +27,7 @@ const DANGLING_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 
 const MIGRATIONS = new URL('../../../../../../packages/db/migrations/', import.meta.url)
 
-interface JournalEntry {
+type JournalEntry = {
 	idx: number
 	tag: string
 }
@@ -197,7 +197,7 @@ describe('paymentExpenseId: device A writes, the database answers', () => {
 		expect((await pullRow())?.paymentExpenseId).toBe(DANGLING_ID)
 	})
 
-	it('deleting the linked expense leaves the debt row intact (no cascade, D8)', async () => {
+	it('deleting the linked expense leaves the debt row intact (no cascade)', async () => {
 		await pushUpdate(EXPENSE_ID)
 		await db.delete(expenses).where(eq(expenses.id, EXPENSE_ID))
 		const row = await pullRow()

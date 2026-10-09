@@ -6,12 +6,12 @@ import { type CurrencyOptions, formatCurrency } from '../format/currency'
 // Rates below this produce absurdly large required assets.
 const MIN_ANNUAL_RETURN_RATE = 0.001
 
-export interface RetirementInput {
+export type RetirementInput = {
 	monthlyIncome: number
 	annualReturnRate: number
 }
 
-export interface RetirementResult {
+export type RetirementResult = {
 	requiredAssets: number
 	requiredAssetsFormatted: string
 	monthlyIncome: number
@@ -144,14 +144,14 @@ export function calculateSafeMonthlyWithdrawal(assets: number, annualReturnRate:
 	return result
 }
 
-export interface CompoundingInput {
+export type CompoundingInput = {
 	principal: number
 	annualContribution: number
 	annualReturnRate: number
 	years: number
 }
 
-export interface YearlyProjection {
+export type YearlyProjection = {
 	year: number
 	startingBalance: number
 	annualContribution: number
@@ -382,7 +382,7 @@ export function calculateRequiredNestEgg(
 	return requiredCents
 }
 
-export interface RetirementAccumulationInput {
+export type RetirementAccumulationInput = {
 	currentAge: number
 	currentSavedCents: number
 	monthlySavingsCents: number
@@ -393,7 +393,7 @@ export interface RetirementAccumulationInput {
 	model: RetirementModel
 }
 
-export interface RetirementAccumulationResult {
+export type RetirementAccumulationResult = {
 	reachable: boolean
 	savedPerYearCents: number
 	monthsToRetirement: number | null

@@ -84,7 +84,7 @@ function expectedTokens(name: string, value: string | undefined): string[] {
 }
 
 describe('value/tag pairs on the Savings table', () => {
-	it('EVERY allocation cell carries a protected tag and a group-wrapping amount, stacked (AC-1, 91.1)', () => {
+	it('EVERY allocation cell carries a protected tag and a group-wrapping amount, stacked', () => {
 		const { container } = renderWithProviders(<SavingsPage />)
 
 		const amounts = [...container.querySelectorAll('[data-testid^="savings-allocation-"]')].filter(
@@ -99,7 +99,7 @@ describe('value/tag pairs on the Savings table', () => {
 			}
 			expect(
 				bareUtilities(tokens(amount.getAttribute('class'))),
-				`${id}: the allocation figure is nowrap again (story 91.1 D3 moved it off nowrap)`
+				`${id}: the allocation figure is nowrap again (it must wrap)`
 			).not.toContain('whitespace-nowrap')
 			const cell = amount.closest('td')
 			for (const token of expectedTokens(
@@ -143,7 +143,7 @@ describe('value/tag pairs on the Savings table', () => {
 		expect(visitedIds).toEqual(seededRows.map((g) => g.id).sort())
 	})
 
-	it('EVERY name cell protects its badge but leaves the name wrappable (AC-2)', () => {
+	it('EVERY name cell protects its badge but leaves the name wrappable', () => {
 		const { container } = renderWithProviders(<SavingsPage />)
 
 		const badges = [...container.querySelectorAll('[data-testid^="savings-badge-"]')]

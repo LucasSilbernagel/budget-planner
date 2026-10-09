@@ -35,7 +35,7 @@ describe('selectEntrypoint', () => {
 	})
 })
 
-describe('module graph (AC-2: the migrate path is unreachable from a serving container)', () => {
+describe('module graph (the migrate path is unreachable from a serving container)', () => {
 	const dispatcher = readWebFile('server-entry.mjs')
 	const serveEntry = readWebFile('serve-entry.mjs')
 	const migrateEntry = readWebFile('migrate-entry.mjs')
@@ -132,7 +132,7 @@ describe('run-id binding (migrate container <-> pipeline run)', () => {
  * The migrate path needs packages/db's toolchain and the serving path doesn't, so a slimmed
  * image could break production migrations while every serve-path check stays green.
  */
-describe('Dockerfile (AC-2: the image actually carries the migrate payload)', () => {
+describe('Dockerfile (the image actually carries the migrate payload)', () => {
 	const dockerfile = readWebFile('Dockerfile')
 	// Comments are stripped so the assertions match build instructions, not prose.
 	const instructions = dockerfile

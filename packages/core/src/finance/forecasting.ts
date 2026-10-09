@@ -50,7 +50,7 @@ export const FORECAST_OUT_OF_RANGE = 'Forecast amounts are too large to project'
 
 // Rows SPLIT savings, they don't add to it: net income already lands in `savings`. Counted
 // investment contributions do leave savings.
-export interface SavingsAccountInput {
+export type SavingsAccountInput = {
 	balance: number
 	monthlyContribution: number
 }
@@ -61,7 +61,7 @@ export const SAVINGS_ROW_NEGATIVE = 'Savings account balances and contributions 
 
 // `balance` is a positive MAGNITUDE for both types. A debt pays `min(annual payment, balance)`
 // with no interest; an unflagged payment also leaves savings.
-export interface BalanceAccountInput {
+export type BalanceAccountInput = {
 	type: 'investment' | 'debt'
 	balance: number
 	contribution: number
@@ -133,7 +133,7 @@ function eventAmountInCents(amount: unknown): number {
 	return Math.round(amount)
 }
 
-export interface ForecastingScenario {
+export type ForecastingScenario = {
 	name: string
 	description?: string
 	// Decimal (0.05 = 5%), -1..1 inclusive; the engine refuses anything else.
@@ -147,7 +147,7 @@ export interface ForecastingScenario {
 	oneTimeEvents?: Array<{ year: number; amount: number }>
 }
 
-export interface YearlyForecast {
+export type YearlyForecast = {
 	year: number
 	income: number
 	expenses: number
@@ -166,7 +166,7 @@ export interface YearlyForecast {
 	assets?: number
 }
 
-export interface ForecastingResult {
+export type ForecastingResult = {
 	scenario: ForecastingScenario
 	baseline: YearlyForecast[]
 	projection: YearlyForecast[]
@@ -178,7 +178,7 @@ export interface ForecastingResult {
 	}
 }
 
-export interface ForecastInputData {
+export type ForecastInputData = {
 	income: NormalizableFinancialItem[]
 	expenses: NormalizableFinancialItem[]
 	savings: number
@@ -500,7 +500,7 @@ export function calculateFinancialForecast(
 	}
 }
 
-export interface GoalCalculation {
+export type GoalCalculation = {
 	targetAmount: number
 	currentAmount: number
 	monthlyContribution: number
@@ -549,7 +549,7 @@ export function calculateGoalTimeline(
 	}
 }
 
-export interface SavedScenario {
+export type SavedScenario = {
 	id: string
 	name: string
 	description?: string

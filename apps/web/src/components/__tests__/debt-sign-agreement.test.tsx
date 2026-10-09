@@ -79,7 +79,7 @@ function exactText(testId: string): string {
 	return (screen.getByTestId(testId).textContent ?? '').trim()
 }
 
-interface Figures {
+type Figures = {
 	overviewNetWorth: string
 	overviewBarDebts: unknown
 	balanceDebtTotal: string
@@ -134,7 +134,7 @@ const EXPECTED: Figures = {
 	reportDebtRowCents: DEBT_OWED,
 }
 
-describe('a debt counts as money owed on every surface (Story 103.1, AC-3)', () => {
+describe('a debt counts as money owed on every surface', () => {
 	beforeEach(() => {
 		const status: PremiumAccessStatus = {
 			hasAccess: false,

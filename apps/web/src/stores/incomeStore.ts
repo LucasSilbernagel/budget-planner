@@ -12,7 +12,7 @@ import { generateUUID, withUuidIds } from '../lib/uuid'
 import { INCOME_STORAGE_KEY } from './overview-data-storage-keys'
 import { useProfileStore } from './profileStore'
 
-interface ClientIncomeSource {
+type ClientIncomeSource = {
 	id: string
 	// Null/absent means unscoped (visible under every profile). Not on the input type: an edit must
 	// never re-home a row.
@@ -28,7 +28,7 @@ interface ClientIncomeSource {
 	updatedAt: string
 }
 
-interface ClientNewIncomeSource {
+type ClientNewIncomeSource = {
 	userId?: number
 	name: string
 	amount: number
@@ -36,7 +36,7 @@ interface ClientNewIncomeSource {
 	categoryId?: string | null
 }
 
-interface IncomeState {
+type IncomeState = {
 	incomeSources: ClientIncomeSource[]
 	addIncomeSource: (incomeSource: ClientNewIncomeSource) => void
 	updateIncomeSource: (id: string, updates: Partial<ClientNewIncomeSource>) => void

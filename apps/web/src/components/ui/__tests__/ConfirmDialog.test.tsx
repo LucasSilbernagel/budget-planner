@@ -12,7 +12,7 @@ describe('ConfirmDialog', () => {
 		expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
 	})
 
-	it('exposes alertdialog semantics with an accessible name + description (AC-1)', () => {
+	it('exposes alertdialog semantics with an accessible name + description', () => {
 		renderWithProviders(
 			<ConfirmDialog
 				isOpen
@@ -27,7 +27,7 @@ describe('ConfirmDialog', () => {
 		expect(dialog).toHaveAccessibleDescription('Are you sure you want to delete this item?')
 	})
 
-	it('fires onConfirm (not onCancel) when Confirm is clicked (AC-3)', async () => {
+	it('fires onConfirm (not onCancel) when Confirm is clicked', async () => {
 		const user = userEvent.setup()
 		const onConfirm = vi.fn()
 		const onCancel = vi.fn()
@@ -39,7 +39,7 @@ describe('ConfirmDialog', () => {
 		expect(onCancel).not.toHaveBeenCalled()
 	})
 
-	it('fires onCancel (not onConfirm) when Cancel is clicked (AC-2)', async () => {
+	it('fires onCancel (not onConfirm) when Cancel is clicked', async () => {
 		const user = userEvent.setup()
 		const onConfirm = vi.fn()
 		const onCancel = vi.fn()
@@ -51,7 +51,7 @@ describe('ConfirmDialog', () => {
 		expect(onConfirm).not.toHaveBeenCalled()
 	})
 
-	it('fires onCancel (not onConfirm) on Escape (AC-2)', async () => {
+	it('fires onCancel (not onConfirm) on Escape', async () => {
 		const user = userEvent.setup()
 		const onConfirm = vi.fn()
 		const onCancel = vi.fn()
@@ -80,7 +80,7 @@ describe('ConfirmDialog', () => {
 		expectNoDarkFill(screen.getByRole('button', { name: 'Remove' }))
 	})
 
-	it('moves focus to finalFocusRef after a destructive confirm removes the trigger (AC-5)', async () => {
+	it('moves focus to finalFocusRef after a destructive confirm removes the trigger', async () => {
 		const user = userEvent.setup()
 
 		function Harness() {
@@ -119,7 +119,7 @@ describe('ConfirmDialog', () => {
 		expect(screen.getByRole('button', { name: 'Add' })).toHaveFocus()
 	})
 
-	it('routes final focus to finalFocusRef even when the trigger is still mounted at confirm time (AC-5, async-safe)', async () => {
+	it('routes final focus to finalFocusRef even when the trigger is still mounted at confirm time (async-safe)', async () => {
 		const user = userEvent.setup()
 
 		// Async delete: the trigger is not removed on confirm, yet focus must still go to finalFocusRef.

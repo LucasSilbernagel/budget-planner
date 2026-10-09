@@ -83,7 +83,7 @@ const REFUSED: ProcessOperationResult = {
 	statusCode: 422,
 }
 
-describe('Retryable durability and refused-op discard (story 75.3)', () => {
+describe('Retryable durability and refused-op discard', () => {
 	let storage: TestStorage
 	let queue: SyncQueue
 	let service: SynchronizationService
@@ -130,7 +130,7 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
 		expect(vi.getTimerCount()).toBe(0)
 	}
 
-	describe('AC-1: a retryable op never leaves the persisted queue', () => {
+	describe('a retryable op never leaves the persisted queue', () => {
 		it('is still persisted after its first retryable failure, and survives a reload', async () => {
 			await queue.add(op('flaky'))
 			resultFor.set('flaky', RETRYABLE)
@@ -190,7 +190,7 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
 		})
 	})
 
-	describe('AC-2: past the budget, the next sync carries the op', () => {
+	describe('past the budget, the next sync carries the op', () => {
 		it('sends it on the next sync once the transport recovers, and resets the budget', async () => {
 			await queue.add(op('flaky'))
 			await exhaustRetryBudget('flaky')
@@ -298,7 +298,7 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
 		})
 	})
 
-	describe('AC-3 / AC-4: a refused op whose removal cannot be persisted', () => {
+	describe('a refused op whose removal cannot be persisted', () => {
 		async function refuseWhileStorageFails(): Promise<ReturnType<typeof vi.fn>> {
 			await queue.add(op('bad'))
 			await queue.add(op('later', { timestamp: 6_000 }))
@@ -378,7 +378,7 @@ describe('Retryable durability and refused-op discard (story 75.3)', () => {
 		})
 	})
 
-	describe('AC-5: queue readers see a retryable op while it waits', () => {
+	describe('queue readers see a retryable op while it waits', () => {
 		it('(a) pull LWW suppresses an OLDER server row for an op that failed retryably', async () => {
 			await queue.add(op('flaky', { timestamp: 5_000 }))
 			resultFor.set('flaky', RETRYABLE)

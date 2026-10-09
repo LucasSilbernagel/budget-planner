@@ -92,7 +92,7 @@ async function fillReachableCase(user: ReturnType<typeof userEvent.setup>) {
 	await user.type(screen.getByLabelText('Expected Annual Return'), '5')
 }
 
-describe('RetirementAccumulationPlanner (story 26.7)', () => {
+describe('RetirementAccumulationPlanner', () => {
 	beforeEach(resetStores)
 	afterEach(resetStores)
 
@@ -104,7 +104,7 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
 		expect(screen.queryByTestId('accumulation-outputs')).not.toBeInTheDocument()
 	})
 
-	it('renders the full output set for a reachable solve (AC-2)', async () => {
+	it('renders the full output set for a reachable solve', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -124,7 +124,7 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
 		)
 	})
 
-	it('every outlook value can break only after a group separator, with its text unchanged (story 88.2)', async () => {
+	it('every outlook value can break only after a group separator, with its text unchanged', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -153,7 +153,7 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
 		}
 	})
 
-	it('every outlook row lets the label shrink first and right-aligns the value (story 88.4, D7)', async () => {
+	it('every outlook row lets the label shrink first and right-aligns the value', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -174,7 +174,7 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
 		}
 	})
 
-	it('in EUR only the money values get break opportunities, after the "." group separator (story 88.2 review)', async () => {
+	it('in EUR only the money values get break opportunities, after the "." group separator', async () => {
 		useCurrencyStore.setState({ mode: 'symbol', currency: 'EUR' })
 		const user = userEvent.setup()
 		renderWithProviders(<RetirementAccumulationPlanner />)
@@ -200,7 +200,7 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
 		}
 	})
 
-	it('recomputes the required nest egg when the model toggles (AC-3)', async () => {
+	it('recomputes the required nest egg when the model toggles', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -216,7 +216,7 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
 		expect(requiredRow()).toHaveTextContent('240,000.00')
 	})
 
-	it('shows the calm not-reachable state with levers, no error (AC-4)', async () => {
+	it('shows the calm not-reachable state with levers, no error', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -254,7 +254,7 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
 		expect(screen.queryByTestId('accumulation-outputs')).not.toBeInTheDocument()
 	})
 
-	it('shows a targeted message (not the generic levers) when age is past life expectancy (AC-4)', async () => {
+	it('shows a targeted message (not the generic levers) when age is past life expectancy', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -286,7 +286,7 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
 		).not.toBeInTheDocument()
 	})
 
-	it('shows an explicit "too large" message instead of a blank void when the solver overflows (AC-6)', async () => {
+	it('shows an explicit "too large" message instead of a blank void when the solver overflows', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -314,11 +314,11 @@ describe('RetirementAccumulationPlanner (story 26.7)', () => {
 	})
 })
 
-describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', () => {
+describe('RetirementAccumulationPlanner — one shared input set', () => {
 	beforeEach(resetStores)
 	afterEach(resetStores)
 
-	it('collects each shared input exactly once (AC-1)', async () => {
+	it('collects each shared input exactly once', async () => {
 		const user = userEvent.setup()
 		const { container } = renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -352,7 +352,7 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
 		expect(container.ownerDocument.querySelectorAll('#postRetirementReturn')).toHaveLength(1)
 	})
 
-	it('renders one required-nest-egg figure, not a second standalone one (AC-2)', async () => {
+	it('renders one required-nest-egg figure, not a second standalone one', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -365,7 +365,7 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
 		expect(screen.queryByText(/FV = Ir × \(12 \/ r\)/)).not.toBeInTheDocument()
 	})
 
-	it('states the selected model’s explanation once, not twice (AC-3)', async () => {
+	it('states the selected model’s explanation once, not twice', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -379,7 +379,7 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
 		}
 	})
 
-	it('the growth chart agrees with the solver to the cent (AC-2, AC-9)', async () => {
+	it('the growth chart agrees with the solver to the cent', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -418,7 +418,7 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
 		expect(summary?.textContent).toContain('6.0% return while saving')
 	})
 
-	it('stops the curve at retirement rather than running to life expectancy (AC-2)', async () => {
+	it('stops the curve at retirement rather than running to life expectancy', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -460,7 +460,7 @@ describe('RetirementAccumulationPlanner — one shared input set (story 29.1)', 
 		expect(screen.queryByText('Projection Summary:')).not.toBeInTheDocument()
 	})
 
-	it('opens on a solved plan for a user who already has income (story 44.1, FR71)', () => {
+	it('opens on a solved plan for a user who already has income', () => {
 		act(seedReachableStores)
 		renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -733,7 +733,7 @@ describe('RetirementAccumulationPlanner — mobile a11y', () => {
 		expect(basis.classList.contains('min-h-[44px]')).toBe(true)
 	})
 
-	it('every text and number input keeps a visible focus ring and a ≥44px target (AC-4)', () => {
+	it('every text and number input keeps a visible focus ring and a ≥44px target', () => {
 		const { container } = renderWithProviders(<RetirementAccumulationPlanner />)
 
 		const fields = container.querySelectorAll<HTMLInputElement>(
@@ -747,7 +747,7 @@ describe('RetirementAccumulationPlanner — mobile a11y', () => {
 		}
 	})
 
-	it('every model radio keeps a visible focus ring (AC-4)', () => {
+	it('every model radio keeps a visible focus ring', () => {
 		const { container } = renderWithProviders(<RetirementAccumulationPlanner />)
 
 		const radios = container.querySelectorAll<HTMLInputElement>('input[type="radio"]')
@@ -810,7 +810,7 @@ describe('RetirementAccumulationPlanner survives a currency switch mid-edit', ()
 	})
 })
 
-describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () => {
+describe('RetirementAccumulationPlanner — derived figures', () => {
 	beforeEach(resetStores)
 	afterEach(resetStores)
 
@@ -829,14 +829,14 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 		await user.type(screen.getByLabelText('Expected Annual Return'), rate)
 	}
 
-	it('derives current amount saved from the investment-accounts total (AC-1)', () => {
+	it('derives current amount saved from the investment-accounts total', () => {
 		useBalanceStore.setState({ entries: [investmentRow(5_000_00)] })
 		renderWithProviders(<RetirementAccumulationPlanner />)
 
 		expect(screen.getByTestId('derived-current-saved')).toHaveTextContent('5,000.00')
 	})
 
-	it('derives monthly savings from investment CONTRIBUTIONS at mixed cadences (47.2 AC-1, AC-5)', () => {
+	it('derives monthly savings from investment CONTRIBUTIONS at mixed cadences', () => {
 		// Per-row rounding then sum (290834c) differs from sum then round (290833c).
 		useBalanceStore.setState({
 			entries: [
@@ -852,7 +852,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 		expect(screen.getByTestId('derived-monthly-savings')).not.toHaveTextContent('2,050.00')
 	})
 
-	it('clamps each ROW at zero, never the total (47.2 AC-1)', () => {
+	it('clamps each ROW at zero, never the total', () => {
 		// Per-row clamping: one clamp on the total would let a negative row eat another account's contribution.
 		useBalanceStore.setState({
 			entries: [
@@ -866,7 +866,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 		expect(screen.getByTestId('derived-monthly-savings')).not.toHaveTextContent('1,100.00')
 	})
 
-	it('discloses a clamped row WITHOUT claiming the figure was zeroed (47.2 AC-8)', async () => {
+	it('discloses a clamped row WITHOUT claiming the figure was zeroed', async () => {
 		const user = userEvent.setup()
 		// Fill the editable fields: resultsCaveat renders only inside a results branch.
 		useBalanceStore.setState({
@@ -887,7 +887,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 		expect(screen.queryByTestId('derived-floor-disclosure')).not.toBeInTheDocument()
 	})
 
-	it('tells a negative-only contributor the truth, not "add one" (47.2 AC-7, AC-8)', () => {
+	it('tells a negative-only contributor the truth, not "add one"', () => {
 		useBalanceStore.setState({
 			entries: [investmentRow(50_000_00, 'inv-1', { amount: -200_000 })],
 		})
@@ -901,7 +901,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 		expect(card).not.toHaveTextContent('have no monthly contribution set yet')
 	})
 
-	it('counts a contribution the user marked as already accounted for (47.2 AC-2)', () => {
+	it('counts a contribution the user marked as already accounted for', () => {
 		// contributionRecordedAsExpense only affects the savings pool; the money is still
 		// invested, so it must count here.
 		useBalanceStore.setState({
@@ -916,7 +916,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 		expect(screen.getByTestId('derived-monthly-savings')).not.toHaveTextContent('600.00')
 	})
 
-	it('no longer moves when income or expenses change (47.2 AC-4)', () => {
+	it('no longer moves when income or expenses change', () => {
 		useBalanceStore.setState({
 			entries: [investmentRow(0, 'inv-1', { amount: 75_000 })],
 		})
@@ -932,7 +932,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 		expect(screen.getByTestId('derived-monthly-savings')).not.toHaveTextContent('5,000.00')
 	})
 
-	it('renders neither derived figure as an editable control (AC-1, AC-2)', () => {
+	it('renders neither derived figure as an editable control', () => {
 		useBalanceStore.setState({
 			entries: [investmentRow(5_000_00, 'inv-1', { amount: 300_000 })],
 		})
@@ -946,7 +946,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 		expect(screen.queryByRole('textbox', { name: /Monthly Savings/ })).not.toBeInTheDocument()
 	})
 
-	it('updates both figures live when the underlying store changes (AC-3)', () => {
+	it('updates both figures live when the underlying store changes', () => {
 		renderWithProviders(<RetirementAccumulationPlanner />)
 		expect(screen.getByTestId('derived-current-saved')).toHaveTextContent('0.00')
 
@@ -960,7 +960,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 		expect(screen.getByTestId('derived-monthly-savings')).toHaveTextContent('2,500.00')
 	})
 
-	it('distinguishes no accounts from accounts with nothing going in (47.2 AC-6, AC-7)', () => {
+	it('distinguishes no accounts from accounts with nothing going in', () => {
 		const { unmount } = renderWithProviders(<RetirementAccumulationPlanner />)
 		expect(screen.getByTestId('derived-monthly-savings')).toHaveTextContent(
 			'Add an investment account on the Balance Tracking page, and say what you put in each month.'
@@ -976,7 +976,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 		expect(derived).not.toHaveTextContent('Add an investment account')
 	})
 
-	it('reports unreadable CONTRIBUTIONS, and names the page that holds them (47.2 AC-9)', () => {
+	it('reports unreadable CONTRIBUTIONS, and names the page that holds them', () => {
 		useBalanceStore.setState({
 			entries: [
 				{
@@ -993,7 +993,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 		expect(screen.getByLabelText('Current Age')).toBeInTheDocument()
 	})
 
-	it('COERCES a corrupt contribution cadence to monthly rather than failing (47.2 AC-9)', () => {
+	it('COERCES a corrupt contribution cadence to monthly rather than failing', () => {
 		// monthlyContributionCents coerces an unknown cadence to monthly, matching the savings pool.
 		useBalanceStore.setState({
 			entries: [
@@ -1020,7 +1020,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 		expect(derived).not.toHaveTextContent('Only investment accounts count toward your nest egg')
 	})
 
-	it('survives a corrupt persisted income row without reaching the ErrorBoundary (AC-6)', () => {
+	it('survives a corrupt persisted income row without reaching the ErrorBoundary', () => {
 		useBalanceStore.setState({
 			entries: [investmentRow(0, 'inv-1', { amount: 120_000 })],
 		})
@@ -1033,7 +1033,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 		expect(derivedValueOf('derived-monthly-savings')).toBe('1,200.00')
 	})
 
-	it('shows the FLOORED monthly savings, never a negative figure (AC-5)', async () => {
+	it('shows the FLOORED monthly savings, never a negative figure', async () => {
 		const user = userEvent.setup()
 		useBalanceStore.setState({
 			entries: [investmentRow(100_000_00, 'inv-1', { amount: -200_000 })],
@@ -1056,7 +1056,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 		).toBeGreaterThanOrEqual(100_000)
 	})
 
-	it('floors a NEGATIVE investment total the same way, and says so (AC-1, AC-5)', () => {
+	it('floors a NEGATIVE investment total the same way, and says so', () => {
 		useBalanceStore.setState({ entries: [investmentRow(-5_000_00)] })
 		renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -1066,7 +1066,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 		)
 	})
 
-	it('reports an unreadable balance instead of rendering a confident zero (AC-4, AC-6)', () => {
+	it('reports an unreadable balance instead of rendering a confident zero', () => {
 		useBalanceStore.setState({
 			entries: [{ ...investmentRow(0), currentBalance: Number.NaN } as unknown as never],
 		})
@@ -1089,7 +1089,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 		expect(derivedValueOf('derived-current-saved')).toBe('0.00')
 	})
 
-	it('warns in the results when a figure could not be read at all (AC-4)', async () => {
+	it('warns in the results when a figure could not be read at all', async () => {
 		const user = userEvent.setup()
 		useBalanceStore.setState({
 			entries: [
@@ -1123,7 +1123,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 		expect(screen.queryByTestId('derived-floor-disclosure')).not.toBeInTheDocument()
 	})
 
-	it('does not claim "no savings data" when the data exists but nets to zero (AC-7)', async () => {
+	it('does not claim "no savings data" when the data exists but nets to zero', async () => {
 		const user = userEvent.setup()
 		useBalanceStore.setState({
 			entries: [investmentRow(-5_000_00, 'inv-1', { amount: -200_000 })],
@@ -1153,7 +1153,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 		expect(screen.queryByText(/income and expenses to see how your savings grow/i)).toBeNull()
 	})
 
-	it('gives a user with no data the add-your-data branch, not "unreachable" (AC-7)', async () => {
+	it('gives a user with no data the add-your-data branch, not "unreachable"', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<RetirementAccumulationPlanner />)
 		await fillEditableFields(user, { age: '30', life: '85', income: '40000', rate: '6' })
@@ -1189,7 +1189,7 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 		).toBeInTheDocument()
 	})
 
-	it('discloses in the results that a floored figure was assumed to be zero (AC-4)', async () => {
+	it('discloses in the results that a floored figure was assumed to be zero', async () => {
 		const user = userEvent.setup()
 		useBalanceStore.setState({
 			entries: [investmentRow(100_000_00, 'inv-1', { amount: -200_000 })],
@@ -1204,11 +1204,11 @@ describe('RetirementAccumulationPlanner — derived figures (story 29.2)', () =>
 	})
 })
 
-describe('RetirementAccumulationPlanner — the monthly figure stops blaming income (story 47.2)', () => {
+describe('RetirementAccumulationPlanner — the monthly figure stops blaming income', () => {
 	beforeEach(resetStores)
 	afterEach(resetStores)
 
-	it('never ties the Monthly Savings card to income or expenses, in any state (AC-10)', () => {
+	it('never ties the Monthly Savings card to income or expenses, in any state', () => {
 		const states: [string, () => void][] = [
 			['no investment accounts', () => undefined],
 			[
@@ -1250,13 +1250,13 @@ describe('RetirementAccumulationPlanner — the monthly figure stops blaming inc
 		}
 	})
 
-	it('sends an unreadable monthly figure to the page that holds it (AC-10)', () => {
+	it('sends an unreadable monthly figure to the page that holds it', () => {
 		const copy = describeSolverError(new Error('Monthly savings must be a finite number'))
 		expect(copy).toMatch(/monthly\s+contributions\s+on\s+your\s+Balance\s+Tracking\s+page/i)
 		expect(copy).not.toMatch(/income|expenses/i)
 	})
 
-	it('offers a lever that can actually move the outcome (AC-10)', async () => {
+	it('offers a lever that can actually move the outcome', async () => {
 		const user = userEvent.setup()
 		useBalanceStore.setState({
 			entries: [investmentRow(1_000_00, 'inv-1', { amount: 5_000 })],
@@ -1281,7 +1281,7 @@ describe('RetirementAccumulationPlanner — the monthly figure stops blaming inc
 	})
 })
 
-describe('RetirementAccumulationPlanner — post-retirement return rate (story 35.3)', () => {
+describe('RetirementAccumulationPlanner — post-retirement return rate', () => {
 	beforeEach(resetStores)
 	afterEach(resetStores)
 
@@ -1297,7 +1297,7 @@ describe('RetirementAccumulationPlanner — post-retirement return rate (story 3
 		await user.type(field, value)
 	}
 
-	it('mirrors the accumulation rate until the user edits it (AC-2)', async () => {
+	it('mirrors the accumulation rate until the user edits it', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -1309,7 +1309,7 @@ describe('RetirementAccumulationPlanner — post-retirement return rate (story 3
 		expect(postRetirementField()).toHaveValue('8')
 	})
 
-	it('stops mirroring once edited, and the two then move independently (AC-2)', async () => {
+	it('stops mirroring once edited, and the two then move independently', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -1323,7 +1323,7 @@ describe('RetirementAccumulationPlanner — post-retirement return rate (story 3
 		expect(postRetirementField()).toHaveValue('3')
 	})
 
-	it('a lower post-retirement rate raises the requirement and delays retirement (AC-7)', async () => {
+	it('a lower post-retirement rate raises the requirement and delays retirement', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<RetirementAccumulationPlanner />)
 
@@ -1361,7 +1361,7 @@ describe('RetirementAccumulationPlanner — post-retirement return rate (story 3
 		).toBeInTheDocument()
 	})
 
-	it('both rate fields explain which phase they govern (AC-1, AC-10)', () => {
+	it('both rate fields explain which phase they govern', () => {
 		renderWithProviders(<RetirementAccumulationPlanner />)
 
 		expect(
@@ -1406,7 +1406,7 @@ describe('RetirementAccumulationPlanner — post-retirement return rate (story 3
 		).toBeInTheDocument()
 	})
 
-	it('names the real cause when the two rates overflow the requirement (AC-10)', async () => {
+	it('names the real cause when the two rates overflow the requirement', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<RetirementAccumulationPlanner />)
 		await fillReachableCase(user)
@@ -1418,7 +1418,7 @@ describe('RetirementAccumulationPlanner — post-retirement return rate (story 3
 		expect(panel).toHaveTextContent(/gap between your two return rates/)
 	})
 
-	it('keeps the growth chart on the accumulation rate only (AC-5)', async () => {
+	it('keeps the growth chart on the accumulation rate only', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<RetirementAccumulationPlanner />)
 		await fillReachableCase(user)
@@ -1432,7 +1432,7 @@ describe('RetirementAccumulationPlanner — post-retirement return rate (story 3
 	})
 })
 
-describe('RetirementAccumulationPlanner — assets stay OUT of the nest egg (Story 43.4, D6)', () => {
+describe('RetirementAccumulationPlanner — assets stay OUT of the nest egg', () => {
 	const balanceRow = (id: string, type: FinanceType, currentBalance: number) => ({
 		id,
 		type,
@@ -1470,7 +1470,7 @@ describe('RetirementAccumulationPlanner — assets stay OUT of the nest egg (Sto
 	})
 })
 
-describe('RetirementAccumulationPlanner — what not to count toward desired income (story 65.1, FR100)', () => {
+describe('RetirementAccumulationPlanner — what not to count toward desired income', () => {
 	beforeEach(resetStores)
 	afterEach(resetStores)
 
@@ -1510,7 +1510,7 @@ describe('RetirementAccumulationPlanner — what not to count toward desired inc
 	})
 })
 
-describe('RetirementAccumulationPlanner — expenses that end before retirement (story 65.2, FR101)', () => {
+describe('RetirementAccumulationPlanner — expenses that end before retirement', () => {
 	beforeEach(resetStores)
 	afterEach(resetStores)
 
@@ -1725,7 +1725,7 @@ describe('RetirementAccumulationPlanner — expenses that end before retirement 
 })
 
 // A number input drops the ',' keystroke, so both rate fields are type="text".
-describe('a decimal comma in the rate fields (story 110.1)', () => {
+describe('a decimal comma in the rate fields', () => {
 	beforeEach(resetStores)
 	afterEach(resetStores)
 

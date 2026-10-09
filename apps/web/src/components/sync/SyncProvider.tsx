@@ -9,7 +9,7 @@ const ActiveSync = lazyWithRetry(() =>
 	import('./ActiveSync').then((m) => ({ default: m.ActiveSync }))
 )
 
-interface SessionUser {
+type SessionUser = {
 	userId: string
 	subscriptionStatus: string
 }

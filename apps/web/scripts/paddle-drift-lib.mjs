@@ -71,7 +71,7 @@ export function checkPaddleJs(source, pinned) {
 		facts.push('ProfitWell isLoaded guard: present')
 	} else {
 		problems.push(
-			"The `window.profitwell?.isLoaded` guard in paddle.js's initPwSnippet (src/gateway/profitwell.gateway.ts) is gone or reshaped. The window.profitwell stub in apps/web/src/lib/paddle/checkout.ts (story sec-4, D1) may no longer stop ProfitWell, so live /pricing logs the blocked profitwell.js again. Re-read the source map and revisit sec-4 D1."
+			"The `window.profitwell?.isLoaded` guard in paddle.js's initPwSnippet (src/gateway/profitwell.gateway.ts) is gone or reshaped. The window.profitwell stub in apps/web/src/lib/paddle/checkout.ts may no longer stop ProfitWell, so live /pricing logs the blocked profitwell.js again. Re-read the source map and revisit whether the stub still works."
 		)
 	}
 
@@ -79,7 +79,7 @@ export function checkPaddleJs(source, pinned) {
 		facts.push('checkout frame allow="payment": present')
 	} else {
 		problems.push(
-			'The checkout iframe no longer sets allow="payment" (src/gateway/iframe.gateway.ts). Permissions-Policy payment=(…) in apps/web/src/server/middleware/security-headers.ts may now be pointless or wrong: re-read and revisit sec-4 AC-4.'
+			'The checkout iframe no longer sets allow="payment" (src/gateway/iframe.gateway.ts). Permissions-Policy payment=(…) in apps/web/src/server/middleware/security-headers.ts may now be pointless or wrong: re-read and revisit the payment policy.'
 		)
 	}
 

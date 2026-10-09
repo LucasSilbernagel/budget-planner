@@ -55,7 +55,7 @@ async function mountWithStuckEdit() {
 	return hook
 }
 
-describe('useSync not-synced notice (story 79.2)', () => {
+describe('useSync not-synced notice', () => {
 	it('appears after the 4th failed attempt, naming the entry, and not before', async () => {
 		const { result, unmount } = await mountWithStuckEdit()
 
@@ -149,7 +149,7 @@ describe('useSync not-synced notice (story 79.2)', () => {
 		second.unmount()
 	})
 
-	it('isSyncing is true for the WHOLE push, so "Try again" stays disabled (D5)', async () => {
+	it('isSyncing is true for the WHOLE push, so "Try again" stays disabled', async () => {
 		const { result, unmount } = await mountWithStuckEdit()
 		let release: (value: unknown) => void = () => undefined
 		send.mockImplementationOnce(

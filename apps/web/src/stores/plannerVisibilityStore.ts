@@ -7,7 +7,7 @@ import { persist } from 'zustand/middleware'
  */
 export const PLANNER_VISIBILITY_STORAGE_KEY = 'budget-planner-planner-visibility-v1'
 
-interface PlannerVisibilityState {
+type PlannerVisibilityState = {
 	showRetirementPlanner: boolean
 	setShowRetirementPlanner: (showRetirementPlanner: boolean) => void
 	toggleRetirementPlanner: () => void

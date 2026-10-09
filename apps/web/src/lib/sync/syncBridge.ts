@@ -35,7 +35,7 @@ function sanitizePlanStrings(plan: RetirementPlan): RetirementPlan {
 	return clean as unknown as RetirementPlan
 }
 
-export interface SyncBridgeHandle {
+export type SyncBridgeHandle = {
 	userId: string
 	queueCreate: (
 		entityType: SyncEntityType,

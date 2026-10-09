@@ -13,7 +13,7 @@ const KNOWN_FREQUENCIES: ReadonlySet<string> = new Set<Frequency>([
 	'annually',
 ])
 
-export interface NormalizableItem {
+export type NormalizableItem = {
 	amount: number
 	frequency: Frequency
 }
@@ -55,7 +55,7 @@ export function countUnreadableRows(rows: readonly unknown[]): number {
  * rawTotalCents sums readable rows only, and conversionApplied is explicit:
  * normalized == raw can still happen after a real conversion.
  */
-export interface ReadableRowsSummary {
+export type ReadableRowsSummary = {
 	rawTotalCents: number
 	unreadableCount: number
 	conversionApplied: boolean

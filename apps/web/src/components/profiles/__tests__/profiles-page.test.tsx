@@ -42,7 +42,7 @@ beforeEach(() => {
 })
 
 describe('ProfilesPage gating', () => {
-	it('shows the locked upgrade surface (Custom Profiles) and NO management UI for a free user — AC-1/AC-2', () => {
+	it('shows the locked upgrade surface (Custom Profiles) and NO management UI for a free user', () => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
 		render(<ProfilesPage />)
 
@@ -54,7 +54,7 @@ describe('ProfilesPage gating', () => {
 		expect(screen.queryByRole('button', { name: /new profile/i })).not.toBeInTheDocument()
 	})
 
-	it('renders the full management UI and NO prompt for an active premium user — AC-3', () => {
+	it('renders the full management UI and NO prompt for an active premium user', () => {
 		mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
 		render(<ProfilesPage />)
 
@@ -63,7 +63,7 @@ describe('ProfilesPage gating', () => {
 		expect(screen.queryByTestId('premium-prompt')).not.toBeInTheDocument()
 	})
 
-	it('shows neither the management UI nor the prompt while the tier is loading — AC-2 fail-closed', () => {
+	it('shows neither the management UI nor the prompt while the tier is loading (fail-closed)', () => {
 		mockStatus({ isLoading: true })
 		render(<ProfilesPage />)
 
@@ -73,7 +73,7 @@ describe('ProfilesPage gating', () => {
 	})
 })
 
-describe('ProfilesPage header (story 63.1)', () => {
+describe('ProfilesPage header', () => {
 	it('carries no switcher dropdown beside "+ New Profile"', () => {
 		mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
 		render(<ProfilesPage />)
@@ -90,7 +90,7 @@ describe('ProfilesPage header (story 63.1)', () => {
 	})
 })
 
-describe('ProfilesPage landmarks (story 116.1)', () => {
+describe('ProfilesPage landmarks', () => {
 	it.each([
 		['loading', { isLoading: true }],
 		['locked', { hasAccess: false, subscriptionStatus: 'free' as const }],
@@ -102,7 +102,7 @@ describe('ProfilesPage landmarks (story 116.1)', () => {
 	})
 })
 
-describe('ProfilesPage loading → resolved (story 117.2)', () => {
+describe('ProfilesPage loading → resolved', () => {
 	it.each([
 		['the locked prompt', { hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true }],
 		['the paid page', { hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true }],

@@ -127,7 +127,7 @@ beforeEach(() => {
 	useProfileStore.setState({ profiles: [], activeProfileId: null })
 })
 
-describe('AC-1/AC-3: a malformed server row is refused, not written', () => {
+describe('a malformed server row is refused, not written', () => {
 	it('a STRING currentBalance never reaches the store', async () => {
 		const result = await pullThrough([balanceChange({ currentBalance: '300000' })])
 		expect(useBalanceStore.getState().entries).toHaveLength(0)
@@ -201,7 +201,7 @@ describe('AC-1/AC-3: a malformed server row is refused, not written', () => {
 	})
 })
 
-describe('AC-1: a VALID row is written exactly as before — byte for byte', () => {
+describe('a VALID row is written exactly as before — byte for byte', () => {
 	it('writes the whole server payload, not a reshaped copy', async () => {
 		await pullThrough([incomeChange({})])
 
@@ -272,7 +272,7 @@ describe('AC-1: a VALID row is written exactly as before — byte for byte', () 
 	})
 })
 
-describe('AC-6: a tombstone is never validated', () => {
+describe('a tombstone is never validated', () => {
 	it('a tombstone carrying NO payload at all still deletes the row', async () => {
 		useBalanceStore.setState({
 			entries: [
@@ -335,7 +335,7 @@ describe('AC-6: a tombstone is never validated', () => {
 	})
 })
 
-describe('AC-7: a pull whose only row was refused does not perturb ordering or the active profile', () => {
+describe('a pull whose only row was refused does not perturb ordering or the active profile', () => {
 	it('the empty-id refusal inside the applier does not re-sort the collection', () => {
 		useIncomeStore.setState({
 			incomeSources: [
@@ -422,7 +422,7 @@ describe('AC-7: a pull whose only row was refused does not perturb ordering or t
 	})
 })
 
-describe('AC-5: a refusal is reported, not swallowed', () => {
+describe('a refusal is reported, not swallowed', () => {
 	it('warns once per rejected row, without leaking the financial value', async () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 		try {
@@ -452,7 +452,7 @@ describe('AC-5: a refusal is reported, not swallowed', () => {
 	})
 })
 
-describe('AC-5: the empty-id refusal is reported too', () => {
+describe('the empty-id refusal is reported too', () => {
 	it('warns when a change carries no entityId, instead of dropping it silently', async () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 		try {
@@ -490,7 +490,7 @@ describe('an unknown entity type is still ignored defensively, not warned about'
 	})
 })
 
-describe('story 75.4: the applier itself no longer validates — ONE validator, in core', () => {
+describe('the applier itself no longer validates — ONE validator, in core', () => {
 	it('writes a row the schema would refuse, when it is called directly', () => {
 		// Validation belongs in core's `pull()`, before last-writer-wins drops the queued edit;
 		// a second `safeParse` in `applyOne` turns this red.
@@ -508,7 +508,7 @@ describe('story 75.4: the applier itself no longer validates — ONE validator, 
 })
 
 /** The plan's pull gate is lenient on fields and strict on the envelope. */
-describe('the retirement plan through core pull (story 99.2)', () => {
+describe('the retirement plan through core pull', () => {
 	const LOCAL = { ...RETIREMENT_PLAN_DEFAULTS, currentAgeInput: '50' }
 	const planChange = (plan: unknown): ServerChange => ({
 		entityType: 'retirementPlan',

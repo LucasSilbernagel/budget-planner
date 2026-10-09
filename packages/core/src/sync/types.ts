@@ -184,7 +184,7 @@ export type SyncEntityType =
 
 export type SyncOperationType = 'create' | 'update' | 'delete'
 
-export interface SyncOperation {
+export type SyncOperation = {
 	id: string
 
 	type: SyncOperationType
@@ -219,7 +219,7 @@ export interface SyncOperation {
 }
 
 // Built from an entity row, not an op, so it has no deviceId; pull uses state-based LWW on `updatedAt`.
-export interface ServerChange {
+export type ServerChange = {
 	entityType: SyncEntityType
 
 	entityId: string
@@ -265,7 +265,7 @@ export function validateServerRow(change: ServerChange): ServerRowVerdict {
 }
 
 /** A refused pulled row. It carries no data or zod issues, so no value can leak through it. */
-export interface RefusedServerChange {
+export type RefusedServerChange = {
 	entityType: SyncEntityType
 	entityId: string
 	fields: string[]
@@ -284,7 +284,7 @@ export type OperationsRejectedCallback = (operations: SyncOperation[]) => void
 /** Includes an accepted op whose queue removal failed; never fired by a destroyed service. */
 export type OperationsSyncedCallback = (operations: SyncOperation[]) => void
 
-export interface PullResult {
+export type PullResult = {
 	success: boolean
 
 	changesPulledCount: number
@@ -318,7 +318,7 @@ export enum SyncStatus {
 	OFFLINE = 'OFFLINE',
 }
 
-export interface SyncState {
+export type SyncState = {
 	status: SyncStatus
 
 	lastSyncTimestamp: number | null
@@ -348,7 +348,7 @@ export interface SyncState {
 	retryCount: number
 }
 
-export interface ConflictResult {
+export type ConflictResult = {
 	hasConflict: boolean
 
 	conflictType?: ConflictType
@@ -379,7 +379,7 @@ export type ConflictResolutionStrategy =
 	| 'manual'
 	| 'merge'
 
-export interface ProcessOperationResult {
+export type ProcessOperationResult = {
 	success: boolean
 	conflict?: boolean
 	error?: string
@@ -390,7 +390,7 @@ export interface ProcessOperationResult {
 
 export type ProcessOperationFn = (operation: SyncOperation) => Promise<ProcessOperationResult>
 
-export interface SyncConfig {
+export type SyncConfig = {
 	conflictResolutionStrategy: ConflictResolutionStrategy
 
 	maxRetries: number
@@ -415,7 +415,7 @@ export interface SyncConfig {
 	profileId?: string
 }
 
-export interface SyncResult {
+export type SyncResult = {
 	success: boolean
 
 	synchronizedCount: number
@@ -435,7 +435,7 @@ export type SyncStatusCallback = (state: SyncState) => void
 
 export type ConflictCallback = (conflict: ConflictResult) => void
 
-export interface SyncQueueStorage {
+export type SyncQueueStorage = {
 	loadQueue: (userId: string) => Promise<SyncOperation[]>
 
 	saveQueue: (userId: string, queue: SyncOperation[]) => Promise<void>

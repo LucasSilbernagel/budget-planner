@@ -103,7 +103,7 @@ beforeAll(async () => {
 	svg = await readFile(sourcePath)
 })
 
-describe('every committed raster is regenerated from favicon.svg (story 40.2, AC-3)', () => {
+describe('every committed raster is regenerated from favicon.svg', () => {
 	it('checks the complete asset set, so a shrunken list cannot pass vacuously', () => {
 		expect(RASTERS.map((entry) => entry.name)).toEqual([
 			'favicon-16.png',
@@ -146,7 +146,7 @@ describe('every committed raster is regenerated from favicon.svg (story 40.2, AC
 })
 
 // Measured from rendered pixels, never from the generator's `safeZone` constant (tautological).
-describe('the maskable icon survives the platform safe-area crop (story 40.2, AC-5)', () => {
+describe('the maskable icon survives the platform safe-area crop', () => {
 	const SIZE = 512
 	const SAFE_ZONE_FRACTION = 0.8
 
@@ -227,7 +227,7 @@ function modalColour(data: Buffer, channels: number): number[] {
 
 // 3:1 is WCAG SC 1.4.11 for graphical objects (4.5:1 is for text). Stroke assertion covers
 // the axis-aligned stem only; the diagonal tick always anti-aliases.
-describe('the 16x16 raster clears its legibility floor (story 40.2, AC-4)', () => {
+describe('the 16x16 raster clears its legibility floor', () => {
 	const luminance = (rgb: number[]) => {
 		const [r, g, b] = rgb.map((channel) => {
 			const value = channel / 255

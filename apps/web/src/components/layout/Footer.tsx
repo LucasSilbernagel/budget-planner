@@ -5,7 +5,7 @@ import { Link } from '@tanstack/react-router'
 
 type FooterPath = '/pricing' | '/docs' | '/terms' | '/privacy' | '/refund' | '/contact'
 
-interface FooterLink {
+type FooterLink = {
 	label: string
 	to: FooterPath
 }

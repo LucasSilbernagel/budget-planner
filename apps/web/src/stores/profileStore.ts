@@ -6,7 +6,7 @@ import { cascadeProfileRowRemoval } from '../lib/profile-cascade'
 import { sortProfilesOldestFirst } from '../lib/profile-order'
 import { syncEntityCreate, syncEntityDelete, syncEntityUpdate } from '../lib/sync/syncBridge'
 
-export interface Profile {
+export type Profile = {
 	id: string
 	userId: string
 	name: string
@@ -17,7 +17,7 @@ export interface Profile {
 	updatedAt: string
 }
 
-export interface ClientProfile {
+export type ClientProfile = {
 	id: string
 	userId: string
 	name: string
@@ -29,7 +29,7 @@ export interface ClientProfile {
 	updatedAt?: string
 }
 
-export interface ProfileState {
+export type ProfileState = {
 	profiles: ClientProfile[]
 
 	activeProfileId: string | null

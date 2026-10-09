@@ -203,7 +203,7 @@ afterEach(() => {
 	seams.beforeInsert = null
 })
 
-describe('a forecast save interleaves with the cascade of its profile (AC-1)', () => {
+describe('a forecast save interleaves with the cascade of its profile', () => {
 	it('a cascade that commits at the save\u2019s first write step leaves no forecast under the tombstone', async () => {
 		// Fire the cascade at the save's first top-level write (transaction open or INSERT);
 		// `firedAt` makes a refactor that moves the write off both seams fail here.
@@ -321,7 +321,7 @@ describe('a malformed scenario is refused before anything is written (Task 2, co
 })
 
 /** The only automated protection of the per-user lock: the race test passes without it. */
-describe('the forecast save locks the user first (AC-2)', () => {
+describe('the forecast save locks the user first', () => {
 	const LOCK = { sql: 'select "id" from "users" where "users"."id" = $1 for share', params: [USER] }
 
 	it('the first statement of its transaction is the reader lock on the users row', async () => {

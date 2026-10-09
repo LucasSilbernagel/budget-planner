@@ -20,7 +20,7 @@ export default function globalTeardown(): void {
 	})
 	if (hits.length > 0) {
 		throw new Error(
-			`A dev server re-optimized a dependency during the run and reloaded every open page (story 85.2). Add the dependency to \`optimizeDeps.include\` in vite.config.ts.\n${hits.join(
+			`A dev server re-optimized a dependency during the run and reloaded every open page. Add the dependency to \`optimizeDeps.include\` in vite.config.ts.\n${hits.join(
 				'\n'
 			)}`
 		)

@@ -83,7 +83,7 @@ describe('the canonical Premium benefit set is the same on every surface', () =>
 		expect(new Set(PREMIUM_BENEFIT_IDS).size).toBe(PREMIUM_BENEFIT_IDS.length)
 	})
 
-	it('pins the CONTENT of the tuple, not just that surfaces follow it (story 5-20, AC-3)', () => {
+	it('pins the CONTENT of the tuple, not just that surfaces follow it', () => {
 		// The order is a product decision (sync last); every other assertion only follows the tuple.
 		expect(PREMIUM_BENEFIT_IDS).toEqual(['forecasting', 'report', 'profiles', 'categories', 'sync'])
 	})
@@ -140,7 +140,7 @@ describe('the canonical Premium benefit set is the same on every surface', () =>
 		expect(dialogItems.map((li) => li.textContent?.trim())).toEqual(expected)
 	})
 
-	it('"Downloadable" is the upgrade prompt\'s wording only; other surfaces keep the plain name (story 95.1, D1)', () => {
+	it('"Downloadable" is the upgrade prompt\'s wording only; other surfaces keep the plain name', () => {
 		expect(PROMPT_COPY.report).toBe('Downloadable Financial Summary Report')
 		const overviewReport = OVERVIEW_BENEFITS.report
 		if (overviewReport.activation === 'none') throw new Error('report must be activatable')

@@ -162,7 +162,7 @@ export function isCanonicalHttpsRequest(
 	return requested.host === canonical.host
 }
 
-export interface SecurityHeaderOptions {
+export type SecurityHeaderOptions = {
 	isDev: boolean
 	/** HSTS is emitted only when TLS is confirmed; the container itself speaks plain HTTP. */
 	isHttps: boolean

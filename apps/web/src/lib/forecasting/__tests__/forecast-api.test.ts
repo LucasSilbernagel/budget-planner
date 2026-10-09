@@ -54,7 +54,7 @@ describe('requests', () => {
 		expect(JSON.parse(String(init.body))).toEqual(input)
 	})
 
-	it('an update sends the input as a JSON body (story 97.1)', async () => {
+	it('an update sends the input as a JSON body', async () => {
 		fetchMock.mockResolvedValue(answer({ success: true, data: { id: 7 } }))
 		const input = { name: 'Plan', description: 'd', scenarioData: { scenario: {} } }
 

@@ -54,18 +54,18 @@ describe('BalancePage add balance entry button', () => {
 		useBalanceStore.setState({ entries: [] })
 	})
 
-	it('renders a visible Add Balance Entry button on load (AC-1)', () => {
+	it('renders a visible Add Balance Entry button on load', () => {
 		renderWithProviders(<BalancePage />)
 		expect(screen.getByTestId('balance-add-button')).toBeInTheDocument()
 	})
 
-	it('keeps the Add Balance Entry button visible when the list is empty (AC-3)', () => {
+	it('keeps the Add Balance Entry button visible when the list is empty', () => {
 		renderWithProviders(<BalancePage />)
 		expect(screen.getByText('No balance entries recorded yet')).toBeInTheDocument()
 		expect(screen.getByTestId('balance-add-button')).toBeInTheDocument()
 	})
 
-	it('opens the add modal when the button is clicked (AC-2)', async () => {
+	it('opens the add modal when the button is clicked', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<BalancePage />)
 
@@ -76,7 +76,7 @@ describe('BalancePage add balance entry button', () => {
 		expect(dialog).toBeInTheDocument()
 	})
 
-	it('creates an entry via the modal and it appears in the list (AC-2)', async () => {
+	it('creates an entry via the modal and it appears in the list', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<BalancePage />)
 
@@ -93,7 +93,7 @@ describe('BalancePage add balance entry button', () => {
 		expect(useBalanceStore.getState().entries).toHaveLength(1)
 	})
 
-	it('resets the form when reopened for a new add after an edit (AC-4)', async () => {
+	it('resets the form when reopened for a new add after an edit', async () => {
 		const user = userEvent.setup()
 		useBalanceStore.getState().addBalanceEntry({
 			type: 'investment',
@@ -118,7 +118,7 @@ describe('BalancePage add balance entry button', () => {
 		expect(within(addDialog).getByLabelText(/current balance/i)).toHaveValue('')
 	})
 
-	it('restores focus to the Add button after the modal closes (AC-5)', async () => {
+	it('restores focus to the Add button after the modal closes', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<BalancePage />)
 
@@ -202,7 +202,7 @@ describe('BalancePage inline validation', () => {
 		expect(useBalanceStore.getState().entries).toHaveLength(0)
 	})
 
-	it('clears the error after correction and a valid submit succeeds (AC-3)', async () => {
+	it('clears the error after correction and a valid submit succeeds', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<BalancePage />)
 
@@ -230,7 +230,7 @@ describe('BalancePage inline validation', () => {
 })
 
 // Section order is load-bearing: an e2e theme check reads the first `.surface`.
-describe('BalancePage section composition (43.1)', () => {
+describe('BalancePage section composition', () => {
 	afterEach(() => {
 		useBalanceStore.setState({ entries: [] })
 	})
@@ -354,7 +354,7 @@ describe('BalancePage form controls have a visible focus ring', () => {
 	})
 })
 
-describe('BalancePage mobile card presentation (story 31.2)', () => {
+describe('BalancePage mobile card presentation', () => {
 	const ISO_31_2 = '2026-01-01T00:00:00.000Z'
 
 	beforeEach(() => {
@@ -417,7 +417,7 @@ describe('BalancePage mobile card presentation (story 31.2)', () => {
 		expect(within(row).getByRole('button', { name: 'Delete Car Loan' })).toBeInTheDocument()
 	})
 
-	it('a legacy NEGATIVE debt opens as the amount owed, and a plain save stores it positive (Story 103.1, D2)', async () => {
+	it('a legacy NEGATIVE debt opens as the amount owed, and a plain save stores it positive', async () => {
 		// The fixture stores this debt negative (setState skips the validator); without the
 		// pre-fill the row could not be saved without retyping.
 		const user = userEvent.setup()
@@ -432,7 +432,7 @@ describe('BalancePage mobile card presentation (story 31.2)', () => {
 		expect(saved?.paymentExpenseId).toBe('exp-car')
 	})
 
-	it('labels exactly the five Balance Entries fields on the card (AC-4)', () => {
+	it('labels exactly the five Balance Entries fields on the card', () => {
 		const { container } = renderWithProviders(<BalancePage />)
 		const row = rowIn(tables(container).entries, 'Car Loan')
 
@@ -460,7 +460,7 @@ describe('BalancePage mobile card presentation (story 31.2)', () => {
 		expect(screen.getAllByText('Car Loan')).toHaveLength(1)
 	})
 
-	it('declares the shared card classes on the entries table (AC-8)', () => {
+	it('declares the shared card classes on the entries table', () => {
 		const { container } = renderWithProviders(<BalancePage />)
 		const { entries } = tables(container)
 
@@ -473,7 +473,7 @@ describe('BalancePage mobile card presentation (story 31.2)', () => {
 		expect([...rowIn(entries, 'Brokerage').classList]).toContain('max-sm:block')
 	})
 
-	it('every row Edit/Delete button carries a focus ring with a colour (AC-5)', () => {
+	it('every row Edit/Delete button carries a focus ring with a colour', () => {
 		const { container } = renderWithProviders(<BalancePage />)
 		const row = rowIn(tables(container).entries, 'Car Loan')
 		for (const label of ['Edit Car Loan', 'Delete Car Loan']) {
@@ -481,7 +481,7 @@ describe('BalancePage mobile card presentation (story 31.2)', () => {
 		}
 	})
 
-	it('declares a >= 44px mobile tap target on each row action, scoped to max-sm (AC-6)', () => {
+	it('declares a >= 44px mobile tap target on each row action, scoped to max-sm', () => {
 		const { container } = renderWithProviders(<BalancePage />)
 		const row = rowIn(tables(container).entries, 'Car Loan')
 		for (const label of ['Edit Car Loan', 'Delete Car Loan']) {
@@ -489,7 +489,7 @@ describe('BalancePage mobile card presentation (story 31.2)', () => {
 		}
 	})
 
-	it('offers exactly Edit and Delete in a row action cell (48.2 AC-1, AC-15)', () => {
+	it('offers exactly Edit and Delete in a row action cell', () => {
 		const { container } = renderWithProviders(<BalancePage />)
 		const cell = rowIn(tables(container).entries, 'Car Loan').querySelector(
 			'td:last-child'
@@ -501,7 +501,7 @@ describe('BalancePage mobile card presentation (story 31.2)', () => {
 		).toEqual(['Edit Car Loan', 'Delete Car Loan'])
 	})
 
-	it('renders each row action as an aria-hidden icon with no visible label (50.1 AC-1, AC-3, AC-9)', () => {
+	it('renders each row action as an aria-hidden icon with no visible label', () => {
 		const { container } = renderWithProviders(<BalancePage />)
 		const cell = rowIn(tables(container).entries, 'Car Loan').querySelector(
 			'td:last-child'
@@ -513,7 +513,7 @@ describe('BalancePage mobile card presentation (story 31.2)', () => {
 		expect(geometry[0], 'Edit and Delete render the same glyph').not.toBe(geometry[1])
 	})
 
-	it('introduces no retired surface/text tokens in the table region (AC-7)', () => {
+	it('introduces no retired surface/text tokens in the table region', () => {
 		const { container } = renderWithProviders(<BalancePage />)
 		const { entries } = tables(container)
 		expect(collectRetiredTokenViolations(entries)).toEqual([])
@@ -521,7 +521,7 @@ describe('BalancePage mobile card presentation (story 31.2)', () => {
 })
 
 // investments 2,000,000c + savings 300,000c − debts 15,000,000c = −12,700,000c
-describe('BalancePage net worth includes savings (Story 32.2)', () => {
+describe('BalancePage net worth includes savings', () => {
 	const clearStores = () => {
 		useBalanceStore.setState({ entries: [] })
 		useSavingsStore.setState({ savingsGoals: [] })
@@ -561,7 +561,7 @@ describe('BalancePage net worth includes savings (Story 32.2)', () => {
 		add({ name: 'Rainy day', targetAmount: null, currentBalance: 50_000 })
 	}
 
-	it('adds savings into the Net Worth figure (AC-4)', () => {
+	it('adds savings into the Net Worth figure', () => {
 		seedBalances()
 		seedSavings()
 		renderWithProviders(<BalancePage />)
@@ -569,7 +569,7 @@ describe('BalancePage net worth includes savings (Story 32.2)', () => {
 		expect(screen.getByTestId('stat-net-worth')).toHaveTextContent('-127,000.00')
 	})
 
-	it('no longer shows the pre-32.2 investments-minus-debts figure (AC-4)', () => {
+	it('no longer shows the pre-32.2 investments-minus-debts figure', () => {
 		seedBalances()
 		seedSavings()
 		renderWithProviders(<BalancePage />)
@@ -577,7 +577,7 @@ describe('BalancePage net worth includes savings (Story 32.2)', () => {
 		expect(screen.getByTestId('stat-net-worth')).not.toHaveTextContent('-130,000.00')
 	})
 
-	it('renders a fourth read-only Savings stat card so the arithmetic reconciles (AC-4)', () => {
+	it('renders a fourth read-only Savings stat card so the arithmetic reconciles', () => {
 		seedBalances()
 		seedSavings()
 		renderWithProviders(<BalancePage />)
@@ -596,7 +596,7 @@ describe('BalancePage net worth includes savings (Story 32.2)', () => {
 		).toBeCloseTo(toNumber('stat-net-worth'), 2)
 	})
 
-	it('shows a positive net worth equal to savings for a savings-only user (AC-6)', () => {
+	it('shows a positive net worth equal to savings for a savings-only user', () => {
 		seedSavings()
 		renderWithProviders(<BalancePage />)
 
@@ -604,7 +604,7 @@ describe('BalancePage net worth includes savings (Story 32.2)', () => {
 		expect(screen.getByTestId('stat-net-worth').textContent?.trim()).toBe('3,000.00')
 	})
 
-	it('shows the negated debt total for a debt-only user (AC-6)', () => {
+	it('shows the negated debt total for a debt-only user', () => {
 		useBalanceStore.getState().addBalanceEntry({
 			type: 'debt',
 			name: 'Mortgage',
@@ -617,7 +617,7 @@ describe('BalancePage net worth includes savings (Story 32.2)', () => {
 		expect(screen.getByTestId('stat-net-worth')).toHaveTextContent('-150,000.00')
 	})
 
-	it('shows zero with no rows at all, and no NaN (AC-6)', () => {
+	it('shows zero with no rows at all, and no NaN', () => {
 		renderWithProviders(<BalancePage />)
 
 		const netWorth = screen.getByTestId('stat-net-worth')
@@ -627,7 +627,7 @@ describe('BalancePage net worth includes savings (Story 32.2)', () => {
 	})
 })
 
-describe('BalancePage — sort by column (34.2)', () => {
+describe('BalancePage — sort by column', () => {
 	const SEED = [
 		{
 			type: 'investment' as const,
@@ -727,7 +727,7 @@ describe('BalancePage — sort by column (34.2)', () => {
 		expect(actions).not.toHaveAttribute('aria-sort')
 	})
 
-	it('describes its headers and announces a header click, not a picker change (120.1)', async () => {
+	it('describes its headers and announces a header click, not a picker change', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<BalancePage />)
 		await expectSortHeaderAnnouncements(user, 'Sort balance entries')
@@ -773,7 +773,7 @@ describe('BalancePage — sort by column (34.2)', () => {
 		expect(orderIn(entriesTable())).toEqual(['Beta', 'Alpha', 'Zeta', 'Mid'])
 	})
 
-	it('sorts a LEGACY negative debt by the amount owed it shows (Story 103.1, rule 2)', async () => {
+	it('sorts a LEGACY negative debt by the amount owed it shows', async () => {
 		// A legacy negative row shows 500.00, so it must sort as 500, not first as raw -500.
 		useBalanceStore.setState({
 			entries: useBalanceStore
@@ -813,7 +813,7 @@ describe('BalancePage — sort by column (34.2)', () => {
 		return screen.getByRole('combobox', { name: 'Sort balance entries' }) as HTMLSelectElement
 	}
 
-	it('offers the mobile sort control whether or not a sort is active (48.1 AC-1)', async () => {
+	it('offers the mobile sort control whether or not a sort is active', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<BalancePage />)
 
@@ -824,7 +824,7 @@ describe('BalancePage — sort by column (34.2)', () => {
 		expect(sortControl().value).toBe('name:asc')
 	})
 
-	it('sorts from the mobile control and drives the SAME state as the headers (48.1 AC-2)', async () => {
+	it('sorts from the mobile control and drives the SAME state as the headers', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<BalancePage />)
 
@@ -835,7 +835,7 @@ describe('BalancePage — sort by column (34.2)', () => {
 		expect(header('Name')).toHaveAttribute('aria-sort', 'descending')
 	})
 
-	it('returns to manual order from the mobile control (48.1 AC-4)', async () => {
+	it('returns to manual order from the mobile control', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<BalancePage />)
 
@@ -852,7 +852,7 @@ describe('BalancePage — sort by column (34.2)', () => {
 		expect(collectRetiredTokenViolations(entriesTable())).toEqual([])
 	})
 
-	it('enqueues NOTHING on a PAID session — sorting is read-only over the store (AC-8)', async () => {
+	it('enqueues NOTHING on a PAID session — sorting is read-only over the store', async () => {
 		// Registered and paid: an unregistered spy can never be called, and only the paid
 		// tier has a sync path.
 		const spies = {
@@ -920,7 +920,7 @@ describe('BalancePage — sort by column (34.2)', () => {
 		expect(screen.getByRole('button', { name: 'Edit Zeta' })).toBe(before)
 	})
 
-	it('places an unreadable contribution LAST without blanking the page (AC-4)', async () => {
+	it('places an unreadable contribution LAST without blanking the page', async () => {
 		// Balance passes an adapted `isReadableRow` shape. `sortOrder: -1` puts the row first
 		// manually, so "last under the sort" is not an accident of position.
 		const user = userEvent.setup()
@@ -981,7 +981,7 @@ const MORTGAGE_DOC_LINK_NAME = 'Where a mortgage belongs'
 
 // Present and absent claims are separate `it()` blocks so an inverted gate and a
 // deleted gate body fail differently.
-describe('BalancePage — debt guidance (36.3)', () => {
+describe('BalancePage — debt guidance', () => {
 	beforeEach(() => {
 		useBalanceStore.setState({ entries: [] })
 	})
@@ -1028,7 +1028,7 @@ describe('BalancePage — debt guidance (36.3)', () => {
 	})
 })
 
-describe('BalancePage — the asset type (Story 43.4, FR70, AC-1/AC-4)', () => {
+describe('BalancePage — the asset type', () => {
 	beforeEach(() => {
 		useBalanceStore.setState({ entries: [] })
 	})
@@ -1048,7 +1048,7 @@ describe('BalancePage — the asset type (Story 43.4, FR70, AC-1/AC-4)', () => {
 		expect((select as HTMLSelectElement).value).toBe('asset')
 	})
 
-	it('asks an asset for NO contribution or frequency (D2)', async () => {
+	it('asks an asset for NO contribution or frequency', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<BalancePage />)
 
@@ -1070,7 +1070,7 @@ describe('BalancePage — the asset type (Story 43.4, FR70, AC-1/AC-4)', () => {
 		expect(within(dialog).getByTestId('balance-asset-hint')).toBeInTheDocument()
 	})
 
-	it('states the asset hint verbatim, including the loan pointer and the down payment (49.2, AC-3/AC-14)', async () => {
+	it('states the asset hint verbatim, including the loan pointer and the down payment', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<BalancePage />)
 
@@ -1152,7 +1152,7 @@ describe('BalancePage — the asset type (Story 43.4, FR70, AC-1/AC-4)', () => {
 	})
 })
 
-describe('BalancePage — mortgage guidance link and contrast token (49.2)', () => {
+describe('BalancePage — mortgage guidance link and contrast token', () => {
 	beforeEach(() => {
 		useBalanceStore.setState({ entries: [] })
 	})
@@ -1169,21 +1169,21 @@ describe('BalancePage — mortgage guidance link and contrast token (49.2)', () 
 		return within(dialog).getByTestId(`balance-${type}-hint`)
 	}
 
-	it('the pinned href resolves to a real doc page, not just a matching string (AC-1)', () => {
+	it('the pinned href resolves to a real doc page, not just a matching string', () => {
 		// The only assertion that survives a slug rename: the rest compare against
 		// `MORTGAGE_DOC_HREF`, which moves with it.
 		expect(getDocPage(MORTGAGE_DOC_SLUG)?.title).toBe(MORTGAGE_DOC_LINK_NAME)
 	})
 
 	for (const type of ['debt', 'asset'] as const) {
-		it(`links the ${type} hint to the mortgage guidance doc (AC-1/AC-2)`, async () => {
+		it(`links the ${type} hint to the mortgage guidance doc`, async () => {
 			const hint = await openArm(type)
 
 			const link = within(hint).getByRole('link', { name: MORTGAGE_DOC_LINK_NAME })
 			expect(link.getAttribute('href')).toBe(MORTGAGE_DOC_HREF)
 		})
 
-		it(`keeps the ${type} hint on the token that passes AA in both themes (AC-5)`, async () => {
+		it(`keeps the ${type} hint on the token that passes AA in both themes`, async () => {
 			const hint = await openArm(type)
 
 			expect([...hint.classList]).toContain('text-muted')
@@ -1192,7 +1192,7 @@ describe('BalancePage — mortgage guidance link and contrast token (49.2)', () 
 	}
 })
 
-describe('BalancePage — contributionRecordedAsExpense is investment-only (Story 45.1)', () => {
+describe('BalancePage — contributionRecordedAsExpense is investment-only', () => {
 	beforeEach(() => {
 		useBalanceStore.setState({ entries: [] })
 	})
@@ -1306,7 +1306,7 @@ describe('BalancePage — contributionRecordedAsExpense is investment-only (Stor
 	})
 })
 
-describe('BalancePage — the contribution control serves both populations (Story 47.1)', () => {
+describe('BalancePage — the contribution control serves both populations', () => {
 	beforeEach(() => {
 		useBalanceStore.setState({ entries: [] })
 	})
@@ -1321,14 +1321,14 @@ describe('BalancePage — the contribution control serves both populations (Stor
 		return screen.getByRole('dialog', { name: 'Add Balance Entry' })
 	}
 
-	it('AC-1: the label states the EFFECT rather than one of the two causes', async () => {
+	it('the label states the EFFECT rather than one of the two causes', async () => {
 		const dialog = await openInvestmentForm()
 		expect(within(dialog).getByLabelText(/Not\s+taken\s+from\s+the\s+money\s+left\s+over/i)).toBe(
 			within(dialog).getByTestId('balance-contribution-recorded-as-expense')
 		)
 	})
 
-	it('AC-1(a): the payroll arm is CONJUNCTIVE, so a gross-income user answers no', async () => {
+	it('the payroll arm is CONJUNCTIVE, so a gross-income user answers no', async () => {
 		const dialog = await openInvestmentForm()
 		const help = within(dialog).getByText(/Tick this if the contribution/i)
 
@@ -1345,7 +1345,7 @@ describe('BalancePage — the contribution control serves both populations (Stor
 		expect(help.textContent?.match(/comes\s+out\s+of\s+your\s+pay/gi)?.length).toBe(1)
 	})
 
-	it('AC-1(b,c): it also names the expense-listing arm and resolves the both-at-once case', async () => {
+	it('it also names the expense-listing arm and resolves the both-at-once case', async () => {
 		const dialog = await openInvestmentForm()
 		const help = within(dialog).getByText(/Tick this if the contribution/i)
 
@@ -1354,12 +1354,12 @@ describe('BalancePage — the contribution control serves both populations (Stor
 		expect(help.textContent).toMatch(/Savings\s+page\s+doesn't\s+subtract\s+it\s+twice/i)
 	})
 
-	it('AC-2: the control never says "net" (story 46.1 removed that word from income copy)', async () => {
+	it('the control never says "net" (removed from income copy)', async () => {
 		const dialog = await openInvestmentForm()
 		expect(dialog.textContent).not.toMatch(/\bnet\b(?!\s+worth)/i)
 	})
 
-	it('AC-3: the help text is the checkbox’s accessible description', async () => {
+	it('the help text is the checkbox’s accessible description', async () => {
 		const dialog = await openInvestmentForm()
 		// A string pin on `aria-describedby` passes for an id that resolves to nothing.
 		expect(
@@ -1368,7 +1368,7 @@ describe('BalancePage — the contribution control serves both populations (Stor
 	})
 })
 
-describe('BalancePage — the modal asks exactly the right fields per type (story 49.1)', () => {
+describe('BalancePage — the modal asks exactly the right fields per type', () => {
 	beforeEach(() => {
 		useBalanceStore.setState({ entries: [] })
 	})
@@ -1412,7 +1412,7 @@ describe('BalancePage — the modal asks exactly the right fields per type (stor
 	})
 
 	it.each(['investment', 'debt', 'asset'])(
-		'labels the balance field the same way for a %s (AC-12)',
+		'labels the balance field the same way for a %s',
 		async (type) => {
 			const user = userEvent.setup()
 			renderWithProviders(<BalancePage />)
@@ -1436,7 +1436,7 @@ describe('BalancePage — the modal asks exactly the right fields per type (stor
 
 // The jurisdiction ban is asserted on the strings, never the file: names like
 // `401k` are legitimate fixtures here.
-describe('BalancePage — the Name placeholder follows the Type dropdown (story 52.1)', () => {
+describe('BalancePage — the Name placeholder follows the Type dropdown', () => {
 	beforeEach(() => {
 		useBalanceStore.setState({ entries: [] })
 	})
@@ -1477,29 +1477,26 @@ describe('BalancePage — the Name placeholder follows the Type dropdown (story 
 	}
 
 	// Driven off FINANCE_TYPES so a new finance type is exercised here too.
-	it.each(FINANCE_TYPES)(
-		'offers examples of a %s once that type is chosen (AC-1, AC-2)',
-		async (type) => {
-			renderWithProviders(<BalancePage />)
-			const { user, dialog } = await openAddDialog()
-			// Selected unconditionally so the investment option's `value` is exercised too.
-			await selectType(user, dialog, type)
+	it.each(FINANCE_TYPES)('offers examples of a %s once that type is chosen', async (type) => {
+		renderWithProviders(<BalancePage />)
+		const { user, dialog } = await openAddDialog()
+		// Selected unconditionally so the investment option's `value` is exercised too.
+		await selectType(user, dialog, type)
 
-			const placeholder = placeholderIn(dialog)
+		const placeholder = placeholderIn(dialog)
 
-			expect(placeholder).toMatch(/^e\.g\., \S/)
-			expect(placeholder).toMatch(DISTINGUISHING[type])
+		expect(placeholder).toMatch(/^e\.g\., \S/)
+		expect(placeholder).toMatch(DISTINGUISHING[type])
 
-			for (const [other, patterns] of Object.entries(OWNED_NOUNS)) {
-				if (other === type) continue
-				for (const pattern of patterns) {
-					expect(placeholder, `a ${type} must not show a ${other} example`).not.toMatch(pattern)
-				}
+		for (const [other, patterns] of Object.entries(OWNED_NOUNS)) {
+			if (other === type) continue
+			for (const pattern of patterns) {
+				expect(placeholder, `a ${type} must not show a ${other} example`).not.toMatch(pattern)
 			}
 		}
-	)
+	})
 
-	it('changes the example as the type changes, within one render (AC-1)', async () => {
+	it('changes the example as the type changes, within one render', async () => {
 		renderWithProviders(<BalancePage />)
 		const { user, dialog } = await openAddDialog()
 
@@ -1516,7 +1513,7 @@ describe('BalancePage — the Name placeholder follows the Type dropdown (story 
 		expect(new Set([investment, debt, asset]).size).toBe(3)
 	})
 
-	it('follows a type change made inside the edit dialog (AC-4)', async () => {
+	it('follows a type change made inside the edit dialog', async () => {
 		const user = userEvent.setup()
 		// Seeded as an asset so the initial assertion is not the default type.
 		useBalanceStore.getState().addBalanceEntry({
@@ -1540,7 +1537,7 @@ describe('BalancePage — the Name placeholder follows the Type dropdown (story 
 		expect(after).not.toBe(before)
 	})
 
-	it('offers no cash or savings example on the asset arm (52.1 review reversal)', async () => {
+	it('offers no cash or savings example on the asset arm', async () => {
 		renderWithProviders(<BalancePage />)
 		const { user, dialog } = await openAddDialog()
 		await selectType(user, dialog, 'asset')
@@ -1580,23 +1577,20 @@ describe('BalancePage — the Name placeholder follows the Type dropdown (story 
 		expect(placeholderIn(dialog)).toMatch(/^e\.g\., \S/)
 	})
 
-	it.each(FINANCE_TYPES)(
-		'names no single-country product in the %s example (AC-6, AC-7)',
-		async (type) => {
-			renderWithProviders(<BalancePage />)
-			const { user, dialog } = await openAddDialog()
-			await selectType(user, dialog, type)
+	it.each(FINANCE_TYPES)('names no single-country product in the %s example', async (type) => {
+		renderWithProviders(<BalancePage />)
+		const { user, dialog } = await openAddDialog()
+		await selectType(user, dialog, type)
 
-			const placeholder = placeholderIn(dialog)
+		const placeholder = placeholderIn(dialog)
 
-			// The `?? ''` helper turns a missing placeholder into an assertable empty string.
-			expect(placeholder).toMatch(/^e\.g\., \S/)
-			expect(placeholder).not.toMatch(JURISDICTION_SPECIFIC)
-		}
-	)
+		// The `?? ''` helper turns a missing placeholder into an assertable empty string.
+		expect(placeholder).toMatch(/^e\.g\., \S/)
+		expect(placeholder).not.toMatch(JURISDICTION_SPECIFIC)
+	})
 })
 
-describe('BalancePage — a debt is paid by a linked expense (Story 102.1)', () => {
+describe('BalancePage — a debt is paid by a linked expense', () => {
 	const MAIN = 'profile-main'
 	const OTHER = 'profile-other'
 
@@ -1748,7 +1742,7 @@ describe('BalancePage — a debt is paid by a linked expense (Story 102.1)', () 
 		expect(screen.queryByText(/NaN/)).not.toBeInTheDocument()
 	})
 
-	it('⚠️ D7: keeps a link this device cannot resolve when the debt is saved untouched', async () => {
+	it('⚠️ keeps a link this device cannot resolve when the debt is saved untouched', async () => {
 		const user = userEvent.setup()
 		const remote = '55555555-5555-4555-8555-555555555555'
 		useBalanceStore.setState({ entries: [debt({ paymentExpenseId: remote })] })
@@ -1771,7 +1765,7 @@ describe('BalancePage — a debt is paid by a linked expense (Story 102.1)', () 
 		expect(useBalanceStore.getState().entries[0]?.paymentExpenseId).toBeNull()
 	})
 
-	it('keeps the unavailable-link option after "Not linked" is picked, so the stored link can be restored (code review)', async () => {
+	it('keeps the unavailable-link option after "Not linked" is picked, so the stored link can be restored', async () => {
 		const user = userEvent.setup()
 		const remote = '55555555-5555-4555-8555-555555555555'
 		useBalanceStore.setState({ entries: [debt({ paymentExpenseId: remote })] })
@@ -1789,7 +1783,7 @@ describe('BalancePage — a debt is paid by a linked expense (Story 102.1)', () 
 		expect(useBalanceStore.getState().entries[0]?.paymentExpenseId).toBe(remote)
 	})
 
-	it('survives a linked expense with a corrupt non-string frequency (code review)', async () => {
+	it('survives a linked expense with a corrupt non-string frequency', async () => {
 		const user = userEvent.setup()
 		useExpenseStore.setState({
 			expenses: [

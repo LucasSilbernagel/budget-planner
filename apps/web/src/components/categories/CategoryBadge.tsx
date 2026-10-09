@@ -1,7 +1,7 @@
 import type React from 'react'
 import { resolveCategoryName } from '../../hooks/useCategoryLabels'
 
-export interface CategoryBadgeProps {
+export type CategoryBadgeProps = {
 	categoryId: string | null | undefined
 	names: ReadonlyMap<string, string>
 	idPrefix: string

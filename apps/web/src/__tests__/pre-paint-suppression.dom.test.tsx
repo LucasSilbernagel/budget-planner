@@ -113,7 +113,7 @@ describe('pre-paint suppression — the <head> wiring (__root.tsx)', () => {
 	})
 })
 
-describe('pre-paint suppression — the Retirement nav entry (story 35.2)', () => {
+describe('pre-paint suppression — the Retirement nav entry', () => {
 	const rule = () => ruleStartingWith('[data-hide-retirement="1"]')
 
 	it('global.css hides it with display: none, unscoped by any @media/@supports', () => {
@@ -160,7 +160,7 @@ describe('pre-paint suppression — the Retirement nav entry (story 35.2)', () =
 	})
 })
 
-describe('pre-paint suppression — the dismissed account notice (story 55.1)', () => {
+describe('pre-paint suppression — the dismissed account notice', () => {
 	const rule = () => ruleStartingWith('[data-dismiss-account-notice="1"]')
 
 	it('global.css hides it with display: none, unscoped by any @media/@supports', () => {
@@ -191,7 +191,7 @@ describe('pre-paint suppression — the dismissed account notice (story 55.1)', 
 
 // This chain RESERVES space instead of hiding: the pending block is one viewport tall so
 // its growth into the charts happens below the fold.
-describe('pre-paint reservation — the Overview pending block (story 117.2)', () => {
+describe('pre-paint reservation — the Overview pending block', () => {
 	const rule = () => ruleStartingWith(`[${OVERVIEW_HAS_DATA_ATTRIBUTE}="1"]`)
 
 	it('global.css gives it min-height: 100vh, unscoped by any @media/@supports', () => {

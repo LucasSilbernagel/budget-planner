@@ -77,7 +77,7 @@ async function query<T>(sql: string): Promise<T[]> {
 	}
 }
 
-describe('AC-4: the e2e PGlite server runs in UTC under a non-UTC host zone', () => {
+describe('the e2e PGlite server runs in UTC under a non-UTC host zone', () => {
 	it('reports the zone on its ready line', () => {
 		expect(output).toMatch(/TimeZone=UTC\b/)
 	})
@@ -99,7 +99,7 @@ describe('AC-4: the e2e PGlite server runs in UTC under a non-UTC host zone', ()
 	})
 })
 
-describe('AC-7(a): the migrate preflight logs the session TimeZone (log-only)', () => {
+describe('the migrate preflight logs the session TimeZone (log-only)', () => {
 	it('prints timezone=<value> on its shape line', async () => {
 		const packageRoot = path.join(REPO_ROOT, 'packages/db')
 		const out = await new Promise<string>((resolve) => {

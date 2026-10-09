@@ -214,7 +214,7 @@ function seedOverview() {
 	)
 }
 
-interface FigureReading {
+type FigureReading = {
 	at: number | null
 	text: string | null
 	source: 'observer' | 'initial' | null
@@ -268,7 +268,7 @@ function armFigureObserver() {
  * Loopback delivers bytes in ~0 ms, hiding what a byte saving costs in transfer, so
  * more than one condition is measured.
  */
-interface Condition {
+type Condition = {
 	name: string
 	cpu: number
 	network: { downloadKbps: number; uploadKbps: number; latencyMs: number } | null
@@ -329,7 +329,7 @@ function median(values: number[]): number {
 	return sorted[(sorted.length - 1) >> 1] as number
 }
 
-test.describe('refresh-to-figures (story 38.3, NFR9)', () => {
+test.describe('refresh-to-figures', () => {
 	test.beforeEach(async ({ page }) => {
 		await page.addInitScript(seedOverview)
 		await page.addInitScript(armFigureObserver)

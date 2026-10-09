@@ -17,7 +17,7 @@ function appTsx(dir: string): string[] {
 	})
 }
 
-describe('helper text and row buttons (story 115.2)', () => {
+describe('helper text and row buttons', () => {
 	it('`.text-faint` is gray-500 in light, the value `.text-muted` has', () => {
 		// gray-400 measured 2.54:1 on white at all 15 of its sites; gray-500 is 4.83.
 		const body = (selector: string) => {

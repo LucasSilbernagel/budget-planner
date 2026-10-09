@@ -1,19 +1,19 @@
 /** Debts are plotted negative: the chart shows each bucket's contribution to net worth. */
 
-export interface BalancesBarDatum {
+export type BalancesBarDatum = {
 	category: string
 	amount: number
 	fill: string
 }
 
-export interface BalancesBarTotals {
+export type BalancesBarTotals = {
 	savingsCents: number
 	investmentsCents: number
 	assetsCents: number
 	debtsCents: number
 }
 
-export interface BalancesBarColors {
+export type BalancesBarColors = {
 	savings: string
 	investment: string
 	asset: string

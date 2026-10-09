@@ -19,7 +19,7 @@ function getFormId(): string {
 	return (import.meta.env.VITE_FORMSPARK_FORM_ID ?? '').trim()
 }
 
-export interface ContactFormProps {
+export type ContactFormProps = {
 	className?: string
 }
 

@@ -17,7 +17,7 @@ vi.mock('../../../lib/chartTheme', () => ({
 	}),
 }))
 
-describe('ProjectionChart (bug-3 AC-3)', () => {
+describe('ProjectionChart', () => {
 	it('shows a neutral empty state, not sample data, when there is no result', () => {
 		render(<ProjectionChart result={null} />)
 		expect(screen.getByText(/build a scenario/i)).toBeInTheDocument()
@@ -81,7 +81,7 @@ describe('ProjectionChart (bug-3 AC-3)', () => {
 	})
 })
 
-describe('chart layer toggles report on/off (story 120.2, FR188)', () => {
+describe('chart layer toggles report on/off', () => {
 	it.each(['Grid', 'Legend', 'Tooltips'])('%s starts pressed and flips on each click', (name) => {
 		render(<ProjectionChart result={null} />)
 		const toggle = screen.getByRole('button', { name })

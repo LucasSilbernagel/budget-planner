@@ -64,7 +64,7 @@ afterEach(() => {
 	vi.unstubAllGlobals()
 })
 
-describe('GlobalNav — light dismiss (stories 31.5, 59.2)', () => {
+describe('GlobalNav — light dismiss', () => {
 	it('an outside press on a FOCUSABLE element closes it without stealing its focus', async () => {
 		renderNavInApp()
 		await screen.findByRole('navigation', { name: /primary/i })
@@ -163,7 +163,7 @@ describe('GlobalNav — light dismiss (stories 31.5, 59.2)', () => {
 	})
 })
 
-describe('GlobalNav — closes on any navigation (story 31.5 review)', () => {
+describe('GlobalNav — closes on any navigation', () => {
 	it('a pathname change from outside the panel closes it, and the trigger is not lit', async () => {
 		const { router } = renderNavInApp('/')
 		await screen.findByRole('navigation', { name: /primary/i })
@@ -181,7 +181,7 @@ describe('GlobalNav — closes on any navigation (story 31.5 review)', () => {
 	})
 })
 
-describe('GlobalNav — the free More closes when the window widens into lg (story 69.3)', () => {
+describe('GlobalNav — the free More closes when the window widens into lg', () => {
 	/** jsdom has no `matchMedia`, and the nav skips its listener without one. */
 	function stubMatchMedia() {
 		const listeners = new Set<(event: { matches: boolean }) => void>()
@@ -223,7 +223,7 @@ describe('GlobalNav — the free More closes when the window widens into lg (sto
 	})
 })
 
-describe('GlobalNav — the lg row copies mark "you are here" (story 69.3)', () => {
+describe('GlobalNav — the lg row copies mark "you are here"', () => {
 	it.each([
 		['Balances', '/balance'],
 		['Retirement', '/retirement'],

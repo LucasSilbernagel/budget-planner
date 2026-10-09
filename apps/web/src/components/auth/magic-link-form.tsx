@@ -5,7 +5,7 @@ import { useState } from 'react'
 
 type Status = 'idle' | 'submitting' | 'sent' | 'error'
 
-export interface MagicLinkFormProps {
+export type MagicLinkFormProps = {
 	initialError?: string
 	className?: string
 }

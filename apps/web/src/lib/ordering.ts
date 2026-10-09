@@ -5,7 +5,7 @@
 
 import { PG_INT32_MAX } from '@budget-planner/core/sync/types'
 
-export interface DisplayOrdered {
+export type DisplayOrdered = {
 	id?: string
 	sortOrder?: number
 	createdAt?: string

@@ -1,7 +1,7 @@
 // `drizzle-kit push`-built databases have the schema but no journal; replaying migrations would
 // re-mint ids or half-migrate. Fail closed on anything not provably safe.
 
-export interface DbShape {
+export type DbShape = {
 	hasJournalTable: boolean
 	journalRowCount: number
 	userTableCount: number
@@ -10,7 +10,7 @@ export interface DbShape {
 /** `inconsistent`: the journal and the schema disagree, in either direction. */
 type DbProvenance = 'empty' | 'journaled' | 'push-built' | 'inconsistent' | 'unreadable'
 
-export interface MigrateVerdict {
+export type MigrateVerdict = {
 	safe: boolean
 	provenance: DbProvenance
 	reason: string
@@ -64,7 +64,7 @@ export function assessMigrateSafety(shape: DbShape): MigrateVerdict {
 		return {
 			safe: false,
 			provenance: 'push-built',
-			reason: `This database already has ${userTableCount} table(s) in the public schema but NO drizzle.__drizzle_migrations journal — the signature of a \`drizzle-kit push\`-built database. Replaying the chain here would re-mint userProfiles ids and orphan profileId / forecastingProfiles references, or fail half-way. Resolve the baseline/squash strategy under Story 4-17 before this database can be a migrate target.`,
+			reason: `This database already has ${userTableCount} table(s) in the public schema but NO drizzle.__drizzle_migrations journal — the signature of a \`drizzle-kit push\`-built database. Replaying the chain here would re-mint userProfiles ids and orphan profileId / forecastingProfiles references, or fail half-way. Resolve the baseline/squash strategy before this database can be a migrate target.`,
 		}
 	}
 

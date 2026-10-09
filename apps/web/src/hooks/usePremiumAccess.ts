@@ -13,7 +13,7 @@ import {
 import { hasPremiumFeatures, STATUS_ACCESS } from '../lib/premium/access-statuses'
 import { useVerifiedSession } from '../lib/session/verifiedSession'
 
-export interface PremiumAccessStatus {
+export type PremiumAccessStatus = {
 	hasAccess: boolean
 	subscriptionStatus: 'free' | 'active' | 'past_due' | 'canceled' | 'lifetime' | null
 	isLoading: boolean
@@ -21,7 +21,7 @@ export interface PremiumAccessStatus {
 	isAuthenticated: boolean
 }
 
-export interface PremiumAccessCheckResult {
+export type PremiumAccessCheckResult = {
 	hasAccess: boolean
 	subscriptionStatus: 'free' | 'active' | 'past_due' | 'canceled' | 'lifetime' | null
 	isAuthenticated: boolean

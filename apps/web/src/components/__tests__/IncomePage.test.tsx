@@ -220,7 +220,7 @@ describe('IncomePage inline validation', () => {
 		expect(screen.getByRole('dialog')).toBeInTheDocument()
 	})
 
-	it('clears the error after correction and a valid submit succeeds (AC-3)', async () => {
+	it('clears the error after correction and a valid submit succeeds', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<IncomePage />)
 
@@ -242,7 +242,7 @@ describe('IncomePage inline validation', () => {
 	})
 })
 
-describe('IncomePage take-home guidance (story 46.1)', () => {
+describe('IncomePage take-home guidance', () => {
 	beforeEach(() => {
 		useIncomeStore.setState({ incomeSources: [] })
 	})
@@ -251,7 +251,7 @@ describe('IncomePage take-home guidance (story 46.1)', () => {
 		useIncomeStore.setState({ incomeSources: [] })
 	})
 
-	it('states at the point of entry that the amount is take-home pay (AC-1, AC-2)', async () => {
+	it('states at the point of entry that the amount is take-home pay', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<IncomePage />)
 
@@ -265,7 +265,7 @@ describe('IncomePage take-home guidance (story 46.1)', () => {
 		expect(hint.textContent).toMatch(/after\s+tax\s+and\s+any\s+other\s+deductions/i)
 	})
 
-	it('shows the same guidance when editing an existing source (AC-3)', async () => {
+	it('shows the same guidance when editing an existing source', async () => {
 		const user = userEvent.setup()
 		useIncomeStore
 			.getState()
@@ -281,7 +281,7 @@ describe('IncomePage take-home guidance (story 46.1)', () => {
 		)
 	})
 
-	it('does not use the word "net" anywhere in the dialog (AC-11)', async () => {
+	it('does not use the word "net" anywhere in the dialog', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<IncomePage />)
 
@@ -291,7 +291,7 @@ describe('IncomePage take-home guidance (story 46.1)', () => {
 		expect(dialog.textContent).not.toMatch(/\bnet\b/i)
 	})
 
-	it('describes the amount input with the hint when there is no error (AC-8)', async () => {
+	it('describes the amount input with the hint when there is no error', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<IncomePage />)
 
@@ -306,7 +306,7 @@ describe('IncomePage take-home guidance (story 46.1)', () => {
 		expect(described).toEqual(['income-amount-hint'])
 	})
 
-	it('keeps BOTH the hint and the error described when validation fails (AC-8)', async () => {
+	it('keeps BOTH the hint and the error described when validation fails', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<IncomePage />)
 
@@ -332,7 +332,7 @@ describe('IncomePage take-home guidance (story 46.1)', () => {
 	})
 })
 
-describe('IncomePage currency input formatting (story 14-3)', () => {
+describe('IncomePage currency input formatting', () => {
 	beforeEach(() => {
 		useIncomeStore.setState({ incomeSources: [] })
 		useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
@@ -394,7 +394,7 @@ describe('IncomePage currency input formatting (story 14-3)', () => {
 		await waitFor(() => expect(amountInput).toHaveValue('1,234,567.89'))
 	})
 
-	it('never lets letters into the field, and blur leaves it empty rather than "0.00" (story 28-1)', async () => {
+	it('never lets letters into the field, and blur leaves it empty rather than "0.00"', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<IncomePage />)
 
@@ -425,7 +425,7 @@ describe('IncomePage currency input formatting (story 14-3)', () => {
 		await waitFor(() => expect(amountInput).toHaveValue('-'))
 	})
 
-	it('strips pasted garbage down to the numeric part in one change event (AC-5)', async () => {
+	it('strips pasted garbage down to the numeric part in one change event', async () => {
 		// A paste arrives as one change event, which is why the filter lives in onChange.
 		renderWithProviders(<IncomePage />)
 
@@ -437,7 +437,7 @@ describe('IncomePage currency input formatting (story 14-3)', () => {
 		expect(amountInput).toHaveValue('1,234.56')
 	})
 
-	it('prefills the edit modal with a grouped, locale-aware amount (story 28-1)', async () => {
+	it('prefills the edit modal with a grouped, locale-aware amount', async () => {
 		const user = userEvent.setup()
 		useIncomeStore.setState({ incomeSources: [] })
 		useIncomeStore
@@ -491,7 +491,7 @@ describe('IncomePage form controls have a visible focus ring', () => {
 	})
 })
 
-describe('IncomePage mobile card presentation (story 31.2)', () => {
+describe('IncomePage mobile card presentation', () => {
 	beforeEach(() => {
 		useIncomeStore.setState({ incomeSources: [] })
 		useIncomeStore
@@ -521,7 +521,7 @@ describe('IncomePage mobile card presentation (story 31.2)', () => {
 		expect(within(row).getByRole('button', { name: 'Delete Salary' })).toBeInTheDocument()
 	})
 
-	it('carries every column value on a free user’s card, minus Category (story 33.3)', () => {
+	it('carries every column value on a free user’s card, minus Category', () => {
 		free()
 		renderWithProviders(<IncomePage />)
 		const row = rowFor('Salary')
@@ -534,7 +534,7 @@ describe('IncomePage mobile card presentation (story 31.2)', () => {
 		expect(within(row).queryByTestId('income-row-category')).not.toBeInTheDocument()
 	})
 
-	it('labels every field on the card (AC-4)', () => {
+	it('labels every field on the card', () => {
 		premium()
 		renderWithProviders(<IncomePage />)
 		const row = rowFor('Salary')
@@ -547,7 +547,7 @@ describe('IncomePage mobile card presentation (story 31.2)', () => {
 		}
 	})
 
-	it('labels every field on a free user’s card, with no Category field (story 33.3)', () => {
+	it('labels every field on a free user’s card, with no Category field', () => {
 		free()
 		renderWithProviders(<IncomePage />)
 		const row = rowFor('Salary')
@@ -561,7 +561,7 @@ describe('IncomePage mobile card presentation (story 31.2)', () => {
 		expect(screen.getAllByText('Salary')).toHaveLength(1)
 	})
 
-	it('declares the shared card classes on the table, body and rows (AC-8)', () => {
+	it('declares the shared card classes on the table, body and rows', () => {
 		const { container } = renderWithProviders(<IncomePage />)
 		const table = container.querySelector('table') as HTMLElement
 
@@ -571,7 +571,7 @@ describe('IncomePage mobile card presentation (story 31.2)', () => {
 		expect([...rowFor('Salary').classList]).toContain('max-sm:block')
 	})
 
-	it('every row Edit/Delete button carries a focus ring with a colour (AC-5)', () => {
+	it('every row Edit/Delete button carries a focus ring with a colour', () => {
 		renderWithProviders(<IncomePage />)
 		const row = rowFor('Salary')
 		for (const label of ['Edit Salary', 'Delete Salary']) {
@@ -579,7 +579,7 @@ describe('IncomePage mobile card presentation (story 31.2)', () => {
 		}
 	})
 
-	it('declares a >= 44px mobile tap target on each row action, scoped to max-sm (AC-6)', () => {
+	it('declares a >= 44px mobile tap target on each row action, scoped to max-sm', () => {
 		renderWithProviders(<IncomePage />)
 		const row = rowFor('Salary')
 		for (const label of ['Edit Salary', 'Delete Salary']) {
@@ -587,7 +587,7 @@ describe('IncomePage mobile card presentation (story 31.2)', () => {
 		}
 	})
 
-	it('offers exactly Edit and Delete in a row action cell (48.2 AC-1, AC-15)', () => {
+	it('offers exactly Edit and Delete in a row action cell', () => {
 		renderWithProviders(<IncomePage />)
 		const cell = rowFor('Salary').querySelector('td:last-child') as HTMLElement
 		expect(
@@ -597,7 +597,7 @@ describe('IncomePage mobile card presentation (story 31.2)', () => {
 		).toEqual(['Edit Salary', 'Delete Salary'])
 	})
 
-	it('renders each row action as an aria-hidden icon with no visible label (50.1 AC-1, AC-3, AC-9)', () => {
+	it('renders each row action as an aria-hidden icon with no visible label', () => {
 		renderWithProviders(<IncomePage />)
 		const cell = rowFor('Salary').querySelector('td:last-child') as HTMLElement
 		const geometry = ['Edit Salary', 'Delete Salary'].map((label) =>
@@ -606,7 +606,7 @@ describe('IncomePage mobile card presentation (story 31.2)', () => {
 		expect(geometry[0], 'Edit and Delete render the same glyph').not.toBe(geometry[1])
 	})
 
-	it('introduces no retired surface/text tokens in the table region (AC-7)', () => {
+	it('introduces no retired surface/text tokens in the table region', () => {
 		const { container } = renderWithProviders(<IncomePage />)
 		const table = container.querySelector('table') as HTMLElement
 		expect(collectRetiredTokenViolations(table)).toEqual([])
@@ -802,7 +802,7 @@ describe('IncomePage — sort by column (34.2)', () => {
 		return screen.getByRole('combobox', { name: 'Sort income sources' }) as HTMLSelectElement
 	}
 
-	it('offers the mobile sort control whether or not a sort is active (48.1 AC-1)', async () => {
+	it('offers the mobile sort control whether or not a sort is active', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<IncomePage />)
 
@@ -813,7 +813,7 @@ describe('IncomePage — sort by column (34.2)', () => {
 		expect(sortControl().value).toBe('name:asc')
 	})
 
-	it('sorts from the mobile control and drives the SAME state as the headers (48.1 AC-2)', async () => {
+	it('sorts from the mobile control and drives the SAME state as the headers', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<IncomePage />)
 
@@ -823,7 +823,7 @@ describe('IncomePage — sort by column (34.2)', () => {
 		expect(header('Name')).toHaveAttribute('aria-sort', 'descending')
 	})
 
-	it('returns to manual order from the mobile control (48.1 AC-4)', async () => {
+	it('returns to manual order from the mobile control', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<IncomePage />)
 
@@ -851,8 +851,8 @@ describe('IncomePage — sort by column (34.2)', () => {
 		expect(renderedOrder()).toEqual(MANUAL_ORDER)
 	})
 
-	describe('Category is a sort target only for entitled users (AC-5)', () => {
-		it('offers Category as a mobile sort option ONLY for an entitled user (48.1 AC-7)', async () => {
+	describe('Category is a sort target only for entitled users', () => {
+		it('offers Category as a mobile sort option ONLY for an entitled user', async () => {
 			free()
 			const { unmount } = renderWithProviders(<IncomePage />)
 			expect(
@@ -916,7 +916,7 @@ describe('IncomePage — sort by column (34.2)', () => {
 		expect(collectRetiredTokenViolations(table)).toEqual([])
 	})
 
-	it('enqueues NOTHING on a PAID session — sorting is read-only over the store (AC-8)', async () => {
+	it('enqueues NOTHING on a PAID session — sorting is read-only over the store', async () => {
 		// Registered so not.toHaveBeenCalled() can fail, and paid because that tier has a sync path.
 		const spies = {
 			userId: '550e8400-e29b-41d4-a716-446655440000',
@@ -1025,7 +1025,7 @@ describe('IncomePage — sort by column (34.2)', () => {
 })
 
 // jsdom reproduces the caret jump, so the selection is asserted, not just the value.
-describe('IncomePage money field: caret, focus and magnitude (story 28-1)', () => {
+describe('IncomePage money field: caret, focus and magnitude', () => {
 	beforeEach(() => {
 		useIncomeStore.setState({ incomeSources: [] })
 	})

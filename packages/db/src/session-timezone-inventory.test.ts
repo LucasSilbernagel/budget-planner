@@ -56,7 +56,7 @@ function count(text: string, pattern: RegExp): number {
 	return [...text.matchAll(pattern)].length
 }
 
-describe('AC-3: every pg connection construction pins TimeZone=UTC', () => {
+describe('every pg connection construction pins TimeZone=UTC', () => {
 	const files = scannedFiles().filter((rel) => !isTestFile(rel))
 
 	it('scans a non-trivial file set (non-vacuity)', () => {

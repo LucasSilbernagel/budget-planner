@@ -8,7 +8,7 @@ import type React from 'react'
 /** `motion-safe:`: without JS the pending state lasts forever, and an endless pulse fails WCAG 2.2.2. */
 const PULSE = 'motion-safe:animate-pulse'
 
-export interface SkeletonProps {
+export type SkeletonProps = {
 	/** Required: a skeleton with no size satisfies presence assertions while reserving no space. */
 	className: string
 	testId?: string
@@ -22,7 +22,7 @@ export function Skeleton({ className, testId }: SkeletonProps): React.ReactEleme
 /** Not baked into `Skeleton`: Tailwind resolves conflicting backgrounds by source order, not class order. */
 export const SKELETON_BAR = 'rounded bg-gray-200 dark:bg-gray-700'
 
-export interface PendingFigureProps {
+export type PendingFigureProps = {
 	/** Label only the first bar of a multi-bar placeholder, or count assertions break. */
 	testId?: string
 	/** Bar width only; the height is `1em`. */
@@ -45,7 +45,7 @@ export function PendingFigure({
 	)
 }
 
-export interface SkeletonBlockProps {
+export type SkeletonBlockProps = {
 	className?: string
 	testId?: string
 	/** CSS hook for a pre-paint rule in global.css, kept separate from `testId`. */
@@ -83,7 +83,7 @@ export function LoadingStatus(): React.ReactElement {
 	)
 }
 
-export interface EmptyStateSkeletonProps {
+export type EmptyStateSkeletonProps = {
 	testId: string
 	lines?: 1 | 2
 }

@@ -48,9 +48,7 @@ const { problems, facts } = checkPaddleJs(source, {
 })
 for (const fact of facts) console.log(`  ${fact}`)
 if (problems.length > 0) {
-	console.error(
-		`\nPADDLE.JS DRIFT: ${problems.length} problem(s). Story sec-4 records why each matters.`
-	)
+	console.error(`\nPADDLE.JS DRIFT: ${problems.length} problem(s).`)
 	for (const problem of problems) console.error(`\n- ${problem}`)
 	process.exit(1)
 }

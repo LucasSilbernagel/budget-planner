@@ -122,7 +122,7 @@ function centsOf(text: string): number {
 	return Math.round(Number(text.replace(/[^0-9.-]/g, '')) * 100)
 }
 
-describe('rows replace the single savings total (AC-1, AC-9)', () => {
+describe('rows replace the single savings total', () => {
 	it('lists one row per active-profile savings row, in display order, with name, balance and contribution', () => {
 		useSavingsStore.setState({
 			savingsGoals: [
@@ -157,7 +157,7 @@ describe('rows replace the single savings total (AC-1, AC-9)', () => {
 		expect(screen.getByRole('region', { name: 'Investments & Debts' })).toBeInTheDocument()
 	})
 
-	it('carries the what-if note under the heading (copy pin, AC-9)', () => {
+	it('carries the what-if note under the heading (copy pin)', () => {
 		render(<ScenarioBuilder onSave={vi.fn()} />)
 		const section = screen.getByRole('region', { name: 'Savings Accounts' })
 		expect(
@@ -166,7 +166,7 @@ describe('rows replace the single savings total (AC-1, AC-9)', () => {
 	})
 })
 
-describe('the starting figure is unchanged (AC-2)', () => {
+describe('the starting figure is unchanged', () => {
 	it('shows a Starting Net Worth equal to the savings total plus investments', async () => {
 		useSavingsStore.setState({
 			savingsGoals: [
@@ -193,7 +193,7 @@ describe('the starting figure is unchanged (AC-2)', () => {
 	})
 })
 
-describe('contributions seed from the same figures /savings shows (AC-3)', () => {
+describe('contributions seed from the same figures /savings shows', () => {
 	// Net 350001 − counted 60000 (the 20000/wk row is an expense, not counted) − manual 130000 = 160001,
 	// split 53334/53334/53333 (remainder cents go to the first rows).
 	function fillParityFixture(): void {
@@ -319,7 +319,7 @@ describe('contributions seed from the same figures /savings shows (AC-3)', () =>
 	})
 })
 
-describe('what-if only: nothing reaches the savings store (AC-4, D0)', () => {
+describe('what-if only: nothing reaches the savings store', () => {
 	it('a full edit sequence calls no savings-store action and leaves the persisted bytes unchanged', async () => {
 		useIncomeStore.setState({ incomeSources: [income(500_000)] })
 		useSavingsStore.setState({
@@ -358,7 +358,7 @@ describe('what-if only: nothing reaches the savings store (AC-4, D0)', () => {
 	})
 })
 
-describe('add and remove rows (AC-5)', () => {
+describe('add and remove rows', () => {
 	it('adds a New Account row at 0/0, names each remove button after its row, and can empty the list', () => {
 		useSavingsStore.setState({
 			savingsGoals: [goal({ id: 'g-1', name: 'Emergency fund', currentBalance: 100_000 })],
@@ -382,7 +382,7 @@ describe('add and remove rows (AC-5)', () => {
 	})
 })
 
-describe('the per-row outcome (AC-7, AC-8, D5)', () => {
+describe('the per-row outcome', () => {
 	function fillOutcomeFixture(contributionCents: number): void {
 		useIncomeStore.setState({ incomeSources: [income(500_000)] })
 		useExpenseStore.setState({ expenses: [expense(400_000)] })
@@ -470,7 +470,7 @@ describe('the per-row outcome (AC-7, AC-8, D5)', () => {
 	})
 })
 
-describe('each money field reports its own validity (AC-10)', () => {
+describe('each money field reports its own validity', () => {
 	it('two bad fields in one row both block Save, and fixing one does not unblock the other', async () => {
 		useIncomeStore.setState({ incomeSources: [income(500_000)] })
 		useSavingsStore.setState({
@@ -523,7 +523,7 @@ describe('each money field reports its own validity (AC-10)', () => {
 	})
 })
 
-describe('save writes the rows and the total (AC-11)', () => {
+describe('save writes the rows and the total', () => {
 	it('hands onSave the rows in order and savings as their sum', async () => {
 		useIncomeStore.setState({ incomeSources: [income(500_000)] })
 		useSavingsStore.setState({
@@ -745,7 +745,7 @@ function cleanupAndRender(forecast: SavedForecast): void {
 	render(<ScenarioBuilder onSave={vi.fn()} initialForecast={forecast} />)
 }
 
-describe('rounding cents are not over-contribution (story 111.1 review, D1)', () => {
+describe('rounding cents are not over-contribution', () => {
 	// The forecast annualises exactly but allocation is monthly-canonical: 100.00/wk over-counts 4 cents a year.
 	// Tolerance: 6 × non-monthly entries × years.
 	it('a fully allocated automatic row shows no amber line, and 0.00 unassigned', async () => {

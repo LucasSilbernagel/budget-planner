@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { sortProfilesOldestFirst } from '../profile-order'
 
-describe('sortProfilesOldestFirst (story 98.1)', () => {
+describe('sortProfilesOldestFirst', () => {
 	const ids = (rows: { id?: string }[]) => rows.map((r) => r.id)
 
 	it('orders by createdAt ascending', () => {

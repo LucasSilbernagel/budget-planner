@@ -13,7 +13,7 @@ beforeEach(() => {
 	useBalanceStore.setState({ entries: [] })
 })
 
-describe('balanceStore — v1→v2 frequency backfill (Story 16-2)', () => {
+describe('balanceStore — v1→v2 frequency backfill', () => {
 	it('backfills frequency=monthly for a legacy v1 row lacking one', async () => {
 		localStorage.setItem(
 			STORAGE_KEY,
@@ -72,7 +72,7 @@ describe('balanceStore — v1→v2 frequency backfill (Story 16-2)', () => {
 	})
 })
 
-describe('balanceStore — partial update validation (Story 16-2 review E2)', () => {
+describe('balanceStore — partial update validation', () => {
 	it('accepts a partial update that omits frequency and preserves the stored cadence', () => {
 		const created = useBalanceStore.getState().addBalanceEntry({
 			type: 'investment',
@@ -92,7 +92,7 @@ describe('balanceStore — partial update validation (Story 16-2 review E2)', ()
 	})
 })
 
-describe('balanceStore — the asset type persists and leaves existing rows alone (Story 43.4, AC-5)', () => {
+describe('balanceStore — the asset type persists and leaves existing rows alone', () => {
 	const row = (id: string, type: string, name: string, sortOrder: number) => ({
 		id,
 		type,
@@ -172,7 +172,7 @@ describe('balanceStore — the asset type persists and leaves existing rows alon
 	})
 })
 
-describe('balanceStore — contributionRecordedAsExpense persists (Story 45.1, FR72)', () => {
+describe('balanceStore — contributionRecordedAsExpense persists', () => {
 	type NewEntry = Parameters<ReturnType<typeof useBalanceStore.getState>['addBalanceEntry']>[0]
 
 	const investment = (overrides: Partial<NewEntry> = {}): NewEntry => ({
@@ -212,7 +212,7 @@ describe('balanceStore — contributionRecordedAsExpense persists (Story 45.1, F
 		expect(useBalanceStore.getState().entries[0]?.contributionRecordedAsExpense).toBe(true)
 	})
 
-	it('REJECTS the flag on a debt row (D8, enforced on the store write path)', () => {
+	it('REJECTS the flag on a debt row (enforced on the store write path)', () => {
 		const created = useBalanceStore.getState().addBalanceEntry(
 			investment({
 				type: 'debt',
@@ -239,7 +239,7 @@ describe('balanceStore — contributionRecordedAsExpense persists (Story 45.1, F
 	})
 })
 
-describe('balanceStore — the retired contribution limit is stripped (story 49.1)', () => {
+describe('balanceStore — the retired contribution limit is stripped', () => {
 	it('drops maxContributionLimit from a legacy row on rehydration', async () => {
 		localStorage.setItem(
 			STORAGE_KEY,
@@ -278,7 +278,7 @@ describe('balanceStore — the retired contribution limit is stripped (story 49.
 })
 
 /** Refused on the store write path: past the queue, a refusal deadlocks sync. */
-describe('balanceStore — a negative balance never reaches the sync queue (Story 103.1)', () => {
+describe('balanceStore — a negative balance never reaches the sync queue', () => {
 	function makeHandle() {
 		return {
 			userId: '550e8400-e29b-41d4-a716-446655440000',

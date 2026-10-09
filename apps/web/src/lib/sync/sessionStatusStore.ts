@@ -2,7 +2,7 @@
 
 import { create } from 'zustand'
 
-interface SessionStatusState {
+type SessionStatusState = {
 	/** False until SyncProvider's probe resolves (including skipped probes); check before trusting isPaidSyncSession. */
 	resolved: boolean
 

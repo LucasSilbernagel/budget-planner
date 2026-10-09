@@ -39,7 +39,7 @@ describe('__root head() analytics wiring', () => {
 })
 
 // Both sides lowercased: the title has the subtitle in lowercase, the description capitalised.
-describe('__root head() subtitle metadata (story 36-1)', () => {
+describe('__root head() subtitle metadata', () => {
 	const SUBTITLE = 'track your finances with privacy and control'
 	const RETIRED_TAGLINE = 'minds its own business'
 	const OLD_TAGLINE = 'never sees your money'
@@ -49,7 +49,7 @@ describe('__root head() subtitle metadata (story 36-1)', () => {
 	const EXPECTED_DESCRIPTION =
 		'Track your finances with privacy and control — income, expenses, savings, and long-term plans. The free tier runs entirely in your browser, so your financial data never leaves your device.'
 
-	it('the document title reads exactly the AC-2 string', () => {
+	it('the document title reads exactly the expected title', () => {
 		const meta = headMeta()
 		const titleEntry = meta.find((m) => m !== undefined && 'title' in m) as
 			| { title?: string }
@@ -61,7 +61,7 @@ describe('__root head() subtitle metadata (story 36-1)', () => {
 		expect(titleEntry?.title?.toLowerCase()).not.toContain(OLD_TAGLINE)
 	})
 
-	it('the meta description is present and reads exactly the AC-3 string', () => {
+	it('the meta description is present and reads exactly the expected description', () => {
 		const meta = headMeta()
 		const description = meta.find((m) => m?.name === 'description') as
 			| { content?: string }

@@ -71,7 +71,7 @@ describe('purgeAppShellCache', () => {
 		expect(vi.getTimerCount()).toBe(0)
 	})
 
-	it('bounds the wait at 2 s by default (D3)', () => {
+	it('bounds the wait at 2 s by default', () => {
 		expect(APP_SHELL_PURGE_TIMEOUT_MS).toBe(2_000)
 	})
 })

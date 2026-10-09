@@ -33,7 +33,7 @@ afterEach(() => {
 	window.localStorage.clear()
 })
 
-describe('IncomePage — initial sync pending (Story 53.1, AC-4)', () => {
+describe('IncomePage — initial sync pending', () => {
 	it('a fresh paid device (never synced, pull not yet complete) shows a loading state, not "No income sources yet"', () => {
 		renderWithProviders(<IncomePage />)
 
@@ -48,7 +48,7 @@ describe('IncomePage — initial sync pending (Story 53.1, AC-4)', () => {
 		expect(screen.getByText('No income sources yet')).toBeInTheDocument()
 	})
 
-	it('AC-6: a device that has synced before is unaffected, even with zero local rows and no pull resolved this session', () => {
+	it('a device that has synced before is unaffected, even with zero local rows and no pull resolved this session', () => {
 		window.localStorage.setItem(STORAGE_KEY, '1')
 		// Only the persisted device-level flag distinguishes this from a fresh device.
 		renderWithProviders(<IncomePage />)
@@ -57,7 +57,7 @@ describe('IncomePage — initial sync pending (Story 53.1, AC-4)', () => {
 		expect(screen.queryByTestId('page-loading-status')).not.toBeInTheDocument()
 	})
 
-	it('AC-6: an established device that already has local rows is unaffected by the pull still being in flight', () => {
+	it('an established device that already has local rows is unaffected by the pull still being in flight', () => {
 		useIncomeStore.getState().addIncomeSource({
 			name: 'Salary',
 			amount: 500000,

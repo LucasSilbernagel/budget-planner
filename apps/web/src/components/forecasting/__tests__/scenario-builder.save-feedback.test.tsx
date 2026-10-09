@@ -72,7 +72,7 @@ afterEach(() => {
 	vi.clearAllMocks()
 })
 
-describe('a failed save reports itself at the button (AC-3, AC-4)', () => {
+describe('a failed save reports itself at the button', () => {
 	it('renders the outcome in the same block as the Save button, not only at the top of the form', async () => {
 		const onSave = vi.fn().mockResolvedValue({ success: false, error: 'Name already in use' })
 		renderWithRouter(<ScenarioBuilder onSave={onSave} />)
@@ -186,7 +186,7 @@ describe('a failed save reports itself at the button (AC-3, AC-4)', () => {
 		expect(outcome).toHaveAttribute('tabindex', '-1')
 	})
 
-	it('keeps the save outcome out of the calculation-error block (AC-9)', async () => {
+	it('keeps the save outcome out of the calculation-error block', async () => {
 		const onSave = vi.fn().mockResolvedValue({ success: false, error: 'Name already in use' })
 		renderWithRouter(<ScenarioBuilder onSave={onSave} />)
 
@@ -196,7 +196,7 @@ describe('a failed save reports itself at the button (AC-3, AC-4)', () => {
 		expect(screen.queryByTestId('calculation-error')).toBeNull()
 	})
 
-	it('clears the failure once the user edits a field to act on it (AC-9)', async () => {
+	it('clears the failure once the user edits a field to act on it', async () => {
 		const onSave = vi.fn().mockResolvedValue({ success: false, error: 'Name already in use' })
 		renderWithRouter(<ScenarioBuilder onSave={onSave} />)
 
@@ -211,7 +211,7 @@ describe('a failed save reports itself at the button (AC-3, AC-4)', () => {
 	})
 })
 
-describe('the Save affordance explains itself when saving cannot work (AC-1, AC-2)', () => {
+describe('the Save affordance explains itself when saving cannot work', () => {
 	it('names the missing profile and links to /profiles', async () => {
 		renderWithRouter(<ScenarioBuilder onSave={vi.fn()} saveAvailability={{ kind: 'none' }} />)
 

@@ -6,7 +6,7 @@
 import type { ServerChange, SyncEntityType, SyncOperation } from '@budget-planner/core/sync'
 import type { RefusalNotice, RefusalOutcome } from './refusalNoticeStore'
 
-export interface RefusalHandlerDeps {
+export type RefusalHandlerDeps = {
 	queue: {
 		getAll: () => SyncOperation[]
 		discardBatch: (ids: string[]) => Promise<{ removed: number; persisted: boolean }>

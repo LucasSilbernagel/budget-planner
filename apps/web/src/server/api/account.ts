@@ -22,7 +22,7 @@ import { cancelActiveSubscriptionsForCustomer } from '../paddle/subscription-api
 import { normalizeEmail } from './auth/email'
 import { getCurrentUserSession } from './auth/paddle'
 
-export interface DeleteAccountResult {
+export type DeleteAccountResult = {
 	success: boolean
 	reason?: 'unauthenticated' | 'error'
 	error?: string

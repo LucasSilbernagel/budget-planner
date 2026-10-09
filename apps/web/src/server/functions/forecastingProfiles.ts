@@ -11,7 +11,7 @@ import { type DbTx, lockUserProfileSet } from '../api/profile-set-lock'
 
 type Executor = typeof db | DbTx
 
-export interface CreateForecastingProfileInput {
+export type CreateForecastingProfileInput = {
 	name: string
 	description?: string
 	scenarioData: unknown
@@ -24,14 +24,14 @@ export interface CreateForecastingProfileInput {
  * Full replace: an absent description clears it, an absent version keeps it. No
  * profileId/isDefault, so an update can't move a forecast or change the default.
  */
-export interface UpdateForecastingProfileInput {
+export type UpdateForecastingProfileInput = {
 	name: string
 	description?: string
 	scenarioData: unknown
 	version?: number
 }
 
-export interface ForecastingProfileOutput extends ForecastingProfile {
+export type ForecastingProfileOutput = ForecastingProfile & {
 	profileName?: string
 }
 

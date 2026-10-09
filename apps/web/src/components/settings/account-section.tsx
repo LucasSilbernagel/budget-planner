@@ -7,7 +7,7 @@ import { hasPaidAccess } from '@/lib/premium/access-statuses'
 import { purgeAppShellCache } from '@/lib/pwa/app-shell-cache'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 
-interface CurrentUser {
+type CurrentUser = {
 	userId: string
 	email: string
 	subscriptionStatus: SubscriptionStatus

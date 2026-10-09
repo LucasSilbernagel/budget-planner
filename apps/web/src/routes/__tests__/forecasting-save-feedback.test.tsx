@@ -91,7 +91,7 @@ afterEach(() => {
 	vi.clearAllMocks()
 })
 
-describe('an account with no financial profile is told BEFORE it builds anything (AC-1, AC-8)', () => {
+describe('an account with no financial profile is told BEFORE it builds anything', () => {
 	it('explains the missing profile and links to /profiles', async () => {
 		fetchProfiles.mockResolvedValue({ success: true, data: [] })
 		renderWithRouter(<ForecastingPage />)
@@ -193,7 +193,7 @@ describe('an account with no financial profile is told BEFORE it builds anything
 		await waitFor(() => expect(projectionsTab).not.toBeDisabled())
 	})
 
-	it('does not flash the prompt while the profile check is still in flight (AC-2)', async () => {
+	it('does not flash the prompt while the profile check is still in flight', async () => {
 		fetchProfiles.mockReturnValue(new Promise(() => {}))
 		renderWithRouter(<ForecastingPage />)
 
@@ -201,7 +201,7 @@ describe('an account with no financial profile is told BEFORE it builds anything
 		expect(screen.queryByTestId('save-blocked-notice')).toBeNull()
 	})
 
-	it('does not tell a user whose profile check FAILED to create a profile (AC-2)', async () => {
+	it('does not tell a user whose profile check FAILED to create a profile', async () => {
 		fetchProfiles.mockResolvedValue({ success: false, error: 'Authentication required' })
 		renderWithRouter(<ForecastingPage />)
 
@@ -210,7 +210,7 @@ describe('an account with no financial profile is told BEFORE it builds anything
 		expect(screen.queryByRole('link', { name: /create a profile/i })).toBeNull()
 	})
 
-	it('treats a THROWN profile fetch as an error, not as "you have no profiles" (AC-2)', async () => {
+	it('treats a THROWN profile fetch as an error, not as "you have no profiles"', async () => {
 		fetchProfiles.mockRejectedValue(new TypeError('Failed to fetch'))
 		renderWithRouter(<ForecastingPage />)
 
@@ -220,7 +220,7 @@ describe('an account with no financial profile is told BEFORE it builds anything
 	})
 })
 
-describe('a save reports its outcome where the user is looking (AC-5, AC-7)', () => {
+describe('a save reports its outcome where the user is looking', () => {
 	it('confirms a successful save OUTSIDE the builder, which the tab switch hides', async () => {
 		renderWithRouter(<ForecastingPage />)
 		fireEvent.click(await findSaveButton())

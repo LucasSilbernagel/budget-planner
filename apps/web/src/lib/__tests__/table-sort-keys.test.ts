@@ -253,7 +253,7 @@ describe('balance sort keys', () => {
 		expect(keyOf(extractors, 'contribution')(corrupt)).toBeNull()
 	})
 
-	describe('a debt sorts by its linked expense (story 102.1)', () => {
+	describe('a debt sorts by its linked expense', () => {
 		const payments: Record<string, { amount: unknown; frequency: unknown }> = {
 			'e-weekly': { amount: 100_00, frequency: 'weekly' },
 			'e-monthly': { amount: 300_00, frequency: 'monthly' },
@@ -297,7 +297,7 @@ describe('balance sort keys', () => {
 		})
 	})
 
-	it('keys a legacy negative debt by the amount owed its cell shows (Story 103.1)', () => {
+	it('keys a legacy negative debt by the amount owed its cell shows', () => {
 		const rows = [entry('tfsa', 'investment', 100_00), entry('loan', 'debt', -500_00)]
 		expect(keyOf(extractors, 'currentBalance')(rows[1] as (typeof rows)[number])).toBe(500_00)
 		expect(sortRowsBy(rows, keyOf(extractors, 'currentBalance'), 'asc').map((r) => r.name)).toEqual(
@@ -305,7 +305,7 @@ describe('balance sort keys', () => {
 		)
 	})
 
-	it('keeps a negative INVESTMENT raw (D3: only debts are read as a magnitude)', () => {
+	it('keeps a negative INVESTMENT raw (only debts are read as a magnitude)', () => {
 		expect(keyOf(extractors, 'currentBalance')(entry('bad', 'investment', -100_00))).toBe(-100_00)
 	})
 

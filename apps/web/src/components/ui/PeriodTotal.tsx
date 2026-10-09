@@ -19,7 +19,7 @@ import { GroupedAmount } from './GroupedAmount'
 import { InfoTooltip } from './InfoTooltip'
 import { PendingFigure } from './Skeleton'
 
-interface PeriodTotalProps {
+type PeriodTotalProps = {
 	label: string
 	/** Monthly-normalized cents. Do NOT pre-denormalize. */
 	monthlyTotalCents: number

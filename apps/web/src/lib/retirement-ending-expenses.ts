@@ -3,7 +3,7 @@
 import { calculateTotalMonthlyNormalized } from '@budget-planner/core'
 import { isReadableRow, toNormalizableItems } from './readable-rows'
 
-export interface EndingExpenseRow {
+export type EndingExpenseRow = {
 	amount: number
 	frequency: string
 	endsBeforeRetirement?: boolean

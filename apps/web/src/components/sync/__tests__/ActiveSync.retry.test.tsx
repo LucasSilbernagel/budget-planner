@@ -57,7 +57,7 @@ afterEach(() => {
 	act(() => resetRefusalNotices())
 })
 
-describe('ActiveSync › "Try again" (story 79.2)', () => {
+describe('ActiveSync › "Try again"', () => {
 	it('calls useSync.forceSync', () => {
 		useSyncMock.mockReturnValue(syncReturn(false))
 		render(<ActiveSync userId={USER} />)

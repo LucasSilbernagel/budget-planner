@@ -72,7 +72,7 @@ const REFUSED: ProcessOperationResult = {
 	statusCode: 422,
 }
 
-describe('escalating an op that keeps failing (story 79.2)', () => {
+describe('escalating an op that keeps failing', () => {
 	let storage: TestStorage
 	let queue: SyncQueue
 	let service: SynchronizationService
@@ -121,7 +121,7 @@ describe('escalating an op that keeps failing (story 79.2)', () => {
 		vi.restoreAllMocks()
 	})
 
-	describe('AC-1: the threshold is maxRetries + 1 consecutive failed attempts', () => {
+	describe('the threshold is maxRetries + 1 consecutive failed attempts', () => {
 		it('a RETRYABLE op, retried by the timer, escalates on its 4th attempt and not before', async () => {
 			await queue.add(op('flaky'))
 			resultFor.set('flaky', RETRYABLE)
@@ -276,7 +276,7 @@ describe('escalating an op that keeps failing (story 79.2)', () => {
 		})
 	})
 
-	describe('AC-3: an escalated op is still queued and persisted (FR120)', () => {
+	describe('an escalated op is still queued and persisted', () => {
 		it('is in the queue, in storage, and survives a reload', async () => {
 			await queue.add(op('stuck'))
 			await failTimes('stuck', 4)
@@ -294,7 +294,7 @@ describe('escalating an op that keeps failing (story 79.2)', () => {
 		})
 	})
 
-	describe('AC-4: the view drops an op once it leaves the queue', () => {
+	describe('the view drops an op once it leaves the queue', () => {
 		it('when a later sync lands it', async () => {
 			await queue.add(op('stuck'))
 			await failTimes('stuck', 4)
@@ -354,7 +354,7 @@ describe('escalating an op that keeps failing (story 79.2)', () => {
 		})
 	})
 
-	describe('AC-5: escalation does not release the pull cursor', () => {
+	describe('escalation does not release the pull cursor', () => {
 		const suppressedAndOther: ServerChange[] = [
 			{
 				entityType: 'incomeSource',
@@ -424,7 +424,7 @@ describe('escalating an op that keeps failing (story 79.2)', () => {
 		})
 	})
 
-	describe('AC-6: a destroyed service escalates nothing', () => {
+	describe('a destroyed service escalates nothing', () => {
 		it('does not count a failure that resolves after destroy()', async () => {
 			await queue.add(op('stuck'))
 			await failTimes('stuck', 3)

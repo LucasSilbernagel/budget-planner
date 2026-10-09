@@ -51,7 +51,7 @@ describe('PricingPageView benefit lists', () => {
 		expect(premium.queryByText(/no ads/i)).not.toBeInTheDocument()
 	})
 
-	it('does not list dark mode under the Free plan either (story 95.1, FR154)', () => {
+	it('does not list dark mode under the Free plan either', () => {
 		render(<PricingPageView />)
 		const free = within(card('Free'))
 		expect(free.getByText('Retirement modelling')).toBeInTheDocument()
@@ -59,7 +59,7 @@ describe('PricingPageView benefit lists', () => {
 	})
 })
 
-describe('PricingPageView pricing (stories 25-2, 5-20)', () => {
+describe('PricingPageView pricing', () => {
 	it('anchors on €39 / year and offers monthly and lifetime alongside it', () => {
 		render(<PricingPageView />)
 		const premium = within(card('Premium'))
@@ -77,7 +77,7 @@ describe('PricingPageView pricing (stories 25-2, 5-20)', () => {
 		expect(premium.queryByText(/two months free/)).not.toBeInTheDocument()
 	})
 
-	it('does not raise the pinned €39 and €99 figures (5-20 AC-2)', () => {
+	it('does not raise the pinned €39 and €99 figures', () => {
 		render(<PricingPageView />)
 		const premium = within(card('Premium'))
 
@@ -87,7 +87,7 @@ describe('PricingPageView pricing (stories 25-2, 5-20)', () => {
 	})
 })
 
-describe('PricingPageView forecasting honesty (story 20-1, re-homed in 20-4, updated in 30-2)', () => {
+describe('PricingPageView forecasting honesty', () => {
 	it('states the reload claim exactly once and never overpromises side-by-side', () => {
 		render(<PricingPageView />)
 
@@ -103,7 +103,7 @@ describe('PricingPageView forecasting honesty (story 20-1, re-homed in 20-4, upd
 	})
 })
 
-describe('PricingPageView de-duplication + billing disclaimer (story 20-4)', () => {
+describe('PricingPageView de-duplication + billing disclaimer', () => {
 	it('states each plan/price once — the Free/Premium feature lists are not repeated in the prose', () => {
 		render(<PricingPageView />)
 

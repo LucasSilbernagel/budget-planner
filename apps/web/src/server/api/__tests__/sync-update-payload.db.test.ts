@@ -141,7 +141,7 @@ beforeEach(async () => {
 	])
 })
 
-describe('a sync update cannot delete a row (AC-3)', () => {
+describe('a sync update cannot delete a row', () => {
 	it('a profile update carrying isDeleted: true leaves the profile and its children live', async () => {
 		const result = await push([updateProfileQ({ isDeleted: true })])
 
@@ -163,7 +163,7 @@ describe('a sync update cannot delete a row (AC-3)', () => {
 	})
 })
 
-describe('a sync update cannot revive a tombstoned child (AC-3, guard)', () => {
+describe('a sync update cannot revive a tombstoned child (guard)', () => {
 	// A guard, not a red: sequentially checkConflict answers update-delete first,
 	// so revival is only reachable in a race PGlite cannot open.
 	it('an update carrying isDeleted: false leaves the tombstone in place', async () => {
@@ -176,7 +176,7 @@ describe('a sync update cannot revive a tombstoned child (AC-3, guard)', () => {
 	})
 })
 
-describe('a sync update cannot re-date a row (AC-3)', () => {
+describe('a sync update cannot re-date a row', () => {
 	it('a profile update carrying createdAt is applied and leaves createdAt unchanged', async () => {
 		const result = await push([updateProfileQ({ createdAt: '2000-01-01T00:00:00.000Z' })])
 
@@ -187,7 +187,7 @@ describe('a sync update cannot re-date a row (AC-3)', () => {
 	})
 })
 
-describe('a sync create cannot insert a tombstone or a back-dated row (AC-3, code review)', () => {
+describe('a sync create cannot insert a tombstone or a back-dated row', () => {
 	const createIncome = (extra: Record<string, unknown>) =>
 		op({
 			type: 'create',

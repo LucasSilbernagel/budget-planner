@@ -34,13 +34,13 @@ function renderControl(overrides: Partial<Parameters<typeof TableSortControl>[0]
 	return { ...utils, onSelect }
 }
 
-describe('TableSortControl — the mobile sort affordance (story 48.1)', () => {
-	it('exposes one combobox named for its table (AC-6)', () => {
+describe('TableSortControl — the mobile sort affordance', () => {
+	it('exposes one combobox named for its table', () => {
 		renderControl()
 		expect(screen.getByRole('combobox', { name: 'Sort income sources' })).toBeInTheDocument()
 	})
 
-	it('offers manual order plus both directions of every column, in header order (AC-5)', () => {
+	it('offers manual order plus both directions of every column, in header order', () => {
 		// Exact array: a "does not offer Category" check would pass on an empty list.
 		renderControl()
 		expect(optionLabels(screen.getByRole('combobox', { name: 'Sort income sources' }))).toEqual([
@@ -52,7 +52,7 @@ describe('TableSortControl — the mobile sort affordance (story 48.1)', () => {
 		])
 	})
 
-	it('offers nothing for a column it was not given (AC-7)', () => {
+	it('offers nothing for a column it was not given', () => {
 		// The tier gate lives at the call site; this component renders exactly the columns it is handed.
 		renderControl()
 		expect(
@@ -62,14 +62,14 @@ describe('TableSortControl — the mobile sort affordance (story 48.1)', () => {
 		).toBeNull()
 	})
 
-	it('shows manual order as the current value when nothing is sorted (AC-11)', () => {
+	it('shows manual order as the current value when nothing is sorted', () => {
 		renderControl()
 		expect(
 			(screen.getByRole('combobox', { name: 'Sort income sources' }) as HTMLSelectElement).value
 		).toBe('manual')
 	})
 
-	it('reflects an ALREADY-ACTIVE sort on first render (AC-11)', () => {
+	it('reflects an ALREADY-ACTIVE sort on first render', () => {
 		// A persisted sort means a phone can open a table already sorted; the control must show it.
 		renderControl({ state: { key: 'amount', direction: 'desc' } })
 		const select = screen.getByRole('combobox', {
@@ -82,7 +82,7 @@ describe('TableSortControl — the mobile sort affordance (story 48.1)', () => {
 		)
 	})
 
-	it('reports the exact column and direction chosen (AC-2)', async () => {
+	it('reports the exact column and direction chosen', async () => {
 		const user = userEvent.setup()
 		const { onSelect } = renderControl()
 
@@ -96,7 +96,7 @@ describe('TableSortControl — the mobile sort affordance (story 48.1)', () => {
 		expect(onSelect).toHaveBeenCalledWith({ key: 'amount', direction: 'desc' })
 	})
 
-	it('reports null when manual order is chosen (AC-4)', async () => {
+	it('reports null when manual order is chosen', async () => {
 		const user = userEvent.setup()
 		const { onSelect } = renderControl({ state: { key: 'name', direction: 'asc' } })
 
@@ -108,7 +108,7 @@ describe('TableSortControl — the mobile sort affordance (story 48.1)', () => {
 		expect(onSelect).toHaveBeenCalledWith(null)
 	})
 
-	it('is hidden at >= 640px (AC-1)', () => {
+	it('is hidden at >= 640px', () => {
 		// Class-TOKEN membership, never a substring of `className`: `-` and `:` are
 		// substring boundaries, so `hidden` false-matches `overflow-hidden`.
 		const { container } = renderControl()
@@ -116,12 +116,12 @@ describe('TableSortControl — the mobile sort affordance (story 48.1)', () => {
 		expect(root.className.split(/\s+/)).toContain('sm:hidden')
 	})
 
-	it('renders whenever it is mounted, sorted or not (AC-1)', () => {
+	it('renders whenever it is mounted, sorted or not', () => {
 		renderControl({ state: null })
 		expect(screen.getByRole('combobox', { name: 'Sort income sources' })).toBeVisible()
 	})
 
-	it('declares the 44px mobile tap target without leaking it onto desktop (AC-9)', () => {
+	it('declares the 44px mobile tap target without leaking it onto desktop', () => {
 		renderControl()
 		assertHasMobileTapTarget(
 			screen.getByRole('combobox', { name: 'Sort income sources' }),
@@ -129,7 +129,7 @@ describe('TableSortControl — the mobile sort affordance (story 48.1)', () => {
 		)
 	})
 
-	it('carries the standard visible focus ring (AC-10)', () => {
+	it('carries the standard visible focus ring', () => {
 		renderControl()
 		assertHasFocusRing(
 			screen.getByRole('combobox', { name: 'Sort income sources' }),
@@ -137,13 +137,13 @@ describe('TableSortControl — the mobile sort affordance (story 48.1)', () => {
 		)
 	})
 
-	it('introduces no retired surface or text tokens (AC-10)', () => {
+	it('introduces no retired surface or text tokens', () => {
 		// Nothing else sweeps this control: the page suites only sweep inside the `<table>`.
 		const { container } = renderControl()
 		expect(collectRetiredTokenViolations(container.firstElementChild as HTMLElement)).toEqual([])
 	})
 
-	it('renders no table markup (AC-12)', () => {
+	it('renders no table markup', () => {
 		const { container } = renderControl()
 		expect(container.querySelector('th')).toBeNull()
 		expect(container.querySelector('td')).toBeNull()

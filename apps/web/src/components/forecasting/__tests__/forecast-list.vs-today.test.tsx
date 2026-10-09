@@ -28,7 +28,7 @@ function forecast(id: string, name: string): SavedForecast {
 	}
 }
 
-describe('My Forecasts "vs. today" (story 107.1)', () => {
+describe('My Forecasts "vs. today"', () => {
 	it('signs each figure once and leaves a forecast without one blank', () => {
 		render(
 			<ForecastList

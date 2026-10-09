@@ -60,7 +60,7 @@ afterEach(() => {
 	vi.restoreAllMocks()
 })
 
-describe('deleting the DEFAULT profile (story 63.2, AC-2/AC-3)', () => {
+describe('deleting the DEFAULT profile', () => {
 	beforeEach(() => {
 		registerSyncBridge(handle)
 	})
@@ -184,7 +184,7 @@ describe('deleting the ACTIVE profile lands on the OLDEST survivor (deferred fro
 	})
 })
 
-describe('the last-profile guard is UNCHANGED (story 63.2, AC-4)', () => {
+describe('the last-profile guard is UNCHANGED', () => {
 	beforeEach(() => {
 		registerSyncBridge(handle)
 	})
@@ -237,7 +237,7 @@ describe('free tier (no bridge registered)', () => {
  * Exercises the cascade through removeProfile. Imports the stores itself, so it cannot detect a
  * missing registration.
  */
-describe('the cascade destroys the deleted profile’s rows (story 66.3, AC-1)', () => {
+describe('the cascade destroys the deleted profile’s rows', () => {
 	beforeEach(() => {
 		registerSyncBridge(handle)
 		useProfileStore.setState({ profiles: [main, biz, side], activeProfileId: 'main' } as never)

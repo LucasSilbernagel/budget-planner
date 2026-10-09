@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { debtLinkSentence } from '../debt-link-sentence'
 
-describe('debtLinkSentence (Story 113.1, FR181)', () => {
+describe('debtLinkSentence', () => {
 	it('is null when no debt links the expense', () => {
 		expect(debtLinkSentence([], 0)).toBeNull()
 	})

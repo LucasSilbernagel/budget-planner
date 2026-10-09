@@ -13,12 +13,12 @@ import { useIncomeStore } from '../stores/incomeStore'
  * sync update; otherwise another device would push the stale categoryId back.
  */
 
-export interface CategoryValidationError {
+export type CategoryValidationError = {
 	reason: 'empty' | 'too-long' | 'duplicate' | 'not-found'
 	message: string
 }
 
-export interface UseCategoryManagerResult {
+export type UseCategoryManagerResult = {
 	createCategory: (
 		name: string,
 		kind: CategoryKind

@@ -139,7 +139,7 @@ beforeEach(() => {
 	}
 })
 
-describe.each(STORES)('$label — new rows land at the BOTTOM (AC-3)', (store) => {
+describe.each(STORES)('$label — new rows land at the BOTTOM', (store) => {
 	it('appends in insertion order and assigns 0, 1, 2', () => {
 		store.add('first')
 		store.add('second')
@@ -180,7 +180,7 @@ describe.each(STORES)('$label — new rows land at the BOTTOM (AC-3)', (store) =
 	})
 
 	/** A delete leaves a gap on purpose; using list.length would collide with the row at position 2. */
-	it('AC-6: after deleting from the middle, the next insert does not collide', () => {
+	it('after deleting from the middle, the next insert does not collide', () => {
 		store.add('a')
 		store.add('b')
 		store.add('c')
@@ -198,7 +198,7 @@ describe.each(STORES)('$label — new rows land at the BOTTOM (AC-3)', (store) =
 		expect(final.map((r) => r.sortOrder)).toEqual([0, 2, 3])
 	})
 
-	it('AC-6: deleting preserves the relative order of the remaining rows', () => {
+	it('deleting preserves the relative order of the remaining rows', () => {
 		store.add('a')
 		store.add('b')
 		store.add('c')
@@ -209,7 +209,7 @@ describe.each(STORES)('$label — new rows land at the BOTTOM (AC-3)', (store) =
 	})
 })
 
-describe.each(STORES)('$label — legacy -> current backfill (AC-2)', (store) => {
+describe.each(STORES)('$label — legacy -> current backfill', (store) => {
 	/** Seeded newest-first, so backfilling by array index would give exactly the reverse order. */
 	it('assigns dense 0..n-1 by createdAt ASC, ignoring the stored array order', async () => {
 		localStorage.setItem(
@@ -342,7 +342,7 @@ describe.each(STORES)('$label — legacy -> current backfill (AC-2)', (store) =>
  * Pinned on the free tier explicitly: a tier-conditional regression is invisible to a
  * single-tier suite.
  */
-describe.each(STORES)('$label — tier matrix (AC-9)', (store) => {
+describe.each(STORES)('$label — tier matrix', (store) => {
 	it('FREE (no session): assigns sortOrder and enqueues NOTHING', () => {
 		// Deliberately NOT registered (free tier); the spies turn that into an assertion.
 		const unregistered = {

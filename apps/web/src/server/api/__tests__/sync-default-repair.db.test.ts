@@ -171,7 +171,7 @@ beforeEach(async () => {
 	])
 })
 
-describe('a failed default repair is not a 500 (AC-2)', () => {
+describe('a failed default repair is not a 500', () => {
 	it('resolves, reports the committed op as processed, and logs the repair error', async () => {
 		const { spy, fired } = failNextTransaction(new Error('deadlock detected'))
 
@@ -227,7 +227,7 @@ describe('a failed default repair is not a 500 (AC-2)', () => {
 	})
 })
 
-describe('a later batch retries the repair (AC-3)', () => {
+describe('a later batch retries the repair', () => {
 	it('a batch with NO userProfile op hands the empty seat to the oldest live profile', async () => {
 		const { spy, fired } = failNextTransaction(new Error('deadlock detected'))
 		try {
@@ -281,7 +281,7 @@ describe('a later batch retries the repair (AC-3)', () => {
 	})
 })
 
-describe('a transient checkConflict error is a FAILURE, not a conflict (AC-4)', () => {
+describe('a transient checkConflict error is a FAILURE, not a conflict', () => {
 	function failFirstSelect() {
 		let fired = 0
 		const spy = vi.spyOn(db, 'select').mockImplementationOnce(() => {

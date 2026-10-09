@@ -150,7 +150,7 @@ async function hydratePendingOverview(withMismatch: boolean) {
 	}
 }
 
-describe('the Overview’s pending markup hydrates into the figures (story 38.2)', () => {
+describe('the Overview’s pending markup hydrates into the figures', () => {
 	beforeEach(() => {
 		__resetStoresHydratedForTests()
 		usePremiumAccess.mockReturnValue({

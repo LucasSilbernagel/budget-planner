@@ -40,7 +40,7 @@ const seed = () => {
 
 const storeProfile = (id: string) => useProfileStore.getState().profiles.find((p) => p.id === id)
 
-describe('EditProfileDialog (story 54.1)', () => {
+describe('EditProfileDialog', () => {
 	beforeEach(seed)
 
 	afterEach(() => {
@@ -318,7 +318,7 @@ describe('EditProfileDialog (story 54.1)', () => {
 		})
 	})
 
-	describe('icon picker (story 54.2)', () => {
+	describe('icon picker', () => {
 		const hashIconFor = (id: string) => profileIcon(id)
 
 		it('renders the eight fixed icons as a radiogroup', () => {

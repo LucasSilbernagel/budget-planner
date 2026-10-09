@@ -7,7 +7,7 @@ import { addProdSessionCookie, PROD_E2E_USER_ID, signProdSession } from './helpe
 const PROFILE_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const FORECAST_NAME = 'Round trip plan'
 
-interface StoredForecast {
+type StoredForecast = {
 	id: number
 	userId: string
 	profileId: string
@@ -116,7 +116,7 @@ async function seedIncome(page: Page): Promise<void> {
 	})
 }
 
-test('a paid user saves a forecast, finds it after a reload, and deletes it (83.1 AC-5)', async ({
+test('a paid user saves a forecast, finds it after a reload, and deletes it', async ({
 	page,
 	context,
 	baseURL,

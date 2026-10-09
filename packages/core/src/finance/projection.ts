@@ -1,6 +1,6 @@
 export type TimeHorizon = '1y' | '5y' | '10y' | 'custom'
 
-export interface NetWorthProjectionInput {
+export type NetWorthProjectionInput = {
 	currentAssetsCents: number
 
 	currentLiabilitiesCents: number
@@ -17,7 +17,7 @@ export interface NetWorthProjectionInput {
 	customYears?: number
 }
 
-export interface ProjectionPoint {
+export type ProjectionPoint = {
 	month: number
 
 	year: number
@@ -31,7 +31,7 @@ export interface ProjectionPoint {
 	monthlyNetIncomeCents: number
 }
 
-export interface NetWorthProjectionResult {
+export type NetWorthProjectionResult = {
 	input: NetWorthProjectionInput
 
 	timeline: ProjectionPoint[]

@@ -78,7 +78,7 @@ describe('sendSyncOperation', () => {
 		expect(result.error).toContain('Entity already exists')
 	})
 
-	it('story 75.1: maps an op the server listed in `rejections` to statusCode 422', async () => {
+	it('maps an op the server listed in `rejections` to statusCode 422', async () => {
 		stubFetch(async () =>
 			jsonResponse({
 				success: false,
@@ -97,7 +97,7 @@ describe('sendSyncOperation', () => {
 		})
 	})
 
-	it('story 75.1: a failure for an op NOT in `rejections` keeps the no-status path (stays queued)', async () => {
+	it('a failure for an op NOT in `rejections` keeps the no-status path (stays queued)', async () => {
 		stubFetch(async () =>
 			jsonResponse({
 				success: false,
@@ -113,7 +113,7 @@ describe('sendSyncOperation', () => {
 		expect(result.statusCode).toBeUndefined()
 	})
 
-	it("code review 75.2 (D1): a 400 carrying the server's own `invalid-request` refusal keeps its permanent status", async () => {
+	it("code review 75.2: a 400 carrying the server's own `invalid-request` refusal keeps its permanent status", async () => {
 		stubFetch(async () =>
 			jsonResponse(
 				{
@@ -141,7 +141,7 @@ describe('sendSyncOperation', () => {
 		['a 409 from something that is not the sync server', 409, {}],
 		['a 422 with no refusal', 422, { error: 'nope' }],
 	])(
-		'code review 75.2 (D1): WITHHOLDS the permanent status for %s — kept queued, never dropped',
+		'code review 75.2: WITHHOLDS the permanent status for %s — kept queued, never dropped',
 		async (_label, status, body) => {
 			stubFetch(async () =>
 				typeof body === 'string'
@@ -155,7 +155,7 @@ describe('sendSyncOperation', () => {
 		}
 	)
 
-	it("story 79.3 (D1): a 413 carrying the sync route's own `too-large` refusal maps to 422 (dropped, not replayed)", async () => {
+	it("a 413 carrying the sync route's own `too-large` refusal maps to 422 (dropped, not replayed)", async () => {
 		stubFetch(async () =>
 			jsonResponse({ success: false, error: 'Request too large', refusal: 'too-large' }, 413)
 		)
@@ -173,22 +173,19 @@ describe('sendSyncOperation', () => {
 		['a 413 with NO body at all', null],
 		['a 413 with an unknown refusal', { error: 'Request too large', refusal: 'something-else' }],
 		['a 413 with the 400 refusal', { error: 'Request too large', refusal: 'invalid-request' }],
-	])(
-		'story 79.3 (D1): an UNPROVEN 413 keeps statusCode 413 (kept queued) — %s',
-		async (_label, body) => {
-			stubFetch(async () =>
-				body === null
-					? new Response(null, { status: 413 })
-					: typeof body === 'string'
-						? new Response(body, { status: 413, headers: { 'Content-Type': 'text/html' } })
-						: jsonResponse(body, 413)
-			)
-			const result = await sendSyncOperation(operation)
-			expect(result.success).toBe(false)
-			expect(result.retryable).toBe(false)
-			expect(result.statusCode).toBe(413)
-		}
-	)
+	])('an UNPROVEN 413 keeps statusCode 413 (kept queued) — %s', async (_label, body) => {
+		stubFetch(async () =>
+			body === null
+				? new Response(null, { status: 413 })
+				: typeof body === 'string'
+					? new Response(body, { status: 413, headers: { 'Content-Type': 'text/html' } })
+					: jsonResponse(body, 413)
+		)
+		const result = await sendSyncOperation(operation)
+		expect(result.success).toBe(false)
+		expect(result.retryable).toBe(false)
+		expect(result.statusCode).toBe(413)
+	})
 
 	it('classifies a 401 as a permanent (non-retryable) failure', async () => {
 		stubFetch(async () => jsonResponse({ success: false, error: 'Unauthorized' }, 401))

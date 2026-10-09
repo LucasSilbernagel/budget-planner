@@ -192,7 +192,7 @@ describe('savingsGoals service', () => {
 			).toBe(true)
 		})
 
-		it('treats a missing targetAmount as an account, not an error (Story 16-1)', () => {
+		it('treats a missing targetAmount as an account, not an error', () => {
 			const input = {
 				name: 'Test',
 				currentBalance: 50000,
@@ -512,7 +512,7 @@ describe('savingsGoals service', () => {
 		})
 	})
 
-	describe('savings accounts (no target, Story 16-1)', () => {
+	describe('savings accounts (no target)', () => {
 		const account: ClientSavingsGoal = {
 			id: 'acc-1',
 			name: 'Checking Buffer',
@@ -603,7 +603,7 @@ describe('savingsGoals service', () => {
 	})
 })
 
-describe('savingsGoals — allocation fields (Story 26.1)', () => {
+describe('savingsGoals — allocation fields', () => {
 	describe('Type Definitions', () => {
 		it('ClientSavingsGoal carries optional monthlyAllocation + allocationMode', () => {
 			const manual: ClientSavingsGoal = {

@@ -4,7 +4,7 @@ import type { ProcessOperationFn, SyncOperation } from '../types'
 
 type AnyOp = { id: string; type: string; entityType: string; entityId?: string }
 
-describe('onOperationsRejected (story 75.2)', () => {
+describe('onOperationsRejected', () => {
 	let service: SynchronizationService
 	let mockQueue: any
 	let operations: AnyOp[]
@@ -89,7 +89,7 @@ describe('onOperationsRejected (story 75.2)', () => {
 		expect(seen).toHaveLength(1)
 	})
 
-	it("includes a refused create's follow-ups (D1) in the same call", async () => {
+	it("includes a refused create's follow-ups in the same call", async () => {
 		const seen: string[][] = []
 		service.onOperationsRejected((ops) => seen.push(ops.map((o) => o.id).sort()))
 		operations.push(

@@ -68,7 +68,7 @@ async function serverNav(seed: SessionSeed | null, path = '/') {
 const panelHrefs = (nav: HTMLElement) =>
 	[...nav.querySelectorAll('details > ul > li > a')].map((a) => a.getAttribute('href'))
 
-describe('GlobalNav — the server HTML (JavaScript off, story 59.2 AC-4)', () => {
+describe('GlobalNav — the server HTML (JavaScript off)', () => {
 	it('renders the More disclosure CLOSED, with a summary and its panel inside', async () => {
 		const { nav } = await serverNav(SIGNED_OUT)
 		const details = nav.querySelector('details')
@@ -89,7 +89,7 @@ describe('GlobalNav — the server HTML (JavaScript off, story 59.2 AC-4)', () =
 		expect(nav.querySelectorAll('button')).toHaveLength(0)
 	})
 
-	it('also serves Balances and Retirement as lg row anchors (story 69.3)', async () => {
+	it('also serves Balances and Retirement as lg row anchors', async () => {
 		const { nav } = await serverNav(SIGNED_OUT)
 		const rows = [...nav.querySelectorAll(':scope > ul > li[data-nav-promoted] > a')]
 		expect(rows.map((a) => a.getAttribute('href'))).toEqual(['/balance', '/retirement'])
@@ -134,7 +134,7 @@ describe('GlobalNav — the server HTML (JavaScript off, story 59.2 AC-4)', () =
 	)
 })
 
-describe('GlobalNav — a panel opened BEFORE hydration (story 59.2 AC-5)', () => {
+describe('GlobalNav — a panel opened BEFORE hydration', () => {
 	let cleanup: (() => void) | undefined
 	afterEach(() => {
 		cleanup?.()

@@ -3,7 +3,7 @@
 
 import { denormalizeFromMonthly, type Frequency, normalizeToMonthly } from './normalization'
 
-export interface CategoryBreakdownRow {
+export type CategoryBreakdownRow = {
 	categoryId: string | null
 	label: string
 	totalCents: number
@@ -12,23 +12,23 @@ export interface CategoryBreakdownRow {
 	count: number
 }
 
-export interface CategoryBreakdownItem {
+export type CategoryBreakdownItem = {
 	categoryId: string | null | undefined
 	amount: number
 	frequency: Frequency
 }
 
-export interface CategoryBreakdownResult {
+export type CategoryBreakdownResult = {
 	rows: CategoryBreakdownRow[]
 	totalCents: number
 }
 
-export interface CategoryBreakdownOptions {
+export type CategoryBreakdownOptions = {
 	cadence: Frequency
 	uncategorizedLabel: string
 }
 
-interface Bucket {
+type Bucket = {
 	categoryId: string | null
 	label: string
 	monthlyCents: number

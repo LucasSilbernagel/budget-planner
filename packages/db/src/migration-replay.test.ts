@@ -9,7 +9,7 @@ import { getTableConfig, isPgEnum, PgDialect, PgTable } from 'drizzle-orm/pg-cor
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import * as schema from './schema'
 
-interface JournalEntry {
+type JournalEntry = {
 	idx: number
 	tag: string
 }
@@ -105,7 +105,7 @@ function normalizeCheckExpr(raw: string): string {
 	)
 }
 
-interface ExpectedColumn {
+type ExpectedColumn = {
 	type: string
 	notNull: boolean
 }
@@ -428,7 +428,7 @@ describe('clean-slate migration replay', () => {
 		}
 	)
 
-	it('creates users.sessionsRevokedAt as declared (the column 5-8 AC-11 needs)', async () => {
+	it('creates users.sessionsRevokedAt as declared (the column session revocation needs)', async () => {
 		const users = expectedTables.get('users') as Map<string, ExpectedColumn>
 		expect(users.has('sessionsRevokedAt')).toBe(true)
 		const result = await db.query<{ pgtype: string }>(

@@ -4,7 +4,7 @@
 // Never the driver's message: it names tables and columns, so it goes to the log.
 export type SyncRejectionReason = 'constraint' | 'invalid'
 
-export interface SyncRejection {
+export type SyncRejection = {
 	operationId: string
 	reason: SyncRejectionReason
 }

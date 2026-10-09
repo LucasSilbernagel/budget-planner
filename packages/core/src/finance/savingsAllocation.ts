@@ -2,7 +2,7 @@ import { type AllocationMode, resolveAllocationMode } from '../services/savingsG
 import { calculateNetPeriodIncome, type NormalizableFinancialItem } from './netIncome'
 import { normalizeToMonthly } from './normalization'
 
-export interface AllocationAccount {
+export type AllocationAccount = {
 	id: string
 	allocationMode?: AllocationMode
 	monthlyAllocation?: number | null
@@ -10,11 +10,11 @@ export interface AllocationAccount {
 
 // recordedAsExpense can only be user-supplied: same-money and different-money rows are
 // byte-identical, so no heuristic can de-duplicate them.
-export interface PoolContributionItem extends NormalizableFinancialItem {
+export type PoolContributionItem = NormalizableFinancialItem & {
 	recordedAsExpense?: boolean
 }
 
-export interface AutomaticAllocationInput {
+export type AutomaticAllocationInput = {
 	incomeSources: NormalizableFinancialItem[]
 	expenses: NormalizableFinancialItem[]
 	investmentContributions: PoolContributionItem[]
@@ -23,7 +23,7 @@ export interface AutomaticAllocationInput {
 
 // Σ allocations === distributablePool only when an automatic row exists; with none the
 // pool is still reported so the UI can show the unallocated leftover.
-export interface AutomaticAllocationResult {
+export type AutomaticAllocationResult = {
 	distributablePool: number
 	automaticAccountCount: number
 	allocations: Record<string, number>

@@ -393,7 +393,7 @@ describe('buildFinancialSummary — PARITY with the app’s own selectors', () =
 		expect(model.netWorth.totalInvestmentsCents).toBe(2_000_000)
 	})
 
-	it('net worth matches the app definition once savings are in play too (story 32.2)', () => {
+	it('net worth matches the app definition once savings are in play too', () => {
 		const model = buildInput({ balances: cleanBalances, savings: cleanSavings })
 		const canonical = canonicalNetWorth(cleanBalances, cleanSavings)
 		expect(model.netWorth.totalSavingsCents).toBe(canonical.savings)
@@ -413,7 +413,7 @@ describe('buildFinancialSummary — PARITY with the app’s own selectors', () =
 	})
 })
 
-describe('buildFinancialSummary — net worth includes savings (story 32.2)', () => {
+describe('buildFinancialSummary — net worth includes savings', () => {
 	const BALANCES = [
 		{ id: 'b1', name: 'ISA', type: 'investment', currentBalance: 800_000 },
 		{ id: 'b2', name: 'Pension', type: 'investment', currentBalance: 1_200_000 },

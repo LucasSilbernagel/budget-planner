@@ -33,7 +33,7 @@ afterEach(() => {
 	vi.useRealTimers()
 })
 
-describe('the one-time event year field (108.1, AC-2)', () => {
+describe('the one-time event year field', () => {
 	it('is labelled "Years from now", not "Year"', () => {
 		const field = addEvent()
 		expect(field.id).toMatch(/^event-year-/)

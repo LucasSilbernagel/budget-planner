@@ -38,13 +38,13 @@ function incomeChange(overrides: Partial<ServerChange> = {}): ServerChange {
 	}
 }
 
-describe('applyServerChangesToStores — uuid reconciliation (Story 5-14)', () => {
+describe('applyServerChangesToStores — uuid reconciliation', () => {
 	beforeEach(() => {
 		useIncomeStore.setState({ incomeSources: [] })
 		useSavingsStore.setState({ savingsGoals: [] })
 	})
 
-	it('AC-4: a client-created row pulled back yields exactly ONE row (no duplicate)', () => {
+	it('a client-created row pulled back yields exactly ONE row (no duplicate)', () => {
 		useIncomeStore.setState({
 			incomeSources: [
 				{
@@ -156,7 +156,7 @@ function profileChange(id: string, isDefault: boolean, name: string): ServerChan
 	}
 }
 
-describe('applyServerChangesToStores — active-profile reconciliation (Story 5-15)', () => {
+describe('applyServerChangesToStores — active-profile reconciliation', () => {
 	beforeEach(() => {
 		useIncomeStore.setState({ incomeSources: [] })
 		useProfileStore.setState({
@@ -232,7 +232,7 @@ describe('applyServerChangesToStores — active-profile reconciliation (Story 5-
 	})
 })
 
-describe('applyServerChangesToStores — placeholder re-home on reconcile (Story 54.4, AC-6)', () => {
+describe('applyServerChangesToStores — placeholder re-home on reconcile', () => {
 	const TS = '2026-09-15T00:00:00.000Z'
 	const OTHER_REAL = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
 
@@ -421,7 +421,7 @@ describe('applyServerChangesToStores — placeholder re-home on reconcile (Story
 	})
 })
 
-describe('applyServerChangesToStores — profile icon (Story 54.2)', () => {
+describe('applyServerChangesToStores — profile icon', () => {
 	beforeEach(() => {
 		useProfileStore.setState({ profiles: [], activeProfileId: null })
 	})
@@ -478,7 +478,7 @@ describe('applyServerChangesToStores — profile icon (Story 54.2)', () => {
 	})
 })
 
-describe('a pulled userProfile tombstone cascades locally (story 66.3)', () => {
+describe('a pulled userProfile tombstone cascades locally', () => {
 	const DOOMED = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 
 	beforeEach(() => {
@@ -574,7 +574,7 @@ describe('a pulled userProfile tombstone cascades locally (story 66.3)', () => {
 	})
 })
 
-describe('the retirement plan (story 99.2)', () => {
+describe('the retirement plan', () => {
 	const PLAN = {
 		...RETIREMENT_PLAN_DEFAULTS,
 		currentAgeInput: '41',
@@ -612,7 +612,7 @@ describe('the retirement plan (story 99.2)', () => {
 		})
 	})
 
-	it('AC-3: replaces the plan, owned by the session, stamped with the server version', () => {
+	it('replaces the plan, owned by the session, stamped with the server version', () => {
 		applyServerChangesToStores([planChange()], SERVER_USER_ID)
 		const state = useRetirementPlannerStore.getState()
 		expect(state.plan).toEqual(PLAN)
@@ -620,7 +620,7 @@ describe('the retirement plan (story 99.2)', () => {
 		expect(state.serverUpdatedAt).toBe('2026-10-05T12:00:00.000Z')
 	})
 
-	it('AC-3: rebuilds the pulled plan through coerceRetirementPlan (lenient pull, coerced fields)', () => {
+	it('rebuilds the pulled plan through coerceRetirementPlan (lenient pull, coerced fields)', () => {
 		applyServerChangesToStores(
 			[planChange({ data: { plan: { currentAgeInput: 7, model: 'hybrid', extra: 1 } } })],
 			SERVER_USER_ID
@@ -628,7 +628,7 @@ describe('the retirement plan (story 99.2)', () => {
 		expect(useRetirementPlannerStore.getState().plan).toEqual(RETIREMENT_PLAN_DEFAULTS)
 	})
 
-	it('D9 / AC-7: a plan TOMBSTONE is a store no-op', () => {
+	it('a plan TOMBSTONE is a store no-op', () => {
 		// A full row: the no-op must not depend on an empty payload.
 		applyServerChangesToStores([planChange({ isDeleted: true })], SERVER_USER_ID)
 		applyServerChangesToStores([planChange({ isDeleted: true, data: {} })], SERVER_USER_ID)
@@ -636,7 +636,7 @@ describe('the retirement plan (story 99.2)', () => {
 		expect(useRetirementPlannerStore.getState().serverUpdatedAt).toBeNull()
 	})
 
-	it('AC-4: while a plan op is still queued, the local plan is NOT overwritten', () => {
+	it('while a plan op is still queued, the local plan is NOT overwritten', () => {
 		const asked: [string, string][] = []
 		applyServerChangesToStores([planChange()], SERVER_USER_ID, {
 			hasPendingOperation: (entityType, entityId) => {
@@ -648,14 +648,14 @@ describe('the retirement plan (story 99.2)', () => {
 		expect(useRetirementPlannerStore.getState().plan).toEqual(LOCAL)
 	})
 
-	it('AC-4 CONTROL: with nothing queued, the same change applies', () => {
+	it('CONTROL: with nothing queued, the same change applies', () => {
 		applyServerChangesToStores([planChange()], SERVER_USER_ID, {
 			hasPendingOperation: () => false,
 		})
 		expect(useRetirementPlannerStore.getState().plan).toEqual(PLAN)
 	})
 
-	it('refuses a plan whose id is not the session account (D3)', () => {
+	it('refuses a plan whose id is not the session account', () => {
 		applyServerChangesToStores([planChange({ entityId: OTHER_ACCOUNT })], SERVER_USER_ID)
 		expect(useRetirementPlannerStore.getState().plan).toEqual(LOCAL)
 	})

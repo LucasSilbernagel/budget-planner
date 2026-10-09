@@ -351,7 +351,7 @@ describe('survival first — paying and not-yet-due accounts survive a sweep tha
 	})
 })
 
-describe('the warning email (AC-4, D2)', () => {
+describe('the warning email', () => {
 	it('emails a lapsed account once its deletion is 30 days away, and stamps the notice', async () => {
 		const due = await seedAccount({
 			label: 'due',
@@ -437,7 +437,7 @@ describe('end to end: notice, then deletion no earlier than 30 days later', () =
 	})
 })
 
-describe('re-check under the lock (AC-6) — SIMULATED interleaving', () => {
+describe('re-check under the lock — SIMULATED interleaving', () => {
 	it('a customer who resubscribes between candidate selection and the purge SURVIVES', async () => {
 		const account = await seedAccount({
 			label: 'resub',
@@ -544,7 +544,7 @@ describe('dry run', () => {
 	})
 })
 
-describe('in-app backstop (D1) — runs only when the scheduled sweep has stopped', () => {
+describe('in-app backstop — runs only when the scheduled sweep has stopped', () => {
 	it('does nothing while the last successful run is fresh', async () => {
 		await db
 			.update(jobRuns)

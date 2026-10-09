@@ -6,7 +6,7 @@ import { useCurrencyStore, useFormattedAmount } from '../currencyStore'
 // spaces) — normalize to a plain space for human-readable assertions.
 const normalizeSpaces = (value: string) => value.replace(/\s/g, ' ')
 
-describe('currencyStore (story 8-1)', () => {
+describe('currencyStore', () => {
 	beforeEach(() => {
 		useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
 	})
@@ -15,7 +15,7 @@ describe('currencyStore (story 8-1)', () => {
 		localStorage.clear()
 	})
 
-	it('defaults new users to explicit USD symbols (story 22-1 / FR38)', () => {
+	it('defaults new users to explicit USD symbols', () => {
 		// The product default lives on the store's initial state, independent of the suite's
 		// currency-less baseline.
 		const initial = useCurrencyStore.getInitialState()
@@ -23,7 +23,7 @@ describe('currencyStore (story 8-1)', () => {
 		expect(initial.currency).toBe('USD')
 	})
 
-	describe('useFormattedAmount derives locale from currency (AC-1)', () => {
+	describe('useFormattedAmount derives locale from currency', () => {
 		it('formats EUR per its de-DE regional default without any locale set', () => {
 			useCurrencyStore.setState({ mode: 'symbol', currency: 'EUR' })
 			const { result } = renderHook(() => useFormattedAmount())
@@ -36,13 +36,13 @@ describe('currencyStore (story 8-1)', () => {
 			expect(result.current(100000)).toBe('$1,000.00')
 		})
 
-		it('leaves currency-less mode as grouped raw numbers (AC-5; story 14-2 grouping)', () => {
+		it('leaves currency-less mode as grouped raw numbers (grouped)', () => {
 			useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
 			const { result } = renderHook(() => useFormattedAmount())
 			expect(result.current(100000)).toBe('1,000.00')
 		})
 
-		it('groups currency-less amounts with a neutral en-US locale even when a symbol currency is still retained (story 14-2 review)', () => {
+		it('groups currency-less amounts with a neutral en-US locale even when a symbol currency is still retained', () => {
 			// { mode:'none', currency:'EUR' } is reachable; raw numbers must stay en-US.
 			useCurrencyStore.setState({ mode: 'none', currency: 'EUR' })
 			const { result } = renderHook(() => useFormattedAmount())
@@ -54,7 +54,7 @@ describe('currencyStore (story 8-1)', () => {
 		})
 	})
 
-	describe('persistence / migration (AC-3)', () => {
+	describe('persistence / migration', () => {
 		const STORAGE_KEY = 'budget-planner-currency-prefs-v1'
 
 		const seed = (state: Record<string, unknown>, version: number) => {
@@ -85,7 +85,7 @@ describe('currencyStore (story 8-1)', () => {
 			expect(useCurrencyStore.getState().mode).toBe('symbol')
 		})
 
-		it('falls back to the new symbol/USD default for a corrupt v0 blob missing mode/currency (story 22-1)', async () => {
+		it('falls back to the new symbol/USD default for a corrupt v0 blob missing mode/currency', async () => {
 			// migrate coalesces per field: a partial blob must not merge undefined over the defaults.
 			seed({ locale: 'de-DE', localeUserSet: true }, 0)
 
@@ -95,7 +95,7 @@ describe('currencyStore (story 8-1)', () => {
 			expect(useCurrencyStore.getState().currency).toBe('USD')
 		})
 
-		it('preserves an existing explicit currency-less choice (new default does NOT clobber it) (story 22-1 / AC-2)', async () => {
+		it('preserves an existing explicit currency-less choice (new default does NOT clobber it)', async () => {
 			// Pre-set the contrasting default so the assertion proves rehydrate restored the stored value.
 			useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
 			seed({ mode: 'none', currency: 'NONE' }, 2)
@@ -109,7 +109,7 @@ describe('currencyStore (story 8-1)', () => {
 			expect(result.current(100000)).toBe('1,000.00')
 		})
 
-		it('canonicalizes a persisted consolidated currency (v1 CAD → USD) (story 8-2 AC-3)', async () => {
+		it('canonicalizes a persisted consolidated currency (v1 CAD → USD)', async () => {
 			// CAD already rendered `$…`, so mapping to USD is lossless.
 			seed({ mode: 'symbol', currency: 'CAD' }, 1)
 

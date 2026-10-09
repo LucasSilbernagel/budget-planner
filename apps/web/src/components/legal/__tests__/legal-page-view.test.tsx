@@ -23,7 +23,7 @@ describe('LegalPageView', () => {
 		).toBeInTheDocument()
 	})
 
-	it('surfaces the Merchant-of-Record disclosure on the pricing page (AC-4)', () => {
+	it('surfaces the Merchant-of-Record disclosure on the pricing page', () => {
 		renderWithProviders(<LegalPageView page={PRICING_PAGE} />)
 		expect(screen.getByText(/Merchant of Record/i)).toBeInTheDocument()
 	})

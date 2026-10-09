@@ -45,7 +45,7 @@ describe('CurrencyToggle', () => {
 		expect(options).not.toContain('NONE')
 	})
 
-	it('does not offer the consolidated dollar variants CAD/AUD/MXN (story 8-2)', async () => {
+	it('does not offer the consolidated dollar variants CAD/AUD/MXN', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<CurrencyToggle />)
 		await user.click(screen.getByRole('switch', { name: /currency symbols/i }))

@@ -49,7 +49,7 @@ beforeEach(() => {
 	localStorage.removeItem(RETIREMENT_PLANNER_STORAGE_KEY)
 })
 
-describe('retirementPlannerStore defaults (AC-2)', () => {
+describe('retirementPlannerStore defaults', () => {
 	it('opens on age 35 and life expectancy 90', () => {
 		const { plan } = useRetirementPlannerStore.getInitialState()
 		expect(plan.currentAgeInput).toBe('35')
@@ -94,7 +94,7 @@ describe('retirementPlannerStore writes', () => {
 		expect(useRetirementPlannerStore.getState().plan.desiredIncomeInput).toBe('1234.56')
 	})
 
-	it('sets the touched flag as it writes the post-retirement rate (AC-3)', () => {
+	it('sets the touched flag as it writes the post-retirement rate', () => {
 		// One writer for both halves: persisting the rate without the flag restores
 		// a plan whose own hint contradicts it.
 		useRetirementPlannerStore.getState().setPostRetirementReturn('3.0')
@@ -122,7 +122,7 @@ describe('retirementPlannerStore writes', () => {
 	})
 })
 
-describe('retirementPlannerStore rehydration (AC-1)', () => {
+describe('retirementPlannerStore rehydration', () => {
 	it('restores every saved field', async () => {
 		seed(SAVED_PLAN)
 		await expect(useRetirementPlannerStore.persist.rehydrate()).resolves.not.toThrow()
@@ -136,7 +136,7 @@ describe('retirementPlannerStore rehydration (AC-1)', () => {
 	})
 })
 
-describe('deliberately cleared fields (AC-4)', () => {
+describe('deliberately cleared fields', () => {
 	// ⚠️ These are the tests a `||` fallback breaks and nothing else does.
 	const CLEARABLE = [
 		'currentAgeInput',
@@ -171,7 +171,7 @@ describe('deliberately cleared fields (AC-4)', () => {
 	})
 })
 
-describe('corrupt, absent and foreign payloads (AC-5)', () => {
+describe('corrupt, absent and foreign payloads', () => {
 	const CORRUPT_CASES: ReadonlyArray<readonly [string, unknown]> = [
 		['null', null],
 		['a string', 'not a plan'],
@@ -265,7 +265,7 @@ describe('corrupt, absent and foreign payloads (AC-5)', () => {
 	})
 })
 
-describe('the adopted figure (story 65.2)', () => {
+describe('the adopted figure', () => {
 	async function restore(plan: unknown) {
 		seed(plan)
 		await useRetirementPlannerStore.persist.rehydrate()
@@ -307,7 +307,7 @@ describe('the adopted figure (story 65.2)', () => {
 	})
 })
 
-describe('coerceRetirementPlan coherence (AC-3)', () => {
+describe('coerceRetirementPlan coherence', () => {
 	it('collapses the incoherent untouched-but-set region', () => {
 		// With postRetirementTouched false the mirror is read, so a stored rate would be invisible
 		// state that could spring back.
@@ -327,7 +327,7 @@ describe('coerceRetirementPlan coherence (AC-3)', () => {
 	})
 })
 
-describe('the desired-income locale travels with its string (AC-5, code review)', () => {
+describe('the desired-income locale travels with its string', () => {
 	it('restores the locale the figure was written in', async () => {
 		seed(SAVED_PLAN)
 		await useRetirementPlannerStore.persist.rehydrate()
@@ -359,7 +359,7 @@ describe('the desired-income locale travels with its string (AC-5, code review)'
 })
 
 /** Every test resets it explicitly: resetPlan (in beforeEach) leaves it alone. */
-describe('serverUpdatedAt (story 99.2)', () => {
+describe('serverUpdatedAt', () => {
 	const OWNER = '11111111-1111-4111-8111-111111111111'
 	const OTHER = '22222222-2222-4222-8222-222222222222'
 	const PULLED = '2026-10-05T12:00:00.000Z'

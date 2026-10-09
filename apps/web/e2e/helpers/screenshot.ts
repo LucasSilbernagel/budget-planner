@@ -33,7 +33,7 @@ const PHONE_TARGET_PX = 44
  */
 const PHONE_STRIP_PX = 45
 
-export interface Box {
+export type Box = {
 	x: number
 	y: number
 	width: number

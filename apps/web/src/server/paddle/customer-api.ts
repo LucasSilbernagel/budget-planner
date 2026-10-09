@@ -3,7 +3,7 @@
 import { getPaddleConfig } from '@budget-planner/config'
 import { logger } from '@/lib/logger'
 
-interface PaddleCustomerResponse {
+type PaddleCustomerResponse = {
 	data?: {
 		id?: string
 		email?: string

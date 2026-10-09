@@ -11,7 +11,7 @@ import { verifySession } from './session'
 
 export type { ApiResult }
 
-export interface UserSession {
+export type UserSession = {
 	userId: string
 	email: string
 	paddleId: string

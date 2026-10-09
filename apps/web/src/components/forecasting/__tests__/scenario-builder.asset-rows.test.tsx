@@ -136,7 +136,7 @@ async function waitForResult() {
 	await screen.findByRole('button', { name: /save forecast/i }, { timeout: 3000 })
 }
 
-describe('the Assets section (AC-5)', () => {
+describe('the Assets section', () => {
 	it('sits between Investments & Debts and Income Sources, with its note and empty state', () => {
 		render(<ScenarioBuilder onSave={vi.fn()} />)
 		const headings = screen
@@ -184,7 +184,7 @@ describe('the Assets section (AC-5)', () => {
 	})
 })
 
-describe('the seed (AC-3)', () => {
+describe('the seed', () => {
 	it('lists the active profile assets in store order, and only in the Assets section', () => {
 		setEntries([
 			entry({ id: 'e-1', name: 'Pension', type: 'investment', currentBalance: 1_000_000 }),
@@ -200,7 +200,7 @@ describe('the seed (AC-3)', () => {
 		expect(screen.getByLabelText('Value for Car')).toHaveValue('12,345.67')
 	})
 
-	it('seeds a negative or non-finite stored value as 0, and a non-string name as blank (AC-3)', () => {
+	it('seeds a negative or non-finite stored value as 0, and a non-string name as blank', () => {
 		setEntries([
 			entry({ id: 'a-1', name: 'Legacy', currentBalance: -500_000 }),
 			entry({ id: 'a-2', name: 'Broken', currentBalance: Number.NaN }),
@@ -214,7 +214,7 @@ describe('the seed (AC-3)', () => {
 		expect(screen.getByLabelText('Value for unnamed asset')).toHaveValue('0.00')
 	})
 
-	it('counts an asset-only user as something to seed (AC-3)', () => {
+	it('counts an asset-only user as something to seed', () => {
 		setEntries([entry({ id: 'a-1', name: 'House', currentBalance: 100_000 })])
 		render(<ScenarioBuilder onSave={vi.fn()} />)
 		expect(gate.calls.length).toBeGreaterThan(0)
@@ -262,7 +262,7 @@ describe('the seed (AC-3)', () => {
 	})
 })
 
-describe('add, remove and the Value field (AC-5)', () => {
+describe('add, remove and the Value field', () => {
 	it('adds a New Asset row at 0, names each remove button after its row, and can empty the list', () => {
 		setEntries([entry({ id: 'a-1', name: 'House', currentBalance: 100_000 })])
 		render(<ScenarioBuilder onSave={vi.fn()} />)
@@ -297,7 +297,7 @@ describe('add, remove and the Value field (AC-5)', () => {
 	})
 })
 
-describe('what-if only: nothing reaches the balance store (AC-7)', () => {
+describe('what-if only: nothing reaches the balance store', () => {
 	it('a full asset edit sequence calls no balance-store action and leaves the persisted bytes unchanged', async () => {
 		useIncomeStore.setState({ incomeSources: [income(500_000)] })
 		setEntries([
@@ -329,7 +329,7 @@ describe('what-if only: nothing reaches the balance store (AC-7)', () => {
 	})
 })
 
-describe('Starting Net Worth is the Overview’s (AC-4)', () => {
+describe('Starting Net Worth is the Overview’s', () => {
 	function seedParityStores(debtBalance: number): void {
 		useSavingsStore.setState({ savingsGoals: [savingsGoal(1_234_500)] as never })
 		setEntries([
@@ -358,7 +358,7 @@ describe('Starting Net Worth is the Overview’s (AC-4)', () => {
 	})
 })
 
-describe('baseline and "vs. today" with assets (AC-11)', () => {
+describe('baseline and "vs. today" with assets', () => {
 	function comparable(rows: ForecastingResult['baseline']) {
 		return rows.map(
 			({
@@ -426,7 +426,7 @@ describe('baseline and "vs. today" with assets (AC-11)', () => {
 	})
 })
 
-describe('save (AC-9)', () => {
+describe('save', () => {
 	it('writes the asset rows as name and value, and [] when there are none', async () => {
 		useIncomeStore.setState({ incomeSources: [income(500_000)] })
 		setEntries([
@@ -456,7 +456,7 @@ describe('save (AC-9)', () => {
 	})
 })
 
-describe('reload, the builder’s own coercion (AC-10)', () => {
+describe('reload, the builder’s own coercion', () => {
 	const forecast = (inputs: unknown) =>
 		({
 			id: 'saved-1',

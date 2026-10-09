@@ -38,7 +38,7 @@ export const FAKE_PADDLE = {
 /** Port 9 on loopback, where nothing listens, so every outbound request is refused locally. */
 export const NO_OUTBOUND_PROXY = 'http://127.0.0.1:9'
 
-export interface OutboxEntry {
+export type OutboxEntry = {
 	to: string
 	link: string
 }

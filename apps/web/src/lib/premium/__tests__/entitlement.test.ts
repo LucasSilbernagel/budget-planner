@@ -18,7 +18,7 @@ describe('isEntitledSeed', () => {
 		expect(isEntitledSeed(seed({ subscriptionStatus: 'active' }))).toBe(true)
 	})
 
-	it('is true for an authenticated lifetime purchase (story 25-2)', () => {
+	it('is true for an authenticated lifetime purchase', () => {
 		expect(isEntitledSeed(seed({ subscriptionStatus: 'lifetime' }))).toBe(true)
 	})
 

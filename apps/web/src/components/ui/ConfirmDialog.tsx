@@ -5,7 +5,7 @@ import { Modal } from './Modal'
  * The destructive button is NOT auto-focused, so an immediate Enter/Space can't confirm a delete.
  * Pass `finalFocusRef` when confirming removes the trigger, or focus falls to `<body>`.
  */
-export interface ConfirmDialogProps {
+export type ConfirmDialogProps = {
 	isOpen: boolean
 	onConfirm: () => void
 	/** Called on Cancel, backdrop click, or Escape. Must abort the action. */

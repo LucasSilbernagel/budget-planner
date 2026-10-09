@@ -52,7 +52,7 @@ afterEach(() => {
 })
 
 describe('hiding the Retirement planner', () => {
-	it('leaves every shared store AND the saved plan byte-identical across a hide/show cycle (AC-7)', async () => {
+	it('leaves every shared store AND the saved plan byte-identical across a hide/show cycle', async () => {
 		const user = userEvent.setup()
 		const before = Object.fromEntries(
 			Object.keys(PRESERVED_KEYS).map((key) => [key, localStorage.getItem(key)])

@@ -13,7 +13,7 @@ export type RefusalOutcome =
 	/** Not a refusal: the edit keeps failing but is still kept and queued. */
 	| 'not-synced'
 
-export interface RefusalNotice {
+export type RefusalNotice = {
 	key: string
 	entityType: SyncEntityType
 	name: string | null
@@ -23,7 +23,7 @@ export interface RefusalNotice {
 	change?: SyncOperationType
 }
 
-interface RefusalNoticeState {
+type RefusalNoticeState = {
 	notices: RefusalNotice[]
 	/** Core re-reports escalated edits on every status change, so a dismissal is kept until the row stops escalating. */
 	dismissedNotSynced: ReadonlySet<string>

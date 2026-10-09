@@ -109,7 +109,7 @@ describe('checkClientBundle', () => {
 
 // Positive control: a marker missing from its source file would make
 // "absent from the build" vacuous.
-describe('checkDevSeamsAbsent (story 87.1, AC 4)', () => {
+describe('checkDevSeamsAbsent', () => {
 	const SEAM = { marker: 'E2E_MAIL_OUTBOX', source: 'src/mailer.ts' }
 	function app(sourceText = "if (import.meta.env.DEV && process.env['E2E_MAIL_OUTBOX']) {}") {
 		return dist({ 'src/mailer.ts': sourceText })
@@ -122,7 +122,7 @@ describe('checkDevSeamsAbsent (story 87.1, AC 4)', () => {
 		})
 	})
 
-	it('the real seam list names the session seed, in getSessionSeed (story 92.1)', () => {
+	it('the real seam list names the session seed, in getSessionSeed', () => {
 		expect(DEV_ONLY_SEAMS).toContainEqual({
 			marker: 'E2E_SESSION_SEED',
 			source: 'src/server/api/auth/session-seed.ts',

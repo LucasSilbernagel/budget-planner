@@ -5,7 +5,7 @@
 
 export const COUNTERDEV_SCRIPT_SRC = 'https://cdn.counter.dev/script.js'
 
-export interface AnalyticsScript {
+export type AnalyticsScript = {
 	src: string
 	'data-id': string
 	defer: true

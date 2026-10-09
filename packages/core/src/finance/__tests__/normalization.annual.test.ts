@@ -14,7 +14,7 @@ import {
 const PERIODS: Record<Frequency, number> = { weekly: 52, biweekly: 26, monthly: 12, annually: 1 }
 const FREQUENCIES = Object.keys(PERIODS) as Frequency[]
 
-describe('normalizeToAnnual (story 111.1)', () => {
+describe('normalizeToAnnual', () => {
 	it.each(FREQUENCIES)('is amount × periods for every amount 0..1,999,999 (%s)', (frequency) => {
 		let misses = 0
 		let first: number | undefined
@@ -59,7 +59,7 @@ describe('normalizeToAnnual (story 111.1)', () => {
 	})
 })
 
-describe('calculateTotalAnnualNormalized (story 111.1)', () => {
+describe('calculateTotalAnnualNormalized', () => {
 	it('sums each item annualised exactly (the annual twin of calculateTotalMonthlyNormalized)', () => {
 		// The docs' worked example: 2000×26 + 600×12 + 1200 = 60,400.00.
 		expect(
@@ -83,7 +83,7 @@ describe('calculateTotalAnnualNormalized (story 111.1)', () => {
 	})
 })
 
-describe('roundingDriftToleranceCents (story 111.1 review, D1)', () => {
+describe('roundingDriftToleranceCents', () => {
 	it('is 6 cents per non-monthly entry per year, for each frequency mix', () => {
 		expect(ROUNDING_DRIFT_CENTS_PER_ENTRY_YEAR).toBe(6)
 		expect(roundingDriftToleranceCents([], 10)).toBe(0)

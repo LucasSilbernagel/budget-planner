@@ -33,7 +33,7 @@ export function renderWithRouter(
 
 export type Frequency = 'weekly' | 'biweekly' | 'monthly' | 'annually'
 
-export interface IncomeSourceLike {
+export type IncomeSourceLike = {
 	id: string
 	userId: string
 	name: string
@@ -41,7 +41,7 @@ export interface IncomeSourceLike {
 	frequency: Frequency
 }
 
-export interface ExpenseLike {
+export type ExpenseLike = {
 	id: string
 	userId: string
 	name: string
@@ -49,7 +49,7 @@ export interface ExpenseLike {
 	frequency: Frequency
 }
 
-export interface SavingsGoalLike {
+export type SavingsGoalLike = {
 	id: string
 	userId: string
 	name: string

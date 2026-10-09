@@ -85,7 +85,7 @@ afterEach(() => {
 	vi.clearAllMocks()
 })
 
-describe('the Projection Period field refuses what the engine cannot run (AC-1)', () => {
+describe('the Projection Period field refuses what the engine cannot run', () => {
 	const invalid: [string, string][] = [
 		["an empty field (Number('') is 0)", ''],
 		['0', '0'],
@@ -196,7 +196,7 @@ describe('the Projection Period field refuses what the engine cannot run (AC-1)'
 	})
 })
 
-describe('one-time event amounts reach the engine finite and in whole cents (AC-4)', () => {
+describe('one-time event amounts reach the engine finite and in whole cents', () => {
 	it('an amount that overflows to Infinity once scaled to cents never reaches the engine', async () => {
 		const field = await renderBuilder()
 		fireEvent.click(screen.getByRole('button', { name: /add event/i }))

@@ -1,9 +1,9 @@
-export interface ContactValidationError {
+export type ContactValidationError = {
 	field: 'message' | 'email'
 	message: string
 }
 
-export interface ContactFormValues {
+export type ContactFormValues = {
 	name: string
 	email: string
 	message: string

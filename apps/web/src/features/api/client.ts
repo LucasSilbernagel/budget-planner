@@ -57,7 +57,7 @@ export async function fetchServerChangesWithMeta(
 	return { changes: result.changes ?? [], profileIds }
 }
 
-interface BatchSyncResponseLite {
+type BatchSyncResponseLite = {
 	success: boolean
 	processedCount: number
 	failedCount: number

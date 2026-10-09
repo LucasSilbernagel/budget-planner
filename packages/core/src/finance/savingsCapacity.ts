@@ -39,7 +39,7 @@ export function calculateMaxDynamicallyAllocableSavings(
 	return Math.max(0, maxAllocable)
 }
 
-export interface SavingsCapacityResult {
+export type SavingsCapacityResult = {
 	grossIncome: number
 	netPeriodIncome: number
 	savingsCapacityPercentage: number

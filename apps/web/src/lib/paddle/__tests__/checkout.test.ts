@@ -60,7 +60,7 @@ describe('getPaddleInstance', () => {
 	})
 })
 
-describe('getPaddleInstance: the window.profitwell stub (sec-4 D1)', () => {
+describe('getPaddleInstance: the window.profitwell stub', () => {
 	type Host = { profitwell?: unknown }
 	let host: Host
 

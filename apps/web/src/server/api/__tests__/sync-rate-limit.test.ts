@@ -9,7 +9,7 @@ beforeEach(() => {
 	vi.clearAllMocks()
 })
 
-describe('sync checkRateLimit wiring (AC-4)', () => {
+describe('sync checkRateLimit wiring', () => {
 	it('delegates to the shared primitive with the exact sync scope/limit and an onDbError fallback', async () => {
 		checkDbRateLimit.mockResolvedValue({ allowed: true, remaining: 99 })
 		const result = await checkRateLimit('user-abc')
@@ -28,7 +28,7 @@ describe('sync checkRateLimit wiring (AC-4)', () => {
 	})
 })
 
-describe('sync DB-error degrade — syncInMemoryFallback boundary (AC-6)', () => {
+describe('sync DB-error degrade — syncInMemoryFallback boundary', () => {
 	it('enforces 100/60s per user in the bounded in-memory fallback (100 allowed, 101st blocked)', async () => {
 		checkDbRateLimit.mockImplementation(
 			async ({

@@ -193,7 +193,7 @@ const F = {
 	adjRejectedA: '90-adjustment.updated-full-refund-A.REJECTED.derived.json',
 } as const
 
-interface Envelope {
+type Envelope = {
 	event_id: string
 	event_type?: string
 	occurred_at: string

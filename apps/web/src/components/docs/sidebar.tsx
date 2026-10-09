@@ -1,6 +1,6 @@
 import { DOC_PAGES } from '../../content/docs'
 
-export interface DocsSidebarProps {
+export type DocsSidebarProps = {
 	activeSlug?: string
 }
 

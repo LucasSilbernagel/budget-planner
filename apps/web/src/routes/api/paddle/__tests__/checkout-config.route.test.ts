@@ -91,7 +91,7 @@ describe('GET /api/paddle/checkout-config', () => {
 		})
 	})
 
-	it('FAILS CLOSED (500) in production when the monthly price is unset (story 5-20, code review)', async () => {
+	it('FAILS CLOSED (500) in production when the monthly price is unset', async () => {
 		// The monthly price is advertised on the legal pricing page, so production without it must fail.
 		withEnv({
 			NODE_ENV: 'production',
@@ -185,7 +185,7 @@ describe('GET /api/paddle/checkout-config', () => {
 	})
 })
 
-describe('GET /api/paddle/checkout-config — already-entitled guard (5-19 AC-5)', () => {
+describe('GET /api/paddle/checkout-config — already-entitled guard', () => {
 	function configured() {
 		withEnv({
 			NODE_ENV: 'development',
