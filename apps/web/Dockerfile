@@ -43,7 +43,7 @@ RUN rm -rf node_modules/.pnpm/@electric-sql+pglite@* \
 COPY packages/db/drizzle.config.ts packages/db/
 COPY packages/db/migrations packages/db/migrations
 COPY packages/db/src packages/db/src
-RUN rm -f packages/db/src/*.test.ts
+RUN rm -rf packages/db/src/__tests__
 
 # Not `base`: nothing at runtime runs pnpm. Paths mirror the workspace layout
 # because entry files and pnpm's .bin shims embed them.

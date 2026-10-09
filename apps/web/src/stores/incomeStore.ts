@@ -181,17 +181,5 @@ export const useTotalIncome = () => {
 	)
 }
 
-export const useUnreadableIncomeCount = () => {
-	const activeProfileId = useProfileStore((state) => state.activeProfileId)
-	return useIncomeStore((state) =>
-		unreadableIncomeCountFrom(scopeToActiveProfile(state.incomeSources, activeProfileId))
-	)
-}
-
-export const useIncomeByFrequency = (frequency: Frequency): ClientIncomeSource[] => {
-	const rows = useIncomeSources()
-	return useMemo(() => incomeSourcesByFrequencyFrom(rows, frequency), [rows, frequency])
-}
-
 // Stores register themselves: the cascade importing them would create an import cycle.
 registerProfileScopedCollection(useIncomeStore, 'incomeSources')

@@ -7,40 +7,68 @@ import {
 } from '../chart-axis'
 
 describe('formatCompactAxisTick', () => {
-	it('leaves sub-thousand values whole and un-prefixed in currency-less mode', () => {
-		expect(formatCompactAxisTick(500, 'none', 'NONE')).toBe('500')
-		expect(formatCompactAxisTick(0, 'none', 'NONE')).toBe('0')
-	})
-
-	it('abbreviates thousands and millions, dropping the cents', () => {
-		expect(formatCompactAxisTick(7800, 'none', 'NONE')).toBe('8K')
-		expect(formatCompactAxisTick(1_500_000, 'none', 'NONE')).toBe('1.5M')
-	})
-
-	it('keeps the sign on negative values', () => {
-		expect(formatCompactAxisTick(-2900, 'none', 'NONE')).toBe('-3K')
-	})
-
-	it('prefixes the currency symbol in symbol mode', () => {
-		expect(formatCompactAxisTick(7800, 'symbol', 'USD')).toBe('$8K')
-		expect(formatCompactAxisTick(500, 'symbol', 'EUR')).toBe('€500')
-	})
-
-	it('stays symbol-less for the NONE currency even in symbol mode (no "NONE" prefix)', () => {
+	it.each<[string, { cases: [number, 'none' | 'symbol', string, string][] }]>([
+		[
+			'leaves sub-thousand values whole and un-prefixed in currency-less mode',
+			{
+				cases: [
+					[500, 'none', 'NONE', '500'],
+					[0, 'none', 'NONE', '0'],
+				],
+			},
+		],
+		[
+			'abbreviates thousands and millions, dropping the cents',
+			{
+				cases: [
+					[7800, 'none', 'NONE', '8K'],
+					[1_500_000, 'none', 'NONE', '1.5M'],
+				],
+			},
+		],
+		['keeps the sign on negative values', { cases: [[-2900, 'none', 'NONE', '-3K']] }],
+		[
+			'prefixes the currency symbol in symbol mode',
+			{
+				cases: [
+					[7800, 'symbol', 'USD', '$8K'],
+					[500, 'symbol', 'EUR', '€500'],
+				],
+			},
+		],
 		// Reachable from a stale persisted `{mode:'symbol', currency:'NONE'}` blob.
-		expect(formatCompactAxisTick(7800, 'symbol', 'NONE')).toBe('8K')
-		expect(formatCompactAxisTick(500, 'symbol', 'NONE')).toBe('500')
-	})
-
-	it('rolls the K band over to M instead of printing "1000K"', () => {
-		expect(formatCompactAxisTick(999_600, 'none', 'NONE')).toBe('1.0M')
-		expect(formatCompactAxisTick(-999_600, 'none', 'NONE')).toBe('-1.0M')
-	})
-
-	it('coerces non-finite values to 0 instead of rendering "NaN"/"Infinity"', () => {
-		expect(formatCompactAxisTick(Number.NaN, 'none', 'NONE')).toBe('0')
-		expect(formatCompactAxisTick(Number.POSITIVE_INFINITY, 'none', 'NONE')).toBe('0')
-		expect(formatCompactAxisTick(Number.NaN, 'symbol', 'USD')).toBe('$0')
+		[
+			'stays symbol-less for the NONE currency even in symbol mode (no "NONE" prefix)',
+			{
+				cases: [
+					[7800, 'symbol', 'NONE', '8K'],
+					[500, 'symbol', 'NONE', '500'],
+				],
+			},
+		],
+		[
+			'rolls the K band over to M instead of printing "1000K"',
+			{
+				cases: [
+					[999_600, 'none', 'NONE', '1.0M'],
+					[-999_600, 'none', 'NONE', '-1.0M'],
+				],
+			},
+		],
+		[
+			'coerces non-finite values to 0 instead of rendering "NaN"/"Infinity"',
+			{
+				cases: [
+					[Number.NaN, 'none', 'NONE', '0'],
+					[Number.POSITIVE_INFINITY, 'none', 'NONE', '0'],
+					[Number.NaN, 'symbol', 'USD', '$0'],
+				],
+			},
+		],
+	])('%s', (_title, { cases }) => {
+		for (const [value, mode, currency, expected] of cases) {
+			expect(formatCompactAxisTick(value, mode, currency)).toBe(expected)
+		}
 	})
 })
 

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../../hooks/usePremiumAccess'
 import { type ClientCategory, useCategoryStore } from '../../../stores/categoryStore'
+import { useProfileStore } from '../../../stores/profileStore'
 
 const usePremiumAccess = vi.fn()
 
@@ -184,6 +185,55 @@ describe('CategoryPicker — premium user', () => {
 		).toBe(true)
 		checked++
 		expect(checked).toBe(3)
+	})
+})
+
+describe('CategoryPicker — profile scoping', () => {
+	const PROFILE_A = 'profile-a'
+	const PROFILE_B = 'profile-b'
+	const initialProfileId = useProfileStore.getState().activeProfileId
+
+	afterEach(() => {
+		act(() => {
+			useProfileStore.setState({ activeProfileId: initialProfileId })
+		})
+	})
+
+	const offered = () =>
+		within(screen.getByLabelText('Category'))
+			.getAllByRole('option')
+			.map((option) => option.textContent)
+
+	it('offers only the active profile’s categories, and follows a profile switch', () => {
+		premium()
+		useProfileStore.setState({ activeProfileId: PROFILE_A })
+		seed([
+			category({ id: 'a1', name: 'Groceries', profileId: PROFILE_A }),
+			category({ id: 'b1', name: 'Rent', profileId: PROFILE_B }),
+		])
+
+		render(<CategoryPicker kind="expense" value={null} onChange={vi.fn()} idPrefix="expense" />)
+		expect(offered()).toEqual(['Uncategorized', 'Groceries'])
+
+		act(() => {
+			useProfileStore.setState({ activeProfileId: PROFILE_B })
+		})
+		expect(offered()).toEqual(['Uncategorized', 'Rent'])
+	})
+
+	it('offers a category with no profileId under every profile', () => {
+		// activeProfileId is essentially never null, so a strict `===` would hide these.
+		premium()
+		seed([category({ id: 'legacy', name: 'Groceries', profileId: null })])
+
+		for (const activeProfileId of [PROFILE_A, PROFILE_B]) {
+			useProfileStore.setState({ activeProfileId })
+			const { unmount } = render(
+				<CategoryPicker kind="expense" value={null} onChange={vi.fn()} idPrefix="expense" />
+			)
+			expect(offered()).toEqual(['Uncategorized', 'Groceries'])
+			unmount()
+		}
 	})
 })
 

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { act, fireEvent, renderWithProviders, screen, within } from '@/test/utils'
+import { useCurrencyStore } from '../../stores/currencyStore'
 import { useExpenseStore } from '../../stores/expenseStore'
 import { useIncomeStore } from '../../stores/incomeStore'
 import { useOverviewDurationStore } from '../../stores/overviewDurationStore'
@@ -347,5 +348,31 @@ describe('unreadable rows are excluded and disclosed, never silently dropped', (
 		renderWithProviders(<IncomePage />)
 
 		expect(screen.queryByTestId('unreadable-rows-note')).not.toBeInTheDocument()
+	})
+})
+
+describe('the total is formatted in the locale its currency implies', () => {
+	afterEach(() => {
+		useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
+	})
+
+	// de-DE puts U+00A0 before the symbol; normalise it so the expectations stay readable.
+	const shownTotal = () =>
+		(screen.getByTestId('period-total-amount').textContent ?? '').replace(/\s/g, ' ')
+
+	it.each([
+		['symbol', 'EUR', 100_000, '1.000,00 €'],
+		['symbol', 'USD', 100_000, '$1,000.00'],
+		['none', 'NONE', 100_000, '1,000.00'],
+		// A retained symbol currency under currency-less mode is reachable; raw numbers stay en-US.
+		['none', 'EUR', 123_456_789, '1,234,567.89'],
+		['none', 'INR', 123_456_789, '1,234,567.89'],
+	] as const)('%s mode with %s shows %i cents as %s', (mode, currency, amount, expected) => {
+		useCurrencyStore.setState({ mode, currency })
+		useOverviewDurationStore.setState({ duration: 'monthly' })
+		useIncomeStore.setState({ incomeSources: [{ ...MIXED_INCOME[1], amount }] })
+		renderWithProviders(<IncomePage />)
+
+		expect(shownTotal()).toBe(expected)
 	})
 })

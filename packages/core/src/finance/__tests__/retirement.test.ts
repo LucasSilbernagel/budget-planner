@@ -377,19 +377,38 @@ describe('Retirement Modeler', () => {
 
 	// Annual input is divided by 12 at the boundary; the model itself stays monthly.
 	describe('toMonthlyIncomeCents (annual/monthly boundary)', () => {
-		it('passes a monthly amount through unchanged (identity)', () => {
-			expect(toMonthlyIncomeCents(500000, 'monthly')).toBe(500000)
-			expect(toMonthlyIncomeCents(0, 'monthly')).toBe(0)
-		})
-
-		it('converts an annual amount to Math.round(annualCents / 12)', () => {
-			expect(toMonthlyIncomeCents(6000000, 'annual')).toBe(500000)
-			expect(toMonthlyIncomeCents(1000000, 'annual')).toBe(83333)
-		})
-
-		it('rounds to the nearest cent (never truncates)', () => {
-			expect(toMonthlyIncomeCents(100, 'annual')).toBe(8)
-			expect(toMonthlyIncomeCents(1000, 'annual')).toBe(83)
+		it.each<[string, { cases: [number, 'monthly' | 'annual', number][] }]>([
+			[
+				'passes a monthly amount through unchanged (identity)',
+				{
+					cases: [
+						[500000, 'monthly', 500000],
+						[0, 'monthly', 0],
+					],
+				},
+			],
+			[
+				'converts an annual amount to Math.round(annualCents / 12)',
+				{
+					cases: [
+						[6000000, 'annual', 500000],
+						[1000000, 'annual', 83333],
+					],
+				},
+			],
+			[
+				'rounds to the nearest cent (never truncates)',
+				{
+					cases: [
+						[100, 'annual', 8],
+						[1000, 'annual', 83],
+					],
+				},
+			],
+		])('%s', (_title, { cases }) => {
+			for (const [amount, period, expected] of cases) {
+				expect(toMonthlyIncomeCents(amount, period)).toBe(expected)
+			}
 		})
 
 		it('throws for a non-finite amount', () => {
@@ -443,21 +462,38 @@ describe('Retirement Accumulation Solver', () => {
 			expect(result).toBe(122_110)
 		})
 
-		it('returns the principal unchanged when months = 0', () => {
-			expect(projectAccumulatedNestEgg(5_954_100, 179_900, 0.06, 0)).toBe(5_954_100)
-		})
-
-		it('degrades to linear accumulation at zero return', () => {
-			expect(projectAccumulatedNestEgg(200_000, 50_000, 0, 24)).toBe(1_400_000)
-		})
-
-		it('treats negative principal and contribution as zero (never negative)', () => {
-			expect(projectAccumulatedNestEgg(-100_000, -5_000, 0.06, 12)).toBe(0)
-		})
-
-		it('returns 0 for zero principal and zero contribution at any horizon (no false overflow)', () => {
+		it.each([
+			[
+				'returns the principal unchanged when months = 0',
+				{
+					args: [5_954_100, 179_900, 0.06, 0],
+					expected: 5_954_100,
+				},
+			],
+			[
+				'degrades to linear accumulation at zero return',
+				{
+					args: [200_000, 50_000, 0, 24],
+					expected: 1_400_000,
+				},
+			],
+			[
+				'treats negative principal and contribution as zero (never negative)',
+				{
+					args: [-100_000, -5_000, 0.06, 12],
+					expected: 0,
+				},
+			],
 			// (1 + i)^months can overflow to Infinity, and 0 × Infinity = NaN.
-			expect(projectAccumulatedNestEgg(0, 0, 0.06, 200_000)).toBe(0)
+			[
+				'returns 0 for zero principal and zero contribution at any horizon (no false overflow)',
+				{
+					args: [0, 0, 0.06, 200_000],
+					expected: 0,
+				},
+			],
+		] as const)('%s', (_title, { args: [principal, contribution, rate, months], expected }) => {
+			expect(projectAccumulatedNestEgg(principal, contribution, rate, months)).toBe(expected)
 		})
 
 		it('throws on non-finite, negative, or non-integer inputs', () => {

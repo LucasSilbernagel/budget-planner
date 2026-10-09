@@ -1,6 +1,7 @@
 // savingsCapacityPercentage = totalExpenses / grossIncome × 100.
 
 import { describe, expect, it } from 'vitest'
+import type { NormalizableFinancialItem } from '../normalization.js'
 import {
 	calculateMaxAllocableSavings,
 	calculateMaxDynamicallyAllocableSavings,
@@ -9,146 +10,177 @@ import {
 	type SavingsCapacityResult,
 } from '../savingsCapacity.js'
 
+type CapacityCase = {
+	income: NormalizableFinancialItem[]
+	expenses: NormalizableFinancialItem[]
+	expected: number
+}
+
 describe('Savings Capacity Calculation', () => {
 	describe('calculateMaxAllocableSavings', () => {
-		it('should return net period income as max allocable savings', () => {
-			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
-			const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
-
-			const result = calculateMaxAllocableSavings(incomeSources, expenses)
-			expect(result).toBe(30000)
-		})
-
-		it('should return negative value when expenses exceed income', () => {
-			const incomeSources = [{ amount: 20000, frequency: 'monthly' as const }]
-			const expenses = [{ amount: 50000, frequency: 'monthly' as const }]
-
-			const result = calculateMaxAllocableSavings(incomeSources, expenses)
-			expect(result).toBe(-30000)
-		})
-
-		it('should return 0 for break-even', () => {
-			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
-			const expenses = [{ amount: 50000, frequency: 'monthly' as const }]
-
-			const result = calculateMaxAllocableSavings(incomeSources, expenses)
-			expect(result).toBe(0)
-		})
-
-		it('should handle empty arrays', () => {
-			const result = calculateMaxAllocableSavings([], [])
-			expect(result).toBe(0)
-		})
-
-		it('should return full income when no expenses', () => {
-			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
-			const result = calculateMaxAllocableSavings(incomeSources, [])
-			expect(result).toBe(50000)
-		})
-
-		it('should handle mixed frequencies', () => {
-			const incomeSources = [{ amount: 10000, frequency: 'weekly' as const }]
-			const expenses = [{ amount: 10000, frequency: 'biweekly' as const }]
-
-			const result = calculateMaxAllocableSavings(incomeSources, expenses)
+		it.each<[string, CapacityCase]>([
+			[
+				'should return net period income as max allocable savings',
+				{
+					income: [{ amount: 50000, frequency: 'monthly' }],
+					expenses: [{ amount: 20000, frequency: 'monthly' }],
+					expected: 30000,
+				},
+			],
+			[
+				'should return negative value when expenses exceed income',
+				{
+					income: [{ amount: 20000, frequency: 'monthly' }],
+					expenses: [{ amount: 50000, frequency: 'monthly' }],
+					expected: -30000,
+				},
+			],
+			[
+				'should return 0 for break-even',
+				{
+					income: [{ amount: 50000, frequency: 'monthly' }],
+					expenses: [{ amount: 50000, frequency: 'monthly' }],
+					expected: 0,
+				},
+			],
+			[
+				'should handle empty arrays',
+				{
+					income: [],
+					expenses: [],
+					expected: 0,
+				},
+			],
+			[
+				'should return full income when no expenses',
+				{
+					income: [{ amount: 50000, frequency: 'monthly' }],
+					expenses: [],
+					expected: 50000,
+				},
+			],
 			// grossIncome 43333 (weekly), totalExpenses 21667 (biweekly)
-			expect(result).toBe(21666)
+			[
+				'should handle mixed frequencies',
+				{
+					income: [{ amount: 10000, frequency: 'weekly' }],
+					expenses: [{ amount: 10000, frequency: 'biweekly' }],
+					expected: 21666,
+				},
+			],
+		])('%s', (_title, { income, expenses, expected }) => {
+			expect(calculateMaxAllocableSavings(income, expenses)).toBe(expected)
 		})
 	})
 
 	describe('calculateMaxDynamicallyAllocableSavings', () => {
-		it('should return positive net income unchanged', () => {
-			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
-			const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
-
-			const result = calculateMaxDynamicallyAllocableSavings(incomeSources, expenses)
-			expect(result).toBe(30000)
-		})
-
-		it('should return 0 when net income is negative', () => {
-			const incomeSources = [{ amount: 20000, frequency: 'monthly' as const }]
-			const expenses = [{ amount: 50000, frequency: 'monthly' as const }]
-
-			const result = calculateMaxDynamicallyAllocableSavings(incomeSources, expenses)
-			expect(result).toBe(0)
-		})
-
-		it('should return 0 when net income is 0', () => {
-			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
-			const expenses = [{ amount: 50000, frequency: 'monthly' as const }]
-
-			const result = calculateMaxDynamicallyAllocableSavings(incomeSources, expenses)
-			expect(result).toBe(0)
-		})
-
-		it('should handle empty arrays', () => {
-			const result = calculateMaxDynamicallyAllocableSavings([], [])
-			expect(result).toBe(0)
-		})
-
-		it('should return full income when no expenses', () => {
-			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
-			const result = calculateMaxDynamicallyAllocableSavings(incomeSources, [])
-			expect(result).toBe(50000)
+		it.each<[string, CapacityCase]>([
+			[
+				'should return positive net income unchanged',
+				{
+					income: [{ amount: 50000, frequency: 'monthly' }],
+					expenses: [{ amount: 20000, frequency: 'monthly' }],
+					expected: 30000,
+				},
+			],
+			[
+				'should return 0 when net income is negative',
+				{
+					income: [{ amount: 20000, frequency: 'monthly' }],
+					expenses: [{ amount: 50000, frequency: 'monthly' }],
+					expected: 0,
+				},
+			],
+			[
+				'should return 0 when net income is 0',
+				{
+					income: [{ amount: 50000, frequency: 'monthly' }],
+					expenses: [{ amount: 50000, frequency: 'monthly' }],
+					expected: 0,
+				},
+			],
+			[
+				'should handle empty arrays',
+				{
+					income: [],
+					expenses: [],
+					expected: 0,
+				},
+			],
+			[
+				'should return full income when no expenses',
+				{
+					income: [{ amount: 50000, frequency: 'monthly' }],
+					expenses: [],
+					expected: 50000,
+				},
+			],
+		])('%s', (_title, { income, expenses, expected }) => {
+			expect(calculateMaxDynamicallyAllocableSavings(income, expenses)).toBe(expected)
 		})
 	})
 
 	describe('calculateSavingsCapacityPercentage', () => {
-		it('should calculate savings capacity percentage with surplus', () => {
-			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
-			const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
-
-			const result = calculateSavingsCapacityPercentage(incomeSources, expenses)
-			expect(result).toBe(40)
-		})
-
-		it('should return 0 when expenses are 0', () => {
-			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
-			const expenses: Array<{ amount: number; frequency: any }> = []
-
-			const result = calculateSavingsCapacityPercentage(incomeSources, expenses)
-			expect(result).toBe(0)
-		})
-
-		it('should return 0 when income is 0', () => {
-			const incomeSources: Array<{ amount: number; frequency: any }> = []
-			const expenses = [{ amount: 50000, frequency: 'monthly' as const }]
-
-			const result = calculateSavingsCapacityPercentage(incomeSources, expenses)
-			expect(result).toBe(0)
-		})
-
-		it('should return 100 when expenses equal income (break-even)', () => {
-			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
-			const expenses = [{ amount: 50000, frequency: 'monthly' as const }]
-
-			const result = calculateSavingsCapacityPercentage(incomeSources, expenses)
-			expect(result).toBe(100)
-		})
-
-		it('should calculate correct percentage with mixed frequencies', () => {
-			const incomeSources = [{ amount: 10000, frequency: 'weekly' as const }]
-			const expenses = [{ amount: 10000, frequency: 'monthly' as const }]
-
-			const result = calculateSavingsCapacityPercentage(incomeSources, expenses)
+		it.each<[string, CapacityCase]>([
+			[
+				'should calculate savings capacity percentage with surplus',
+				{
+					income: [{ amount: 50000, frequency: 'monthly' }],
+					expenses: [{ amount: 20000, frequency: 'monthly' }],
+					expected: 40,
+				},
+			],
+			[
+				'should return 0 when expenses are 0',
+				{
+					income: [{ amount: 50000, frequency: 'monthly' }],
+					expenses: [],
+					expected: 0,
+				},
+			],
+			[
+				'should return 0 when income is 0',
+				{
+					income: [],
+					expenses: [{ amount: 50000, frequency: 'monthly' }],
+					expected: 0,
+				},
+			],
+			[
+				'should return 100 when expenses equal income (break-even)',
+				{
+					income: [{ amount: 50000, frequency: 'monthly' }],
+					expenses: [{ amount: 50000, frequency: 'monthly' }],
+					expected: 100,
+				},
+			],
 			// (10000 / 43333) × 100 ≈ 23.08 → 23
-			expect(result).toBe(23)
-		})
-
-		it('should return 50% when expenses are half of income', () => {
-			const incomeSources = [{ amount: 10000, frequency: 'monthly' as const }]
-			const expenses = [{ amount: 5000, frequency: 'monthly' as const }]
-
-			const result = calculateSavingsCapacityPercentage(incomeSources, expenses)
-			expect(result).toBe(50)
-		})
-
-		it('should return >100% when expenses exceed gross income (overspending)', () => {
-			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
-			const expenses = [{ amount: 75000, frequency: 'monthly' as const }]
-
-			const result = calculateSavingsCapacityPercentage(incomeSources, expenses)
-			expect(result).toBe(150)
+			[
+				'should calculate correct percentage with mixed frequencies',
+				{
+					income: [{ amount: 10000, frequency: 'weekly' }],
+					expenses: [{ amount: 10000, frequency: 'monthly' }],
+					expected: 23,
+				},
+			],
+			[
+				'should return 50% when expenses are half of income',
+				{
+					income: [{ amount: 10000, frequency: 'monthly' }],
+					expenses: [{ amount: 5000, frequency: 'monthly' }],
+					expected: 50,
+				},
+			],
+			[
+				'should return >100% when expenses exceed gross income (overspending)',
+				{
+					income: [{ amount: 50000, frequency: 'monthly' }],
+					expenses: [{ amount: 75000, frequency: 'monthly' }],
+					expected: 150,
+				},
+			],
+		])('%s', (_title, { income, expenses, expected }) => {
+			expect(calculateSavingsCapacityPercentage(income, expenses)).toBe(expected)
 		})
 	})
 

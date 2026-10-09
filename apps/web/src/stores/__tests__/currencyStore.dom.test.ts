@@ -1,10 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { renderHook } from '@/test/utils'
-import { useCurrencyStore, useFormattedAmount } from '../currencyStore'
-
-// de-DE uses U+00A0 before the symbol. \s matches it (and other Unicode
-// spaces) — normalize to a plain space for human-readable assertions.
-const normalizeSpaces = (value: string) => value.replace(/\s/g, ' ')
+import { useCurrencyStore } from '../currencyStore'
 
 describe('currencyStore', () => {
 	beforeEach(() => {
@@ -21,37 +16,6 @@ describe('currencyStore', () => {
 		const initial = useCurrencyStore.getInitialState()
 		expect(initial.mode).toBe('symbol')
 		expect(initial.currency).toBe('USD')
-	})
-
-	describe('useFormattedAmount derives locale from currency', () => {
-		it('formats EUR per its de-DE regional default without any locale set', () => {
-			useCurrencyStore.setState({ mode: 'symbol', currency: 'EUR' })
-			const { result } = renderHook(() => useFormattedAmount())
-			expect(normalizeSpaces(result.current(100000))).toBe('1.000,00 €')
-		})
-
-		it('formats USD per its en-US regional default', () => {
-			useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
-			const { result } = renderHook(() => useFormattedAmount())
-			expect(result.current(100000)).toBe('$1,000.00')
-		})
-
-		it('leaves currency-less mode as grouped raw numbers (grouped)', () => {
-			useCurrencyStore.setState({ mode: 'none', currency: 'NONE' })
-			const { result } = renderHook(() => useFormattedAmount())
-			expect(result.current(100000)).toBe('1,000.00')
-		})
-
-		it('groups currency-less amounts with a neutral en-US locale even when a symbol currency is still retained', () => {
-			// { mode:'none', currency:'EUR' } is reachable; raw numbers must stay en-US.
-			useCurrencyStore.setState({ mode: 'none', currency: 'EUR' })
-			const { result } = renderHook(() => useFormattedAmount())
-			expect(result.current(123456789)).toBe('1,234,567.89')
-
-			useCurrencyStore.setState({ mode: 'none', currency: 'INR' })
-			const { result: inr } = renderHook(() => useFormattedAmount())
-			expect(inr.current(123456789)).toBe('1,234,567.89')
-		})
 	})
 
 	describe('persistence / migration', () => {
@@ -71,9 +35,6 @@ describe('currencyStore', () => {
 			expect(state.mode).toBe('symbol')
 			expect('locale' in state).toBe(false)
 			expect('localeUserSet' in state).toBe(false)
-
-			const { result } = renderHook(() => useFormattedAmount())
-			expect(normalizeSpaces(result.current(100000))).toBe('1.000,00 €')
 		})
 
 		it('rehydrates a current v1 blob unchanged', async () => {
@@ -104,9 +65,6 @@ describe('currencyStore', () => {
 
 			expect(useCurrencyStore.getState().mode).toBe('none')
 			expect(useCurrencyStore.getState().currency).toBe('NONE')
-
-			const { result } = renderHook(() => useFormattedAmount())
-			expect(result.current(100000)).toBe('1,000.00')
 		})
 
 		it('canonicalizes a persisted consolidated currency (v1 CAD → USD)', async () => {
@@ -117,9 +75,6 @@ describe('currencyStore', () => {
 
 			expect(useCurrencyStore.getState().currency).toBe('USD')
 			expect(useCurrencyStore.getState().mode).toBe('symbol')
-
-			const { result } = renderHook(() => useFormattedAmount())
-			expect(result.current(100000)).toBe('$1,000.00')
 		})
 
 		it('leaves a non-consolidated persisted currency untouched (EUR stays EUR)', async () => {

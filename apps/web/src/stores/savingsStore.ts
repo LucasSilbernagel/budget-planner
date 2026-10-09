@@ -196,29 +196,10 @@ export const useSavingsGoals = (): ClientSavingsGoal[] => {
 	return useMemo(() => scopeToActiveProfile(rows, activeProfileId), [rows, activeProfileId])
 }
 
-export const useSavingsGoalsWithProgress = () => {
-	const rows = useSavingsGoals()
-	return useMemo(() => savingsGoalsWithProgressFrom(rows), [rows])
-}
-
 export const useTotalSavings = () => {
 	const activeProfileId = useProfileStore((state) => state.activeProfileId)
 	return useSavingsStore((state) =>
 		totalSavingsFrom(scopeToActiveProfile(state.savingsGoals, activeProfileId))
-	)
-}
-
-export const useTotalTargetAmount = () => {
-	const activeProfileId = useProfileStore((state) => state.activeProfileId)
-	return useSavingsStore((state) =>
-		totalTargetAmountFrom(scopeToActiveProfile(state.savingsGoals, activeProfileId))
-	)
-}
-
-export const useOverallSavingsProgress = () => {
-	const activeProfileId = useProfileStore((state) => state.activeProfileId)
-	return useSavingsStore((state) =>
-		overallProgressFrom(scopeToActiveProfile(state.savingsGoals, activeProfileId))
 	)
 }
 

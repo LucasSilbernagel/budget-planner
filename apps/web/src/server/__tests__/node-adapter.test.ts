@@ -35,61 +35,86 @@ afterAll(async () => {
 })
 
 describe('resolveStaticAsset', () => {
-	it('returns null for a path with no matching file', async () => {
-		expect(await resolveStaticAsset('/does-not-exist.js', clientDir)).toBeNull()
+	it.each([
+		['a path with no matching file', { path: '/does-not-exist.js' }],
+		['the root path (SSR must handle it, no index.html)', { path: '/' }],
+		['malformed percent-encoding rather than throwing', { path: '/%E0%A4%A' }],
+	])('returns null for %s', async (_title, { path }) => {
+		expect(await resolveStaticAsset(path, clientDir)).toBeNull()
 	})
 
-	it('returns null for the root path (SSR must handle it, no index.html)', async () => {
-		expect(await resolveStaticAsset('/', clientDir)).toBeNull()
-	})
-
-	it('serves hashed /assets/* files as immutable', async () => {
-		const asset = await resolveStaticAsset('/assets/app-abc123.js', clientDir)
+	it.each([
+		[
+			'serves hashed /assets/* files as immutable',
+			{
+				path: '/assets/app-abc123.js',
+				contentType: 'text/javascript; charset=utf-8',
+				cacheControl: 'public, max-age=31536000, immutable',
+			},
+		],
+		[
+			'serves non-hashed root files with a short cache lifetime',
+			{
+				path: '/favicon.svg',
+				contentType: 'image/svg+xml',
+				cacheControl: 'public, max-age=3600',
+			},
+		],
+		[
+			'serves the PNG favicon fallback with the image/png MIME type',
+			{
+				path: '/favicon-32.png',
+				contentType: 'image/png',
+				cacheControl: 'public, max-age=3600',
+			},
+		],
+		[
+			'serves the legacy .ico favicon with the image/x-icon MIME type',
+			{
+				path: '/favicon.ico',
+				contentType: 'image/x-icon',
+				cacheControl: 'public, max-age=3600',
+			},
+		],
+		[
+			'serves the PWA manifest as application/manifest+json',
+			{
+				path: '/manifest.webmanifest',
+				contentType: 'application/manifest+json',
+				cacheControl: 'public, max-age=3600',
+			},
+		],
+		[
+			'serves the sitemap as application/xml, not a binary download',
+			{
+				path: '/sitemap.xml',
+				contentType: 'application/xml; charset=utf-8',
+				cacheControl: 'public, max-age=3600',
+			},
+		],
+		[
+			'serves the service worker (/sw.js) with no-cache so redeploys are not stale',
+			{
+				path: '/sw.js',
+				contentType: 'text/javascript; charset=utf-8',
+				cacheControl: 'no-cache',
+			},
+		],
+		// `/assets/..%2fsw.js` resolves to sw.js on disk; following the `/assets/` prefix instead
+		// would serve the service worker immutable.
+		[
+			'classifies cache-control from the resolved file, not the raw pathname (encoded-slash)',
+			{
+				path: '/assets/..%2fsw.js',
+				contentType: 'text/javascript; charset=utf-8',
+				cacheControl: 'no-cache',
+			},
+		],
+	])('%s', async (_title, { path, contentType, cacheControl }) => {
+		const asset = await resolveStaticAsset(path, clientDir)
 		expect(asset).not.toBeNull()
-		expect(asset.contentType).toBe('text/javascript; charset=utf-8')
-		expect(asset.cacheControl).toBe('public, max-age=31536000, immutable')
-	})
-
-	it('serves non-hashed root files with a short cache lifetime', async () => {
-		const asset = await resolveStaticAsset('/favicon.svg', clientDir)
-		expect(asset).not.toBeNull()
-		expect(asset.contentType).toBe('image/svg+xml')
-		expect(asset.cacheControl).toBe('public, max-age=3600')
-	})
-
-	it('serves the PNG favicon fallback with the image/png MIME type', async () => {
-		const asset = await resolveStaticAsset('/favicon-32.png', clientDir)
-		expect(asset).not.toBeNull()
-		expect(asset.contentType).toBe('image/png')
-		expect(asset.cacheControl).toBe('public, max-age=3600')
-	})
-
-	it('serves the legacy .ico favicon with the image/x-icon MIME type', async () => {
-		const asset = await resolveStaticAsset('/favicon.ico', clientDir)
-		expect(asset).not.toBeNull()
-		expect(asset.contentType).toBe('image/x-icon')
-		expect(asset.cacheControl).toBe('public, max-age=3600')
-	})
-
-	it('serves the PWA manifest as application/manifest+json', async () => {
-		const asset = await resolveStaticAsset('/manifest.webmanifest', clientDir)
-		expect(asset).not.toBeNull()
-		expect(asset.contentType).toBe('application/manifest+json')
-		expect(asset.cacheControl).toBe('public, max-age=3600')
-	})
-
-	it('serves the sitemap as application/xml, not a binary download', async () => {
-		const asset = await resolveStaticAsset('/sitemap.xml', clientDir)
-		expect(asset).not.toBeNull()
-		expect(asset.contentType).toBe('application/xml; charset=utf-8')
-		expect(asset.cacheControl).toBe('public, max-age=3600')
-	})
-
-	it('serves the service worker (/sw.js) with no-cache so redeploys are not stale', async () => {
-		const asset = await resolveStaticAsset('/sw.js', clientDir)
-		expect(asset).not.toBeNull()
-		expect(asset.contentType).toBe('text/javascript; charset=utf-8')
-		expect(asset.cacheControl).toBe('no-cache')
+		expect(asset.contentType).toBe(contentType)
+		expect(asset.cacheControl).toBe(cacheControl)
 	})
 
 	it('serves the Workbox runtime (/workbox-*.js) with no-cache', async () => {
@@ -104,22 +129,9 @@ describe('resolveStaticAsset', () => {
 		expect(asset.cacheControl).toBe('public, max-age=31536000, immutable')
 	})
 
-	it('classifies cache-control from the resolved file, not the raw pathname (encoded-slash)', async () => {
-		// `/assets/..%2fsw.js` resolves to sw.js on disk; cache-control must follow the resolved file,
-		// not the `/assets/` prefix, or the service worker could be served immutable.
-		const asset = await resolveStaticAsset('/assets/..%2fsw.js', clientDir)
-		expect(asset).not.toBeNull()
-		expect(asset.contentType).toBe('text/javascript; charset=utf-8')
-		expect(asset.cacheControl).toBe('no-cache')
-	})
-
 	it('rejects path traversal escaping the client dir', async () => {
 		expect(await resolveStaticAsset('/../../../../etc/passwd', clientDir)).toBeNull()
 		expect(await resolveStaticAsset('/assets/../../secret', clientDir)).toBeNull()
-	})
-
-	it('returns null for malformed percent-encoding rather than throwing', async () => {
-		expect(await resolveStaticAsset('/%E0%A4%A', clientDir)).toBeNull()
 	})
 })
 
@@ -136,34 +148,38 @@ describe('toWebRequest', () => {
 		expect(webReq.headers.get('x-custom')).toBe('yes')
 	})
 
-	it('falls back to localhost when no Host header is present', () => {
-		const req = { method: 'GET', url: '/', headers: {} }
-		const webReq = toWebRequest(req as never)
-		expect(webReq.url).toBe('http://localhost/')
-	})
-
-	it('honors X-Forwarded-Proto / X-Forwarded-Host from the proxy', () => {
-		const req = {
-			method: 'GET',
-			url: '/x',
-			headers: {
-				host: 'internal:8080',
-				'x-forwarded-proto': 'https',
-				'x-forwarded-host': 'app.example.com',
+	it.each([
+		[
+			'falls back to localhost when no Host header is present',
+			{
+				url: '/',
+				headers: {},
+				expected: 'http://localhost/',
 			},
-		}
-		const webReq = toWebRequest(req as never)
-		expect(webReq.url).toBe('https://app.example.com/x')
-	})
-
-	it('takes the first hop of a comma-joined X-Forwarded-Proto', () => {
-		const req = {
-			method: 'GET',
-			url: '/',
-			headers: { host: 'h', 'x-forwarded-proto': 'https, http' },
-		}
-		const webReq = toWebRequest(req as never)
-		expect(webReq.url).toBe('https://h/')
+		],
+		[
+			'honors X-Forwarded-Proto / X-Forwarded-Host from the proxy',
+			{
+				url: '/x',
+				headers: {
+					host: 'internal:8080',
+					'x-forwarded-proto': 'https',
+					'x-forwarded-host': 'app.example.com',
+				},
+				expected: 'https://app.example.com/x',
+			},
+		],
+		[
+			'takes the first hop of a comma-joined X-Forwarded-Proto',
+			{
+				url: '/',
+				headers: { host: 'h', 'x-forwarded-proto': 'https, http' },
+				expected: 'https://h/',
+			},
+		],
+	])('%s', (_title, { url, headers, expected }) => {
+		const webReq = toWebRequest({ method: 'GET', url, headers } as never)
+		expect(webReq.url).toBe(expected)
 	})
 
 	it('streams a POST body through to the web Request', async () => {

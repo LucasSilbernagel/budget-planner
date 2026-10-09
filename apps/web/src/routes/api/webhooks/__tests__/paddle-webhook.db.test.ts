@@ -735,53 +735,46 @@ describe('lower-severity correctness', () => {
 		expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('canceled')
 	})
 
-	it('refuses a zero total when the discount did NOT cover the subtotal (credit top-up)', async () => {
+	it.each([
 		// `grand_total` is computed AFTER customer credit: a 10% coupon with the
 		// rest paid from credit also reads 0, but the coupon did not pay for it.
+		[
+			'refuses a zero total when the discount did NOT cover the subtotal (credit top-up)',
+			{
+				overrides: {
+					discount_id: 'dsc_ten_percent',
+					details: { totals: { grand_total: '0', subtotal: '9900', discount: '990' } },
+				},
+			},
+		],
+		[
+			'refuses a €0 PRICE that merely carries a discount (misconfigured price)',
+			{
+				overrides: {
+					discount_id: 'dsc_any',
+					details: { totals: { grand_total: '0', subtotal: '0', discount: '0' } },
+				},
+			},
+		],
+		[
+			'refuses a coupon grant whose payload states no subtotal/discount (cannot prove coverage)',
+			{
+				overrides: { discount_id: 'dsc_full', details: { totals: { grand_total: '0' } } },
+			},
+		],
+		[
+			'refuses a NEGATIVE total even when a discount is present',
+			{
+				overrides: {
+					discount_id: 'dsc_full',
+					details: { totals: { grand_total: '-100', subtotal: '9900', discount: '9900' } },
+				},
+			},
+		],
+	])('%s', async (_title, { overrides }) => {
 		await seedUser({ subscriptionStatus: 'free' })
 
-		await post(
-			lifetimeEvent({
-				discount_id: 'dsc_ten_percent',
-				details: { totals: { grand_total: '0', subtotal: '9900', discount: '990' } },
-			})
-		)
-
-		expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('free')
-	})
-
-	it('refuses a €0 PRICE that merely carries a discount (misconfigured price)', async () => {
-		await seedUser({ subscriptionStatus: 'free' })
-
-		await post(
-			lifetimeEvent({
-				discount_id: 'dsc_any',
-				details: { totals: { grand_total: '0', subtotal: '0', discount: '0' } },
-			})
-		)
-
-		expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('free')
-	})
-
-	it('refuses a coupon grant whose payload states no subtotal/discount (cannot prove coverage)', async () => {
-		await seedUser({ subscriptionStatus: 'free' })
-
-		await post(
-			lifetimeEvent({ discount_id: 'dsc_full', details: { totals: { grand_total: '0' } } })
-		)
-
-		expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('free')
-	})
-
-	it('refuses a NEGATIVE total even when a discount is present', async () => {
-		await seedUser({ subscriptionStatus: 'free' })
-
-		await post(
-			lifetimeEvent({
-				discount_id: 'dsc_full',
-				details: { totals: { grand_total: '-100', subtotal: '9900', discount: '9900' } },
-			})
-		)
+		await post(lifetimeEvent(overrides))
 
 		expect((await readUser('ctm_1'))[0].subscriptionStatus).toBe('free')
 	})

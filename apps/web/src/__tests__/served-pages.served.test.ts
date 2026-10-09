@@ -66,24 +66,43 @@ describe('per-route metadata in the served head', () => {
 		expect(title).toBe('Overview · Longhand Budget')
 	})
 
-	it('the premium summary page is Financial Summary at /financial-summary', async () => {
-		const { title, description } = await servedHead('/financial-summary')
-		expect(title).toBe('Financial Summary · Longhand Budget')
-		expect(description).toBe('A printable summary of your income, expenses, savings and net worth.')
-	})
-
-	it('a route without its own head entry still names itself', async () => {
-		const { title, description } = await servedHead('/income')
-		expect(title).toBe('Income · Longhand Budget')
-		expect(description).toBe(
-			'Manage your income streams and track your earnings across any pay frequency.'
-		)
-	})
-
-	it('a route that already had a title keeps it and gains a description', async () => {
-		const { title, description } = await servedHead('/pricing')
-		expect(title).toBe('Pricing · Longhand Budget')
-		expect(description).toBe('Free and Premium plans, and how billing works.')
+	it.each([
+		[
+			'the premium summary page is Financial Summary at /financial-summary',
+			{
+				path: '/financial-summary',
+				pageTitle: 'Financial Summary · Longhand Budget',
+				description: 'A printable summary of your income, expenses, savings and net worth.',
+			},
+		],
+		[
+			'a route without its own head entry still names itself',
+			{
+				path: '/income',
+				pageTitle: 'Income · Longhand Budget',
+				description: 'Manage your income streams and track your earnings across any pay frequency.',
+			},
+		],
+		[
+			'a route that already had a title keeps it and gains a description',
+			{
+				path: '/pricing',
+				pageTitle: 'Pricing · Longhand Budget',
+				description: 'Free and Premium plans, and how billing works.',
+			},
+		],
+		[
+			'a documentation page is named for the doc, not the section',
+			{
+				path: '/docs/getting-started',
+				pageTitle: 'Getting Started · Longhand Budget',
+				description: 'Set up your income, expenses, and first overview.',
+			},
+		],
+	])('%s', async (_title, { path, pageTitle, description }) => {
+		const head = await servedHead(path)
+		expect(head.title).toBe(pageTitle)
+		expect(head.description).toBe(description)
 	})
 
 	it('two app pages do not share one title, and neither is the root default', async () => {
@@ -92,12 +111,6 @@ describe('per-route metadata in the served head', () => {
 		expect(income).not.toBe(expenses)
 		expect(income).not.toBe(ROOT_DEFAULT_TITLE)
 		expect(expenses).not.toBe(ROOT_DEFAULT_TITLE)
-	})
-
-	it('a documentation page is named for the doc, not the section', async () => {
-		const { title, description } = await servedHead('/docs/getting-started')
-		expect(title).toBe('Getting Started · Longhand Budget')
-		expect(description).toBe('Set up your income, expenses, and first overview.')
 	})
 
 	it('the root default applies to a route with no head of its own (the 404)', async () => {
@@ -130,7 +143,7 @@ describe('the global not-found page', () => {
 		expect(body).toMatch(/<a [^>]*href="\/"[^>]*>Go home<\/a>/)
 	})
 
-	it('the pre-95.2 path /report is a plain branded 404, not a redirect', async () => {
+	it('the retired path /report is a plain branded 404, not a redirect', async () => {
 		const response = await app.get('/report')
 		expect(response.status).toBe(404)
 		const h1s = bodyOf(response.body).match(/<h1[\s>][\s\S]*?<\/h1>/g) ?? []
@@ -256,7 +269,7 @@ describe('loading state: the server response', () => {
 // Server-rendered chart markup with a client Suspense fallback is not a hydration mismatch
 // to React, and the chart import is dynamic, so the served bytes are asserted directly.
 describe('the Overview response keeps the chart library off the critical path', () => {
-	it('/ serves no "recharts" anywhere in the document (was e2e refresh-to-figures:595)', async () => {
+	it('/ serves no "recharts" anywhere in the document', async () => {
 		const response = await app.get('/')
 		expect(response.status).toBe(200)
 		// Positive control: a real document came back, so a zero below is not the

@@ -79,25 +79,39 @@ describe('version utility', () => {
 			expect(compareVersions('1.0.0', '1.0.0')).toBe(0)
 		})
 
-		it('treats a prerelease as lower precedence than its release', () => {
-			expect(compareVersions('1.0.0-beta', '1.0.0')).toBe(-1)
-			expect(compareVersions('1.0.0', '1.0.0-beta')).toBe(1)
-		})
-
-		it('orders numeric prerelease identifiers numerically, not lexically (§11)', () => {
+		it.each([
+			[
+				'treats a prerelease as lower precedence than its release',
+				{
+					lower: '1.0.0-beta',
+					higher: '1.0.0',
+				},
+			],
 			// Lexically "alpha.2" > "alpha.10"; numerically alpha.2 < alpha.10.
-			expect(compareVersions('1.0.0-alpha.2', '1.0.0-alpha.10')).toBe(-1)
-			expect(compareVersions('1.0.0-alpha.10', '1.0.0-alpha.2')).toBe(1)
-		})
-
-		it('ranks numeric identifiers below alphanumeric ones', () => {
-			expect(compareVersions('1.0.0-1', '1.0.0-alpha')).toBe(-1)
-			expect(compareVersions('1.0.0-alpha', '1.0.0-1')).toBe(1)
-		})
-
-		it('ranks a larger set of identifiers higher when the prefix is equal', () => {
-			expect(compareVersions('1.0.0-alpha', '1.0.0-alpha.1')).toBe(-1)
-			expect(compareVersions('1.0.0-alpha.1', '1.0.0-alpha')).toBe(1)
+			[
+				'orders numeric prerelease identifiers numerically, not lexically (§11)',
+				{
+					lower: '1.0.0-alpha.2',
+					higher: '1.0.0-alpha.10',
+				},
+			],
+			[
+				'ranks numeric identifiers below alphanumeric ones',
+				{
+					lower: '1.0.0-1',
+					higher: '1.0.0-alpha',
+				},
+			],
+			[
+				'ranks a larger set of identifiers higher when the prefix is equal',
+				{
+					lower: '1.0.0-alpha',
+					higher: '1.0.0-alpha.1',
+				},
+			],
+		])('%s', (_title, { lower, higher }) => {
+			expect(compareVersions(lower, higher)).toBe(-1)
+			expect(compareVersions(higher, lower)).toBe(1)
 		})
 
 		it('matches the canonical SemVer §11 precedence chain', () => {
