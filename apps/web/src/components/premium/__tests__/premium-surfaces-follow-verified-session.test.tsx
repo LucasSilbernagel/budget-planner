@@ -14,7 +14,6 @@ import {
 	SessionSeedProvider,
 	SIGNED_OUT_SEED,
 } from '../../../context/session-seed'
-import { usePremiumAccess } from '../../../hooks/usePremiumAccess'
 import {
 	getVerifiedSession,
 	resetVerifiedSessionForTests,
@@ -50,14 +49,14 @@ afterEach(() => {
 	vi.restoreAllMocks()
 })
 
-/** The indicator calls `fetch(url)` bare; the hook's own check passes an `Accept` header. */
-type Caller = 'indicator' | 'hook'
+/** The indicator calls `fetch(url)` bare; each gate's own check passes an `Accept` header. */
+type Caller = 'indicator' | 'gate'
 
 function stubMe(answer: (caller: Caller) => Response | Promise<Response>, delayMs = 0) {
 	const me = vi.fn(answer)
 	global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
 		if (String(input).includes('/api/auth/me')) {
-			const caller: Caller = init?.headers ? 'hook' : 'indicator'
+			const caller: Caller = init?.headers ? 'gate' : 'indicator'
 			const run = () => Promise.resolve().then(() => me(caller))
 			if (delayMs === 0) return run()
 			return new Promise<Response>((resolve, reject) =>
@@ -104,7 +103,6 @@ function GatesPage() {
 	return (
 		<div data-testid="reader">
 			<h1>Gates page</h1>
-			<HookProbe />
 			{Array.from({ length: GATE_COUNT }, (_, i) => (
 				<PremiumFeatureGate
 					// biome-ignore lint/suspicious/noArrayIndexKey: fixed list
@@ -117,11 +115,6 @@ function GatesPage() {
 			))}
 		</div>
 	)
-}
-
-function HookProbe() {
-	const { status } = usePremiumAccess()
-	return <output data-testid="hook-status">{JSON.stringify(status)}</output>
 }
 
 function OverviewPage() {
@@ -161,7 +154,28 @@ function renderApp(seed: SessionSeed | null, Reader: ComponentType, path = '/') 
 	return { router, ...result }
 }
 
-const hookStatus = () => JSON.parse(screen.getByTestId('hook-status').textContent ?? 'null')
+const GATE_FLASH = '[data-testid="premium-gate-locked"], [data-testid="premium-gate-skeleton"]'
+
+function watchForGateFlash(container: HTMLElement): () => string[] {
+	const seen: string[] = []
+	const record = (records: MutationRecord[]) => {
+		// Removed nodes count too: a gate swapped out before the records are read was still painted.
+		for (const node of records.flatMap((r) => [...r.addedNodes, ...r.removedNodes])) {
+			if (!(node instanceof Element)) continue
+			for (const el of [node, ...node.querySelectorAll(GATE_FLASH)]) {
+				if (el.matches(GATE_FLASH)) seen.push(el.getAttribute('data-testid') ?? '')
+			}
+		}
+	}
+	const observer = new MutationObserver(record)
+	observer.observe(container, { childList: true, subtree: true })
+	return () => {
+		record(observer.takeRecords())
+		observer.disconnect()
+		return seen
+	}
+}
+
 const unlockedGates = () => screen.queryAllByTestId('gate-unlocked').length
 const lockedGates = () => screen.queryAllByTestId('premium-gate-locked').length
 const skeletonGates = () => screen.queryAllByTestId('premium-gate-skeleton').length
@@ -198,7 +212,7 @@ describe('AC 1: a definitive premium answer unlocks every reader', () => {
 	for (const delayMs of [0, 50]) {
 		describe(`answer delay ${delayMs} ms`, () => {
 			it.each(NOT_ENTITLED_SEEDS)(
-				'$name + an active answer: the hook resolves premium and every gate unlocks',
+				'$name + an active answer: every gate unlocks',
 				async ({ seed }) => {
 					const answer = held(meIs(PAID))
 					stubMe(answer.respond, delayMs)
@@ -208,13 +222,6 @@ describe('AC 1: a definitive premium answer unlocks every reader', () => {
 					answer.release()
 					await answerApplied()
 
-					expect(hookStatus()).toEqual({
-						hasAccess: true,
-						subscriptionStatus: 'active',
-						isLoading: false,
-						error: null,
-						isAuthenticated: true,
-					})
 					expect(unlockedGates()).toBe(GATE_COUNT)
 					expect(lockedGates()).toBe(0)
 					expect(skeletonGates()).toBe(0)
@@ -299,28 +306,24 @@ describe('a definitive not-entitled answer over an entitled seed locks (symmetri
 		{
 			name: 'signed out',
 			user: null,
-			hook: { isAuthenticated: false, subscriptionStatus: null },
 		},
 		{
 			name: 'free',
 			user: withStatus('free'),
-			hook: { isAuthenticated: true, subscriptionStatus: 'free' },
 		},
 		{
 			name: 'past_due',
 			user: withStatus('past_due'),
-			hook: { isAuthenticated: true, subscriptionStatus: 'past_due' },
 		},
 		{
 			name: 'canceled',
 			user: withStatus('canceled'),
-			hook: { isAuthenticated: true, subscriptionStatus: 'canceled' },
 		},
 	]
 
 	it.each(NOT_ENTITLED_ANSWERS)(
-		'entitled seed + $name answer: the hook reports no access and every gate locks',
-		async ({ user, hook }) => {
+		'entitled seed + $name answer: every gate locks',
+		async ({ user }) => {
 			const answer = held(meIs(user))
 			stubMe(answer.respond)
 			renderApp(ENTITLED_SEED, GatesPage)
@@ -328,7 +331,6 @@ describe('a definitive not-entitled answer over an entitled seed locks (symmetri
 			expect(unlockedGates(), 'first paint is the seed: unlocked').toBe(GATE_COUNT)
 			answer.release()
 			await answerApplied()
-			expect(hookStatus()).toEqual({ hasAccess: false, isLoading: false, error: null, ...hook })
 			expect(unlockedGates()).toBe(0)
 			expect(lockedGates()).toBe(GATE_COUNT)
 		}
@@ -362,17 +364,10 @@ describe('a definitive not-entitled answer over an entitled seed locks (symmetri
 		}
 	)
 
-	it('an unknown status string resolves to no access, inside the declared union', async () => {
+	it('an unknown status string locks every gate', async () => {
 		stubMe(meIs(withStatus('trialing')))
 		renderApp(ENTITLED_SEED, GatesPage)
 		await answerApplied()
-		expect(hookStatus()).toEqual({
-			hasAccess: false,
-			subscriptionStatus: 'free',
-			isLoading: false,
-			error: null,
-			isAuthenticated: true,
-		})
 		expect(lockedGates()).toBe(GATE_COUNT)
 	})
 })
@@ -428,7 +423,7 @@ describe('AC 3: an unknown answer changes nothing', () => {
 		}
 	)
 
-	/** A hook check failing after a definitive premium answer is unknown and must not lock the gates. */
+	/** A gate's own check failing after a definitive premium answer is unknown and must not lock the gates. */
 	it.each([
 		{ name: 'a 503', fail: () => new Response('{}', { status: 503 }) },
 		{
@@ -438,7 +433,7 @@ describe('AC 3: an unknown answer changes nothing', () => {
 			},
 		},
 	])(
-		'null seed: the hook’s own check failing with $name after a premium answer keeps the gates unlocked (DS1)',
+		'null seed: a gate’s own check failing with $name after a premium answer keeps the gates unlocked',
 		async ({ fail }) => {
 			const late = held(fail)
 			const me = stubMe((caller) => (caller === 'indicator' ? meIs(PAID)() : late.respond()))
@@ -450,7 +445,6 @@ describe('AC 3: an unknown answer changes nothing', () => {
 			late.release()
 			await settle()
 			await settle()
-			expect(hookStatus()).toMatchObject({ hasAccess: true, subscriptionStatus: 'active' })
 			expect(unlockedGates()).toBe(GATE_COUNT)
 			expect(lockedGates()).toBe(0)
 		}
@@ -502,27 +496,27 @@ describe('AC 4: with no definitive answer every reader keeps today’s behaviour
 		expect(settingsSectionsShown()).toBe(shown)
 	})
 
-	it('the hook: a seed resolves at once with no client check of its own', async () => {
+	it('an entitled seed unlocks every gate at once, and the gates ask nothing themselves', async () => {
 		const me = stubMe(neverAnswer)
 		renderApp(ENTITLED_SEED, GatesPage)
 		await screen.findByText('Gates page')
 		await settle()
-		expect(hookStatus()).toMatchObject({ hasAccess: true, isLoading: false })
+		expect(unlockedGates()).toBe(GATE_COUNT)
+		expect(skeletonGates()).toBe(0)
 		expect(me).toHaveBeenCalledTimes(1)
 	})
 
-	it('the hook: a null seed starts loading (fail closed) and asks for itself, once per gate', async () => {
+	it('a null seed shows every gate loading (fail closed) and each gate asks for itself', async () => {
 		const me = stubMe(neverAnswer)
 		renderApp(null, GatesPage)
 		await screen.findByText('Gates page')
 		await settle()
-		expect(hookStatus()).toMatchObject({ hasAccess: false, isLoading: true })
 		expect(skeletonGates()).toBe(GATE_COUNT)
-		// The indicator + one check per hook instance (3 gates + the probe).
-		expect(me).toHaveBeenCalledTimes(1 + GATE_COUNT + 1)
+		expect(unlockedGates()).toBe(0)
+		expect(me).toHaveBeenCalledTimes(1 + GATE_COUNT)
 	})
 
-	it('the hook: a null seed whose own check answers premium unlocks, with no indicator answer needed', async () => {
+	it('a null seed whose gates’ own checks answer premium unlocks, with no indicator answer needed', async () => {
 		stubMe((caller) => (caller === 'indicator' ? neverAnswer() : meIs(PAID)()))
 		renderApp(null, GatesPage)
 		await waitFor(() => expect(unlockedGates()).toBe(GATE_COUNT))
@@ -565,7 +559,7 @@ describe('DS2: a gate mounting after the answer uses it and asks nothing', () =>
 		app.unmount()
 	})
 
-	/** The hook's value is recorded on every render: RTL's `act` flushes the effect, hiding a locked first commit. */
+	// RTL's `act` flushes effects before returning, so a locked first commit is only visible as a DOM mutation.
 	it('signed-out seed, premium answer held: a gate mounted later is unlocked from its very first render', async () => {
 		const me = stubMe(meIs(PAID))
 		const rootRoute = createRootRoute({
@@ -585,20 +579,18 @@ describe('DS2: a gate mounting after the answer uses it and asks nothing', () =>
 		await answerApplied()
 		expect(getVerifiedSession()?.subscriptionStatus).toBe('active')
 
-		const seen: boolean[] = []
-		function Recorder() {
-			const { status } = usePremiumAccess()
-			seen.push(status.hasAccess)
-			return null
-		}
+		const container = document.body.appendChild(document.createElement('div'))
+		const flashes = watchForGateFlash(container)
 		const gates = render(
 			<SessionSeedProvider seed={SIGNED_OUT_SEED}>
-				<Recorder />
 				<GatesPage />
-			</SessionSeedProvider>
+			</SessionSeedProvider>,
+			{ container }
 		)
-		expect(seen[0], 'the first render used the stale seed, not the held answer').toBe(true)
-		expect(seen, 'a render reported no access').not.toContain(false)
+		expect(
+			flashes(),
+			'a locked or loading gate was painted before the held answer applied'
+		).toEqual([])
 		expect(lockedGates()).toBe(0)
 		expect(unlockedGates()).toBe(GATE_COUNT)
 		await settle()
