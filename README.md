@@ -91,10 +91,8 @@ The app also serves 17 `/api/*` routes for authentication, sync, calculations, w
 - **Language:** TypeScript.
 - **Database:** Drizzle ORM with PostgreSQL.
 - **Billing:** Paddle Billing.
-- **Tooling:** Biome (lint/format, tabs), knip (unused code), Vitest (unit), Playwright (end-to-end), MSW (network mocking).
+- **Tooling:** Biome (lint/format, tabs), knip (unused code), Vitest 5 (unit), Playwright (end-to-end), MSW (network mocking).
 - **Monorepo:** pnpm workspaces.
-
-Note that `apps/web` runs Vitest 3 while the root and the other packages run Vitest 1, so `pnpm test` spans two majors.
 
 ## Getting Started
 

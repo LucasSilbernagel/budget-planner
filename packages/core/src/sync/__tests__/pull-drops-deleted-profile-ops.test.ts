@@ -75,7 +75,7 @@ describe('pull() lets go of a remotely deleted profile’s queued ops', () => {
 	let storage: ReturnType<typeof createStorage>
 	let queue: SyncQueue
 	let service: SynchronizationService
-	let fetchServerChanges: Mock<[since: number | null], Promise<ServerChange[]>>
+	let fetchServerChanges: Mock<(since: number | null) => Promise<ServerChange[]>>
 	let processOperation: Mock
 	let queueSeenByPulledCallback: string[][]
 

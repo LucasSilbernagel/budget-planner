@@ -17,10 +17,10 @@
 	},
 	"devDependencies": {
 		"@budget-planner/db": "workspace:*",
-		"@vitest/coverage-v8": "^1.6.1",
+		"@vitest/coverage-v8": "^5.0.3",
 		"typescript": "^5.3.3",
 		"@biomejs/biome": "2.5.15",
-		"vitest": "^1.6.1"
+		"vitest": "^5.0.3"
 	},
 	"engines": {
 		"node": ">=24.0.0"

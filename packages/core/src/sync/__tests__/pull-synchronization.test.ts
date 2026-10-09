@@ -24,11 +24,11 @@ function serverChange(overrides: Partial<ServerChange> = {}): ServerChange {
 
 describe('SynchronizationService.pull', () => {
 	let service: SynchronizationService
-	let fetchServerChanges: Mock<Parameters<FetchServerChangesFn>, ReturnType<FetchServerChangesFn>>
+	let fetchServerChanges: Mock<FetchServerChangesFn>
 
 	beforeEach(() => {
 		vi.useFakeTimers()
-		fetchServerChanges = vi.fn<Parameters<FetchServerChangesFn>, ReturnType<FetchServerChangesFn>>()
+		fetchServerChanges = vi.fn<FetchServerChangesFn>()
 		service = createSynchronizationService(testUserId, {
 			autoSync: false,
 			debug: false,

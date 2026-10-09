@@ -81,8 +81,8 @@ describe('escalating an op that keeps failing', () => {
 	let queue: SyncQueue
 	let service: SynchronizationService
 	let resultFor: Map<string, ProcessOperationResult>
-	let processOperation: Mock<Parameters<ProcessOperationFn>, ReturnType<ProcessOperationFn>>
-	let fetchServerChanges: Mock<Parameters<FetchServerChangesFn>, ReturnType<FetchServerChangesFn>>
+	let processOperation: Mock<ProcessOperationFn>
+	let fetchServerChanges: Mock<FetchServerChangesFn>
 
 	const sentCount = (id: string): number =>
 		processOperation.mock.calls.filter(([sent]) => sent.id === id).length

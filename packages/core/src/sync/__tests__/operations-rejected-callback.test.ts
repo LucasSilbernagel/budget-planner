@@ -9,7 +9,7 @@ describe('onOperationsRejected', () => {
 	let mockQueue: any
 	let operations: AnyOp[]
 	let resultForOp: Map<string, any>
-	let processOperation: Mock<Parameters<ProcessOperationFn>, ReturnType<ProcessOperationFn>>
+	let processOperation: Mock<ProcessOperationFn>
 
 	function op(id: string, overrides: Partial<SyncOperation> = {}): SyncOperation {
 		return {
