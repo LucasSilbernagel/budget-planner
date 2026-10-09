@@ -63,7 +63,7 @@ Paddle acts as the authorised reseller and Merchant of Record, so it is responsi
 
 ## Pages
 
-The app has 19 pages.
+The app has 20 pages.
 
 | Route | Page | Tier |
 | --- | --- | --- |
@@ -80,6 +80,7 @@ The app has 19 pages.
 | `/categories` | Custom categories and per-category breakdown | Premium |
 | `/login` | Sign in via emailed magic link | - |
 | `/pricing` | Pricing | - |
+| `/welcome` | Post-checkout thank-you page that points buyers to sign-in | - |
 | `/docs`, `/docs/:docId` | In-app documentation | - |
 | `/contact` | Contact form | - |
 | `/privacy`, `/terms`, `/refund` | Legal pages | - |
@@ -90,7 +91,7 @@ The app also serves 17 `/api/*` routes for authentication, sync, calculations, w
 ## Tech Stack
 
 - **Framework:** TanStack Start (SSR with file-based routing).
-- **UI:** React 19, Tailwind CSS, and Radix UI's Slot primitive.
+- **UI:** React 19 and Tailwind CSS, with classes composed through `cn()` (`clsx` + `tailwind-merge`).
 - **State:** Zustand.
 - **Charts:** Recharts.
 - **Language:** TypeScript.
@@ -154,6 +155,8 @@ A full production or paid-tier deployment additionally requires the server secre
 | Variable | Scope | Notes |
 | --- | --- | --- |
 | `DATABASE_URL` | Server | PostgreSQL connection string. A local instance in development; DanubeData PostgreSQL (EU) in production. Only needed for the paid/server-sync path. |
+| `PORT` | Server | Port the production server binds. Defaults to `8080`. |
+| `APP_ENTRYPOINT` | Server | Set to `migrate` to make the container image run database migrations instead of serving the app. |
 | `NODE_ENV` | Server | Standard environment flag. When it is `production`, several paths below fail closed unless their secrets are configured. |
 | `SESSION_SECRET` | Server | HMAC-SHA256 key for signed session cookies. **Required in production** - authentication fails closed if it is missing or shorter than 32 characters. Generate with `openssl rand -hex 32`. In development it may be omitted (an insecure fallback is used with a warning). |
 | `SITE_URL` | Server | Public HTTPS origin of the deployed app. **Required in production** - it fails closed if the value is missing, `localhost`, or non-HTTPS, because magic-link emails build absolute links from it. Defaults to `http://localhost:5173` in development. |
@@ -178,6 +181,7 @@ Run these from the repository root unless noted otherwise.
 - `pnpm dev` - Start the web app in development (alias for `pnpm --filter web dev`) on port 5173.
 - `pnpm build` - Build the web app for production.
   This builds `apps/web` only, not the other packages.
+- `pnpm build:packages` - Build `packages/core`, `packages/db`, and `packages/config` with `tsc -b`.
 - `pnpm --filter web start` - Serve the production build (runs `node server-entry.mjs`); see [Deployment](#deployment-and-data-sovereignty).
 - `pnpm --filter web preview` - Preview the production build with Vite.
 - `pnpm lint` - Run Biome, validate the tsconfig files, and check comment rules (`lint:comments`).
@@ -191,6 +195,8 @@ Run these from the repository root unless noted otherwise.
 - `pnpm test:watch` - Run unit tests in watch mode.
 - `pnpm --filter web test:coverage` - Run the web unit tests with coverage.
 - `pnpm test:e2e` - Run the end-to-end tests (Playwright).
+- `pnpm gates` - Run every local gate (package and web builds, bundle check, type-check, Biome, unit suites, e2e) in parallel and report one verdict.
+  Pass `--only <id,...>` to run a subset or `--sequential` to run one at a time; `pnpm gates --help` lists the gate ids.
 - `pnpm --filter web test:e2e:install` - Install the Chromium browser Playwright needs.
 - `pnpm --filter web icons:generate` - Regenerate every favicon and PWA icon from `apps/web/public/favicon.svg`.
 
@@ -199,6 +205,8 @@ Database scripts live in the `packages/db` workspace:
 - `pnpm --filter db db:generate` - Generate Drizzle migrations from the schema.
 - `( set -a; . ./.env; set +a; pnpm --filter db db:migrate:preflight && pnpm --filter db db:migrate )` - Classify the target database, then apply pending migrations. The subshell loads the root `.env`, which the preflight does not read itself. Never run `db:migrate` without the preflight in front of it; see `packages/db/migrations/README.md`.
 - `pnpm --filter db db:studio` - Open Drizzle Studio.
+- `pnpm --filter db db:smoke` - Check the connection to a real database. It needs `DATABASE_URL` and is not run in CI.
+- `pnpm --filter db db:ca-expiry` - Fail if the pinned `DATABASE_CA_CERT` is missing, expired, or about to expire.
 
 ## Continuous Integration
 
@@ -211,13 +219,22 @@ Database scripts live in the `packages/db` workspace:
 Pushes to `main` run `.github/workflows/deploy.yml`, which calls `ci.yml` as a reusable workflow, adds a type-check of every package, and builds and deploys the container image.
 The type-check does not run on pull requests, so run `pnpm type-check:all` before you push.
 
+The other workflows:
+
+- `container-image.yml` - On pull requests, builds the container image and runs the same size budget and serve and migrate checks as the deploy, without pushing anything.
+- `screenshots.yml` - Manually dispatched; the only place screenshot baselines are generated, because CI and dev machines render fonts differently.
+- `retention-sweep.yml` - Daily call to the retention-sweep endpoint.
+- `ca-expiry.yml` - Weekly warning when the pinned database CA certificate is close to expiry.
+- `paddle-drift.yml` - Weekly check that the Paddle.js internals the app relies on still match the CDN file.
+
 To skip bulk-reformat commits in `git blame`, run `git config blame.ignoreRevsFile .git-blame-ignore-revs`.
 
 ## Deployment and Data Sovereignty
 
 The app builds to a single TanStack Start SSR server.
 `pnpm build` emits `dist/server/server.js` (a web-standard fetch handler) and the `dist/client/` assets.
-`pnpm --filter web start` then runs `node server-entry.mjs`, a thin self-listening `node:http` wrapper that binds `$PORT` (default 8080), serves `dist/client/`, and delegates SSR and `/api/*` to the built handler.
+`pnpm --filter web start` then runs `node server-entry.mjs`, which loads `serve-entry.mjs`: a thin self-listening `node:http` wrapper that binds `$PORT` (default 8080), serves `dist/client/`, and delegates SSR and `/api/*` to the built handler.
+With `APP_ENTRYPOINT=migrate`, the same entry runs `migrate-entry.mjs` instead, so one image serves the app and applies migrations.
 
 The production topology is:
 
@@ -262,9 +279,10 @@ budget-planner/
 │   ├── core/                # Shared finance, calculation, format, and sync utilities (@budget-planner/core)
 │   ├── db/                  # Drizzle schema, migrations, and PostgreSQL client (@budget-planner/db)
 │   └── config/              # Zod-validated configuration (@budget-planner/config)
+├── biome-plugins/           # Custom Biome lint rules (GritQL)
 ├── docs/                    # Contributor documentation
 ├── scripts/                 # Repo tooling: tsconfig, comment, and deploy-workflow validators
-├── .github/workflows/       # CI
+├── .github/workflows/       # CI, deploy, and scheduled checks
 ├── pnpm-workspace.yaml
 └── package.json
 ```
