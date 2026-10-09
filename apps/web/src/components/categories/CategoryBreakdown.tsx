@@ -19,6 +19,8 @@ import {
 	XAxis,
 	YAxis,
 } from 'recharts'
+import { Card } from '@/components/ui/Card'
+import { CardTitle } from '@/components/ui/CardTitle'
 import { useCategoryNameMap } from '../../hooks/useCategoryLabels'
 import { useIsNarrowViewport } from '../../hooks/useIsNarrowViewport'
 import { barDomainTicks, categoryChartHeight, formatCompactAxisTick } from '../../lib/chart-axis'
@@ -97,15 +99,16 @@ export function CategoryBreakdown(): ReactElement {
 	const hasAnyRows = income.rows.length > 0 || expense.rows.length > 0
 
 	return (
-		<section
+		<Card
+			as="section"
 			data-testid="category-breakdown"
 			aria-labelledby={headingId}
-			className="surface rounded-lg shadow-md p-4 sm:p-6"
+			className="p-4 sm:p-6"
 		>
 			{/* Not the literal "Categories", which would collide with the page heading. */}
-			<h2 id={headingId} className="text-xl font-semibold text-subheading">
+			<CardTitle id={headingId} className="text-xl">
 				Category breakdown
-			</h2>
+			</CardTitle>
 			<p className="mt-1 text-sm text-muted">
 				What each category totals and its share of that side. Income and expenses are separate
 				wholes, so each share is measured against its own total.
@@ -148,18 +151,15 @@ export function CategoryBreakdown(): ReactElement {
 					/>
 				</div>
 			) : (
-				<div
-					className="surface-inset mt-6 rounded-lg p-6 text-center"
-					data-testid="breakdown-empty"
-				>
+				<Card variant="inset" className="mt-6 p-6 text-center" data-testid="breakdown-empty">
 					{/* Don't imply categorizing is required: uncategorized money still gets a full breakdown. */}
 					<p className="text-muted">
 						Add income or expenses to see the breakdown here. Anything you have not categorized is
 						grouped together, so there is no need to categorize everything first.
 					</p>
-				</div>
+				</Card>
 			)}
-		</section>
+		</Card>
 	)
 }
 
@@ -205,12 +205,13 @@ function BreakdownSide({
 				<h3 id={headingId} className="text-sm font-semibold text-label">
 					{heading}
 				</h3>
-				<div
-					className="surface-inset mt-2 rounded-lg p-6 text-center"
+				<Card
+					variant="inset"
+					className="mt-2 p-6 text-center"
 					data-testid={`breakdown-${side}-empty`}
 				>
 					<p className="text-muted">{emptyLabel}</p>
-				</div>
+				</Card>
 			</div>
 		)
 	}

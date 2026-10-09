@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { Card } from '@/components/ui/Card'
 
 // The CTA points at /login: checkout is not auth-gated, so most buyers here have no session yet.
 export const Route = createFileRoute('/welcome')({
@@ -18,7 +19,7 @@ function WelcomePage() {
 	return (
 		<main className="min-h-screen flex flex-col items-center justify-center surface-sunken p-4">
 			<div className="w-full max-w-md text-center">
-				<div className="surface shadow-md rounded-2xl p-6 sm:p-8 border border-default">
+				<Card className="rounded-2xl sm:p-8 border border-default">
 					<h1 className="text-2xl font-semibold text-heading mb-2">Welcome to Premium 🎉</h1>
 					<p className="text-body mb-6">
 						Thanks for subscribing! Paddle is finishing up your purchase — this usually takes just a
@@ -39,7 +40,7 @@ function WelcomePage() {
 						</a>
 						.
 					</p>
-				</div>
+				</Card>
 			</div>
 		</main>
 	)

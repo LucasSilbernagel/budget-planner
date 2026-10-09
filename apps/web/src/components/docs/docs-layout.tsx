@@ -1,4 +1,9 @@
 import type { ReactNode } from 'react'
+import { Page } from '../ui/Page'
+import { PageContent } from '../ui/PageContent'
+import { PageDescription } from '../ui/PageDescription'
+import { PageHeader } from '../ui/PageHeader'
+import { PageTitle } from '../ui/PageTitle'
 import { DocsSidebar } from './sidebar'
 
 export type DocsLayoutProps = {
@@ -10,15 +15,15 @@ export type DocsLayoutProps = {
 
 export function DocsLayout({ title, description, activeSlug, children }: DocsLayoutProps) {
 	return (
-		<div className="min-h-screen surface-sunken p-4 sm:p-8">
-			<div className="mx-auto max-w-6xl">
-				<header className="mb-8">
+		<Page>
+			<PageContent className="max-w-6xl">
+				<PageHeader>
 					<a href="/" className="text-sm text-accent hover:underline">
 						← Back to app
 					</a>
-					<h1 className="mt-2 text-3xl font-bold text-heading">{title}</h1>
-					{description ? <p className="mt-2 text-body">{description}</p> : null}
-				</header>
+					<PageTitle className="mt-2">{title}</PageTitle>
+					{description ? <PageDescription>{description}</PageDescription> : null}
+				</PageHeader>
 
 				<div className="flex flex-col gap-8 sm:flex-row">
 					<aside className="sm:w-56 sm:flex-shrink-0">
@@ -26,7 +31,7 @@ export function DocsLayout({ title, description, activeSlug, children }: DocsLay
 					</aside>
 					<main className="min-w-0 flex-1">{children}</main>
 				</div>
-			</div>
-		</div>
+			</PageContent>
+		</Page>
 	)
 }

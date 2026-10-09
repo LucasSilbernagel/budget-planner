@@ -3,6 +3,9 @@ import { cn } from '@/lib/cn'
 // It is an accepted exception to the EU-only data rule because it carries free-text feedback only.
 
 import { useState } from 'react'
+import { FormError } from '../ui/FormError'
+import { FormField } from '../ui/FormField'
+import { FormLabel } from '../ui/FormLabel'
 import {
 	type ContactValidationError,
 	MESSAGE_MAX_LENGTH,
@@ -132,13 +135,10 @@ export function ContactForm({ className = '' }: ContactFormProps) {
 				</div>
 			)}
 
-			<div>
-				<label
-					htmlFor="contact-name"
-					className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-				>
+			<FormField>
+				<FormLabel htmlFor="contact-name" className="text-gray-700 dark:text-gray-300">
 					Name <span className="text-muted">(optional)</span>
-				</label>
+				</FormLabel>
 				<input
 					id="contact-name"
 					name="name"
@@ -153,15 +153,12 @@ export function ContactForm({ className = '' }: ContactFormProps) {
 					}}
 					className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
 				/>
-			</div>
+			</FormField>
 
-			<div>
-				<label
-					htmlFor="contact-email"
-					className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-				>
+			<FormField>
+				<FormLabel htmlFor="contact-email" className="text-gray-700 dark:text-gray-300">
 					Email <span className="text-muted">(optional)</span>
-				</label>
+				</FormLabel>
 				<input
 					id="contact-email"
 					name="email"
@@ -184,23 +181,14 @@ export function ContactForm({ className = '' }: ContactFormProps) {
 					aria-describedby={hasFieldError('email') ? 'contact-email-error' : undefined}
 				/>
 				{hasFieldError('email') && (
-					<p
-						id="contact-email-error"
-						className="mt-1 text-sm text-red-600 dark:text-red-400"
-						role="alert"
-					>
-						{getFieldError('email')}
-					</p>
+					<FormError id="contact-email-error">{getFieldError('email')}</FormError>
 				)}
-			</div>
+			</FormField>
 
-			<div>
-				<label
-					htmlFor="contact-message"
-					className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-				>
+			<FormField>
+				<FormLabel htmlFor="contact-message" className="text-gray-700 dark:text-gray-300">
 					Message *
-				</label>
+				</FormLabel>
 				<textarea
 					id="contact-message"
 					name="message"
@@ -223,15 +211,9 @@ export function ContactForm({ className = '' }: ContactFormProps) {
 					aria-describedby={hasFieldError('message') ? 'contact-message-error' : undefined}
 				/>
 				{hasFieldError('message') && (
-					<p
-						id="contact-message-error"
-						className="mt-1 text-sm text-red-600 dark:text-red-400"
-						role="alert"
-					>
-						{getFieldError('message')}
-					</p>
+					<FormError id="contact-message-error">{getFieldError('message')}</FormError>
 				)}
-			</div>
+			</FormField>
 
 			{/* hidden removes it from the a11y tree, tab order and focus, so no aria-hidden is needed. */}
 			<input

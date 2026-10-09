@@ -8,6 +8,7 @@ import type { Frequency } from '@budget-planner/core/finance/normalization'
 import { createFileRoute } from '@tanstack/react-router'
 import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Card } from '@/components/ui/Card'
 import { cn } from '@/lib/cn'
 import { PremiumPrompt } from '../components/auth/premium-prompt'
 import { ForecastList } from '../components/forecasting/forecast-list'
@@ -497,7 +498,7 @@ function ForecastingPage(): React.ReactElement {
 					</div>
 				)}
 
-				<div className="surface rounded-xl shadow-lg p-4 sm:p-8">
+				<Card className="rounded-xl shadow-lg p-4 sm:p-8">
 					{/* The builder stays mounted (hidden) so switching tabs doesn't wipe unsaved edits. */}
 					{/* All panel wrappers always render so every tab's `aria-controls` target exists. */}
 					<div
@@ -542,7 +543,7 @@ function ForecastingPage(): React.ReactElement {
 							/>
 						)}
 					</div>
-				</div>
+				</Card>
 
 				<PageFooter />
 			</main>

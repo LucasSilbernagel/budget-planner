@@ -4,7 +4,11 @@ import { cn } from '@/lib/cn'
 import { resolveProfileIcon } from '@/lib/profile-appearance'
 import { isSyncActive } from '@/lib/sync/syncBridge'
 import { useProfiles } from '@/stores/profileStore'
+import { FormField } from '../ui/FormField'
+import { FormLabel } from '../ui/FormLabel'
 import { Modal } from '../ui/Modal'
+import { ModalFooter } from '../ui/ModalFooter'
+import { ModalTitle } from '../ui/ModalTitle'
 import { type ProfileFormState, validateProfileForm } from './profile-form'
 import { ProfileIconPicker } from './profile-icon-picker'
 
@@ -105,9 +109,9 @@ export function EditProfileDialog({ profileId, onClose }: EditProfileDialogProps
 		>
 			<div className="flex items-center justify-between p-6 border-b border-default">
 				<div>
-					<h2 id="edit-profile-title" className="text-xl font-bold text-heading">
+					<ModalTitle as="h2" id="edit-profile-title" className="text-xl font-bold">
 						Edit Profile
-					</h2>
+					</ModalTitle>
 					<p className="text-body mt-1">Update this profile's name or description</p>
 				</div>
 				<button
@@ -140,10 +144,10 @@ export function EditProfileDialog({ profileId, onClose }: EditProfileDialogProps
 					onChange={(icon) => handleChange('icon', icon)}
 				/>
 
-				<div>
-					<label htmlFor="edit-profile-name" className="block text-sm font-medium text-label mb-1">
+				<FormField>
+					<FormLabel htmlFor="edit-profile-name">
 						Profile Name <span className="text-red-500">*</span>
-					</label>
+					</FormLabel>
 					<input
 						id="edit-profile-name"
 						type="text"
@@ -159,15 +163,10 @@ export function EditProfileDialog({ profileId, onClose }: EditProfileDialogProps
 					{errors['name'] && (
 						<p className="text-sm text-red-600 dark:text-red-400 mt-1">{errors['name']}</p>
 					)}
-				</div>
+				</FormField>
 
-				<div>
-					<label
-						htmlFor="edit-profile-description"
-						className="block text-sm font-medium text-label mb-1"
-					>
-						Description
-					</label>
+				<FormField>
+					<FormLabel htmlFor="edit-profile-description">Description</FormLabel>
 					<textarea
 						id="edit-profile-description"
 						value={form.description}
@@ -186,7 +185,7 @@ export function EditProfileDialog({ profileId, onClose }: EditProfileDialogProps
 					{errors['description'] && (
 						<p className="text-sm text-red-600 dark:text-red-400 mt-1">{errors['description']}</p>
 					)}
-				</div>
+				</FormField>
 
 				{errors['form'] && (
 					<div className="p-3 bg-red-50 dark:bg-red-950/30 rounded-lg">
@@ -194,7 +193,7 @@ export function EditProfileDialog({ profileId, onClose }: EditProfileDialogProps
 					</div>
 				)}
 
-				<div className="flex items-center justify-end gap-3 pt-2">
+				<ModalFooter className="items-center pt-2">
 					<button
 						type="button"
 						onClick={onClose}
@@ -209,7 +208,7 @@ export function EditProfileDialog({ profileId, onClose }: EditProfileDialogProps
 					>
 						{isSubmitting ? 'Saving...' : 'Save Changes'}
 					</button>
-				</div>
+				</ModalFooter>
 			</form>
 		</Modal>
 	)

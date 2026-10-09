@@ -17,6 +17,7 @@ import {
 	XAxis,
 	YAxis,
 } from 'recharts'
+import { Card } from '@/components/ui/Card'
 import { cn } from '@/lib/cn'
 import { useIsNarrowViewport } from '../../hooks/useIsNarrowViewport'
 import { niceAxisTicks } from '../../lib/chart-axis'
@@ -312,7 +313,7 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
 					</button>
 				</div>
 
-				<div className="surface rounded-xl shadow-lg border border-default p-4">
+				<Card className="rounded-xl shadow-lg border border-default p-4">
 					{chartData.length === 0 ? (
 						<div className="flex items-center justify-center h-[400px] text-muted text-center px-4">
 							Build a scenario in the Scenario Builder to see its projection here.
@@ -412,7 +413,7 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
 							</LineChart>
 						</ResponsiveContainer>
 					)}
-				</div>
+				</Card>
 
 				{/* Gated on chartData so an empty-arrays result can't show cards beside the empty state. */}
 				{result && chartData.length > 0 && (
@@ -470,7 +471,7 @@ function SummaryCard({ label, value, change }: SummaryCardProps): React.ReactEle
 
 	return (
 		// A <dl> group may hold only <dt> and <dd>, so the change line is a block span inside the <dd>.
-		<div className="surface-inset rounded-lg p-4">
+		<Card variant="inset" className="p-4">
 			<dt className="text-sm font-medium text-muted">{label}</dt>
 			<dd className="mt-1 text-lg font-semibold text-subheading">
 				<GroupedAmount text={value} />
@@ -486,6 +487,6 @@ function SummaryCard({ label, value, change }: SummaryCardProps): React.ReactEle
 					</span>
 				)}
 			</dd>
-		</div>
+		</Card>
 	)
 }

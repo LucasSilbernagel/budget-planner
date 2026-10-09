@@ -15,7 +15,10 @@ import { useFormattedAmount } from '../../stores/currencyStore'
 import { useExpenses } from '../../stores/expenseStore'
 import { useIncomeSources } from '../../stores/incomeStore'
 import { useSavingsGoals } from '../../stores/savingsStore'
+import { CardHeader } from '../ui/CardHeader'
+import { CardTitle } from '../ui/CardTitle'
 import { GroupedAmount } from '../ui/GroupedAmount'
+import { PageTitle } from '../ui/PageTitle'
 import { RESPONSIVE_SCROLL_SHADOW_CLASS, RESPONSIVE_WRAPPER_CLASS } from '../ui/ResponsiveTable'
 import { TableScrollRegion } from '../ui/TableScrollRegion'
 
@@ -60,7 +63,6 @@ const TH_NUMERIC_CLASS = cn(TH_CLASS, 'text-right')
 const TD_CLASS = 'px-3 py-2 text-sm text-body'
 const TD_NUMERIC_CLASS = cn(TD_CLASS, 'text-right tabular-nums')
 const SECTION_CLASS = 'surface border-default mt-6 rounded-lg border p-4 sm:p-6'
-const SECTION_HEADING_CLASS = 'text-lg font-semibold text-heading'
 
 // Shared by both print buttons; a test asserts their class attributes are equal.
 const PRINT_BUTTON_CLASS =
@@ -228,9 +230,9 @@ export function FinancialSummaryReport({
 
 			<article id="financial-summary-report" aria-labelledby="report-heading">
 				<header>
-					<h1 id="report-heading" className="text-2xl font-bold text-heading">
+					<PageTitle id="report-heading" className="text-2xl">
 						Financial Summary
-					</h1>
+					</PageTitle>
 					{/* Inside the article so the date prints; filed printouts need it. */}
 					<p className="mt-1 text-sm text-muted">Generated {model.generatedAtISO}</p>
 				</header>
@@ -251,10 +253,10 @@ export function FinancialSummaryReport({
 							</p>
 						)}
 						<section aria-labelledby="report-budget-heading" className={SECTION_CLASS}>
-							<div className="flex flex-wrap items-center justify-between gap-2">
-								<h2 id="report-budget-heading" className={SECTION_HEADING_CLASS}>
+							<CardHeader className="flex-wrap gap-2">
+								<CardTitle id="report-budget-heading" className="text-heading">
 									Budget
-								</h2>
+								</CardTitle>
 								{/* Screen-only reading aid inside the article: the section still prints the selected period.
                    See BUDGET_PERIOD_LABEL_TEXT before renaming. */}
 								{!model.budget.isEmpty && (
@@ -276,7 +278,7 @@ export function FinancialSummaryReport({
 										</label>
 									</div>
 								)}
-							</div>
+							</CardHeader>
 							{model.budget.isEmpty ? (
 								<p className="mt-2 text-sm text-body">
 									{emptySectionCopy(
@@ -342,9 +344,9 @@ export function FinancialSummaryReport({
 						</section>
 
 						<section aria-labelledby="report-net-worth-heading" className={SECTION_CLASS}>
-							<h2 id="report-net-worth-heading" className={SECTION_HEADING_CLASS}>
+							<CardTitle id="report-net-worth-heading" className="text-heading">
 								Net worth
-							</h2>
+							</CardTitle>
 							{model.netWorth.isEmpty ? (
 								<p className="mt-2 text-sm text-body">
 									{emptySectionCopy(
@@ -401,9 +403,9 @@ export function FinancialSummaryReport({
 						</section>
 
 						<section aria-labelledby="report-savings-heading" className={SECTION_CLASS}>
-							<h2 id="report-savings-heading" className={SECTION_HEADING_CLASS}>
+							<CardTitle id="report-savings-heading" className="text-heading">
 								Savings
-							</h2>
+							</CardTitle>
 							{model.savings.isEmpty ? (
 								<p className="mt-2 text-sm text-body">
 									{emptySectionCopy(

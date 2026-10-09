@@ -1,4 +1,6 @@
 import type React from 'react'
+import { Page } from '@/components/ui/Page'
+import { PageContent } from '@/components/ui/PageContent'
 import { usePremiumAccess } from '../../hooks/usePremiumAccess'
 import { PremiumPrompt } from '../auth/premium-prompt'
 import { CategoryBreakdown } from './CategoryBreakdown'
@@ -40,11 +42,11 @@ export function CategoriesPage(): React.ReactElement {
 
 	// Each child must stay a single element, or space-y margins the manager's fixed dialog overlay.
 	return (
-		<div key="premium-content" className="min-h-screen surface-sunken p-4 sm:p-8">
-			<div className="mx-auto max-w-3xl space-y-8">
+		<Page key="premium-content">
+			<PageContent className="max-w-3xl space-y-8">
 				<CategoryManager />
 				<CategoryBreakdown />
-			</div>
-		</div>
+			</PageContent>
+		</Page>
 	)
 }

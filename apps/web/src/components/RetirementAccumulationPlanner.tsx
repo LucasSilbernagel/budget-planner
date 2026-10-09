@@ -38,6 +38,10 @@ import {
 } from '../stores/retirementPlannerStore'
 import { ErrorBoundary } from './ErrorBoundary'
 import { RetirementTimelineChart } from './RetirementTimelineChart'
+import { Card } from './ui/Card'
+import { CardTitle } from './ui/CardTitle'
+import { FormField } from './ui/FormField'
+import { FormLabel } from './ui/FormLabel'
 import { GroupedAmount } from './ui/GroupedAmount'
 
 // Applied to take-home income, not gross as in the 50% rule of thumb; kept as an
@@ -535,10 +539,10 @@ function RetirementAccumulationPlannerInner() {
 		const helpId = `${id}-help`
 		const noteId = `${id}-note`
 		return (
-			<div>
-				<label htmlFor={id} className="block text-sm font-medium text-label mb-2">
+			<FormField>
+				<FormLabel htmlFor={id} className="mb-2">
 					{label}
-				</label>
+				</FormLabel>
 				<div className="relative">
 					{mode === 'symbol' && (
 						<span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
@@ -576,7 +580,7 @@ function RetirementAccumulationPlannerInner() {
 					{note}
 				</p>
 				{children}
-			</div>
+			</FormField>
 		)
 	}
 
@@ -591,7 +595,7 @@ function RetirementAccumulationPlannerInner() {
 		caption: string
 		figure: DerivedFigure
 	}) => (
-		<div className="surface-inset p-4 rounded-lg" data-testid={id}>
+		<Card variant="inset" className="p-4" data-testid={id}>
 			<dt className="text-sm text-muted">{label}</dt>
 			{/* Figures change when other stores update, so announce them; aria-atomic because each digit
          group is its own text node. */}
@@ -606,7 +610,7 @@ function RetirementAccumulationPlannerInner() {
 					<span className="block text-xs text-muted mt-1">{figure.note}</span>
 				)}
 			</dd>
-		</div>
+		</Card>
 	)
 
 	// Covers floored and unreadable figures: an unreadable source was handed to the solver as zero.
@@ -626,7 +630,9 @@ function RetirementAccumulationPlannerInner() {
 	return (
 		<div className="space-y-8">
 			<div data-testid="retirement-savings-position">
-				<h3 className="text-lg font-semibold text-subheading mb-4">Your Savings Position</h3>
+				<CardTitle as="h3" className="mb-4">
+					Your Savings Position
+				</CardTitle>
 				<dl className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 					{derivedField({
 						id: 'derived-current-saved',
@@ -645,10 +651,10 @@ function RetirementAccumulationPlannerInner() {
 			</div>
 
 			<div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-				<div>
-					<label htmlFor="currentAge" className="block text-sm font-medium text-label mb-2">
+				<FormField>
+					<FormLabel htmlFor="currentAge" className="mb-2">
 						Current Age
-					</label>
+					</FormLabel>
 					<input
 						type="number"
 						id="currentAge"
@@ -664,12 +670,12 @@ function RetirementAccumulationPlannerInner() {
 						aria-required="true"
 					/>
 					<p className="text-sm text-muted mt-1">Your age today, in years</p>
-				</div>
+				</FormField>
 
-				<div>
-					<label htmlFor="lifeExpectancy" className="block text-sm font-medium text-label mb-2">
+				<FormField>
+					<FormLabel htmlFor="lifeExpectancy" className="mb-2">
 						Life Expectancy
-					</label>
+					</FormLabel>
 					<input
 						type="number"
 						id="lifeExpectancy"
@@ -685,7 +691,7 @@ function RetirementAccumulationPlannerInner() {
 						aria-required="true"
 					/>
 					<p className="text-sm text-muted mt-1">The age you plan through</p>
-				</div>
+				</FormField>
 
 				<div className="sm:col-span-2">
 					{currencyField({
@@ -701,13 +707,8 @@ function RetirementAccumulationPlannerInner() {
 						},
 						children: (
 							<>
-								<div className="mt-2">
-									<label
-										htmlFor="incomeBasis"
-										className="block text-sm font-medium text-label mb-1"
-									>
-										Income period
-									</label>
+								<FormField className="mt-2">
+									<FormLabel htmlFor="incomeBasis">Income period</FormLabel>
 									<select
 										id="incomeBasis"
 										value={incomeBasis}
@@ -717,7 +718,7 @@ function RetirementAccumulationPlannerInner() {
 										<option value="annual">Annual</option>
 										<option value="monthly">Monthly</option>
 									</select>
-								</div>
+								</FormField>
 
 								{/* Nothing below writes the field; the button is the only path. */}
 								{endingExpenses.state !== 'none' && (
@@ -754,10 +755,10 @@ function RetirementAccumulationPlannerInner() {
 					})}
 				</div>
 
-				<div>
-					<label htmlFor="annualReturn" className="block text-sm font-medium text-label mb-2">
+				<FormField>
+					<FormLabel htmlFor="annualReturn" className="mb-2">
 						Expected Annual Return
-					</label>
+					</FormLabel>
 					<div className="relative">
 						{/* type="text": a number input drops "," so 2,5 became 25%. parsePercentageToDecimal reads
                a single comma as the decimal point. */}
@@ -783,16 +784,13 @@ function RetirementAccumulationPlannerInner() {
 							? 'Expected yearly return while you are still saving — under this model it also sets how fast your retirement income is assumed to rise'
 							: 'Expected yearly return while you are still saving'}
 					</p>
-				</div>
+				</FormField>
 
 				{/* Distinct ids: reusing annualReturn would put two controls behind one <label>. */}
-				<div>
-					<label
-						htmlFor="postRetirementReturn"
-						className="block text-sm font-medium text-label mb-2"
-					>
+				<FormField>
+					<FormLabel htmlFor="postRetirementReturn" className="mb-2">
 						Post-Retirement Annual Return
-					</label>
+					</FormLabel>
 					<div className="relative">
 						<input
 							// text, not number: see the Expected Annual Return field.
@@ -818,7 +816,7 @@ function RetirementAccumulationPlannerInner() {
 							? 'What your savings earn once you retire — lower it to model a safer allocation'
 							: 'What your savings earn once you retire — lower it to model a safer allocation. Follows the rate above until you change it'}
 					</p>
-				</div>
+				</FormField>
 			</div>
 
 			{/* The fieldset is a transparent wrapper; panel styles on it put the rendered legend at the border edge.
@@ -827,9 +825,10 @@ function RetirementAccumulationPlannerInner() {
 				<legend className="float-left w-full block text-sm font-medium text-label mb-2">
 					Retirement target model
 				</legend>
-				<div
+				<Card
+					variant="inset"
 					data-testid="retirement-model-panel"
-					className="clear-both p-4 surface-inset rounded-lg grid grid-cols-1 sm:grid-cols-2 gap-3"
+					className="clear-both p-4 grid grid-cols-1 sm:grid-cols-2 gap-3"
 				>
 					{(
 						Object.entries(MODEL_COPY) as [
@@ -860,22 +859,23 @@ function RetirementAccumulationPlannerInner() {
 							</span>
 						</label>
 					))}
-				</div>
+				</Card>
 			</fieldset>
 
 			{/* Gates key on status === 'solved', never truthiness: all-falsy gates rendered a blank void. */}
 			{!parsed.ok && (
-				<div className="p-4 surface-inset rounded-lg text-body" role="status">
+				<Card variant="inset" className="p-4 text-body" role="status">
 					{parsed.reason === 'invalid'
 						? 'Please check your inputs — one of the values is not a valid number.'
 						: 'Enter all the details above to see your retirement outlook.'}
-				</div>
+				</Card>
 			)}
 
 			{solved?.status === 'failed' && (
-				<div
+				<Card
+					variant="inset"
 					data-testid="accumulation-solve-failed"
-					className="p-4 surface-inset rounded-lg text-body"
+					className="p-4 text-body"
 					role="status"
 				>
 					<p>
@@ -884,7 +884,7 @@ function RetirementAccumulationPlannerInner() {
 					</p>
 					{solved.detail && <p className="text-sm mt-2">{solved.detail}</p>}
 					{resultsCaveat('text-body')}
-				</div>
+				</Card>
 			)}
 
 			{/* !noSourceData: with no investment accounts and zero desired income, the solve succeeds
@@ -894,9 +894,9 @@ function RetirementAccumulationPlannerInner() {
 					data-testid="accumulation-outputs"
 					className="p-6 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-900 rounded-xl"
 				>
-					<h3 className="text-lg font-semibold text-green-800 dark:text-green-300 mb-4">
+					<CardTitle as="h3" className="text-green-800 dark:text-green-300 mb-4">
 						Your Retirement Outlook
-					</h3>
+					</CardTitle>
 					<dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
 						<OutputRow
 							label="Saved per year"
@@ -965,9 +965,9 @@ function RetirementAccumulationPlannerInner() {
 						// Targeted copy for the age-window case: the blocker is the ages, not
 						// the savings, so the generic "save more" levers would mislead.
 						<>
-							<h3 className="text-lg font-semibold text-amber-800 dark:text-amber-300 mb-2">
+							<CardTitle as="h3" className="text-amber-800 dark:text-amber-300 mb-2">
 								Your current age is at or past your life expectancy
-							</h3>
+							</CardTitle>
 							<p className="text-sm">
 								There&rsquo;s no retirement window to plan for. Set a life expectancy greater than
 								your current age to see your outlook. You still save{' '}
@@ -977,9 +977,9 @@ function RetirementAccumulationPlannerInner() {
 					) : noSourceData ? (
 						// Nothing to grow: the generic levers would tell a new user to save more on a page with no savings control.
 						<>
-							<h3 className="text-lg font-semibold text-amber-800 dark:text-amber-300 mb-2">
+							<CardTitle as="h3" className="text-amber-800 dark:text-amber-300 mb-2">
 								We don&rsquo;t have your savings data yet
-							</h3>
+							</CardTitle>
 							<p className="text-sm">
 								This plan has nothing to grow yet. Add your investment accounts on the Balance
 								Tracking page, along with what you put into them each month — both figures above
@@ -988,9 +988,9 @@ function RetirementAccumulationPlannerInner() {
 						</>
 					) : (
 						<>
-							<h3 className="text-lg font-semibold text-amber-800 dark:text-amber-300 mb-2">
+							<CardTitle as="h3" className="text-amber-800 dark:text-amber-300 mb-2">
 								Retirement isn&rsquo;t reachable with these numbers
-							</h3>
+							</CardTitle>
 							<p className="text-sm">
 								Your savings don&rsquo;t reach the nest egg this plan needs before your life
 								expectancy. You still save{' '}
@@ -1014,9 +1014,9 @@ function RetirementAccumulationPlannerInner() {
 
 			{/* Accumulation only, so the post-retirement rate deliberately does not appear. */}
 			<div>
-				<h3 className="text-lg font-semibold text-subheading mb-4">
+				<CardTitle as="h3" className="mb-4">
 					Your Savings Until Retirement
-				</h3>
+				</CardTitle>
 				{solved?.status === 'solved' && parsed.ok && !noSourceData ? (
 					<RetirementTimelineChart
 						currentSavedCents={parsed.input.currentSavedCents}
@@ -1030,7 +1030,7 @@ function RetirementAccumulationPlannerInner() {
 					/>
 				) : (
 					// Three states: 'fill in the details' beneath a 'too large' panel would contradict it.
-					<div className="p-8 text-center text-muted surface-inset rounded-lg">
+					<Card variant="inset" className="p-8 text-center text-muted">
 						<p>
 							{solved?.status === 'failed'
 								? 'No projection — the numbers above are out of range.'
@@ -1041,7 +1041,7 @@ function RetirementAccumulationPlannerInner() {
 											'No projection yet — add your investment accounts to see how your savings grow.'
 										: 'Fill in the details above to see how your savings grow.'}
 						</p>
-					</div>
+					</Card>
 				)}
 			</div>
 		</div>
