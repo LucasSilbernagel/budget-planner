@@ -109,8 +109,8 @@ jobs:
         run: |
           set -euo pipefail
           docker image inspect "${IMAGE_NAME}:${GITHUB_SHA}" --format 'uncompressed .Size: {{.Size}} B'
-          # The base is pulled only to label which layers are base vs app.
-          docker pull -q public.ecr.aws/docker/library/node:24-slim > /dev/null
+          # Pulled only to label base vs app layers; a registry throttle must not fail the budget.
+          docker pull -q public.ecr.aws/docker/library/node:24-slim > /dev/null || true
           docker save "${IMAGE_NAME}:${GITHUB_SHA}" | python3 .github/scripts/image_size.py --base public.ecr.aws/docker/library/node:24-slim
 
       - name: Verify the image serves and migrates
