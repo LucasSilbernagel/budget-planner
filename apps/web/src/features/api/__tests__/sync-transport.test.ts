@@ -1,4 +1,4 @@
-import type { SyncOperation } from '@budget-planner/core/sync'
+import type { SyncOperation } from '@budget-planner/core/sync/types'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { sendSyncOperation } from '../client'
 

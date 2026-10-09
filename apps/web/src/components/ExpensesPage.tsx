@@ -1,10 +1,10 @@
-import { resolveDebtPaymentExpense } from '@budget-planner/core'
 import {
 	currencySymbol,
 	formatForInputDisplay,
 	parseFromInput,
 } from '@budget-planner/core/format/currency'
-import type { Frequency } from '@budget-planner/db'
+import { resolveDebtPaymentExpense } from '@budget-planner/core/services/balanceTracking'
+import type { Frequency } from '@budget-planner/db/schema'
 import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useCategoryNameMap } from '../hooks/useCategoryLabels'
@@ -18,8 +18,9 @@ import { exceedsMoneyLimit, moneyLimitMessage } from '../lib/money-limit'
 import { summarizeReadableRows } from '../lib/readable-rows'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import { createFlowSortExtractors, type FlowSortKey } from '../lib/table-sort-keys'
-import { useBalanceStore, useExpenseStore, useExpenses, useTotalExpenses } from '../stores'
+import { useBalanceStore } from '../stores/balanceStore'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
+import { useExpenseStore, useExpenses, useTotalExpenses } from '../stores/expenseStore'
 import { useShowRetirementPlanner } from '../stores/plannerVisibilityStore'
 import { CategoryBadge } from './categories/CategoryBadge'
 import { CategoryPicker } from './categories/CategoryPicker'

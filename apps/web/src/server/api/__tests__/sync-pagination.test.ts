@@ -1,4 +1,4 @@
-import type { ServerChange } from '@budget-planner/core/sync'
+import type { ServerChange } from '@budget-planner/core/sync/types'
 import { describe, expect, it } from 'vitest'
 import { capChangesAtTimestampBoundary } from '../sync'
 

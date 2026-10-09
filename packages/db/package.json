@@ -19,8 +19,6 @@
 		"db:studio": "drizzle-kit studio",
 		"db:ca-expiry": "tsx src/ca-expiry-cli.ts"
 	},
-	"main": "dist/index.js",
-	"types": "dist/index.d.ts",
 	"dependencies": {
 		"dotenv": "^16.3.1",
 		"drizzle-kit": "^0.23.0",

@@ -8,7 +8,7 @@ import {
 	type IncomeBasis,
 	RETIREMENT_MODELS,
 	type RetirementModel,
-} from '@budget-planner/core'
+} from '@budget-planner/core/finance/retirement'
 
 export type RetirementPlan = {
 	/** `''` is "cleared", which is not the same as absent. */

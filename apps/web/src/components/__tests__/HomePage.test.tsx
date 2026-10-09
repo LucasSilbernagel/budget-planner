@@ -6,13 +6,11 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { renderWithRouter } from '@/test/utils'
 import { type SessionSeed, SessionSeedProvider, SIGNED_OUT_SEED } from '../../context/session-seed'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
-import {
-	useBalanceStore,
-	useExpenseStore,
-	useIncomeStore,
-	useOverviewDurationStore,
-	useSavingsStore,
-} from '../../stores'
+import { useBalanceStore } from '../../stores/balanceStore'
+import { useExpenseStore } from '../../stores/expenseStore'
+import { useIncomeStore } from '../../stores/incomeStore'
+import { useOverviewDurationStore } from '../../stores/overviewDurationStore'
+import { useSavingsStore } from '../../stores/savingsStore'
 import {
 	ANY_LOCKED_NAME,
 	expectLockedRowsNamedByVisibleText,

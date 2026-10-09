@@ -1,4 +1,4 @@
-import type { BillingInterval, SubscriptionStatus } from '@budget-planner/db/src/schema'
+import type { BillingInterval, SubscriptionStatus } from '@budget-planner/db/schema'
 import { useEffect, useRef, useState } from 'react'
 import { planLabel } from '@/lib/account/plan-label'
 import { purgeLocalFinancialData } from '@/lib/account/purge-local-financial-data'

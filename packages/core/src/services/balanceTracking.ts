@@ -1,11 +1,10 @@
-import type { FinanceType } from '@budget-planner/db'
+import type { FinanceType } from '@budget-planner/db/schema'
 import { MAX_MONEY_CENTS } from '../finance/money-limits'
 import { type Frequency, normalizeToAnnual, normalizeToMonthly } from '../finance/normalization'
 import { calculateDebtMetrics, type DebtSubType } from '../utils/balanceCalculations'
 import { generateUuid } from '../utils/uuid'
 
-// Restated rather than imported from @budget-planner/db: that barrel throws when bundled
-// for the browser. `_FinanceTypeCoverage` keeps the two in sync.
+// Restated: core takes only types from @budget-planner/db. `_FinanceTypeCoverage` keeps the two in sync.
 export const FINANCE_TYPES = [
 	'investment',
 	'debt',

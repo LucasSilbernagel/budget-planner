@@ -62,8 +62,6 @@ export default defineConfig({
 				find: '@budget-planner/config',
 				replacement: resolve(__dirname, '../../packages/config/src'),
 			},
-			// Must precede the bare `@budget-planner/db` rule, or it rewrites to `packages/db/src/src/schema`.
-			{ find: '@budget-planner/db/src', replacement: resolve(__dirname, '../../packages/db/src') },
 			{ find: '@budget-planner/db', replacement: resolve(__dirname, '../../packages/db/src') },
 			{ find: '@', replacement: resolve(__dirname, './src') },
 		],

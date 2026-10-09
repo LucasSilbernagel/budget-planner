@@ -11,7 +11,7 @@ import {
 	validateBalanceTracking,
 	withTimeline,
 } from '@budget-planner/core/services/balanceTracking'
-import type { FinanceType } from '@budget-planner/db'
+import type { FinanceType } from '@budget-planner/db/schema'
 import { useMemo } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'

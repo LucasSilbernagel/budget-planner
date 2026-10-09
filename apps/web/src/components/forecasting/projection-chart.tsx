@@ -1,4 +1,4 @@
-import type { ForecastingResult } from '@budget-planner/core'
+import type { ForecastingResult } from '@budget-planner/core/finance/forecasting'
 import {
 	type CurrencyCode,
 	type CurrencyMode,

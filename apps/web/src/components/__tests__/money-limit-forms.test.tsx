@@ -1,4 +1,4 @@
-import { MAX_MONEY_CENTS } from '@budget-planner/core'
+import { MAX_MONEY_CENTS } from '@budget-planner/core/finance/money-limits'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders, screen, userEvent, within } from '@/test/utils'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'

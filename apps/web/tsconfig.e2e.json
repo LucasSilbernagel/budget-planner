@@ -2,7 +2,7 @@
 	"extends": "./tsconfig.vitest.json",
 	"compilerOptions": {
 		"rootDir": ".",
-		"types": [],
+		"types": ["node"],
 		"tsBuildInfoFile": "./tsconfig.e2e.tsbuildinfo"
 	},
 	"references": [

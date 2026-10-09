@@ -1,5 +1,5 @@
-import { calculateTotalMonthlyNormalized } from '@budget-planner/core'
-import type { Frequency } from '@budget-planner/db'
+import { calculateTotalMonthlyNormalized } from '@budget-planner/core/finance/normalization'
+import type { Frequency } from '@budget-planner/db/schema'
 import { useMemo } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'

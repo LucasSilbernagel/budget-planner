@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ClientProfile } from '@/hooks/useActiveProfile'
 import {
-	useHasMultipleProfiles,
-	useProfileError,
 	useProfileManager,
 	useProfileSwitcher,
 	useProfilesWithActive,
 } from '@/hooks/useActiveProfile'
 import { profileColor, resolveProfileIcon } from '@/lib/profile-appearance'
+import type { ClientProfile } from '@/stores/profileStore'
+import { useHasMultipleProfiles, useProfileError } from '@/stores/profileStore'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { EditProfileDialog } from './edit-profile'
 

@@ -1,9 +1,9 @@
 // The filename is historical: identity is app-owned (magic link), not Paddle. Kept for its importers.
 
+import { db } from '@budget-planner/db/client'
 // Re-exported so existing importers of this module keep working.
-import type { BillingInterval, Currency } from '@budget-planner/db'
-import { db } from '@budget-planner/db'
-import { users } from '@budget-planner/db/src/schema'
+import type { BillingInterval, Currency } from '@budget-planner/db/schema'
+import { users } from '@budget-planner/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { logger } from '@/lib/logger'
 import type { ApiResult } from '../result'

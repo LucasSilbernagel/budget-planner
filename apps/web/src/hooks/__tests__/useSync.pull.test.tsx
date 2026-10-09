@@ -3,7 +3,7 @@
  * init effect under React 19.
  */
 
-import type { ServerChange } from '@budget-planner/core/sync'
+import type { ServerChange } from '@budget-planner/core/sync/types'
 import { renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 

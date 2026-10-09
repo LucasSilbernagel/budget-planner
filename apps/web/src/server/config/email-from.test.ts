@@ -1,6 +1,6 @@
 /** vitest.config.ts overrides EMAIL_FROM suite-wide, so only this pins the real default. */
 
-import { getEmailConfig, resetConfig } from '@budget-planner/config'
+import { getEmailConfig, resetConfig } from '@budget-planner/config/schema'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 afterEach(() => {

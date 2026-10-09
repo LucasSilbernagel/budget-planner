@@ -6,7 +6,7 @@ const { runRetentionSweep, getRetentionSweepToken } = vi.hoisted(() => ({
 }))
 
 vi.mock('@/server/retention/sweep', () => ({ runRetentionSweep }))
-vi.mock('@budget-planner/config', async (importOriginal) => ({
+vi.mock('@budget-planner/config/schema', async (importOriginal) => ({
 	...(await importOriginal<Record<string, unknown>>()),
 	getRetentionSweepToken,
 }))

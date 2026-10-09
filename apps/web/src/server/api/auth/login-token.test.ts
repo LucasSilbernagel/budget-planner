@@ -32,7 +32,7 @@ const {
 	}
 })
 
-vi.mock('@budget-planner/db', () => ({
+vi.mock('@budget-planner/db/client', () => ({
 	db: {
 		insert: dbInsert,
 		update: dbUpdate,

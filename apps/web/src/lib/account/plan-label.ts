@@ -1,4 +1,4 @@
-import type { BillingInterval, SubscriptionStatus } from '@budget-planner/db/src/schema'
+import type { BillingInterval, SubscriptionStatus } from '@budget-planner/db/schema'
 
 /**
  * Status and billing interval stay separate: splitting `active` per plan would de-entitle every

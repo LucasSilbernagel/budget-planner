@@ -1,4 +1,4 @@
-import { getConfig } from '@budget-planner/config'
+import { getConfig } from '@budget-planner/config/schema'
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 export type LogContext = Record<string, unknown>

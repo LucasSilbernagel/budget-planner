@@ -153,7 +153,7 @@ function createDb() {
 	return drizzle(getPool(), { schema })
 }
 
-export function getDb() {
+function getDb() {
 	if (!dbInstance) {
 		dbInstance = createDb()
 	}
@@ -217,5 +217,3 @@ export async function testDbConnection(): Promise<boolean> {
 		return false
 	}
 }
-
-export * from './schema'

@@ -16,16 +16,19 @@ const state = vi.hoisted(() => ({
 	},
 }))
 
-vi.mock('@budget-planner/db', () => {
-	// Column sentinels — identity is enough to assert the conflict target.
-	const rateLimits = {
+// Column sentinels — identity is enough to assert the conflict target.
+vi.mock('@budget-planner/db/schema', () => ({
+	rateLimits: {
 		scope: 'col:scope',
 		subject: 'col:subject',
 		windowStart: 'col:windowStart',
 		requestCount: 'col:requestCount',
 		// Present so the "no userId term" assertion is not vacuous.
 		userId: 'col:userId',
-	}
+	},
+}))
+
+vi.mock('@budget-planner/db/client', () => {
 	const db = {
 		insert: vi.fn(() => ({
 			values: vi.fn((v: Record<string, unknown>) => {
@@ -55,7 +58,7 @@ vi.mock('@budget-planner/db', () => {
 			return Promise.resolve(undefined)
 		}),
 	}
-	return { db, rateLimits }
+	return { db }
 })
 
 vi.mock('@/lib/logger', () => ({

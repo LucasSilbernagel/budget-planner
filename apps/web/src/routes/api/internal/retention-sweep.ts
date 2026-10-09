@@ -4,7 +4,7 @@
  */
 
 import crypto from 'node:crypto'
-import { getRetentionSweepToken } from '@budget-planner/config'
+import { getRetentionSweepToken } from '@budget-planner/config/schema'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 import { captureError } from '@/lib/error-tracking'

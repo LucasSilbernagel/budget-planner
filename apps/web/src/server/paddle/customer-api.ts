@@ -1,6 +1,6 @@
 /** Webhook payloads identify the buyer only by `customer_id`, so a first-seen buyer's email is fetched here. */
 
-import { getPaddleConfig } from '@budget-planner/config'
+import { getPaddleConfig } from '@budget-planner/config/schema'
 import { logger } from '@/lib/logger'
 
 type PaddleCustomerResponse = {

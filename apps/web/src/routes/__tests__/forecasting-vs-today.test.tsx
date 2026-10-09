@@ -2,7 +2,7 @@ import {
 	calculateFinancialForecast,
 	type ForecastingResult,
 	type YearlyForecast,
-} from '@budget-planner/core'
+} from '@budget-planner/core/finance/forecasting'
 import { act, fireEvent, renderHook, waitFor, within } from '@testing-library/react'
 import type React from 'react'
 import { cloneElement, type ReactElement } from 'react'

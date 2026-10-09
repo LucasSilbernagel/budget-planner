@@ -19,7 +19,7 @@ const { getPaddleConfig, assertPaddleProductionConfig, captureError } = vi.hoist
 	captureError: vi.fn(),
 }))
 
-vi.mock('@budget-planner/db', async (importOriginal) => {
+vi.mock('@budget-planner/db/client', async (importOriginal) => {
 	const actual = await importOriginal<Record<string, unknown>>()
 	return {
 		...actual,
@@ -28,7 +28,7 @@ vi.mock('@budget-planner/db', async (importOriginal) => {
 		},
 	}
 })
-vi.mock('@budget-planner/config', () => ({
+vi.mock('@budget-planner/config/schema', () => ({
 	getPaddleConfig,
 	assertPaddleProductionConfig,
 	getSessionSecret: () => 'story-94-1-session-secret-at-least-32-chars',
@@ -58,7 +58,7 @@ import {
 	rateLimits,
 	userProfiles,
 	users,
-} from '@budget-planner/db'
+} from '@budget-planner/db/schema'
 import { and, eq, sql } from 'drizzle-orm'
 import { POST } from '../paddle'
 

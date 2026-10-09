@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { getPaddleConfig, resetConfig } from '@budget-planner/config'
+import { getPaddleConfig, resetConfig } from '@budget-planner/config/schema'
 import { afterEach, describe, expect, it } from 'vitest'
 import { NO_FLASH_PLANNER_SCRIPT } from '../../../lib/nav/no-flash-planner-visibility-script'
 import { NO_FLASH_ACCOUNT_NOTICE_SCRIPT } from '../../../lib/overview/no-flash-account-notice-script'

@@ -372,7 +372,7 @@ export type ConflictType =
 	| 'delete-delete'
 	| 'version-mismatch'
 
-export type ConflictResolutionStrategy =
+type ConflictResolutionStrategy =
 	| 'last-write-wins'
 	| 'server-wins'
 	| 'client-wins'

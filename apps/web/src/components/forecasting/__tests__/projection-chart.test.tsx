@@ -1,4 +1,4 @@
-import type { ForecastingResult } from '@budget-planner/core'
+import type { ForecastingResult } from '@budget-planner/core/finance/forecasting'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { assertHasFocusRing } from '@/test/responsive-table-tokens'

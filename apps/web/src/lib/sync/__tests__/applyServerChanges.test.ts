@@ -1,4 +1,4 @@
-import type { ServerChange } from '@budget-planner/core/sync'
+import type { ServerChange } from '@budget-planner/core/sync/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useBalanceStore } from '../../../stores/balanceStore'
 import { useCategoryStore } from '../../../stores/categoryStore'

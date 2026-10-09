@@ -1,6 +1,6 @@
 /** The queue add is async, so timers advance with `advanceTimersByTimeAsync` to settle it. */
 
-import type { ServerChange, SyncOperation } from '@budget-planner/core/sync'
+import type { ServerChange, SyncOperation } from '@budget-planner/core/sync/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useIncomeStore } from '../../../stores/incomeStore'
 import {

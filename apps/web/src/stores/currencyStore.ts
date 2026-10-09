@@ -3,10 +3,9 @@ import {
 	type CurrencyMode,
 	type CurrencyOptions,
 	canonicalizeCurrency,
-	DEFAULT_LOCALE,
 	formatCurrency as formatCurrencyCore,
-	localeForCurrency,
-} from '@budget-planner/core'
+} from '@budget-planner/core/format/currency'
+import { DEFAULT_LOCALE, localeForCurrency } from '@budget-planner/core/format/currency-locale'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 

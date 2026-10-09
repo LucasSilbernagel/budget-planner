@@ -1,8 +1,8 @@
 // A hard DELETE, not the `isDeleted` sync tombstone: the tombstone leaves the values in the
 // database, so it does not satisfy erasure.
 
-import { getPaddleConfig } from '@budget-planner/config'
-import { db } from '@budget-planner/db'
+import { getPaddleConfig } from '@budget-planner/config/schema'
+import { db } from '@budget-planner/db/client'
 import {
 	balanceTracking,
 	categories,
@@ -15,7 +15,7 @@ import {
 	savingsGoals,
 	userProfiles,
 	users,
-} from '@budget-planner/db/src/schema'
+} from '@budget-planner/db/schema'
 import { and, eq, sql } from 'drizzle-orm'
 import { logger } from '@/lib/logger'
 import { cancelActiveSubscriptionsForCustomer } from '../paddle/subscription-api'

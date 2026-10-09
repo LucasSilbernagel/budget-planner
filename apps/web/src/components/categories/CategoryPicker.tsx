@@ -1,11 +1,11 @@
 // Deliberately not PremiumFeatureGate: its locked branch opens a Modal, and this picker lives inside one.
 // The locked state is a link instead; following it discards the form, which its copy warns about.
 
-import type { CategoryKind } from '@budget-planner/db'
+import type { CategoryKind } from '@budget-planner/db/schema'
 import type React from 'react'
 import { useCategoriesForActiveProfile } from '../../hooks/useCategoryLabels'
 import { usePremiumAccess } from '../../hooks/usePremiumAccess'
-import { PremiumLockBadge } from '../premium'
+import { PremiumLockBadge } from '../premium/PremiumLockBadge'
 import { Skeleton } from '../ui/Skeleton'
 
 // <select> values are strings, so the empty string stands in for null.

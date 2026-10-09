@@ -3,8 +3,8 @@
  * NaN; the guard must check `typeof`, not finiteness.
  */
 
-import type { PullResult, ServerChange } from '@budget-planner/core/sync'
-import { createSynchronizationService } from '@budget-planner/core/sync'
+import { createSynchronizationService } from '@budget-planner/core/sync/synchronization'
+import type { PullResult, ServerChange } from '@budget-planner/core/sync/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useBalanceStore } from '../../../stores/balanceStore'
 import { useExpenseStore } from '../../../stores/expenseStore'

@@ -7,11 +7,13 @@ import { useBalanceStore } from '../../stores/balanceStore'
 import { useProfileStore } from '../../stores/profileStore'
 import { Route } from '../forecasting'
 
-type ForecastArgs = Parameters<typeof import('@budget-planner/core').calculateFinancialForecast>
+type ForecastArgs = Parameters<
+	typeof import('@budget-planner/core/finance/forecasting').calculateFinancialForecast
+>
 const engineCalls = vi.hoisted(() => [] as ForecastArgs[])
 
-vi.mock('@budget-planner/core', async (importOriginal) => {
-	const real = await importOriginal<typeof import('@budget-planner/core')>()
+vi.mock('@budget-planner/core/finance/forecasting', async (importOriginal) => {
+	const real = await importOriginal<typeof import('@budget-planner/core/finance/forecasting')>()
 	return {
 		...real,
 		calculateFinancialForecast: (...args: Parameters<typeof real.calculateFinancialForecast>) => {

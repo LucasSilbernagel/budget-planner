@@ -1,5 +1,4 @@
-// The barrel, not the finance subpath: tsc cannot resolve the subpath (no exports map).
-import { calculateNetIncomeResult, monthlyContributionCents } from '@budget-planner/core'
+import { calculateNetIncomeResult } from '@budget-planner/core/finance/netIncome'
 import {
 	type IncomeBasis,
 	type RetirementAccumulationResult,
@@ -13,6 +12,7 @@ import {
 	formatForInputDisplay,
 	parseFromInput,
 } from '@budget-planner/core/format/currency'
+import { monthlyContributionCents } from '@budget-planner/core/services/balanceTracking'
 import type React from 'react'
 import { useEffect, useMemo } from 'react'
 import { summarizeEndingExpenses } from '../lib/retirement-ending-expenses'

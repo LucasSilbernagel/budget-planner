@@ -295,5 +295,3 @@ export class SyncQueue {
 export function createSyncQueue(userId: string): SyncQueue {
 	return new SyncQueue(userId, undefined)
 }
-
-export { LocalStorageSyncQueueStorage }

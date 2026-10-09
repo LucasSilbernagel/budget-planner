@@ -2,8 +2,11 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import { cloneElement, type ReactElement } from 'react'
 import { Pie, PieChart } from 'recharts'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useBalanceStore, useExpenseStore, useIncomeStore, useSavingsStore } from '../../stores'
+import { useBalanceStore } from '../../stores/balanceStore'
 import { useCategoryStore } from '../../stores/categoryStore'
+import { useExpenseStore } from '../../stores/expenseStore'
+import { useIncomeStore } from '../../stores/incomeStore'
+import { useSavingsStore } from '../../stores/savingsStore'
 
 vi.mock('../../hooks/usePremiumAccess', () => ({
 	usePremiumAccess: () => ({

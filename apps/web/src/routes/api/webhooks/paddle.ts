@@ -4,16 +4,17 @@
  */
 
 import crypto from 'node:crypto'
-import { assertPaddleProductionConfig, getPaddleConfig } from '@budget-planner/config'
-import { currencyEnum, db } from '@budget-planner/db'
+import { assertPaddleProductionConfig, getPaddleConfig } from '@budget-planner/config/schema'
+import { db } from '@budget-planner/db/client'
 import {
 	type BillingInterval,
 	type Currency,
+	currencyEnum,
 	loginTokens,
 	paddleAdjustments,
 	type SubscriptionStatus,
 	users,
-} from '@budget-planner/db/src/schema'
+} from '@budget-planner/db/schema'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'

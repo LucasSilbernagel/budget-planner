@@ -54,8 +54,6 @@ export type SavingsGoalFilter = {
 	search?: string
 }
 
-export { calculateProgress } from '../utils/savingsGoalCalculations'
-
 export function getStatusFromProgress(progress: number): SavingsGoalStatus {
 	if (progress >= 100) return 'complete'
 	if (progress > 0) return 'on-track'

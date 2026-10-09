@@ -1,7 +1,11 @@
 /** Rows are validated in core's pull before last-writer-wins, so there is deliberately no second validator here. */
 
-import type { ServerChange, SyncEntityType, SyncOperation } from '@budget-planner/core'
-import type { RefusedServerChange } from '@budget-planner/core/sync'
+import type {
+	RefusedServerChange,
+	ServerChange,
+	SyncEntityType,
+	SyncOperation,
+} from '@budget-planner/core/sync/types'
 import { useBalanceStore } from '../../stores/balanceStore'
 import { useCategoryStore } from '../../stores/categoryStore'
 import { useExpenseStore } from '../../stores/expenseStore'

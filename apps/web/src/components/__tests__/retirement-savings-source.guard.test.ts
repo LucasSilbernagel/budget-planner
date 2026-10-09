@@ -40,7 +40,10 @@ describe('RetirementAccumulationPlanner — monthly-savings source', () => {
 
 	it('routes through the single normalizer', () => {
 		expect(source).toContain(
-			"import { calculateNetIncomeResult, monthlyContributionCents } from '@budget-planner/core'"
+			"import { calculateNetIncomeResult } from '@budget-planner/core/finance/netIncome'"
+		)
+		expect(source).toContain(
+			"import { monthlyContributionCents } from '@budget-planner/core/services/balanceTracking'"
 		)
 	})
 
@@ -64,7 +67,7 @@ describe('RetirementAccumulationPlanner — monthly-savings source', () => {
 		const codeUses = codeOnly.filter((line) => line.includes('calculateNetIncomeResult'))
 		// Two code lines: the import and the desired-income prefill, which is seeded from GROSS income.
 		expect(codeUses).toHaveLength(2)
-		expect(codeUses[0]).toContain("from '@budget-planner/core'")
+		expect(codeUses[0]).toContain("from '@budget-planner/core/finance/netIncome'")
 		expect(codeUses[1]).toContain('const { grossIncome } = calculateNetIncomeResult(')
 	})
 })

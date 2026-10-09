@@ -11,10 +11,8 @@ const session = vi.hoisted(() => ({ userId: '11111111-1111-4111-8111-11111111111
 
 // The real package entry refuses to load under jsdom (it has a `window`), so
 // mock it from the schema module alone.
-vi.mock('@budget-planner/db', async () => {
-	const actual = await vi.importActual<Record<string, unknown>>(
-		'../../../../../../packages/db/src/schema'
-	)
+vi.mock('@budget-planner/db/client', async (importOriginal) => {
+	const actual = await importOriginal<Record<string, unknown>>()
 	return {
 		...actual,
 		get db() {
@@ -36,7 +34,7 @@ vi.mock('@/server/api/auth/paddle', () => ({
 	})),
 }))
 
-import { users } from '@budget-planner/db'
+import { users } from '@budget-planner/db/schema'
 import { JSDOM } from 'jsdom'
 import type { ReactElement } from 'react'
 import { POST as batchPOST } from '@/routes/api/sync/batch'

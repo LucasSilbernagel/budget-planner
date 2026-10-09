@@ -1,4 +1,4 @@
-import type { ForecastingResult } from '@budget-planner/core'
+import type { ForecastingResult } from '@budget-planner/core/finance/forecasting'
 import { fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import type React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

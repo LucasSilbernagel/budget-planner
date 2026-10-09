@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const queriedTables: string[] = []
 const calls: { table: string; method: 'where' | 'orderBy' | 'limit'; arg: unknown }[] = []
 
-vi.mock('@budget-planner/db', async (importOriginal) => {
+vi.mock('@budget-planner/db/client', async (importOriginal) => {
 	const actual = (await importOriginal()) as Record<string, unknown>
 
 	const rowsFor = (name: string): Record<string, unknown>[] => {

@@ -17,7 +17,7 @@ export type NetWorthProjectionInput = {
 	customYears?: number
 }
 
-export type ProjectionPoint = {
+type ProjectionPoint = {
 	month: number
 
 	year: number

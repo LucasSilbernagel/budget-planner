@@ -1,27 +1,36 @@
 import {
-	type CurrencyOptions,
 	calculateFinancialForecast,
-	currencySymbol,
 	DEFAULT_FORECAST_YEARS,
 	DEFAULT_INVESTMENT_RETURN,
-	debtOwedCents,
 	type ForecastInputData,
 	type ForecastingResult,
 	type ForecastingScenario,
-	formatForInputDisplay,
 	isValidForecastYears,
 	isValidGrowthRate,
 	MAX_FORECAST_YEARS,
 	MAX_GROWTH_RATE,
 	MIN_FORECAST_YEARS,
 	MIN_GROWTH_RATE,
+} from '@budget-planner/core/finance/forecasting'
+import type {
+	Frequency,
+	NormalizableFinancialItem,
+} from '@budget-planner/core/finance/normalization'
+import {
 	normalizeToMonthly,
-	resolveDebtPaymentExpense,
 	roundingDriftToleranceCents,
-	solveAutomaticAllocations,
-} from '@budget-planner/core'
-import type { Frequency, NormalizableFinancialItem } from '@budget-planner/core/finance'
+} from '@budget-planner/core/finance/normalization'
+import { solveAutomaticAllocations } from '@budget-planner/core/finance/savingsAllocation'
+import {
+	type CurrencyOptions,
+	currencySymbol,
+	formatForInputDisplay,
+} from '@budget-planner/core/format/currency'
 import type { ClientBalanceTracking } from '@budget-planner/core/services/balanceTracking'
+import {
+	debtOwedCents,
+	resolveDebtPaymentExpense,
+} from '@budget-planner/core/services/balanceTracking'
 import type { ClientSavingsGoal } from '@budget-planner/core/services/savingsGoals'
 import { Link } from '@tanstack/react-router'
 import type React from 'react'

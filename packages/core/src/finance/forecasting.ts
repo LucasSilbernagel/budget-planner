@@ -1,5 +1,5 @@
 import { annualContributionCents } from '../services/balanceTracking'
-import type { NormalizableFinancialItem } from './netIncome'
+import type { NormalizableFinancialItem } from './normalization'
 import { calculateTotalAnnualNormalized, type Frequency, validateAmount } from './normalization'
 
 // Each loop iteration is a YEAR: recurring flows are annualised per item, after growth and
@@ -498,61 +498,4 @@ export function calculateFinancialForecast(
 			averageAnnualGrowth,
 		},
 	}
-}
-
-export type GoalCalculation = {
-	targetAmount: number
-	currentAmount: number
-	monthlyContribution: number
-	annualReturnRate: number
-	yearsToGoal: number
-	monthlyAmountNeeded: number
-}
-
-export function calculateGoalTimeline(
-	targetAmount: number,
-	currentAmount: number,
-	monthlyContribution: number,
-	annualReturnRate: number
-): GoalCalculation {
-	if (currentAmount >= targetAmount) {
-		return {
-			targetAmount,
-			currentAmount,
-			monthlyContribution,
-			annualReturnRate,
-			yearsToGoal: 0,
-			monthlyAmountNeeded: 0,
-		}
-	}
-
-	let years = 0
-	let amount = currentAmount
-	const monthlyReturnRate = annualReturnRate / 12
-
-	while (amount < targetAmount && years < 100) {
-		years++
-		amount = amount * (1 + monthlyReturnRate) + monthlyContribution * 12
-	}
-
-	const months = years * 12
-	// Approximation: ignores returns rather than solving the annuity formula for PMT.
-	const monthlyAmountNeeded = Math.round((targetAmount - currentAmount) / months)
-
-	return {
-		targetAmount,
-		currentAmount,
-		monthlyContribution,
-		annualReturnRate,
-		yearsToGoal: Math.round(years * 10) / 10,
-		monthlyAmountNeeded,
-	}
-}
-
-export type SavedScenario = {
-	id: string
-	name: string
-	description?: string
-	createdAt: string
-	updatedAt: string
 }

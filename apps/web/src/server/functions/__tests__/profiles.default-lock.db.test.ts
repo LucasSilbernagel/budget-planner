@@ -9,7 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 const holder = vi.hoisted(() => ({ db: null as unknown }))
 
-vi.mock('@budget-planner/db', async (importOriginal) => {
+vi.mock('@budget-planner/db/client', async (importOriginal) => {
 	const actual = await importOriginal<Record<string, unknown>>()
 	return {
 		...actual,
@@ -25,7 +25,7 @@ vi.mock('@/lib/logger', () => ({
 	logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }))
 
-import { userProfiles, users } from '@budget-planner/db'
+import { userProfiles, users } from '@budget-planner/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { createDefaultProfileForUser } from '../profiles'
 

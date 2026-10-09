@@ -1,4 +1,4 @@
-import { assertPaddleProductionConfig, resetConfig } from '@budget-planner/config'
+import { assertPaddleProductionConfig, resetConfig } from '@budget-planner/config/schema'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 const PADDLE_KEYS = [

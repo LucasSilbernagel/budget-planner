@@ -3,9 +3,10 @@
  * unreadable ones are excluded and counted for disclosure.
  */
 
-import type { Frequency } from '@budget-planner/core'
-import { calculateNetIncomeResult, debtOwedCents, normalizeToMonthly } from '@budget-planner/core'
-import { FINANCE_TYPES } from '@budget-planner/core/services/balanceTracking'
+import { calculateNetIncomeResult } from '@budget-planner/core/finance/netIncome'
+import type { Frequency } from '@budget-planner/core/finance/normalization'
+import { normalizeToMonthly } from '@budget-planner/core/finance/normalization'
+import { debtOwedCents, FINANCE_TYPES } from '@budget-planner/core/services/balanceTracking'
 import { netWorthFromTotals } from '../net-worth'
 
 /** `frequency` is `string`, not `Frequency`, so a corrupt persisted value is representable and can be rejected. */

@@ -2,7 +2,8 @@
  * Takes currency primitives, not useFormattedAmount's function: a new function each render would
  * re-run validation on every render.
  */
-import { type CurrencyOptions, formatCurrency, MAX_MONEY_CENTS } from '@budget-planner/core'
+import { MAX_MONEY_CENTS } from '@budget-planner/core/finance/money-limits'
+import { type CurrencyOptions, formatCurrency } from '@budget-planner/core/format/currency'
 
 export function exceedsMoneyLimit(cents: number): boolean {
 	return cents > MAX_MONEY_CENTS

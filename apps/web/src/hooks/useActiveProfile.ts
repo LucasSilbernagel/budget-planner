@@ -2,24 +2,9 @@ import {
 	type ClientProfile,
 	useActiveProfile as useActiveProfileBase,
 	useActiveProfileId,
-	useHasMultipleProfiles,
-	useIsLoadingProfiles,
-	useProfileCount,
-	useProfileError,
 	useProfileStore,
 	useProfiles,
 } from '../stores/profileStore'
-
-export type { ClientProfile }
-export {
-	useActiveProfileId,
-	useHasMultipleProfiles,
-	useIsLoadingProfiles,
-	useProfileCount,
-	useProfileError,
-	useProfileStore,
-	useProfiles,
-}
 
 export function useActiveProfile(): ClientProfile | null {
 	return useActiveProfileBase()

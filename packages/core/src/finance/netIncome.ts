@@ -1,9 +1,6 @@
 import type { NormalizableFinancialItem } from './normalization'
 import { calculateTotalMonthlyNormalized } from './normalization'
 
-// Re-exported, not redeclared: a second declaration made the name ambiguous across barrels.
-export type { NormalizableFinancialItem } from './normalization'
-
 export function calculateNetPeriodIncome(
 	incomeSources: NormalizableFinancialItem[],
 	expenses: NormalizableFinancialItem[]

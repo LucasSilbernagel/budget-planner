@@ -1,4 +1,4 @@
-import type { ServerChange } from '@budget-planner/core/sync'
+import type { ServerChange } from '@budget-planner/core/sync/types'
 import { cleanup, render, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 

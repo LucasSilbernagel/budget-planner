@@ -1,4 +1,4 @@
-import type { SubscriptionStatus } from '@budget-planner/db/src/schema'
+import type { SubscriptionStatus } from '@budget-planner/db/schema'
 
 /**
  * Paid access includes past_due (dunning); premium features exclude it. Client-safe: the only

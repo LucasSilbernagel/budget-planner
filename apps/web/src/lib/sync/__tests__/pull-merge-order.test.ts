@@ -1,6 +1,6 @@
 /** applyOne removes then appends, so without the re-sort a pulled update moves its row to the bottom. */
 
-import type { ServerChange } from '@budget-planner/core/sync'
+import type { ServerChange } from '@budget-planner/core/sync/types'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useBalanceStore } from '../../../stores/balanceStore'
 import { useExpenseStore } from '../../../stores/expenseStore'

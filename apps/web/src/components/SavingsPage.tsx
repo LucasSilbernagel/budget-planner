@@ -1,15 +1,15 @@
 import {
-	type AllocationMode,
 	type ContributionDuplicateCandidate,
 	findContributionDuplicateCandidates,
-	normalizeToMonthly,
-	solveAutomaticAllocations,
-} from '@budget-planner/core'
+} from '@budget-planner/core/finance/contributionDuplicates'
+import { normalizeToMonthly } from '@budget-planner/core/finance/normalization'
+import { solveAutomaticAllocations } from '@budget-planner/core/finance/savingsAllocation'
 import {
 	currencySymbol,
 	formatForInputDisplay,
 	parseFromInput,
 } from '@budget-planner/core/format/currency'
+import type { AllocationMode } from '@budget-planner/core/services/savingsGoals'
 import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
@@ -20,15 +20,11 @@ import { exceedsMoneyLimit, moneyLimitMessage } from '../lib/money-limit'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
 import { investmentContributionItems } from '../lib/savings/investment-contribution-items'
 import { createSavingsSortExtractors, type SavingsSortKey } from '../lib/table-sort-keys'
-import {
-	useExpenses,
-	useIncomeSources,
-	useInvestmentEntries,
-	useSavingsGoals,
-	useSavingsStore,
-	useTotalSavings,
-} from '../stores'
+import { useInvestmentEntries } from '../stores/balanceStore'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
+import { useExpenses } from '../stores/expenseStore'
+import { useIncomeSources } from '../stores/incomeStore'
+import { useSavingsGoals, useSavingsStore, useTotalSavings } from '../stores/savingsStore'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 import { GroupedAmount } from './ui/GroupedAmount'
 import { Modal } from './ui/Modal'

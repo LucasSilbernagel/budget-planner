@@ -5,8 +5,9 @@ import { render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { barDomainTicks } from '../../../lib/chart-axis'
-import { useExpenseStore, useIncomeStore } from '../../../stores'
 import { type ClientCategory, useCategoryStore } from '../../../stores/categoryStore'
+import { useExpenseStore } from '../../../stores/expenseStore'
+import { useIncomeStore } from '../../../stores/incomeStore'
 import { useOverviewDurationStore } from '../../../stores/overviewDurationStore'
 
 type CapturedDatum = {

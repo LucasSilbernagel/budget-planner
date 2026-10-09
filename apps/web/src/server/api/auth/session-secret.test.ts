@@ -1,4 +1,4 @@
-import { getSessionSecret, resetConfig } from '@budget-planner/config'
+import { getSessionSecret, resetConfig } from '@budget-planner/config/schema'
 import { afterEach, describe, expect, it } from 'vitest'
 
 const ORIGINAL_NODE_ENV = process.env.NODE_ENV

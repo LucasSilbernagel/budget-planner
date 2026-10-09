@@ -1,6 +1,6 @@
 /** Paddle cancels by subscription id but the app stores only the customer id: list, then cancel each. */
 
-import { getPaddleConfig } from '@budget-planner/config'
+import { getPaddleConfig } from '@budget-planner/config/schema'
 import { captureError } from '@/lib/error-tracking'
 import { logger } from '@/lib/logger'
 

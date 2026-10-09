@@ -1,9 +1,5 @@
-import {
-	type ServerChange,
-	type SyncOperation,
-	SyncQueue,
-	type SyncQueueStorage,
-} from '@budget-planner/core/sync'
+import { SyncQueue } from '@budget-planner/core/sync/queue'
+import type { ServerChange, SyncOperation, SyncQueueStorage } from '@budget-planner/core/sync/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
 	addRefusalNotices,

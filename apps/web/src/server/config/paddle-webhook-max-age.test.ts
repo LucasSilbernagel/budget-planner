@@ -3,7 +3,7 @@
  * a throw inside getConfig() 500s every route.
  */
 
-import { getPaddleConfig, resetConfig } from '@budget-planner/config'
+import { getPaddleConfig, resetConfig } from '@budget-planner/config/schema'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 afterEach(() => {

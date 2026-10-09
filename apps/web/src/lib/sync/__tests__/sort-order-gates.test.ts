@@ -3,7 +3,6 @@
  * so they validate rather than strip.
  */
 
-// Deep import: `syncOperationDataSchema` is not re-exported from core's `sync` barrel.
 import { syncOperationDataSchema } from '@budget-planner/core/sync/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { syncOperationSchema } from '../../../server/api/sync'

@@ -1,7 +1,7 @@
 // Assembled from local stores and printed via window.print(): no figure may leave the device.
 // Retirement outlook and net-worth projection are deliberately excluded (no persisted source).
 
-import { denormalizeFromMonthly } from '@budget-planner/core/finance'
+import { denormalizeFromMonthly } from '@budget-planner/core/finance/normalization'
 import type React from 'react'
 import { useMemo, useState } from 'react'
 import {

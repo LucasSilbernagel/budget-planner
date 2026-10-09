@@ -1,4 +1,4 @@
-import type { IncomeBasis, RetirementModel } from '@budget-planner/core'
+import type { IncomeBasis, RetirementModel } from '@budget-planner/core/finance/retirement'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import {

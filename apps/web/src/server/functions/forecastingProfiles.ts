@@ -3,9 +3,9 @@
  * Never import from client code: it bundles `pg` into the browser.
  */
 
-import type { ForecastingProfile, NewForecastingProfile } from '@budget-planner/db'
-import { db } from '@budget-planner/db'
-import { forecastingProfiles, userProfiles } from '@budget-planner/db/src/schema'
+import { db } from '@budget-planner/db/client'
+import type { ForecastingProfile, NewForecastingProfile } from '@budget-planner/db/schema'
+import { forecastingProfiles, userProfiles } from '@budget-planner/db/schema'
 import { and, desc, eq, inArray, ne, type SQL } from 'drizzle-orm'
 import { type DbTx, lockUserProfileSet } from '../api/profile-set-lock'
 

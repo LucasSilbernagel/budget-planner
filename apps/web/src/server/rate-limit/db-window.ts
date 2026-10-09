@@ -3,7 +3,8 @@
  * makes the increment atomic; the decision uses the returned count.
  */
 
-import { db, rateLimits } from '@budget-planner/db'
+import { db } from '@budget-planner/db/client'
+import { rateLimits } from '@budget-planner/db/schema'
 import { sql } from 'drizzle-orm'
 import { logger } from '@/lib/logger'
 import { maybeRunRetentionBackstop } from '@/server/retention/backstop'

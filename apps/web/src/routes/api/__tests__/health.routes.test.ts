@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@budget-planner/db', () => ({
+vi.mock('@budget-planner/db/client', () => ({
 	testDbConnection: vi.fn(),
 }))
 
-import { testDbConnection } from '@budget-planner/db'
+import { testDbConnection } from '@budget-planner/db/client'
 import { GET as healthGET } from '../health'
 import { GET as readyGET } from '../ready'
 

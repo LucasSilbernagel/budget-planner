@@ -1,8 +1,8 @@
 // One op with an unrecognised entityType fails the whole batch, so these gates fail silently
 // and destructively.
 
-import type { SyncEntityType } from '@budget-planner/core'
-import { subscriptionStatusEnum } from '@budget-planner/db'
+import type { SyncEntityType } from '@budget-planner/core/sync/types'
+import { subscriptionStatusEnum } from '@budget-planner/db/schema'
 import { getTableName } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
 import {

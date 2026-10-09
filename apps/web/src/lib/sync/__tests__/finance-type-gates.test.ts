@@ -5,7 +5,7 @@
 
 import { FINANCE_TYPES } from '@budget-planner/core/services/balanceTracking'
 import { syncOperationDataSchema } from '@budget-planner/core/sync/types'
-import { ALL_FINANCE_TYPES, financeTypeEnum } from '@budget-planner/db/src/schema'
+import { ALL_FINANCE_TYPES, financeTypeEnum } from '@budget-planner/db/schema'
 import { describe, expect, it } from 'vitest'
 import { syncOperationSchema } from '../../../server/api/sync'
 
@@ -35,7 +35,7 @@ describe('Gate 1 — the enum itself, and every list derived from it', () => {
 	})
 
 	it('core FINANCE_TYPES matches the enum exactly, in order', () => {
-		// Core restates the list because the db barrel throws when `window` is defined; this catches order/value drift.
+		// Core restates the list rather than importing it from db; this catches order/value drift.
 		expect([...FINANCE_TYPES]).toEqual([...ALL_FINANCE_TYPES])
 		expect([...FINANCE_TYPES]).toEqual([...financeTypeEnum.enumValues])
 	})

@@ -16,7 +16,7 @@ const { sendRetentionNoticeEmail, captureError } = vi.hoisted(() => ({
 	captureError: vi.fn(),
 }))
 
-vi.mock('@budget-planner/db', async (importOriginal) => {
+vi.mock('@budget-planner/db/client', async (importOriginal) => {
 	const actual = await importOriginal<Record<string, unknown>>()
 	return {
 		...actual,
@@ -54,7 +54,7 @@ import {
 	savingsGoals,
 	userProfiles,
 	users,
-} from '@budget-planner/db'
+} from '@budget-planner/db/schema'
 import { eq } from 'drizzle-orm'
 import { runRetentionBackstopIfStale, STALE_AFTER_MS } from '../backstop'
 import { RETENTION_JOB, runRetentionSweep } from '../sweep'

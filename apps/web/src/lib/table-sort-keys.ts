@@ -1,4 +1,8 @@
-import { debtOwedCents, getNormalizationMultiplier, normalizeToMonthly } from '@budget-planner/core'
+import {
+	getNormalizationMultiplier,
+	normalizeToMonthly,
+} from '@budget-planner/core/finance/normalization'
+import { debtOwedCents } from '@budget-planner/core/services/balanceTracking'
 import { resolveCategoryName } from '../hooks/useCategoryLabels'
 import { isKnownFrequency, isReadableRow } from './readable-rows'
 import type { SortKeyExtractors } from './table-sort'

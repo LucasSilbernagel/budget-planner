@@ -1,10 +1,5 @@
 import { z } from 'zod'
-import {
-	createSyncQueue,
-	LocalStorageSyncQueueStorage,
-	SyncQueue,
-	SyncQueueClosedError,
-} from './queue'
+import { createSyncQueue, type SyncQueue, SyncQueueClosedError } from './queue'
 import type {
 	ChangesPulledCallback,
 	ConflictCallback,
@@ -31,7 +26,7 @@ import {
 	validateServerRow,
 } from './types'
 
-const DEFAULT_CONFIG: SyncConfig = {
+export const DEFAULT_CONFIG: SyncConfig = {
 	conflictResolutionStrategy: 'last-write-wins',
 	maxRetries: 3,
 	retryDelay: 5000,
@@ -1787,28 +1782,4 @@ export function createSynchronizationService(
 	config?: Partial<SyncConfig>
 ): SynchronizationService {
 	return new SynchronizationService(userId, config)
-}
-
-export type {
-	ChangesPulledCallback,
-	ConflictCallback,
-	ConflictResult,
-	OperationsRejectedCallback,
-	OperationsSyncedCallback,
-	PullResult,
-	ServerChange,
-	SyncConfig,
-	SyncEntityType,
-	SyncOperation,
-	SyncResult,
-	SyncState,
-	SyncStatusCallback,
-}
-
-export {
-	createSyncQueue,
-	DEFAULT_CONFIG,
-	LocalStorageSyncQueueStorage,
-	SyncQueue,
-	SyncQueueClosedError,
 }

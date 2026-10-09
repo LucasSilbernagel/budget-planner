@@ -1,6 +1,6 @@
 import crypto from 'node:crypto'
-import { db } from '@budget-planner/db'
-import { loginTokens } from '@budget-planner/db/src/schema'
+import { db } from '@budget-planner/db/client'
+import { loginTokens } from '@budget-planner/db/schema'
 import { and, eq, gt, isNull } from 'drizzle-orm'
 
 export const LOGIN_TOKEN_TTL_MS = 15 * 60 * 1000

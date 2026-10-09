@@ -1,4 +1,4 @@
-import type { ForecastingResult } from '@budget-planner/core'
+import type { ForecastingResult } from '@budget-planner/core/finance/forecasting'
 import { render } from '@testing-library/react'
 import { cloneElement, type ReactElement } from 'react'
 import { Line } from 'recharts'

@@ -3,7 +3,7 @@
  * `NOT IN (ENTITLED)`. `free` is lapsed (Paddle `paused` maps to it).
  */
 
-import { type SubscriptionStatus, users } from '@budget-planner/db/src/schema'
+import { type SubscriptionStatus, users } from '@budget-planner/db/schema'
 import { type SQL, sql } from 'drizzle-orm'
 import { hasPaidAccess, PAID_ACCESS_STATUSES, STATUS_ACCESS } from '@/lib/premium/access-statuses'
 

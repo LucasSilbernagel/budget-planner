@@ -1,4 +1,4 @@
-import { createSynchronizationService } from '@budget-planner/core/sync'
+import { createSynchronizationService } from '@budget-planner/core/sync/synchronization'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { sendSyncOperation } from '../../../features/api/client'
 

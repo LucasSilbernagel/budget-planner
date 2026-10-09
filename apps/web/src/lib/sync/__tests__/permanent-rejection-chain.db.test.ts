@@ -12,7 +12,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 const holder = vi.hoisted(() => ({ db: null as unknown }))
 
-vi.mock('@budget-planner/db', async (importOriginal) => {
+vi.mock('@budget-planner/db/client', async (importOriginal) => {
 	const actual = await importOriginal<Record<string, unknown>>()
 	return {
 		...actual,
@@ -39,9 +39,15 @@ vi.mock('@/server/api/auth/paddle', () => ({
 	})),
 }))
 
-import type { SyncOperation } from '@budget-planner/core/sync'
-import { createSynchronizationService } from '@budget-planner/core/sync'
-import { categories, incomeSources, savingsGoals, userProfiles, users } from '@budget-planner/db'
+import { createSynchronizationService } from '@budget-planner/core/sync/synchronization'
+import type { SyncOperation } from '@budget-planner/core/sync/types'
+import {
+	categories,
+	incomeSources,
+	savingsGoals,
+	userProfiles,
+	users,
+} from '@budget-planner/db/schema'
 import { eq } from 'drizzle-orm'
 import { JSDOM } from 'jsdom'
 import { logger } from '@/lib/logger'

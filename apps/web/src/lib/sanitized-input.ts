@@ -3,8 +3,7 @@
  * to the end, even when the value is unchanged.
  */
 
-// Barrel, not the `format/currency` subpath: tsc can't resolve the subpath (no exports map).
-import { sanitizeMoneyInput } from '@budget-planner/core'
+import { sanitizeMoneyInput } from '@budget-planner/core/format/currency'
 
 /**
  * `sanitize` must be prefix-stable, so sanitize(raw.slice(0, caret)).length indexes sanitize(raw).

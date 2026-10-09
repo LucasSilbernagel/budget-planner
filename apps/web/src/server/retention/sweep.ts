@@ -3,8 +3,8 @@
  * whose notice never succeeds is never deleted. Each purge re-checks eligibility under FOR UPDATE SKIP LOCKED.
  */
 
-import { db } from '@budget-planner/db'
-import { jobRuns, users } from '@budget-planner/db/src/schema'
+import { db } from '@budget-planner/db/client'
+import { jobRuns, users } from '@budget-planner/db/schema'
 import { and, asc, count, eq, type SQL, sql } from 'drizzle-orm'
 import { captureError } from '@/lib/error-tracking'
 import { logger } from '@/lib/logger'

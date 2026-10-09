@@ -1,6 +1,6 @@
 /** Brevo (EU data centres) via plain fetch, so recipient addresses never leave the EU. */
 
-import { getEmailConfig, getSiteUrl } from '@budget-planner/config'
+import { getEmailConfig, getSiteUrl } from '@budget-planner/config/schema'
 import { logger } from '@/lib/logger'
 
 const BREVO_SEND_URL = 'https://api.brevo.com/v3/smtp/email'

@@ -1,5 +1,5 @@
 import { projectAccumulatedNestEgg } from '@budget-planner/core/finance/retirement'
-import type { FinanceType, Frequency } from '@budget-planner/db'
+import type { FinanceType, Frequency } from '@budget-planner/db/schema'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { act, fireEvent, renderWithProviders, screen, userEvent, within } from '@/test/utils'
 import { useBalanceStore } from '../../stores/balanceStore'

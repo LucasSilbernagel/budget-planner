@@ -1,3 +1,7 @@
+import {
+	createSynchronizationService,
+	type SynchronizationService,
+} from '@budget-planner/core/sync/synchronization'
 import type {
 	FetchServerChangesFn,
 	ProcessOperationFn,
@@ -7,12 +11,8 @@ import type {
 	SyncOperation,
 	SyncResult,
 	SyncStatus,
-} from '@budget-planner/core/sync'
-import {
-	createSynchronizationService,
-	type SynchronizationService,
-	SyncStatus as SyncStatusEnum,
-} from '@budget-planner/core/sync'
+} from '@budget-planner/core/sync/types'
+import { SyncStatus as SyncStatusEnum } from '@budget-planner/core/sync/types'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'

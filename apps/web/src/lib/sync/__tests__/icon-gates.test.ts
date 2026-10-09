@@ -1,6 +1,5 @@
 /** The server gate validates but doesn't strip: superRefine discards its parse result and `data` is a z.record. */
 
-// Deep import: core's `sync` barrel doesn't re-export syncOperationDataSchema.
 import { syncOperationDataSchema } from '@budget-planner/core/sync/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { syncOperationSchema } from '../../../server/api/sync'
