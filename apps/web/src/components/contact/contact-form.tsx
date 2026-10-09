@@ -1,3 +1,4 @@
+import { cn } from '@/lib/cn'
 // Posts client-side to Formspark with a public form id: no server route and no secret.
 // It is an accepted exception to the EU-only data rule because it carries free-text feedback only.
 
@@ -118,7 +119,7 @@ export function ContactForm({ className = '' }: ContactFormProps) {
 	const isSubmitting = status === 'submitting'
 
 	return (
-		<form onSubmit={handleSubmit} className={`space-y-4 ${className}`} noValidate>
+		<form onSubmit={handleSubmit} className={cn('space-y-4', className)} noValidate>
 			{status === 'success' && (
 				<div
 					role="status"
@@ -173,11 +174,12 @@ export function ContactForm({ className = '' }: ContactFormProps) {
 						clearTerminalStatus()
 					}}
 					placeholder="you@example.com"
-					className={`w-full rounded-md border px-3 py-2 focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-white ${
+					className={cn(
+						'w-full rounded-md border px-3 py-2 focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-white',
 						hasFieldError('email')
 							? 'border-red-500 focus:border-red-500 focus:ring-red-500'
 							: 'border-gray-300 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600'
-					}`}
+					)}
 					aria-invalid={hasFieldError('email')}
 					aria-describedby={hasFieldError('email') ? 'contact-email-error' : undefined}
 				/>
@@ -211,11 +213,12 @@ export function ContactForm({ className = '' }: ContactFormProps) {
 						clearTerminalStatus()
 					}}
 					placeholder="Share feedback or report an issue…"
-					className={`w-full rounded-md border px-3 py-2 focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-white ${
+					className={cn(
+						'w-full rounded-md border px-3 py-2 focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-white',
 						hasFieldError('message')
 							? 'border-red-500 focus:border-red-500 focus:ring-red-500'
 							: 'border-gray-300 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600'
-					}`}
+					)}
 					aria-invalid={hasFieldError('message')}
 					aria-describedby={hasFieldError('message') ? 'contact-message-error' : undefined}
 				/>

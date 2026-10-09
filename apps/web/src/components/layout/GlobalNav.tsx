@@ -1,6 +1,7 @@
 import { Link, useRouterState } from '@tanstack/react-router'
 import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { cn } from '@/lib/cn'
 import { useSessionSeed } from '../../context/session-seed'
 import { isEntitledSeed } from '../../lib/premium/entitlement'
 import { useVerifiedSession } from '../../lib/session/verifiedSession'
@@ -67,9 +68,15 @@ const NAV_LINK_BASE =
 
 // `max-sm:focus-visible:ring-inset`: an outset ring is clipped off-screen on the edge cells.
 // `max-sm:text-[11px]` sets the bar height and keeps the widest label fitting.
-const TAB_LINK_CLASS = `${NAV_LINK_BASE} max-sm:flex max-sm:h-full max-sm:min-h-[44px] max-sm:flex-col max-sm:items-center max-sm:justify-center max-sm:gap-0.5 max-sm:break-words max-sm:rounded-none max-sm:px-1 max-sm:text-center max-sm:text-[11px] max-sm:leading-tight max-sm:focus-visible:ring-inset`
+const TAB_LINK_CLASS = cn(
+	NAV_LINK_BASE,
+	'max-sm:flex max-sm:h-full max-sm:min-h-[44px] max-sm:flex-col max-sm:items-center max-sm:justify-center max-sm:gap-0.5 max-sm:break-words max-sm:rounded-none max-sm:px-1 max-sm:text-center max-sm:text-[11px] max-sm:leading-tight max-sm:focus-visible:ring-inset'
+)
 
-const SHEET_ROW_CLASS = `${NAV_LINK_BASE} sm:block sm:whitespace-nowrap max-sm:flex max-sm:min-h-[44px] max-sm:items-center max-sm:gap-3 max-sm:rounded-none max-sm:px-4 max-sm:py-3 max-sm:text-sm max-sm:leading-tight max-sm:focus-visible:ring-inset`
+const SHEET_ROW_CLASS = cn(
+	NAV_LINK_BASE,
+	'sm:block sm:whitespace-nowrap max-sm:flex max-sm:min-h-[44px] max-sm:items-center max-sm:gap-3 max-sm:rounded-none max-sm:px-4 max-sm:py-3 max-sm:text-sm max-sm:leading-tight max-sm:focus-visible:ring-inset'
+)
 
 const ACTIVE_CLASS = 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300'
 
@@ -99,11 +106,17 @@ const SETTINGS_ACTIVE_BELOW_SM_CLASS =
 
 // The webkit-details-marker token hides WebKit's triangle. No hand-rolled ARIA: browsers
 // already expose <summary> as an expandable disclosure.
-const MORE_TRIGGER_CLASS = `${NAV_LINK_BASE} cursor-pointer list-none sm:pr-2 [&::-webkit-details-marker]:hidden max-sm:flex max-sm:h-full max-sm:min-h-[44px] max-sm:w-full max-sm:flex-col max-sm:items-center max-sm:justify-center max-sm:gap-0.5 max-sm:rounded-none max-sm:px-1 max-sm:text-center max-sm:text-[11px] max-sm:leading-tight max-sm:focus-visible:ring-inset`
+const MORE_TRIGGER_CLASS = cn(
+	NAV_LINK_BASE,
+	'cursor-pointer list-none sm:pr-2 [&::-webkit-details-marker]:hidden max-sm:flex max-sm:h-full max-sm:min-h-[44px] max-sm:w-full max-sm:flex-col max-sm:items-center max-sm:justify-center max-sm:gap-0.5 max-sm:rounded-none max-sm:px-1 max-sm:text-center max-sm:text-[11px] max-sm:leading-tight max-sm:focus-visible:ring-inset'
+)
 
 // Rotates on the native `open` attribute, never `isMoreOpen`: they disagree before hydration
 // and with JS off. Desktop-only: `max-sm:hidden`, never `sm:hidden`.
-const MORE_CHEVRON_CLASS = `${DISCLOSURE_CHEVRON_CLASS} ml-1 inline-block align-middle max-sm:hidden group-open:rotate-180`
+const MORE_CHEVRON_CLASS = cn(
+	DISCLOSURE_CHEVRON_CLASS,
+	'ml-1 inline-block align-middle max-sm:hidden group-open:rotate-180'
+)
 
 // `sm:z-40` stops positioned page content painting over the dropdown. The max-height cap and
 // scroll stop the out-of-flow sheet growing off the top of the screen.
@@ -156,12 +169,7 @@ export function GlobalNav() {
 
 	// Lowercased: `/Settings` serves the page, but TanStack's active match is case-sensitive.
 	const isOnSettingsPage = pathname.toLowerCase() === SETTINGS_PATH
-	const triggerActiveClass = [
-		moreActiveClass,
-		isOnSettingsPage ? SETTINGS_ACTIVE_BELOW_SM_CLASS : '',
-	]
-		.filter(Boolean)
-		.join(' ')
+	const triggerActiveClass = cn(moreActiveClass, isOnSettingsPage && SETTINGS_ACTIVE_BELOW_SM_CLASS)
 
 	// Light-dismiss passes `false`: restoring from `pointerup` would steal focus from what was clicked.
 	const closeMore = useCallback((restoreFocus = true) => {
@@ -289,7 +297,7 @@ export function GlobalNav() {
 					</li>
 				))}
 				{/* Not positioned below `sm`: the sheet must resolve `absolute` against the fixed <nav>. */}
-				<li className={moreNeededAtLg ? MORE_CELL_CLASS : `${MORE_CELL_CLASS} lg:hidden`}>
+				<li className={moreNeededAtLg ? MORE_CELL_CLASS : cn(MORE_CELL_CLASS, 'lg:hidden')}>
 					<details
 						ref={detailsRef}
 						open={isMoreOpen}
@@ -310,9 +318,7 @@ export function GlobalNav() {
 								setIsMoreOpen((open) => !open)
 							}}
 							className={
-								triggerActiveClass
-									? `${MORE_TRIGGER_CLASS} ${triggerActiveClass}`
-									: MORE_TRIGGER_CLASS
+								triggerActiveClass ? cn(MORE_TRIGGER_CLASS, triggerActiveClass) : MORE_TRIGGER_CLASS
 							}
 						>
 							<MoreIcon className="h-6 w-6 sm:hidden" />
@@ -349,9 +355,7 @@ export function GlobalNav() {
 								<Link
 									to={SETTINGS_PATH}
 									aria-current={isOnSettingsPage ? 'page' : undefined}
-									className={
-										isOnSettingsPage ? `${SHEET_ROW_CLASS} ${ACTIVE_CLASS}` : SHEET_ROW_CLASS
-									}
+									className={isOnSettingsPage ? cn(SHEET_ROW_CLASS, ACTIVE_CLASS) : SHEET_ROW_CLASS}
 									activeProps={{}}
 									onClick={() => closeMore()}
 								>

@@ -1,6 +1,7 @@
 import { Link, useRouterState } from '@tanstack/react-router'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { signOut } from '@/lib/account/sign-out'
+import { cn } from '@/lib/cn'
 import { hasPremiumFeatures } from '@/lib/premium/access-statuses'
 import { setVerifiedSession } from '@/lib/session/verifiedSession'
 import {
@@ -165,7 +166,11 @@ export function AuthIndicator() {
 						{!isOnPricingPage && !isOnLoginPage && (
 							<Link
 								to={PRICING_PATH}
-								className={`rounded-md px-3 py-1 font-medium sm:px-1.5 ${PHONE_TARGET_CLASS} text-green-700 transition-colors hover:bg-green-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-green-400 dark:hover:bg-gray-700`}
+								className={cn(
+									'rounded-md px-3 py-1 font-medium sm:px-1.5',
+									PHONE_TARGET_CLASS,
+									'text-green-700 transition-colors hover:bg-green-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-green-400 dark:hover:bg-gray-700'
+								)}
 							>
 								Upgrade
 							</Link>
@@ -173,7 +178,11 @@ export function AuthIndicator() {
 						{!isOnLoginPage && (
 							<Link
 								to={LOGIN_PATH}
-								className={`rounded-md px-3 py-1 font-medium sm:px-1.5 ${PHONE_TARGET_CLASS} text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100`}
+								className={cn(
+									'rounded-md px-3 py-1 font-medium sm:px-1.5',
+									PHONE_TARGET_CLASS,
+									'text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100'
+								)}
 							>
 								Sign in
 							</Link>
@@ -201,7 +210,7 @@ export function AuthIndicator() {
 					to={SETTINGS_PATH}
 					aria-label="Settings"
 					aria-current={isOnSettingsPage ? 'page' : undefined}
-					className={isOnSettingsPage ? `${GEAR_LINK_CLASS} ${GEAR_ACTIVE_CLASS}` : GEAR_LINK_CLASS}
+					className={isOnSettingsPage ? cn(GEAR_LINK_CLASS, GEAR_ACTIVE_CLASS) : GEAR_LINK_CLASS}
 					activeProps={{}}
 				>
 					<SettingsIcon className="h-4 w-4" />
@@ -215,9 +224,7 @@ export function AuthIndicator() {
 						href={SETTINGS_PATH}
 						aria-label="Settings"
 						aria-current={isOnSettingsPage ? 'page' : undefined}
-						className={
-							isOnSettingsPage ? `${GEAR_LINK_CLASS} ${GEAR_ACTIVE_CLASS}` : GEAR_LINK_CLASS
-						}
+						className={isOnSettingsPage ? cn(GEAR_LINK_CLASS, GEAR_ACTIVE_CLASS) : GEAR_LINK_CLASS}
 					>
 						<SettingsIcon className="h-4 w-4" />
 					</a>
@@ -255,7 +262,7 @@ const ACCOUNT_PANEL_CLASS =
 const PANEL_ROW_CLASS =
 	'block w-full px-4 py-2 max-sm:min-h-[44px] max-sm:py-3 text-left max-sm:text-center text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-green-500 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100'
 
-const SIGN_OUT_CLASS = `${PANEL_ROW_CLASS} disabled:cursor-wait disabled:opacity-60`
+const SIGN_OUT_CLASS = cn(PANEL_ROW_CLASS, 'disabled:cursor-wait disabled:opacity-60')
 
 /** Visible only while the panel is open on /settings: any navigation closes it. */
 const PANEL_ROW_ACTIVE_CLASS = 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300'
@@ -375,7 +382,7 @@ function AccountMenu({
 				>
 					{email.charAt(0).toUpperCase()}
 				</span>
-				<ChevronDownIcon className={`${DISCLOSURE_CHEVRON_CLASS}${isOpen ? ' rotate-180' : ''}`} />
+				<ChevronDownIcon className={cn(DISCLOSURE_CHEVRON_CLASS, isOpen && ' rotate-180')} />
 			</button>
 			{isOpen && (
 				<div id={panelId} className={ACCOUNT_PANEL_CLASS}>
@@ -387,14 +394,14 @@ function AccountMenu({
 						aria-current={isOnSettingsPage ? 'page' : undefined}
 						className={
 							isOnSettingsPage
-								? `${PANEL_ROW_CLASS} ${PANEL_ROW_ACTIVE_CLASS} ${HIDDEN_BELOW_SM}`
-								: `${PANEL_ROW_CLASS} ${HIDDEN_BELOW_SM}`
+								? cn(PANEL_ROW_CLASS, PANEL_ROW_ACTIVE_CLASS, HIDDEN_BELOW_SM)
+								: cn(PANEL_ROW_CLASS, HIDDEN_BELOW_SM)
 						}
 						activeProps={{}}
 					>
 						Settings
 					</Link>
-					<hr className={`border-gray-200 dark:border-gray-700 ${HIDDEN_BELOW_SM}`} />
+					<hr className={cn('border-gray-200 dark:border-gray-700', HIDDEN_BELOW_SM)} />
 					<button
 						type="button"
 						onClick={handleSignOut}

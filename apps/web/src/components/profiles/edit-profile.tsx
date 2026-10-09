@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useProfileById, useProfileManager } from '@/hooks/useActiveProfile'
+import { cn } from '@/lib/cn'
 import { resolveProfileIcon } from '@/lib/profile-appearance'
 import { isSyncActive } from '@/lib/sync/syncBridge'
 import { useProfiles } from '@/stores/profileStore'
@@ -150,9 +151,10 @@ export function EditProfileDialog({ profileId, onClose }: EditProfileDialogProps
 						onChange={(e) => handleChange('name', e.target.value)}
 						placeholder="e.g., Personal, Business, Investments"
 						maxLength={255}
-						className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+						className={cn(
+							'w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400',
 							errors['name'] ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
-						}`}
+						)}
 					/>
 					{errors['name'] && (
 						<p className="text-sm text-red-600 dark:text-red-400 mt-1">{errors['name']}</p>
@@ -173,9 +175,10 @@ export function EditProfileDialog({ profileId, onClose }: EditProfileDialogProps
 						placeholder="Briefly describe the purpose of this profile (optional)"
 						maxLength={500}
 						rows={3}
-						className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors resize-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+						className={cn(
+							'w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors resize-none dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400',
 							errors['description'] ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
-						}`}
+						)}
 					/>
 					<p className="text-xs text-muted mt-1 text-right">
 						{form.description.length}/500 characters

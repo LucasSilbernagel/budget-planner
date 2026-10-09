@@ -1,3 +1,4 @@
+import { cn } from '@/lib/cn'
 // The confirmation is deliberately generic so the UI never reveals whether the address
 // is registered.
 
@@ -46,7 +47,10 @@ export function MagicLinkForm({ initialError, className = '' }: MagicLinkFormPro
 			<div
 				role="status"
 				aria-live="polite"
-				className={`rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/30 dark:text-green-300 ${className}`}
+				className={cn(
+					'rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/30 dark:text-green-300',
+					className
+				)}
 			>
 				<p>
 					Check your email — if an account exists for <strong>{email}</strong>, we&apos;ve sent a
@@ -57,7 +61,7 @@ export function MagicLinkForm({ initialError, className = '' }: MagicLinkFormPro
 	}
 
 	return (
-		<form onSubmit={handleSubmit} className={`space-y-4 ${className}`} noValidate>
+		<form onSubmit={handleSubmit} className={cn('space-y-4', className)} noValidate>
 			<div className="text-left">
 				<label
 					htmlFor="login-email"

@@ -1,3 +1,4 @@
+import { cn } from '@/lib/cn'
 /**
  * `monthlyTotalCents` is monthly-normalized; this component denormalizes to the selected period,
  * so callers must not pre-convert.
@@ -68,7 +69,7 @@ export function PeriodTotal({
 			{/* `data-testid`, not a name query: the heading's accessible name includes the tooltip button's label. */}
 			{/* `text-2xl` below `sm` plus `GroupedAmount` keep a denormalized annual figure from widening the page at 320px. */}
 			<p
-				className={`text-2xl sm:text-3xl font-bold ${amountClassName}`}
+				className={cn('text-2xl sm:text-3xl font-bold', amountClassName)}
 				data-testid="period-total-amount"
 			>
 				{hydrated ? (

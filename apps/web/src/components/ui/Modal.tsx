@@ -1,4 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useRef } from 'react'
+import { cn } from '@/lib/cn'
 
 /**
  * Stacked modals are safe, not supported: the background is not inerted, so a dialog
@@ -200,7 +201,7 @@ export function Modal({
 				aria-describedby={describedBy}
 				data-testid={testId}
 				tabIndex={-1}
-				className={`${MODAL_CARD_CONSTRAINT} ${className}`}
+				className={cn(MODAL_CARD_CONSTRAINT, className)}
 				onClick={(event) => event.stopPropagation()}
 				onKeyDown={handleKeyDown}
 			>

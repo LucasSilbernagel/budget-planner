@@ -1,5 +1,6 @@
 import { currencyDisplayLabel, getSupportedCurrencies } from '@budget-planner/core/format/currency'
 import { type ChangeEvent, useId } from 'react'
+import { cn } from '@/lib/cn'
 import { useCurrencyStore } from '../../stores/currencyStore'
 
 const SELECTABLE_CURRENCIES = getSupportedCurrencies().filter((code: string) => code !== 'NONE')
@@ -39,7 +40,7 @@ export function CurrencyToggle({ className }: CurrencyToggleProps) {
 			role="group"
 			aria-label="Currency display"
 			// `max-w-full` lets `flex-wrap` break lines at narrow widths instead of growing to max-content.
-			className={`flex max-w-full flex-wrap items-center gap-3 ${className ?? ''}`.trim()}
+			className={cn('flex max-w-full flex-wrap items-center gap-3', className)}
 		>
 			<span id={labelId} className="text-sm font-medium text-gray-700 dark:text-gray-300">
 				Currency symbols
@@ -51,15 +52,17 @@ export function CurrencyToggle({ className }: CurrencyToggleProps) {
 				aria-checked={symbolsOn}
 				aria-labelledby={labelId}
 				onClick={handleToggle}
-				className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+				className={cn(
+					'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2',
 					symbolsOn ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
-				}`}
+				)}
 			>
 				<span
 					aria-hidden="true"
-					className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+					className={cn(
+						'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
 						symbolsOn ? 'translate-x-6' : 'translate-x-1'
-					}`}
+					)}
 				/>
 			</button>
 

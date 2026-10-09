@@ -1,3 +1,4 @@
+import { cn } from '@/lib/cn'
 // Not auth-gated: accounts are created only by the Paddle webhook on a completed checkout,
 // so requiring sign-in would lock out new customers. The session only pre-fills the email.
 
@@ -281,11 +282,12 @@ function PremiumCheckoutForm({ seed }: { seed: SessionSeed | null }) {
 						tabIndex={plan === id ? 0 : -1}
 						onClick={() => setPlan(id)}
 						onKeyDown={(event) => handleRadioKeyDown(event, id)}
-						className={`flex-1 rounded-md px-3 py-1.5 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50 ${
+						className={cn(
+							'flex-1 rounded-md px-3 py-1.5 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50',
 							plan === id
 								? 'bg-blue-600 text-white'
 								: 'text-body hover:bg-gray-100 dark:hover:bg-gray-700'
-						}`}
+						)}
 					>
 						{label}
 					</button>

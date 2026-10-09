@@ -15,6 +15,7 @@ import {
 } from '@budget-planner/core/finance/visualization'
 import { debtOwedCents } from '@budget-planner/core/services/balanceTracking'
 import React, { Suspense, useCallback, useMemo, useState } from 'react'
+import { cn } from '@/lib/cn'
 import { useSessionSeed } from '../context/session-seed'
 import { resolveCategoryLabel, useCategoryNameMap } from '../hooks/useCategoryLabels'
 import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
@@ -84,7 +85,10 @@ function useChartsChunkReady(): boolean {
 // The caller owns the box: keep this `h-full w-full` only.
 function ChartPending(): React.ReactElement {
 	return (
-		<div aria-hidden="true" className={`${SKELETON_BAR} h-full w-full motion-safe:animate-pulse`} />
+		<div
+			aria-hidden="true"
+			className={cn(SKELETON_BAR, 'h-full w-full motion-safe:animate-pulse')}
+		/>
 	)
 }
 
@@ -455,11 +459,12 @@ export function HomePage() {
 								</p>
 								<p
 									data-testid="overview-net-worth"
-									className={`text-2xl font-bold ${
+									className={cn(
+										'text-2xl font-bold',
 										netWorth >= 0
 											? 'text-purple-600 dark:text-purple-400'
 											: 'text-red-600 dark:text-red-400'
-									}`}
+									)}
 								>
 									{hydrated ? (
 										<GroupedAmount text={formatAmount(netWorth)} />
@@ -502,22 +507,28 @@ export function HomePage() {
 							<div className="surface-inset rounded-lg p-6 sm:p-8 text-center">
 								<p className="mb-1 text-lg font-medium">
 									<span
-										className={`${SKELETON_BAR} inline-block h-[1em] w-56 max-w-full align-middle`}
+										className={cn(
+											SKELETON_BAR,
+											'inline-block h-[1em] w-56 max-w-full align-middle'
+										)}
 									/>
 								</p>
 								<p className="mb-6 text-sm">
 									<span
-										className={`${SKELETON_BAR} inline-block h-[1em] w-80 max-w-full align-middle`}
+										className={cn(
+											SKELETON_BAR,
+											'inline-block h-[1em] w-80 max-w-full align-middle'
+										)}
 									/>
 								</p>
 								{/* `h-6`, not `h-[1em]`: an inline-flex button has no line-box strut, so 1em made it 8px short.
                    Transparent border because the resolved link is bordered. */}
 								<div className="flex flex-wrap items-center justify-center gap-3">
 									<span className="inline-flex items-center rounded-md px-4 py-2 font-medium">
-										<span className={`${SKELETON_BAR} inline-block h-6 w-24 align-middle`} />
+										<span className={cn(SKELETON_BAR, 'inline-block h-6 w-24 align-middle')} />
 									</span>
 									<span className="inline-flex items-center rounded-md border border-transparent px-4 py-2 font-medium">
-										<span className={`${SKELETON_BAR} inline-block h-6 w-28 align-middle`} />
+										<span className={cn(SKELETON_BAR, 'inline-block h-6 w-28 align-middle')} />
 									</span>
 								</div>
 							</div>
@@ -674,7 +685,7 @@ export function HomePage() {
 										return (
 											<div
 												key={id}
-												className={`${PREMIUM_BOX_BASE} surface-inset`}
+												className={cn(PREMIUM_BOX_BASE, 'surface-inset')}
 												data-testid={`premium-benefit-${id}`}
 											>
 												<LockedTileContent label={<Label />} chevronHidden />
@@ -690,7 +701,7 @@ export function HomePage() {
 													className={PREMIUM_BOX_INTERACTIVE}
 													locked={<LockedTileContent label={<Label />} />}
 												>
-													<div className={`${PREMIUM_BOX_BASE} surface-inset`}>
+													<div className={cn(PREMIUM_BOX_BASE, 'surface-inset')}>
 														<LockedTileContent label={<Label />} chevronHidden />
 													</div>
 												</PremiumFeatureGate>
@@ -814,7 +825,7 @@ function BreakdownPie({
 				{data.length > 0 && (
 					<span
 						data-testid={`breakdown-pie-total-${testId}`}
-						className={`text-sm font-semibold ${accentClass}`}
+						className={cn('text-sm font-semibold', accentClass)}
 					>
 						{totalDisplay ?? formatAmount(total)}
 					</span>
@@ -898,9 +909,10 @@ function LockedTileContent({
 			<span className="mr-auto">{label}</span>
 			<span
 				aria-hidden="true"
-				className={`order-last pl-2 text-lg leading-none text-accent${
-					chevronHidden ? ' invisible' : ''
-				}`}
+				className={cn(
+					'order-last pl-2 text-lg leading-none text-accent',
+					chevronHidden && ' invisible'
+				)}
 			>
 				›
 			</span>

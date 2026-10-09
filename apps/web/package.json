@@ -27,11 +27,13 @@
 		"@budget-planner/db": "workspace:*",
 		"@paddle/paddle-js": "^1.6.4",
 		"@tanstack/react-router": "^1.170.16",
+		"clsx": "^2.1.1",
 		"drizzle-orm": "^0.32.0",
 		"markdown-to-jsx": "^9.8.2",
 		"react": "^19.0.0",
 		"react-dom": "^19.0.0",
 		"recharts": "^2.15.3",
+		"tailwind-merge": "^2.6.1",
 		"zod": "^3.22.4",
 		"zustand": "^4.4.7"
 	},

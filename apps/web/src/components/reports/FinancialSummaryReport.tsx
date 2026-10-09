@@ -1,3 +1,4 @@
+import { cn } from '@/lib/cn'
 // Assembled from local stores and printed via window.print(): no figure may leave the device.
 // Retirement outlook and net-worth projection are deliberately excluded (no persisted source).
 
@@ -44,16 +45,20 @@ const TABLE_CLASS = 'min-w-full divide-y divide-gray-200 dark:divide-gray-700'
 
 // A four-column table is wider than a phone card, so it scrolls in its own region.
 // The print: resets keep wide tables unclipped and the shadow gradients off paper.
-const TABLE_REGION_CLASS = `${RESPONSIVE_WRAPPER_CLASS} ${RESPONSIVE_SCROLL_SHADOW_CLASS} mt-3 print:overflow-visible print:bg-none`
+const TABLE_REGION_CLASS = cn(
+	RESPONSIVE_WRAPPER_CLASS,
+	RESPONSIVE_SCROLL_SHADOW_CLASS,
+	'mt-3 print:overflow-visible print:bg-none'
+)
 
 // `anywhere` (not break-word) lowers min-content so long names cannot widen tables, on screen or paper;
 // max-sm:min-w keeps ordinary names from splitting mid-word on phones.
 const NAME_WRAP_CLASS = '[overflow-wrap:anywhere] max-sm:min-w-[8rem]'
 
 const TH_CLASS = 'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-label'
-const TH_NUMERIC_CLASS = `${TH_CLASS} text-right`
+const TH_NUMERIC_CLASS = cn(TH_CLASS, 'text-right')
 const TD_CLASS = 'px-3 py-2 text-sm text-body'
-const TD_NUMERIC_CLASS = `${TD_CLASS} text-right tabular-nums`
+const TD_NUMERIC_CLASS = cn(TD_CLASS, 'text-right tabular-nums')
 const SECTION_CLASS = 'surface border-default mt-6 rounded-lg border p-4 sm:p-6'
 const SECTION_HEADING_CLASS = 'text-lg font-semibold text-heading'
 
@@ -104,7 +109,7 @@ function CashflowTable({
 						<tr key={row.id}>
 							{/* Explicit text-left: an unstyled <th> takes the UA default centre and Preflight does not reset it.
                  Per call site, not on TD_CLASS, which TD_NUMERIC_CLASS extends with text-right. */}
-							<th scope="row" className={`${TD_CLASS} font-normal text-left ${NAME_WRAP_CLASS}`}>
+							<th scope="row" className={cn(TD_CLASS, 'font-normal text-left', NAME_WRAP_CLASS)}>
 								{row.name}
 							</th>
 							{/* What the user entered: unaffected by the period control. */}
@@ -215,7 +220,7 @@ export function FinancialSummaryReport({
 		// w-full is load-bearing: auto margins switch off flex stretching, so the column would size to its widest table.
 		<main className="mx-auto w-full max-w-3xl px-4 py-10">
 			{/* data-print-hide: the print control must not appear on the printed page. */}
-			<div data-print-hide className={`mb-6 ${PRINT_ROW_CLASS}`}>
+			<div data-print-hide className={cn('mb-6', PRINT_ROW_CLASS)}>
 				<button type="button" onClick={() => window.print()} className={PRINT_BUTTON_CLASS}>
 					Print / Save as PDF
 				</button>
@@ -438,7 +443,7 @@ export function FinancialSummaryReport({
 														{/* text-left: same UA-default fix as CashflowTable's row header. */}
 														<th
 															scope="row"
-															className={`${TD_CLASS} font-normal text-left ${NAME_WRAP_CLASS}`}
+															className={cn(TD_CLASS, 'font-normal text-left', NAME_WRAP_CLASS)}
 														>
 															{goal.name}
 														</th>
@@ -489,7 +494,7 @@ export function FinancialSummaryReport({
 
 						{/* Inside the article, so data-print-hide alone keeps it off paper; inside this branch so the
                empty document does not get a second button. */}
-						<div data-print-hide className={`mt-6 ${PRINT_ROW_CLASS}`}>
+						<div data-print-hide className={cn('mt-6', PRINT_ROW_CLASS)}>
 							<button type="button" onClick={() => window.print()} className={PRINT_BUTTON_CLASS}>
 								Print / Save as PDF
 							</button>
@@ -528,7 +533,7 @@ function BalanceTable({
 					{rows.map((row) => (
 						<tr key={row.id}>
 							{/* text-left: same UA-default fix as CashflowTable's row header. */}
-							<th scope="row" className={`${TD_CLASS} font-normal text-left ${NAME_WRAP_CLASS}`}>
+							<th scope="row" className={cn(TD_CLASS, 'font-normal text-left', NAME_WRAP_CLASS)}>
 								{row.name}
 							</th>
 							<td className={TD_NUMERIC_CLASS}>{format(row.balanceCents)}</td>

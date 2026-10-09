@@ -4,6 +4,7 @@ import {
 	useProfileSwitcher,
 	useProfilesWithActive,
 } from '@/hooks/useActiveProfile'
+import { cn } from '@/lib/cn'
 import { profileColor, resolveProfileIcon } from '@/lib/profile-appearance'
 import type { ClientProfile } from '@/stores/profileStore'
 import { useHasMultipleProfiles, useProfileError } from '@/stores/profileStore'
@@ -178,17 +179,21 @@ function ProfileCard({
 
 	return (
 		<div
-			className={`surface border rounded-xl p-5 transition-all duration-200 relative ${
+			className={cn(
+				'surface border rounded-xl p-5 transition-all duration-200 relative',
 				isActive
 					? 'border-blue-500 shadow-lg shadow-blue-500/10'
 					: 'border-default hover:border-gray-300 dark:hover:border-gray-600'
-			}`}
+			)}
 		>
 			{/* Stretched link: only the name is the button (role=button strips child roles); its ::after
          overlay covers the card, and the actions row sits above it with z-10. */}
 			<div className="flex items-start gap-3 mb-3">
 				<div
-					className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-xl shrink-0 ${color}`}
+					className={cn(
+						'w-10 h-10 rounded-full flex items-center justify-center text-white text-xl shrink-0',
+						color
+					)}
 				>
 					{icon}
 				</div>
@@ -206,11 +211,12 @@ function ProfileCard({
 								aria-label={
 									isActive ? `${profile.name} (current profile)` : `Switch to ${profile.name}`
 								}
-								className={`max-w-full truncate text-left rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+								className={cn(
+									'max-w-full truncate text-left rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
 									isActive
 										? 'cursor-default'
 										: "cursor-pointer after:absolute after:inset-0 after:content-['']"
-								}`}
+								)}
 							>
 								{profile.name}
 							</button>

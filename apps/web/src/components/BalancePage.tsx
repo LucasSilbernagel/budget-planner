@@ -11,6 +11,7 @@ import {
 import type { Frequency } from '@budget-planner/db/schema'
 import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { cn } from '@/lib/cn'
 import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
 import { useNetWorth } from '../hooks/useNetWorth'
 import { useStoresHydrated } from '../hooks/useStoresHydrated'
@@ -131,7 +132,7 @@ function DebtPaymentCell({
 		<div>
 			{typeof expense.amount === 'number' && Number.isFinite(expense.amount) && (
 				<>
-					<div className={`text-muted text-sm ${RESPONSIVE_AMOUNT_CLASS}`}>
+					<div className={cn('text-muted text-sm', RESPONSIVE_AMOUNT_CLASS)}>
 						<GroupedAmount text={formatAmount(expense.amount)} />
 					</div>
 					<div className="text-faint text-xs">{untrustedFrequencyLabel(expense.frequency)}</div>
@@ -532,11 +533,12 @@ export function BalancePage() {
 								<p className="text-muted text-sm">Net Worth</p>
 								<p
 									data-testid="stat-net-worth"
-									className={`text-2xl font-bold mt-1 ${
+									className={cn(
+										'text-2xl font-bold mt-1',
 										netWorth >= 0
 											? 'text-green-600 dark:text-green-400'
 											: 'text-red-600 dark:text-red-400'
-									}`}
+									)}
 								>
 									{hydrated ? (
 										<GroupedAmount text={formatAmount(netWorth)} />
@@ -575,7 +577,7 @@ export function BalancePage() {
 								/>
 								<TableScrollRegion
 									label="Balance entries table"
-									className={`${RESPONSIVE_WRAPPER_CLASS} ${RESPONSIVE_SCROLL_SHADOW_CLASS}`}
+									className={cn(RESPONSIVE_WRAPPER_CLASS, RESPONSIVE_SCROLL_SHADOW_CLASS)}
 								>
 									<table className={RESPONSIVE_TABLE_CLASS}>
 										<thead className={RESPONSIVE_THEAD_CLASS}>
@@ -620,7 +622,10 @@ export function BalancePage() {
 														<td className={RESPONSIVE_CELL_CLASS}>
 															<FieldLabel>Type</FieldLabel>
 															<span
-																className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${typeDisplay.color}`}
+																className={cn(
+																	'px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full',
+																	typeDisplay.color
+																)}
 															>
 																{typeDisplay.label}
 															</span>
@@ -636,7 +641,7 @@ export function BalancePage() {
 																<wbr />
 																Value
 															</FieldLabel>
-															<div className={`text-muted text-sm ${RESPONSIVE_AMOUNT_CLASS}`}>
+															<div className={cn('text-muted text-sm', RESPONSIVE_AMOUNT_CLASS)}>
 																<GroupedAmount
 																	text={formatAmount(
 																		entry.type === 'debt'
@@ -660,7 +665,9 @@ export function BalancePage() {
 																/>
 															) : (
 																<div>
-																	<div className={`text-muted text-sm ${RESPONSIVE_AMOUNT_CLASS}`}>
+																	<div
+																		className={cn('text-muted text-sm', RESPONSIVE_AMOUNT_CLASS)}
+																	>
 																		<GroupedAmount text={formatAmount(entry.monthlyContribution)} />
 																	</div>
 																	<div className="text-faint text-xs">
@@ -676,7 +683,10 @@ export function BalancePage() {
 																	type="button"
 																	onClick={() => openEditModal(entry)}
 																	aria-label={`Edit ${entry.name}`}
-																	className={`mr-4 p-1 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
+																	className={cn(
+																		'mr-4 p-1 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500',
+																		RESPONSIVE_ACTION_BUTTON_CLASS
+																	)}
 																>
 																	<PencilIcon className="h-5 w-5" />
 																</button>
@@ -684,7 +694,10 @@ export function BalancePage() {
 																	type="button"
 																	onClick={() => handleDelete(entry.id)}
 																	aria-label={`Delete ${entry.name}`}
-																	className={`p-1 text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
+																	className={cn(
+																		'p-1 text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500',
+																		RESPONSIVE_ACTION_BUTTON_CLASS
+																	)}
 																>
 																	<TrashIcon className="h-5 w-5" />
 																</button>
@@ -768,11 +781,12 @@ export function BalancePage() {
 								// Not dead: persist migrate and sync pull write `type` unvalidated, so an unknown value
 								// would otherwise leave the field with no example.
 								placeholder={NAME_PLACEHOLDERS[type] ?? NAME_PLACEHOLDERS.investment}
-								className={`shadow-sm px-3 py-2 border rounded-md focus:outline-none focus:ring-2 w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+								className={cn(
+									'shadow-sm px-3 py-2 border rounded-md focus:outline-none focus:ring-2 w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400',
 									hasFieldError('name')
 										? 'border-red-500 focus:border-red-500 focus:ring-red-500'
 										: 'border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:ring-purple-500'
-								}`}
+								)}
 								aria-invalid={hasFieldError('name')}
 								aria-required
 								aria-describedby={hasFieldError('name') ? 'balance-name-error' : undefined}
@@ -808,13 +822,14 @@ export function BalancePage() {
 									onChange={(e) => setCurrentBalance(sanitizeMoneyChange(e.target, locale))}
 									onBlur={(e) => reformatAmountOnBlur(e.target.value, locale, setCurrentBalance)}
 									placeholder="0.00"
-									className={`shadow-sm px-3 py-2 ${
-										mode === 'symbol' ? 'pl-7' : ''
-									} border rounded-md focus:outline-none focus:ring-2 w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+									className={cn(
+										'shadow-sm px-3 py-2',
+										mode === 'symbol' && 'pl-7',
+										'border rounded-md focus:outline-none focus:ring-2 w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400',
 										hasFieldError('currentBalance')
 											? 'border-red-500 focus:border-red-500 focus:ring-red-500'
 											: 'border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:ring-purple-500'
-									}`}
+									)}
 									aria-invalid={hasFieldError('currentBalance')}
 									aria-required
 									aria-describedby={
@@ -939,13 +954,14 @@ export function BalancePage() {
 												reformatAmountOnBlur(e.target.value, locale, setMonthlyContribution)
 											}
 											placeholder="0.00"
-											className={`shadow-sm px-3 py-2 ${
-												mode === 'symbol' ? 'pl-7' : ''
-											} border rounded-md focus:outline-none focus:ring-2 w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+											className={cn(
+												'shadow-sm px-3 py-2',
+												mode === 'symbol' && 'pl-7',
+												'border rounded-md focus:outline-none focus:ring-2 w-full dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400',
 												hasFieldError('monthlyContribution')
 													? 'border-red-500 focus:border-red-500 focus:ring-red-500'
 													: 'border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:ring-purple-500'
-											}`}
+											)}
 											aria-invalid={hasFieldError('monthlyContribution')}
 											aria-required
 											aria-describedby={
