@@ -12,7 +12,7 @@ vi.mock('../../hooks/usePremiumAccess', () => ({
 	usePremiumAccess: () => usePremiumAccess(),
 }))
 
-import type { ReactNode } from 'react'
+import { Profiler, type ReactNode } from 'react'
 import { useBalanceStore } from '../../stores/balanceStore'
 import { useCurrencyStore } from '../../stores/currencyStore'
 import { useExpenseStore } from '../../stores/expenseStore'
@@ -406,4 +406,40 @@ describe('every gated page resolves with data', () => {
 			}
 		})
 	}
+})
+
+describe('a client navigation back to a gated page', () => {
+	beforeEach(() => {
+		__resetStoresHydratedForTests()
+		resolvedFreeTier()
+		clearStores()
+	})
+
+	/** RTL flushes effects before any assertion, so a one-commit skeleton flash is only visible per commit. */
+	function commitsShowingSkeleton(): boolean[] {
+		const commits: boolean[] = []
+		const { unmount } = render(
+			<Profiler
+				id="gated-page"
+				onRender={() => {
+					commits.push(document.querySelector('[data-testid="page-loading-status"]') !== null)
+				}}
+			>
+				<IncomePage />
+			</Profiler>
+		)
+		unmount()
+		return commits
+	}
+
+	it('the first mount commits the server-agreeing skeleton before the figures (positive control)', () => {
+		expect(commitsShowingSkeleton()[0]).toBe(true)
+	})
+
+	it('a later mount never commits the skeleton', () => {
+		commitsShowingSkeleton()
+		const remount = commitsShowingSkeleton()
+		expect(remount.length).toBeGreaterThan(0)
+		expect(remount).not.toContain(true)
+	})
 })

@@ -6,138 +6,172 @@ import {
 	calculateTotalPeriodExpenses,
 	type NetIncomeResult,
 } from '../netIncome.js'
+import type { NormalizableFinancialItem } from '../normalization.js'
+
+type TotalCase = { items: NormalizableFinancialItem[]; expected: number }
+type NetCase = {
+	income: NormalizableFinancialItem[]
+	expenses: NormalizableFinancialItem[]
+	expected: number
+}
 
 describe('Net Period Income Calculation', () => {
 	describe('calculateGrossPeriodIncome', () => {
-		it('should calculate gross income from single monthly source ($500 → 50000 cents)', () => {
-			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
-
-			const result = calculateGrossPeriodIncome(incomeSources)
-			expect(result).toBe(50000)
-		})
-
-		it('should calculate gross income from weekly source ($100/week)', () => {
-			const incomeSources = [{ amount: 10000, frequency: 'weekly' as const }]
-
-			const result = calculateGrossPeriodIncome(incomeSources)
-			expect(result).toBe(43333)
-		})
-
-		it('should calculate gross income from multiple sources with different frequencies', () => {
-			const incomeSources = [
-				{ amount: 10000, frequency: 'weekly' as const },
-				{ amount: 20000, frequency: 'biweekly' as const },
-				{ amount: 50000, frequency: 'monthly' as const },
-			]
-
-			const result = calculateGrossPeriodIncome(incomeSources)
+		it.each<[string, TotalCase]>([
+			[
+				'should calculate gross income from single monthly source ($500 → 50000 cents)',
+				{
+					items: [{ amount: 50000, frequency: 'monthly' }],
+					expected: 50000,
+				},
+			],
+			[
+				'should calculate gross income from weekly source ($100/week)',
+				{
+					items: [{ amount: 10000, frequency: 'weekly' }],
+					expected: 43333,
+				},
+			],
 			// 43333 + 43333 + 50000 = 136666
-			expect(result).toBe(136666)
-		})
-
-		it('should return 0 for empty array', () => {
-			const result = calculateGrossPeriodIncome([])
-			expect(result).toBe(0)
-		})
-
-		it('should handle negative income amounts', () => {
-			const incomeSources = [{ amount: -50000, frequency: 'monthly' as const }]
-
-			const result = calculateGrossPeriodIncome(incomeSources)
-			expect(result).toBe(-50000)
+			[
+				'should calculate gross income from multiple sources with different frequencies',
+				{
+					items: [
+						{ amount: 10000, frequency: 'weekly' },
+						{ amount: 20000, frequency: 'biweekly' },
+						{ amount: 50000, frequency: 'monthly' },
+					],
+					expected: 136666,
+				},
+			],
+			[
+				'should return 0 for empty array',
+				{
+					items: [],
+					expected: 0,
+				},
+			],
+			[
+				'should handle negative income amounts',
+				{
+					items: [{ amount: -50000, frequency: 'monthly' }],
+					expected: -50000,
+				},
+			],
+		])('%s', (_title, { items, expected }) => {
+			expect(calculateGrossPeriodIncome(items)).toBe(expected)
 		})
 	})
 
 	describe('calculateTotalPeriodExpenses', () => {
-		it('should calculate total expenses from single monthly expense ($200 → 20000 cents)', () => {
-			const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
-
-			const result = calculateTotalPeriodExpenses(expenses)
-			expect(result).toBe(20000)
-		})
-
-		it('should calculate total expenses from weekly expense ($50/week)', () => {
-			const expenses = [{ amount: 5000, frequency: 'weekly' as const }]
-
-			const result = calculateTotalPeriodExpenses(expenses)
+		it.each<[string, TotalCase]>([
+			[
+				'should calculate total expenses from single monthly expense ($200 → 20000 cents)',
+				{
+					items: [{ amount: 20000, frequency: 'monthly' }],
+					expected: 20000,
+				},
+			],
 			// $50 * 52/12 = $216.666... = 21667 cents (rounded)
-			expect(result).toBe(21667)
-		})
-
-		it('should calculate total expenses from multiple expenses with different frequencies', () => {
-			const expenses = [
-				{ amount: 10000, frequency: 'weekly' as const },
-				{ amount: 5000, frequency: 'biweekly' as const },
-				{ amount: 20000, frequency: 'monthly' as const },
-			]
-
-			const result = calculateTotalPeriodExpenses(expenses)
+			[
+				'should calculate total expenses from weekly expense ($50/week)',
+				{
+					items: [{ amount: 5000, frequency: 'weekly' }],
+					expected: 21667,
+				},
+			],
 			// 43333 + 10833 + 20000 = 74166
-			expect(result).toBe(74166)
-		})
-
-		it('should return 0 for empty array', () => {
-			const result = calculateTotalPeriodExpenses([])
-			expect(result).toBe(0)
-		})
-
-		it('should handle negative expense amounts', () => {
-			const expenses = [{ amount: -20000, frequency: 'monthly' as const }]
-
-			const result = calculateTotalPeriodExpenses(expenses)
-			expect(result).toBe(-20000)
+			[
+				'should calculate total expenses from multiple expenses with different frequencies',
+				{
+					items: [
+						{ amount: 10000, frequency: 'weekly' },
+						{ amount: 5000, frequency: 'biweekly' },
+						{ amount: 20000, frequency: 'monthly' },
+					],
+					expected: 74166,
+				},
+			],
+			[
+				'should return 0 for empty array',
+				{
+					items: [],
+					expected: 0,
+				},
+			],
+			[
+				'should handle negative expense amounts',
+				{
+					items: [{ amount: -20000, frequency: 'monthly' }],
+					expected: -20000,
+				},
+			],
+		])('%s', (_title, { items, expected }) => {
+			expect(calculateTotalPeriodExpenses(items)).toBe(expected)
 		})
 	})
 
 	describe('calculateNetPeriodIncome', () => {
-		it('should calculate net income with surplus (income > expenses)', () => {
-			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
-			const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
-
-			const result = calculateNetPeriodIncome(incomeSources, expenses)
-			expect(result).toBe(30000)
-		})
-
-		it('should calculate net income with deficit (expenses > income)', () => {
-			const incomeSources = [{ amount: 20000, frequency: 'monthly' as const }]
-			const expenses = [{ amount: 50000, frequency: 'monthly' as const }]
-
-			const result = calculateNetPeriodIncome(incomeSources, expenses)
-			expect(result).toBe(-30000)
-		})
-
-		it('should calculate net income with break-even (income = expenses)', () => {
-			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
-			const expenses = [{ amount: 50000, frequency: 'monthly' as const }]
-
-			const result = calculateNetPeriodIncome(incomeSources, expenses)
-			expect(result).toBe(0)
-		})
-
-		it('should calculate net income with mixed frequencies', () => {
-			const incomeSources = [{ amount: 10000, frequency: 'weekly' as const }]
-			const expenses = [{ amount: 10000, frequency: 'biweekly' as const }]
-
-			const result = calculateNetPeriodIncome(incomeSources, expenses)
+		it.each<[string, NetCase]>([
+			[
+				'should calculate net income with surplus (income > expenses)',
+				{
+					income: [{ amount: 50000, frequency: 'monthly' }],
+					expenses: [{ amount: 20000, frequency: 'monthly' }],
+					expected: 30000,
+				},
+			],
+			[
+				'should calculate net income with deficit (expenses > income)',
+				{
+					income: [{ amount: 20000, frequency: 'monthly' }],
+					expenses: [{ amount: 50000, frequency: 'monthly' }],
+					expected: -30000,
+				},
+			],
+			[
+				'should calculate net income with break-even (income = expenses)',
+				{
+					income: [{ amount: 50000, frequency: 'monthly' }],
+					expenses: [{ amount: 50000, frequency: 'monthly' }],
+					expected: 0,
+				},
+			],
 			// 43333 - 21667 = 21666
-			expect(result).toBe(21666)
-		})
-
-		it('should handle empty income and expense arrays', () => {
-			const result = calculateNetPeriodIncome([], [])
-			expect(result).toBe(0)
-		})
-
-		it('should handle empty expenses array', () => {
-			const incomeSources = [{ amount: 50000, frequency: 'monthly' as const }]
-			const result = calculateNetPeriodIncome(incomeSources, [])
-			expect(result).toBe(50000)
-		})
-
-		it('should handle empty income array', () => {
-			const expenses = [{ amount: 20000, frequency: 'monthly' as const }]
-			const result = calculateNetPeriodIncome([], expenses)
-			expect(result).toBe(-20000)
+			[
+				'should calculate net income with mixed frequencies',
+				{
+					income: [{ amount: 10000, frequency: 'weekly' }],
+					expenses: [{ amount: 10000, frequency: 'biweekly' }],
+					expected: 21666,
+				},
+			],
+			[
+				'should handle empty income and expense arrays',
+				{
+					income: [],
+					expenses: [],
+					expected: 0,
+				},
+			],
+			[
+				'should handle empty expenses array',
+				{
+					income: [{ amount: 50000, frequency: 'monthly' }],
+					expenses: [],
+					expected: 50000,
+				},
+			],
+			[
+				'should handle empty income array',
+				{
+					income: [],
+					expenses: [{ amount: 20000, frequency: 'monthly' }],
+					expected: -20000,
+				},
+			],
+		])('%s', (_title, { income, expenses, expected }) => {
+			expect(calculateNetPeriodIncome(income, expenses)).toBe(expected)
 		})
 	})
 

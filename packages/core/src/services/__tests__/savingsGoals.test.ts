@@ -61,42 +61,39 @@ describe('savingsGoals service', () => {
 	})
 
 	describe('calculateProgress', () => {
-		it('should return 60 for 60000/100000', () => {
-			expect(calculateProgress(100000, 60000)).toBe(60)
-		})
-
-		it('should return 0 for 0/100000', () => {
-			expect(calculateProgress(100000, 0)).toBe(0)
-		})
-
-		it('should return 100 for 100000/100000', () => {
-			expect(calculateProgress(100000, 100000)).toBe(100)
-		})
-
-		it('should return 0 when targetAmount is 0', () => {
-			expect(calculateProgress(0, 100)).toBe(0)
-		})
-
-		it('should return 0 when targetAmount is negative', () => {
-			expect(calculateProgress(-100, 50)).toBe(0)
+		it.each([
+			['should return 60 for 60000/100000', { target: 100000, current: 60000, expected: 60 }],
+			['should return 0 for 0/100000', { target: 100000, current: 0, expected: 0 }],
+			[
+				'should return 100 for 100000/100000',
+				{
+					target: 100000,
+					current: 100000,
+					expected: 100,
+				},
+			],
+			['should return 0 when targetAmount is 0', { target: 0, current: 100, expected: 0 }],
+			[
+				'should return 0 when targetAmount is negative',
+				{
+					target: -100,
+					current: 50,
+					expected: 0,
+				},
+			],
+		])('%s', (_title, { target, current, expected }) => {
+			expect(calculateProgress(target, current)).toBe(expected)
 		})
 	})
 
 	describe('getStatusFromProgress', () => {
-		it('should return "complete" for 100%', () => {
-			expect(getStatusFromProgress(100)).toBe('complete')
-		})
-
-		it('should return "on-track" for 50%', () => {
-			expect(getStatusFromProgress(50)).toBe('on-track')
-		})
-
-		it('should return "on-track" for 1%', () => {
-			expect(getStatusFromProgress(1)).toBe('on-track')
-		})
-
-		it('should return "not-started" for 0%', () => {
-			expect(getStatusFromProgress(0)).toBe('not-started')
+		it.each([
+			['should return "complete" for 100%', { progress: 100, expected: 'complete' }],
+			['should return "on-track" for 50%', { progress: 50, expected: 'on-track' }],
+			['should return "on-track" for 1%', { progress: 1, expected: 'on-track' }],
+			['should return "not-started" for 0%', { progress: 0, expected: 'not-started' }],
+		])('%s', (_title, { progress, expected }) => {
+			expect(getStatusFromProgress(progress)).toBe(expected)
 		})
 	})
 
@@ -168,30 +165,6 @@ describe('savingsGoals service', () => {
 			expect(errors.some((e) => e.field === 'name')).toBe(true)
 		})
 
-		it('should return error for empty name', () => {
-			const input = {
-				name: '',
-				targetAmount: 100000,
-				currentBalance: 50000,
-			}
-			const errors = validateSavingsGoal(input)
-			expect(errors.some((e) => e.field === 'name' && e.message === 'Name is required')).toBe(true)
-		})
-
-		it('should return error for name longer than 100 characters', () => {
-			const input = {
-				name: 'a'.repeat(101),
-				targetAmount: 100000,
-				currentBalance: 50000,
-			}
-			const errors = validateSavingsGoal(input)
-			expect(
-				errors.some(
-					(e) => e.field === 'name' && e.message === 'Name must be 100 characters or less'
-				)
-			).toBe(true)
-		})
-
 		it('treats a missing targetAmount as an account, not an error', () => {
 			const input = {
 				name: 'Test',
@@ -201,107 +174,82 @@ describe('savingsGoals service', () => {
 			expect(errors.some((e) => e.field === 'targetAmount')).toBe(false)
 		})
 
-		it('should return error for negative targetAmount', () => {
-			const input = {
-				name: 'Test',
-				targetAmount: -100,
-				currentBalance: 50000,
-			}
+		it.each([
+			[
+				'should return error for empty name',
+				{
+					input: { name: '', targetAmount: 100000, currentBalance: 50000 },
+					field: 'name',
+					message: 'Name is required',
+				},
+			],
+			[
+				'should return error for name longer than 100 characters',
+				{
+					input: { name: 'a'.repeat(101), targetAmount: 100000, currentBalance: 50000 },
+					field: 'name',
+					message: 'Name must be 100 characters or less',
+				},
+			],
+			[
+				'should return error for negative targetAmount',
+				{
+					input: { name: 'Test', targetAmount: -100, currentBalance: 50000 },
+					field: 'targetAmount',
+					message: 'Target amount must be positive',
+				},
+			],
+			[
+				'should return error for zero targetAmount',
+				{
+					input: { name: 'Test', targetAmount: 0, currentBalance: 50000 },
+					field: 'targetAmount',
+					message: 'Target amount must be positive',
+				},
+			],
+			[
+				'should return error for non-integer targetAmount',
+				{
+					input: { name: 'Test', targetAmount: 100.5, currentBalance: 50000 },
+					field: 'targetAmount',
+					message: 'Target amount must be an integer (in cents)',
+				},
+			],
+			[
+				'should return error for missing currentBalance',
+				{
+					input: { name: 'Test', targetAmount: 100000 },
+					field: 'currentBalance',
+					message: 'Current balance is required',
+				},
+			],
+			[
+				'should return error for negative currentBalance',
+				{
+					input: { name: 'Test', targetAmount: 100000, currentBalance: -100 },
+					field: 'currentBalance',
+					message: 'Current balance cannot be negative',
+				},
+			],
+			[
+				'should return error for currentBalance exceeding targetAmount',
+				{
+					input: { name: 'Test', targetAmount: 100000, currentBalance: 150000 },
+					field: 'currentBalance',
+					message: 'Current balance cannot exceed target amount',
+				},
+			],
+			[
+				'should return error for non-integer currentBalance',
+				{
+					input: { name: 'Test', targetAmount: 100000, currentBalance: 50.5 },
+					field: 'currentBalance',
+					message: 'Current balance must be an integer (in cents)',
+				},
+			],
+		])('%s', (_title, { input, field, message }) => {
 			const errors = validateSavingsGoal(input)
-			expect(
-				errors.some(
-					(e) => e.field === 'targetAmount' && e.message === 'Target amount must be positive'
-				)
-			).toBe(true)
-		})
-
-		it('should return error for zero targetAmount', () => {
-			const input = {
-				name: 'Test',
-				targetAmount: 0,
-				currentBalance: 50000,
-			}
-			const errors = validateSavingsGoal(input)
-			expect(
-				errors.some(
-					(e) => e.field === 'targetAmount' && e.message === 'Target amount must be positive'
-				)
-			).toBe(true)
-		})
-
-		it('should return error for non-integer targetAmount', () => {
-			const input = {
-				name: 'Test',
-				targetAmount: 100.5,
-				currentBalance: 50000,
-			}
-			const errors = validateSavingsGoal(input)
-			expect(
-				errors.some(
-					(e) =>
-						e.field === 'targetAmount' &&
-						e.message === 'Target amount must be an integer (in cents)'
-				)
-			).toBe(true)
-		})
-
-		it('should return error for missing currentBalance', () => {
-			const input = {
-				name: 'Test',
-				targetAmount: 100000,
-			}
-			const errors = validateSavingsGoal(input)
-			expect(
-				errors.some(
-					(e) => e.field === 'currentBalance' && e.message === 'Current balance is required'
-				)
-			).toBe(true)
-		})
-
-		it('should return error for negative currentBalance', () => {
-			const input = {
-				name: 'Test',
-				targetAmount: 100000,
-				currentBalance: -100,
-			}
-			const errors = validateSavingsGoal(input)
-			expect(
-				errors.some(
-					(e) => e.field === 'currentBalance' && e.message === 'Current balance cannot be negative'
-				)
-			).toBe(true)
-		})
-
-		it('should return error for currentBalance exceeding targetAmount', () => {
-			const input = {
-				name: 'Test',
-				targetAmount: 100000,
-				currentBalance: 150000,
-			}
-			const errors = validateSavingsGoal(input)
-			expect(
-				errors.some(
-					(e) =>
-						e.field === 'currentBalance' &&
-						e.message === 'Current balance cannot exceed target amount'
-				)
-			).toBe(true)
-		})
-
-		it('should return error for non-integer currentBalance', () => {
-			const input = {
-				name: 'Test',
-				targetAmount: 100000,
-				currentBalance: 50.5,
-			}
-			const errors = validateSavingsGoal(input)
-			expect(
-				errors.some(
-					(e) =>
-						e.field === 'currentBalance' &&
-						e.message === 'Current balance must be an integer (in cents)'
-				)
-			).toBe(true)
+			expect(errors.some((e) => e.field === field && e.message === message)).toBe(true)
 		})
 	})
 

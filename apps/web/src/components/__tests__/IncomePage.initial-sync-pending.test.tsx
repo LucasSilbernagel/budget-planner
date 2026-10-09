@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { renderWithProviders, screen } from '@/test/utils'
+import { act, renderWithProviders, screen } from '@/test/utils'
+import { INITIAL_SYNC_PENDING_TIMEOUT_MS } from '../../hooks/useIsInitialSyncPending'
 import { useIncomeStore } from '../../stores/incomeStore'
 
 const STORAGE_KEY = 'sync:hasCompletedInitialPull'
@@ -29,6 +30,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+	vi.useRealTimers()
 	useIncomeStore.setState({ incomeSources: [] })
 	window.localStorage.clear()
 })
@@ -74,5 +76,39 @@ describe('IncomePage — initial sync pending', () => {
 		renderWithProviders(<IncomePage />)
 
 		expect(screen.getByText('No income sources yet')).toBeInTheDocument()
+	})
+
+	it('an unresolved session probe is unaffected, so a free user never waits on it', () => {
+		sessionStatus.resolved = false
+		renderWithProviders(<IncomePage />)
+
+		expect(screen.getByText('No income sources yet')).toBeInTheDocument()
+		expect(screen.queryByTestId('page-loading-status')).not.toBeInTheDocument()
+	})
+
+	it('a completed pull marks the device, so a later visit before this session’s pull is not gated', () => {
+		lastPullTimestamp.value = 1_700_000_000_000
+		const first = renderWithProviders(<IncomePage />)
+		expect(window.localStorage.getItem(STORAGE_KEY)).toBe('1')
+		first.unmount()
+
+		lastPullTimestamp.value = null
+		renderWithProviders(<IncomePage />)
+
+		expect(screen.getByText('No income sources yet')).toBeInTheDocument()
+		expect(screen.queryByTestId('page-loading-status')).not.toBeInTheDocument()
+	})
+
+	it('a stalled pull gives way to the real empty state after the bounded wait', () => {
+		vi.useFakeTimers()
+		renderWithProviders(<IncomePage />)
+		expect(screen.getByTestId('page-loading-status')).toBeInTheDocument()
+
+		act(() => {
+			vi.advanceTimersByTime(INITIAL_SYNC_PENDING_TIMEOUT_MS)
+		})
+
+		expect(screen.getByText('No income sources yet')).toBeInTheDocument()
+		expect(screen.queryByTestId('page-loading-status')).not.toBeInTheDocument()
 	})
 })

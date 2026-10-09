@@ -6,7 +6,6 @@ import type {
 } from '@budget-planner/core/services/balanceTracking'
 import {
 	debtOwedCents,
-	filterBalanceTracking,
 	toClientBalanceTracking,
 	validateBalanceTracking,
 	withTimeline,
@@ -187,12 +186,6 @@ export const useBalanceEntriesWithTimeline = (): BalanceTrackingWithTimeline[] =
 	return useMemo(() => rows.map(withTimeline), [rows])
 }
 
-export const useFilteredBalanceEntries = (): BalanceTrackingWithTimeline[] => {
-	const rows = useBalanceEntriesWithTimeline()
-	const filter = useBalanceStore((state) => state.filter)
-	return useMemo(() => filterBalanceTracking(rows, filter), [rows, filter])
-}
-
 export const useBalanceEntriesByType = (type: FinanceType): BalanceTrackingWithTimeline[] => {
 	const rows = useBalanceEntriesWithTimeline()
 	return useMemo(() => rows.filter((entry) => entry.type === type), [rows, type])
@@ -240,11 +233,6 @@ export const useTotalDebtBalance = (): number => {
 
 export const useBalanceFilter = (): BalanceTrackingFilter =>
 	useBalanceStore((state) => state.filter)
-
-export const useBalanceEntryCount = (): number => {
-	const activeProfileId = useProfileStore((state) => state.activeProfileId)
-	return useBalanceStore((state) => scopeToActiveProfile(state.entries, activeProfileId).length)
-}
 
 export const useBalanceActions = () =>
 	useBalanceStore((state) => ({

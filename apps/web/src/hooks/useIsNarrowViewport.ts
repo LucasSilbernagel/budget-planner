@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 /** 639.98 follows Tailwind's max-width convention, so fractional widths in (639, 640) count as narrow. */
-export const NARROW_VIEWPORT_MAX_WIDTH = 639.98
+const NARROW_VIEWPORT_MAX_WIDTH = 639.98
 
 export function useIsNarrowViewport(): boolean {
 	const [isNarrow, setIsNarrow] = useState(false)

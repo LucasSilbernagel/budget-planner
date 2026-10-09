@@ -7,105 +7,127 @@ import {
 } from '../balanceCalculations'
 
 describe('formatTimeline', () => {
-	it('should return "No limit set" for null input', () => {
-		const result = formatTimeline(null)
-		expect(result).toBe('No limit set')
-	})
-
-	it('should return "Limit reached" for 0 months', () => {
-		const result = formatTimeline(0)
-		expect(result).toBe('Limit reached')
-	})
-
-	it('should return singular "1 month to limit" for 1 month', () => {
-		const result = formatTimeline(1)
-		expect(result).toBe('1 month to limit')
-	})
-
-	it('should return plural "X months to limit" for multiple months', () => {
-		const result = formatTimeline(10)
-		expect(result).toBe('10 months to limit')
+	it.each([
+		[
+			'should return "No limit set" for null input',
+			{
+				months: null,
+				expected: 'No limit set',
+			},
+		],
+		['should return "Limit reached" for 0 months', { months: 0, expected: 'Limit reached' }],
+		[
+			'should return singular "1 month to limit" for 1 month',
+			{
+				months: 1,
+				expected: '1 month to limit',
+			},
+		],
+		[
+			'should return plural "X months to limit" for multiple months',
+			{
+				months: 10,
+				expected: '10 months to limit',
+			},
+		],
+	])('%s', (_title, { months, expected }) => {
+		expect(formatTimeline(months)).toBe(expected)
 	})
 })
 
 describe('calculateProjectedBalance', () => {
-	it('should return current balance for 0 months', () => {
-		const result = calculateProjectedBalance(100000, 10000, 0)
-		expect(result).toBe(100000)
-	})
-
-	it('should calculate positive projection', () => {
-		const result = calculateProjectedBalance(100000, 50000, 5)
-		expect(result).toBe(350000)
-	})
-
-	it('should calculate negative projection (debt reduction)', () => {
-		const result = calculateProjectedBalance(-100000, -50000, 5)
-		expect(result).toBe(-350000)
-	})
-
-	it('should return current balance for negative months', () => {
-		const result = calculateProjectedBalance(100000, 10000, -5)
-		expect(result).toBe(100000)
+	it.each([
+		[
+			'should return current balance for 0 months',
+			{
+				args: [100000, 10000, 0],
+				expected: 100000,
+			},
+		],
+		['should calculate positive projection', { args: [100000, 50000, 5], expected: 350000 }],
+		[
+			'should calculate negative projection (debt reduction)',
+			{
+				args: [-100000, -50000, 5],
+				expected: -350000,
+			},
+		],
+		[
+			'should return current balance for negative months',
+			{
+				args: [100000, 10000, -5],
+				expected: 100000,
+			},
+		],
+	] as const)('%s', (_title, { args: [balance, contribution, months], expected }) => {
+		expect(calculateProjectedBalance(balance, contribution, months)).toBe(expected)
 	})
 })
 
 describe('formatProgress', () => {
-	it('should return "No limit" for null input', () => {
-		const result = formatProgress(null)
-		expect(result).toBe('No limit')
-	})
-
-	it('should format percentage with % sign', () => {
-		const result = formatProgress(50)
-		expect(result).toBe('50%')
-	})
-
-	it('should format 0%', () => {
-		const result = formatProgress(0)
-		expect(result).toBe('0%')
-	})
-
-	it('should format 100%', () => {
-		const result = formatProgress(100)
-		expect(result).toBe('100%')
+	it.each([
+		['should return "No limit" for null input', { progress: null, expected: 'No limit' }],
+		['should format percentage with % sign', { progress: 50, expected: '50%' }],
+		['should format 0%', { progress: 0, expected: '0%' }],
+		['should format 100%', { progress: 100, expected: '100%' }],
+	])('%s', (_title, { progress, expected }) => {
+		expect(formatProgress(progress)).toBe(expected)
 	})
 })
 
 describe('Edge Case Handling - calculateProjectedBalance', () => {
-	it('should return currentBalance for NaN currentBalance', () => {
-		const result = calculateProjectedBalance(Number.NaN, 10000, 5)
-		expect(result).toBe(Number.NaN)
-	})
-
-	it('should return currentBalance for Infinity currentBalance', () => {
-		const result = calculateProjectedBalance(Number.POSITIVE_INFINITY, 10000, 5)
-		expect(result).toBe(Number.POSITIVE_INFINITY)
-	})
-
-	it('should return currentBalance for NaN monthlyContribution', () => {
-		const result = calculateProjectedBalance(100000, Number.NaN, 5)
-		expect(result).toBe(100000)
-	})
-
-	it('should return currentBalance for Infinity monthlyContribution', () => {
-		const result = calculateProjectedBalance(100000, Number.POSITIVE_INFINITY, 5)
-		expect(result).toBe(100000)
-	})
-
-	it('should return currentBalance for NaN months', () => {
-		const result = calculateProjectedBalance(100000, 10000, Number.NaN)
-		expect(result).toBe(100000)
-	})
-
-	it('should return currentBalance for Infinity months', () => {
-		const result = calculateProjectedBalance(100000, 10000, Number.POSITIVE_INFINITY)
-		expect(result).toBe(100000)
-	})
-
-	it('should handle arithmetic overflow gracefully', () => {
-		const result = calculateProjectedBalance(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, 100)
-		expect(result).toBe(Number.MAX_SAFE_INTEGER)
+	it.each([
+		[
+			'should return currentBalance for NaN currentBalance',
+			{
+				args: [Number.NaN, 10000, 5],
+				expected: Number.NaN,
+			},
+		],
+		[
+			'should return currentBalance for Infinity currentBalance',
+			{
+				args: [Number.POSITIVE_INFINITY, 10000, 5],
+				expected: Number.POSITIVE_INFINITY,
+			},
+		],
+		[
+			'should return currentBalance for NaN monthlyContribution',
+			{
+				args: [100000, Number.NaN, 5],
+				expected: 100000,
+			},
+		],
+		[
+			'should return currentBalance for Infinity monthlyContribution',
+			{
+				args: [100000, Number.POSITIVE_INFINITY, 5],
+				expected: 100000,
+			},
+		],
+		[
+			'should return currentBalance for NaN months',
+			{
+				args: [100000, 10000, Number.NaN],
+				expected: 100000,
+			},
+		],
+		[
+			'should return currentBalance for Infinity months',
+			{
+				args: [100000, 10000, Number.POSITIVE_INFINITY],
+				expected: 100000,
+			},
+		],
+		[
+			'should handle arithmetic overflow gracefully',
+			{
+				args: [Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, 100],
+				expected: Number.MAX_SAFE_INTEGER,
+			},
+		],
+	] as const)('%s', (_title, { args: [balance, contribution, months], expected }) => {
+		expect(calculateProjectedBalance(balance, contribution, months)).toBe(expected)
 	})
 })
 
@@ -145,16 +167,11 @@ describe('Debt-Specific Calculations', () => {
 	})
 
 	describe('calculateDebtMetrics with invalid inputs', () => {
-		it('should handle NaN inputs gracefully', () => {
-			const result = calculateDebtMetrics(Number.NaN, 50000, 'credit-card')
-			expect(result.progress).toBeNull()
-			expect(result.progressLabel).toBe('Invalid data')
-			expect(result.timeline).toBeNull()
-			expect(result.timelineLabel).toBe('Invalid data')
-		})
-
-		it('should handle Infinity inputs gracefully', () => {
-			const result = calculateDebtMetrics(Number.POSITIVE_INFINITY, 50000, 'credit-card')
+		it.each([
+			['NaN', Number.NaN],
+			['Infinity', Number.POSITIVE_INFINITY],
+		])('should handle %s inputs gracefully', (_kind, balance) => {
+			const result = calculateDebtMetrics(balance, 50000, 'credit-card')
 			expect(result.progress).toBeNull()
 			expect(result.progressLabel).toBe('Invalid data')
 			expect(result.timeline).toBeNull()

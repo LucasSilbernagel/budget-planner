@@ -64,37 +64,58 @@ describe('parseMetadataFromUrl', () => {
 		expect(parseMetadataFromUrl(params)).toEqual({ campaign: 'spring' })
 	})
 
-	it('extracts the query from a full URL (with fragment)', () => {
-		expect(
-			parseMetadataFromUrl('https://app.example.com/path?utm_source=newsletter#section')
-		).toEqual({ source: 'newsletter' })
-	})
-
-	it('maps the "ref" shorthand to source', () => {
-		expect(parseMetadataFromUrl('?ref=twitter')).toEqual({ source: 'twitter' })
-	})
-
-	it('prefers utm_source over the ref shorthand when both are present', () => {
-		expect(parseMetadataFromUrl('?ref=twitter&utm_source=newsletter')).toEqual({
-			source: 'newsletter',
-		})
-	})
-
-	it('captures an explicit referrer parameter', () => {
-		expect(parseMetadataFromUrl('?referrer=example.com')).toEqual({ referrer: 'example.com' })
-	})
-
-	it('ignores unknown / arbitrary parameters (no PII passthrough)', () => {
-		const meta = parseMetadataFromUrl('?email=user@example.com&name=Jane&utm_source=ok')
-		expect(meta).toEqual({ source: 'ok' })
-	})
-
-	it('sanitizes captured values', () => {
-		expect(parseMetadataFromUrl('?utm_source=  goo\u0000gle  ')).toEqual({ source: 'google' })
-	})
-
-	it('drops parameters that sanitize to empty', () => {
-		expect(parseMetadataFromUrl('?utm_source=%20%20&utm_medium=email')).toEqual({ medium: 'email' })
+	it.each([
+		[
+			'extracts the query from a full URL (with fragment)',
+			{
+				input: 'https://app.example.com/path?utm_source=newsletter#section',
+				expected: { source: 'newsletter' },
+			},
+		],
+		[
+			'maps the "ref" shorthand to source',
+			{
+				input: '?ref=twitter',
+				expected: { source: 'twitter' },
+			},
+		],
+		[
+			'prefers utm_source over the ref shorthand when both are present',
+			{
+				input: '?ref=twitter&utm_source=newsletter',
+				expected: { source: 'newsletter' },
+			},
+		],
+		[
+			'captures an explicit referrer parameter',
+			{
+				input: '?referrer=example.com',
+				expected: { referrer: 'example.com' },
+			},
+		],
+		[
+			'ignores unknown / arbitrary parameters (no PII passthrough)',
+			{
+				input: '?email=user@example.com&name=Jane&utm_source=ok',
+				expected: { source: 'ok' },
+			},
+		],
+		[
+			'sanitizes captured values',
+			{
+				input: '?utm_source=  goo\u0000gle  ',
+				expected: { source: 'google' },
+			},
+		],
+		[
+			'drops parameters that sanitize to empty',
+			{
+				input: '?utm_source=%20%20&utm_medium=email',
+				expected: { medium: 'email' },
+			},
+		],
+	])('%s', (_title, { input, expected }) => {
+		expect(parseMetadataFromUrl(input)).toEqual(expected)
 	})
 
 	it('returns an empty object for no query / no tracked params', () => {

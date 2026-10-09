@@ -187,17 +187,5 @@ export const useTotalExpenses = () => {
 	)
 }
 
-export const useUnreadableExpenseCount = () => {
-	const activeProfileId = useProfileStore((state) => state.activeProfileId)
-	return useExpenseStore((state) =>
-		unreadableExpenseCountFrom(scopeToActiveProfile(state.expenses, activeProfileId))
-	)
-}
-
-export const useExpenseByFrequency = (frequency: Frequency): ClientExpense[] => {
-	const rows = useExpenses()
-	return useMemo(() => expensesByFrequencyFrom(rows, frequency), [rows, frequency])
-}
-
 // Stores register themselves: the cascade importing them would create an import cycle.
 registerProfileScopedCollection(useExpenseStore, 'expenses')

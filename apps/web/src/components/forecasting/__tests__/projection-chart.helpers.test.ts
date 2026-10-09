@@ -20,16 +20,24 @@ function resultNamed(name: unknown): ForecastingResult {
 }
 
 describe('projectionSeriesName', () => {
-	it('is the scenario name, trimmed', () => {
-		expect(projectionSeriesName(resultNamed('  Buy a house  '))).toBe('Buy a house')
-	})
-
-	it('keeps an unsaved builder default name', () => {
-		expect(projectionSeriesName(resultNamed('My Financial Forecast'))).toBe('My Financial Forecast')
-	})
-
-	it('passes a scenario literally named "Baseline" through unchanged', () => {
-		expect(projectionSeriesName(resultNamed('Baseline'))).toBe('Baseline')
+	it.each([
+		['is the scenario name, trimmed', { name: '  Buy a house  ', expected: 'Buy a house' }],
+		[
+			'keeps an unsaved builder default name',
+			{
+				name: 'My Financial Forecast',
+				expected: 'My Financial Forecast',
+			},
+		],
+		[
+			'passes a scenario literally named "Baseline" through unchanged',
+			{
+				name: 'Baseline',
+				expected: 'Baseline',
+			},
+		],
+	])('%s', (_title, { name, expected }) => {
+		expect(projectionSeriesName(resultNamed(name))).toBe(expected)
 	})
 
 	it('falls back for a blank, whitespace-only, missing or non-string name', () => {

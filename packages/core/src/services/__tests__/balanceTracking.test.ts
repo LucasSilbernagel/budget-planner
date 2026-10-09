@@ -21,18 +21,6 @@ import {
 } from '../balanceTracking'
 
 describe('validateBalanceTracking', () => {
-	it('should pass validation for valid input', () => {
-		const input: ClientNewBalanceTracking = {
-			type: 'investment',
-			name: 'Test Investment',
-			currentBalance: 100000,
-			monthlyContribution: 50000,
-			frequency: 'monthly',
-		}
-		const errors = validateBalanceTracking(input)
-		expect(errors.length).toBe(0)
-	})
-
 	it('should fail validation for empty name', () => {
 		const input: Partial<ClientNewBalanceTracking> = {
 			type: 'investment',
@@ -156,28 +144,45 @@ describe('validateBalanceTracking', () => {
 		).toBe(true)
 	})
 
-	it('should pass validation for an entry carrying only the required fields', () => {
-		const input: ClientNewBalanceTracking = {
-			type: 'investment',
-			name: 'Test',
-			currentBalance: 100000,
-			monthlyContribution: 50000,
-			frequency: 'monthly',
-		}
-		const errors = validateBalanceTracking(input)
-		expect(errors.length).toBe(0)
-	})
-
-	it('should pass validation for optional monthlyContribution', () => {
-		const input: ClientNewBalanceTracking = {
-			type: 'investment',
-			name: 'Test',
-			currentBalance: 100000,
-			monthlyContribution: 0,
-			frequency: 'monthly',
-		}
-		const errors = validateBalanceTracking(input)
-		expect(errors.length).toBe(0)
+	it.each<[string, { input: ClientNewBalanceTracking }]>([
+		[
+			'should pass validation for valid input',
+			{
+				input: {
+					type: 'investment',
+					name: 'Test Investment',
+					currentBalance: 100000,
+					monthlyContribution: 50000,
+					frequency: 'monthly',
+				},
+			},
+		],
+		[
+			'should pass validation for an entry carrying only the required fields',
+			{
+				input: {
+					type: 'investment',
+					name: 'Test',
+					currentBalance: 100000,
+					monthlyContribution: 50000,
+					frequency: 'monthly',
+				},
+			},
+		],
+		[
+			'should pass validation for optional monthlyContribution',
+			{
+				input: {
+					type: 'investment',
+					name: 'Test',
+					currentBalance: 100000,
+					monthlyContribution: 0,
+					frequency: 'monthly',
+				},
+			},
+		],
+	])('%s', (_title, { input }) => {
+		expect(validateBalanceTracking(input).length).toBe(0)
 	})
 })
 
@@ -236,28 +241,31 @@ describe('validateBalanceTracking - frequency', () => {
 
 describe('monthlyContributionCents', () => {
 	// weekly ×52/12, biweekly ×26/12, monthly ×1, annually ×1/12, then Math.round
-	it('normalizes a weekly contribution to its monthly equivalent', () => {
-		expect(monthlyContributionCents({ monthlyContribution: 50000, frequency: 'weekly' })).toBe(
-			216667
-		)
-	})
-
-	it('normalizes a biweekly contribution to its monthly equivalent', () => {
-		expect(monthlyContributionCents({ monthlyContribution: 50000, frequency: 'biweekly' })).toBe(
-			108333
-		)
-	})
-
-	it('leaves a monthly contribution unchanged', () => {
-		expect(monthlyContributionCents({ monthlyContribution: 50000, frequency: 'monthly' })).toBe(
-			50000
-		)
-	})
-
-	it('normalizes an annual contribution to its monthly equivalent', () => {
-		expect(monthlyContributionCents({ monthlyContribution: 50000, frequency: 'annually' })).toBe(
-			4167
-		)
+	it.each([
+		[
+			'normalizes a weekly contribution to its monthly equivalent',
+			{
+				frequency: 'weekly',
+				expected: 216667,
+			},
+		],
+		[
+			'normalizes a biweekly contribution to its monthly equivalent',
+			{
+				frequency: 'biweekly',
+				expected: 108333,
+			},
+		],
+		['leaves a monthly contribution unchanged', { frequency: 'monthly', expected: 50000 }],
+		[
+			'normalizes an annual contribution to its monthly equivalent',
+			{
+				frequency: 'annually',
+				expected: 4167,
+			},
+		],
+	] as const)('%s', (_title, { frequency, expected }) => {
+		expect(monthlyContributionCents({ monthlyContribution: 50000, frequency })).toBe(expected)
 	})
 
 	it('treats a legacy entry with no frequency as monthly (guard)', () => {

@@ -26,26 +26,21 @@ const EXPECTED_MONTHLY = {
 
 describe('Frequency Normalization Engine', () => {
 	describe('getNormalizationMultiplier', () => {
-		it('should return correct exact multiplier for weekly frequency (52/12)', () => {
-			const multiplier = getNormalizationMultiplier('weekly')
-			expect(multiplier).toBe(52 / 12)
-			expect(multiplier).toBeCloseTo(4.333333, 6)
-		})
-
-		it('should return correct exact multiplier for biweekly frequency (26/12)', () => {
-			const multiplier = getNormalizationMultiplier('biweekly')
-			expect(multiplier).toBe(26 / 12)
-			expect(multiplier).toBeCloseTo(2.166666, 5)
-		})
+		it.each([
+			['weekly', '52/12', 52 / 12, 4.333333, 6],
+			['biweekly', '26/12', 26 / 12, 2.166666, 5],
+			['annually', '1/12', 1 / 12, 0.083333, 6],
+		] as const)(
+			'should return correct exact multiplier for %s frequency (%s)',
+			(frequency, _label, exact, approx, digits) => {
+				const multiplier = getNormalizationMultiplier(frequency)
+				expect(multiplier).toBe(exact)
+				expect(multiplier).toBeCloseTo(approx, digits)
+			}
+		)
 
 		it('should return correct multiplier for monthly frequency (1)', () => {
 			expect(getNormalizationMultiplier('monthly')).toBe(1)
-		})
-
-		it('should return correct exact multiplier for annually frequency (1/12)', () => {
-			const multiplier = getNormalizationMultiplier('annually')
-			expect(multiplier).toBe(1 / 12)
-			expect(multiplier).toBeCloseTo(0.083333, 6)
 		})
 	})
 
@@ -78,24 +73,42 @@ describe('Frequency Normalization Engine', () => {
 			expect(result).toBe(10000)
 		})
 
-		it('should handle zero amount', () => {
-			const result = normalizeToMonthly(0, 'weekly')
-			expect(result).toBe(0)
-		})
-
-		it('should handle negative amounts (debt)', () => {
-			const result = normalizeToMonthly(-10000, 'monthly')
-			expect(result).toBe(-10000)
-		})
-
-		it('should handle negative amounts with weekly frequency', () => {
-			const result = normalizeToMonthly(-10000, 'weekly')
-			expect(result).toBe(-43333)
-		})
-
-		it('should round to nearest integer using Math.round', () => {
-			const result = normalizeToMonthly(100, 'weekly')
-			expect(result).toBe(433)
+		it.each([
+			['should handle zero amount', { amount: 0, frequency: 'weekly', expected: 0 }],
+			[
+				'should handle negative amounts (debt)',
+				{
+					amount: -10000,
+					frequency: 'monthly',
+					expected: -10000,
+				},
+			],
+			[
+				'should handle negative amounts with weekly frequency',
+				{
+					amount: -10000,
+					frequency: 'weekly',
+					expected: -43333,
+				},
+			],
+			[
+				'should round to nearest integer using Math.round',
+				{
+					amount: 100,
+					frequency: 'weekly',
+					expected: 433,
+				},
+			],
+			[
+				'should handle very large amounts',
+				{
+					amount: 1000000,
+					frequency: 'weekly',
+					expected: 4333333,
+				},
+			],
+		] as const)('%s', (_title, { amount, frequency, expected }) => {
+			expect(normalizeToMonthly(amount, frequency)).toBe(expected)
 		})
 
 		it('should verify Math.round is used for rounding (half-up)', () => {
@@ -105,41 +118,45 @@ describe('Frequency Normalization Engine', () => {
 			const result2 = normalizeToMonthly(2, 'monthly')
 			expect(result2).toBe(2)
 		})
-
-		it('should handle very large amounts', () => {
-			const result = normalizeToMonthly(1000000, 'weekly')
-			expect(result).toBe(4333333)
-		})
 	})
 
 	describe('denormalizeFromMonthly', () => {
-		it('should denormalize monthly $433.33 to weekly (~$100 = 10000 cents)', () => {
-			const monthlyAmount = 43333
-			const result = denormalizeFromMonthly(monthlyAmount, 'weekly')
-			expect(result).toBe(10000)
-		})
-
-		it('should denormalize monthly $433.33 to biweekly (~$200 = 20000 cents)', () => {
-			const monthlyAmount = 43333
-			const result = denormalizeFromMonthly(monthlyAmount, 'biweekly')
-			expect(result).toBe(20000)
-		})
-
-		it('should denormalize monthly $500 to monthly (unchanged = 50000 cents)', () => {
-			const monthlyAmount = 50000
-			const result = denormalizeFromMonthly(monthlyAmount, 'monthly')
-			expect(result).toBe(50000)
-		})
-
-		it('should denormalize monthly $100 to annually ($1200 = 120000 cents)', () => {
-			const monthlyAmount = 10000
-			const result = denormalizeFromMonthly(monthlyAmount, 'annually')
-			expect(result).toBe(120000)
-		})
-
-		it('should handle zero monthly amount', () => {
-			const result = denormalizeFromMonthly(0, 'weekly')
-			expect(result).toBe(0)
+		it.each([
+			[
+				'should denormalize monthly $433.33 to weekly (~$100 = 10000 cents)',
+				{
+					monthly: 43333,
+					frequency: 'weekly',
+					expected: 10000,
+				},
+			],
+			[
+				'should denormalize monthly $433.33 to biweekly (~$200 = 20000 cents)',
+				{
+					monthly: 43333,
+					frequency: 'biweekly',
+					expected: 20000,
+				},
+			],
+			[
+				'should denormalize monthly $500 to monthly (unchanged = 50000 cents)',
+				{
+					monthly: 50000,
+					frequency: 'monthly',
+					expected: 50000,
+				},
+			],
+			[
+				'should denormalize monthly $100 to annually ($1200 = 120000 cents)',
+				{
+					monthly: 10000,
+					frequency: 'annually',
+					expected: 120000,
+				},
+			],
+			['should handle zero monthly amount', { monthly: 0, frequency: 'weekly', expected: 0 }],
+		] as const)('%s', (_title, { monthly, frequency, expected }) => {
+			expect(denormalizeFromMonthly(monthly, frequency)).toBe(expected)
 		})
 	})
 
@@ -194,19 +211,33 @@ describe('Frequency Normalization Engine', () => {
 	})
 
 	describe('Mathematical Validation - Zero Tolerance', () => {
-		it('should pass exact validation: weekly $100 → $433.33 (43333 cents)', () => {
-			const result = normalizeToMonthly(10000, 'weekly')
-			expect(result).toBe(43333)
-		})
-
-		it('should pass exact validation: biweekly $200 → $433.33 (43333 cents)', () => {
-			const result = normalizeToMonthly(20000, 'biweekly')
-			expect(result).toBe(43333)
-		})
-
-		it('should pass exact validation: annual $1200 → $100 (10000 cents)', () => {
-			const result = normalizeToMonthly(120000, 'annually')
-			expect(result).toBe(10000)
+		it.each([
+			[
+				'weekly $100 → $433.33 (43333 cents)',
+				{
+					amount: 10000,
+					frequency: 'weekly',
+					expected: 43333,
+				},
+			],
+			[
+				'biweekly $200 → $433.33 (43333 cents)',
+				{
+					amount: 20000,
+					frequency: 'biweekly',
+					expected: 43333,
+				},
+			],
+			[
+				'annual $1200 → $100 (10000 cents)',
+				{
+					amount: 120000,
+					frequency: 'annually',
+					expected: 10000,
+				},
+			],
+		] as const)('should pass exact validation: %s', (_title, { amount, frequency, expected }) => {
+			expect(normalizeToMonthly(amount, frequency)).toBe(expected)
 		})
 
 		it('should verify reverse operation for monthly', () => {

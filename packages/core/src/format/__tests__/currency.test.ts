@@ -159,16 +159,6 @@ describe('Currency Formatting', () => {
 			)
 		})
 
-		it('de-DE formats 1000 EUR as 1.000,00 €', () => {
-			const result = formatCurrency(100000, { mode: 'symbol', currency: 'EUR', locale: 'de-DE' })
-			expect(normalizeSpaces(result)).toBe('1.000,00 €')
-		})
-
-		it('fr-FR formats 1000 EUR as 1 000,00 €', () => {
-			const result = formatCurrency(100000, { mode: 'symbol', currency: 'EUR', locale: 'fr-FR' })
-			expect(normalizeSpaces(result)).toBe('1 000,00 €')
-		})
-
 		it('the same value renders differently per locale (locale actually drives output)', () => {
 			const us = formatCurrency(100000, { mode: 'symbol', currency: 'EUR', locale: 'en-US' })
 			const de = formatCurrency(100000, { mode: 'symbol', currency: 'EUR', locale: 'de-DE' })
@@ -181,9 +171,34 @@ describe('Currency Formatting', () => {
 			)
 		})
 
-		it('groups a large EUR value per de-DE as 1.234.567,89 €', () => {
-			const result = formatCurrency(123456789, { mode: 'symbol', currency: 'EUR', locale: 'de-DE' })
-			expect(normalizeSpaces(result)).toBe('1.234.567,89 €')
+		it.each([
+			[
+				'de-DE formats 1000 EUR as 1.000,00 €',
+				{
+					cents: 100000,
+					locale: 'de-DE',
+					expected: '1.000,00 €',
+				},
+			],
+			[
+				'fr-FR formats 1000 EUR as 1 000,00 €',
+				{
+					cents: 100000,
+					locale: 'fr-FR',
+					expected: '1 000,00 €',
+				},
+			],
+			[
+				'groups a large EUR value per de-DE as 1.234.567,89 €',
+				{
+					cents: 123456789,
+					locale: 'de-DE',
+					expected: '1.234.567,89 €',
+				},
+			],
+		])('%s', (_title, { cents, locale, expected }) => {
+			const result = formatCurrency(cents, { mode: 'symbol', currency: 'EUR', locale })
+			expect(normalizeSpaces(result)).toBe(expected)
 		})
 	})
 

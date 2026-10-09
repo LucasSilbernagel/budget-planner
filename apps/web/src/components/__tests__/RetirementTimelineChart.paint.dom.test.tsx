@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react'
+import { act, render } from '@testing-library/react'
 import { cloneElement, type ReactElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useCurrencyStore } from '../../stores/currencyStore'
@@ -102,4 +102,106 @@ it('titles the axis "Age" on a wide viewport (was e2e retirement-age-axis:258)',
 	)
 	expect(titles).toContain('Age')
 	expect(titles).not.toContain('Years from Now')
+})
+
+type MediaApi = 'modern' | 'legacy'
+type MediaState = { dark: boolean; narrow: boolean }
+
+/** A live `matchMedia` answering the width and colour-scheme queries from one mutable state. */
+function stubLiveMedia(initial: Partial<MediaState> = {}, api: MediaApi = 'modern') {
+	const state: MediaState = { dark: false, narrow: false, ...initial }
+	const listeners = new Set<() => void>()
+	const matchMedia = vi.fn((query: string) => {
+		const listenerApi =
+			api === 'modern'
+				? {
+						addEventListener: (_: string, cb: () => void) => listeners.add(cb),
+						removeEventListener: (_: string, cb: () => void) => listeners.delete(cb),
+					}
+				: {
+						addListener: (cb: () => void) => listeners.add(cb),
+						removeListener: (cb: () => void) => listeners.delete(cb),
+					}
+		return Object.defineProperty(listenerApi, 'matches', {
+			get: () => (/max-width/.test(query) ? state.narrow : /dark/.test(query) && state.dark),
+			enumerable: true,
+		})
+	})
+	vi.stubGlobal('matchMedia', matchMedia)
+	return {
+		matchMedia,
+		set(next: Partial<MediaState>) {
+			Object.assign(state, next)
+			act(() => {
+				for (const cb of listeners) cb()
+			})
+		},
+	}
+}
+
+const LIGHT = { axis: '#6b7280', grid: '#e5e7eb' }
+const DARK = { axis: '#9ca3af', grid: '#374151' }
+
+function paint(container: HTMLElement) {
+	const tick = container.querySelector('.recharts-xAxis .recharts-cartesian-axis-tick text')
+	const grid = container.querySelector('.recharts-cartesian-grid line')
+	return { axis: tick?.getAttribute('fill'), grid: grid?.getAttribute('stroke') }
+}
+
+function axisTitles(container: HTMLElement): (string | null)[] {
+	return [...container.querySelectorAll('.recharts-surface .recharts-label')].map(
+		(node) => node.textContent
+	)
+}
+
+describe('the chart follows the device', () => {
+	afterEach(() => {
+		vi.unstubAllGlobals()
+	})
+
+	it.each([
+		['light', false, LIGHT],
+		['dark', true, DARK],
+	])('paints the axis and grid in the %s palette', (_label, dark, expected) => {
+		stubLiveMedia({ dark })
+		const { container } = render(<RetirementTimelineChart {...PROPS} />)
+		expect(paint(container)).toEqual(expected)
+	})
+
+	it('asks for the dark colour scheme and the sub-640px width specifically', () => {
+		// Spelled as literals: the stub answers any query, so this is the only check on the strings.
+		const { matchMedia } = stubLiveMedia()
+		render(<RetirementTimelineChart {...PROPS} />)
+		expect(matchMedia).toHaveBeenCalledWith('(prefers-color-scheme: dark)')
+		expect(matchMedia).toHaveBeenCalledWith('(max-width: 639.98px)')
+	})
+
+	it('drops the axis titles on a narrow viewport', () => {
+		stubLiveMedia({ narrow: true })
+		const { container } = render(<RetirementTimelineChart {...PROPS} />)
+		expect(axisTitles(container)).not.toContain('Age')
+	})
+
+	it.each(['modern', 'legacy'] as const)(
+		'follows a live scheme and width change without a remount (%s listener API)',
+		(api) => {
+			const media = stubLiveMedia({}, api)
+			const { container, unmount } = render(<RetirementTimelineChart {...PROPS} />)
+			expect(paint(container)).toEqual(LIGHT)
+			expect(axisTitles(container)).toContain('Age')
+
+			media.set({ dark: true, narrow: true })
+
+			expect(paint(container)).toEqual(DARK)
+			expect(axisTitles(container)).not.toContain('Age')
+			expect(() => unmount()).not.toThrow()
+		}
+	)
+
+	it('renders light and wide when matchMedia is unavailable', () => {
+		vi.stubGlobal('matchMedia', undefined)
+		const { container } = render(<RetirementTimelineChart {...PROPS} />)
+		expect(paint(container)).toEqual(LIGHT)
+		expect(axisTitles(container)).toContain('Age')
+	})
 })
