@@ -115,17 +115,12 @@ export function CustomTooltip({
 	active,
 	payload,
 	label,
-	mode,
-	currency,
-	locale,
 }: {
 	active?: boolean
 	payload?: Array<{ payload: unknown }>
 	label?: string
-	mode: CurrencyMode
-	currency: CurrencyCode
-	locale: string
 }) {
+	const { mode, currency, locale } = useCurrencyPreferences()
 	const firstEntry = payload?.[0]
 	if (!active || !firstEntry) {
 		return null
@@ -309,7 +304,7 @@ function RetirementTimelineChartInner({
 							domain={[0, 'auto']}
 							width={chartChrome.yAxisWidth}
 						/>
-						<Tooltip content={<CustomTooltip mode={mode} currency={currency} locale={locale} />} />
+						<Tooltip content={<CustomTooltip />} />
 						<Line
 							type="monotone"
 							dataKey="endingBalance"

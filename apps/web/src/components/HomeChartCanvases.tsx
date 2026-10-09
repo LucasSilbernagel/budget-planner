@@ -13,9 +13,10 @@ import {
 	XAxis,
 	YAxis,
 } from 'recharts'
+import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { formatCompactAxisTick } from '../lib/chart-axis'
-import type { useChartColors } from '../lib/chartTheme'
-import type { useCurrencyPreferences } from '../stores/currencyStore'
+import { useChartColors } from '../lib/chartTheme'
+import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 
 // Lazy-loaded by HomePage to keep Recharts off the critical path: export chart components only. Safe only because
 // HomePage renders these inside its `hydrated` gate; the caller owns the height so the Suspense fallback can be null.
@@ -25,22 +26,13 @@ type CategoryBarDatum = { category: string; amount: number; fill: string }
 type CategoryBarCanvasProps = {
 	data: CategoryBarDatum[]
 	ticks: number[]
-	isNarrow: boolean
-	chartColors: ReturnType<typeof useChartColors>
-	formatAmount: (cents: number) => string
-	mode: ReturnType<typeof useCurrencyPreferences>['mode']
-	currency: ReturnType<typeof useCurrencyPreferences>['currency']
 }
 
-export function CategoryBarCanvas({
-	data,
-	ticks,
-	isNarrow,
-	chartColors,
-	formatAmount,
-	mode,
-	currency,
-}: CategoryBarCanvasProps): React.ReactElement {
+export function CategoryBarCanvas({ data, ticks }: CategoryBarCanvasProps): React.ReactElement {
+	const isNarrow = useIsNarrowViewport()
+	const chartColors = useChartColors()
+	const formatAmount = useFormattedAmount()
+	const { mode, currency } = useCurrencyPreferences()
 	// niceAxisTicks never returns [], but the type allows undefined; undefined falls back to Recharts' auto domain.
 	const first = ticks[0]
 	const last = ticks.at(-1)
@@ -89,17 +81,12 @@ export function CategoryBarCanvas({
 type BreakdownPieCanvasProps = {
 	data: RechartsDataItem[]
 	total: number
-	isNarrow: boolean
-	formatAmount: (cents: number) => string
 }
 
 // No accessible name on purpose: HomePage hides the plot, and the list below it reads every slice.
-export function BreakdownPieCanvas({
-	data,
-	total,
-	isNarrow,
-	formatAmount,
-}: BreakdownPieCanvasProps): React.ReactElement {
+export function BreakdownPieCanvas({ data, total }: BreakdownPieCanvasProps): React.ReactElement {
+	const isNarrow = useIsNarrowViewport()
+	const formatAmount = useFormattedAmount()
 	return (
 		<ResponsiveContainer width="100%" height="100%">
 			<PieChart>
