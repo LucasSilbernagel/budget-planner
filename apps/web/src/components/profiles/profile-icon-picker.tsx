@@ -1,4 +1,5 @@
 import { useRef } from 'react'
+import { cn } from '@/lib/cn'
 import { PROFILE_ICON_LABELS, PROFILE_ICONS, type ProfileIcon } from '@/lib/profile-appearance'
 
 type ProfileIconPickerProps = {
@@ -76,12 +77,13 @@ export function ProfileIconPicker({ value, onChange, idPrefix }: ProfileIconPick
 								iconRefs.current[index] = el
 							}}
 							onClick={() => onChange(icon)}
-							className={`w-10 h-10 rounded-lg text-xl flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+							className={cn(
+								'w-10 h-10 rounded-lg text-xl flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500',
 								selected
 									? // Selection must not rely on colour alone (WCAG 1.4.1): the border width differs.
 										'border-4 border-blue-600 bg-blue-50 dark:border-blue-300 dark:bg-blue-950/40'
 									: 'border-2 border-gray-300 hover:border-gray-400 dark:border-gray-600 dark:hover:border-gray-500'
-							}`}
+							)}
 						>
 							<span aria-hidden="true">{icon}</span>
 						</button>

@@ -15,6 +15,7 @@ import {
 import { monthlyContributionCents } from '@budget-planner/core/services/balanceTracking'
 import type React from 'react'
 import { useEffect, useMemo } from 'react'
+import { cn } from '@/lib/cn'
 import { summarizeEndingExpenses } from '../lib/retirement-ending-expenses'
 import { parseAge, parseCurrencyToCents, parsePercentageToDecimal } from '../lib/retirement-parsers'
 import { sanitizeMoneyChange } from '../lib/sanitized-input'
@@ -614,7 +615,7 @@ function RetirementAccumulationPlannerInner() {
 			return null
 		}
 		return (
-			<p data-testid="derived-floor-disclosure" className={`text-xs mt-4 ${toneClass}`}>
+			<p data-testid="derived-floor-disclosure" className={cn('text-xs mt-4', toneClass)}>
 				{derivedUnreadable
 					? 'Some of your saved data could not be read, so this projection assumes zero for it — treat these figures as incomplete.'
 					: 'A figure above came out below zero, so this projection treats it as zero — your real position is worse than these numbers suggest.'}
@@ -711,7 +712,7 @@ function RetirementAccumulationPlannerInner() {
 										id="incomeBasis"
 										value={incomeBasis}
 										onChange={(e) => setIncomeBasis(e.target.value as IncomeBasis)}
-										className={`w-full px-3 py-2 ${controlChrome}`}
+										className={cn('w-full px-3 py-2', controlChrome)}
 									>
 										<option value="annual">Annual</option>
 										<option value="monthly">Monthly</option>
@@ -768,7 +769,7 @@ function RetirementAccumulationPlannerInner() {
 							onChange={(e) => setAnnualReturnInput(e.target.value)}
 							inputMode="decimal"
 							placeholder="6.0"
-							className={`${inputClass(false)} pr-10`}
+							className={cn(inputClass(false), 'pr-10')}
 							aria-label="Expected Annual Return"
 							aria-required="true"
 						/>
@@ -803,7 +804,7 @@ function RetirementAccumulationPlannerInner() {
 							onChange={(e) => setPostRetirementReturn(e.target.value)}
 							inputMode="decimal"
 							placeholder="6.0"
-							className={`${inputClass(false)} pr-10`}
+							className={cn(inputClass(false), 'pr-10')}
 							aria-label="Post-Retirement Annual Return"
 							aria-required="true"
 						/>
@@ -838,11 +839,12 @@ function RetirementAccumulationPlannerInner() {
 					).map(([key, copy]) => (
 						<label
 							key={key}
-							className={`flex gap-3 p-3 min-h-[44px] rounded-lg border cursor-pointer transition-colors ${
+							className={cn(
+								'flex gap-3 p-3 min-h-[44px] rounded-lg border cursor-pointer transition-colors',
 								model === key
 									? 'border-blue-500 bg-blue-50 dark:bg-blue-950/40'
 									: 'border-gray-300 dark:border-gray-600'
-							}`}
+							)}
 						>
 							<input
 								type="radio"

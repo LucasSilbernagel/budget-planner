@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { purgeLocalFinancialData } from '@/lib/account/purge-local-financial-data'
+import { cn } from '@/lib/cn'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 
 async function fetchCurrentUserId(): Promise<string | undefined> {
@@ -33,9 +34,10 @@ export function LocalDataSection() {
 		}
 	}
 
-	const statusClassName = `text-sm font-medium text-green-700 dark:text-green-400${
-		cleared ? ' mt-3' : ''
-	}`
+	const statusClassName = cn(
+		'text-sm font-medium text-green-700 dark:text-green-400',
+		cleared && ' mt-3'
+	)
 
 	return (
 		<section

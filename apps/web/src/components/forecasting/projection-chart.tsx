@@ -17,6 +17,7 @@ import {
 	XAxis,
 	YAxis,
 } from 'recharts'
+import { cn } from '@/lib/cn'
 import { useIsNarrowViewport } from '../../hooks/useIsNarrowViewport'
 import { niceAxisTicks } from '../../lib/chart-axis'
 import { useChartColors } from '../../lib/chartTheme'
@@ -271,11 +272,13 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
 						type="button"
 						aria-pressed={config.showGrid}
 						onClick={() => toggleOption('showGrid')}
-						className={`px-3 py-1 text-sm rounded-md ${CHART_TOGGLE_FOCUS_CLASS} ${
+						className={cn(
+							'px-3 py-1 text-sm rounded-md',
+							CHART_TOGGLE_FOCUS_CLASS,
 							config.showGrid
 								? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
 								: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-						}`}
+						)}
 					>
 						Grid
 					</button>
@@ -283,11 +286,13 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
 						type="button"
 						aria-pressed={config.showLegend}
 						onClick={() => toggleOption('showLegend')}
-						className={`px-3 py-1 text-sm rounded-md ${CHART_TOGGLE_FOCUS_CLASS} ${
+						className={cn(
+							'px-3 py-1 text-sm rounded-md',
+							CHART_TOGGLE_FOCUS_CLASS,
 							config.showLegend
 								? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
 								: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-						}`}
+						)}
 					>
 						Legend
 					</button>
@@ -295,11 +300,13 @@ export function ProjectionChart({ result }: ProjectionChartProps): React.ReactEl
 						type="button"
 						aria-pressed={config.showTooltip}
 						onClick={() => toggleOption('showTooltip')}
-						className={`px-3 py-1 text-sm rounded-md ${CHART_TOGGLE_FOCUS_CLASS} ${
+						className={cn(
+							'px-3 py-1 text-sm rounded-md',
+							CHART_TOGGLE_FOCUS_CLASS,
 							config.showTooltip
 								? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
 								: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-						}`}
+						)}
 					>
 						Tooltips
 					</button>
@@ -469,9 +476,10 @@ function SummaryCard({ label, value, change }: SummaryCardProps): React.ReactEle
 				<GroupedAmount text={value} />
 				{change !== 0 && (
 					<span
-						className={`mt-1 block text-xs font-medium ${
+						className={cn(
+							'mt-1 block text-xs font-medium',
 							isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-						}`}
+						)}
 					>
 						{isPositive ? '+' : ''}
 						{changeFormatted}

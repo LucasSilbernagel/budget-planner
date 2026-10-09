@@ -6,6 +6,7 @@ import {
 import type { Frequency } from '@budget-planner/db/schema'
 import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { cn } from '@/lib/cn'
 import { useCategoryNameMap } from '../hooks/useCategoryLabels'
 import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
 import { usePremiumAccess } from '../hooks/usePremiumAccess'
@@ -296,7 +297,7 @@ export function IncomePage() {
 								/>
 								<TableScrollRegion
 									label="Income sources table"
-									className={`${RESPONSIVE_WRAPPER_CLASS} ${RESPONSIVE_SCROLL_SHADOW_CLASS}`}
+									className={cn(RESPONSIVE_WRAPPER_CLASS, RESPONSIVE_SCROLL_SHADOW_CLASS)}
 								>
 									<table className={RESPONSIVE_TABLE_CLASS}>
 										<thead className={RESPONSIVE_THEAD_CLASS}>
@@ -345,7 +346,7 @@ export function IncomePage() {
 													</td>
 													<td className={RESPONSIVE_CELL_CLASS}>
 														<FieldLabel>Amount</FieldLabel>
-														<div className={`text-sm text-muted ${RESPONSIVE_AMOUNT_CLASS}`}>
+														<div className={cn('text-sm text-muted', RESPONSIVE_AMOUNT_CLASS)}>
 															<GroupedAmount text={formatAmount(source.amount)} />
 														</div>
 													</td>
@@ -372,7 +373,10 @@ export function IncomePage() {
 																type="button"
 																onClick={() => openEditModal(source)}
 																aria-label={`Edit ${source.name}`}
-																className={`mr-4 p-1 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
+																className={cn(
+																	'mr-4 p-1 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500',
+																	RESPONSIVE_ACTION_BUTTON_CLASS
+																)}
 															>
 																<PencilIcon className="h-5 w-5" />
 															</button>
@@ -380,7 +384,10 @@ export function IncomePage() {
 																type="button"
 																onClick={() => handleDelete(source.id)}
 																aria-label={`Delete ${source.name}`}
-																className={`p-1 text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
+																className={cn(
+																	'p-1 text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500',
+																	RESPONSIVE_ACTION_BUTTON_CLASS
+																)}
 															>
 																<TrashIcon className="h-5 w-5" />
 															</button>
@@ -436,11 +443,12 @@ export function IncomePage() {
 								value={name}
 								onChange={(e) => setName(e.target.value)}
 								placeholder="e.g., Salary, Freelance, Investment"
-								className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+								className={cn(
+									'w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400',
 									hasFieldError('name')
 										? 'border-red-500 focus:ring-red-500 focus:border-red-500'
 										: 'border-gray-300 dark:border-gray-600 focus:ring-blue-500 focus:border-blue-500'
-								}`}
+								)}
 								aria-invalid={hasFieldError('name')}
 								aria-required
 								aria-describedby={hasFieldError('name') ? 'income-name-error' : undefined}
@@ -476,13 +484,14 @@ export function IncomePage() {
 									onChange={(e) => setAmount(sanitizeMoneyChange(e.target, locale))}
 									onBlur={(e) => reformatAmountOnBlur(e.target.value, locale, setAmount)}
 									placeholder="0.00"
-									className={`w-full px-3 py-2 ${
-										mode === 'symbol' ? 'pl-7' : ''
-									} border rounded-md shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+									className={cn(
+										'w-full px-3 py-2',
+										mode === 'symbol' && 'pl-7',
+										'border rounded-md shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400',
 										hasFieldError('amount')
 											? 'border-red-500 focus:ring-red-500 focus:border-red-500'
 											: 'border-gray-300 dark:border-gray-600 focus:ring-blue-500 focus:border-blue-500'
-									}`}
+									)}
 									aria-invalid={hasFieldError('amount')}
 									aria-required
 									// Append the error id, never replace the hint: `aria-describedby` is an id list.

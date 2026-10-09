@@ -8,6 +8,7 @@ import type { Frequency } from '@budget-planner/core/finance/normalization'
 import { createFileRoute } from '@tanstack/react-router'
 import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { cn } from '@/lib/cn'
 import { PremiumPrompt } from '../components/auth/premium-prompt'
 import { ForecastList } from '../components/forecasting/forecast-list'
 import { ProjectionChart } from '../components/forecasting/projection-chart'
@@ -653,11 +654,14 @@ function TabNavigation({
 						tabIndex={activeTab === tab.id ? 0 : -1}
 						onClick={() => onTabChange(tab.id)}
 						disabled={disabled}
-						className={`px-4 ${TAB_BUTTON_PHONE_CLASS} py-2 text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${
+						className={cn(
+							'px-4',
+							TAB_BUTTON_PHONE_CLASS,
+							'py-2 text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed',
 							activeTab === tab.id
 								? 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 shadow-sm'
 								: 'text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 hover:text-gray-700 dark:hover:text-gray-100'
-						}`}
+						)}
 					>
 						<span className={TAB_CONTENT_CLASS}>
 							{getTabIcon(tab.id, activeTab === tab.id)}
@@ -671,9 +675,11 @@ function TabNavigation({
 }
 
 function getTabIcon(tabId: ForecastingTab, isActive: boolean): React.ReactElement {
-	const className = `w-4 h-4 ${TAB_ICON_PHONE_CLASS} ${
+	const className = cn(
+		'w-4 h-4',
+		TAB_ICON_PHONE_CLASS,
 		isActive ? 'text-blue-600' : 'text-gray-400'
-	}`
+	)
 
 	switch (tabId) {
 		case 'scenarios':

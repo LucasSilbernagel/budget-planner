@@ -1,5 +1,6 @@
 import type React from 'react'
 import { useCallback, useMemo, useRef, useState } from 'react'
+import { cn } from '@/lib/cn'
 import { signedAmount } from '../../lib/forecasting/today-baseline'
 import type { AriaSortValue } from '../../lib/table-sort'
 import type { SavedForecast } from '../../routes/forecasting'
@@ -334,9 +335,10 @@ export function ForecastList({
 								<tr
 									key={forecast.id}
 									onClick={() => toggleSelection(forecast.id)}
-									className={`cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors ${
-										selectedIds.has(forecast.id) ? 'bg-blue-50 dark:bg-blue-950/40' : ''
-									}`}
+									className={cn(
+										'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors',
+										selectedIds.has(forecast.id) && 'bg-blue-50 dark:bg-blue-950/40'
+									)}
 								>
 									<td className="px-4 py-4 whitespace-nowrap">
 										<input
@@ -354,7 +356,7 @@ export function ForecastList({
 										<div className="text-sm font-medium text-subheading">
 											{truncate(forecast.name, 40)}
 										</div>
-										<div className={`text-xs mt-1 ${mutedOnRow(selectedIds.has(forecast.id))}`}>
+										<div className={cn('text-xs mt-1', mutedOnRow(selectedIds.has(forecast.id)))}>
 											v{forecast.version ?? 1}
 										</div>
 									</td>
@@ -374,12 +376,12 @@ export function ForecastList({
 											{formatCurrency(forecast.result.summary.endingNetWorth)}
 										</div>
 										{/* The + is conditional: formatCurrency emits its own -, which would render +-40,000.00. */}
-										<div className={`text-xs mt-1 ${mutedOnRow(selectedIds.has(forecast.id))}`}>
+										<div className={cn('text-xs mt-1', mutedOnRow(selectedIds.has(forecast.id)))}>
 											{forecast.result.summary.totalGrowth >= 0 ? '+' : ''}
 											{formatCurrency(forecast.result.summary.totalGrowth)}
 										</div>
 										{vsToday?.has(forecast.id) && (
-											<div className={`text-xs mt-1 ${mutedOnRow(selectedIds.has(forecast.id))}`}>
+											<div className={cn('text-xs mt-1', mutedOnRow(selectedIds.has(forecast.id)))}>
 												{signedAmount(vsToday.get(forecast.id) ?? 0, formatCurrency)} vs. today
 											</div>
 										)}

@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { cn } from '@/lib/cn'
 import type { SortState } from '../../lib/table-sort'
 import { RESPONSIVE_ACTION_BUTTON_CLASS } from './ResponsiveTable'
 
@@ -17,13 +18,13 @@ const DEFAULT_ORDER_LABEL = 'Default order'
 const WRAPPER_CLASS = 'sm:hidden mb-3 min-w-0'
 
 /** No `focus:ring-offset-*`: the default white offset bands the dark card. */
-const SELECT_CLASS = [
+const SELECT_CLASS = cn(
 	'w-full max-w-full',
 	'surface-inset border border-default rounded-lg',
 	'px-3 py-2 text-sm text-body',
 	RESPONSIVE_ACTION_BUTTON_CLASS,
-	'focus:outline-none focus:ring-2 focus:ring-blue-500',
-].join(' ')
+	'focus:outline-none focus:ring-2 focus:ring-blue-500'
+)
 
 type SortOption<Key extends string> = {
 	value: string

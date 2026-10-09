@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { cn } from '@/lib/cn'
 
 /**
  * Below `sm` rows become cards via appended `max-sm:` display modes: one DOM, no JS branch, so SSR matches.
@@ -45,10 +46,13 @@ export const RESPONSIVE_ROW_CLASS =
 const RESPONSIVE_CELL_BASE =
 	'px-6 max-lg:px-4 py-4 whitespace-nowrap max-sm:flex max-sm:justify-between max-sm:gap-3 max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere] max-sm:px-3 max-sm:py-2'
 
-export const RESPONSIVE_CELL_CLASS = `${RESPONSIVE_CELL_BASE} max-sm:items-baseline`
+export const RESPONSIVE_CELL_CLASS = cn(RESPONSIVE_CELL_BASE, 'max-sm:items-baseline')
 
 /** `max-sm:flex-col` stacks the label above the buttons, which don't fit beside it at 320px. */
-export const RESPONSIVE_ACTIONS_CELL_CLASS = `${RESPONSIVE_CELL_BASE} max-sm:flex-col max-sm:items-center text-right text-sm`
+export const RESPONSIVE_ACTIONS_CELL_CLASS = cn(
+	RESPONSIVE_CELL_BASE,
+	'max-sm:flex-col max-sm:items-center text-right text-sm'
+)
 
 export const RESPONSIVE_STACKED_CELL_CLASS =
 	'px-6 max-lg:px-4 py-4 whitespace-nowrap max-sm:block max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere] max-sm:px-3 max-sm:py-2'

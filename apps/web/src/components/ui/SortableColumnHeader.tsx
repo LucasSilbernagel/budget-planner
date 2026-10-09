@@ -1,4 +1,5 @@
 import { type ReactElement, useCallback, useEffect, useId, useRef, useState } from 'react'
+import { cn } from '@/lib/cn'
 import type { AriaSortValue } from '../../lib/table-sort'
 import { RESPONSIVE_HEADER_CELL_CLASS } from './ResponsiveTable'
 
@@ -9,12 +10,12 @@ import { RESPONSIVE_HEADER_CELL_CLASS } from './ResponsiveTable'
 
 /** No `focus:ring-offset-*`: the white offset bands the dark card. `uppercase tracking-wider` are repeated
  * because a `<button>` doesn't inherit `text-transform`. */
-const SORT_BUTTON_CLASS = [
+const SORT_BUTTON_CLASS = cn(
 	'inline-flex items-center gap-1',
 	'uppercase tracking-wider',
 	'hover:text-body',
-	'rounded focus:outline-none focus:ring-2 focus:ring-blue-500',
-].join(' ')
+	'rounded focus:outline-none focus:ring-2 focus:ring-blue-500'
+)
 
 function SortAscendingIcon() {
 	return (

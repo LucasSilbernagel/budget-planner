@@ -35,6 +35,7 @@ import type { ClientSavingsGoal } from '@budget-planner/core/services/savingsGoa
 import { Link } from '@tanstack/react-router'
 import type React from 'react'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { cn } from '@/lib/cn'
 import { useIsInitialSyncPending } from '../../hooks/useIsInitialSyncPending'
 import { useStoresHydrated } from '../../hooks/useStoresHydrated'
 import { signedAmount, vsTodayCents, withTodayBaseline } from '../../lib/forecasting/today-baseline'
@@ -1927,9 +1928,11 @@ function FinancialItemRow({
 							onBlur={(e) => reechoAmountOnBlur(e.target.value, locale, setDraft)}
 							aria-invalid={amountError ? true : undefined}
 							aria-describedby={amountError ? amountErrorId : undefined}
-							className={`w-full ${
-								mode === 'symbol' ? 'px-6' : 'px-2'
-							} py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm`}
+							className={cn(
+								'w-full',
+								mode === 'symbol' ? 'px-6' : 'px-2',
+								'py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm'
+							)}
 							placeholder="0.00"
 						/>
 					</div>
@@ -2122,9 +2125,11 @@ function OneTimeEventRow({
 							onBlur={(e) => reechoAmountOnBlur(e.target.value, locale, setDraft)}
 							aria-invalid={amountError ? true : undefined}
 							aria-describedby={amountError ? `${amountId}-error` : undefined}
-							className={`w-full ${
-								mode === 'symbol' ? 'px-6' : 'px-2'
-							} py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm`}
+							className={cn(
+								'w-full',
+								mode === 'symbol' ? 'px-6' : 'px-2',
+								'py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm'
+							)}
 							placeholder="0.00"
 						/>
 					</div>
@@ -2332,9 +2337,11 @@ function RowMoneyField({
 					autoComplete="off"
 					aria-invalid={field.error ? true : undefined}
 					aria-describedby={field.error ? `${id}-error` : undefined}
-					className={`w-full ${
-						mode === 'symbol' ? 'px-6' : 'px-2'
-					} py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm`}
+					className={cn(
+						'w-full',
+						mode === 'symbol' ? 'px-6' : 'px-2',
+						'py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded text-sm'
+					)}
 					placeholder="0.00"
 				/>
 			</div>
@@ -2680,15 +2687,17 @@ type StatCardProps = {
 function StatCard({ label, value, highlight }: StatCardProps): React.ReactElement {
 	return (
 		<div
-			className={`rounded-lg p-4 text-center ${
+			className={cn(
+				'rounded-lg p-4 text-center',
 				highlight ? 'bg-white dark:bg-gray-800 shadow' : 'bg-blue-100 dark:bg-blue-900/40'
-			}`}
+			)}
 		>
 			<dt className="text-xs font-medium text-body uppercase tracking-wider">{label}</dt>
 			<dd
-				className={`mt-1 text-lg font-semibold ${
+				className={cn(
+					'mt-1 text-lg font-semibold',
 					highlight ? 'text-blue-600 dark:text-blue-400' : 'text-gray-800 dark:text-gray-100'
-				}`}
+				)}
 			>
 				<GroupedAmount text={value} />
 			</dd>

@@ -1,3 +1,4 @@
+import { cn } from '@/lib/cn'
 import { DOC_PAGES } from '../../content/docs'
 
 export type DocsSidebarProps = {
@@ -19,11 +20,12 @@ export function DocsSidebar({ activeSlug }: DocsSidebarProps) {
 								href={`/docs/${page.slug}`}
 								aria-current={isActive ? 'page' : undefined}
 								// No semantic token exists for the active pill or inactive hover, hence the hand-rolled dark: variants.
-								className={`block rounded-md px-3 py-2 text-sm transition-colors ${
+								className={cn(
+									'block rounded-md px-3 py-2 text-sm transition-colors',
 									isActive
 										? 'bg-blue-50 dark:bg-blue-950/40 font-medium text-accent'
 										: 'text-label hover:bg-gray-100 dark:hover:bg-gray-700/40'
-								}`}
+								)}
 							>
 								{page.title}
 							</a>

@@ -1,3 +1,4 @@
+import { cn } from '@/lib/cn'
 /**
  * Skeletons render identically on server and first client render, are `aria-hidden`, and are sized
  * by the caller. The single announcement per page comes from `LoadingStatus`.
@@ -16,7 +17,7 @@ export type SkeletonProps = {
 
 /** A `<span>`, so it is legal inside a `<p>` or `<td>`. */
 export function Skeleton({ className, testId }: SkeletonProps): React.ReactElement {
-	return <span aria-hidden="true" data-testid={testId} className={`${PULSE} ${className}`} />
+	return <span aria-hidden="true" data-testid={testId} className={cn(PULSE, className)} />
 }
 
 /** Not baked into `Skeleton`: Tailwind resolves conflicting backgrounds by source order, not class order. */
@@ -40,7 +41,7 @@ export function PendingFigure({
 	return (
 		<Skeleton
 			testId={testId}
-			className={`${SKELETON_BAR} inline-block h-[1em] align-middle ${widthClass}`}
+			className={cn(SKELETON_BAR, 'inline-block h-[1em] align-middle', widthClass)}
 		/>
 	)
 }
@@ -60,12 +61,7 @@ export function SkeletonBlock({
 	children,
 }: SkeletonBlockProps): React.ReactElement {
 	return (
-		<div
-			aria-hidden="true"
-			data-testid={testId}
-			data-hook={hook}
-			className={`${PULSE} ${className ?? ''}`.trim()}
-		>
+		<div aria-hidden="true" data-testid={testId} data-hook={hook} className={cn(PULSE, className)}>
 			{children}
 		</div>
 	)
@@ -96,11 +92,11 @@ export function EmptyStateSkeleton({
 	return (
 		<SkeletonBlock className="surface-inset rounded-lg p-8 text-center" testId={testId}>
 			<p className={lines === 2 ? 'mb-4' : undefined}>
-				<span className={`${SKELETON_BAR} inline-block h-[1em] w-48 max-w-full align-middle`} />
+				<span className={cn(SKELETON_BAR, 'inline-block h-[1em] w-48 max-w-full align-middle')} />
 			</p>
 			{lines === 2 && (
 				<p className="text-sm">
-					<span className={`${SKELETON_BAR} inline-block h-[1em] w-64 max-w-full align-middle`} />
+					<span className={cn(SKELETON_BAR, 'inline-block h-[1em] w-64 max-w-full align-middle')} />
 				</p>
 			)}
 		</SkeletonBlock>

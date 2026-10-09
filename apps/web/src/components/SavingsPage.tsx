@@ -12,6 +12,7 @@ import {
 import type { AllocationMode } from '@budget-planner/core/services/savingsGoals'
 import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { cn } from '@/lib/cn'
 import { useIsInitialSyncPending } from '../hooks/useIsInitialSyncPending'
 import { useStoresHydrated } from '../hooks/useStoresHydrated'
 import { useTableSort } from '../hooks/useTableSort'
@@ -469,7 +470,10 @@ export function SavingsPage() {
                      box-shadows, which High Contrast drops, hence forced-colors:focus:outline; p-1 makes 24px on desktop. */}
 									<button
 										type="button"
-										className={`inline-flex items-center gap-1 p-1 text-accent underline text-xs cursor-pointer rounded hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 forced-colors:focus:outline forced-colors:focus:outline-2 dark:hover:text-blue-200 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
+										className={cn(
+											'inline-flex items-center gap-1 p-1 text-accent underline text-xs cursor-pointer rounded hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 forced-colors:focus:outline forced-colors:focus:outline-2 dark:hover:text-blue-200',
+											RESPONSIVE_ACTION_BUTTON_CLASS
+										)}
 										aria-expanded={breakdownOpen}
 										aria-controls="savings-leftover-breakdown-body"
 										onClick={() => setBreakdownOpen((open) => !open)}
@@ -478,9 +482,10 @@ export function SavingsPage() {
 										{/* Geometry copied from SortableColumnHeader's chevron. */}
 										<svg
 											aria-hidden="true"
-											className={`h-3 w-3 shrink-0 transition-transform${
-												breakdownOpen ? ' rotate-180' : ''
-											}`}
+											className={cn(
+												'h-3 w-3 shrink-0 transition-transform',
+												breakdownOpen && ' rotate-180'
+											)}
 											fill="none"
 											stroke="currentColor"
 											strokeWidth={2.5}
@@ -522,17 +527,19 @@ export function SavingsPage() {
 															<li
 																key={line.id}
 																data-testid={`breakdown-contribution-${line.id}`}
-																className={`flex flex-wrap items-center gap-x-2 gap-y-1 ${
-																	candidate && !line.excluded
-																		? 'bg-amber-50 dark:bg-amber-900/20 -mx-1 px-1 rounded'
-																		: ''
-																}`}
+																className={cn(
+																	'flex flex-wrap items-center gap-x-2 gap-y-1',
+																	candidate &&
+																		!line.excluded &&
+																		'bg-amber-50 dark:bg-amber-900/20 -mx-1 px-1 rounded'
+																)}
 															>
 																<span className="text-muted">{line.name}</span>
 																<span
-																	className={`ml-auto ${
+																	className={cn(
+																		'ml-auto',
 																		line.excluded ? 'text-muted line-through' : 'text-body'
-																	}`}
+																	)}
 																	data-testid={`breakdown-contribution-amount-${line.id}`}
 																>
 																	{formatAmount(line.monthlyCents)}
@@ -636,7 +643,7 @@ export function SavingsPage() {
 								/>
 								<TableScrollRegion
 									label="Savings goals and accounts table"
-									className={`${RESPONSIVE_WRAPPER_CLASS} ${RESPONSIVE_SCROLL_SHADOW_CLASS}`}
+									className={cn(RESPONSIVE_WRAPPER_CLASS, RESPONSIVE_SCROLL_SHADOW_CLASS)}
 								>
 									<table className={RESPONSIVE_TABLE_CLASS}>
 										<thead className={RESPONSIVE_THEAD_CLASS}>
@@ -704,11 +711,13 @@ export function SavingsPage() {
 																	{goal.name}
 																</span>
 																<span
-																	className={`inline-flex items-center px-2 py-0.5 rounded-full font-medium text-xs ${RESPONSIVE_TAG_CLASS} ${
+																	className={cn(
+																		'inline-flex items-center px-2 py-0.5 rounded-full font-medium text-xs',
+																		RESPONSIVE_TAG_CLASS,
 																		isAccountRow
 																			? 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200'
 																			: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
-																	}`}
+																	)}
 																	data-testid={`savings-badge-${goal.id}`}
 																>
 																	{isAccountRow ? 'Account' : 'Goal'}
@@ -717,7 +726,7 @@ export function SavingsPage() {
 														</td>
 														<td className={RESPONSIVE_CELL_CLASS}>
 															<FieldLabel>Target</FieldLabel>
-															<div className={`text-muted text-sm ${RESPONSIVE_AMOUNT_CLASS}`}>
+															<div className={cn('text-muted text-sm', RESPONSIVE_AMOUNT_CLASS)}>
 																{goal.targetAmount == null ? (
 																	'No target'
 																) : (
@@ -727,7 +736,7 @@ export function SavingsPage() {
 														</td>
 														<td className={RESPONSIVE_CELL_CLASS}>
 															<FieldLabel>Current Balance</FieldLabel>
-															<div className={`text-muted text-sm ${RESPONSIVE_AMOUNT_CLASS}`}>
+															<div className={cn('text-muted text-sm', RESPONSIVE_AMOUNT_CLASS)}>
 																<GroupedAmount text={formatAmount(goal.currentBalance)} />
 															</div>
 														</td>
@@ -735,13 +744,16 @@ export function SavingsPage() {
 															<FieldLabel>Monthly Allocation</FieldLabel>
 															<div className={RESPONSIVE_VALUE_TAG_CLASS}>
 																<span
-																	className={`text-muted text-sm ${RESPONSIVE_AMOUNT_CLASS}`}
+																	className={cn('text-muted text-sm', RESPONSIVE_AMOUNT_CLASS)}
 																	data-testid={`savings-allocation-${goal.id}`}
 																>
 																	<GroupedAmount text={formatAmount(effectiveAllocation)} />
 																</span>
 																<span
-																	className={`inline-flex items-center bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full font-medium text-gray-600 dark:text-gray-300 text-xs ${RESPONSIVE_TAG_CLASS}`}
+																	className={cn(
+																		'inline-flex items-center bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full font-medium text-gray-600 dark:text-gray-300 text-xs',
+																		RESPONSIVE_TAG_CLASS
+																	)}
 																	data-testid={`savings-allocation-mode-${goal.id}`}
 																>
 																	{isAutomatic ? 'Auto' : 'Fixed'}
@@ -780,7 +792,10 @@ export function SavingsPage() {
 																	type="button"
 																	onClick={() => openEditModal(goal)}
 																	aria-label={`Edit ${goal.name}`}
-																	className={`mr-4 p-1 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
+																	className={cn(
+																		'mr-4 p-1 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500',
+																		RESPONSIVE_ACTION_BUTTON_CLASS
+																	)}
 																>
 																	<PencilIcon className="h-5 w-5" />
 																</button>
@@ -788,7 +803,10 @@ export function SavingsPage() {
 																	type="button"
 																	onClick={() => handleDelete(goal.id)}
 																	aria-label={`Delete ${goal.name}`}
-																	className={`p-1 text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500 ${RESPONSIVE_ACTION_BUTTON_CLASS}`}
+																	className={cn(
+																		'p-1 text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500',
+																		RESPONSIVE_ACTION_BUTTON_CLASS
+																	)}
 																>
 																	<TrashIcon className="h-5 w-5" />
 																</button>
@@ -845,11 +863,12 @@ export function SavingsPage() {
 								value={name}
 								onChange={(e) => setName(e.target.value)}
 								placeholder="e.g., Emergency Fund, Vacation, New Car"
-								className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+								className={cn(
+									'w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400',
 									hasFieldError('name')
 										? 'border-red-500 focus:ring-red-500 focus:border-red-500'
 										: 'border-gray-300 dark:border-gray-600 focus:ring-purple-500 focus:border-purple-500'
-								}`}
+								)}
 								aria-invalid={hasFieldError('name')}
 								aria-required
 								aria-describedby={hasFieldError('name') ? 'savings-name-error' : undefined}
@@ -900,13 +919,14 @@ export function SavingsPage() {
 										onChange={(e) => setTargetAmount(sanitizeMoneyChange(e.target, locale))}
 										onBlur={(e) => reformatAmountOnBlur(e.target.value, locale, setTargetAmount)}
 										placeholder="0.00"
-										className={`w-full px-3 py-2 ${
-											mode === 'symbol' ? 'pl-7' : ''
-										} border rounded-md shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+										className={cn(
+											'w-full px-3 py-2',
+											mode === 'symbol' && 'pl-7',
+											'border rounded-md shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400',
 											hasFieldError('targetAmount')
 												? 'border-red-500 focus:ring-red-500 focus:border-red-500'
 												: 'border-gray-300 dark:border-gray-600 focus:ring-purple-500 focus:border-purple-500'
-										}`}
+										)}
 										aria-invalid={hasFieldError('targetAmount')}
 										aria-required
 										aria-describedby={
@@ -946,13 +966,14 @@ export function SavingsPage() {
 									onChange={(e) => setCurrentBalance(sanitizeMoneyChange(e.target, locale))}
 									onBlur={(e) => reformatAmountOnBlur(e.target.value, locale, setCurrentBalance)}
 									placeholder="0.00"
-									className={`w-full px-3 py-2 ${
-										mode === 'symbol' ? 'pl-7' : ''
-									} border rounded-md shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+									className={cn(
+										'w-full px-3 py-2',
+										mode === 'symbol' && 'pl-7',
+										'border rounded-md shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400',
 										hasFieldError('currentBalance')
 											? 'border-red-500 focus:ring-red-500 focus:border-red-500'
 											: 'border-gray-300 dark:border-gray-600 focus:ring-purple-500 focus:border-purple-500'
-									}`}
+									)}
 									aria-invalid={hasFieldError('currentBalance')}
 									aria-describedby={
 										hasFieldError('currentBalance') ? 'savings-current-balance-error' : undefined
@@ -1018,13 +1039,14 @@ export function SavingsPage() {
 											reformatAmountOnBlur(e.target.value, locale, setMonthlyAllocation)
 										}
 										placeholder="0.00"
-										className={`w-full px-3 py-2 ${
-											mode === 'symbol' ? 'pl-7' : ''
-										} border rounded-md shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 ${
+										className={cn(
+											'w-full px-3 py-2',
+											mode === 'symbol' && 'pl-7',
+											'border rounded-md shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400',
 											hasFieldError('monthlyAllocation')
 												? 'border-red-500 focus:ring-red-500 focus:border-red-500'
 												: 'border-gray-300 dark:border-gray-600 focus:ring-purple-500 focus:border-purple-500'
-										}`}
+										)}
 										aria-invalid={hasFieldError('monthlyAllocation')}
 										aria-describedby={
 											hasFieldError('monthlyAllocation')
