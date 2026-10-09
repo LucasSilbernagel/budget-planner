@@ -3,7 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ZodError } from 'zod'
-import { createSynchronizationService, type SynchronizationService } from '../index'
+import { createSynchronizationService, type SynchronizationService } from '../synchronization'
 
 /** A bare `.rejects.toThrow()` would also pass on a userId mismatch or a mis-keyed refinement. */
 async function expectCurrentBalanceRejection(promise: Promise<unknown>): Promise<void> {

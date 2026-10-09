@@ -3,8 +3,8 @@
  * also runs the sweep when the heartbeat is stale. Unarmed until a first run completes.
  */
 
-import { db } from '@budget-planner/db'
-import { jobRuns } from '@budget-planner/db/src/schema'
+import { db } from '@budget-planner/db/client'
+import { jobRuns } from '@budget-planner/db/schema'
 import { eq } from 'drizzle-orm'
 import { captureError } from '@/lib/error-tracking'
 import { logger } from '@/lib/logger'

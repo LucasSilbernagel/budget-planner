@@ -3,7 +3,7 @@
  * Never through a store action, which would queue a delete for a row the server never had (a permanent conflict).
  */
 
-import type { ServerChange, SyncEntityType, SyncOperation } from '@budget-planner/core/sync'
+import type { ServerChange, SyncEntityType, SyncOperation } from '@budget-planner/core/sync/types'
 import type { RefusalNotice, RefusalOutcome } from './refusalNoticeStore'
 
 export type RefusalHandlerDeps = {

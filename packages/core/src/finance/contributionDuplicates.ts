@@ -1,15 +1,15 @@
 // Presentation input only: NEVER changes a number. Byte-identical rows can be the same or
 // different money, so the pool must not depend on this heuristic.
 
-import type { NormalizableFinancialItem } from './netIncome'
+import type { NormalizableFinancialItem } from './normalization'
 import { normalizeToMonthly } from './normalization'
 
-export type DuplicateCandidateExpense = NormalizableFinancialItem & {
+type DuplicateCandidateExpense = NormalizableFinancialItem & {
 	id: string
 	name: string
 }
 
-export type DuplicateCandidateContribution = NormalizableFinancialItem & {
+type DuplicateCandidateContribution = NormalizableFinancialItem & {
 	id: string
 	name: string
 	recordedAsExpense?: boolean

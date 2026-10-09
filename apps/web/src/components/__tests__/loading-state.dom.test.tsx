@@ -13,8 +13,11 @@ vi.mock('../../hooks/usePremiumAccess', () => ({
 }))
 
 import type { ReactNode } from 'react'
-import { useBalanceStore, useExpenseStore, useIncomeStore, useSavingsStore } from '../../stores'
+import { useBalanceStore } from '../../stores/balanceStore'
 import { useCurrencyStore } from '../../stores/currencyStore'
+import { useExpenseStore } from '../../stores/expenseStore'
+import { useIncomeStore } from '../../stores/incomeStore'
+import { useSavingsStore } from '../../stores/savingsStore'
 import { FENCED_EMPTY_COPY, type GatedPath } from '../../test/fenced-copy'
 import { BalancePage } from '../BalancePage'
 import { ExpensesPage } from '../ExpensesPage'

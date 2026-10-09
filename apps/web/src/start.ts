@@ -1,4 +1,4 @@
-import { getSiteUrl } from '@budget-planner/config'
+import { getSiteUrl } from '@budget-planner/config/schema'
 import { createMiddleware, createStart } from '@tanstack/react-start'
 import { generateCspNonce, runWithCspNonce } from './server/csp-nonce'
 import {

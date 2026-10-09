@@ -1,4 +1,4 @@
-import type { FinanceType } from '@budget-planner/db'
+import type { FinanceType } from '@budget-planner/db/schema'
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
 	annualContributionCents,

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const envSchema = z.object({
+const envSchema = z.object({
 	NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 
 	PORT: z.coerce.number().default(3000),
@@ -78,7 +78,7 @@ export type PaddleConfig = {
 	isConfigured: boolean
 }
 
-export const PADDLE_API_BASE_URL = {
+const PADDLE_API_BASE_URL = {
 	sandbox: 'https://sandbox-api.paddle.com',
 	production: 'https://api.paddle.com',
 } as const
@@ -157,7 +157,7 @@ export type EmailConfig = {
 	isConfigured: boolean
 }
 
-export const EMAIL_FROM_NAME = 'Longhand Budget'
+const EMAIL_FROM_NAME = 'Longhand Budget'
 
 // Fails closed outside development, or users would be emailed localhost links.
 export function getSiteUrl(): string {

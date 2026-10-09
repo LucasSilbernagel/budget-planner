@@ -3,7 +3,7 @@
  * One-way dependency: never import stores (import cycle) or server code here.
  */
 
-import type { SyncEntityType, SyncOperation } from '@budget-planner/core'
+import type { SyncEntityType, SyncOperation } from '@budget-planner/core/sync/types'
 import { RETIREMENT_PLAN_STRING_MAX } from '@budget-planner/core/sync/types'
 import { z } from 'zod'
 import { coerceRetirementPlan, type RetirementPlan } from '../retirement-plan'

@@ -3,8 +3,9 @@
  * forever and stall every later change (the server filters on updatedAt > cursor).
  */
 
-import type { ServerChange, SynchronizationService } from '@budget-planner/core/sync'
-import { createSynchronizationService } from '@budget-planner/core/sync'
+import type { SynchronizationService } from '@budget-planner/core/sync/synchronization'
+import { createSynchronizationService } from '@budget-planner/core/sync/synchronization'
+import type { ServerChange } from '@budget-planner/core/sync/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useIncomeStore } from '../../../stores/incomeStore'
 import { applyServerChangesToStores, reportRefusedServerChanges } from '../applyServerChanges'

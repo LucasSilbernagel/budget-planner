@@ -22,7 +22,7 @@ const {
 	}
 })
 
-vi.mock('@budget-planner/db', () => ({ db: { select: dbSelect } }))
+vi.mock('@budget-planner/db/client', () => ({ db: { select: dbSelect } }))
 vi.mock('./login-token', () => ({ createLoginToken, consumeLoginToken, peekLoginToken }))
 vi.mock('@/server/email/mailer', () => ({ sendMagicLinkEmail }))
 

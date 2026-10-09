@@ -55,7 +55,7 @@ const state: MockState = { incomeRows: [], expenseRows: [], profileRows: [] }
 const limitCalls: { table: string; arg: number; callIndex: number }[] = []
 const callCountByTable = new Map<string, number>()
 
-vi.mock('@budget-planner/db', async (importOriginal) => {
+vi.mock('@budget-planner/db/client', async (importOriginal) => {
 	const actual = (await importOriginal()) as Record<string, unknown>
 
 	const rowsFor = (name: string): Row[] => {

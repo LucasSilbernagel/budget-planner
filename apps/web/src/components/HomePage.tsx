@@ -1,9 +1,8 @@
-import { debtOwedCents } from '@budget-planner/core'
+import { calculateNetIncomeResult } from '@budget-planner/core/finance/netIncome'
 import {
-	calculateNetIncomeResult,
 	denormalizeFromMonthly,
 	normalizeToMonthly,
-} from '@budget-planner/core/finance'
+} from '@budget-planner/core/finance/normalization'
 import type {
 	FinancialDataPoint,
 	RechartsDataItem,
@@ -14,6 +13,7 @@ import {
 	generateColorMap,
 	toPieChartData,
 } from '@budget-planner/core/finance/visualization'
+import { debtOwedCents } from '@budget-planner/core/services/balanceTracking'
 import React, { Suspense, useCallback, useMemo, useState } from 'react'
 import { useSessionSeed } from '../context/session-seed'
 import { resolveCategoryLabel, useCategoryNameMap } from '../hooks/useCategoryLabels'
@@ -29,8 +29,10 @@ import { OVERVIEW_SECTIONS_PENDING_HOOK } from '../lib/overview/no-flash-overvie
 import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../lib/premium/benefits'
 import { isEntitledSeed } from '../lib/premium/entitlement'
 import { useVerifiedSession } from '../lib/session/verifiedSession'
-import { useBalanceEntries, useExpenses, useIncomeSources, useSavingsGoals } from '../stores'
+import { useBalanceEntries } from '../stores/balanceStore'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
+import { useExpenses } from '../stores/expenseStore'
+import { useIncomeSources } from '../stores/incomeStore'
 import {
 	DURATION_LABEL,
 	DURATION_OPTION_LABEL,
@@ -40,9 +42,10 @@ import {
 	useSetOverviewDuration,
 	VALID_DURATIONS,
 } from '../stores/overviewDurationStore'
+import { useSavingsGoals } from '../stores/savingsStore'
 import { ErrorBoundary } from './ErrorBoundary'
 import { AccountNoticeBox } from './overview/AccountNoticeBox'
-import { PremiumFeatureGate } from './premium'
+import { PremiumFeatureGate } from './premium/PremiumFeatureGate'
 import { GroupedAmount } from './ui/GroupedAmount'
 import { InfoTooltip } from './ui/InfoTooltip'
 import { LoadingStatus, PendingFigure, SKELETON_BAR, SkeletonBlock } from './ui/Skeleton'

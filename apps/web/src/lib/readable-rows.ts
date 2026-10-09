@@ -3,7 +3,7 @@
  * Unreadable rows are excluded and counted for disclosure rather than coerced into an invented total.
  */
 
-import type { Frequency } from '@budget-planner/core'
+import type { Frequency } from '@budget-planner/core/finance/normalization'
 
 /** Runtime set: `Frequency` is erased, so persisted strings must be checked against real values. */
 const KNOWN_FREQUENCIES: ReadonlySet<string> = new Set<Frequency>([

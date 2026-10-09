@@ -5,9 +5,9 @@ import {
 	buildCategoryBreakdown,
 	type CategoryBreakdownItem,
 	type CategoryBreakdownRow,
-	type Frequency,
-	generateColorMap,
-} from '@budget-planner/core'
+} from '@budget-planner/core/finance/categoryBreakdown'
+import type { Frequency } from '@budget-planner/core/finance/normalization'
+import { generateColorMap } from '@budget-planner/core/finance/visualization'
 import { type ReactElement, useId, useMemo } from 'react'
 import {
 	Bar,
@@ -23,8 +23,9 @@ import { useCategoryNameMap } from '../../hooks/useCategoryLabels'
 import { useIsNarrowViewport } from '../../hooks/useIsNarrowViewport'
 import { barDomainTicks, categoryChartHeight, formatCompactAxisTick } from '../../lib/chart-axis'
 import { useChartColors } from '../../lib/chartTheme'
-import { useExpenses, useIncomeSources } from '../../stores'
 import { useCurrencyPreferences, useFormattedAmount } from '../../stores/currencyStore'
+import { useExpenses } from '../../stores/expenseStore'
+import { useIncomeSources } from '../../stores/incomeStore'
 import {
 	DURATION_LABEL,
 	IS_NON_INTEGRAL_CADENCE,

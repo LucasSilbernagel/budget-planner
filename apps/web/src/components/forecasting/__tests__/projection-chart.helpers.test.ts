@@ -1,6 +1,6 @@
 // @vitest-environment node
 // Pure helpers: opt out of the jsdom environment the components/** glob would assign.
-import type { ForecastingResult } from '@budget-planner/core'
+import type { ForecastingResult } from '@budget-planner/core/finance/forecasting'
 import { describe, expect, it } from 'vitest'
 import {
 	formatProjectionAxisTick,

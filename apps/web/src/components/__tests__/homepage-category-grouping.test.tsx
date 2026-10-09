@@ -1,8 +1,11 @@
 import { act, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PremiumAccessStatus } from '../../hooks/usePremiumAccess'
-import { useBalanceStore, useExpenseStore, useIncomeStore, useSavingsStore } from '../../stores'
+import { useBalanceStore } from '../../stores/balanceStore'
 import { type ClientCategory, useCategoryStore } from '../../stores/categoryStore'
+import { useExpenseStore } from '../../stores/expenseStore'
+import { useIncomeStore } from '../../stores/incomeStore'
+import { useSavingsStore } from '../../stores/savingsStore'
 
 const usePremiumAccess = vi.fn()
 

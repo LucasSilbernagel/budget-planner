@@ -1,6 +1,6 @@
 /** The output is only a suggestion for the desired-income field; it must never feed the nest-egg base of the solve. */
 
-import { calculateTotalMonthlyNormalized } from '@budget-planner/core'
+import { calculateTotalMonthlyNormalized } from '@budget-planner/core/finance/normalization'
 import { isReadableRow, toNormalizableItems } from './readable-rows'
 
 export type EndingExpenseRow = {

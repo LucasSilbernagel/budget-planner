@@ -215,7 +215,7 @@ describe('Gate 1 — the flag survives payload -> server schema -> generated SQL
 	it('reaches the UPDATE statement as a real column', async () => {
 		const { drizzle } = await import('drizzle-orm/node-postgres')
 		const { eq, and } = await import('drizzle-orm')
-		const { expenses } = await import('@budget-planner/db')
+		const { expenses } = await import('@budget-planner/db/schema')
 		const db = drizzle({} as never)
 
 		syncEntityUpdate('expense', expenseRow({ endsBeforeRetirement: true }))
@@ -240,7 +240,7 @@ describe('Gate 1 — the flag survives payload -> server schema -> generated SQL
 
 	it('reaches the INSERT statement as a real column', async () => {
 		const { drizzle } = await import('drizzle-orm/node-postgres')
-		const { expenses } = await import('@budget-planner/db')
+		const { expenses } = await import('@budget-planner/db/schema')
 		const db = drizzle({} as never)
 
 		syncEntityCreate('expense', expenseRow({ endsBeforeRetirement: true }))

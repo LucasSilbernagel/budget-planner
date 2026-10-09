@@ -17,8 +17,8 @@ type EngineCall = {
 }
 const engineCalls = vi.hoisted(() => [] as EngineCall[])
 
-vi.mock('@budget-planner/core', async (importOriginal) => {
-	const real = await importOriginal<typeof import('@budget-planner/core')>()
+vi.mock('@budget-planner/core/finance/forecasting', async (importOriginal) => {
+	const real = await importOriginal<typeof import('@budget-planner/core/finance/forecasting')>()
 	return {
 		...real,
 		calculateFinancialForecast: (

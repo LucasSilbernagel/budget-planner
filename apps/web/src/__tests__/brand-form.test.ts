@@ -140,7 +140,7 @@ describe('the product name is "Longhand Budget" on every user-visible surface', 
 		expect(swept).toContain('pwa.config.mjs')
 		expect(swept).toContain('server-entry.mjs')
 		expect(swept).toContain('../../packages/config/src/schema.ts')
-		expect(swept).toContain('../../packages/core/src/index.ts')
+		expect(swept).toContain('../../packages/core/src/format/currency.ts')
 		expect(swept).toContain('src/content/docs/faq.md')
 		expect(swept).toContain('src/content/legal/terms.md')
 		expect(swept).toContain('public/favicon.svg')

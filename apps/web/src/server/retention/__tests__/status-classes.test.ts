@@ -1,4 +1,4 @@
-import { subscriptionStatusEnum } from '@budget-planner/db/src/schema'
+import { subscriptionStatusEnum } from '@budget-planner/db/schema'
 import { describe, expect, it } from 'vitest'
 import {
 	ENTITLED_STATUSES,

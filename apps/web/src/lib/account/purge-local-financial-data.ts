@@ -3,7 +3,7 @@
  * a local failure must not surface as a deletion failure.
  */
 
-import { createSyncQueue } from '@budget-planner/core/sync'
+import { createSyncQueue } from '@budget-planner/core/sync/queue'
 import { getSyncPurgeHandle } from '@/lib/sync/purgeHandle'
 import { resetRefusalNotices } from '@/lib/sync/refusalNoticeStore'
 import { useBalanceStore } from '@/stores/balanceStore'

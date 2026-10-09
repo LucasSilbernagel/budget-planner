@@ -3,7 +3,11 @@
  * `@budget-planner/db` (server-only) into the client bundle.
  */
 
-import type { ProcessOperationResult, ServerChange, SyncOperation } from '@budget-planner/core/sync'
+import type {
+	ProcessOperationResult,
+	ServerChange,
+	SyncOperation,
+} from '@budget-planner/core/sync/types'
 
 export async function fetchServerChanges(
 	since: number | null,

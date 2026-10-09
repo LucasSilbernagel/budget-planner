@@ -28,8 +28,7 @@ export const frequencyEnum = pgEnum('frequency', ['weekly', 'biweekly', 'monthly
 // `asset` is owned outright and carries no contribution: it changes value by appreciation.
 export const financeTypeEnum = pgEnum('financeType', ['investment', 'debt', 'asset'])
 
-// Derived from the enum: a `satisfies` tuple would compile with a member missing. Client code must
-// import this from `src/schema`, not the barrel, which pulls in the server-only client.
+// Derived from the enum: a `satisfies` tuple would compile with a member missing.
 export const ALL_FINANCE_TYPES = financeTypeEnum.enumValues
 
 // 'manual' holds a fixed monthlyAllocation; 'automatic' gets an even share of the leftover pool.

@@ -8,7 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 const holder = vi.hoisted(() => ({ db: null as unknown }))
 
-vi.mock('@budget-planner/db', async (importOriginal) => {
+vi.mock('@budget-planner/db/client', async (importOriginal) => {
 	const actual = await importOriginal<Record<string, unknown>>()
 	return {
 		...actual,
@@ -35,7 +35,7 @@ vi.mock('@/server/api/auth/paddle', () => ({
 	})),
 }))
 
-import { incomeSources, userProfiles, users } from '@budget-planner/db'
+import { incomeSources, userProfiles, users } from '@budget-planner/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { logger } from '@/lib/logger'
 import { POST as batchPOST } from '@/routes/api/sync/batch'

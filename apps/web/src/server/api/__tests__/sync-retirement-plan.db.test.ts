@@ -8,7 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 const holder = vi.hoisted(() => ({ db: null as unknown }))
 
-vi.mock('@budget-planner/db', async (importOriginal) => {
+vi.mock('@budget-planner/db/client', async (importOriginal) => {
 	const actual = await importOriginal<Record<string, unknown>>()
 	return {
 		...actual,
@@ -37,9 +37,9 @@ vi.mock('@/server/api/auth/paddle', () => ({
 	})),
 }))
 
-import type { SyncOperation } from '@budget-planner/core/sync'
-import { createSynchronizationService } from '@budget-planner/core/sync'
-import { retirementPlans, userProfiles, users } from '@budget-planner/db'
+import { createSynchronizationService } from '@budget-planner/core/sync/synchronization'
+import type { SyncOperation } from '@budget-planner/core/sync/types'
+import { retirementPlans, userProfiles, users } from '@budget-planner/db/schema'
 import type { PGlite } from '@electric-sql/pglite'
 import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/pglite'

@@ -1,7 +1,7 @@
 // localStorage is user-editable and pulled rows are unvalidated, so a contribution can be
 // NaN, ±Infinity or null; `normalizeToMonthly` throws on all of them.
 
-import { solveAutomaticAllocations } from '@budget-planner/core'
+import { solveAutomaticAllocations } from '@budget-planner/core/finance/savingsAllocation'
 import { render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, renderWithProviders, screen } from '@/test/utils'

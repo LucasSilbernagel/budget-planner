@@ -1,6 +1,6 @@
 // jsdom has no layout: this pins the wiring (a <wbr> after each digit-flanked separator), not that it fits.
 
-import type { ForecastingResult } from '@budget-planner/core'
+import type { ForecastingResult } from '@budget-planner/core/finance/forecasting'
 import { render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useCurrencyStore } from '../../../stores/currencyStore'
@@ -32,8 +32,8 @@ const RESULT: ForecastingResult = {
 	summary: SUMMARY,
 }
 
-vi.mock('@budget-planner/core', async (importOriginal) => {
-	const real = await importOriginal<typeof import('@budget-planner/core')>()
+vi.mock('@budget-planner/core/finance/forecasting', async (importOriginal) => {
+	const real = await importOriginal<typeof import('@budget-planner/core/finance/forecasting')>()
 	return { ...real, calculateFinancialForecast: () => RESULT }
 })
 

@@ -1,5 +1,4 @@
-// The `format/currency` subpath is unresolvable to `tsc`, so import from the barrel.
-import { formatForInputDisplay, parseFromInput } from '@budget-planner/core'
+import { formatForInputDisplay, parseFromInput } from '@budget-planner/core/format/currency'
 
 export const AMOUNT_NOT_A_NUMBER_MESSAGE = 'Enter a number.'
 

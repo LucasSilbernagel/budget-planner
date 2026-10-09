@@ -13,8 +13,8 @@ import { Route } from '../forecasting'
 const engineYears = vi.hoisted(() => [] as unknown[])
 const engineSavings = vi.hoisted(() => [] as unknown[])
 
-vi.mock('@budget-planner/core', async (importOriginal) => {
-	const real = await importOriginal<typeof import('@budget-planner/core')>()
+vi.mock('@budget-planner/core/finance/forecasting', async (importOriginal) => {
+	const real = await importOriginal<typeof import('@budget-planner/core/finance/forecasting')>()
 	return {
 		...real,
 		calculateFinancialForecast: (

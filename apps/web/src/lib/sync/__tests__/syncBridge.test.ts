@@ -1,4 +1,4 @@
-import type { SyncEntityType } from '@budget-planner/core/sync'
+import type { SyncEntityType } from '@budget-planner/core/sync/types'
 import {
 	RETIREMENT_PLAN_STRING_MAX,
 	retirementPlanSyncSchema,

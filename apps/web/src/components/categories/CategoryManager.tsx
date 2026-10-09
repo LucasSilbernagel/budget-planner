@@ -1,6 +1,6 @@
 // No nested dialogs: Modal assumes one open at a time, so renaming happens inline.
 
-import type { CategoryKind } from '@budget-planner/db'
+import type { CategoryKind } from '@budget-planner/db/schema'
 import { type ReactElement, useRef, useState } from 'react'
 import { useCategoriesForActiveProfile } from '../../hooks/useCategoryLabels'
 import {

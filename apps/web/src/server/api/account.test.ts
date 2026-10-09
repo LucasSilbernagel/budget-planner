@@ -34,7 +34,7 @@ const {
 	}
 })
 
-vi.mock('@budget-planner/db', () => ({ db: { transaction } }))
+vi.mock('@budget-planner/db/client', () => ({ db: { transaction } }))
 // Preserve real drizzle exports (schema.ts needs `sql` at module load); only
 // override `eq` so each WHERE clause target is an inspectable { col, val }.
 vi.mock('drizzle-orm', async (importOriginal) => {
@@ -46,7 +46,7 @@ vi.mock('drizzle-orm', async (importOriginal) => {
 	}
 })
 vi.mock('./auth/paddle', () => ({ getCurrentUserSession }))
-vi.mock('@budget-planner/config', () => ({ getPaddleConfig }))
+vi.mock('@budget-planner/config/schema', () => ({ getPaddleConfig }))
 vi.mock('../paddle/subscription-api', () => ({ cancelActiveSubscriptionsForCustomer }))
 vi.mock('@/lib/logger', () => ({ logger: { warn: vi.fn(), error: vi.fn() } }))
 
@@ -62,7 +62,7 @@ import {
 	savingsGoals,
 	userProfiles,
 	users,
-} from '@budget-planner/db/src/schema'
+} from '@budget-planner/db/schema'
 import { deleteUserAccount } from './account'
 
 // `categories` is both a parent and a child here: earlier breaks the cashflow FKs, later its own.

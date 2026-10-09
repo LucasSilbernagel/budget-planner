@@ -6,7 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 const holder = vi.hoisted(() => ({ db: null as unknown }))
 
-vi.mock('@budget-planner/db', async (importOriginal) => {
+vi.mock('@budget-planner/db/client', async (importOriginal) => {
 	const actual = await importOriginal<Record<string, unknown>>()
 	return {
 		...actual,
@@ -22,7 +22,7 @@ vi.mock('@/lib/logger', () => ({
 
 vi.mock('@/server/api/auth/paddle', () => ({ getCurrentUserSession: vi.fn() }))
 
-import { userProfiles, users } from '@budget-planner/db'
+import { userProfiles, users } from '@budget-planner/db/schema'
 import { logger } from '@/lib/logger'
 import { getCurrentUserSession } from '@/server/api/auth/paddle'
 import { migratedPglite } from '../../../test/pglite-migrated'

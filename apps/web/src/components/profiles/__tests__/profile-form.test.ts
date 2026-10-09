@@ -2,7 +2,7 @@
 // No DOM needed; the components/** glob would otherwise give it jsdom.
 
 import { describe, expect, it } from 'vitest'
-import type { ClientProfile } from '@/hooks/useActiveProfile'
+import type { ClientProfile } from '@/stores/profileStore'
 import { EMPTY_PROFILE_FORM, validateProfileForm } from '../profile-form'
 
 const profile = (id: string, name: string): ClientProfile => ({

@@ -12,7 +12,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 const holder = vi.hoisted(() => ({ db: null as unknown }))
 
-vi.mock('@budget-planner/db', async (importOriginal) => {
+vi.mock('@budget-planner/db/client', async (importOriginal) => {
 	const actual = await importOriginal<Record<string, unknown>>()
 	return {
 		...actual,
@@ -32,7 +32,7 @@ vi.mock('@/lib/logger', () => ({
 
 const USER = '11111111-1111-4111-8111-111111111111'
 
-import { forecastingProfiles, userProfiles, users } from '@budget-planner/db'
+import { forecastingProfiles, userProfiles, users } from '@budget-planner/db/schema'
 import { eq } from 'drizzle-orm'
 import { processBatchSync } from '../../api/sync'
 import { createForecastingProfile } from '../forecastingProfiles'

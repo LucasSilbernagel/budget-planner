@@ -3,7 +3,7 @@
  * so the schema's sandbox default can't point a real checkout at the wrong account.
  */
 
-import { assertPaddleProductionConfig, getPaddleConfig } from '@budget-planner/config'
+import { assertPaddleProductionConfig, getPaddleConfig } from '@budget-planner/config/schema'
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 import { logger } from '@/lib/logger'

@@ -3,7 +3,7 @@ import {
 	resetConfig,
 	SESSION_SECRET_MIN_DISTINCT_CHARS,
 	SESSION_SECRET_MIN_LENGTH,
-} from '@budget-planner/config'
+} from '@budget-planner/config/schema'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 afterEach(() => {

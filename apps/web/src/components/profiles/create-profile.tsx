@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useProfileManager, useProfiles } from '@/hooks/useActiveProfile'
+import { useProfileManager } from '@/hooks/useActiveProfile'
 import { DEFAULT_PROFILE_ICON, isProfileIcon } from '@/lib/profile-appearance'
+import { useProfiles } from '@/stores/profileStore'
 import { Modal } from '../ui/Modal'
 import { EMPTY_PROFILE_FORM, type ProfileFormState, validateProfileForm } from './profile-form'
 import { ProfileIconPicker } from './profile-icon-picker'

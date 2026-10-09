@@ -3,7 +3,7 @@
  * Imports no store: the retirement store imports this, and a cycle deadlocks concurrent imports.
  */
 
-import type { SyncOperation } from '@budget-planner/core'
+import type { SyncOperation } from '@budget-planner/core/sync/types'
 import { coerceRetirementPlan, type RetirementPlan } from '../retirement-plan'
 import { enqueueCreate, enqueueUpdate, getSyncSessionUserId } from './syncBridge'
 

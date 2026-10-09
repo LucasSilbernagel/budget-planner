@@ -3,12 +3,11 @@
  * params survive client-side navigation.
  */
 
+import { type ClientMetadata, parseMetadataFromUrl } from '@budget-planner/core/analytics/metadata'
 import {
 	type AnalyticsService,
-	type ClientMetadata,
 	createAnalyticsService,
-	parseMetadataFromUrl,
-} from '@budget-planner/core'
+} from '@budget-planner/core/analytics/service'
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from 'react'
 
 type MetadataContextValue = {

@@ -1,4 +1,4 @@
-import type { ClientProfile } from '@/hooks/useActiveProfile'
+import type { ClientProfile } from '@/stores/profileStore'
 
 export type ProfileFormState = {
 	name: string

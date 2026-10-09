@@ -10,10 +10,8 @@ const holder = vi.hoisted(() => ({ db: null as unknown }))
 
 // The real package entry refuses to load under jsdom (it has a `window`), so
 // mock it from the schema module alone.
-vi.mock('@budget-planner/db', async () => {
-	const actual = await vi.importActual<Record<string, unknown>>(
-		'../../../../../../packages/db/src/schema'
-	)
+vi.mock('@budget-planner/db/client', async (importOriginal) => {
+	const actual = await importOriginal<Record<string, unknown>>()
 	return {
 		...actual,
 		get db() {
@@ -35,7 +33,7 @@ vi.mock('@/server/api/auth/paddle', () => ({
 	})),
 }))
 
-import { users } from '@budget-planner/db'
+import { users } from '@budget-planner/db/schema'
 import { JSDOM } from 'jsdom'
 import { POST as batchPOST } from '@/routes/api/sync/batch'
 import { GET as changesGET } from '@/routes/api/sync/changes'

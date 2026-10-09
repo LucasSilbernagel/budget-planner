@@ -3,7 +3,7 @@
  * One entry per refused row; a later different outcome replaces it, moved to the end to be re-announced.
  */
 
-import type { SyncEntityType, SyncOperationType } from '@budget-planner/core/sync'
+import type { SyncEntityType, SyncOperationType } from '@budget-planner/core/sync/types'
 import { create } from 'zustand'
 
 export type RefusalOutcome =

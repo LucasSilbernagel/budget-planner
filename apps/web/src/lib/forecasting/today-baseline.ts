@@ -7,7 +7,7 @@ import {
 	type ForecastingScenario,
 	isValidForecastYears,
 	type YearlyForecast,
-} from '@budget-planner/core'
+} from '@budget-planner/core/finance/forecasting'
 
 const FLAT: ForecastingScenario = {
 	name: 'Today',

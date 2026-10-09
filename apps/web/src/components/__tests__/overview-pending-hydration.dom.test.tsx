@@ -13,8 +13,11 @@ vi.mock('../../hooks/usePremiumAccess', () => ({
 	usePremiumAccess: () => usePremiumAccess(),
 }))
 
-import { useBalanceStore, useExpenseStore, useIncomeStore, useSavingsStore } from '../../stores'
+import { useBalanceStore } from '../../stores/balanceStore'
 import { useCurrencyStore } from '../../stores/currencyStore'
+import { useExpenseStore } from '../../stores/expenseStore'
+import { useIncomeStore } from '../../stores/incomeStore'
+import { useSavingsStore } from '../../stores/savingsStore'
 import { HomePage } from '../HomePage'
 
 const NOW = '2026-01-01T00:00:00.000Z'

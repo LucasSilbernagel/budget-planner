@@ -1,11 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-	createSynchronizationService,
-	createSyncQueue,
-	type SynchronizationService,
-	SyncStatus,
-} from '../index'
+import { createSyncQueue } from '../queue'
+import { createSynchronizationService, type SynchronizationService } from '../synchronization'
 import type { SyncOperation } from '../types'
+import { SyncStatus } from '../types'
 
 // Unique ids even when fake timers freeze Date.now(): ops sharing an id are the same
 // op to conflict detection, which would mask real conflicts.

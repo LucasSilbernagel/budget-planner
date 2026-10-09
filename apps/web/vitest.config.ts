@@ -17,7 +17,6 @@ export default defineConfig({
 		__APP_VERSION__: JSON.stringify(appVersion),
 	},
 	resolve: {
-		// The explicit `/src` db rule must precede the bare db rule, or it rewrites to `db/src/src`.
 		alias: [
 			{
 				find: /^@budget-planner\/core/,
@@ -26,10 +25,6 @@ export default defineConfig({
 			{
 				find: /^@budget-planner\/config/,
 				replacement: resolve(__dirname, '../../packages/config/src'),
-			},
-			{
-				find: /^@budget-planner\/db\/src/,
-				replacement: resolve(__dirname, '../../packages/db/src'),
 			},
 			{
 				find: /^@budget-planner\/db/,

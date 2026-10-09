@@ -1,5 +1,6 @@
 import { type AllocationMode, resolveAllocationMode } from '../services/savingsGoals'
-import { calculateNetPeriodIncome, type NormalizableFinancialItem } from './netIncome'
+import { calculateNetPeriodIncome } from './netIncome'
+import type { NormalizableFinancialItem } from './normalization'
 import { normalizeToMonthly } from './normalization'
 
 export type AllocationAccount = {
@@ -10,7 +11,7 @@ export type AllocationAccount = {
 
 // recordedAsExpense can only be user-supplied: same-money and different-money rows are
 // byte-identical, so no heuristic can de-duplicate them.
-export type PoolContributionItem = NormalizableFinancialItem & {
+type PoolContributionItem = NormalizableFinancialItem & {
 	recordedAsExpense?: boolean
 }
 

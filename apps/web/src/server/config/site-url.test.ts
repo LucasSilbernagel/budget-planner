@@ -1,4 +1,4 @@
-import { getSiteUrl, resetConfig } from '@budget-planner/config'
+import { getSiteUrl, resetConfig } from '@budget-planner/config/schema'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 afterEach(() => {

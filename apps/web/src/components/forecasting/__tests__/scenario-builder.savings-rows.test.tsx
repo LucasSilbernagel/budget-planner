@@ -1,6 +1,6 @@
 // Rows only SPLIT savings, so totals and net worth never move: the per-row "After N years" line is the visible outcome.
 
-import { solveAutomaticAllocations } from '@budget-planner/core'
+import { solveAutomaticAllocations } from '@budget-planner/core/finance/savingsAllocation'
 import { fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/test/utils'

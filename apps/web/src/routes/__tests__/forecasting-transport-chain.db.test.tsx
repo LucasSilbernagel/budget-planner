@@ -9,7 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 const holder = vi.hoisted(() => ({ db: null as unknown }))
 
-vi.mock('@budget-planner/db', async (importOriginal) => {
+vi.mock('@budget-planner/db/client', async (importOriginal) => {
 	const actual = await importOriginal<Record<string, unknown>>()
 	return {
 		...actual,
@@ -25,7 +25,7 @@ vi.mock('@/lib/logger', () => ({
 
 vi.mock('@/server/api/auth/paddle', () => ({ getCurrentUserSession: vi.fn() }))
 
-import { forecastingProfiles, userProfiles, users } from '@budget-planner/db'
+import { forecastingProfiles, userProfiles, users } from '@budget-planner/db/schema'
 import { JSDOM } from 'jsdom'
 import { FORECAST_SAVE_VERSION } from '@/lib/forecasting/forecast-version'
 import { GET as meGET } from '@/routes/api/auth/me'

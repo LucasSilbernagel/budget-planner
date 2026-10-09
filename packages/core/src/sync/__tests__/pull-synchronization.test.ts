@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
-import { createSynchronizationService, type SynchronizationService } from '../index'
+import { createSynchronizationService, type SynchronizationService } from '../synchronization'
 import type { FetchServerChangesFn, ServerChange } from '../types'
 
 const testUserId = 'user-abc'

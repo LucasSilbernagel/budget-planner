@@ -1,4 +1,4 @@
-import { currencyDisplayLabel, getSupportedCurrencies } from '@budget-planner/core'
+import { currencyDisplayLabel, getSupportedCurrencies } from '@budget-planner/core/format/currency'
 import { type ChangeEvent, useId } from 'react'
 import { useCurrencyStore } from '../../stores/currencyStore'
 

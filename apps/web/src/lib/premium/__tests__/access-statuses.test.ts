@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { subscriptionStatusEnum } from '@budget-planner/db/src/schema'
+import { subscriptionStatusEnum } from '@budget-planner/db/schema'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import {
 	hasPaidAccess,
@@ -68,7 +68,7 @@ describe('STATUS_ACCESS', () => {
 		]
 		expect(specifiers).toHaveLength(1)
 		expect(source).toMatch(
-			/^import type \{ SubscriptionStatus \} from '@budget-planner\/db\/src\/schema'$/m
+			/^import type \{ SubscriptionStatus \} from '@budget-planner\/db\/schema'$/m
 		)
 	})
 

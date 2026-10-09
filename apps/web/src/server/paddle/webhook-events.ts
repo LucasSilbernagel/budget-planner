@@ -3,8 +3,8 @@
  * the entitlement write's transaction, or a rollback would leave a claim that dismisses the retry.
  */
 
-import type { db } from '@budget-planner/db'
-import { paddleWebhookEvents } from '@budget-planner/db/src/schema'
+import type { db } from '@budget-planner/db/client'
+import { paddleWebhookEvents } from '@budget-planner/db/schema'
 import { logger } from '@/lib/logger'
 
 /** Derived from the client so it can't drift when the query builder changes shape. */

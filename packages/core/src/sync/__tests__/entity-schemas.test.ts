@@ -1,7 +1,7 @@
 // Fixtures are whole pulled rows after JSON transport (ISO string dates, nullable columns
 // as null): a fixture that isn't production-shaped proves nothing.
 
-import { currencyEnum } from '@budget-planner/db'
+import { currencyEnum } from '@budget-planner/db/schema'
 import { describe, expect, it } from 'vitest'
 import {
 	balanceTrackingSchema,

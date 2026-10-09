@@ -3,8 +3,9 @@
 import { act, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { barDomainTicks } from '../../../lib/chart-axis'
-import { useExpenseStore, useIncomeStore } from '../../../stores'
 import { type ClientCategory, useCategoryStore } from '../../../stores/categoryStore'
+import { useExpenseStore } from '../../../stores/expenseStore'
+import { useIncomeStore } from '../../../stores/incomeStore'
 import { useOverviewDurationStore } from '../../../stores/overviewDurationStore'
 import { CategoryBreakdown } from '../CategoryBreakdown'
 

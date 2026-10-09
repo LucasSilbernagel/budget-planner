@@ -3,7 +3,7 @@
  * so callers must not pre-convert.
  */
 
-import { denormalizeFromMonthly } from '@budget-planner/core'
+import { denormalizeFromMonthly } from '@budget-planner/core/finance/normalization'
 import type React from 'react'
 import { useStoresHydrated } from '../../hooks/useStoresHydrated'
 import { useFormattedAmount } from '../../stores/currencyStore'

@@ -1,4 +1,4 @@
-import type { CategoryKind } from '@budget-planner/db'
+import type { CategoryKind } from '@budget-planner/db/schema'
 import { useMemo } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'

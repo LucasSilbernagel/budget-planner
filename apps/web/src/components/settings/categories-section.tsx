@@ -1,5 +1,5 @@
 import type React from 'react'
-import { PremiumFeatureGate } from '../premium'
+import { PremiumFeatureGate } from '../premium/PremiumFeatureGate'
 
 function CategoriesFeatureLabel(): React.ReactElement {
 	return (

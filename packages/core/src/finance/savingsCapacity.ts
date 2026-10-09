@@ -1,8 +1,5 @@
-import {
-	calculateGrossPeriodIncome,
-	calculateNetPeriodIncome,
-	type NormalizableFinancialItem,
-} from './netIncome'
+import { calculateGrossPeriodIncome, calculateNetPeriodIncome } from './netIncome'
+import type { NormalizableFinancialItem } from './normalization'
 
 // Equals expenses / income, as specified, despite the name.
 export function calculateSavingsCapacityPercentage(

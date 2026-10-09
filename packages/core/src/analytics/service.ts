@@ -3,11 +3,11 @@
 
 import type { ClientMetadata } from './metadata'
 
-export type AnalyticsPropertyValue = string | number | boolean
+type AnalyticsPropertyValue = string | number | boolean
 
 export type AnalyticsEventProperties = Record<string, AnalyticsPropertyValue>
 
-export type AnalyticsEvent = {
+type AnalyticsEvent = {
 	name: string
 	metadata: ClientMetadata
 	properties: AnalyticsEventProperties

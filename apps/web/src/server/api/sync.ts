@@ -1,19 +1,22 @@
 import { FINANCE_TYPES } from '@budget-planner/core/services/balanceTracking'
-import type { ServerChange, SyncOperation, SyncStatus } from '@budget-planner/core/sync'
-import { SyncStatus as SyncStatusEnum } from '@budget-planner/core/sync'
-import { retirementPlanSyncSchema, SYNC_CURRENCIES } from '@budget-planner/core/sync/types'
-import type { User } from '@budget-planner/db'
+import type { ServerChange, SyncOperation, SyncStatus } from '@budget-planner/core/sync/types'
+import {
+	retirementPlanSyncSchema,
+	SYNC_CURRENCIES,
+	SyncStatus as SyncStatusEnum,
+} from '@budget-planner/core/sync/types'
+import { db } from '@budget-planner/db/client'
+import type { User } from '@budget-planner/db/schema'
 import {
 	balanceTracking,
 	categories,
-	db,
 	expenses,
 	forecastingProfiles,
 	incomeSources,
 	retirementPlans,
 	savingsGoals,
 	userProfiles,
-} from '@budget-planner/db'
+} from '@budget-planner/db/schema'
 import { and, asc, eq, gt } from 'drizzle-orm'
 import { z } from 'zod'
 import { logger } from '@/lib/logger'

@@ -4,7 +4,7 @@
  */
 
 import { readFileSync } from 'node:fs'
-import { balanceTracking, expenses } from '@budget-planner/db'
+import { balanceTracking, expenses } from '@budget-planner/db/schema'
 import { PGlite } from '@electric-sql/pglite'
 import { and, eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/pglite'

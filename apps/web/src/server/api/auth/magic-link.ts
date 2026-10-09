@@ -1,5 +1,5 @@
-import { db } from '@budget-planner/db'
-import { users } from '@budget-planner/db/src/schema'
+import { db } from '@budget-planner/db/client'
+import { users } from '@budget-planner/db/schema'
 import { and, eq, sql } from 'drizzle-orm'
 import { sendMagicLinkEmail } from '@/server/email/mailer'
 import { isValidEmail, normalizeEmail } from './email'

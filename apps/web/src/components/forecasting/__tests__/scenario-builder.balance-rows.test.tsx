@@ -9,8 +9,8 @@ import { useSavingsStore } from '../../../stores/savingsStore'
 import { ScenarioBuilder } from '../scenario-builder'
 
 const engineRows = vi.hoisted(() => [] as unknown[][])
-vi.mock('@budget-planner/core', async (importOriginal) => {
-	const real = await importOriginal<typeof import('@budget-planner/core')>()
+vi.mock('@budget-planner/core/finance/forecasting', async (importOriginal) => {
+	const real = await importOriginal<typeof import('@budget-planner/core/finance/forecasting')>()
 	return {
 		...real,
 		calculateFinancialForecast: (...args: Parameters<typeof real.calculateFinancialForecast>) => {

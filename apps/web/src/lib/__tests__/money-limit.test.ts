@@ -1,4 +1,4 @@
-import { MAX_MONEY_CENTS } from '@budget-planner/core'
+import { MAX_MONEY_CENTS } from '@budget-planner/core/finance/money-limits'
 import { describe, expect, it } from 'vitest'
 import { exceedsMoneyLimit, moneyLimitMessage } from '../money-limit'
 

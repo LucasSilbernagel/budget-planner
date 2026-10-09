@@ -4,7 +4,7 @@ const { getPaddleConfig, captureError } = vi.hoisted(() => ({
 	getPaddleConfig: vi.fn(),
 	captureError: vi.fn(),
 }))
-vi.mock('@budget-planner/config', () => ({ getPaddleConfig }))
+vi.mock('@budget-planner/config/schema', () => ({ getPaddleConfig }))
 vi.mock('@/lib/logger', () => ({
 	logger: { warn: vi.fn(), error: vi.fn() },
 }))

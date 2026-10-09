@@ -3,8 +3,7 @@
  * which mocked-queue tests can't see.
  */
 
-// Barrel, not the `/sync` subpath: the subpath doesn't resolve for tsc, so `service` would be `any`.
-import { createSynchronizationService } from '@budget-planner/core'
+import { createSynchronizationService } from '@budget-planner/core/sync/synchronization'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { sendSyncOperation } from '../../../features/api/client'
 

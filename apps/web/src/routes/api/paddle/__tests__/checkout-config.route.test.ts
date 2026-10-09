@@ -1,4 +1,4 @@
-import { resetConfig } from '@budget-planner/config'
+import { resetConfig } from '@budget-planner/config/schema'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { getCurrentUserSession } = vi.hoisted(() => ({ getCurrentUserSession: vi.fn() }))

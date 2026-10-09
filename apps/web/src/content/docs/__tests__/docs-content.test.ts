@@ -1,9 +1,9 @@
+import { calculateFinancialForecast } from '@budget-planner/core/finance/forecasting'
 import {
-	calculateFinancialForecast,
 	calculateTotalMonthlyNormalized,
 	denormalizeFromMonthly,
 	normalizeToMonthly,
-} from '@budget-planner/core/finance'
+} from '@budget-planner/core/finance/normalization'
 import { describe, expect, it } from 'vitest'
 import { DOC_PAGES, getDocPage } from '../index'
 

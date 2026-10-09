@@ -3,7 +3,7 @@
  * assert what a consumer reads, after first asserting the raw array really is out of order.
  */
 
-import type { ServerChange } from '@budget-planner/core/sync'
+import type { ServerChange } from '@budget-planner/core/sync/types'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ProfileList } from '@/components/profiles/profile-list'
 import { useProfileManager } from '@/hooks/useActiveProfile'

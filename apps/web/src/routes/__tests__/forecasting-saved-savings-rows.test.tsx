@@ -1,4 +1,4 @@
-import { calculateFinancialForecast as realForecast } from '@budget-planner/core'
+import { calculateFinancialForecast as realForecast } from '@budget-planner/core/finance/forecasting'
 import { fireEvent, waitFor } from '@testing-library/react'
 import type React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -12,13 +12,17 @@ import { Route } from '../forecasting'
 const engineCalls = vi.hoisted(
 	() =>
 		[] as Array<{
-			data: Parameters<typeof import('@budget-planner/core').calculateFinancialForecast>[0]
-			result: ReturnType<typeof import('@budget-planner/core').calculateFinancialForecast>
+			data: Parameters<
+				typeof import('@budget-planner/core/finance/forecasting').calculateFinancialForecast
+			>[0]
+			result: ReturnType<
+				typeof import('@budget-planner/core/finance/forecasting').calculateFinancialForecast
+			>
 		}>
 )
 
-vi.mock('@budget-planner/core', async (importOriginal) => {
-	const real = await importOriginal<typeof import('@budget-planner/core')>()
+vi.mock('@budget-planner/core/finance/forecasting', async (importOriginal) => {
+	const real = await importOriginal<typeof import('@budget-planner/core/finance/forecasting')>()
 	return {
 		...real,
 		calculateFinancialForecast: (

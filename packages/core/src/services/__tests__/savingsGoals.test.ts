@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { calculateProgress } from '../../utils/savingsGoalCalculations'
 import {
 	type ClientNewSavingsGoal,
 	type ClientSavingsGoal,
-	calculateProgress,
 	filterSavingsGoals,
 	generateSavingsGoalTempId,
 	getStatusFromProgress,

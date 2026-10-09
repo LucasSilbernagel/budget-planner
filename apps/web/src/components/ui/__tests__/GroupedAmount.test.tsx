@@ -2,8 +2,8 @@ import {
 	CONSOLIDATED_CURRENCIES,
 	formatCurrency,
 	getSupportedCurrencies,
-	localeForCurrency,
-} from '@budget-planner/core'
+} from '@budget-planner/core/format/currency'
+import { localeForCurrency } from '@budget-planner/core/format/currency-locale'
 import { render } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { useCurrencyStore } from '../../../stores/currencyStore'

@@ -1,4 +1,4 @@
-import type { Frequency } from '@budget-planner/core/finance'
+import type { Frequency } from '@budget-planner/core/finance/normalization'
 import { isKnownFrequency } from '../readable-rows'
 
 export type InvestmentContributionItem = {

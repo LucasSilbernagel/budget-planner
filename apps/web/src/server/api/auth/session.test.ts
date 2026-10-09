@@ -1,4 +1,4 @@
-import { resetConfig } from '@budget-planner/config'
+import { resetConfig } from '@budget-planner/config/schema'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { signSession, verifySession } from './session'
 
@@ -12,8 +12,8 @@ function mockUserLookup(result: unknown[]): void {
 	limitMock.mockResolvedValue(result)
 }
 
-vi.mock('@budget-planner/db', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('@budget-planner/db')>()
+vi.mock('@budget-planner/db/client', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('@budget-planner/db/client')>()
 	const chain = {
 		from: vi.fn(() => chain),
 		where: vi.fn(() => chain),

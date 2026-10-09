@@ -3,8 +3,8 @@ import {
 	type ForecastingResult,
 	type ForecastingScenario,
 	isValidForecastYears,
-} from '@budget-planner/core'
-import type { Frequency } from '@budget-planner/core/finance'
+} from '@budget-planner/core/finance/forecasting'
+import type { Frequency } from '@budget-planner/core/finance/normalization'
 import { createFileRoute } from '@tanstack/react-router'
 import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'

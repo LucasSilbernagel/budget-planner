@@ -23,8 +23,8 @@ const {
 	dbHasUser: { value: true },
 }))
 
-vi.mock('@budget-planner/config', () => ({ getPaddleConfig, assertPaddleProductionConfig }))
-vi.mock('@budget-planner/db', () => ({
+vi.mock('@budget-planner/config/schema', () => ({ getPaddleConfig, assertPaddleProductionConfig }))
+vi.mock('@budget-planner/db/client', () => ({
 	// `select` backs the pre-transaction existence check that decides whether email needs resolving.
 	db: {
 		transaction,
@@ -36,9 +36,9 @@ vi.mock('@budget-planner/db', () => ({
 			}),
 		}),
 	},
-	currencyEnum: { enumValues: ['NONE', 'USD', 'EUR'] },
 }))
-vi.mock('@budget-planner/db/src/schema', () => ({
+vi.mock('@budget-planner/db/schema', () => ({
+	currencyEnum: { enumValues: ['NONE', 'USD', 'EUR'] },
 	users: {
 		paddleId: 'paddleId',
 		id: 'id',

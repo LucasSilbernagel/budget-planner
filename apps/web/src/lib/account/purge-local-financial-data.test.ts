@@ -59,7 +59,7 @@ vi.mock('@/stores/categoryStore', () => ({
 		persist: { clearStorage: h.categoryClear },
 	},
 }))
-vi.mock('@budget-planner/core/sync', () => ({ createSyncQueue: h.createSyncQueue }))
+vi.mock('@budget-planner/core/sync/queue', () => ({ createSyncQueue: h.createSyncQueue }))
 
 import { registerSyncPurgeHandle } from '@/lib/sync/purgeHandle'
 import {
