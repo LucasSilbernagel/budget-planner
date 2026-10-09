@@ -2,20 +2,13 @@ import type { FinanceType } from '@budget-planner/db/schema'
 import { MAX_MONEY_CENTS } from '../finance/money-limits'
 import { type Frequency, normalizeToAnnual, normalizeToMonthly } from '../finance/normalization'
 import { calculateDebtMetrics, type DebtSubType } from '../utils/balanceCalculations'
+import type { SameMembers } from '../utils/enum-parity'
 import { generateUuid } from '../utils/uuid'
 
-// Restated: core takes only types from @budget-planner/db. `_FinanceTypeCoverage` keeps the two in sync.
-export const FINANCE_TYPES = [
-	'investment',
-	'debt',
-	'asset',
-] as const satisfies readonly FinanceType[]
+export const FINANCE_TYPES = ['investment', 'debt', 'asset'] as const
 
-// `satisfies` catches misspelled members; this Exclude catches omitted ones.
-type _FinanceTypeCoverage =
-	Exclude<FinanceType, (typeof FINANCE_TYPES)[number]> extends never ? true : never
-const _financeTypeCoverage: _FinanceTypeCoverage = true
-void _financeTypeCoverage
+const _financeTypeParity: SameMembers<(typeof FINANCE_TYPES)[number], FinanceType> = true
+void _financeTypeParity
 
 export type ClientBalanceTracking = {
 	id: string

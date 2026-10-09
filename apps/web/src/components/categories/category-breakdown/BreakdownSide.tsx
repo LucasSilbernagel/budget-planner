@@ -1,4 +1,5 @@
 import type { CategoryBreakdownRow } from '@budget-planner/core/finance/categoryBreakdown'
+import type { CategoryKind } from '@budget-planner/core/finance/categoryKind'
 import { generateColorMap } from '@budget-planner/core/finance/visualization'
 import { type ReactElement, useId } from 'react'
 import { Card } from '@/components/ui/Card'
@@ -8,7 +9,7 @@ import { BreakdownBarChart } from './BreakdownBarChart'
 import { rowKey } from './breakdown-rows'
 
 type BreakdownSideProps = {
-	side: 'income' | 'expense'
+	side: CategoryKind
 	title: string
 	emptyLabel: string
 	rows: CategoryBreakdownRow[]

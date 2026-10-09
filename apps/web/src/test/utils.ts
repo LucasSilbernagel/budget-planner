@@ -1,3 +1,4 @@
+import type { Frequency } from '@budget-planner/core/finance/normalization'
 /// <reference path="./jest-dom.d.ts" />
 
 import {
@@ -30,8 +31,6 @@ export function renderWithRouter(
 	})
 	return render(createElement(RouterProvider, { router }))
 }
-
-export type Frequency = 'weekly' | 'biweekly' | 'monthly' | 'annually'
 
 export type IncomeSourceLike = {
 	id: string

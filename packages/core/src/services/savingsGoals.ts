@@ -1,4 +1,6 @@
+import type { AllocationMode as DbAllocationMode } from '@budget-planner/db/schema'
 import { MAX_MONEY_CENTS } from '../finance/money-limits'
+import type { SameMembers } from '../utils/enum-parity'
 import { calculateProgress as calculateSavingsGoalProgress } from '../utils/savingsGoalCalculations'
 import { generateUuid } from '../utils/uuid'
 
@@ -33,8 +35,13 @@ export type ClientNewSavingsGoal = {
 
 export type SavingsGoalStatus = 'on-track' | 'behind' | 'complete' | 'not-started' | 'account'
 
+export const ALLOCATION_MODES = ['manual', 'automatic'] as const
+
 /** 'automatic' takes an even share of the leftover pool; any stored `monthlyAllocation` is ignored. */
-export type AllocationMode = 'manual' | 'automatic'
+export type AllocationMode = (typeof ALLOCATION_MODES)[number]
+
+const _allocationModeParity: SameMembers<AllocationMode, DbAllocationMode> = true
+void _allocationModeParity
 
 export function resolveAllocationMode(goal: { allocationMode?: AllocationMode }): AllocationMode {
 	return goal.allocationMode ?? 'automatic'

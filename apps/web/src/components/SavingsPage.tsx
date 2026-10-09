@@ -2,7 +2,7 @@ import {
 	type ContributionDuplicateCandidate,
 	findContributionDuplicateCandidates,
 } from '@budget-planner/core/finance/contributionDuplicates'
-import { normalizeToMonthly } from '@budget-planner/core/finance/normalization'
+import { FREQUENCIES, normalizeToMonthly } from '@budget-planner/core/finance/normalization'
 import { solveAutomaticAllocations } from '@budget-planner/core/finance/savingsAllocation'
 import {
 	currencySymbol,
@@ -73,7 +73,7 @@ import { TableSortControl } from './ui/TableSortControl'
 
 // A persisted frequency can be a corrupt non-null string and the normalizer throws on it,
 // so unknown values are coerced to 'monthly'.
-const KNOWN_FREQUENCIES = new Set(['weekly', 'biweekly', 'monthly', 'annually'])
+const KNOWN_FREQUENCIES = new Set<string>(FREQUENCIES)
 
 const SORT_COLUMN_LABELS = {
 	name: 'Name',

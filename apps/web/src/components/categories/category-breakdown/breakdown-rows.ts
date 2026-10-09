@@ -2,11 +2,9 @@ import type {
 	CategoryBreakdownItem,
 	CategoryBreakdownRow,
 } from '@budget-planner/core/finance/categoryBreakdown'
-import type { Frequency } from '@budget-planner/core/finance/normalization'
+import { FREQUENCIES } from '@budget-planner/core/finance/normalization'
 import type { useExpenses } from '../../../stores/expenseStore'
 import type { useIncomeSources } from '../../../stores/incomeStore'
-
-const FREQUENCIES = ['weekly', 'biweekly', 'monthly', 'annually'] satisfies readonly Frequency[]
 
 type IncomeRow = ReturnType<typeof useIncomeSources>[number]
 type ExpenseRow = ReturnType<typeof useExpenses>[number]

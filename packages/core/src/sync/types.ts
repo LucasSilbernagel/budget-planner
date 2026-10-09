@@ -1,7 +1,10 @@
 import { z } from 'zod'
+import { CATEGORY_KINDS } from '../finance/categoryKind'
 import { MAX_MONEY_CENTS } from '../finance/money-limits'
+import { FREQUENCIES } from '../finance/normalization'
 import { INCOME_BASES, RETIREMENT_MODELS } from '../finance/retirement'
 import { FINANCE_TYPES } from '../services/balanceTracking'
+import { ALLOCATION_MODES } from '../services/savingsGoals'
 
 // Money is stored as int32 cents; refuse what the DB can't store before it queues and retries forever.
 // Import PG_INT32_MAX rather than re-declaring the literal, so producers can't drift from the gate.
@@ -39,21 +42,21 @@ export const SYNC_CURRENCIES = [
 export const incomeSourceSchema = z.object({
 	name: z.string().min(1).max(255),
 	amount: z.number().int(),
-	frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']),
+	frequency: z.enum(FREQUENCIES),
 	userId: z.string().uuid(),
 })
 
 export const expenseSchema = z.object({
 	name: z.string().min(1).max(255),
 	amount: z.number().int(),
-	frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']),
+	frequency: z.enum(FREQUENCIES),
 	endsBeforeRetirement: z.boolean(),
 	userId: z.string().uuid(),
 })
 
 export const categorySchema = z.object({
 	name: z.string().min(1).max(255),
-	kind: z.enum(['income', 'expense']),
+	kind: z.enum(CATEGORY_KINDS),
 	userId: z.string().uuid(),
 })
 
@@ -66,7 +69,7 @@ export const savingsGoalSchema = z.object({
 	currentBalance: z.number().int().min(0).max(MAX_MONEY_CENTS),
 	// `allocationMode` is optional here; the server gate defaults it on ingest.
 	monthlyAllocation: z.number().int().min(0).max(MAX_MONEY_CENTS).nullable().optional(),
-	allocationMode: z.enum(['manual', 'automatic']),
+	allocationMode: z.enum(ALLOCATION_MODES),
 	userId: z.string().uuid(),
 })
 
@@ -76,7 +79,7 @@ export const balanceTrackingSchema = z.object({
 	// May be negative (debt balances).
 	currentBalance: z.number().int().min(PG_INT32_MIN).max(MAX_MONEY_CENTS),
 	monthlyContribution: z.number().int().min(0).max(MAX_MONEY_CENTS),
-	frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']),
+	frequency: z.enum(FREQUENCIES),
 	// The contribution is already recorded as an expense, so the savings pool must not subtract it twice.
 	contributionRecordedAsExpense: z.boolean(),
 	// `paymentExpenseId` is deliberately undeclared: this gate is verdict-only, so the key still reaches
@@ -146,7 +149,7 @@ const retirementPlanRowSchema = z.object({
 export const syncOperationDataSchema = z.object({
 	name: z.string().min(1).max(255).optional(),
 	amount: z.number().int().positive().max(MAX_MONEY_CENTS).optional(),
-	frequency: z.enum(['weekly', 'biweekly', 'monthly', 'annually']).optional(),
+	frequency: z.enum(FREQUENCIES).optional(),
 	// Must allow null (a savings account without a target).
 	targetAmount: z.number().int().positive().max(MAX_MONEY_CENTS).nullable().optional(),
 	currentBalance: z.number().int().min(PG_INT32_MIN).max(MAX_MONEY_CENTS).optional(),
@@ -157,11 +160,11 @@ export const syncOperationDataSchema = z.object({
 	paymentExpenseId: z.string().uuid().nullable().optional(),
 	endsBeforeRetirement: z.boolean().optional(),
 	monthlyAllocation: z.number().int().min(0).max(MAX_MONEY_CENTS).nullable().optional(),
-	allocationMode: z.enum(['manual', 'automatic']).optional(),
+	allocationMode: z.enum(ALLOCATION_MODES).optional(),
 	description: z.string().max(500).optional(),
 	isDefault: z.boolean().optional(),
 	// Nullable: clearing a category sends an explicit null, since updates are partial `.set()`s.
-	kind: z.enum(['income', 'expense']).optional(),
+	kind: z.enum(CATEGORY_KINDS).optional(),
 	categoryId: z.string().uuid().nullable().optional(),
 	sortOrder: z.number().int().min(0).max(PG_INT32_MAX).optional(),
 	currency: z.enum(SYNC_CURRENCIES).optional(),
