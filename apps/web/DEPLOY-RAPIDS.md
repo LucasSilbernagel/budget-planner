@@ -91,7 +91,7 @@ headers (`x-content-type-options`, `x-frame-options`, …) present on responses.
 - **`apps/web/Dockerfile`** — builds the workspace and runs
   `node apps/web/server-entry.mjs`. Build context is the **monorepo root**:
   `docker build -f apps/web/Dockerfile -t budget-planner-web .`
-  The runtime stage is **slim**: `node:24-slim` + a
+  The runtime stage is **slim**: `node:24-slim` (ECR Public mirror) + a
   `pnpm install --prod` of `@budget-planner/web` and `@budget-planner/db` + the
   built `dist/` (with its precompressed `.br`/`.gz` siblings) + the entry files
   + `packages/db`'s migrate payload (`drizzle.config.ts`, `migrations/`, the

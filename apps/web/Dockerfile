@@ -1,8 +1,8 @@
-# syntax=docker/dockerfile:1
 # Build context must be the monorepo root. The registry bills each tag at its full
 # compressed size, so an image must stay <= 112 MB (build-image enforces it).
 
-FROM node:24-slim AS base
+# Docker Hub 429s anonymous pulls from shared CI runner IPs; ECR Public mirrors the official images.
+FROM public.ecr.aws/docker/library/node:24-slim AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
@@ -47,7 +47,7 @@ RUN rm -rf packages/db/src/__tests__
 
 # Not `base`: nothing at runtime runs pnpm. Paths mirror the workspace layout
 # because entry files and pnpm's .bin shims embed them.
-FROM node:24-slim AS runtime
+FROM public.ecr.aws/docker/library/node:24-slim AS runtime
 ENV NODE_ENV=production
 ENV PORT=8080
 ENV HOST=0.0.0.0
