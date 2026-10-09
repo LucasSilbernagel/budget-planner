@@ -2,7 +2,7 @@ import type { LegalPage } from '../../content/legal'
 import { MarkdownRenderer } from '../docs/markdown-renderer'
 import { LegalPageLayout } from './legal-page-layout'
 
-export interface LegalPageViewProps {
+export type LegalPageViewProps = {
 	page: LegalPage
 }
 

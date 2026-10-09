@@ -49,7 +49,7 @@ beforeEach(() => {
 	useIncomeStore.setState({ incomeSources: [] })
 })
 
-describe('incomeStore — getTotalIncome (story 32.1, FR58)', () => {
+describe('incomeStore — getTotalIncome', () => {
 	it('normalizes mixed frequencies to a monthly basis instead of raw-summing', () => {
 		useIncomeStore.setState({ incomeSources: MIXED_INCOME })
 
@@ -96,7 +96,7 @@ describe('incomeStore — getTotalIncome (story 32.1, FR58)', () => {
 	})
 })
 
-describe('incomeStore — corrupt rows are excluded, not thrown on (story 32.1)', () => {
+describe('incomeStore — corrupt rows are excluded, not thrown on', () => {
 	/** core's validateFrequency throws outside the four values, and stored rows are user-editable. */
 	it('does not throw on a corrupt persisted frequency', () => {
 		useIncomeStore.setState({

@@ -36,7 +36,7 @@ const sampleForecast: SavedForecast = {
 	updatedAt: '2026-01-01T00:00:00Z',
 }
 
-describe('ForecastList reload affordance (bug-3 AC-4)', () => {
+describe('ForecastList reload affordance', () => {
 	it('renders an Edit action and calls onLoad with the forecast when provided', () => {
 		const onLoad = vi.fn()
 		render(<ForecastList forecasts={[sampleForecast]} onDelete={vi.fn()} onLoad={onLoad} />)
@@ -76,7 +76,7 @@ describe('ForecastList reload affordance (bug-3 AC-4)', () => {
 	})
 })
 
-describe('the Edit action looks and reads like an edit (story 108.1, AC-3)', () => {
+describe('the Edit action looks and reads like an edit', () => {
 	it('draws the finance tables\' pencil, titled "Edit", and nothing still says Load', () => {
 		render(<ForecastList forecasts={[sampleForecast]} onDelete={vi.fn()} onLoad={vi.fn()} />)
 		const button = screen.getByRole('button', { name: 'Edit Retirement Plan' })
@@ -94,7 +94,7 @@ describe('the Edit action looks and reads like an edit (story 108.1, AC-3)', () 
 	})
 })
 
-describe('Total Growth sign (story forecast-1)', () => {
+describe('Total Growth sign', () => {
 	const negativeGrowth: SavedForecast = {
 		...sampleForecast,
 		id: 'saved-negative',
@@ -124,7 +124,7 @@ describe('Total Growth sign (story forecast-1)', () => {
 	})
 })
 
-describe('secondary text on a selected row (story 115.2)', () => {
+describe('secondary text on a selected row', () => {
 	it('reads .text-body on the selected row’s blue tint, .text-muted otherwise', () => {
 		render(<ForecastList forecasts={[sampleForecast]} onDelete={vi.fn()} onLoad={vi.fn()} />)
 		const lines = () => [screen.getByText('v1'), screen.getByText('+40000.00')]
@@ -141,7 +141,7 @@ describe('secondary text on a selected row (story 115.2)', () => {
 	})
 })
 
-describe('row checkbox selects its row (story 118.1, FR186)', () => {
+describe('row checkbox selects its row', () => {
 	// The row's onClick toggles too, so the checkbox's onClick must stop propagation or one click toggles twice.
 	const second: SavedForecast = { ...sampleForecast, id: 'saved-2', name: 'House Fund' }
 
@@ -210,7 +210,7 @@ describe('row checkbox selects its row (story 118.1, FR186)', () => {
 	})
 })
 
-describe('selection acts only on visible forecasts (story 119.1, FR187)', () => {
+describe('selection acts only on visible forecasts', () => {
 	const forecast = (id: string, name: string): SavedForecast => ({
 		...sampleForecast,
 		id,
@@ -333,7 +333,7 @@ describe('selection acts only on visible forecasts (story 119.1, FR187)', () => 
 	})
 })
 
-describe('My Forecasts sortable headers (story 120.1, FR188)', () => {
+describe('My Forecasts sortable headers', () => {
 	function forecastNamed(name: string, createdAt: string, endingNetWorth: number): SavedForecast {
 		return {
 			...sampleForecast,
@@ -399,7 +399,7 @@ describe('My Forecasts sortable headers (story 120.1, FR188)', () => {
 		expect(screen.getByRole('columnheader', { name: 'Actions' })).not.toHaveAttribute('aria-sort')
 	})
 
-	it('shows the order the arrow claims: ↓ is newest, largest and Z→A first (D1)', async () => {
+	it('shows the order the arrow claims: ↓ is newest, largest and Z→A first', async () => {
 		const user = userEvent.setup()
 		renderList()
 		expect(rowOrder()).toEqual(['Alpha', 'Charlie', 'Bravo'])

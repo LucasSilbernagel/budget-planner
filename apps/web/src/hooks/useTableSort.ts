@@ -17,7 +17,7 @@ import {
  * Apply per table where rows are mapped, never at page level. Callers must memoise `extractors` with
  * non-row inputs (category names, solver pool) in deps, or the table sorts by stale keys.
  */
-export interface TableSort<Row, Key extends string> {
+export type TableSort<Row, Key extends string> = {
 	state: SortState<Key> | null
 	rows: readonly Row[]
 	toggle: (key: Key) => void

@@ -70,7 +70,7 @@ beforeEach(() => {
 	useExpenseStore.setState({ expenses: [] })
 })
 
-describe('first visit (AC-2)', () => {
+describe('first visit', () => {
 	it('pre-fills age 35 and life expectancy 90', () => {
 		renderWithProviders(<RetirementAccumulationPlanner />)
 		expect(screen.getByLabelText('Current Age')).toHaveValue(35)
@@ -84,7 +84,7 @@ describe('first visit (AC-2)', () => {
 	})
 })
 
-describe('the plan outlives the component (AC-1)', () => {
+describe('the plan outlives the component', () => {
 	it('keeps every typed field across an unmount and remount', async () => {
 		const user = userEvent.setup()
 		const first = renderWithProviders(<RetirementAccumulationPlanner />)
@@ -117,7 +117,7 @@ describe('the plan outlives the component (AC-1)', () => {
 		expect(screen.getByRole('radio', { name: /perpetual/i })).toBeChecked()
 	})
 
-	it('restores a comma rate as typed and solves it as the point rate (story 110.1)', async () => {
+	it('restores a comma rate as typed and solves it as the point rate', async () => {
 		useBalanceStore.setState({ entries: [investmentRow(1_000_000_00, 150_000)] })
 		seedStoredPlan({ ...SAVED_PLAN, annualReturnInput: '7.5', postRetirementReturnInput: '3.25' })
 		await rehydrate()
@@ -136,7 +136,7 @@ describe('the plan outlives the component (AC-1)', () => {
 	})
 })
 
-describe('the income prefill must not clobber a restored plan (AC-1)', () => {
+describe('the income prefill must not clobber a restored plan', () => {
 	it('leaves a restored desired income alone WITH income rows present', async () => {
 		// Without income rows the prefill is null and the seeding effect returns early,
 		// so this would pass with no guard at all.
@@ -169,7 +169,7 @@ describe('the income prefill must not clobber a restored plan (AC-1)', () => {
 	})
 })
 
-describe('a deliberately cleared field stays cleared (AC-4)', () => {
+describe('a deliberately cleared field stays cleared', () => {
 	it('does not re-default an age the user emptied, across a remount', async () => {
 		const user = userEvent.setup()
 		const first = renderWithProviders(<RetirementAccumulationPlanner />)
@@ -204,7 +204,7 @@ describe('a deliberately cleared field stays cleared (AC-4)', () => {
 	})
 })
 
-describe('the mirror hint matches the restored plan (AC-3)', () => {
+describe('the mirror hint matches the restored plan', () => {
 	it('drops the "follows the rate above" clause for a restored touched plan', async () => {
 		seedStoredPlan(SAVED_PLAN)
 		await rehydrate()
@@ -240,7 +240,7 @@ describe('the mirror hint matches the restored plan (AC-3)', () => {
 	})
 })
 
-describe('the derived figures still derive (AC-8)', () => {
+describe('the derived figures still derive', () => {
 	it('is absent from the persisted payload', async () => {
 		useBalanceStore.setState({ entries: [investmentRow(1_000_000_00)] })
 		renderWithProviders(<RetirementAccumulationPlanner />)
@@ -279,7 +279,7 @@ describe('the derived figures still derive (AC-8)', () => {
 	})
 })
 
-describe('corrupt payloads (AC-5)', () => {
+describe('corrupt payloads', () => {
 	it('renders the planner on defaults without throwing', async () => {
 		seedStoredPlan({ currentAgeInput: 42, lifeExpectancyInput: null, model: 'preserve' })
 		await rehydrate()
@@ -303,7 +303,7 @@ describe('corrupt payloads (AC-5)', () => {
 	})
 })
 
-describe('the income basis and the seeded figure stay in step (code review)', () => {
+describe('the income basis and the seeded figure stay in step', () => {
 	it('re-seeds an UNTOUCHED figure when the basis changes, so it round-trips', async () => {
 		const user = userEvent.setup()
 		useIncomeStore.setState({ incomeSources: [incomeRow(200_000)] })
@@ -331,7 +331,7 @@ describe('the income basis and the seeded figure stay in step (code review)', ()
 	})
 })
 
-describe('a persisted money string survives a currency change (code review, HIGH)', () => {
+describe('a persisted money string survives a currency change', () => {
 	it('re-expresses an authored figure instead of reinterpreting it', async () => {
 		// '55.000,00' authored under de-DE and reparsed under en-US yields 5500 cents.
 		seedStoredPlan({
@@ -392,7 +392,7 @@ describe('a persisted money string survives a currency change (code review, HIGH
 	})
 })
 
-describe('the authored latch is not tripped by a rejected keystroke (code review)', () => {
+describe('the authored latch is not tripped by a rejected keystroke', () => {
 	it('keeps seeding after a character the sanitizer throws away', async () => {
 		const user = userEvent.setup()
 		useIncomeStore.setState({ incomeSources: [incomeRow(200_000)] })
@@ -405,7 +405,7 @@ describe('the authored latch is not tripped by a rejected keystroke (code review
 	})
 })
 
-describe('an UNTOUCHED seeded figure written under another locale (story 99.3: a plan pulled from another device)', () => {
+describe('an UNTOUCHED seeded figure written under another locale (a plan pulled from another device)', () => {
 	it('is re-expressed in this device’s locale even with no income to seed from', async () => {
 		// Read raw under en-US, '66.000,00' is 6,600 cents: a 1000x error.
 		seedStoredPlan({

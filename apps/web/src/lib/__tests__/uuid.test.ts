@@ -13,7 +13,7 @@ describe('generateUUID', () => {
 	})
 })
 
-describe('withUuidIds (Story 5-14 review P2 — legacy localStorage migration)', () => {
+describe('withUuidIds (legacy localStorage migration)', () => {
 	it('reassigns a fresh uuid to items with a legacy numeric id', () => {
 		const migrated = withUuidIds([
 			{ id: -10001, name: 'old income' },

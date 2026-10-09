@@ -83,7 +83,7 @@ async function main(): Promise<number> {
 	if (!isRelaxedDbEnv(nodeEnv)) {
 		if (!isEuSovereignDbHost(host)) {
 			console.error(
-				`[migrate-preflight] Refusing to migrate: "${host}" is not a DanubeData EU host (NFR1/NFR2, CLOUD Act immunity). Expected e.g. *.danubedata.ro.`
+				`[migrate-preflight] Refusing to migrate: "${host}" is not a DanubeData EU host (CLOUD Act immunity). Expected e.g. *.danubedata.ro.`
 			)
 			return 1
 		}
@@ -91,7 +91,7 @@ async function main(): Promise<number> {
 		// `buildMigrationCredentials` enforces this too; checking here gives a readable message.
 		if (!isInClusterDbHost(host)) {
 			console.error(
-				`[migrate-preflight] Refusing to migrate over the public endpoint "${host}". Migrations run in-cluster only, over internal DNS (ADR-001; public-DNS window retired by Story 5.18).`
+				`[migrate-preflight] Refusing to migrate over the public endpoint "${host}". Migrations run in-cluster only, over internal DNS (the public-DNS exception is retired).`
 			)
 			return 1
 		}

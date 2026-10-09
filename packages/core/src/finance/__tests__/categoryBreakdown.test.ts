@@ -10,7 +10,7 @@ const NAMES = new Map<string, string>([
 const OPTIONS = { cadence: 'monthly' as const, uncategorizedLabel: 'Uncategorized' }
 
 describe('buildCategoryBreakdown', () => {
-	describe('grouping and frequency normalization (AC-1)', () => {
+	describe('grouping and frequency normalization', () => {
 		it('merges two items sharing a categoryId into one frequency-normalized row', () => {
 			// weekly 10000 → round(43333.33…) = 43333; + monthly 50000 = 93333.
 			const items: CategoryBreakdownItem[] = [
@@ -54,7 +54,7 @@ describe('buildCategoryBreakdown', () => {
 		})
 	})
 
-	describe('cadence (AC-3)', () => {
+	describe('cadence', () => {
 		it('expresses every total at the requested cadence', () => {
 			const items: CategoryBreakdownItem[] = [
 				{ categoryId: 'cat-a', amount: 10000, frequency: 'weekly' },
@@ -72,7 +72,7 @@ describe('buildCategoryBreakdown', () => {
 		})
 	})
 
-	describe('reconciliation (AC-2)', () => {
+	describe('reconciliation', () => {
 		it('reconciles at weekly, where per-bucket rounding is NOT trivially exact', () => {
 			// A non-integral cadence (weekly, biweekly) is what exposes a wrong rounding order.
 			// Per row: round(10000 × 12/52) = 2308; 7 × 2308 = 16156.
@@ -153,7 +153,7 @@ describe('buildCategoryBreakdown', () => {
 		})
 	})
 
-	describe('shares (AC-2)', () => {
+	describe('shares', () => {
 		it('sums same-sign shares to 100%', () => {
 			const items: CategoryBreakdownItem[] = [
 				{ categoryId: 'cat-a', amount: 60000, frequency: 'monthly' },
@@ -225,7 +225,7 @@ describe('buildCategoryBreakdown', () => {
 		})
 	})
 
-	describe('degenerate states (AC-4)', () => {
+	describe('degenerate states', () => {
 		it('returns an empty result for no items', () => {
 			const result = buildCategoryBreakdown([], NAMES, OPTIONS)
 			expect(result.rows).toEqual([])
@@ -383,7 +383,7 @@ describe('buildCategoryBreakdown', () => {
 		})
 	})
 
-	describe('malformed input throws rather than silently dropping data (AC-4 contract)', () => {
+	describe('malformed input throws rather than silently dropping data', () => {
 		it('throws on an unknown frequency', () => {
 			const items = [
 				{ categoryId: 'cat-a', amount: 10000, frequency: 'quarterly' },

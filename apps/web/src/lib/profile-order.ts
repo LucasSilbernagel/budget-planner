@@ -3,7 +3,7 @@
  * Imports nothing: profileStore imports this, and any store import here recreates an import-cycle deadlock.
  */
 
-export interface CreationOrdered {
+export type CreationOrdered = {
 	id?: string
 	createdAt?: string
 }

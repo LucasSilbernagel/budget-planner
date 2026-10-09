@@ -58,7 +58,7 @@ beforeEach(() => {
 	send.mockResolvedValue({ success: true })
 })
 
-describe("uploadMissingProfiles skips another account's profiles (story 86.2, AC 1)", () => {
+describe("uploadMissingProfiles skips another account's profiles", () => {
 	it("uploads this browser's own unsynced profile, and none of A's", async () => {
 		useProfileStore.setState({
 			profiles: [
@@ -80,7 +80,7 @@ describe("uploadMissingProfiles skips another account's profiles (story 86.2, AC
 	})
 })
 
-describe("reconcileActiveProfile never keeps another account's profile active (story 86.2, AC 2)", () => {
+describe("reconcileActiveProfile never keeps another account's profile active", () => {
 	beforeEach(() => {
 		useProfileStore.setState({
 			profiles: [profile(A_MAIN, ACCOUNT_A, true), profile(A_SIDE, ACCOUNT_A, false)],
@@ -144,7 +144,7 @@ describe("reconcileActiveProfile never keeps another account's profile active (s
 	})
 })
 
-describe('the refused-edit path reconciles as the session user too (story 86.2)', () => {
+describe('the refused-edit path reconciles as the session user too', () => {
 	it('a refused profile create is removed and the active profile moves to B’s default', async () => {
 		useProfileStore.setState({
 			profiles: [profile(B_MAIN, ACCOUNT_B, true), profile(LOCAL, 'temp-user', false)],

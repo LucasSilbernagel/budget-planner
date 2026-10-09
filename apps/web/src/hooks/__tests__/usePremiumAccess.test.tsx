@@ -150,7 +150,7 @@ describe('usePremiumAccess — no seed (pre-UX-1 fallback)', () => {
 	})
 
 	it.each(['active', 'lifetime'] as const)(
-		'a %s user with no seed ends with access (story 83.1, FR136 AC-2)',
+		'a %s user with no seed ends with access',
 		async (subscriptionStatus) => {
 			fetchMock.mockResolvedValue(meResponse({ user: { ...PAID_USER, subscriptionStatus } }))
 

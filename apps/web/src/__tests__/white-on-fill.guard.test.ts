@@ -31,7 +31,7 @@ function hits(pattern: RegExp, also?: RegExp): string[] {
 	)
 }
 
-describe('white text on a fill (story 115.1)', () => {
+describe('white text on a fill', () => {
 	it('`.fill-green` is green-700 with white text and no dark variant', () => {
 		const rules = cssRules(GLOBAL_CSS).filter((rule) => rule.selector === '.fill-green')
 		expect(rules).toHaveLength(1)

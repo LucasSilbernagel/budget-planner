@@ -32,7 +32,7 @@ const PROMPT_MESSAGE =
 const META_DESCRIPTION =
 	'Model how a raise, rising bills, a one-off cost, paying down a loan or saving more each month changes your finances over the years ahead — with saved, reloadable scenarios.'
 
-interface MetaEntry {
+type MetaEntry = {
 	title?: string
 	name?: string
 	property?: string
@@ -55,7 +55,7 @@ beforeEach(() => {
 	vi.clearAllMocks()
 })
 
-describe('the /forecasting page intro (57.1, AC-3)', () => {
+describe('the /forecasting page intro', () => {
 	it('names situations the engine can actually model, in both sentences', async () => {
 		mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
 		renderWithRouter(<ForecastingPage />)
@@ -90,7 +90,7 @@ describe('the /forecasting page intro (57.1, AC-3)', () => {
 		expect((tabStrip as HTMLElement).contains(intro)).toBe(false)
 	})
 
-	it('keeps all three tabs but renders none of the old per-tab descriptions (story 95.1, D3)', async () => {
+	it('keeps all three tabs but renders none of the old per-tab descriptions', async () => {
 		mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
 		renderWithRouter(<ForecastingPage />)
 
@@ -137,7 +137,7 @@ describe('the /forecasting page intro (57.1, AC-3)', () => {
 	})
 })
 
-describe('/forecasting landmarks (story 116.1)', () => {
+describe('/forecasting landmarks', () => {
 	it.each([
 		['loading', { isLoading: true }, () => screen.findAllByText(/^loading\.\.\.$/i)],
 		[

@@ -162,7 +162,7 @@ describe('getSyncChanges — the categories block (gate 10)', () => {
 		expect(sqlFragments(orderBy?.arg).join(' ')).toMatch(/\basc\b/i)
 	})
 
-	it('applies the caller-supplied row cap, over-fetched by one (Story 53.1, AC-3)', async () => {
+	it('applies the caller-supplied row cap, over-fetched by one', async () => {
 		await getSyncChanges('u1', null, 500, 'p1')
 
 		// LIMIT is cappedLimit + 1: the extra row lets the per-table boundary trim

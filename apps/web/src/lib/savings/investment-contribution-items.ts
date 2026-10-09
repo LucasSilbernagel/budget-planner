@@ -1,7 +1,7 @@
 import type { Frequency } from '@budget-planner/core/finance'
 import { isKnownFrequency } from '../readable-rows'
 
-export interface InvestmentContributionItem {
+export type InvestmentContributionItem = {
 	id: string
 	name: string
 	amount: number

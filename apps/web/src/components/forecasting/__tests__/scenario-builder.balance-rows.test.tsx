@@ -169,7 +169,7 @@ async function setYears(years: number) {
 	)
 }
 
-describe('rows replace the investments total (AC-1, AC-11)', () => {
+describe('rows replace the investments total', () => {
 	it('lists the active profile investments and debts in store order, with every field; assets (their own section since 114.1) and other profiles are left out', () => {
 		setEntries([
 			entry({ id: 'e-1', name: 'Pension', currentBalance: 1_000_000, monthlyContribution: 5_000 }),
@@ -197,7 +197,7 @@ describe('rows replace the investments total (AC-1, AC-11)', () => {
 		expect(screen.queryByLabelText('Current Investments')).toBeNull()
 	})
 
-	it('carries the heading and the what-if note (copy pin, AC-11)', () => {
+	it('carries the heading and the what-if note (copy pin)', () => {
 		render(<ScenarioBuilder onSave={vi.fn()} />)
 		expect(
 			within(section()).getByRole('heading', { name: 'Investments & Debts' })
@@ -209,7 +209,7 @@ describe('rows replace the investments total (AC-1, AC-11)', () => {
 		).toBeInTheDocument()
 	})
 
-	it('names every control after its row and turns autofill off (AC-15)', () => {
+	it('names every control after its row and turns autofill off', () => {
 		setEntries([
 			entry({ id: 'e-1', name: 'Same', sortOrder: 0 }),
 			entry({ id: 'e-2', name: 'Same', type: 'debt', sortOrder: 1 }),
@@ -236,7 +236,7 @@ describe('rows replace the investments total (AC-1, AC-11)', () => {
 	})
 })
 
-describe('the seed (AC-6)', () => {
+describe('the seed', () => {
 	it('shows each contribution at its own frequency, as /balance does', () => {
 		setEntries([
 			entry({ id: 'e-1', name: 'Weekly', monthlyContribution: 2_500, frequency: 'weekly' }),
@@ -251,7 +251,7 @@ describe('the seed (AC-6)', () => {
 		expect(screen.getByLabelText('Frequency for Odd')).toHaveValue('monthly')
 	})
 
-	it('seeds a negative stored debt as its magnitude, and a negative investment as 0 (D6)', () => {
+	it('seeds a negative stored debt as its magnitude, and a negative investment as 0', () => {
 		setEntries([
 			entry({ id: 'e-1', name: 'Mortgage', type: 'debt', currentBalance: -98_765_432_100 }),
 			entry({ id: 'e-2', name: 'Bad fund', currentBalance: -500 }),
@@ -318,7 +318,7 @@ describe('the seed (AC-6)', () => {
 	})
 })
 
-describe('a debt seeds its payment from its linked expense (story 102.1, AC-10)', () => {
+describe('a debt seeds its payment from its linked expense', () => {
 	it('seeds the linked expense amount at the expense’s own frequency', () => {
 		useExpenseStore.setState({
 			expenses: [expense(15_000, { id: 'exp-car', name: 'Car payment', frequency: 'biweekly' })],
@@ -384,7 +384,7 @@ describe('a debt seeds its payment from its linked expense (story 102.1, AC-10)'
 	})
 })
 
-describe('the linked expense moves into the debt row (story 102.2)', () => {
+describe('the linked expense moves into the debt row', () => {
 	function expenseRowNames(): string[] {
 		const expenses = screen.getByRole('heading', { name: 'Expense Categories' }).closest('section')
 		if (!expenses) throw new Error('no Expense Categories section')
@@ -409,7 +409,7 @@ describe('the linked expense moves into the debt row (story 102.2)', () => {
 		])
 	}
 
-	it('leaves the expense out of the Expenses rows, labels the debt row, keeps its flag off and hidden, and keeps year 1 as it was (AC-1)', async () => {
+	it('leaves the expense out of the Expenses rows, labels the debt row, keeps its flag off and hidden, and keeps year 1 as it was', async () => {
 		linkedFixture()
 		render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResult} />)
 		expect(expenseRowNames()).toEqual(['Rent'])
@@ -424,7 +424,7 @@ describe('the linked expense moves into the debt row (story 102.2)', () => {
 		expect(year1?.expenses).toBe(4_800_000)
 	})
 
-	it('lets one expense pay ONE debt: a second debt linked to it seeds unlinked, so it is never counted twice (AC-8)', () => {
+	it('lets one expense pay ONE debt: a second debt linked to it seeds unlinked, so it is never counted twice', () => {
 		linkedFixture()
 		setEntries([
 			entry({
@@ -451,7 +451,7 @@ describe('the linked expense moves into the debt row (story 102.2)', () => {
 		expect(expenseRowNames()).toEqual(['Rent'])
 	})
 
-	it('removes no expense for a dangling link, and shows no label (AC-8)', () => {
+	it('removes no expense for a dangling link, and shows no label', () => {
 		linkedFixture()
 		setEntries([
 			entry({
@@ -468,7 +468,7 @@ describe('the linked expense moves into the debt row (story 102.2)', () => {
 		expect(within(section()).queryByText(/^from Expenses:/)).toBeNull()
 	})
 
-	it('an unlinked what-if debt pays from cash too: no row creates money (AC-4)', async () => {
+	it('an unlinked what-if debt pays from cash too: no row creates money', async () => {
 		useIncomeStore.setState({ incomeSources: [income(500_000)] })
 		useExpenseStore.setState({ expenses: [expense(400_000)] })
 		render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResult} />)
@@ -492,7 +492,7 @@ describe('the linked expense moves into the debt row (story 102.2)', () => {
 		)
 	})
 
-	it('on an UNLINKED debt whose payment is also an Expenses row, ticking the checkbox stops the double count, by hand (D2)', async () => {
+	it('on an UNLINKED debt whose payment is also an Expenses row, ticking the checkbox stops the double count, by hand', async () => {
 		useIncomeStore.setState({ incomeSources: [income(500_000)] })
 		useExpenseStore.setState({
 			expenses: [expense(380_000), expense(20_000, { id: 'exp-car', name: 'Car payment' })],
@@ -516,7 +516,7 @@ describe('the linked expense moves into the debt row (story 102.2)', () => {
 		})
 	})
 
-	it('shows no debt checkbox on an investment row, and the investment flag on no debt row (AC-9)', () => {
+	it('shows no debt checkbox on an investment row, and the investment flag on no debt row', () => {
 		setEntries([
 			entry({ id: 'e-1', name: 'Pension', currentBalance: 100_000 }),
 			entry({ id: 'e-2', name: 'Card', type: 'debt', currentBalance: 50_000 }),
@@ -530,27 +530,24 @@ describe('the linked expense moves into the debt row (story 102.2)', () => {
 
 	it.each([
 		['a paid-off debt (balance 0)', { currentBalance: 0 }, 20_000],
-		['a corrupt debt balance (seeds 0, D6)', { currentBalance: Number.NaN }, 20_000],
+		['a corrupt debt balance (seeds 0)', { currentBalance: Number.NaN }, 20_000],
 		['a negative linked expense', { currentBalance: 300_000 }, -20_000],
 		['an unreadable linked amount', { currentBalance: 300_000 }, Number.NaN],
-	])(
-		'does not move the expense for %s: the money stays an Expenses row (code review)',
-		(_case, debt, amount) => {
-			useExpenseStore.setState({
-				expenses: [expense(380_000), expense(amount, { id: 'exp-loan', name: 'Loan payment' })],
-			})
-			setEntries([
-				entry({ id: 'e-1', name: 'Loan', type: 'debt', paymentExpenseId: 'exp-loan', ...debt }),
-			])
-			render(<ScenarioBuilder onSave={vi.fn()} />)
-			expect(expenseRowNames()).toEqual(['Rent', 'Loan payment'])
-			expect(screen.getByLabelText('Contribution for Loan')).toHaveValue('0.00')
-			expect(within(section()).queryByText(/^from Expenses:/)).toBeNull()
-			expect(screen.getByLabelText('Payment already in Expenses, for Loan')).not.toBeChecked()
-		}
-	)
+	])('does not move the expense for %s: the money stays an Expenses row', (_case, debt, amount) => {
+		useExpenseStore.setState({
+			expenses: [expense(380_000), expense(amount, { id: 'exp-loan', name: 'Loan payment' })],
+		})
+		setEntries([
+			entry({ id: 'e-1', name: 'Loan', type: 'debt', paymentExpenseId: 'exp-loan', ...debt }),
+		])
+		render(<ScenarioBuilder onSave={vi.fn()} />)
+		expect(expenseRowNames()).toEqual(['Rent', 'Loan payment'])
+		expect(screen.getByLabelText('Contribution for Loan')).toHaveValue('0.00')
+		expect(within(section()).queryByText(/^from Expenses:/)).toBeNull()
+		expect(screen.getByLabelText('Payment already in Expenses, for Loan')).not.toBeChecked()
+	})
 
-	it('hides the label on an investment and shows it again back on Debt; editing the payment keeps it (D6, D7)', () => {
+	it('hides the label on an investment and shows it again back on Debt; editing the payment keeps it', () => {
 		linkedFixture()
 		render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResult} />)
 		fireEvent.change(screen.getByLabelText('Contribution for Loan'), { target: { value: '350' } })
@@ -564,7 +561,7 @@ describe('the linked expense moves into the debt row (story 102.2)', () => {
 	})
 })
 
-describe('the starting figures (AC-2)', () => {
+describe('the starting figures', () => {
 	it('investment rows add up to the investment total, and Starting Net Worth subtracts the debts', async () => {
 		useSavingsStore.setState({
 			savingsGoals: [savingsRow({ id: 'g-1', name: 'Pot', currentBalance: 123_456 })],
@@ -588,7 +585,7 @@ describe('the starting figures (AC-2)', () => {
 	})
 })
 
-describe('a debt seeds as the amount owed, whatever its stored sign (Story 103.1, FR171/AC-3)', () => {
+describe('a debt seeds as the amount owed, whatever its stored sign', () => {
 	for (const sign of [1, -1] as const) {
 		it(`Starting Net Worth is 500,000c with the debt stored ${
 			sign > 0 ? '+' : '−'
@@ -605,7 +602,7 @@ describe('a debt seeds as the amount owed, whatever its stored sign (Story 103.1
 	}
 })
 
-describe('what-if only: nothing reaches the balance store (AC-7, D0)', () => {
+describe('what-if only: nothing reaches the balance store', () => {
 	it('a full edit sequence calls no balance-store action and leaves the persisted bytes unchanged', async () => {
 		useIncomeStore.setState({ incomeSources: [income(500_000)] })
 		setEntries([
@@ -642,7 +639,7 @@ describe('what-if only: nothing reaches the balance store (AC-7, D0)', () => {
 	})
 })
 
-describe('add, remove and type switch (AC-8)', () => {
+describe('add, remove and type switch', () => {
 	it('adds a New Investment row, names each remove button after its row, and can empty the list', () => {
 		setEntries([entry({ id: 'e-1', name: 'Pension', currentBalance: 100_000 })])
 		render(<ScenarioBuilder onSave={vi.fn()} />)
@@ -666,7 +663,7 @@ describe('add, remove and type switch (AC-8)', () => {
 		expect(screen.queryByText('At least one item is required')).toBeNull()
 	})
 
-	it('any type switch clears the flag, both ways, and relabels it; the save carries false (story 102.2, D8)', async () => {
+	it('any type switch clears the flag, both ways, and relabels it; the save carries false', async () => {
 		setEntries([entry({ id: 'e-1', name: 'Pension', contributionRecordedAsExpense: true })])
 		const onSave = vi.fn().mockResolvedValue({ success: true })
 		render(<ScenarioBuilder onSave={onSave} />)
@@ -700,7 +697,7 @@ describe('add, remove and type switch (AC-8)', () => {
 	})
 })
 
-describe('the per-row outcome and the totals (AC-10)', () => {
+describe('the per-row outcome and the totals', () => {
 	// Fund at 6%: 1000.00 → 2260.00 → 3595.60; Loan paid off in year 2; Card stays 500.00. The Loan pays from cash
 	// only while owed: savings 23,400.00, ending 23,400.00 + 3,595.60 − 500.00 = 26,495.60.
 	function fillOutcomeFixture(): void {
@@ -798,8 +795,8 @@ describe('the per-row outcome and the totals (AC-10)', () => {
 	})
 })
 
-describe('over-contribution without savings rows (story 112.1, FR180)', () => {
-	it('blames counted investment contributions even when there are no savings rows (AC-1)', async () => {
+describe('over-contribution without savings rows', () => {
+	it('blames counted investment contributions even when there are no savings rows', async () => {
 		useIncomeStore.setState({ incomeSources: [income(500_000)] })
 		useExpenseStore.setState({ expenses: [expense(400_000)] })
 		setEntries([entry({ id: 'e-1', name: 'Fund', monthlyContribution: 150_000 })])
@@ -815,7 +812,7 @@ describe('over-contribution without savings rows (story 112.1, FR180)', () => {
 		expect(line.className).toContain('text-amber-800')
 	})
 
-	it('shows no line without savings rows when the deficit is in the income itself (AC-3)', async () => {
+	it('shows no line without savings rows when the deficit is in the income itself', async () => {
 		useIncomeStore.setState({ incomeSources: [income(400_000)] })
 		useExpenseStore.setState({ expenses: [expense(500_000)] })
 		setEntries([entry({ id: 'e-1', name: 'Fund', monthlyContribution: 0 })])
@@ -825,7 +822,7 @@ describe('over-contribution without savings rows (story 112.1, FR180)', () => {
 		expect(screen.queryByTestId('savings-unassigned')).toBeNull()
 	})
 
-	it('shows no line without savings rows for a rounding-only shortfall (111.1 review D1)', async () => {
+	it('shows no line without savings rows for a rounding-only shortfall', async () => {
 		// Rounded 4,566.67/mo is 54,800.04 a year vs 54,800.00 exact: −0.40 over 10 years, inside the 0.60 drift tolerance.
 		useIncomeStore.setState({ incomeSources: [income(500_000)] })
 		useExpenseStore.setState({ expenses: [expense(10_000, { frequency: 'weekly' })] })
@@ -836,7 +833,7 @@ describe('over-contribution without savings rows (story 112.1, FR180)', () => {
 		expect(screen.queryByTestId('savings-unassigned')).toBeNull()
 	})
 
-	it('hides the line when the last savings row goes until the recompute, then shows the no-rows figure (AC-4)', async () => {
+	it('hides the line when the last savings row goes until the recompute, then shows the no-rows figure', async () => {
 		useIncomeStore.setState({ incomeSources: [income(500_000)] })
 		useExpenseStore.setState({ expenses: [expense(400_000)] })
 		useSavingsStore.setState({
@@ -860,7 +857,7 @@ describe('over-contribution without savings rows (story 112.1, FR180)', () => {
 		expect(screen.getByTestId('savings-unassigned').className).toContain('text-amber-800')
 	})
 
-	it('hides the no-rows line when the first savings row is added until the recompute (AC-4)', async () => {
+	it('hides the no-rows line when the first savings row is added until the recompute', async () => {
 		useIncomeStore.setState({ incomeSources: [income(500_000)] })
 		useExpenseStore.setState({ expenses: [expense(400_000)] })
 		setEntries([entry({ id: 'e-1', name: 'Fund', monthlyContribution: 150_000 })])
@@ -881,7 +878,7 @@ describe('over-contribution without savings rows (story 112.1, FR180)', () => {
 	})
 })
 
-describe('each money field reports its own validity (AC-9)', () => {
+describe('each money field reports its own validity', () => {
 	it('two bad fields in one row both block Save, and fixing one does not unblock the other', async () => {
 		useIncomeStore.setState({ incomeSources: [income(500_000)] })
 		setEntries([entry({ id: 'e-1', name: 'Fund', currentBalance: 100_000 })])
@@ -903,7 +900,7 @@ describe('each money field reports its own validity (AC-9)', () => {
 		expect(reason()).toBeNull()
 	})
 
-	it('text that cannot be read (1.2.3) is refused, never saved as 0 (replaces bug-3 AC-2, code review)', async () => {
+	it('text that cannot be read (1.2.3) is refused, never saved as 0', async () => {
 		useIncomeStore.setState({ incomeSources: [income(500_000)] })
 		setEntries([entry({ id: 'e-1', name: 'Fund', currentBalance: 100_000 })])
 		const format = formatter()
@@ -937,7 +934,7 @@ describe('each money field reports its own validity (AC-9)', () => {
 	})
 })
 
-describe('the builder is defensive on its own (AC-14, 100.1 review)', () => {
+describe('the builder is defensive on its own', () => {
 	it('drops an entry of unknown type and survives a null entry or a non-array handed straight to it', () => {
 		const forecast = (inputs: unknown) =>
 			({
@@ -1216,7 +1213,7 @@ function legacyForecast(version: number | undefined) {
 	} as never
 }
 
-describe('a forecast saved before version 5 keeps its figures (story 102.2, AC-6)', () => {
+describe('a forecast saved before version 5 keeps its figures', () => {
 	it.each([
 		['version 4', 4],
 		['version 3', 3],
@@ -1332,7 +1329,7 @@ describe('a forecast saved before version 5 keeps its figures (story 102.2, AC-6
 	})
 })
 
-describe('save writes the rows and the investment total (AC-12)', () => {
+describe('save writes the rows and the investment total', () => {
 	it('hands onSave every row field in order, and investments as the investment rows sum', async () => {
 		setEntries([
 			entry({
@@ -1385,7 +1382,7 @@ describe('save writes the rows and the investment total (AC-12)', () => {
 	})
 })
 
-describe('each investment row has its own annual return (story 100.3)', () => {
+describe('each investment row has its own annual return', () => {
 	function fillFixture(): void {
 		useIncomeStore.setState({ incomeSources: [income(500_000)] })
 		useExpenseStore.setState({ expenses: [expense(400_000)] })
@@ -1407,7 +1404,7 @@ describe('each investment row has its own annual return (story 100.3)', () => {
 			/^After 2 years:/
 		).textContent
 
-	it('seeds 6.00% on every investment row, + Add Balance too, and shows no rate on a debt (AC-7, AC-8)', () => {
+	it('seeds 6.00% on every investment row, + Add Balance too, and shows no rate on a debt', () => {
 		setEntries([
 			entry({ id: 'e-1', name: 'Pension' }),
 			entry({ id: 'e-2', name: 'Loan', type: 'debt' }),
@@ -1456,7 +1453,7 @@ describe('each investment row has its own annual return (story 100.3)', () => {
 		// Seven 500 ms debounced recomputes exceed the 5 s default under gate load.
 	}, 15_000)
 
-	it('a decimal comma is the decimal point: 2,5 means 2.5% (story 110.1, D3)', async () => {
+	it('a decimal comma is the decimal point: 2,5 means 2.5%', async () => {
 		fillFixture()
 		render(<ScenarioBuilder onSave={vi.fn()} />)
 		await waitForResult()
@@ -1475,7 +1472,7 @@ describe('each investment row has its own annual return (story 100.3)', () => {
 
 	// parseFloat alone would read `5abc` as 5% and `1e2` as 100%; text with several separators is ambiguous and refused.
 	for (const bad of ['', 'abc', '150', '-101', '5abc', '1e2', '2,5,1', '1.000,5', '1,000.5']) {
-		it(`"${bad}" is refused: error on the field, recompute and Save held, last result kept (AC-9)`, async () => {
+		it(`"${bad}" is refused: error on the field, recompute and Save held, last result kept`, async () => {
 			fillFixture()
 			const format = formatter()
 			render(<ScenarioBuilder onSave={vi.fn()} />)
@@ -1522,7 +1519,7 @@ describe('each investment row has its own annual return (story 100.3)', () => {
 		}, 15_000)
 	}
 
-	it('a bad balance and a bad rate in one row both block Save; fixing one leaves the other (AC-9)', async () => {
+	it('a bad balance and a bad rate in one row both block Save; fixing one leaves the other', async () => {
 		fillFixture()
 		render(<ScenarioBuilder onSave={vi.fn()} />)
 		await waitForResult()
@@ -1535,7 +1532,7 @@ describe('each investment row has its own annual return (story 100.3)', () => {
 		expect(reason()).toBeNull()
 	})
 
-	it('switching to Debt withdraws a bad rate and hides the field; back to Investment shows the last VALID rate (AC-10, D8)', async () => {
+	it('switching to Debt withdraws a bad rate and hides the field; back to Investment shows the last VALID rate', async () => {
 		fillFixture()
 		render(<ScenarioBuilder onSave={vi.fn()} />)
 		await waitForResult()
@@ -1552,7 +1549,7 @@ describe('each investment row has its own annual return (story 100.3)', () => {
 		expect(rateField('Fund')).not.toHaveAttribute('aria-invalid')
 	})
 
-	it('saves the typed rate on the investment row and none on a debt (AC-11)', async () => {
+	it('saves the typed rate on the investment row and none on a debt', async () => {
 		fillFixture()
 		const onSave = vi.fn().mockResolvedValue({ success: true })
 		render(<ScenarioBuilder onSave={onSave} />)

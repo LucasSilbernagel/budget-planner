@@ -199,7 +199,7 @@ const CHILD_SEEDS = {
 			.values({ id: ROW, userId: USER, profileId: Q, name: 'Food', kind: 'expense' }),
 } as const
 
-describe('a delete the server already applied is acknowledged (AC-1)', () => {
+describe('a delete the server already applied is acknowledged', () => {
 	it.each(Object.keys(CHILD_SEEDS) as (keyof typeof CHILD_SEEDS)[])(
 		'%s: the same delete pushed twice succeeds both times',
 		async (entityType) => {
@@ -238,7 +238,7 @@ describe('a delete the server already applied is acknowledged (AC-1)', () => {
 	})
 })
 
-describe('idempotence is not "a delete of anything succeeds" (AC-2)', () => {
+describe('idempotence is not "a delete of anything succeeds"', () => {
 	it('a delete for an id that never existed is still a conflict, unchanged', async () => {
 		const result = await push([deleteOp('incomeSource', ROW, Q)])
 
@@ -290,7 +290,7 @@ function stubSelectsAsLive(count: number, id: string) {
 	return { spy, limit }
 }
 
-describe('the row is tombstoned between checkConflict and applyOperation (AC-1, the race arm)', () => {
+describe('the row is tombstoned between checkConflict and applyOperation (the race arm)', () => {
 	// Simulated interleaving, not a race (PGlite is single-connection): checkConflict sees the row
 	// live while the database already holds its tombstone.
 	function checkConflictSeesLiveRow() {
@@ -330,7 +330,7 @@ describe('the row is tombstoned between checkConflict and applyOperation (AC-1, 
 	})
 })
 
-describe('the promotion that travels with a profile delete (AC-3, AC-4; decision D1)', () => {
+describe('the promotion that travels with a profile delete', () => {
 	it("one device: its own promotion wins over the repair's pick (the survivor was not the oldest)", async () => {
 		// One op per request, so the repair gives the seat to R, the oldest survivor.
 		expect(await push([deleteOp('userProfile', P)])).toMatchObject(ACKNOWLEDGED)

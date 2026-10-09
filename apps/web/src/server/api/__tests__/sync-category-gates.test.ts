@@ -111,7 +111,7 @@ describe('batchSyncRequestSchema — one category operation must not poison the 
 	})
 })
 
-describe('a cashflow operation may carry a categoryId (AC-5)', () => {
+describe('a cashflow operation may carry a categoryId', () => {
 	it('accepts a concrete category reference', () => {
 		expect(syncOperationSchema.safeParse(incomeOp()).success).toBe(true)
 	})
@@ -148,7 +148,7 @@ describe('a cashflow operation may carry a categoryId (AC-5)', () => {
 	})
 })
 
-describe('entityTableMap — every syncable entity resolves to a table (AC-6)', () => {
+describe('entityTableMap — every syncable entity resolves to a table', () => {
 	// `satisfies` alone accepts a subset; the `Missing` check makes tsc reject an omitted member.
 	const ALL_SYNC_ENTITIES = [
 		'incomeSource',
@@ -174,11 +174,11 @@ describe('entityTableMap — every syncable entity resolves to a table (AC-6)', 
 		expect(getTableName(entityTableMap.category)).toBe('categories')
 	})
 
-	it('maps retirementPlan to the retirementPlans table specifically (story 99.2)', () => {
+	it('maps retirementPlan to the retirementPlans table specifically', () => {
 		expect(getTableName(entityTableMap.retirementPlan)).toBe('retirementPlans')
 	})
 
-	it('the server entityType enum is EXACTLY the core union, both ways (story 99.2, AC-5b)', () => {
+	it('the server entityType enum is EXACTLY the core union, both ways', () => {
 		const serverEnum = syncOperationSchema.innerType().shape.entityType.options
 		expect([...serverEnum].sort()).toEqual([...ALL_SYNC_ENTITIES].sort())
 	})
@@ -188,7 +188,7 @@ describe('entityTableMap — every syncable entity resolves to a table (AC-6)', 
 	})
 })
 
-describe('the sync gate (hasPaidAccess) — every premium-bearing status may sync (AC-8)', () => {
+describe('the sync gate (hasPaidAccess) — every premium-bearing status may sync', () => {
 	it('contains only real subscription statuses', () => {
 		for (const status of PAID_ACCESS_STATUSES) {
 			expect(subscriptionStatusEnum.enumValues).toContain(status)

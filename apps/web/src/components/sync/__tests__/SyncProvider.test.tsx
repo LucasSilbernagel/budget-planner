@@ -143,7 +143,7 @@ describe('SyncProvider gating', () => {
 	})
 })
 
-describe('SyncProvider free→paid seeding + push gate (review P1)', () => {
+describe('SyncProvider free→paid seeding + push gate', () => {
 	it('does NOT register the push bridge OR seed while the active profile is the un-synced bootstrap', async () => {
 		useProfileStore.setState({
 			profiles: [
@@ -186,7 +186,7 @@ describe('SyncProvider free→paid seeding + push gate (review P1)', () => {
 	})
 })
 
-describe('hasProbableSession — Story 53.1 cross-device sync fix', () => {
+describe('hasProbableSession — cross-device sync', () => {
 	it('is false with no cookies at all', () => {
 		expect(hasProbableSession('')).toBe(false)
 	})

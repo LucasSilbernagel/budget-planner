@@ -5,7 +5,7 @@ import { X509Certificate } from 'node:crypto'
 
 type CaExpiryStatus = 'ok' | 'warn' | 'expired' | 'invalid'
 
-export interface CaExpiryResult {
+export type CaExpiryResult = {
 	status: CaExpiryStatus
 	daysRemaining?: number
 	notAfter?: string

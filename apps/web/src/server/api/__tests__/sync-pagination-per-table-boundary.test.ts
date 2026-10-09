@@ -4,7 +4,7 @@
 import { getTableName } from 'drizzle-orm'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-interface Row {
+type Row = {
 	id: string
 	userId: string
 	profileId?: string
@@ -45,7 +45,7 @@ const DEGENERATE_EXPENSE_ROWS: Row[] = [
 const CROSS_TABLE_INCOME_ROWS: Row[] = [row('old', 1), row('x1', 4), row('x2', 4), row('x3', 4)]
 const CROSS_TABLE_PROFILE_ROWS: Row[] = [row('prof1', 10), row('prof2', 20)]
 
-interface MockState {
+type MockState = {
 	incomeRows: Row[]
 	expenseRows: Row[]
 	profileRows: Row[]
@@ -105,7 +105,7 @@ beforeEach(() => {
 	state.profileRows = []
 })
 
-describe('getSyncChanges — per-table SQL LIMIT boundary (Story 53.1, AC-3)', () => {
+describe('getSyncChanges — per-table SQL LIMIT boundary', () => {
 	it('does not return a page that ends mid-timestamp-group for a single table', async () => {
 		state.incomeRows = INCOME_ROWS
 		// Returning 'b' alone would advance the cursor to 5 and skip 'c' and 'd' forever.

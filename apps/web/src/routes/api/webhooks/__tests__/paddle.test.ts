@@ -185,7 +185,7 @@ beforeEach(() => {
 	)
 })
 
-describe('POST /api/webhooks/paddle — signature verification (AC-4)', () => {
+describe('POST /api/webhooks/paddle — signature verification', () => {
 	it('accepts a valid, fresh Billing signature', async () => {
 		const res = await POST({
 			request: signedRequest({
@@ -278,7 +278,7 @@ describe('POST /api/webhooks/paddle — signature verification (AC-4)', () => {
 	})
 })
 
-describe('POST /api/webhooks/paddle — lifetime purchase (AC-3, story 25-2)', () => {
+describe('POST /api/webhooks/paddle — lifetime purchase', () => {
 	it('persists subscriptionStatus="lifetime" for a lifetime line-item transaction', async () => {
 		const res = await POST({
 			request: signedRequest({
@@ -679,7 +679,7 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
 		expect(fetchPaddleCustomerEmail).not.toHaveBeenCalled()
 	})
 
-	it('writes the plan cadence in the SAME update as the status when the payload states one (Story 70.1)', async () => {
+	it('writes the plan cadence in the SAME update as the status when the payload states one', async () => {
 		// `toHaveBeenCalledWith` ignores undefined-valued props, so this can't prove an absent cycle
 		// omits the key; the db suite proves that.
 		const res = await POST({
@@ -723,18 +723,15 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
 				},
 			},
 		],
-	])(
-		'the %s carries the watermark IN its WHERE, not only as a pre-read (Story 70.1 review)',
-		async (_, event) => {
-			// Only `entitlementWatermarkGuard` calls `lt`, so its presence shows the UPDATE is guarded in-statement.
-			const occurredAt = '2026-09-25T12:00:00.000Z'
-			const res = await POST({ request: signedRequest({ ...event, occurred_at: occurredAt }) })
+	])('the %s carries the watermark IN its WHERE, not only as a pre-read', async (_, event) => {
+		// Only `entitlementWatermarkGuard` calls `lt`, so its presence shows the UPDATE is guarded in-statement.
+		const occurredAt = '2026-09-25T12:00:00.000Z'
+		const res = await POST({ request: signedRequest({ ...event, occurred_at: occurredAt }) })
 
-			expect(res.status).toBe(200)
-			expect(setSpy).toHaveBeenCalledTimes(1)
-			expect(lt).toHaveBeenCalledWith(expect.anything(), Date.parse(occurredAt))
-		}
-	)
+		expect(res.status).toBe(200)
+		expect(setSpy).toHaveBeenCalledTimes(1)
+		expect(lt).toHaveBeenCalledWith(expect.anything(), Date.parse(occurredAt))
+	})
 
 	it('still fails closed for a first-seen subscriber whose resolved email is malformed', async () => {
 		dbHasUser.value = false
@@ -813,7 +810,7 @@ describe('POST /api/webhooks/paddle — subscription path (regression + no-downg
 	})
 })
 
-describe('Story 73.2, AC-9 — a row that vanishes between read and UPDATE is retried, not dropped', () => {
+describe('a row that vanishes between read and UPDATE is retried, not dropped', () => {
 	// The real interleaving needs two connections; `vanishBeforeUpdate` simulates it.
 	function subscriptionActivated() {
 		return POST({

@@ -162,7 +162,7 @@ export function CategoryBreakdown(): ReactElement {
 	)
 }
 
-interface BreakdownSideProps {
+type BreakdownSideProps = {
 	side: 'income' | 'expense'
 	title: string
 	emptyLabel: string
@@ -312,7 +312,7 @@ function BreakdownSide({
 	)
 }
 
-interface BreakdownBarChartProps {
+type BreakdownBarChartProps = {
 	rows: CategoryBreakdownRow[]
 	colors: Record<string, string>
 	isNarrow: boolean

@@ -113,7 +113,7 @@ describe('deleteUserAccount', () => {
 		expect(whereCalls.map((c) => c.table)).toEqual(['LOCK users', ...EXPECTED_ORDER])
 	})
 
-	it('deletes the email-scoped throttle by the NORMALIZED session address (Story 74.2)', async () => {
+	it('deletes the email-scoped throttle by the NORMALIZED session address', async () => {
 		getCurrentUserSession.mockResolvedValue(authedSession('user-A'))
 
 		await deleteUserAccount(req())

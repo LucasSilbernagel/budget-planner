@@ -213,7 +213,7 @@ afterEach(() => {
 	seams.beforeInsert = null
 })
 
-describe('two devices delete the two profiles of a 2-profile account at once (AC-1)', () => {
+describe('two devices delete the two profiles of a 2-profile account at once', () => {
 	it('exactly one delete takes effect; the account keeps one live profile and one default', async () => {
 		// Both pushes are held at their first transaction until both arrive, i.e. past all out-of-transaction checks.
 		const gate = barrier()
@@ -243,7 +243,7 @@ describe('two devices delete the two profiles of a 2-profile account at once (AC
 	})
 })
 
-describe('two devices delete the SAME profile at once (AC-3)', () => {
+describe('two devices delete the SAME profile at once', () => {
 	it('the second delete re-checks the target under the lock and writes nothing', async () => {
 		// Three profiles, so the count cannot mask a missing re-check.
 		await db.insert(userProfiles).values({
@@ -277,7 +277,7 @@ describe('two devices delete the SAME profile at once (AC-3)', () => {
 	})
 })
 
-describe('a child create interleaves with the cascade of its profile (AC-2)', () => {
+describe('a child create interleaves with the cascade of its profile', () => {
 	it('a cascade that commits after the create passed its out-of-transaction checks leaves no live orphan', async () => {
 		// Fires the cascade as the create's first top-level write opens; its in-transaction re-check must see it.
 		let consumed = 0
@@ -319,7 +319,7 @@ describe('a child create interleaves with the cascade of its profile (AC-2)', ()
 })
 
 // The only automated guard of the lock: the race tests pass without it under PGlite.
-describe('every transaction that depends on the live-profile set locks the user first (AC-6)', () => {
+describe('every transaction that depends on the live-profile set locks the user first', () => {
 	const WRITER = {
 		sql: 'select "id" from "users" where "users"."id" = $1 for no key update',
 		params: [USER],

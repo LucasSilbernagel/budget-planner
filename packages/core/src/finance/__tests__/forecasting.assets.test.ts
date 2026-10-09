@@ -27,7 +27,7 @@ function data(assets?: number): ForecastInputData {
 	}
 }
 
-describe('assets count in net worth (story 114.1, AC-1)', () => {
+describe('assets count in net worth', () => {
 	it('adds the assets to the starting net worth', () => {
 		const result = calculateFinancialForecast(data(HOUSE), FLAT, 3)
 		expect(result.summary.startingNetWorth).toBe(1_000_000 + HOUSE)
@@ -120,7 +120,7 @@ describe('assets count in net worth (story 114.1, AC-1)', () => {
 	})
 })
 
-describe('the baseline uses its OWN assets (story 114.1, AC-1, with story 107.1)', () => {
+describe('the baseline uses its OWN assets', () => {
 	it('a separate baseline input with different assets moves only the baseline', () => {
 		const plain = calculateFinancialForecast(data(), FLAT, 3)
 		const result = calculateFinancialForecast(data(HOUSE), FLAT, 3, data(10_000_000))
@@ -142,7 +142,7 @@ describe('the baseline uses its OWN assets (story 114.1, AC-1, with story 107.1)
 	})
 })
 
-describe('assets are validated like every starting figure (story 114.1, AC-1)', () => {
+describe('assets are validated like every starting figure', () => {
 	it('refuses a negative total', () => {
 		expect(() => calculateFinancialForecast(data(-1), FLAT, 3)).toThrow(ASSETS_NEGATIVE)
 		expect(ASSETS_NEGATIVE).toBe('Asset values must be 0 or more')
@@ -176,7 +176,7 @@ describe('assets are validated like every starting figure (story 114.1, AC-1)', 
 	})
 })
 
-describe('without assets the output is unchanged (story 114.1, AC-2)', () => {
+describe('without assets the output is unchanged', () => {
 	it('no `assets` key on any row when none is given', () => {
 		const result = calculateFinancialForecast(data(), FLAT, 3)
 		for (const row of [...result.baseline, ...result.projection]) {

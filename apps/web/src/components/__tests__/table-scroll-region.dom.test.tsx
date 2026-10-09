@@ -88,7 +88,7 @@ describe('table scroll region', () => {
 	for (const page of PAGES) {
 		describe(page.name, () => {
 			for (const state of ['overflows', 'fits'] as const) {
-				it(`wraps EVERY table it renders in a named region, a Tab stop only while it scrolls (AC-5; 93.1): ${state}`, () => {
+				it(`wraps EVERY table it renders in a named region, a Tab stop only while it scrolls: ${state}`, () => {
 					// Every table-bearing region, not `[0]`, so a second table can't ship unwired.
 					stubRegionWidths()
 					if (state === 'overflows') setRegionOverflows()
@@ -117,7 +117,7 @@ describe('table scroll region', () => {
 				})
 			}
 
-			it('declares the scroll affordance alongside the wrapper class (AC-1, AC-7)', () => {
+			it('declares the scroll affordance alongside the wrapper class', () => {
 				page.render()
 				const region = screen.getAllByRole('region')[0]
 				const classes = [...region.classList]
@@ -129,7 +129,7 @@ describe('table scroll region', () => {
 				}
 			})
 
-			it('nests no second scroll container (AC-7)', () => {
+			it('nests no second scroll container', () => {
 				// A nested `overflow-x-auto` makes a bare `querySelector('div.overflow-x-auto')` pick the wrong one.
 				const { container } = page.render()
 				const wrappers = container.querySelectorAll('div.overflow-x-auto')

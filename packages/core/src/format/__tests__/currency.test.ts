@@ -25,7 +25,7 @@ const SEPARATOR_SHAPES = [
 ] as const
 
 describe('Currency Formatting', () => {
-	describe('DEFAULT_CURRENCY_OPTIONS (AC-1: currency-less default)', () => {
+	describe('DEFAULT_CURRENCY_OPTIONS (currency-less default)', () => {
 		it('defaults to currency-less mode', () => {
 			expect(DEFAULT_CURRENCY_OPTIONS.mode).toBe('none')
 		})
@@ -35,7 +35,7 @@ describe('Currency Formatting', () => {
 		})
 	})
 
-	describe('formatCurrency - currency-less mode (AC-1)', () => {
+	describe('formatCurrency - currency-less mode', () => {
 		it('renders grouped numeric value with no symbol when mode is none', () => {
 			expect(formatCurrency(123456, { mode: 'none' })).toBe('1,234.56')
 		})
@@ -62,7 +62,7 @@ describe('Currency Formatting', () => {
 		})
 	})
 
-	describe('formatCurrency - currency-less grouping (story 14-2, AC-2/AC-3)', () => {
+	describe('formatCurrency - currency-less grouping', () => {
 		// ICU may emit U+202F or U+00A0 as a separator; normalize to a plain space.
 		const normalizeSpaces = (value: string) => value.replace(/[  ]/g, ' ')
 
@@ -102,7 +102,7 @@ describe('Currency Formatting', () => {
 		})
 	})
 
-	describe('formatCurrency - explicit symbols mode (AC-2)', () => {
+	describe('formatCurrency - explicit symbols mode', () => {
 		it('formats USD with $ via Intl.NumberFormat', () => {
 			expect(formatCurrency(123456, { mode: 'symbol', currency: 'USD', locale: 'en-US' })).toBe(
 				'$1,234.56'
@@ -149,22 +149,22 @@ describe('Currency Formatting', () => {
 		})
 	})
 
-	describe('locale-aware formatting (story 4-7: AC-1, AC-2, AC-3)', () => {
+	describe('locale-aware formatting', () => {
 		// de-DE uses U+00A0 before the symbol, fr-FR U+202F for grouping; normalize to a space.
 		const normalizeSpaces = (value: string) => value.replace(/[  ]/g, ' ')
 
-		it('AC-1: en-US formats 1000 USD as $1,000.00', () => {
+		it('en-US formats 1000 USD as $1,000.00', () => {
 			expect(formatCurrency(100000, { mode: 'symbol', currency: 'USD', locale: 'en-US' })).toBe(
 				'$1,000.00'
 			)
 		})
 
-		it('AC-2: de-DE formats 1000 EUR as 1.000,00 €', () => {
+		it('de-DE formats 1000 EUR as 1.000,00 €', () => {
 			const result = formatCurrency(100000, { mode: 'symbol', currency: 'EUR', locale: 'de-DE' })
 			expect(normalizeSpaces(result)).toBe('1.000,00 €')
 		})
 
-		it('AC-3: fr-FR formats 1000 EUR as 1 000,00 €', () => {
+		it('fr-FR formats 1000 EUR as 1 000,00 €', () => {
 			const result = formatCurrency(100000, { mode: 'symbol', currency: 'EUR', locale: 'fr-FR' })
 			expect(normalizeSpaces(result)).toBe('1 000,00 €')
 		})
@@ -237,14 +237,14 @@ describe('Currency Formatting', () => {
 		})
 
 		// Non-finite amounts must coerce to 0 so entry pages never store Infinity.
-		it('coerces overflowing / non-finite amounts to 0 (regression: story 6-8 leak, fixed by 14-3)', () => {
+		it('coerces overflowing / non-finite amounts to 0 (regression)', () => {
 			expect(parseFromInput('1e309')).toBe(0) // parses to Infinity via exponent
 			expect(parseFromInput('1e999')).toBe(0)
 			expect(parseFromInput('Infinity')).toBe(0) // letters stripped → NaN → 0
 		})
 	})
 
-	describe('formatForInputDisplay (story 14-3: grouped symbol-less input echo)', () => {
+	describe('formatForInputDisplay (grouped symbol-less input echo)', () => {
 		// ICU may use a narrow no-break space (U+202F) as the group separator.
 		const normalizeSpaces = (value: string) => value.replace(/[  ]/g, ' ')
 
@@ -275,7 +275,7 @@ describe('Currency Formatting', () => {
 		})
 	})
 
-	describe('parseFromInput - locale-aware grouping (story 14-3)', () => {
+	describe('parseFromInput - locale-aware grouping', () => {
 		it('parses en-US grouped input to cents', () => {
 			expect(parseFromInput('1,234,567.89', 'en-US')).toBe(123456789)
 		})
@@ -354,7 +354,7 @@ describe('Currency Formatting', () => {
 			expect(currencies).toContain('GBP')
 		})
 
-		it('drops the consolidated dollar variants CAD/AUD/MXN (story 8-2)', () => {
+		it('drops the consolidated dollar variants CAD/AUD/MXN', () => {
 			const currencies = getSupportedCurrencies()
 			expect(currencies).not.toContain('CAD')
 			expect(currencies).not.toContain('AUD')
@@ -377,7 +377,7 @@ describe('Currency Formatting', () => {
 		})
 	})
 
-	describe('currencyDisplayLabel (story 14-1: symbol picker, UX-DR16)', () => {
+	describe('currencyDisplayLabel (symbol picker)', () => {
 		it('renders unambiguous currencies as their bare symbol', () => {
 			expect(currencyDisplayLabel('USD')).toBe('$')
 			expect(currencyDisplayLabel('EUR')).toBe('€')
@@ -426,7 +426,7 @@ describe('Currency Formatting', () => {
 		})
 	})
 
-	describe('canonicalizeCurrency (story 8-2: consolidation)', () => {
+	describe('canonicalizeCurrency (consolidation)', () => {
 		it('maps the consolidated dollar family to USD', () => {
 			expect(canonicalizeCurrency('CAD')).toBe('USD')
 			expect(canonicalizeCurrency('AUD')).toBe('USD')
@@ -478,8 +478,8 @@ describe('Currency Formatting', () => {
 		})
 	})
 
-	describe('sanitizeMoneyInput (story 28-1, FR46: on-input character filtering)', () => {
-		describe('rejects characters a money field can never contain (AC-1)', () => {
+	describe('sanitizeMoneyInput (on-input character filtering)', () => {
+		describe('rejects characters a money field can never contain', () => {
 			it('strips letters entirely', () => {
 				expect(sanitizeMoneyInput('abc')).toBe('')
 				expect(sanitizeMoneyInput('12abc34')).toBe('1234')
@@ -508,7 +508,7 @@ describe('Currency Formatting', () => {
 			})
 		})
 
-		describe('keeps legal locale-formatted amounts intact (AC-2)', () => {
+		describe('keeps legal locale-formatted amounts intact', () => {
 			it('leaves each separator shape unchanged', () => {
 				expect(sanitizeMoneyInput('1,234.56', 'en-US')).toBe('1,234.56')
 				expect(sanitizeMoneyInput('1.234,56', 'de-DE')).toBe('1.234,56')
@@ -600,7 +600,7 @@ describe('Currency Formatting', () => {
 			})
 		})
 
-		describe('negative sign (AC-1: sign characters are legal)', () => {
+		describe('negative sign (sign characters are legal)', () => {
 			it('keeps a leading minus — negatives are valid for debts', () => {
 				expect(sanitizeMoneyInput('-100')).toBe('-100')
 				expect(sanitizeMoneyInput('-1,234.56', 'en-US')).toBe('-1,234.56')
@@ -673,7 +673,7 @@ describe('Currency Formatting', () => {
 			}
 		})
 
-		describe('round-trip with parseFromInput (the AC-2 guarantee)', () => {
+		describe('round-trip with parseFromInput (the value survives the round trip)', () => {
 			for (const { shape, locale, decimalSep } of SEPARATOR_SHAPES) {
 				it(`sanitizing never changes the parsed value in shape ${shape}`, () => {
 					const accepted = [
@@ -718,7 +718,7 @@ describe('Currency Formatting', () => {
 			})
 		})
 
-		describe('paste handling (AC-5 — a paste arrives as one change event)', () => {
+		describe('paste handling (a paste arrives as one change event)', () => {
 			it('cleans a whole pasted string in a single call', () => {
 				expect(sanitizeMoneyInput('USD 1,234.56 per month', 'en-US')).toBe('1,234.56')
 				expect(sanitizeMoneyInput('total: abc', 'en-US')).toBe('')

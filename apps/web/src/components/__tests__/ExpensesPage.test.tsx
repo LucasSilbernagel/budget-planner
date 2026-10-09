@@ -95,7 +95,7 @@ describe('ExpensesPage inline validation', () => {
 		expect(screen.getByRole('dialog')).toBeInTheDocument()
 	})
 
-	it('clears the error after correction and a valid submit succeeds (AC-3)', async () => {
+	it('clears the error after correction and a valid submit succeeds', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<ExpensesPage />)
 
@@ -263,7 +263,7 @@ describe('ExpensesPage edit modal prefills a grouped, locale-aware amount', () =
 	})
 })
 
-describe('ExpensesPage mobile card presentation (story 31.2)', () => {
+describe('ExpensesPage mobile card presentation', () => {
 	beforeEach(() => {
 		useExpenseStore.setState({ expenses: [] })
 		useExpenseStore.getState().addExpense({ name: 'Rent', amount: 150000, frequency: 'monthly' })
@@ -291,7 +291,7 @@ describe('ExpensesPage mobile card presentation (story 31.2)', () => {
 		expect(within(row).getByRole('button', { name: 'Delete Rent' })).toBeInTheDocument()
 	})
 
-	it('carries every column value on a free user’s card, minus Category (story 33.3)', () => {
+	it('carries every column value on a free user’s card, minus Category', () => {
 		free()
 		renderWithProviders(<ExpensesPage />)
 		const row = rowFor('Rent')
@@ -304,7 +304,7 @@ describe('ExpensesPage mobile card presentation (story 31.2)', () => {
 		expect(within(row).queryByTestId('expense-row-category')).not.toBeInTheDocument()
 	})
 
-	it('labels every field on the card (AC-4)', () => {
+	it('labels every field on the card', () => {
 		premium()
 		renderWithProviders(<ExpensesPage />)
 		const row = rowFor('Rent')
@@ -315,7 +315,7 @@ describe('ExpensesPage mobile card presentation (story 31.2)', () => {
 		}
 	})
 
-	it('labels every field on a free user’s card, with no Category field (story 33.3)', () => {
+	it('labels every field on a free user’s card, with no Category field', () => {
 		free()
 		renderWithProviders(<ExpensesPage />)
 		const row = rowFor('Rent')
@@ -329,7 +329,7 @@ describe('ExpensesPage mobile card presentation (story 31.2)', () => {
 		expect(screen.getAllByText('Rent')).toHaveLength(1)
 	})
 
-	it('declares the shared card classes on the table, body and rows (AC-8)', () => {
+	it('declares the shared card classes on the table, body and rows', () => {
 		const { container } = renderWithProviders(<ExpensesPage />)
 		const table = container.querySelector('table') as HTMLElement
 
@@ -339,7 +339,7 @@ describe('ExpensesPage mobile card presentation (story 31.2)', () => {
 		expect([...rowFor('Rent').classList]).toContain('max-sm:block')
 	})
 
-	it('every row Edit/Delete button carries a focus ring with a colour (AC-5)', () => {
+	it('every row Edit/Delete button carries a focus ring with a colour', () => {
 		renderWithProviders(<ExpensesPage />)
 		const row = rowFor('Rent')
 		for (const label of ['Edit Rent', 'Delete Rent']) {
@@ -347,7 +347,7 @@ describe('ExpensesPage mobile card presentation (story 31.2)', () => {
 		}
 	})
 
-	it('declares a >= 44px mobile tap target on each row action, scoped to max-sm (AC-6)', () => {
+	it('declares a >= 44px mobile tap target on each row action, scoped to max-sm', () => {
 		renderWithProviders(<ExpensesPage />)
 		const row = rowFor('Rent')
 		for (const label of ['Edit Rent', 'Delete Rent']) {
@@ -355,7 +355,7 @@ describe('ExpensesPage mobile card presentation (story 31.2)', () => {
 		}
 	})
 
-	it('offers exactly Edit and Delete in a row action cell (48.2 AC-1, AC-15)', () => {
+	it('offers exactly Edit and Delete in a row action cell', () => {
 		renderWithProviders(<ExpensesPage />)
 		const cell = rowFor('Rent').querySelector('td:last-child') as HTMLElement
 		expect(
@@ -365,7 +365,7 @@ describe('ExpensesPage mobile card presentation (story 31.2)', () => {
 		).toEqual(['Edit Rent', 'Delete Rent'])
 	})
 
-	it('renders each row action as an aria-hidden icon with no visible label (50.1 AC-1, AC-3, AC-9)', () => {
+	it('renders each row action as an aria-hidden icon with no visible label', () => {
 		renderWithProviders(<ExpensesPage />)
 		const cell = rowFor('Rent').querySelector('td:last-child') as HTMLElement
 		const geometry = ['Edit Rent', 'Delete Rent'].map((label) =>
@@ -374,7 +374,7 @@ describe('ExpensesPage mobile card presentation (story 31.2)', () => {
 		expect(geometry[0], 'Edit and Delete render the same glyph').not.toBe(geometry[1])
 	})
 
-	it('introduces no retired surface/text tokens in the table region (AC-7)', () => {
+	it('introduces no retired surface/text tokens in the table region', () => {
 		const { container } = renderWithProviders(<ExpensesPage />)
 		const table = container.querySelector('table') as HTMLElement
 		expect(collectRetiredTokenViolations(table)).toEqual([])
@@ -557,7 +557,7 @@ describe('ExpensesPage — sort by column (34.2)', () => {
 		return screen.getByRole('combobox', { name: 'Sort expenses' }) as HTMLSelectElement
 	}
 
-	it('offers the mobile sort control whether or not a sort is active (48.1 AC-1)', async () => {
+	it('offers the mobile sort control whether or not a sort is active', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<ExpensesPage />)
 
@@ -568,7 +568,7 @@ describe('ExpensesPage — sort by column (34.2)', () => {
 		expect(sortControl().value).toBe('name:asc')
 	})
 
-	it('sorts from the mobile control and drives the SAME state as the headers (48.1 AC-2)', async () => {
+	it('sorts from the mobile control and drives the SAME state as the headers', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<ExpensesPage />)
 
@@ -578,7 +578,7 @@ describe('ExpensesPage — sort by column (34.2)', () => {
 		expect(header('Name')).toHaveAttribute('aria-sort', 'descending')
 	})
 
-	it('returns to manual order from the mobile control (48.1 AC-4)', async () => {
+	it('returns to manual order from the mobile control', async () => {
 		const user = userEvent.setup()
 		renderWithProviders(<ExpensesPage />)
 
@@ -590,8 +590,8 @@ describe('ExpensesPage — sort by column (34.2)', () => {
 		expect(header('Name')).toHaveAttribute('aria-sort', 'none')
 	})
 
-	describe('Category is a sort target only for entitled users (AC-5)', () => {
-		it('offers Category as a mobile sort option ONLY for an entitled user (48.1 AC-7)', async () => {
+	describe('Category is a sort target only for entitled users', () => {
+		it('offers Category as a mobile sort option ONLY for an entitled user', async () => {
 			free()
 			const { unmount } = renderWithProviders(<ExpensesPage />)
 			expect(
@@ -655,7 +655,7 @@ describe('ExpensesPage — sort by column (34.2)', () => {
 		expect(collectRetiredTokenViolations(table)).toEqual([])
 	})
 
-	it('enqueues NOTHING on a PAID session — sorting is read-only over the store (AC-8)', async () => {
+	it('enqueues NOTHING on a PAID session — sorting is read-only over the store', async () => {
 		// Registered so not.toHaveBeenCalled() can fail, and paid because that tier has a sync path.
 		const spies = {
 			userId: '550e8400-e29b-41d4-a716-446655440000',
@@ -740,7 +740,7 @@ describe('ExpensesPage — mortgage guidance (36.3)', () => {
 	})
 })
 
-describe('ExpensesPage — "ends before I retire" (65.2, FR101)', () => {
+describe('ExpensesPage — "ends before I retire"', () => {
 	const LABEL = 'This expense ends before I retire'
 	const HELP =
 		"Tick this for a cost that will have stopped by the time you retire — a mortgage you'll have paid off, tuition, daycare or a commute. The retirement planner uses it to suggest what your income needs to cover."
@@ -974,7 +974,7 @@ describe('ExpensesPage — "ends before I retire" (65.2, FR101)', () => {
 	})
 })
 
-describe('ExpensesPage — the retirement question follows the planner toggle (71.1, FR113)', () => {
+describe('ExpensesPage — the retirement question follows the planner toggle', () => {
 	const LABEL = 'This expense ends before I retire'
 	const BADGE = '[data-testid="expense-row-ends-before-retirement"]'
 	const HELP_ID = 'expense-ends-before-retirement-help'

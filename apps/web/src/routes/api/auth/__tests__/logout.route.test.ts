@@ -30,7 +30,7 @@ describe('POST /api/auth/logout', () => {
 		expect(res.headers.getSetCookie()).toEqual([CLEAR, CLEAR_HAS_SESSION])
 	})
 
-	it('also clears has_session (Story 53.1) — leaving it behind would tell SyncProvider a signed-out browser still has a session', async () => {
+	it('also clears has_session — leaving it behind would tell SyncProvider a signed-out browser still has a session', async () => {
 		asMock(logoutUser).mockResolvedValue({ success: true })
 		const res = await POST({ request: req() })
 		const setCookies = res.headers.getSetCookie()
@@ -42,7 +42,7 @@ describe('POST /api/auth/logout', () => {
 		)
 	})
 
-	it('adds Secure to BOTH cleared cookies in production (Story 53.1 review — this was missing entirely pre-review)', async () => {
+	it('adds Secure to BOTH cleared cookies in production', async () => {
 		vi.stubEnv('NODE_ENV', 'production')
 		asMock(logoutUser).mockResolvedValue({ success: true })
 		const res = await POST({ request: req() })

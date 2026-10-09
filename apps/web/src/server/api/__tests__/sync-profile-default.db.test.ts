@@ -109,7 +109,7 @@ beforeEach(async () => {
 	])
 })
 
-describe('the delete + promote pair the store queues (story 63.2)', () => {
+describe('the delete + promote pair the store queues', () => {
 	it('applies both and leaves exactly one live default', async () => {
 		const result = await push([
 			op({ type: 'delete', entityType: 'userProfile', entityId: P_DEFAULT }),

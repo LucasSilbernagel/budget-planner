@@ -52,7 +52,7 @@ export function formatProgress(progress: number | null): string {
 
 export type DebtSubType = 'credit-card' | 'mortgage' | 'loan' | 'other'
 
-export interface DebtCalculationResult {
+export type DebtCalculationResult = {
 	progress: number | null
 	progressLabel: string
 	timeline: number | null

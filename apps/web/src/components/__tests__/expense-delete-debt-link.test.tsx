@@ -68,7 +68,7 @@ async function openDelete(name: string) {
 	return { user, dialog: screen.getByRole('alertdialog') }
 }
 
-describe('the expense delete dialog names the debt it pays (Story 113.1)', () => {
+describe('the expense delete dialog names the debt it pays', () => {
 	let savedProfiles: ReturnType<typeof useProfileStore.getState>
 
 	beforeEach(() => {
@@ -80,7 +80,7 @@ describe('the expense delete dialog names the debt it pays (Story 113.1)', () =>
 		useProfileStore.setState(savedProfiles)
 	})
 
-	it('(a) one linked debt: the D6 sentence sits between the question and "cannot be undone" (AC 1)', async () => {
+	it('(a) one linked debt: the debt-link sentence sits between the question and "cannot be undone"', async () => {
 		seed([balance('debt-1', 'debt', 'Car loan', 'exp-car')])
 		const { dialog } = await openDelete('Car payment')
 		expect(dialog).toHaveAccessibleDescription(
@@ -88,13 +88,13 @@ describe('the expense delete dialog names the debt it pays (Story 113.1)', () =>
 		)
 	})
 
-	it('(b) an expense no debt links reads exactly as before (AC 3)', async () => {
+	it('(b) an expense no debt links reads exactly as before', async () => {
 		seed([balance('debt-1', 'debt', 'Car loan', 'exp-car')])
 		const { dialog } = await openDelete('Rent')
 		expect(dialog).toHaveAccessibleDescription(UNLINKED_RENT)
 	})
 
-	it('(b) a NON-debt row carrying the id is not a link: the dialog is unchanged (AC 3)', async () => {
+	it('(b) a NON-debt row carrying the id is not a link: the dialog is unchanged', async () => {
 		seed([
 			balance('inv-1', 'investment', 'Pension', 'exp-rent'),
 			balance('asset-1', 'asset', 'House', 'exp-rent'),
@@ -103,7 +103,7 @@ describe('the expense delete dialog names the debt it pays (Story 113.1)', () =>
 		expect(dialog).toHaveAccessibleDescription(UNLINKED_RENT)
 	})
 
-	it('(c) two debts linking one expense: both named, in store order, plural (AC 2)', async () => {
+	it('(c) two debts linking one expense: both named, in store order, plural', async () => {
 		seed([
 			balance('debt-b', 'debt', 'Student loan', 'exp-rent'),
 			balance('debt-other', 'debt', 'Card', 'exp-car'),
@@ -115,7 +115,7 @@ describe('the expense delete dialog names the debt it pays (Story 113.1)', () =>
 		)
 	})
 
-	it('(d) a debt in ANOTHER profile linking an unscoped expense is named too (AC 4)', async () => {
+	it('(d) a debt in ANOTHER profile linking an unscoped expense is named too', async () => {
 		useProfileStore.setState({
 			profiles: [
 				{ id: PROFILE_A, userId: 'u1', name: 'Mine', isDefault: true, currency: 'NONE' },
@@ -134,7 +134,7 @@ describe('the expense delete dialog names the debt it pays (Story 113.1)', () =>
 		['blank', '   '],
 		['non-string', 42],
 		['missing', undefined],
-	])('(e) a %s debt name: "one of your debts", no quotes (AC 6)', async (_kind, name) => {
+	])('(e) a %s debt name: "one of your debts", no quotes', async (_kind, name) => {
 		seed([balance('debt-1', 'debt', name, 'exp-car')])
 		const { dialog } = await openDelete('Car payment')
 		expect(dialog).toHaveAccessibleDescription(
@@ -142,7 +142,7 @@ describe('the expense delete dialog names the debt it pays (Story 113.1)', () =>
 		)
 	})
 
-	it('(e) a debt name is trimmed (AC 6)', async () => {
+	it('(e) a debt name is trimmed', async () => {
 		seed([balance('debt-1', 'debt', '  Car loan  ', 'exp-car')])
 		const { dialog } = await openDelete('Car payment')
 		expect(dialog).toHaveAccessibleDescription(
@@ -150,7 +150,7 @@ describe('the expense delete dialog names the debt it pays (Story 113.1)', () =>
 		)
 	})
 
-	it('(f) confirming deletes ONLY the expense; the debt keeps its link (AC 5, 102.1 D8)', async () => {
+	it('(f) confirming deletes ONLY the expense; the debt keeps its link', async () => {
 		seed([balance('debt-1', 'debt', 'Car loan', 'exp-car')])
 		const { user, dialog } = await openDelete('Car payment')
 		await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
@@ -162,7 +162,7 @@ describe('the expense delete dialog names the debt it pays (Story 113.1)', () =>
 		])
 	})
 
-	it('(g) cancelling deletes nothing (AC 5)', async () => {
+	it('(g) cancelling deletes nothing', async () => {
 		seed([balance('debt-1', 'debt', 'Car loan', 'exp-car')])
 		const { user, dialog } = await openDelete('Car payment')
 		await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
@@ -174,7 +174,7 @@ describe('the expense delete dialog names the debt it pays (Story 113.1)', () =>
 		])
 	})
 
-	it('a PAID session enqueues exactly the one expense delete, no balance write (AC 5)', async () => {
+	it('a PAID session enqueues exactly the one expense delete, no balance write', async () => {
 		// Registered so these spies are reachable; otherwise not.toHaveBeenCalled() is a tautology.
 		const spies = {
 			userId: '550e8400-e29b-41d4-a716-446655440000',

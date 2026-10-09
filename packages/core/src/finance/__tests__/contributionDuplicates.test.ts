@@ -53,7 +53,7 @@ describe('nameSimilarity', () => {
 })
 
 describe('findContributionDuplicateCandidates', () => {
-	it('finds and highlights the FR72 reproduction', () => {
+	it('finds and highlights an expense that repeats a same-amount, similar-name contribution', () => {
 		const candidates = findContributionDuplicateCandidates({
 			expenses: [expense('e1', 'TFSA contribution', 50_000)],
 			investmentContributions: [contribution('c1', 'TFSA', 50_000)],
@@ -191,7 +191,7 @@ describe('findContributionDuplicateCandidates', () => {
 	})
 })
 
-describe('the detector is fenced off from the pool calculation (AC-4)', () => {
+describe('the detector is fenced off from the pool calculation', () => {
 	it('savingsAllocation.ts does not import contributionDuplicates', () => {
 		// Read the source text: importing the module here would only test our own import.
 		const here = dirname(fileURLToPath(import.meta.url))

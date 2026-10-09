@@ -85,7 +85,7 @@ describe('assertPaddleProductionConfig', () => {
 		expect(() => assertPaddleProductionConfig()).toThrow(/not fully configured/)
 	})
 
-	it('REQUIRES PADDLE_MONTHLY_PRICE_ID in production (story 5-20, settled at code review)', () => {
+	it('REQUIRES PADDLE_MONTHLY_PRICE_ID in production', () => {
 		// Monthly is required because its price is stated on the legal pricing page: a build must not
 		// advertise a plan it cannot sell.
 		const { PADDLE_MONTHLY_PRICE_ID: _omitted, ...withoutMonthly } = FULL

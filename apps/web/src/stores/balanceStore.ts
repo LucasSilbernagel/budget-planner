@@ -23,7 +23,7 @@ import { withUuidIds } from '../lib/uuid'
 import { BALANCE_TRACKING_STORAGE_KEY } from './overview-data-storage-keys'
 import { useProfileStore } from './profileStore'
 
-interface BalanceState {
+type BalanceState = {
 	entries: ClientBalanceTracking[]
 
 	filter: BalanceTrackingFilter

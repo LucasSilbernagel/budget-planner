@@ -45,7 +45,7 @@ const HEAD_ARGS: Record<string, unknown> = {
 	},
 }
 
-interface MetaEntry {
+type MetaEntry = {
 	title?: string
 	name?: string
 	property?: string
@@ -95,7 +95,7 @@ async function importRoute(routePath: string): Promise<unknown> {
 	return loader()
 }
 
-describe('route discovery (story 40.1, AC-6)', () => {
+describe('route discovery', () => {
 	it('the compile-time glob and a real filesystem walk find the SAME page routes', () => {
 		const walkedPagePaths = walkRouteFiles(ROUTES_DIR)
 			.filter(isPageRouteFile)
@@ -116,7 +116,7 @@ describe('route discovery (story 40.1, AC-6)', () => {
 	})
 })
 
-describe('every page route names itself (story 40.1, AC-1/AC-2/AC-4)', () => {
+describe('every page route names itself', () => {
 	// Iterates the discovered set, not the hand list, so weakening the discovery test cannot
 	// turn this into a spot-check.
 	for (const routePath of globbedPagePaths) {
@@ -165,7 +165,7 @@ describe('every page route names itself (story 40.1, AC-1/AC-2/AC-4)', () => {
 	})
 })
 
-describe('pre-existing titles are unchanged (story 40.1, AC-2)', () => {
+describe('pre-existing titles are unchanged', () => {
 	const PINNED: Record<string, string> = {
 		'/categories': 'Categories · Longhand Budget',
 		'/settings': 'Settings · Longhand Budget',
@@ -185,7 +185,7 @@ describe('pre-existing titles are unchanged (story 40.1, AC-2)', () => {
 })
 
 // head() also runs while the loader is pending and on notFound, hence both branches.
-describe('/docs/$docId head branches (story 40.1)', () => {
+describe('/docs/$docId head branches', () => {
 	it('has documents to assert against', () => {
 		// Without this, every per-doc assertion below would vacuously pass on an
 		// empty list — the loop would simply not run.

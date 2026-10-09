@@ -10,7 +10,7 @@ const source = (): string => readFileSync(MAILER, 'utf8')
 const ENV_KEY = 'E2E_MAIL_OUTBOX'
 const GATE = `import.meta.env.DEV && process.env['${ENV_KEY}']`
 
-describe('sendMagicLinkEmail dev-only outbox (story 87.1, AC 4)', () => {
+describe('sendMagicLinkEmail dev-only outbox', () => {
 	it('opens the outbox with NOTHING but the DEV build flag, evaluated first', () => {
 		// The whole condition, exactly: `true || import.meta.env.DEV && …` contains
 		// the gate verbatim and would pass a substring check.

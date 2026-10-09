@@ -37,7 +37,7 @@ afterEach(() => {
 })
 
 describe('MetadataProvider', () => {
-	it('AC-1: captures metadata from the landing URL and exposes it', async () => {
+	it('captures metadata from the landing URL and exposes it', async () => {
 		setUrl('?utm_source=newsletter&utm_campaign=launch')
 		render(
 			<MetadataProvider>
@@ -47,7 +47,7 @@ describe('MetadataProvider', () => {
 		await waitFor(() => expect(screen.getByTestId('source')).toHaveTextContent('newsletter'))
 	})
 
-	it('AC-1: feeds the captured metadata into the analytics service', async () => {
+	it('feeds the captured metadata into the analytics service', async () => {
 		setUrl('?utm_source=twitter')
 		render(
 			<MetadataProvider>
@@ -59,7 +59,7 @@ describe('MetadataProvider', () => {
 		)
 	})
 
-	it('AC-1: writes NO cookies and NO localStorage for tracking', async () => {
+	it('writes NO cookies and NO localStorage for tracking', async () => {
 		setUrl('?utm_source=newsletter')
 		render(
 			<MetadataProvider>

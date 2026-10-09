@@ -3,7 +3,7 @@
  * A null active profile keeps every row.
  */
 
-export interface ProfileScoped {
+export type ProfileScoped = {
 	profileId?: string | null
 }
 

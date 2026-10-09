@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { formatCurrency, getSupportedCurrencies } from '../currency.js'
 import { DEFAULT_LOCALE, localeForCurrency } from '../currency-locale.js'
 
-describe('localeForCurrency (story 8-1)', () => {
+describe('localeForCurrency', () => {
 	it('DEFAULT_LOCALE is en-US', () => {
 		expect(DEFAULT_LOCALE).toBe('en-US')
 	})
@@ -50,7 +50,7 @@ describe('localeForCurrency (story 8-1)', () => {
 		expect(localeForCurrency('XYZ')).toBe(DEFAULT_LOCALE)
 	})
 
-	describe('drives region-default formatting via formatCurrency (AC-1)', () => {
+	describe('drives region-default formatting via formatCurrency', () => {
 		// Intl uses various Unicode spaces (e.g. U+00A0); normalize to a plain space.
 		const normalizeSpaces = (value: string) => value.replace(/\s/g, ' ')
 

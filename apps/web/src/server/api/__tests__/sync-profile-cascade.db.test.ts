@@ -193,7 +193,7 @@ beforeEach(async () => {
 	])
 })
 
-describe('the server cascade (AC-4, AC-9)', () => {
+describe('the server cascade', () => {
 	it('tombstones the deleted profile and all five syncable child tables', async () => {
 		const result = await pushDelete(P_DOOM)
 		expect(result.success).toBe(true)
@@ -279,7 +279,7 @@ describe('the server cascade (AC-4, AC-9)', () => {
 	})
 })
 
-describe('the last-profile refusal on the live push path (AC-3)', () => {
+describe('the last-profile refusal on the live push path', () => {
 	// Both halves together: acknowledgement alone would pass against code that deleted the last profile.
 	it('ACKNOWLEDGES an unsatisfiable last-profile delete while keeping the profile live', async () => {
 		await db.delete(forecastingProfiles).where(eq(forecastingProfiles.profileId, P_KEEP))
@@ -344,7 +344,7 @@ describe('the last-profile refusal on the live push path (AC-3)', () => {
 	})
 })
 
-describe('what a SECOND device pulls afterwards (AC-8)', () => {
+describe('what a SECOND device pulls afterwards', () => {
 	// Child tables are filtered by the client's active profile, so another device gets only the
 	// profile tombstone; the client cascades locally.
 	it('delivers the profile tombstone but NOT the child tombstones', async () => {

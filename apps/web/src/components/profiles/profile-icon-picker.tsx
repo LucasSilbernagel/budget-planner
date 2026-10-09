@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import { PROFILE_ICON_LABELS, PROFILE_ICONS, type ProfileIcon } from '@/lib/profile-appearance'
 
-interface ProfileIconPickerProps {
+type ProfileIconPickerProps = {
 	value: string
 	onChange: (icon: ProfileIcon) => void
 	idPrefix: string

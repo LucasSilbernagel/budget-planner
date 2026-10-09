@@ -1,6 +1,6 @@
 // Only allow-listed params are captured, so PII-bearing params (`?email=`) never reach analytics.
 
-export interface ClientMetadata {
+export type ClientMetadata = {
 	source?: string
 	medium?: string
 	campaign?: string

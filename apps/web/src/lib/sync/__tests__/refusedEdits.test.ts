@@ -154,7 +154,7 @@ describe('handleRejectedOperations — reverting', () => {
 		expect(d.requestFullRepull).not.toHaveBeenCalled()
 	})
 
-	it('a refused PROFILE create lets go of its children’s queued ops too (story 76.2)', async () => {
+	it('a refused PROFILE create lets go of its children’s queued ops too', async () => {
 		const d = deps()
 		await handleRejectedOperations(
 			[op({ type: 'create', entityType: 'userProfile', entityId: 'p-1' })],
@@ -344,7 +344,7 @@ describe('refusalNoticeStore', () => {
 	})
 })
 
-describe('a refused retirement plan edit (story 99.2)', () => {
+describe('a refused retirement plan edit', () => {
 	const planOp = (type: SyncOperation['type']) =>
 		op({ type, entityType: 'retirementPlan', entityId: 'u', data: { userId: 'u', plan: {} } })
 

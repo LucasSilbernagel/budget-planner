@@ -56,23 +56,23 @@ describe('SettingsPage', () => {
 		expect(screen.getByRole('heading', { level: 2, name: /^display$/i })).toBeInTheDocument()
 	})
 
-	it('names both locked premium rows by their visible title and description (story 116.2)', () => {
+	it('names both locked premium rows by their visible title and description', () => {
 		const { container } = render(<SettingsPage />)
 		expect(expectLockedRowsNamedByVisibleText(container)).toHaveLength(2)
 	})
 
-	it('is exactly one <main> landmark (story 116.1, FR184)', () => {
+	it('is exactly one <main> landmark', () => {
 		render(<SettingsPage />)
 		expect(screen.getAllByRole('main')).toHaveLength(1)
 	})
 
-	it('consolidates the currency control here, with its global scope made explicit (AC-2)', () => {
+	it('consolidates the currency control here, with its global scope made explicit', () => {
 		render(<SettingsPage />)
 		expect(screen.getByRole('group', { name: /currency display/i })).toBeInTheDocument()
 		expect(screen.getByText(/applies everywhere amounts are shown/i)).toBeInTheDocument()
 	})
 
-	it('describes the Retirement switch as covering the expense-form question too (71.1, FR113)', () => {
+	it('describes the Retirement switch as covering the expense-form question too', () => {
 		render(<SettingsPage />)
 		const toggle = screen.getByRole('switch', { name: /show retirement planner/i })
 		const description = document.getElementById(toggle.getAttribute('aria-describedby') ?? '')
@@ -82,7 +82,7 @@ describe('SettingsPage', () => {
 		expect(text).not.toMatch(/from your navigation\./)
 	})
 
-	it('hosts NO dark-mode toggle — the theme follows the device (61.1, FR93)', () => {
+	it('hosts NO dark-mode toggle — the theme follows the device', () => {
 		render(<SettingsPage />)
 
 		// Does not catch a dark-mode control renamed to "Theme" or "Appearance".
@@ -96,7 +96,7 @@ describe('SettingsPage', () => {
 		expect(screen.queryByRole('checkbox', { name: /dark mode/i })).toBeNull()
 	})
 
-	it('surfaces the all-users "Clear local data" control, even for a free/unauthenticated user (17-2 AC-1)', () => {
+	it('surfaces the all-users "Clear local data" control, even for a free/unauthenticated user', () => {
 		mockStatus({ hasAccess: false, subscriptionStatus: null, isAuthenticated: false })
 		render(<SettingsPage />)
 		expect(screen.getByRole('button', { name: /clear local data/i })).toBeInTheDocument()
@@ -145,7 +145,7 @@ describe('SettingsPage', () => {
 })
 
 // Tier here is the session seed, not the usePremiumAccess mock.
-describe('58.2: the premium Settings sections are tier-conditional (D2)', () => {
+describe('58.2: the premium Settings sections are tier-conditional', () => {
 	function paidSeed(overrides: Partial<SessionSeed> = {}): SessionSeed {
 		return {
 			isAuthenticated: true,
@@ -188,7 +188,7 @@ describe('58.2: the premium Settings sections are tier-conditional (D2)', () => 
 		}
 	)
 
-	it('takes the report privacy sentence with it — NOT re-homed to /financial-summary (AC-5)', () => {
+	it('takes the report privacy sentence with it — NOT re-homed to /financial-summary', () => {
 		// Don't move the privacy sentence onto /financial-summary: the report omits it
 		// deliberately and a test pins its absence.
 		mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
@@ -208,7 +208,7 @@ describe('58.2: the premium Settings sections are tier-conditional (D2)', () => 
 		['a free session', { subscriptionStatus: 'free' as const }, { isAuthenticated: true }],
 		['a past_due session', { subscriptionStatus: 'past_due' as const }, { isAuthenticated: true }],
 		['a canceled session', { subscriptionStatus: 'canceled' as const }, { isAuthenticated: true }],
-	])('renders both premium sections, unchanged, for %s (AC-6)', (_label, overrides, tier) => {
+	])('renders both premium sections, unchanged, for %s', (_label, overrides, tier) => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', ...tier })
 		renderWithSeed(overrides === null ? null : paidSeed(overrides as Partial<SessionSeed>))
 

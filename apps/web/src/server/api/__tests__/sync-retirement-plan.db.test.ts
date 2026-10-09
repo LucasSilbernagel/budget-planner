@@ -213,7 +213,7 @@ afterEach(() => {
 	service = undefined
 })
 
-describe('AC-2: the plan round-trips through the real chain, both directions', () => {
+describe('the plan round-trips through the real chain, both directions', () => {
 	it('(a)+(e) an UPDATE with no server row creates it (upsert), and pulls back identically', async () => {
 		const sync = await queuePlan('update', PLAN)
 		await sync.forceSync()
@@ -363,7 +363,7 @@ describe('AC-2: the plan round-trips through the real chain, both directions', (
 	})
 })
 
-describe('AC-6: no rejection path can deadlock — each op has a FATE', () => {
+describe('no rejection path can deadlock — each op has a FATE', () => {
 	it('(a) client gate: an over-long field is a ZodError before queue.add — nothing queued, nothing sent', async () => {
 		const sync = await startService()
 		// Straight to core: toServerPayload clamps strings, so only a direct op can
@@ -489,7 +489,7 @@ describe('AC-6: no rejection path can deadlock — each op has a FATE', () => {
 	})
 })
 
-describe('AC-4: a still-queued plan edit is not overwritten by the pull', () => {
+describe('a still-queued plan edit is not overwritten by the pull', () => {
 	it('core LWW keeps the newer queued edit, and the store is not touched', async () => {
 		// The server holds an OLDER plan; this device queued a newer edit (its
 		// timestamp is later than the row) and has not pushed it yet.

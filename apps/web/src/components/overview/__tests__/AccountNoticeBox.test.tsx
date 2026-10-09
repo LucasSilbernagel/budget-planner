@@ -28,7 +28,7 @@ afterEach(() => {
 })
 
 describe('AccountNoticeBox — not yet dismissed', () => {
-	it('renders both copy lines and a named close button (AC-1)', () => {
+	it('renders both copy lines and a named close button', () => {
 		render(<AccountNoticeBox />)
 
 		expect(screen.getByText(PILLARS)).toBeInTheDocument()
@@ -72,7 +72,7 @@ describe('AccountNoticeBox — not yet dismissed', () => {
 })
 
 describe('AccountNoticeBox — dismissing', () => {
-	it('removes the box and records the dismissal permanently (AC-1, AC-2)', () => {
+	it('removes the box and records the dismissal permanently', () => {
 		render(<AccountNoticeBox />)
 
 		act(() => {
@@ -85,7 +85,7 @@ describe('AccountNoticeBox — dismissing', () => {
 		expect(localStorage.getItem(ACCOUNT_NOTICE_DISMISSED_STORAGE_KEY)).toBe('1')
 	})
 
-	it('still hides the box when the store refuses the write (AC-3)', () => {
+	it('still hides the box when the store refuses the write', () => {
 		vi.spyOn(globalThis.localStorage, 'setItem').mockImplementation(() => {
 			throw new Error('QuotaExceededError')
 		})
@@ -102,7 +102,7 @@ describe('AccountNoticeBox — dismissing', () => {
 })
 
 describe('AccountNoticeBox — returning user', () => {
-	it('renders nothing once the flag is set (AC-4, post-hydration half)', () => {
+	it('renders nothing once the flag is set (post-hydration half)', () => {
 		localStorage.setItem(ACCOUNT_NOTICE_DISMISSED_STORAGE_KEY, '1')
 
 		render(<AccountNoticeBox />)
@@ -114,7 +114,7 @@ describe('AccountNoticeBox — returning user', () => {
 
 	// Against the server render: a lazy initializer would drop the box from it. Asserts the closing
 	// tag because the pillars sentence also opens the meta description.
-	it('emits the box in the SERVER render even when already dismissed (AC-3 hydration contract)', () => {
+	it('emits the box in the SERVER render even when already dismissed (hydration contract)', () => {
 		localStorage.setItem(ACCOUNT_NOTICE_DISMISSED_STORAGE_KEY, '1')
 
 		const html = renderToString(<AccountNoticeBox />)
@@ -126,7 +126,7 @@ describe('AccountNoticeBox — returning user', () => {
 
 	// A dismissal after document load must mark <html>, or a client-side return renders the box
 	// until a post-paint effect removes it.
-	it('marks <html> on dismiss so a later remount cannot paint the box (AC-4)', () => {
+	it('marks <html> on dismiss so a later remount cannot paint the box', () => {
 		render(<AccountNoticeBox />)
 		expect(document.documentElement.hasAttribute(ACCOUNT_NOTICE_DISMISSED_ATTRIBUTE)).toBe(false)
 
@@ -137,7 +137,7 @@ describe('AccountNoticeBox — returning user', () => {
 		expect(document.documentElement.getAttribute(ACCOUNT_NOTICE_DISMISSED_ATTRIBUTE)).toBe('1')
 	})
 
-	it('shows the box when the store throws on read — fails open (AC-3)', () => {
+	it('shows the box when the store throws on read — fails open', () => {
 		vi.spyOn(globalThis.localStorage, 'getItem').mockImplementation(() => {
 			throw new Error('SecurityError: access denied')
 		})
@@ -148,7 +148,7 @@ describe('AccountNoticeBox — returning user', () => {
 		expect(screen.getByRole('button', { name: DISMISS_NAME })).toBeInTheDocument()
 	})
 
-	it('ignores an unrelated dismissal key (AC-6, and no key sharing with InstallPrompt)', () => {
+	it('ignores an unrelated dismissal key (no key sharing with InstallPrompt)', () => {
 		localStorage.setItem('bp-pwa-install-dismissed', Date.now().toString())
 
 		render(<AccountNoticeBox />)

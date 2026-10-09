@@ -18,7 +18,7 @@ function exactRoundBig(num: bigint, den: bigint): number {
 	return Number(rem * 2n >= den ? floor + 1n : floor)
 }
 
-interface Rate {
+type Rate = {
 	label: string
 	num: number
 	den: number
@@ -41,7 +41,7 @@ const SWEEP_RATES = [
 
 const SWEEP_SIZE = 2_000_000
 
-describe('roundCents — the RD1 sweep (AC-3)', () => {
+describe('roundCents — the RD1 sweep', () => {
 	it.each(SWEEP_RATES)(
 		'matches the integer oracle for every b in 0..1,999,999 at $label',
 		({ num, den, multiplier }) => {
@@ -72,14 +72,13 @@ describe('roundCents — the RD1 sweep (AC-3)', () => {
 	)
 })
 
-describe('roundCents — large magnitudes never do worse than bare Math.round (AC-4)', () => {
+describe('roundCents — large magnitudes never do worse than bare Math.round', () => {
 	// Past ~1e13 the float product can't carry the exact fraction, so the bar is no
 	// regression versus bare Math.round, not zero mismatches.
 	const ranges: { label: string; start: bigint }[] = [
 		{ label: '1e13 cents', start: 10_000_000_000_000n },
 		{
-			label:
-				'MAX_SAFE_INTEGER / 100 (the balance validator bound before story 106.1 made it int32)',
+			label: 'MAX_SAFE_INTEGER / 100 (the old balance validator bound, before it became int32)',
 			start: BigInt(Math.floor(Number.MAX_SAFE_INTEGER / 100)) - 200_000n,
 		},
 	]
@@ -129,13 +128,13 @@ describe('roundCents — large magnitudes never do worse than bare Math.round (A
 })
 
 describe('roundCents — edge values', () => {
-	it('keeps Math.round for a negative exact half (D4: half toward +Infinity)', () => {
+	it('keeps Math.round for a negative exact half (half toward +Infinity)', () => {
 		expect(roundCents(-2.5)).toBe(-2)
 		expect(roundCents(-0.5)).toBe(Math.round(-0.5))
 		expect(roundCents(-101.5)).toBe(-101)
 	})
 
-	it('rounds a negative value near an exact half as that half, toward +Infinity (D4)', () => {
+	it('rounds a negative value near an exact half as that half, toward +Infinity', () => {
 		// -100 * 1.015 is -101.49999999999999; exactly -101.5, which rounds to -101.
 		expect(-100 * 1.015).not.toBe(-101.5)
 		expect(roundCents(-100 * 1.015)).toBe(-101)
@@ -155,7 +154,7 @@ describe('roundCents — edge values', () => {
 		expect(roundCents(1_000_000.5 - 1e-6)).toBe(1_000_000)
 	})
 
-	it('snaps a negative value float error pushed past the half (the only case D4 changes)', () => {
+	it('snaps a negative value float error pushed past the half (the only case the snap changes)', () => {
 		// Exact -101.5 rounds to -101; float lands just below, where bare Math.round gives -102.
 		expect(Math.round(-101.50000000000001)).toBe(-102)
 		expect(roundCents(-101.50000000000001)).toBe(-101)
@@ -177,7 +176,7 @@ const QUIET_DATA = {
 }
 const FLAT: ForecastingScenario = { name: 'flat', incomeGrowthRate: 0, expenseGrowthRate: 0 }
 
-describe('the engine sites round through roundCents (AC-1, AC-2)', () => {
+describe('the engine sites round through roundCents', () => {
 	it('an investment row of 100 at 1.5% closes year 1 at 102, not 101 (stepBalanceRows)', () => {
 		const r = calculateFinancialForecast(
 			{

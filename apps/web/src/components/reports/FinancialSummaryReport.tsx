@@ -181,7 +181,7 @@ function UnreadableNote({ count }: { count: number }): React.ReactElement | null
 	)
 }
 
-export interface FinancialSummaryReportProps {
+export type FinancialSummaryReportProps = {
 	// Injected by tests for determinism; production stamps today.
 	generatedAt?: Date
 }

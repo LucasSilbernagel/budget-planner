@@ -81,7 +81,7 @@ describe('netWorthFromTotals', () => {
 		).toBe(40_000_000)
 	})
 
-	it('is POSITIVE for a condo worth more than the mortgage against it (FR70)', () => {
+	it('is POSITIVE for a condo worth more than the mortgage against it', () => {
 		expect(
 			netWorthFromTotals({
 				investmentsCents: 0,

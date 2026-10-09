@@ -1,4 +1,4 @@
-export interface SemanticVersion {
+export type SemanticVersion = {
 	major: number
 	minor: number
 	patch: number

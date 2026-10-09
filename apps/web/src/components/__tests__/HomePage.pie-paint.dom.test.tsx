@@ -129,7 +129,7 @@ describe('the harness can see a pie label at all (positive control)', () => {
 })
 
 describe('Overview breakdown pies paint no in-plot slice labels (was e2e breakdown-pie-labels)', () => {
-	it('many categories: no labels; list, totals and accessible names intact (was :222, AC-4/5/6)', async () => {
+	it('many categories: no labels; list, totals and accessible names intact', async () => {
 		seed(INCOME, EXPENSES)
 		const { container } = render(<HomePage />)
 		await assertNoInPlotLabels(container, { ratioSlices: EXPENSES.length + 1, expenseSlices: 6 })
@@ -163,7 +163,7 @@ describe('Overview breakdown pies paint no in-plot slice labels (was e2e breakdo
 		expect(screen.queryAllByRole('img')).toHaveLength(0)
 	})
 
-	it('a two-slice pie is still readable with no in-plot labels (was :275, AC-8)', async () => {
+	it('a two-slice pie is still readable with no in-plot labels', async () => {
 		seed(INCOME.slice(0, 2), EXPENSES.slice(0, 2))
 		const { container } = render(<HomePage />)
 		await assertNoInPlotLabels(container, { ratioSlices: 3, expenseSlices: 2 })
@@ -187,7 +187,7 @@ describe('Overview breakdown pies paint no in-plot slice labels (was e2e breakdo
 		expect(screen.getByTestId('breakdown-pie-total-expense-ratio')).toHaveTextContent(/^31%$/)
 	})
 
-	it('a one-slice pie is still readable with no in-plot labels (was :313, AC-8)', async () => {
+	it('a one-slice pie is still readable with no in-plot labels', async () => {
 		seed(INCOME.slice(0, 1), EXPENSES.slice(0, 1))
 		const { container } = render(<HomePage />)
 		await assertNoInPlotLabels(container, { ratioSlices: 2, expenseSlices: 1 })
@@ -207,7 +207,7 @@ describe('Overview breakdown pies paint no in-plot slice labels (was e2e breakdo
 		expect(screen.getByTestId('breakdown-pie-total-expense-ratio')).toHaveTextContent(/^30%$/)
 	})
 
-	it('no in-plot labels on a NARROW viewport either (was :345, AC-9)', async () => {
+	it('no in-plot labels on a NARROW viewport either', async () => {
 		matchNarrow(true)
 		seed(INCOME, EXPENSES)
 		const { container } = render(<HomePage />)
@@ -215,7 +215,7 @@ describe('Overview breakdown pies paint no in-plot slice labels (was e2e breakdo
 	})
 })
 
-describe('Overview bar charts and screen readers (story 116.1, FR184, D4)', () => {
+describe('Overview bar charts and screen readers', () => {
 	it('hides the flows chart (its bars ARE the total cards) but NOT the balances chart (no text twin)', async () => {
 		seed(INCOME, EXPENSES)
 		useBalanceStore.setState({

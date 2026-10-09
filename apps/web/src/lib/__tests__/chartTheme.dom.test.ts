@@ -70,7 +70,7 @@ describe('useChartColors', () => {
 		expect(result.current.axis).not.toBe('#6b7280')
 	})
 
-	it('follows a LIVE change of the device preference without a remount (61.1, AC-7)', () => {
+	it('follows a LIVE change of the device preference without a remount', () => {
 		const setMatches = mockMatchMedia(false)
 		const { result } = renderHook(() => useChartColors())
 		expect(result.current.axis).toBe('#6b7280')

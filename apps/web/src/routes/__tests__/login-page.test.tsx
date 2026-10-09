@@ -80,7 +80,7 @@ describe('/login — the sign-in card beside the strip', () => {
 		expect(within(region).queryByRole('link', { name: /sign in/i })).toBeNull()
 	})
 
-	it('is exactly one <main> landmark (story 116.1, FR184)', async () => {
+	it('is exactly one <main> landmark', async () => {
 		renderChrome('/login', true)
 		expect(await screen.findByRole('heading', { name: /^sign in$/i })).toBeInTheDocument()
 		expect(screen.getAllByRole('main')).toHaveLength(1)

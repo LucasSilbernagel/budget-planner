@@ -5,7 +5,7 @@ export type Summary = Record<string, number>
 
 export type Parser = (text: string) => Summary | null
 
-export interface GateResult {
+export type GateResult = {
 	id: string
 	exitCode: number | null
 	summary: Summary | null
@@ -17,13 +17,13 @@ export interface GateResult {
 	skipped?: string
 }
 
-export interface GatePart {
+export type GatePart = {
 	cwd: string
 	command: string
 	args: string[]
 }
 
-export interface Gate {
+export type Gate = {
 	id: string
 	phase: 'A' | 'B'
 	needsBuild?: boolean

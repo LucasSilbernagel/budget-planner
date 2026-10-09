@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { DocsSidebar } from './sidebar'
 
-export interface DocsLayoutProps {
+export type DocsLayoutProps = {
 	title: string
 	description?: string
 	activeSlug?: string

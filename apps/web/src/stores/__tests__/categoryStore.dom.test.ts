@@ -137,7 +137,7 @@ describe('useCategoryManager — validation', () => {
 	})
 })
 
-describe('useCategoryManager — delete cascade (AC-3)', () => {
+describe('useCategoryManager — delete cascade', () => {
 	it('clears the reference from every referencing row and reports the count', () => {
 		const created = manager().createCategory('Groceries', 'expense')
 		const categoryId = created.ok ? created.category.id : ''

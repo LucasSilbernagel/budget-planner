@@ -146,7 +146,7 @@ afterEach(() => {
 })
 
 describe('FinancialSummaryReport — content', () => {
-	it('is exactly one <main> landmark (story 116.1, FR184)', () => {
+	it('is exactly one <main> landmark', () => {
 		seedTypicalData()
 		render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 		expect(screen.getAllByRole('main')).toHaveLength(1)
@@ -177,7 +177,7 @@ describe('FinancialSummaryReport — content', () => {
 		expect(cells[2]).toHaveTextContent('433.33')
 	})
 
-	it('renders net worth with savings added and debts subtracted (story 32.2)', () => {
+	it('renders net worth with savings added and debts subtracted', () => {
 		seedTypicalData()
 		render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
@@ -189,7 +189,7 @@ describe('FinancialSummaryReport — content', () => {
 		expect(totalFor('Net worth')).not.toHaveTextContent('-142,000.00')
 	})
 
-	it('summarizes a savings-only user instead of claiming they have no net worth (story 32.2)', () => {
+	it('summarizes a savings-only user instead of claiming they have no net worth', () => {
 		useSavingsStore.setState({
 			savingsGoals: [savingsRow('s1', 'Emergency fund', 1_000_000, 250_000)],
 		})
@@ -232,7 +232,7 @@ describe('FinancialSummaryReport — content', () => {
 		expect(document.body.textContent).not.toMatch(/nothing is sent anywhere to produce it/i)
 	})
 
-	it('formats through the selected currency when symbols mode is on (FR34)', () => {
+	it('formats through the selected currency when symbols mode is on', () => {
 		useCurrencyStore.setState({ mode: 'symbol', currency: 'USD' })
 		seedTypicalData()
 		render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
@@ -330,7 +330,7 @@ describe('FinancialSummaryReport — unreadable data is disclosed, not hidden', 
 
 // Class-token pin, not a layout proof: jsdom has no Tailwind and returns textAlign '' for every <th>.
 // Pins both sides to text-left, exclusively (see alignmentTokensOf).
-describe('FinancialSummaryReport — table column alignment (story 56.2, UX-DR63)', () => {
+describe('FinancialSummaryReport — table column alignment', () => {
 	it('left-aligns every row-header cell to match its column header', () => {
 		seedTypicalData()
 		render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
@@ -371,7 +371,7 @@ describe('FinancialSummaryReport — printing and privacy', () => {
 		printSpy.mockRestore()
 	})
 
-	it('makes NO network request to build or print the report (AC-3, NFR1/NFR2)', () => {
+	it('makes NO network request to build or print the report', () => {
 		// The privacy claim rests on this: nothing is transmitted.
 		const fetchSpy = vi.fn(() => Promise.resolve(new Response('{}', { status: 200 })))
 		global.fetch = fetchSpy as unknown as typeof global.fetch
@@ -419,8 +419,8 @@ describe('FinancialSummaryReport — printing and privacy', () => {
 	})
 })
 
-describe('FinancialSummaryReport — bottom print button (story 56.4, FR83)', () => {
-	it('offers a second print button at the end of the document (AC-1, AC-4)', () => {
+describe('FinancialSummaryReport — bottom print button', () => {
+	it('offers a second print button at the end of the document', () => {
 		seedTypicalData()
 		render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
@@ -437,7 +437,7 @@ describe('FinancialSummaryReport — bottom print button (story 56.4, FR83)', ()
 		expect(button.closest('section')).toBeNull()
 	})
 
-	it('gives the bottom button the same row shape as the top one (AC-6)', () => {
+	it('gives the bottom button the same row shape as the top one', () => {
 		seedTypicalData()
 		render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
@@ -449,7 +449,7 @@ describe('FinancialSummaryReport — bottom print button (story 56.4, FR83)', ()
 		expect(tokens).not.toContain('justify-between')
 	})
 
-	it('renders the bottom button in the all-unreadable branch too (AC-5)', () => {
+	it('renders the bottom button in the all-unreadable branch too', () => {
 		useIncomeStore.setState({
 			incomeSources: [incomeRow('i1', 'Corrupt', 100_000, 'fortnightly')],
 		})
@@ -459,7 +459,7 @@ describe('FinancialSummaryReport — bottom print button (story 56.4, FR83)', ()
 		expect(printButtons()).toHaveLength(2)
 	})
 
-	it('hands the document to the print dialog from the bottom button too (AC-4)', () => {
+	it('hands the document to the print dialog from the bottom button too', () => {
 		const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
 		seedTypicalData()
 		render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
@@ -470,7 +470,7 @@ describe('FinancialSummaryReport — bottom print button (story 56.4, FR83)', ()
 		printSpy.mockRestore()
 	})
 
-	it('keeps the bottom button off paper while sitting inside the article (AC-2)', () => {
+	it('keeps the bottom button off paper while sitting inside the article', () => {
 		seedTypicalData()
 		render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
@@ -479,14 +479,14 @@ describe('FinancialSummaryReport — bottom print button (story 56.4, FR83)', ()
 		expect(button.closest('#financial-summary-report')).not.toBeNull()
 	})
 
-	it('does not repeat itself on a report with nothing to print (AC-5)', () => {
+	it('does not repeat itself on a report with nothing to print', () => {
 		render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
 		expect(screen.getByText(/there is nothing to report yet/i)).toBeInTheDocument()
 		expect(screen.queryAllByRole('button', { name: PRINT_BUTTON_NAME })).toHaveLength(1)
 	})
 
-	it('still offers both buttons when the sections exist but hold no figures (AC-5)', () => {
+	it('still offers both buttons when the sections exist but hold no figures', () => {
 		useBalanceStore.setState({ entries: [balanceRow('b1', 'ISA', 'investment', 100_000)] })
 		render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
@@ -494,7 +494,7 @@ describe('FinancialSummaryReport — bottom print button (story 56.4, FR83)', ()
 		expect(printButtons()).toHaveLength(2)
 	})
 
-	it('renders the two buttons with identical class attributes (AC-6)', () => {
+	it('renders the two buttons with identical class attributes', () => {
 		seedTypicalData()
 		render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
@@ -505,7 +505,7 @@ describe('FinancialSummaryReport — bottom print button (story 56.4, FR83)', ()
 	})
 })
 
-describe('FinancialSummaryReport — scope (story 30-3, Decision 1)', () => {
+describe('FinancialSummaryReport — scope', () => {
 	it('does not claim a retirement outlook or a forward projection', () => {
 		// Guards the claim, not the token: the net-worth section legitimately says 'This is not a projection'.
 		seedTypicalData()
@@ -524,7 +524,7 @@ describe('FinancialSummaryReport — scope (story 30-3, Decision 1)', () => {
 	})
 })
 
-describe('FinancialSummaryReport — net worth copy and savings disclosure (32.2 review)', () => {
+describe('FinancialSummaryReport — net worth copy and savings disclosure', () => {
 	it('names savings in the empty-state sentence', () => {
 		// Seed an unrelated section; with every store empty the whole-document empty state shows instead.
 		useIncomeStore.setState({ incomeSources: [incomeRow('i1', 'Salary', 500_000, 'monthly')] })
@@ -566,7 +566,7 @@ describe('FinancialSummaryReport — net worth copy and savings disclosure (32.2
 	})
 })
 
-describe('FinancialSummaryReport — corrupt savings targets are disclosed (32.2 review)', () => {
+describe('FinancialSummaryReport — corrupt savings targets are disclosed', () => {
 	it('explains that a balance counted but its target could not be read', () => {
 		useSavingsStore.setState({
 			savingsGoals: [savingsRow('s1', 'Legacy goal', 0, 100_000)],
@@ -594,7 +594,7 @@ describe('FinancialSummaryReport — corrupt savings targets are disclosed (32.2
 	})
 })
 
-describe('FinancialSummaryReport — assets are printed, not just counted (Story 43.4, FR70)', () => {
+describe('FinancialSummaryReport — assets are printed, not just counted', () => {
 	it('renders an Assets table and a Total assets row that reconcile with net worth', () => {
 		useBalanceStore.setState({
 			entries: [
@@ -633,7 +633,7 @@ describe('FinancialSummaryReport — assets are printed, not just counted (Story
 
 // Every assertion must cross a state change (monthly is the default) and re-anchor on rendered
 // figures after the switch. Annual expectations are hand-computed literals.
-describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', () => {
+describe('FinancialSummaryReport — Budget period toggle', () => {
 	function periodControl(): HTMLSelectElement {
 		return screen.getByRole('combobox', { name: /show the budget per/i }) as HTMLSelectElement
 	}
@@ -653,7 +653,7 @@ describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', (
 		expect(screen.getAllByRole('table').length).toBeGreaterThan(0)
 	}
 
-	it('defaults to monthly, leaving the figures and labels unchanged (AC-1)', () => {
+	it('defaults to monthly, leaving the figures and labels unchanged', () => {
 		seedTypicalData()
 		render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
@@ -684,7 +684,7 @@ describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', (
 		expect(document.body.textContent).not.toMatch(/amounts\b/i)
 	})
 
-	it('annualizes the derived column and all three totals when switched (AC-3, AC-4)', async () => {
+	it('annualizes the derived column and all three totals when switched', async () => {
 		const user = userEvent.setup()
 		seedTypicalData()
 		render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
@@ -710,7 +710,7 @@ describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', (
 		expect(screen.queryByText('Monthly income', { selector: 'dt' })).not.toBeInTheDocument()
 	})
 
-	it('leaves the entered Amount and Frequency columns untouched (AC-5)', async () => {
+	it('leaves the entered Amount and Frequency columns untouched', async () => {
 		const user = userEvent.setup()
 		seedTypicalData()
 		render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
@@ -726,7 +726,7 @@ describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', (
 		expect(cellsOfRow('Freelance')[2]).toHaveTextContent('5,199.96')
 	})
 
-	it('keeps the status word when relabelling a break-even budget (AC-4)', async () => {
+	it('keeps the status word when relabelling a break-even budget', async () => {
 		const user = userEvent.setup()
 		useIncomeStore.setState({ incomeSources: [incomeRow('i1', 'Salary', 200_000, 'monthly')] })
 		useExpenseStore.setState({ expenses: [incomeRow('e1', 'Rent', 200_000, 'monthly')] })
@@ -742,7 +742,7 @@ describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', (
 		expect(screen.queryByText('Annual surplus')).not.toBeInTheDocument()
 	})
 
-	it('keeps the status word when relabelling a deficit budget (AC-4)', async () => {
+	it('keeps the status word when relabelling a deficit budget', async () => {
 		const user = userEvent.setup()
 		useIncomeStore.setState({ incomeSources: [incomeRow('i1', 'Salary', 100_000, 'monthly')] })
 		useExpenseStore.setState({ expenses: [incomeRow('e1', 'Rent', 200_000, 'monthly')] })
@@ -758,7 +758,7 @@ describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', (
 		expect(totalFor('Annual shortfall')).toHaveTextContent('-12,000.00')
 	})
 
-	it('leaves the Net Worth and Savings sections alone (AC-6)', async () => {
+	it('leaves the Net Worth and Savings sections alone', async () => {
 		const user = userEvent.setup()
 		seedTypicalData()
 		render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
@@ -782,7 +782,7 @@ describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', (
 		expect(totalFor('Overall progress').textContent).toBe(before.progress)
 	})
 
-	it('keeps the control off the printed page while the figures print (AC-7)', () => {
+	it('keeps the control off the printed page while the figures print', () => {
 		seedTypicalData()
 		render(<FinancialSummaryReport generatedAt={GENERATED_AT} />)
 
@@ -834,7 +834,7 @@ describe('FinancialSummaryReport — Budget period toggle (story 56.3, FR84)', (
 })
 
 // jsdom computes no layout: this pins the wiring, not that it fits.
-describe('section totals break only between digit groups (story 88.4)', () => {
+describe('section totals break only between digit groups', () => {
 	function runsOf(el: Element): string[] {
 		const out = ['']
 		for (const node of Array.from(el.childNodes)) {
@@ -871,7 +871,7 @@ describe('section totals break only between digit groups (story 88.4)', () => {
 		expect(runsOf(totalFor('Overall progress'))).toEqual(['—'])
 	})
 
-	it('every total row: the label shrinks first and the value is right-aligned (D7, 88.4 review)', () => {
+	it('every total row: the label shrinks first and the value is right-aligned', () => {
 		// jsdom has no layout or Tailwind: this pins the class tokens only.
 		useIncomeStore.setState({ incomeSources: [incomeRow('i1', 'Salary', 100_00, 'monthly')] })
 		useBalanceStore.setState({ entries: [balanceRow('b1', 'Brokerage', 'investment', 100_00)] })
@@ -894,7 +894,7 @@ describe('section totals break only between digit groups (story 88.4)', () => {
 		}
 	})
 
-	it('a percent total renders unchanged, with no break (story 88.4)', () => {
+	it('a percent total renders unchanged, with no break', () => {
 		useCurrencyStore.setState({ mode: 'symbol', currency: 'EUR' })
 		useSavingsStore.setState({
 			savingsGoals: [savingsRow('s1', 'Roof', 4_000_000_00, 1_000_000_00)],
@@ -909,7 +909,7 @@ describe('section totals break only between digit groups (story 88.4)', () => {
 })
 
 // jsdom computes no layout: these pin the wiring; geometry is pinned by the report CI screenshots.
-describe('the report fits the screen and keeps its columns in print (story 91.2)', () => {
+describe('the report fits the screen and keeps its columns in print', () => {
 	afterEach(() => {
 		restoreRegionWidths()
 	})
@@ -964,7 +964,7 @@ describe('the report fits the screen and keeps its columns in print (story 91.2)
 		expect(labels.size, 'every region has a distinct name').toBe(6)
 	})
 
-	it('a table that fits is not a Tab stop, but keeps its region role and name (93.1)', () => {
+	it('a table that fits is not a Tab stop, but keeps its region role and name', () => {
 		seedEveryTable()
 		stubRegionWidths()
 		setRegionFits()

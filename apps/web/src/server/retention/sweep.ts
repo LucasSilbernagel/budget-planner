@@ -28,7 +28,7 @@ export const RETENTION_JOB = 'retention-sweep'
 
 const LEASE_MS = 10 * 60 * 1000
 
-export interface RetentionSweepResult {
+export type RetentionSweepResult = {
 	skipped?: 'lease-held'
 	dryRun: boolean
 	clocksStarted: number
@@ -45,7 +45,7 @@ export interface RetentionSweepResult {
 	truncated: boolean
 }
 
-export interface RetentionSweepOptions {
+export type RetentionSweepOptions = {
 	now: number
 	dryRun?: boolean
 	noticeLimit?: number

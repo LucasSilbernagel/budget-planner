@@ -25,7 +25,7 @@ const ROW_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
 const MIGRATIONS = new URL('../../../../../../packages/db/migrations/', import.meta.url)
 
-interface JournalEntry {
+type JournalEntry = {
 	idx: number
 	tag: string
 }

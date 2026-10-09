@@ -153,7 +153,7 @@ afterEach(() => {
 	vi.clearAllMocks()
 })
 
-describe('a v3 forecast reloads its rows exactly (AC-13)', () => {
+describe('a v3 forecast reloads its rows exactly', () => {
 	it('names, types, balances, contributions, frequencies, flags and order', async () => {
 		const call = await loadPlan(
 			{
@@ -232,7 +232,7 @@ describe('a v3 forecast reloads its rows exactly (AC-13)', () => {
 })
 
 // Forecasts saved without rates reload at 6%, so they reopen lower than saved, by design.
-describe('a v1/v2 forecast reopens as one Investments row, at 6% (AC-13; 100.3 D3)', () => {
+describe('a v1/v2 forecast reopens as one Investments row, at 6%', () => {
 	for (const version of [1, 2]) {
 		it(`v${version}: becomes ONE Investments row at 6.00%, and projects LOWER than at the old 7%`, async () => {
 			const call = await loadPlan({ savings: 123_400, investments: 50_000, years: 7 }, version)
@@ -281,14 +281,14 @@ describe('a v1/v2 forecast reopens as one Investments row, at 6% (AC-13; 100.3 D
 		)
 	})
 
-	it('a pre-bug-3 row with no inputs still starts at 0', async () => {
+	it('a version-1 row with no inputs still starts at 0', async () => {
 		const call = await loadPlan(undefined, 1)
 		expect(rows()).toEqual([])
 		expect(call.data.investments).toBe(0)
 	})
 })
 
-describe('corrupt saved rows (AC-14)', () => {
+describe('corrupt saved rows', () => {
 	it('ignores a balanceAccounts that is not an array and falls back to the v1/v2 total', async () => {
 		const call = await loadPlan(
 			{ savings: 0, investments: 50_000, years: 7, balanceAccounts: { not: 'an array' } },
@@ -389,7 +389,7 @@ describe('corrupt saved rows (AC-14)', () => {
 })
 
 // Presence of a saved rate decides, never `version`.
-describe('a v4 forecast reloads each investment row at its own rate (story 100.3)', () => {
+describe('a v4 forecast reloads each investment row at its own rate', () => {
 	const row = (name: string, extra: Record<string, unknown>, type = 'investment') => ({
 		name,
 		type,
@@ -423,7 +423,7 @@ describe('a v4 forecast reloads each investment row at its own rate (story 100.3
 		expect(screen.queryByTestId('save-blocked-reason')).toBeNull()
 	})
 
-	it('a missing, null or non-number rate reloads at 6% (D3)', async () => {
+	it('a missing, null or non-number rate reloads at 6%', async () => {
 		const call = await loadPlan(
 			{
 				savings: 0,
@@ -445,7 +445,7 @@ describe('a v4 forecast reloads each investment row at its own rate (story 100.3
 		).toEqual([DEFAULT_INVESTMENT_RETURN, DEFAULT_INVESTMENT_RETURN, DEFAULT_INVESTMENT_RETURN])
 	})
 
-	it('keeps a FINITE rate outside −100%..100% and flags it from the first render (D9)', async () => {
+	it('keeps a FINITE rate outside −100%..100% and flags it from the first render', async () => {
 		fetchForecasts.mockResolvedValue({
 			success: true,
 			data: [
@@ -492,7 +492,7 @@ describe('a v4 forecast reloads each investment row at its own rate (story 100.3
 	})
 })
 
-describe("a v5 forecast keeps each debt row's flag and label (story 102.2)", () => {
+describe("a v5 forecast keeps each debt row's flag and label", () => {
 	const debtRow = (over: Record<string, unknown>) => ({
 		name: 'Car loan',
 		type: 'debt',

@@ -57,7 +57,7 @@ export async function sendMagicLinkEmail(to: string, link: string): Promise<stri
 			return undefined
 		}
 		throw new Error(
-			'EMAIL_API_KEY is not configured. Magic-link login requires the EU email provider (NFR1, NFR2).'
+			'EMAIL_API_KEY is not configured. Magic-link login requires the EU email provider.'
 		)
 	}
 
@@ -155,7 +155,7 @@ export async function sendRetentionNoticeEmail(
 
 	if (!config.isConfigured || !config.apiKey) {
 		throw new Error(
-			'EMAIL_API_KEY is not configured. The retention notice requires the EU email provider (NFR1, NFR2).'
+			'EMAIL_API_KEY is not configured. The retention notice requires the EU email provider.'
 		)
 	}
 

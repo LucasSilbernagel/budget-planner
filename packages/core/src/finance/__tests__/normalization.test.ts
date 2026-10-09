@@ -60,7 +60,7 @@ describe('Frequency Normalization Engine', () => {
 			expect(result).toBe(EXPECTED_MONTHLY.BIWEEKLY)
 		})
 
-		it('normalizes 27¢ biweekly to 59, the exact half rounded up (Story 105.1, AC-2)', () => {
+		it('normalizes 27¢ biweekly to 59, the exact half rounded up', () => {
 			// Multiply before dividing: 27 * (26 / 12) lands just below 58.5; (27 * 26) / 12 is exact.
 			expect(27 * (26 / 12)).toBe(58.49999999999999)
 			expect(normalizeToMonthly(27, 'biweekly')).toBe(59)

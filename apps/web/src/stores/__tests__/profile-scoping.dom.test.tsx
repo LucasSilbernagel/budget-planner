@@ -201,7 +201,7 @@ afterEach(() => {
 	})
 })
 
-describe('switching profile re-scopes every selector (AC-2, AC-3)', () => {
+describe('switching profile re-scopes every selector', () => {
 	it('shows ONLY profile A before the switch — the probe can see A (positive control)', () => {
 		seedTwoProfiles()
 		const { result } = renderHook(() => useEverything())
@@ -253,7 +253,7 @@ describe('switching profile re-scopes every selector (AC-2, AC-3)', () => {
 		expect(result.current.netWorth).toBe(2_834)
 	})
 
-	it('keeps array identity stable across a re-render with no store change (AC-8)', () => {
+	it('keeps array identity stable across a re-render with no store change', () => {
 		seedTwoProfiles()
 		const { result, rerender } = renderHook(() => ({
 			income: useIncomeSources(),
@@ -272,7 +272,7 @@ describe('switching profile re-scopes every selector (AC-2, AC-3)', () => {
 	})
 })
 
-describe('create paths stamp the active profile (AC-4)', () => {
+describe('create paths stamp the active profile', () => {
 	it('stamps a row added under B with B, and it is invisible after switching back to A', () => {
 		seedProfiles(B)
 		act(() => {
@@ -329,7 +329,7 @@ describe('create paths stamp the active profile (AC-4)', () => {
 	})
 })
 
-describe('free tier is unchanged (AC-5)', () => {
+describe('free tier is unchanged', () => {
 	it('a single default profile with legacy rows lacking profileId sees every row and total', () => {
 		useProfileStore.setState({
 			profiles: [{ id: A, userId: '', name: 'Main Profile', isDefault: true, currency: 'NONE' }],

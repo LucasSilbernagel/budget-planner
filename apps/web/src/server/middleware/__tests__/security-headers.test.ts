@@ -88,7 +88,7 @@ describe('applySecurityHeaders', () => {
 		)
 	})
 
-	describe('Content-Security-Policy (sec-1 AC-1)', () => {
+	describe('Content-Security-Policy', () => {
 		const headers = new Headers()
 		applySecurityHeaders(headers, baseOpts)
 		const csp = headers.get('Content-Security-Policy')
@@ -164,7 +164,7 @@ describe('applySecurityHeaders', () => {
 		})
 
 		// Guards an edited copy of the spinner text, not Paddle changing its own.
-		it("derives the Paddle spinner <style> hash from the committed text, equal to Chrome's live report (sec-4 D2)", () => {
+		it("derives the Paddle spinner <style> hash from the committed text, equal to Chrome's live report", () => {
 			expect(PADDLE_LOADER_STYLE_TEXT).toHaveLength(270)
 			expect(PADDLE_LOADER_STYLE_CSP_HASH).toBe(
 				`sha256-${createHash('sha256').update(PADDLE_LOADER_STYLE_TEXT, 'utf8').digest('base64')}`
@@ -174,7 +174,7 @@ describe('applySecurityHeaders', () => {
 
 		// Deliberately brittle: adding or removing a script source is a security decision
 		// made here. Built from the exported hash constants, never pasted base64.
-		it('pins the ENTIRE production script-src, so no source can be added unnoticed (39.2 AC-5)', () => {
+		it('pins the ENTIRE production script-src, so no source can be added unnoticed', () => {
 			const d = parseCsp(csp ?? '')
 			expect(d['script-src']).toBe(
 				`'self' 'nonce-${TEST_NONCE}' '${PLANNER_SCRIPT_CSP_HASH}' '${ACCOUNT_NOTICE_SCRIPT_CSP_HASH}' '${OVERVIEW_DATA_SCRIPT_CSP_HASH}' https://cdn.paddle.com https://cdn.counter.dev`
@@ -183,7 +183,7 @@ describe('applySecurityHeaders', () => {
 
 		// Pinned exactly. A hash in the base style-src would switch its 'unsafe-inline' off,
 		// so the spinner hash lives only in style-src-elem.
-		it('splits styles: elements locked to self + the Paddle spinner hash + the production Paddle CDN, attributes inline (89.1 D2, sec-4)', () => {
+		it('splits styles: elements locked to self + the Paddle spinner hash + the production Paddle CDN, attributes inline', () => {
 			const d = parseCsp(csp ?? '')
 			expect(d['style-src']).toBe(`'self' 'unsafe-inline' https://cdn.paddle.com`)
 			expect(d['style-src-elem']).toBe(
@@ -195,7 +195,7 @@ describe('applySecurityHeaders', () => {
 		// Dropping style-src-elem would hand <style> elements to the 'unsafe-inline'
 		// fallback, reopening injected <style> in every CSP3 browser.
 		it.each(['production', 'sandbox'] as const)(
-			"in %s, <style> elements are refused: style-src-elem is present, has no 'unsafe-inline', nonce, wildcard or other hash (89.1 review, sec-4)",
+			"in %s, <style> elements are refused: style-src-elem is present, has no 'unsafe-inline', nonce, wildcard or other hash",
 			(env) => {
 				const d = parseCsp(buildContentSecurityPolicy(TEST_NONCE, env, false))
 				const elem = d['style-src-elem']
@@ -213,7 +213,7 @@ describe('applySecurityHeaders', () => {
 			}
 		)
 
-		it('never grants the SANDBOX Paddle CDN to a production policy (89.1 D2)', () => {
+		it('never grants the SANDBOX Paddle CDN to a production policy', () => {
 			expect(csp ?? '').not.toContain('sandbox-cdn.paddle.com')
 		})
 
@@ -229,7 +229,7 @@ describe('applySecurityHeaders', () => {
 		})
 
 		// Drift guard, recomputed independently: a blocked bootstrap paints hidden UI on the first frame.
-		it('pins the sha256 of the EXACT inline planner-visibility script in script-src (35.2 AC-10)', () => {
+		it('pins the sha256 of the EXACT inline planner-visibility script in script-src', () => {
 			const expectedHash = `sha256-${createHash('sha256')
 				.update(NO_FLASH_PLANNER_SCRIPT, 'utf8')
 				.digest('base64')}`
@@ -237,7 +237,7 @@ describe('applySecurityHeaders', () => {
 			expect(d['script-src']).toContain(`'${expectedHash}'`)
 		})
 
-		it('pins the sha256 of the EXACT inline account-notice script in script-src (55.1 AC-4)', () => {
+		it('pins the sha256 of the EXACT inline account-notice script in script-src', () => {
 			const expectedHash = `sha256-${createHash('sha256')
 				.update(NO_FLASH_ACCOUNT_NOTICE_SCRIPT, 'utf8')
 				.digest('base64')}`
@@ -267,14 +267,14 @@ describe('applySecurityHeaders', () => {
 		 * A retired hash is a standing, silent permission. Literal because its source script
 		 * is deleted and cannot be recomputed.
 		 */
-		it('no longer authorizes the RETIRED theme bootstrap hash (61.1, AC-5)', () => {
+		it('no longer authorizes the RETIRED theme bootstrap hash', () => {
 			const RETIRED_THEME_HASH = 'sha256-DzWHJTkK2Y+TrJj6ZKlur4j1LNH8wBr/KvpudOrBoWY='
 			// Asserted on the raw header: a stale hash in any directive is just as wrong.
 			expect(csp ?? '').not.toContain(RETIRED_THEME_HASH)
 		})
 	})
 
-	describe('Paddle stylesheet host by Paddle environment (story 89.1 D2)', () => {
+	describe('Paddle stylesheet host by Paddle environment', () => {
 		it('a SANDBOX policy adds the sandbox CDN to style-src-elem, and changes nothing else', () => {
 			const sandbox = parseCsp(buildContentSecurityPolicy(TEST_NONCE, 'sandbox', false))
 			const production = parseCsp(buildContentSecurityPolicy(TEST_NONCE, 'production', false))
@@ -342,7 +342,7 @@ describe('applySecurityHeaders', () => {
 	// meta's `.nonce`, TanStack writes `content`). No hash: it would disable 'unsafe-inline'.
 	describe("style-src-elem 'unsafe-inline': dev only (89.1 review)", () => {
 		it.each(['production', 'sandbox'] as const)(
-			"in %s, the DEV policy has 'unsafe-inline' and NO hash in style-src-elem (sec-4)",
+			"in %s, the DEV policy has 'unsafe-inline' and NO hash in style-src-elem",
 			(env) => {
 				const dev = parseCsp(buildContentSecurityPolicy(TEST_NONCE, env, true))
 				const prod = parseCsp(buildContentSecurityPolicy(TEST_NONCE, env, false))
@@ -430,7 +430,7 @@ describe('applySecurityHeaders', () => {
 		})
 	})
 
-	describe('isConfirmedHttps (sec-1, HSTS scheme gate)', () => {
+	describe('isConfirmedHttps (HSTS scheme gate)', () => {
 		it('is true only for a forwarded proto of https, case-insensitively', () => {
 			expect(isConfirmedHttps('https')).toBe(true)
 			expect(isConfirmedHttps('HTTPS')).toBe(true)
@@ -450,7 +450,7 @@ describe('applySecurityHeaders', () => {
 		})
 	})
 
-	describe('isCanonicalHttpsRequest (story 5-6 F2, custom-domain HSTS gate)', () => {
+	describe('isCanonicalHttpsRequest (custom-domain HSTS gate)', () => {
 		const SITE = 'https://www.longhandbudget.com'
 
 		it('is true when the request host IS the canonical https origin host', () => {
@@ -481,7 +481,7 @@ describe('applySecurityHeaders', () => {
 		})
 	})
 
-	describe('Strict-Transport-Security (sec-1 AC-3, gated on confirmed HTTPS)', () => {
+	describe('Strict-Transport-Security (gated on confirmed HTTPS)', () => {
 		it('is present over confirmed HTTPS in production, without preload', () => {
 			const headers = new Headers()
 			applySecurityHeaders(headers, {
@@ -518,7 +518,7 @@ describe('applySecurityHeaders', () => {
 		})
 	})
 
-	describe('Referrer-Policy and Permissions-Policy (sec-1 AC-4)', () => {
+	describe('Referrer-Policy and Permissions-Policy', () => {
 		it('sets a strict Referrer-Policy on every response', () => {
 			const headers = new Headers()
 			applySecurityHeaders(headers, {
@@ -533,7 +533,7 @@ describe('applySecurityHeaders', () => {
 
 		// Typed out in full: changing any feature is a decision made here. `self` is
 		// required for the checkout frame to inherit `payment`.
-		it('production: payment for self + the production Paddle checkout frame only; the rest denied (sec-4)', () => {
+		it('production: payment for self + the production Paddle checkout frame only; the rest denied', () => {
 			const headers = new Headers()
 			applySecurityHeaders(headers, {
 				isDev: false,
@@ -546,7 +546,7 @@ describe('applySecurityHeaders', () => {
 			)
 		})
 
-		it('sandbox: also names the sandbox checkout frame (sec-4 D3)', () => {
+		it('sandbox: also names the sandbox checkout frame', () => {
 			const headers = new Headers()
 			applySecurityHeaders(headers, { ...baseOpts, paddleEnvironment: 'sandbox' })
 			expect(headers.get('Permissions-Policy')).toBe(
@@ -554,7 +554,7 @@ describe('applySecurityHeaders', () => {
 			)
 		})
 
-		it('a production policy never names the sandbox checkout origin (sec-4 D3)', () => {
+		it('a production policy never names the sandbox checkout origin', () => {
 			expect(buildPermissionsPolicy('production')).not.toContain('sandbox')
 			expect(paddleCheckoutFrameOrigins('production')).toEqual(['https://buy.paddle.com'])
 			expect(paddleCheckoutFrameOrigins('sandbox')).toEqual([

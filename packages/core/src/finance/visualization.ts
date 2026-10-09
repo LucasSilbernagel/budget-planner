@@ -1,6 +1,6 @@
 import type { Frequency } from './normalization'
 
-interface FinancialDataPoint {
+type FinancialDataPoint = {
 	id: string | number
 	name: string
 	amount: number
@@ -10,7 +10,7 @@ interface FinancialDataPoint {
 	type: 'income' | 'expense'
 }
 
-interface CategoryAggregate {
+type CategoryAggregate = {
 	category: string
 	amount: number
 	type: 'income' | 'expense'
@@ -18,7 +18,7 @@ interface CategoryAggregate {
 	color?: string
 }
 
-interface RechartsDataItem {
+type RechartsDataItem = {
 	name: string
 	value: number
 	type?: 'income' | 'expense'
@@ -30,7 +30,7 @@ interface RechartsDataItem {
 	originalAmount?: number
 }
 
-interface DrillDownState {
+type DrillDownState = {
 	level: number
 	path: string[]
 	currentCategory?: string

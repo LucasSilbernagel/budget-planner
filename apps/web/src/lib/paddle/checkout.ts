@@ -1,6 +1,6 @@
 import type { Environments, Paddle } from '@paddle/paddle-js'
 
-export interface PaddleCheckoutClientConfig {
+export type PaddleCheckoutClientConfig = {
 	environment: Environments
 	clientToken: string
 }
@@ -52,13 +52,13 @@ export function resetPaddleInstanceForTests(): void {
 }
 
 /** Pre-formatted display strings; never do math on them. */
-export interface LocalizedPriceBreakdown {
+export type LocalizedPriceBreakdown = {
 	subtotal: string
 	tax: string
 	total: string
 }
 
-export interface LocalizedPlanPrices {
+export type LocalizedPlanPrices = {
 	monthly: LocalizedPriceBreakdown | null
 	annual: LocalizedPriceBreakdown | null
 	lifetime: LocalizedPriceBreakdown | null

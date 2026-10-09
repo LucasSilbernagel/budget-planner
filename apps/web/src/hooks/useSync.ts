@@ -37,7 +37,7 @@ import { setLastPullTimestamp } from '../lib/sync/sessionStatusStore'
 import { toServerPayload } from '../lib/sync/syncBridge'
 import { useProfileStore } from '../stores/profileStore'
 
-interface SyncStoreState {
+type SyncStoreState = {
 	status: SyncStatus
 
 	isOnline: boolean
@@ -61,7 +61,7 @@ interface SyncStoreState {
 	retryCount: number
 }
 
-interface SyncStoreActions {
+type SyncStoreActions = {
 	setState: (state: Partial<SyncStoreState>) => void
 
 	reset: () => void
@@ -69,7 +69,7 @@ interface SyncStoreActions {
 
 type SyncStore = SyncStoreState & SyncStoreActions
 
-export interface UseSyncOptions {
+export type UseSyncOptions = {
 	userId: string
 
 	autoSync?: boolean
@@ -85,7 +85,7 @@ export interface UseSyncOptions {
 	syncConfig?: Partial<Parameters<typeof createSynchronizationService>[1]>
 }
 
-export interface UseSyncReturn {
+export type UseSyncReturn = {
 	status: SyncStatus
 
 	isOnline: boolean

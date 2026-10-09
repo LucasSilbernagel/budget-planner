@@ -19,7 +19,7 @@ function stubFormId(id: string = FORM_ID) {
 }
 
 describe('ContactForm', () => {
-	it('marks the optional fields with .text-muted, not the sub-AA greys (story 115.2)', () => {
+	it('marks the optional fields with .text-muted, not the sub-AA greys', () => {
 		stubFormId()
 		render(<ContactForm />)
 		const marks = screen.getAllByText('(optional)')
@@ -27,7 +27,7 @@ describe('ContactForm', () => {
 		for (const mark of marks) expect([...mark.classList]).toEqual(['text-muted'])
 	})
 
-	it('keeps the Send message fill at blue-600 in dark too (story 115.1)', () => {
+	it('keeps the Send message fill at blue-600 in dark too', () => {
 		stubFormId()
 		render(<ContactForm />)
 		expectNoDarkFill(screen.getByRole('button', { name: /send message/i }))

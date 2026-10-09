@@ -23,7 +23,7 @@ const DEFAULT_SORTS: Record<TableSortId, SortState<string> | null> = {
 
 export const TABLE_SORT_IDS = Object.keys(DEFAULT_SORTS) as readonly TableSortId[]
 
-interface TableSortStoreState {
+type TableSortStoreState = {
 	sorts: Record<TableSortId, SortState<string> | null>
 	setTableSort: (table: TableSortId, state: SortState<string> | null) => void
 	clearTableSort: (table: TableSortId) => void

@@ -49,7 +49,7 @@ beforeEach(() => {
 	useExpenseStore.setState({ expenses: [] })
 })
 
-describe('expenseStore — getTotalExpenses (story 32.1, FR58)', () => {
+describe('expenseStore — getTotalExpenses', () => {
 	it('normalizes mixed frequencies to a monthly basis instead of raw-summing', () => {
 		useExpenseStore.setState({ expenses: MIXED_EXPENSES })
 
@@ -100,7 +100,7 @@ describe('expenseStore — getTotalExpenses (story 32.1, FR58)', () => {
 	})
 })
 
-describe('expenseStore — corrupt rows are excluded, not thrown on (story 32.1)', () => {
+describe('expenseStore — corrupt rows are excluded, not thrown on', () => {
 	it('does not throw on a corrupt persisted frequency', () => {
 		useExpenseStore.setState({
 			expenses: [

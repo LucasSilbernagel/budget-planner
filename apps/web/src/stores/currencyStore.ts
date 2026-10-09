@@ -10,7 +10,7 @@ import {
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-interface CurrencyState {
+type CurrencyState = {
 	mode: CurrencyMode
 	currency: CurrencyCode
 	setMode: (mode: CurrencyMode) => void

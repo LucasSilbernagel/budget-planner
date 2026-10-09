@@ -39,7 +39,7 @@ describe('sortByDisplayOrder — the canonical three-key rule', () => {
 	 * Two devices reordered offline and both wrote sortOrder 1, which is expected under
 	 * last-write-wins. Both must land on the same visible order.
 	 */
-	it('AC-5: breaks a duplicate sortOrder by createdAt ascending', () => {
+	it('breaks a duplicate sortOrder by createdAt ascending', () => {
 		const deviceA = [
 			row('x', 1, '2026-01-02T00:00:00.000Z'),
 			row('y', 1, '2026-01-01T00:00:00.000Z'),
@@ -52,7 +52,7 @@ describe('sortByDisplayOrder — the canonical three-key rule', () => {
 	})
 
 	/** Two rows added in the same millisecond collide on both sortOrder and createdAt. */
-	it('AC-2: breaks an identical sortOrder AND createdAt by id ascending', () => {
+	it('breaks an identical sortOrder AND createdAt by id ascending', () => {
 		const SAME = '2026-01-01T00:00:00.000Z'
 		const forwards = [row('bbb', 0, SAME), row('aaa', 0, SAME), row('ccc', 0, SAME)]
 		const backwards = [row('ccc', 0, SAME), row('bbb', 0, SAME), row('aaa', 0, SAME)]
@@ -119,7 +119,7 @@ describe('nextSortOrder — append at the bottom', () => {
 	 * Deleting leaves a gap on purpose (no reindex). After deleting position 1, `length` is 2
 	 * and would collide with the row still at 2.
 	 */
-	it('AC-6: is gap-tolerant after a delete from the middle', () => {
+	it('is gap-tolerant after a delete from the middle', () => {
 		const afterDelete = [row('a', 0), row('c', 2)]
 		expect(afterDelete).toHaveLength(2)
 		expect(nextSortOrder(afterDelete)).toBe(3)
@@ -213,7 +213,7 @@ describe('stampMissingSortOrder — self-healing for rows that arrive unposition
 		expect(stamped.map((r) => r.sortOrder)).toEqual([0, 1])
 	})
 
-	it('AC-3 holds after stamping: the next added row goes to the BOTTOM', () => {
+	it('after stamping, the next added row goes to the BOTTOM', () => {
 		const stamped = stampMissingSortOrder([
 			{ id: 'a', createdAt: '2026-01-01T00:00:00.000Z' },
 			{ id: 'b', createdAt: '2026-01-02T00:00:00.000Z' },

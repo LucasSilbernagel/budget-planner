@@ -101,7 +101,7 @@ function renderSql(query: unknown): { text: string; params: unknown[] } {
 	return { text: text.replace(/\s+/g, ' ').trim(), params }
 }
 
-describe('checkDbRateLimit — atomic upsert shape (AC-4)', () => {
+describe('checkDbRateLimit — atomic upsert shape', () => {
 	it('writes the row keyed by scope/subject and floors windowStart to the bucket boundary', async () => {
 		const windowMs = 60_000
 		const now = 1_700_000_123_456 // arbitrary; not a bucket boundary
@@ -136,7 +136,7 @@ describe('checkDbRateLimit — atomic upsert shape (AC-4)', () => {
 	})
 })
 
-describe('checkDbRateLimit — decision boundary on the returned count (AC-4)', () => {
+describe('checkDbRateLimit — decision boundary on the returned count', () => {
 	it('allows while count <= maxAttempts and rejects the (max+1)th', async () => {
 		state.fixedCount = 5
 		expect(
@@ -181,7 +181,7 @@ describe('checkDbRateLimit — decision boundary on the returned count (AC-4)', 
 	})
 })
 
-describe('checkDbRateLimit — scope isolation (AC-3)', () => {
+describe('checkDbRateLimit — scope isolation', () => {
 	it('two scopes with the same subject write distinct buckets (no cross-scope collision)', async () => {
 		await checkDbRateLimit({ scope: 'ip', subject: 'same', windowMs: 60_000, maxAttempts: 5 })
 		const ipScope = state.captured.values?.scope
@@ -199,7 +199,7 @@ describe('checkDbRateLimit — scope isolation (AC-3)', () => {
 	})
 })
 
-describe('checkDbRateLimit — DB-error degrade (AC-6)', () => {
+describe('checkDbRateLimit — DB-error degrade', () => {
 	it('fails CLOSED (deny, degraded) when the DB throws and no fallback is given', async () => {
 		state.mode = 'throw'
 		const r = await checkDbRateLimit({
@@ -259,7 +259,7 @@ describe('expired-window reaper', () => {
 	const call = (now: number) =>
 		checkDbRateLimit({ scope: 'ip', subject: '203.0.113.5', windowMs: 60_000, maxAttempts: 5, now })
 
-	it('sweeps on the success path, with a cutoff OLDER than the longest window (AC-4)', async () => {
+	it('sweeps on the success path, with a cutoff OLDER than the longest window', async () => {
 		const now = 1_800_000_000_000
 		await call(now)
 
@@ -278,7 +278,7 @@ describe('expired-window reaper', () => {
 		expect(now - new Date(cutoff as string).getTime()).toBeGreaterThan(LONGEST_CONFIGURED_WINDOW_MS)
 	})
 
-	it('compares with a STRICT < so a row exactly AT the cutoff survives (AC-4 boundary)', async () => {
+	it('compares with a STRICT < so a row exactly AT the cutoff survives (boundary)', async () => {
 		await call(1_800_000_000_000)
 		const { text } = renderSql(state.captured.executed[0])
 		// `<` errs toward keeping a boundary row one sweep longer, the safe direction.
@@ -286,7 +286,7 @@ describe('expired-window reaper', () => {
 		expect(text).not.toContain('<=')
 	})
 
-	it('carries NO userId term, so it cannot race account erasure on that predicate (AC-6)', async () => {
+	it('carries NO userId term, so it cannot race account erasure on that predicate', async () => {
 		await call(1_800_000_000_000)
 		const { params } = renderSql(state.captured.executed[0])
 
@@ -296,7 +296,7 @@ describe('expired-window reaper', () => {
 		expect(params).not.toContain('col:userId')
 	})
 
-	it('uses FOR UPDATE SKIP LOCKED so it can never deadlock with erasure (AC-6)', async () => {
+	it('uses FOR UPDATE SKIP LOCKED so it can never deadlock with erasure', async () => {
 		await call(1_800_000_000_000)
 		const { text } = renderSql(state.captured.executed[0])
 		// SKIP LOCKED is load-bearing: sync rows have both userId and windowStart, so the
@@ -304,7 +304,7 @@ describe('expired-window reaper', () => {
 		expect(text).toContain('FOR UPDATE SKIP LOCKED')
 	})
 
-	it('sweeps at most ONCE per interval however many requests arrive (AC-5c)', async () => {
+	it('sweeps at most ONCE per interval however many requests arrive', async () => {
 		const now = 1_800_000_000_000
 		for (let i = 0; i < 25; i += 1) {
 			await call(now + i * 1000)
@@ -315,7 +315,7 @@ describe('expired-window reaper', () => {
 		expect(state.captured.executed).toHaveLength(2)
 	})
 
-	it('a REJECTED sweep does not fail the rate-limit decision (AC-5b)', async () => {
+	it('a REJECTED sweep does not fail the rate-limit decision', async () => {
 		state.executeMode = 'reject'
 		state.fixedCount = 1
 		await expect(call(1_800_000_000_000)).resolves.toEqual({ allowed: true, remaining: 4 })
@@ -326,7 +326,7 @@ describe('expired-window reaper', () => {
 		)
 	})
 
-	it('a SYNCHRONOUSLY throwing sweep does not fail the decision either (AC-5b)', async () => {
+	it('a SYNCHRONOUSLY throwing sweep does not fail the decision either', async () => {
 		state.executeMode = 'throwSync'
 		state.fixedCount = 1
 		await expect(call(1_800_000_000_000)).resolves.toEqual({ allowed: true, remaining: 4 })
@@ -336,7 +336,7 @@ describe('expired-window reaper', () => {
 		)
 	})
 
-	it('does not AWAIT the sweep — a sweep that never settles does not delay it (AC-5a)', async () => {
+	it('does not AWAIT the sweep — a sweep that never settles does not delay it', async () => {
 		state.executeMode = 'pending'
 		state.fixedCount = 1
 		// If the decision awaited the sweep this would hang and time out.
@@ -369,7 +369,7 @@ describe('reaper bounds and invariants', () => {
 		expect(params).toContain(5000)
 	})
 
-	it('DISABLES the sweep for a caller whose window is longer than the cutoff (AC-4)', async () => {
+	it('DISABLES the sweep for a caller whose window is longer than the cutoff', async () => {
 		// Otherwise the reaper would delete that caller's live buckets; enforced in code,
 		// not by a constant copied into a test.
 		await call(1_800_000_000_000, 2 * 60 * 60 * 1000)
@@ -386,7 +386,7 @@ describe('reaper bounds and invariants', () => {
 	})
 })
 
-describe('retention backstop wiring (Story 73.2)', () => {
+describe('retention backstop wiring', () => {
 	const opts = { scope: 'sync' as const, subject: 'u1', windowMs: 60_000, maxAttempts: 5 }
 
 	it('offers the backstop the request clock on the success path', async () => {

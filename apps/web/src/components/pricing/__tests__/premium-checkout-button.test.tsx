@@ -129,7 +129,7 @@ describe('PremiumCheckoutButton — price preview (auth-independent)', () => {
 	})
 })
 
-describe('PremiumCheckoutButton — the monthly plan (story 5-20, AC-1)', () => {
+describe('PremiumCheckoutButton — the monthly plan', () => {
 	const ANON_SEED = {
 		isAuthenticated: false,
 		userId: null,
@@ -157,7 +157,7 @@ describe('PremiumCheckoutButton — the monthly plan (story 5-20, AC-1)', () => 
 		})
 	})
 
-	it('keeps ANNUAL selected by default even when monthly is available — annual is the anchor (AC-2)', async () => {
+	it('keeps ANNUAL selected by default even when monthly is available — annual is the anchor', async () => {
 		stubConfigFetch(CONFIGURED_WITH_MONTHLY)
 		render(
 			<SessionSeedProvider seed={ANON_SEED}>
@@ -545,7 +545,7 @@ describe('PremiumCheckoutButton — plan toggle a11y', () => {
 	})
 })
 
-describe('PremiumCheckoutButton — unverified session seed (5-19 AC-5)', () => {
+describe('PremiumCheckoutButton — unverified session seed', () => {
 	function stubAuthMe(user: unknown, opts: { neverResolves?: boolean } = {}) {
 		global.fetch = vi.fn((input: RequestInfo | URL) => {
 			if (String(input).includes('/api/paddle/checkout-config')) {

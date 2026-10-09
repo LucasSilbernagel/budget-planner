@@ -30,7 +30,7 @@ beforeEach(() => {
 	usePremiumAccess.mockReturnValue({ status })
 })
 
-describe('the /forecasting header (108.1, AC-1)', () => {
+describe('the /forecasting header', () => {
 	it('shows the page title and no Premium badge', async () => {
 		renderWithRouter(<ForecastingPage />)
 

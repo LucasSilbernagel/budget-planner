@@ -166,8 +166,8 @@ function comparable(rows: ForecastingResult['baseline']) {
 	)
 }
 
-describe('the baseline is today (story 107.1)', () => {
-	it('an unedited, flat scenario coincides with the baseline (AC-5)', async () => {
+describe('the baseline is today', () => {
+	it('an unedited, flat scenario coincides with the baseline', async () => {
 		seedStores()
 		render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResult} />)
 		await waitFor(() => expect(onResult).toHaveBeenCalled(), { timeout: 3000 })
@@ -177,7 +177,7 @@ describe('the baseline is today (story 107.1)', () => {
 		expect(result.baseline.at(-1)?.debts).toBe(0)
 	})
 
-	it('raising a contribution moves only the projection, and "vs. today" shows the gap (AC-3, AC-4, AC-8)', async () => {
+	it('raising a contribution moves only the projection, and "vs. today" shows the gap', async () => {
 		seedStores()
 		render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResult} />)
 		await waitFor(() => expect(onResult).toHaveBeenCalled(), { timeout: 3000 })
@@ -199,7 +199,7 @@ describe('the baseline is today (story 107.1)', () => {
 		expect(card?.textContent).toBe(`+${formatter()(gap)}`)
 	})
 
-	it('editing an income row moves only the projection (AC-4)', async () => {
+	it('editing an income row moves only the projection', async () => {
 		seedStores()
 		render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResult} />)
 		await waitFor(() => expect(onResult).toHaveBeenCalled(), { timeout: 3000 })
@@ -224,7 +224,7 @@ describe('the baseline is today (story 107.1)', () => {
 		expect(card?.textContent).toBe(`+${formatter()(0)}`)
 	})
 
-	it('does not calculate while the first pull is still in flight (AC-6)', async () => {
+	it('does not calculate while the first pull is still in flight', async () => {
 		syncPending.value = true
 		render(<ScenarioBuilder onSave={vi.fn()} onResultChange={onResult} />)
 		await new Promise((resolve) => setTimeout(resolve, 800))

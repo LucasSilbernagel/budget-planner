@@ -63,7 +63,7 @@ export function resetConfig(): void {
 	config = null
 }
 
-export interface PaddleConfig {
+export type PaddleConfig = {
 	environment: 'sandbox' | 'production'
 	apiKey: string | undefined
 	clientToken: string | undefined
@@ -150,7 +150,7 @@ export function assertPaddleProductionConfig(): void {
 	}
 }
 
-export interface EmailConfig {
+export type EmailConfig = {
 	apiKey: string | undefined
 	from: string
 	fromName: string

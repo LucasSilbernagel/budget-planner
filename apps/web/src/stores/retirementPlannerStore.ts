@@ -26,7 +26,7 @@ export const RETIREMENT_PLANNER_VERSION = 1
 /** Matches React's dispatch signature: callers pass updater functions. */
 type StringSetter = (value: string | ((previous: string) => string)) => void
 
-interface RetirementPlannerStoreState {
+type RetirementPlannerStoreState = {
 	plan: RetirementPlan
 	/** '' = unclaimed. Written only by claimRetirementPlanFor, never by an edit. */
 	ownerUserId: string

@@ -135,7 +135,7 @@ describe('POST /api/auth/login/request', () => {
 		)
 	})
 
-	it('still applies the email limit when the IP is unknown (AC-3: email never skippable)', async () => {
+	it('still applies the email limit when the IP is unknown (email never skippable)', async () => {
 		let last: Response | undefined
 		for (let i = 0; i < 7; i++) {
 			last = await post({ email: 'noip@example.com' })
@@ -148,7 +148,7 @@ describe('POST /api/auth/login/request', () => {
 	})
 })
 
-describe('Story 74.1 — one outcome line per request (AC-4, AC-5)', () => {
+describe('one outcome line per request', () => {
 	const OUTCOME = 'Magic-link request outcome'
 
 	const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
@@ -291,7 +291,7 @@ describe('Story 74.1 — one outcome line per request (AC-4, AC-5)', () => {
 		expect(outcomeLines()).toContainEqual({ branch: 'throttled', scope: 'email' })
 	})
 
-	it('does NOT await the send: the response returns while the lookup is still pending (AC-4)', async () => {
+	it('does NOT await the send: the response returns while the lookup is still pending', async () => {
 		let release!: (value: unknown) => void
 		asMock(requestMagicLink).mockReturnValueOnce(
 			new Promise((resolve) => {
@@ -306,7 +306,7 @@ describe('Story 74.1 — one outcome line per request (AC-4, AC-5)', () => {
 		expect(outcomeLines()).toEqual([{ branch: 'sent', userId: 'u-1' }])
 	})
 
-	it('the logged messageRef survives the REAL redact() (AC-5 trap)', async () => {
+	it('the logged messageRef survives the REAL redact()', async () => {
 		const { redact } = await vi.importActual<typeof import('@/lib/logger')>('@/lib/logger')
 		const { toMessageRef } = await vi.importActual<typeof import('@/server/api/auth/magic-link')>(
 			'@/server/api/auth/magic-link'

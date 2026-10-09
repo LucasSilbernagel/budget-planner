@@ -23,7 +23,7 @@ type NavPath =
 	| '/financial-summary'
 	| '/categories'
 
-interface NavItem {
+type NavItem = {
 	label: string
 	to: NavPath
 	exact?: boolean

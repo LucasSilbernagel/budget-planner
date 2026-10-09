@@ -8,7 +8,7 @@ import {
 	sortRowsBy,
 } from '../table-sort'
 
-interface Row {
+type Row = {
 	id: string
 	value: number | null
 	text: string

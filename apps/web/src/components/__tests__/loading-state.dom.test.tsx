@@ -59,7 +59,7 @@ function clearStores(): void {
 	useBalanceStore.setState({ entries: [] })
 }
 
-describe('Overview loading state (story 38.2)', () => {
+describe('Overview loading state', () => {
 	beforeEach(() => {
 		// Reset the module-level "already hydrated" flag that render() sets, or a later
 		// renderToString() starts resolved.
@@ -98,7 +98,7 @@ describe('Overview loading state (story 38.2)', () => {
 	})
 })
 
-describe('the announced region (AC-8)', () => {
+describe('the announced region', () => {
 	beforeEach(() => {
 		// Reset the module-level "already hydrated" flag that render() sets, or a later
 		// renderToString() starts resolved.
@@ -145,7 +145,7 @@ describe('the announced region (AC-8)', () => {
 	})
 })
 
-describe('Income page loading state (a second surface, AC-5)', () => {
+describe('Income page loading state (a second surface)', () => {
 	beforeEach(() => {
 		// Reset the module-level "already hydrated" flag that render() sets, or a later
 		// renderToString() starts resolved.
@@ -213,7 +213,7 @@ describe('Income page loading state (a second surface, AC-5)', () => {
 	})
 })
 
-describe('the remaining gated pages, pending → resolved (AC-5)', () => {
+describe('the remaining gated pages, pending → resolved', () => {
 	beforeEach(() => {
 		__resetStoresHydratedForTests()
 		resolvedFreeTier()

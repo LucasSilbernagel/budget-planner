@@ -14,7 +14,7 @@ import {
 
 const ENUM = [...subscriptionStatusEnum.enumValues].sort()
 
-describe('STATUS_ACCESS (Story 78.3)', () => {
+describe('STATUS_ACCESS', () => {
 	it('classifies every enum value, and nothing else', () => {
 		expect(Object.keys(STATUS_ACCESS).sort()).toEqual(ENUM)
 	})
@@ -23,7 +23,7 @@ describe('STATUS_ACCESS (Story 78.3)', () => {
 		expect([...PAID_ACCESS_STATUSES].sort()).toEqual(['active', 'lifetime', 'past_due'])
 	})
 
-	it('premium features are exactly active and lifetime — past_due is paid but NOT premium (Story 4-18)', () => {
+	it('premium features are exactly active and lifetime — past_due is paid but NOT premium', () => {
 		expect([...PREMIUM_FEATURE_STATUSES].sort()).toEqual(['active', 'lifetime'])
 		expect(hasPaidAccess('past_due')).toBe(true)
 		expect(hasPremiumFeatures('past_due')).toBe(false)

@@ -32,7 +32,7 @@ export function getProgressStatus(progress: number): string {
 	return 'Not Started'
 }
 
-export interface SavingsGoalProgressInfo {
+export type SavingsGoalProgressInfo = {
 	percentage: number
 	formattedPercentage: string
 	remainingAmount: number

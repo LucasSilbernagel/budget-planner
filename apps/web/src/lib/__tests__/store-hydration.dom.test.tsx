@@ -47,7 +47,7 @@ describe('StoreHydration', () => {
 		}
 	})
 
-	it('rehydrates the category store specifically (Story 30.4a)', () => {
+	it('rehydrates the category store specifically', () => {
 		const spy = vi.spyOn(useCategoryStore.persist, 'rehydrate').mockResolvedValue(undefined)
 
 		render(<StoreHydration />)

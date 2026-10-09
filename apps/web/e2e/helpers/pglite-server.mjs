@@ -59,7 +59,7 @@ if (!UTC_ZONES.includes(timeZone)) {
 	console.error(
 		`[e2e-db] session TimeZone is ${JSON.stringify(timeZone)}, expected one of ${UTC_ZONES.join(
 			', '
-		)} (story ops-2)`
+		)}`
 	)
 	process.exit(3)
 }

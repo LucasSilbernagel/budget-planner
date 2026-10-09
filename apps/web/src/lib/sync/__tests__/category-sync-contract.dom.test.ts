@@ -43,7 +43,7 @@ afterEach(() => {
 })
 
 describe('category sync contract — the payload AFTER syncOperationDataSchema', () => {
-	it('AC-5: a cashflow row keeps its categoryId through the queue gate', async () => {
+	it('a cashflow row keeps its categoryId through the queue gate', async () => {
 		const fetchMock = vi.fn(async () => ok())
 		vi.stubGlobal('fetch', fetchMock)
 
@@ -64,7 +64,7 @@ describe('category sync contract — the payload AFTER syncOperationDataSchema',
 		expect(sentData(fetchMock).categoryId).toBe(CATEGORY_ID)
 	})
 
-	it('AC-5: an explicit null categoryId survives — un-categorizing must propagate', async () => {
+	it('an explicit null categoryId survives — un-categorizing must propagate', async () => {
 		// An omit-when-null bridge would leave the previous category server-side (partial .set()).
 		const fetchMock = vi.fn(async () => ok())
 		vi.stubGlobal('fetch', fetchMock)
@@ -82,7 +82,7 @@ describe('category sync contract — the payload AFTER syncOperationDataSchema',
 		expect(data.categoryId).toBeNull()
 	})
 
-	it('AC-5: a category entity keeps its name and kind through the queue gate', async () => {
+	it('a category entity keeps its name and kind through the queue gate', async () => {
 		const fetchMock = vi.fn(async () => ok())
 		vi.stubGlobal('fetch', fetchMock)
 
@@ -99,7 +99,7 @@ describe('category sync contract — the payload AFTER syncOperationDataSchema',
 		expect(data.kind).toBe('expense')
 	})
 
-	it('AC-5: the category entity type reaches the wire intact', async () => {
+	it('the category entity type reaches the wire intact', async () => {
 		const fetchMock = vi.fn<typeof fetch>(async () => ok())
 		vi.stubGlobal('fetch', fetchMock)
 

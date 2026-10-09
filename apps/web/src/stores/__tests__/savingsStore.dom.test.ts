@@ -28,7 +28,7 @@ beforeEach(() => {
 	useSavingsStore.setState({ savingsGoals: [] })
 })
 
-describe('savingsStore — accounts vs goals (Story 16-1)', () => {
+describe('savingsStore — accounts vs goals', () => {
 	it('getTotalSavings includes account balances', () => {
 		useSavingsStore.setState({ savingsGoals: [goal, account] })
 		// 60000 (goal) + 250000 (account)
@@ -72,7 +72,7 @@ describe('savingsStore — accounts vs goals (Story 16-1)', () => {
 	})
 })
 
-describe('savingsStore — v1→v2 allocation backfill (Story 26.1)', () => {
+describe('savingsStore — v1→v2 allocation backfill', () => {
 	it("backfills allocationMode='automatic' and monthlyAllocation=null for a legacy v1 row", async () => {
 		localStorage.setItem(
 			SAVINGS_GOALS_STORAGE_KEY,

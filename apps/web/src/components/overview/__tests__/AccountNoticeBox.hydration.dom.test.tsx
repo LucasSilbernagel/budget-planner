@@ -54,7 +54,7 @@ afterEach(() => {
 	document.documentElement.removeAttribute('data-dismiss-account-notice')
 })
 
-describe('AccountNoticeBox — hydration for a dismissed user (AC-3)', () => {
+describe('AccountNoticeBox — hydration for a dismissed user', () => {
 	it('hydrates the server HTML with no recoverable error, then removes the box', async () => {
 		const { recoverable, serverHadBox, boxAfter } = await hydrateAsADismissedUser(AccountNoticeBox)
 

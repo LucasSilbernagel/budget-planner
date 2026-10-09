@@ -76,7 +76,7 @@ const ALL_COPY_FILES = [...ALL_FILES, ...walk(PACKAGES_ROOT)]
 
 const label = (file: string) => file.replace(`${REPO_ROOT}/`, '')
 
-describe('no retired brand survives on a shipped surface (brand-1 AC-2)', () => {
+describe('no retired brand survives on a shipped surface', () => {
 	const files = ALL_FILES.filter((f) => !ALLOWED.some((pattern) => pattern.test(f)))
 
 	it('walks a non-trivial set of files (guards against a vacuous pass)', () => {
@@ -85,7 +85,7 @@ describe('no retired brand survives on a shipped surface (brand-1 AC-2)', () => 
 		expect(files.length).toBeGreaterThan(100)
 	})
 
-	it('reaches the contributor docs outside apps/web (story 40-3, AC-5)', () => {
+	it('reaches the contributor docs outside apps/web', () => {
 		// The count can't protect these (apps/web alone clears it), so pin the named files.
 		const swept = new Set(files.map(label))
 
@@ -104,7 +104,7 @@ describe('no retired brand survives on a shipped surface (brand-1 AC-2)', () => 
 	}
 })
 
-describe('no retired copy survives on a shipped surface (story 36-1 AC-4)', () => {
+describe('no retired copy survives on a shipped surface', () => {
 	const copyFiles = ALL_COPY_FILES.filter((f) => !COPY_ALLOWED.some((pattern) => pattern.test(f)))
 
 	it('walks a non-trivial set of files (guards against a vacuous pass)', () => {

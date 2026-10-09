@@ -3,7 +3,7 @@ import type React from 'react'
 import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../../lib/premium/benefits'
 import { Modal } from '../ui/Modal'
 
-export interface PremiumPromptProps {
+export type PremiumPromptProps = {
 	featureName?: string
 	message?: string
 	asDialog?: boolean
@@ -76,7 +76,7 @@ export function PremiumPrompt({
 	)
 }
 
-interface PremiumPromptContentProps {
+type PremiumPromptContentProps = {
 	featureName?: string
 	message: string
 	upgradeHref: string

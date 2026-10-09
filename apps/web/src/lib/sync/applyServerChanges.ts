@@ -23,23 +23,23 @@ import {
 	requeueAfterOwnEcho,
 } from './retirementPlanPush'
 
-interface StoreApi {
+type StoreApi = {
 	getState: () => Record<string, unknown>
 	setState: (partial: Record<string, unknown>) => void
 }
 
-interface CollectionBinding {
+type CollectionBinding = {
 	kind: 'collection'
 	store: StoreApi
 	collection: string
 }
 
-interface ApplyContext {
+type ApplyContext = {
 	sessionUserId: string
 	hasPendingOperation?: (entityType: SyncEntityType, entityId: string) => boolean
 }
 
-interface SingletonBinding {
+type SingletonBinding = {
 	kind: 'singleton'
 	read: (id: string) => Record<string, unknown> | undefined
 	apply: (change: ServerChange, context: ApplyContext) => boolean

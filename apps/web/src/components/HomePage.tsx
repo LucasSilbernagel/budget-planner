@@ -721,7 +721,7 @@ export function HomePage() {
 	)
 }
 
-interface BreakdownPieProps {
+type BreakdownPieProps = {
 	// testid, not the title: the title carries the period suffix and changes with the selector.
 	testId: string
 	title: string
@@ -739,7 +739,7 @@ interface BreakdownPieProps {
 
 type CategoryBarDatum = { category: string; amount: number; fill: string }
 
-interface CategoryBarChartProps {
+type CategoryBarChartProps = {
 	testId: string
 	data: CategoryBarDatum[]
 	ticks: number[]

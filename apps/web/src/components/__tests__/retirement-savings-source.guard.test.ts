@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 // The retirement figure must NOT adopt the savings pool's `contributionRecordedAsExpense` skip.
 // Scans raw source: blanking template `${}` interpolations would hide code.
-describe('RetirementAccumulationPlanner — monthly-savings source (story 47.2)', () => {
+describe('RetirementAccumulationPlanner — monthly-savings source', () => {
 	const source = readFileSync(join(__dirname, '..', 'RetirementAccumulationPlanner.tsx'), 'utf8')
 	const lines = source.split('\n')
 
@@ -44,7 +44,7 @@ describe('RetirementAccumulationPlanner — monthly-savings source (story 47.2)'
 		)
 	})
 
-	it('never imports the pool reducer that DOES skip flagged rows (AC-2, AC-12)', () => {
+	it('never imports the pool reducer that DOES skip flagged rows', () => {
 		const codeUses = codeOnly.filter((line) => line.includes('sumMonthlyInvestmentContributions'))
 		expect(codeUses).toEqual([])
 		const poolUses = codeOnly.filter((line) => line.includes('calculateDistributablePool'))
@@ -60,7 +60,7 @@ describe('RetirementAccumulationPlanner — monthly-savings source (story 47.2)'
 		expect(codeUses).toEqual([])
 	})
 
-	it('no longer derives the monthly figure from income minus expenses (AC-1)', () => {
+	it('no longer derives the monthly figure from income minus expenses', () => {
 		const codeUses = codeOnly.filter((line) => line.includes('calculateNetIncomeResult'))
 		// Two code lines: the import and the desired-income prefill, which is seeded from GROSS income.
 		expect(codeUses).toHaveLength(2)

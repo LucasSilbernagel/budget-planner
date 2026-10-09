@@ -169,8 +169,8 @@ afterEach(() => {
 	vi.clearAllMocks()
 })
 
-describe('a saved forecast is compared against today (story 107.1)', () => {
-	it('My Forecasts shows each row "vs. today" from today\'s data, not the stored baseline (Q1, D2)', async () => {
+describe('a saved forecast is compared against today', () => {
+	it('My Forecasts shows each row "vs. today" from today\'s data, not the stored baseline', async () => {
 		renderWithRouter(<ForecastingPage />)
 		fireEvent.click(await screen.findByRole('tab', { name: /my forecasts/i }))
 		const format = formatter()
@@ -181,7 +181,7 @@ describe('a saved forecast is compared against today (story 107.1)', () => {
 		expect(within(cell).getByText(`+${format(expected)} vs. today`)).toBeInTheDocument()
 	})
 
-	it("a reopened forecast's Projections never shows the stored baseline (AC-7)", async () => {
+	it("a reopened forecast's Projections never shows the stored baseline", async () => {
 		renderWithRouter(<ForecastingPage />)
 		fireEvent.click(await screen.findByRole('tab', { name: /my forecasts/i }))
 		fireEvent.click(await screen.findByRole('button', { name: 'Edit Big plan' }))
@@ -197,7 +197,7 @@ describe('a saved forecast is compared against today (story 107.1)', () => {
 		expect(card.nextElementSibling?.textContent).toBe(`+${format(STORED_ENDING - todayEnding())}`)
 	})
 
-	it('both summaries are description lists: every term in a <dl>, groups hold only <dt>/<dd> (story 116.1)', async () => {
+	it('both summaries are description lists: every term in a <dl>, groups hold only <dt>/<dd>', async () => {
 		renderWithRouter(<ForecastingPage />)
 		fireEvent.click(await screen.findByRole('tab', { name: /my forecasts/i }))
 		fireEvent.click(await screen.findByRole('button', { name: 'Edit Big plan' }))

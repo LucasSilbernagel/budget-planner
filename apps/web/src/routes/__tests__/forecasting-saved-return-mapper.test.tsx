@@ -99,8 +99,8 @@ beforeEach(() => {
 	})
 })
 
-describe('mapToSavedForecast: annualReturn (story 100.3)', () => {
-	it('keeps every FINITE investment rate as saved, in range or not (D9)', async () => {
+describe('mapToSavedForecast: annualReturn', () => {
+	it('keeps every FINITE investment rate as saved, in range or not', async () => {
 		const rows = await mapped([
 			row('Zero', { annualReturn: 0 }),
 			row('Negative', { annualReturn: -0.25 }),
@@ -110,7 +110,7 @@ describe('mapToSavedForecast: annualReturn (story 100.3)', () => {
 		expect(rows.map((r) => r.annualReturn)).toEqual([0, -0.25, 0.055, 1.5])
 	})
 
-	it('omits a missing, null or non-number rate, so the builder default applies (D3)', async () => {
+	it('omits a missing, null or non-number rate, so the builder default applies', async () => {
 		const rows = await mapped([
 			row('Missing', {}),
 			row('Null', { annualReturn: null }),
@@ -121,7 +121,7 @@ describe('mapToSavedForecast: annualReturn (story 100.3)', () => {
 		for (const r of rows) expect(Object.keys(r)).not.toContain('annualReturn')
 	})
 
-	it("drops a debt row's rate (debts are saved without one, D8)", async () => {
+	it("drops a debt row's rate (debts are saved without one)", async () => {
 		const rows = await mapped([row('Loan', { annualReturn: 0.2 }, 'debt')])
 		expect(rows).toHaveLength(1)
 		expect(rows[0]?.type).toBe('debt')

@@ -5,7 +5,7 @@ import { act, fireEvent, renderWithProviders, screen, userEvent, within } from '
 import { ProfileList } from '../profile-list'
 import { collectClassTokens, RETIRED_LIGHT_ONLY_TOKENS } from './retired-tokens'
 
-describe('ProfileList edit action (story 54.1)', () => {
+describe('ProfileList edit action', () => {
 	afterEach(() => {
 		useProfileStore.getState().reset()
 	})
@@ -44,7 +44,7 @@ describe('ProfileList edit action (story 54.1)', () => {
 		expect(screen.queryByRole('dialog')).toBeNull()
 	})
 
-	it('re-seeds the dialog when it switches straight to another profile (code review 54.1)', async () => {
+	it('re-seeds the dialog when it switches straight to another profile', async () => {
 		useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
 		const user = userEvent.setup()
 		renderWithProviders(<ProfileList />)
@@ -63,7 +63,7 @@ describe('ProfileList edit action (story 54.1)', () => {
 	})
 })
 
-describe('ProfileList avatar icon (story 54.2)', () => {
+describe('ProfileList avatar icon', () => {
 	afterEach(() => {
 		useProfileStore.getState().reset()
 	})
@@ -83,7 +83,7 @@ describe('ProfileList avatar icon (story 54.2)', () => {
 
 	const biz = { id: 'biz', userId: 'u1', name: 'Business', isDefault: false, currency: 'NONE' }
 
-	it('falls back to exactly the hash icon when no icon is stored (AC-8)', () => {
+	it('falls back to exactly the hash icon when no icon is stored', () => {
 		useProfileStore.setState({ profiles: [biz], activeProfileId: 'biz' })
 		renderWithProviders(<ProfileList />)
 
@@ -112,7 +112,7 @@ describe('ProfileList avatar icon (story 54.2)', () => {
 		expect(screen.getByText(profileIcon('biz'))).toBeInTheDocument()
 	})
 
-	it('renders 🏠 for the DEFAULT profile with no valid stored icon (story 98.1, D1)', () => {
+	it('renders 🏠 for the DEFAULT profile with no valid stored icon', () => {
 		expect(profileIcon('main')).not.toBe('🏠')
 		for (const icon of [undefined, null, '🦄']) {
 			useProfileStore.setState({
@@ -127,7 +127,7 @@ describe('ProfileList avatar icon (story 54.2)', () => {
 		}
 	})
 })
-describe('ProfileList card is the switcher (story 63.1)', () => {
+describe('ProfileList card is the switcher', () => {
 	// reset() restores data only; zustand keeps actions in state, so a spied action would leak.
 	const REAL_SWITCH_PROFILE = useProfileStore.getState().switchProfile
 
@@ -306,7 +306,7 @@ describe('ProfileList card is the switcher (story 63.1)', () => {
 	})
 })
 
-describe('ProfileList dark-mode tokens (story 54.5)', () => {
+describe('ProfileList dark-mode tokens', () => {
 	afterEach(() => {
 		useProfileStore.getState().reset()
 	})
@@ -314,7 +314,7 @@ describe('ProfileList dark-mode tokens (story 54.5)', () => {
 	const main = { id: 'main', userId: 'u1', name: 'Main Profile', isDefault: true, currency: 'NONE' }
 	const biz = { id: 'biz', userId: 'u1', name: 'Business', isDefault: false, currency: 'EUR' }
 
-	it('gives the "Your Profiles" heading a themed token (AC-1)', () => {
+	it('gives the "Your Profiles" heading a themed token', () => {
 		useProfileStore.setState({ profiles: [main], activeProfileId: 'main' })
 		const { container } = renderWithProviders(<ProfileList />)
 
@@ -325,7 +325,7 @@ describe('ProfileList dark-mode tokens (story 54.5)', () => {
 		expect([...heading.classList]).not.toContain('text-gray-900')
 	})
 
-	it('puts the card body, divider and actions on semantic tokens (AC-2)', () => {
+	it('puts the card body, divider and actions on semantic tokens', () => {
 		useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
 		renderWithProviders(<ProfileList />)
 
@@ -352,7 +352,7 @@ describe('ProfileList dark-mode tokens (story 54.5)', () => {
 		expect([...card.classList]).toContain('dark:hover:border-gray-600')
 	})
 
-	it("pairs the active indicator's green with a dark variant (AC-3)", () => {
+	it("pairs the active indicator's green with a dark variant", () => {
 		useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
 		renderWithProviders(<ProfileList />)
 
@@ -363,7 +363,7 @@ describe('ProfileList dark-mode tokens (story 54.5)', () => {
 		expect([...indicator.classList]).not.toContain('text-green-600')
 	})
 
-	it('leaves no light-only colour token anywhere in the rendered list (AC-2)', () => {
+	it('leaves no light-only colour token anywhere in the rendered list', () => {
 		useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'main' })
 		const { container } = renderWithProviders(<ProfileList />)
 
@@ -381,7 +381,7 @@ describe('ProfileList dark-mode tokens (story 54.5)', () => {
 		}
 	})
 
-	it('sweeps the single-profile branch too, where the tip box renders (AC-2)', () => {
+	it('sweeps the single-profile branch too, where the tip box renders', () => {
 		useProfileStore.setState({ profiles: [main], activeProfileId: 'main' })
 		const { container } = renderWithProviders(<ProfileList />)
 
@@ -399,7 +399,7 @@ describe('ProfileList dark-mode tokens (story 54.5)', () => {
 		}
 	})
 
-	it('sweeps the empty-state branch too (AC-2)', () => {
+	it('sweeps the empty-state branch too', () => {
 		useProfileStore.setState({ profiles: [], activeProfileId: null })
 		const { container } = renderWithProviders(<ProfileList />)
 
@@ -418,7 +418,7 @@ describe('ProfileList dark-mode tokens (story 54.5)', () => {
 	})
 })
 
-describe('ProfileList card metadata removal (story 54.5)', () => {
+describe('ProfileList card metadata removal', () => {
 	afterEach(() => {
 		useProfileStore.getState().reset()
 	})
@@ -433,7 +433,7 @@ describe('ProfileList card metadata removal (story 54.5)', () => {
 		createdAt: '2026-01-15T10:00:00.000Z',
 	}
 
-	it('shows no "Currency:" row (AC-4)', () => {
+	it('shows no "Currency:" row', () => {
 		useProfileStore.setState({ profiles: [main], activeProfileId: 'main' })
 		renderWithProviders(<ProfileList />)
 
@@ -444,7 +444,7 @@ describe('ProfileList card metadata removal (story 54.5)', () => {
 		expect(screen.queryByText('EUR')).toBeNull()
 	})
 
-	it('shows no "Created:" row (AC-4)', () => {
+	it('shows no "Created:" row', () => {
 		useProfileStore.setState({ profiles: [main], activeProfileId: 'main' })
 		renderWithProviders(<ProfileList />)
 
@@ -455,7 +455,7 @@ describe('ProfileList card metadata removal (story 54.5)', () => {
 	})
 })
 
-describe('ProfileList delete confirmation (story 63.2)', () => {
+describe('ProfileList delete confirmation', () => {
 	// reset() restores data only; restore the real action so the spy cannot leak.
 	const REAL_REMOVE_PROFILE = useProfileStore.getState().removeProfile
 
@@ -554,7 +554,7 @@ describe('ProfileList delete confirmation (story 63.2)', () => {
 		expect(dialog.textContent).toMatch(/can(no|')t be undone|cannot be undone/i)
 	})
 
-	it('offers Delete on the DEFAULT profile once another profile exists (AC-2)', async () => {
+	it('offers Delete on the DEFAULT profile once another profile exists', async () => {
 		const user = userEvent.setup()
 		useProfileStore.setState({ profiles: [main, biz], activeProfileId: 'biz' })
 		renderWithProviders(<ProfileList />)
@@ -598,7 +598,7 @@ describe('ProfileList delete confirmation (story 63.2)', () => {
 		expect(screen.getByRole('heading', { name: 'Your Profiles' })).toHaveFocus()
 	})
 
-	it('still withholds Delete from a lone profile (AC-4, unchanged)', () => {
+	it('still withholds Delete from a lone profile', () => {
 		useProfileStore.setState({ profiles: [main], activeProfileId: 'main' })
 		const { unmount } = renderWithProviders(<ProfileList />)
 
@@ -611,7 +611,7 @@ describe('ProfileList delete confirmation (story 63.2)', () => {
 	})
 })
 
-describe('ProfileList destructive-delete copy and error surface (story 66.3)', () => {
+describe('ProfileList destructive-delete copy and error surface', () => {
 	const main = { id: 'main', userId: 'u1', name: 'Main Profile', isDefault: true, currency: 'NONE' }
 	const biz = { id: 'biz', userId: 'u1', name: 'Business', isDefault: false, currency: 'EUR' }
 

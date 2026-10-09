@@ -11,7 +11,7 @@ const SAVINGS_PAGE = join(__dirname, '..', 'SavingsPage.tsx')
 // `useBalanceStore` is a forward guard; it would also trip on a legitimate future read.
 const WRITE_PATHS = ['updateBalanceEntry', 'useBalanceActions', 'useBalanceStore']
 
-describe('SavingsPage — no balance-store writes (Story 47.1, AC-8)', () => {
+describe('SavingsPage — no balance-store writes', () => {
 	it('names no balance-store write path anywhere in the file', () => {
 		const source = readFileSync(SAVINGS_PAGE, 'utf8')
 		for (const symbol of WRITE_PATHS) {

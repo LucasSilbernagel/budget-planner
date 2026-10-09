@@ -21,7 +21,7 @@ function renderPlanner() {
 	return { container, fieldset, legend, panel }
 }
 
-describe('retirement target model grouping (AC-2)', () => {
+describe('retirement target model grouping', () => {
 	it('keeps the native fieldset/legend grouping', () => {
 		const { fieldset, legend } = renderPlanner()
 		expect(fieldset).toBeInTheDocument()
@@ -42,7 +42,7 @@ describe('retirement target model grouping (AC-2)', () => {
 	})
 })
 
-describe('the panel moved off the fieldset (AC-1)', () => {
+describe('the panel moved off the fieldset', () => {
 	it('puts the panel styling on the inner panel, not the fieldset', () => {
 		const { panel } = renderPlanner()
 		for (const token of ['p-4', 'surface-inset', 'rounded-lg', 'clear-both']) {
@@ -50,7 +50,7 @@ describe('the panel moved off the fieldset (AC-1)', () => {
 		}
 	})
 
-	it('keeps the responsive grid on the panel (AC-4)', () => {
+	it('keeps the responsive grid on the panel', () => {
 		const { panel } = renderPlanner()
 		for (const token of ['grid', 'grid-cols-1', 'sm:grid-cols-2', 'gap-3']) {
 			expect(tokens(panel)).toContain(token)
@@ -74,7 +74,7 @@ describe('the panel moved off the fieldset (AC-1)', () => {
 	})
 })
 
-describe('the radio options are untouched (AC-5)', () => {
+describe('the radio options are untouched', () => {
 	it('keeps both options, their 44px targets and their focus rings', () => {
 		const { panel } = renderPlanner()
 		const labels = panel.querySelectorAll('label')

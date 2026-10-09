@@ -82,7 +82,7 @@ beforeEach(() => {
 	useCategoryStore.setState({ categories: [] })
 })
 
-describe('AC-7: two rows sharing a category merge into one slice', () => {
+describe('two rows sharing a category merge into one slice', () => {
 	it('shows the category once with the summed figure, and neither row name', () => {
 		useCategoryStore.setState({
 			categories: [category({ id: 'e1', name: 'Groceries', kind: 'expense' })],
@@ -161,7 +161,7 @@ describe('AC-7: two rows sharing a category merge into one slice', () => {
 	})
 })
 
-describe('AC-7: a rename re-renders the pies', () => {
+describe('a rename re-renders the pies', () => {
 	it('follows a category rename with no other store change (the memo dependency)', () => {
 		useCategoryStore.setState({
 			categories: [category({ id: 'e1', name: 'Groceries', kind: 'expense' })],
@@ -182,7 +182,7 @@ describe('AC-7: a rename re-renders the pies', () => {
 	})
 })
 
-describe('AC-3: a dangling categoryId degrades gracefully in the pies', () => {
+describe('a dangling categoryId degrades gracefully in the pies', () => {
 	it('CAUSE 1 (pull pagination): an id not yet on this device falls back to the row name', () => {
 		useCategoryStore.setState({
 			categories: [category({ id: 'e-other', name: 'Housing', kind: 'expense' })],

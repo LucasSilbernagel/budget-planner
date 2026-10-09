@@ -105,7 +105,7 @@ afterEach(() => {
 	vi.useRealTimers()
 })
 
-describe('AC-2: only the user-intent setters push', () => {
+describe('only the user-intent setters push', () => {
 	const intent: [string, () => void][] = [
 		['setCurrentAgeInput', () => store().setCurrentAgeInput('41')],
 		['setLifeExpectancyInput', () => store().setLifeExpectancyInput('87')],
@@ -159,7 +159,7 @@ describe('AC-2: only the user-intent setters push', () => {
 		expect(queued()).toEqual([])
 	})
 
-	it('resetPlan DROPS a pending edit (AC-9: Clear local data never pushes)', async () => {
+	it('resetPlan DROPS a pending edit (Clear local data never pushes)', async () => {
 		store().setModel('perpetual')
 		expect(hasPendingPlanEdit()).toBe(true)
 		store().resetPlan()
@@ -168,7 +168,7 @@ describe('AC-2: only the user-intent setters push', () => {
 		expect(queued()).toEqual([])
 	})
 
-	it('an owner change DROPS a pending edit (AC-8): the plan it brings back is never pushed by it', async () => {
+	it('an owner change DROPS a pending edit: the plan it brings back is never pushed by it', async () => {
 		// Without the drop, the old timer would push the parked plan as an edit.
 		localStorage.setItem(
 			`${RETIREMENT_PLANNER_STORAGE_KEY}:${OTHER}`,
@@ -216,7 +216,7 @@ describe('AC-2: only the user-intent setters push', () => {
 	})
 })
 
-describe('AC-4: keystrokes coalesce', () => {
+describe('keystrokes coalesce', () => {
 	it('20 keystrokes inside the window queue exactly ONE op, carrying the LAST value', async () => {
 		for (let i = 1; i <= 20; i += 1) {
 			store().setDesiredIncomeInput((previous) => `${previous}${i % 10}`)
@@ -300,7 +300,7 @@ describe('AC-4: keystrokes coalesce', () => {
 	})
 })
 
-describe('AC-5: a pull never overwrites un-pushed typing', () => {
+describe('a pull never overwrites un-pushed typing', () => {
 	it('type → push → type again → a pull of this device’s OWN earlier write: the newer value stays and is what is sent, based on that write', async () => {
 		useRetirementPlannerStore.setState({ serverUpdatedAt: new Date(1_000).toISOString() })
 		store().setCurrentAgeInput('40')
@@ -403,7 +403,7 @@ describe('own echo (code review 2026-10-05, HIGH): core dropped the newer queued
 	})
 })
 
-describe('AC-6: owner and session', () => {
+describe('owner and session', () => {
 	it('the owner is checked again when the debounce FIRES, not only when it is armed', async () => {
 		store().setModel('perpetual')
 		// The owner changes without the claim (which would also cancel the timer).
@@ -429,7 +429,7 @@ describe('AC-6: owner and session', () => {
 		expect(queued()).toEqual([])
 	})
 
-	it('signed out (an unclaimed plan): no op, and NOT marked (D4: server wins at sign-in)', async () => {
+	it('signed out (an unclaimed plan): no op, and NOT marked (server wins at sign-in)', async () => {
 		clearSyncBridge()
 		useRetirementPlannerStore.setState({ ownerUserId: '' })
 		store().setModel('perpetual')
@@ -448,7 +448,7 @@ describe('AC-6: owner and session', () => {
 	})
 })
 
-describe('AC-7 / AC-12: after the initial pull', () => {
+describe('after the initial pull', () => {
 	it('the server has no plan (`serverUpdatedAt` null after the pull): ONE create with the whole plan', async () => {
 		useRetirementPlannerStore.setState({
 			plan: { ...RETIREMENT_PLAN_DEFAULTS, currentAgeInput: '44' },
@@ -502,7 +502,7 @@ describe('AC-7 / AC-12: after the initial pull', () => {
 	})
 })
 
-describe('AC-12: a refused plan edit stays on this device until a plan update is accepted', () => {
+describe('a refused plan edit stays on this device until a plan update is accepted', () => {
 	function refusalDeps(): RefusalHandlerDeps {
 		return {
 			queue: {

@@ -6,7 +6,7 @@ function Exploding({ message }: { message: string }): never {
 	throw new Error(message)
 }
 
-describe('ErrorBoundary — containment (story 51.1)', () => {
+describe('ErrorBoundary — containment', () => {
 	let consoleError: ReturnType<typeof vi.spyOn>
 
 	beforeEach(() => {
@@ -17,7 +17,7 @@ describe('ErrorBoundary — containment (story 51.1)', () => {
 		consoleError.mockRestore()
 	})
 
-	it('renders its default fallback instead of propagating the throw (AC-18)', () => {
+	it('renders its default fallback instead of propagating the throw', () => {
 		// console.error having been called proves a throw was actually caught.
 		render(
 			<ErrorBoundary>
@@ -30,7 +30,7 @@ describe('ErrorBoundary — containment (story 51.1)', () => {
 		expect(consoleError.mock.calls.length).toBeGreaterThanOrEqual(1)
 	})
 
-	it('renders a provided fallback in place of the default (AC-18)', () => {
+	it('renders a provided fallback in place of the default', () => {
 		render(
 			<ErrorBoundary fallback={<p>sync unavailable</p>}>
 				<Exploding message="a plain rendering failure occurred here" />
@@ -52,7 +52,7 @@ describe('ErrorBoundary — containment (story 51.1)', () => {
 		expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 	})
 
-	it('strips file locations and stack fragments out of the displayed message (AC-18)', () => {
+	it('strips file locations and stack fragments out of the displayed message', () => {
 		render(
 			<ErrorBoundary>
 				<Exploding message="database write failed at handleSubmit ( SavingsPage.tsx:1024:17" />
@@ -64,7 +64,7 @@ describe('ErrorBoundary — containment (story 51.1)', () => {
 		expect(details.textContent).not.toMatch(/at \w+ \(/)
 	})
 
-	it('falls back to a generic message when sanitising leaves too little (AC-18)', () => {
+	it('falls back to a generic message when sanitising leaves too little', () => {
 		render(
 			<ErrorBoundary>
 				<Exploding message="at boot (" />

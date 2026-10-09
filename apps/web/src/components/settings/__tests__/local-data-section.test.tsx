@@ -31,12 +31,12 @@ afterEach(() => {
 })
 
 describe('LocalDataSection', () => {
-	it('renders the "Clear local data" control for a free / unauthenticated user (AC-1)', () => {
+	it('renders the "Clear local data" control for a free / unauthenticated user', () => {
 		render(<LocalDataSection />)
 		expect(screen.getByRole('button', { name: /clear local data/i })).toBeInTheDocument()
 	})
 
-	it('opens a themed confirmation dialog instead of a browser confirm() (AC-2)', async () => {
+	it('opens a themed confirmation dialog instead of a browser confirm()', async () => {
 		const user = userEvent.setup()
 		render(<LocalDataSection />)
 
@@ -50,7 +50,7 @@ describe('LocalDataSection', () => {
 		expect(screen.getByText(/permanently|cannot be undone/i)).toBeInTheDocument()
 	})
 
-	it('Cancel closes the dialog WITHOUT purging (AC-2)', async () => {
+	it('Cancel closes the dialog WITHOUT purging', async () => {
 		const user = userEvent.setup()
 		render(<LocalDataSection />)
 
@@ -62,7 +62,7 @@ describe('LocalDataSection', () => {
 		expect(purgeLocalFinancialData).not.toHaveBeenCalled()
 	})
 
-	it('confirming purges with undefined for an unauthenticated user (AC-3)', async () => {
+	it('confirming purges with undefined for an unauthenticated user', async () => {
 		const user = userEvent.setup()
 		render(<LocalDataSection />)
 
@@ -75,7 +75,7 @@ describe('LocalDataSection', () => {
 		await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/cleared/i))
 	})
 
-	it('confirming purges with the resolved userId for a signed-in user (AC-3)', async () => {
+	it('confirming purges with the resolved userId for a signed-in user', async () => {
 		stubFetch({ user: { userId: 'user-42', email: 'a@b.co', subscriptionStatus: 'active' } })
 		const user = userEvent.setup()
 		render(<LocalDataSection />)

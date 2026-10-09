@@ -16,7 +16,7 @@ import { seedFinanceRows } from './helpers/seed-finance-rows'
 // Baselines are made in CI only: CI renders system-ui as DejaVu Sans, a dev box as
 // Noto Sans. Regenerate them with the screenshots.yml workflow.
 
-interface Shot {
+type Shot = {
 	name: string
 	path: string
 	width: number

@@ -4,7 +4,7 @@ import { Route } from '../welcome'
 
 const WelcomePage = Route.options.component as () => React.ReactElement
 
-describe('/welcome landmarks (story 116.1)', () => {
+describe('/welcome landmarks', () => {
 	it('is exactly one <main> landmark, holding the page heading', async () => {
 		renderWithRouter(<WelcomePage />)
 

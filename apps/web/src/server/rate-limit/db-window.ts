@@ -12,13 +12,13 @@ import { createIntervalGate, passIfDue } from './interval-gate'
 /** Distinct scopes so one scope's usage never consumes another's budget. */
 type RateLimitScope = 'ip' | 'email' | 'login-verify' | 'sync'
 
-export interface RateLimitDecision {
+export type RateLimitDecision = {
 	allowed: boolean
 	remaining: number
 	degraded?: boolean
 }
 
-export interface DbRateLimitOptions {
+export type DbRateLimitOptions = {
 	scope: RateLimitScope
 	/** An IP string, a lowercased email, or a userId. */
 	subject: string

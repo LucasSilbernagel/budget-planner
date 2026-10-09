@@ -11,7 +11,7 @@ import { profileColor, resolveProfileIcon } from '@/lib/profile-appearance'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { EditProfileDialog } from './edit-profile'
 
-interface ProfileListProps {
+type ProfileListProps = {
 	onCreateNewProfile?: () => void
 }
 
@@ -154,7 +154,7 @@ export function ProfileList({ onCreateNewProfile }: ProfileListProps) {
 	)
 }
 
-interface ProfileCardProps {
+type ProfileCardProps = {
 	profile: ClientProfile
 	isActive: boolean
 	isDeleting: boolean

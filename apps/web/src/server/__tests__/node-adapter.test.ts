@@ -71,28 +71,28 @@ describe('resolveStaticAsset', () => {
 		expect(asset.cacheControl).toBe('public, max-age=3600')
 	})
 
-	it('serves the PWA manifest as application/manifest+json (story 7-1)', async () => {
+	it('serves the PWA manifest as application/manifest+json', async () => {
 		const asset = await resolveStaticAsset('/manifest.webmanifest', clientDir)
 		expect(asset).not.toBeNull()
 		expect(asset.contentType).toBe('application/manifest+json')
 		expect(asset.cacheControl).toBe('public, max-age=3600')
 	})
 
-	it('serves the sitemap as application/xml, not a binary download (story seo-1, AC-5)', async () => {
+	it('serves the sitemap as application/xml, not a binary download', async () => {
 		const asset = await resolveStaticAsset('/sitemap.xml', clientDir)
 		expect(asset).not.toBeNull()
 		expect(asset.contentType).toBe('application/xml; charset=utf-8')
 		expect(asset.cacheControl).toBe('public, max-age=3600')
 	})
 
-	it('serves the service worker (/sw.js) with no-cache so redeploys are not stale (AC-4)', async () => {
+	it('serves the service worker (/sw.js) with no-cache so redeploys are not stale', async () => {
 		const asset = await resolveStaticAsset('/sw.js', clientDir)
 		expect(asset).not.toBeNull()
 		expect(asset.contentType).toBe('text/javascript; charset=utf-8')
 		expect(asset.cacheControl).toBe('no-cache')
 	})
 
-	it('serves the Workbox runtime (/workbox-*.js) with no-cache (AC-4)', async () => {
+	it('serves the Workbox runtime (/workbox-*.js) with no-cache', async () => {
 		const asset = await resolveStaticAsset('/workbox-abc123.js', clientDir)
 		expect(asset).not.toBeNull()
 		expect(asset.cacheControl).toBe('no-cache')

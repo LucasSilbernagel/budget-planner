@@ -3,7 +3,7 @@
  * rows rather than silently dropping money.
  */
 
-export interface NetWorthTotals {
+export type NetWorthTotals = {
 	investmentsCents: number
 	savingsCents: number
 	/**

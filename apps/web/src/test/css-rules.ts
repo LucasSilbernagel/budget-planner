@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 
 /** These pins assert rules, never computed style: jsdom applies no stylesheet. */
 
-export interface CssRule {
+export type CssRule = {
 	selector: string
 	body: string
 	/** The at-rule preludes enclosing the rule, outermost first (e.g. `@layer base`). */

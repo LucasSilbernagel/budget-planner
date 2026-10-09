@@ -40,7 +40,7 @@ describe('tableSortStore — defaults and writes', () => {
 		expect([...TABLE_SORT_IDS]).toEqual(['income', 'expenses', 'savings', 'balance'])
 	})
 
-	it('setTableSort writes one table and leaves the others alone (AC-4)', () => {
+	it('setTableSort writes one table and leaves the others alone', () => {
 		useTableSortStore.getState().setTableSort('income', { key: 'amount', direction: 'desc' })
 
 		expect(read('income')).toEqual({ key: 'amount', direction: 'desc' })
@@ -98,7 +98,7 @@ describe('tableSortStore — defaults and writes', () => {
 	})
 })
 
-describe('tableSortStore — rehydrate restores a persisted sort (AC-1)', () => {
+describe('tableSortStore — rehydrate restores a persisted sort', () => {
 	it.each([...TABLE_SORT_IDS])('restores a valid persisted sort for %s', async (table) => {
 		seed({ ...EMPTY, [table]: { key: 'name', direction: 'desc' } })
 
@@ -131,7 +131,7 @@ describe('tableSortStore — rehydrate restores a persisted sort (AC-1)', () => 
 	})
 })
 
-describe('tableSortStore — corrupt, absent and unknown payloads (AC-5)', () => {
+describe('tableSortStore — corrupt, absent and unknown payloads', () => {
 	it('an absent key leaves every table in manual order', async () => {
 		expect(localStorage.getItem(TABLE_SORT_STORAGE_KEY)).toBeNull()
 		// Seed a live sort first, so "still EMPTY afterwards" is a real transition

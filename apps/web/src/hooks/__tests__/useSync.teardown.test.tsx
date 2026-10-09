@@ -61,7 +61,7 @@ beforeEach(() => {
 	fetchMeta.mockResolvedValue({ changes: [], profileIds: [PROFILE] })
 })
 
-describe('useSync teardown mid-sync (story 79.1)', () => {
+describe('useSync teardown mid-sync', () => {
 	it('a create refused after unmount is refused again, named and reverted by the next session', async () => {
 		let release: (value: unknown) => void = () => {}
 		send.mockImplementationOnce(

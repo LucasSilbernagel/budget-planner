@@ -36,7 +36,7 @@ const bareUtilities = (list: string[]): string[] =>
 	})
 
 describe('ResponsiveTable class layer', () => {
-	describe('desktop classes are preserved verbatim (AC-2)', () => {
+	describe('desktop classes are preserved verbatim', () => {
 		// `max-lg:px-4` is listed explicitly: it is the 640-1024px width budget, and dev fonts are
 		// narrow enough that deleting it would only fail on CI.
 		const cases: [string, string, string[]][] = [
@@ -90,7 +90,7 @@ describe('ResponsiveTable class layer', () => {
 		})
 	})
 
-	describe('mobile card switching (AC-1)', () => {
+	describe('mobile card switching', () => {
 		it('the table declares block display and drops its min width', () => {
 			expect(tokens(RESPONSIVE_TABLE_CLASS)).toContain('max-sm:block')
 			expect(tokens(RESPONSIVE_TABLE_CLASS)).toContain('max-sm:min-w-0')
@@ -130,7 +130,7 @@ describe('ResponsiveTable class layer', () => {
 		})
 	})
 
-	describe('cells declare the classes that make them fit 320px (AC-3)', () => {
+	describe('cells declare the classes that make them fit 320px', () => {
 		for (const [name, value] of [
 			['cell', RESPONSIVE_CELL_CLASS],
 			['actions cell', RESPONSIVE_ACTIONS_CELL_CLASS],
@@ -178,7 +178,7 @@ describe('ResponsiveTable class layer', () => {
 		})
 	})
 
-	describe('value/tag pairs (story 42.3, UX-DR47)', () => {
+	describe('value/tag pairs', () => {
 		it('the pair is a non-wrapping flex row, aligned to the first line below sm', () => {
 			const pairTokens = tokens(RESPONSIVE_VALUE_TAG_CLASS)
 			expect(pairTokens).toContain('flex')
@@ -194,7 +194,7 @@ describe('ResponsiveTable class layer', () => {
 			expect(bareUtilities(tagTokens)).not.toContain('shrink-0')
 		})
 
-		it('the amount class turns the inherited `anywhere` off and reserves no width (story 91.1)', () => {
+		it('the amount class turns the inherited `anywhere` off and reserves no width', () => {
 			const valueTokens = tokens(RESPONSIVE_AMOUNT_CLASS)
 			expect(valueTokens).toContain('[overflow-wrap:normal]')
 			expect(valueTokens.some((t) => t.startsWith('max-sm:'))).toBe(false)
@@ -208,7 +208,7 @@ describe('ResponsiveTable class layer', () => {
 			}
 		})
 
-		it('⚠️ the cell wrapping contract survives this story (AC-2)', () => {
+		it('⚠️ the cell wrapping contract survives this story', () => {
 			for (const value of [RESPONSIVE_CELL_CLASS, RESPONSIVE_STACKED_CELL_CLASS]) {
 				const cellTokens = tokens(value)
 				expect(cellTokens).toContain('max-sm:whitespace-normal')
@@ -220,7 +220,7 @@ describe('ResponsiveTable class layer', () => {
 		})
 	})
 
-	describe('scroll affordance (story 42.2, UX-DR46)', () => {
+	describe('scroll affordance', () => {
 		it('is a separate constant, so the wrapper pin is untouched', () => {
 			// The wrapper is pinned by exact equality; merging the affordance into it would loosen that pin.
 			expect(tokens(RESPONSIVE_WRAPPER_CLASS)).not.toContain('surface')
@@ -266,7 +266,7 @@ describe('ResponsiveTable class layer', () => {
 			}
 		})
 
-		it('reserves no layout width (AC-8)', () => {
+		it('reserves no layout width', () => {
 			// Zero width slack between 640 and 1024px: strip variants, then reject anything that reserves width.
 			const bare = (c: string) => c.slice(c.lastIndexOf(':') + 1)
 			const RESERVES_WIDTH =
@@ -281,7 +281,7 @@ describe('ResponsiveTable class layer', () => {
 		})
 	})
 
-	describe('tap targets (AC-6)', () => {
+	describe('tap targets', () => {
 		it('a row action button declares a >= 44px floor in both dimensions below sm', () => {
 			const buttonTokens = tokens(RESPONSIVE_ACTION_BUTTON_CLASS)
 			expect(buttonTokens).toContain('max-sm:min-h-[44px]')
@@ -302,7 +302,7 @@ describe('ResponsiveTable class layer', () => {
 			expect([...label.classList]).toContain('sm:hidden')
 		})
 
-		it('uses the muted text token rather than a hand-rolled dark pair (AC-7)', () => {
+		it('uses the muted text token rather than a hand-rolled dark pair', () => {
 			const labelTokens = tokens(FIELD_LABEL_CLASS)
 			expect(labelTokens).toContain('text-muted')
 			expect(labelTokens.some((t) => t.startsWith('dark:'))).toBe(false)
@@ -322,14 +322,14 @@ describe('ResponsiveTable class layer', () => {
 			expect(labelTokens.some((t) => t.startsWith('max-sm:'))).toBe(false)
 		})
 
-		it('breaks only between words, not mid-word (story 91.1, AC 1)', () => {
+		it('breaks only between words, not mid-word', () => {
 			const labelTokens = tokens(FIELD_LABEL_CLASS)
 			expect(labelTokens).toContain('[overflow-wrap:normal]')
 			// Never nowrap: a one-line `MONTHLY ALLOCATION` would starve the value.
 			expect(bareUtilities(labelTokens)).not.toContain('whitespace-nowrap')
 		})
 
-		it('takes only the width the value leaves (basis-0 grow), never a shrink factor (story 91.1)', () => {
+		it('takes only the width the value leaves (basis-0 grow), never a shrink factor', () => {
 			// `shrink-[1000]` was rejected: it still takes sub-pixels from the value, wrapping an exact fit.
 			const labelTokens = tokens(FIELD_LABEL_CLASS)
 			expect(labelTokens).toContain('basis-0')

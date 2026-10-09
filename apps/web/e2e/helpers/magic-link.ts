@@ -2,7 +2,7 @@ import { type BrowserContext, expect, type Page } from '@playwright/test'
 import { SESSION_SETTLE_MS } from './account-menu'
 import { readOutbox } from './db-harness'
 
-export interface SignInResult {
+export type SignInResult = {
 	linksFor: () => number
 	before: number
 }

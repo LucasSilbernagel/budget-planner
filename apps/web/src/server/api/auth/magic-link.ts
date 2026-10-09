@@ -7,7 +7,7 @@ import { consumeLoginToken, createLoginToken, peekLoginToken } from './login-tok
 
 export { isValidEmail, normalizeEmail }
 
-export interface VerifiedLoginUser {
+export type VerifiedLoginUser = {
 	userId: string
 	paddleId: string
 	email: string

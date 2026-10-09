@@ -175,7 +175,7 @@ describe('validateSessionToken via getCurrentUserSession', () => {
 		expect(result.data).toBeNull()
 	})
 
-	it('rejects a token issued at or before the revocation watermark (Story 5.8 logout)', async () => {
+	it('rejects a token issued at or before the revocation watermark (logout)', async () => {
 		const token = signSession({
 			userId: VALID_UUID,
 			paddleId: 'paddle-cookie',

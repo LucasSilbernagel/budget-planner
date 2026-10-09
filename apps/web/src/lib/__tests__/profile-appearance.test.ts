@@ -44,7 +44,7 @@ describe('profileColor / profileIcon', () => {
 })
 
 /** Literal pins: changing `hashProfileId` or the order of `PROFILE_ICONS` reshuffles every existing avatar. */
-describe('resolveProfileIcon (story 54.2)', () => {
+describe('resolveProfileIcon', () => {
 	const UUID_HASH_ICON = profileIcon(UUID)
 	const OTHER_HASH_ICON = profileIcon(OTHER_UUID)
 
@@ -83,7 +83,7 @@ describe('resolveProfileIcon (story 54.2)', () => {
 	})
 })
 
-describe('resolveProfileIcon: 🏠 for the default profile (story 98.1)', () => {
+describe('resolveProfileIcon: 🏠 for the default profile', () => {
 	const UUID_HASH_ICON = profileIcon(UUID)
 
 	it('exports 🏠 as the default-profile icon, a member of the fixed set', () => {
@@ -120,7 +120,7 @@ describe('resolveProfileIcon: 🏠 for the default profile (story 98.1)', () => 
 	})
 })
 
-describe('isProfileIcon (story 54.2)', () => {
+describe('isProfileIcon', () => {
 	it.each([...PROFILE_ICONS])('accepts the fixed icon %s', (icon) => {
 		expect(isProfileIcon(icon)).toBe(true)
 	})

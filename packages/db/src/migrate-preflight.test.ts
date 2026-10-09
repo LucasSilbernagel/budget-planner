@@ -37,17 +37,16 @@ describe('assessMigrateSafety — safe targets', () => {
 	})
 })
 
-describe('assessMigrateSafety — the push-built hazard (deferred-work:643)', () => {
+describe('assessMigrateSafety — the push-built hazard', () => {
 	it('REFUSES a schema-bearing database with no journal', () => {
 		const v = assessMigrateSafety(pushBuilt)
 		expect(v.safe).toBe(false)
 		expect(v.provenance).toBe('push-built')
 	})
 
-	it('names the concrete corruption and points at Story 4-17', () => {
+	it('names the concrete corruption', () => {
 		const { reason } = assessMigrateSafety(pushBuilt)
 		expect(reason).toContain('userProfiles')
-		expect(reason).toContain('4-17')
 	})
 
 	it('refuses even a single leftover table', () => {

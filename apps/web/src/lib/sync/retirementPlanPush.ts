@@ -9,14 +9,14 @@ import { enqueueCreate, enqueueUpdate, getSyncSessionUserId } from './syncBridge
 
 export const PLAN_PUSH_DEBOUNCE_MS = 1500
 
-export interface RetirementPlanSnapshot {
+export type RetirementPlanSnapshot = {
 	plan: RetirementPlan
 	ownerUserId: string
 	serverUpdatedAt: string | null
 	localPlanDiverged: boolean
 }
 
-export interface RetirementPlanSource {
+export type RetirementPlanSource = {
 	read: () => RetirementPlanSnapshot
 	/** Plain setState; never pushes. */
 	setDiverged: (diverged: boolean) => void

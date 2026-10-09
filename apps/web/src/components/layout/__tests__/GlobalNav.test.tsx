@@ -183,7 +183,7 @@ describe('GlobalNav', () => {
 		expect(listTokens).toEqual(expect.arrayContaining(['flex', 'flex-wrap', 'max-sm:grid']))
 	})
 
-	it('lays the mobile bottom bar out as a 5-column grid (story 31.5)', async () => {
+	it('lays the mobile bottom bar out as a 5-column grid', async () => {
 		renderWithRouter(<GlobalNav />)
 		const nav = await screen.findByRole('navigation', { name: /primary/i })
 		const list = nav.querySelector('ul')
@@ -345,7 +345,7 @@ describe('GlobalNav', () => {
 		expect(nav.querySelectorAll('[data-nav-label]')).toHaveLength(10)
 	})
 
-	it('pads for the safe-area inset and stretches each mobile cell (story 18-2)', async () => {
+	it('pads for the safe-area inset and stretches each mobile cell', async () => {
 		renderWithRouter(<GlobalNav />)
 		const nav = await screen.findByRole('navigation', { name: /primary/i })
 		expect(tokens(nav)).toContain('max-sm:pb-[env(safe-area-inset-bottom)]')
@@ -432,7 +432,7 @@ describe('GlobalNav', () => {
 		}
 	})
 
-	describe('the More tab is active on the routes it owns (two since story 69.2)', () => {
+	describe('the More tab is active on the routes it owns (two)', () => {
 		// Non-null first: the `.not.toContain` cases would pass on a missing node.
 		const moreTrigger = (nav: HTMLElement): HTMLElement => {
 			const summary = nav.querySelector('details > summary')
@@ -500,7 +500,7 @@ describe('GlobalNav', () => {
 
 // These counts drop because the Retirement <li> is not rendered at all, unlike the reachability
 // note above.
-describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
+describe('GlobalNav — Retirement planner hidden', () => {
 	const hidePlanner = () => usePlannerVisibilityStore.setState({ showRetirementPlanner: false })
 
 	afterEach(() => {
@@ -617,7 +617,7 @@ describe('GlobalNav — Retirement planner hidden (story 35.2)', () => {
 	})
 })
 
-describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
+describe('GlobalNav — tier-aware destinations', () => {
 	const seedWith = (overrides: Partial<SessionSeed> = {}): SessionSeed => ({
 		isAuthenticated: true,
 		userId: 'u1',
@@ -738,7 +738,7 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
 		})
 	})
 
-	describe('every non-entitled session is unchanged from before this story', () => {
+	describe('every non-entitled session keeps the free-tier nav', () => {
 		const NOT_ENTITLED: readonly [name: string, seed: SessionSeed | null][] = [
 			['a free subscriber', seedWith({ subscriptionStatus: 'free' })],
 			['a past_due subscriber', seedWith({ subscriptionStatus: 'past_due' })],
@@ -828,7 +828,7 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
 		})
 	})
 
-	it('never adds Multi-device sync, in either tier (AC-7)', async () => {
+	it('never adds Multi-device sync, in either tier', async () => {
 		for (const seed of [seedWith(), null]) {
 			const { unmount } = renderWithSeed(seed)
 			const navEl = await nav()
@@ -840,7 +840,7 @@ describe('GlobalNav — tier-aware destinations (story 58.1, FR87)', () => {
 
 // aria-query has no `summary` role, so `getByRole('button')` misses the trigger: locate
 // `details > summary`. The onClick cancels the native toggle; React flips `open`.
-describe('GlobalNav — the More disclosure at every width (story 59.2)', () => {
+describe('GlobalNav — the More disclosure at every width', () => {
 	const parts = async () => {
 		const nav = await screen.findByRole('navigation', { name: /primary/i })
 		const details = nav.querySelector('details')

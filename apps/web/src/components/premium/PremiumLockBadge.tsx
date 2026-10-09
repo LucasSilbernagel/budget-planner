@@ -1,6 +1,6 @@
 import type React from 'react'
 
-export interface PremiumLockBadgeProps {
+export type PremiumLockBadgeProps = {
 	className?: string
 }
 

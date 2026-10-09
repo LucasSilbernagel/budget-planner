@@ -44,14 +44,14 @@ export const Route = createFileRoute('/forecasting')({
 type ForecastingTab = 'scenarios' | 'projections' | 'saved'
 
 /** Money in cents. */
-export interface SavedSavingsAccount {
+export type SavedSavingsAccount = {
 	name: string
 	balance: number
 	monthlyContribution: number
 }
 
 /** Money in cents; `balance` is a positive magnitude for both types. */
-export interface SavedBalanceAccount {
+export type SavedBalanceAccount = {
 	name: string
 	type: 'investment' | 'debt'
 	balance: number
@@ -64,7 +64,7 @@ export interface SavedBalanceAccount {
 }
 
 /** Money in cents. */
-export interface SavedAssetAccount {
+export type SavedAssetAccount = {
 	name: string
 	balance: number
 }
@@ -73,7 +73,7 @@ export interface SavedAssetAccount {
  * `savings`/`investments` are still written as the rows' sums so older cached clients reopen
  * at the right start; on load the rows win when they disagree.
  */
-export interface ScenarioInputs {
+export type ScenarioInputs = {
 	savings: number
 	investments: number
 	years: number
@@ -89,7 +89,7 @@ type ProfileAvailability =
 	| { kind: 'none' }
 	| { kind: 'error' }
 
-export interface SavedForecast {
+export type SavedForecast = {
 	id: string
 	name: string
 	description?: string
@@ -565,7 +565,7 @@ function PageHeader(): React.ReactElement {
 	)
 }
 
-interface TabNavigationProps {
+type TabNavigationProps = {
 	activeTab: ForecastingTab
 	onTabChange: (tab: ForecastingTab) => void
 	disabled?: boolean

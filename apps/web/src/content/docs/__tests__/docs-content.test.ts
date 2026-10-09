@@ -46,14 +46,14 @@ describe('getDocPage', () => {
 	})
 })
 
-describe('documentation content accuracy (story 10-4)', () => {
+describe('documentation content accuracy', () => {
 	const contentFor = (slug: string): string => {
 		const page = getDocPage(slug)
 		if (!page) throw new Error(`missing expected doc page: ${slug}`)
 		return page.content
 	}
 
-	it('no page references the "Financial Health" score removed in story 11-5', () => {
+	it('no page references the "Financial Health" score, which was removed', () => {
 		for (const page of DOC_PAGES) {
 			expect(page.content.toLowerCase()).not.toContain('financial health')
 		}
@@ -65,7 +65,7 @@ describe('documentation content accuracy (story 10-4)', () => {
 		expect(faq).not.toContain('in the page header')
 	})
 
-	it('the FAQ documents the in-app "Clear local data" control (story 17-2)', () => {
+	it('the FAQ documents the in-app "Clear local data" control', () => {
 		expect(contentFor('faq')).toContain('Clear local data')
 	})
 
@@ -79,7 +79,7 @@ describe('documentation content accuracy (story 10-4)', () => {
 		expect(faq).toContain('/privacy')
 	})
 
-	it('the FAQ no longer advertises the phantom data import/export feature (story 17-3, AC-1)', () => {
+	it('the FAQ no longer advertises the phantom data import/export feature', () => {
 		// Guard the CLAIM, not one phrasing: match verb stem against object. The print/PDF summary
 		// report legitimately exists, so the bare word "export" is not banned.
 		const faq = contentFor('faq').toLowerCase()
@@ -98,13 +98,13 @@ describe('documentation content accuracy (story 10-4)', () => {
 		// "import" is deliberately unguarded: the FAQ truthfully says the app does not import transactions.
 	})
 
-	it('the FAQ frames Longhand Budget as a planning tool and points to a spend tracker (story 17-3, AC-2)', () => {
+	it('the FAQ frames Longhand Budget as a planning tool and points to a spend tracker', () => {
 		const faq = contentFor('faq')
 		expect(faq.toLowerCase()).toContain('planning tool')
 		expect(faq).toContain('Lunch Money')
 	})
 
-	it('refers to the product as "Longhand Budget", never the retired brands (stories 27-3, brand-1, brand-2)', () => {
+	it('refers to the product as "Longhand Budget", never the retired brands', () => {
 		for (const page of DOC_PAGES) {
 			expect(page.content).not.toContain('Budget Planner')
 			expect(page.description).not.toContain('Budget Planner')
@@ -117,7 +117,7 @@ describe('documentation content accuracy (story 10-4)', () => {
 		expect(getDocPage('features')?.description).toContain('Everything Longhand Budget can do')
 	})
 
-	it('the Features page pledges no AI, scoped to what was actually verified (brand-1 AC-6)', () => {
+	it('the Features page pledges no AI, scoped to what was actually verified', () => {
 		// The evidence supports "no AI features", not the broader "no machine-learning features".
 		const features = contentFor('features')
 		expect(features).toContain('No ads, no trackers, no AI — ever.')
@@ -125,14 +125,14 @@ describe('documentation content accuracy (story 10-4)', () => {
 		expect(features).not.toMatch(/machine[- ]learning/i)
 	})
 
-	it('the FAQ describes Lunch Money accurately as a Canadian app, not implied-US (story 23-2)', () => {
+	it('the FAQ describes Lunch Money accurately as a Canadian app, not implied-US', () => {
 		// Lunch Money is Canadian. The phrase hard-wraps, hence `\s+`.
 		const faq = contentFor('faq')
 		expect(faq).toMatch(/Lunch Money,\s+a Canadian app/)
 		expect(faq).not.toContain('Non-US options exist too')
 	})
 
-	it('the FAQ explains the monthly-basis conversion is an estimate using the ~4.33 factor (story 23-1)', () => {
+	it('the FAQ explains the monthly-basis conversion is an estimate using the ~4.33 factor', () => {
 		// "4.33" and "estimate" predate this copy, so anchor on the distinguishing new phrasing.
 		const faq = contentFor('faq')
 		expect(faq).toContain('4.33')
@@ -141,7 +141,7 @@ describe('documentation content accuracy (story 10-4)', () => {
 		expect(faq.toLowerCase()).not.toContain('how it was converted')
 	})
 
-	it('the Features page discloses the common monthly basis is an estimate/average (story 23-1)', () => {
+	it('the Features page discloses the common monthly basis is an estimate/average', () => {
 		const free = featureSections().free
 		expect(free).toContain('common monthly basis')
 		expect(free).toContain('4.33')
@@ -167,19 +167,19 @@ describe('documentation content accuracy (story 10-4)', () => {
 		}
 	}
 
-	it('the Features page states no ads universally, not as a Premium perk (story 25-1)', () => {
+	it('the Features page states no ads universally, not as a Premium perk', () => {
 		const content = getDocPage('features')?.content ?? ''
 		expect(content.toLowerCase()).toContain('no ads')
 		expect(featureSections().premium).not.toContain('no ads')
 	})
 
-	it('the Features page lists Dark mode under the Free tier, not Premium (story 25-3)', () => {
+	it('the Features page lists Dark mode under the Free tier, not Premium', () => {
 		const { freeTier, premium } = featureSections()
 		expect(freeTier).toContain('dark mode')
 		expect(premium).not.toContain('dark mode')
 	})
 
-	it('the Features page does not promise a dark-mode CONTROL on the Settings page (61.1, FR93)', () => {
+	it('the Features page does not promise a dark-mode CONTROL on the Settings page', () => {
 		// The sibling test only checks the topic; this pins that no in-app toggle is promised.
 		const { freeTier } = featureSections()
 		const darkLine = freeTier.split('\n').find((line) => line.includes('dark mode')) ?? ''
@@ -189,19 +189,19 @@ describe('documentation content accuracy (story 10-4)', () => {
 		expect(darkLine).toContain('device')
 	})
 
-	it('the Features page keeps Retirement modeling under the Free tier (story 13-1, AC-4)', () => {
+	it('the Features page keeps Retirement modeling under the Free tier', () => {
 		const { freeTier, premium } = featureSections()
 		expect(freeTier).toContain('retirement modeling')
 		expect(premium).not.toContain('retirement modeling')
 	})
 
-	it('the Features page documents Custom categories under Premium only (story 30.4b, AC-8)', () => {
+	it('the Features page documents Custom categories under Premium only', () => {
 		const { freeTier, premium } = featureSections()
 		expect(premium).toContain('custom categories')
 		expect(freeTier).not.toContain('custom categories')
 	})
 
-	it('the Custom categories bullet documents the per-category breakdown (story 30.5)', () => {
+	it('the Custom categories bullet documents the per-category breakdown', () => {
 		// Deliberately scoped to `free`, not `freeTier`: narrowing it would silently weaken the guard.
 		const { premium, free } = featureSections()
 		expect(premium).toContain('what share of that side it is')
@@ -209,7 +209,7 @@ describe('documentation content accuracy (story 10-4)', () => {
 		expect(free).not.toContain('what share of that side it is')
 	})
 
-	it('the Custom categories bullet claims no cross-device sync (story 30.4b)', () => {
+	it('the Custom categories bullet claims no cross-device sync', () => {
 		// Category rows can't reach the server yet, so the copy must not claim they sync.
 		const { premium } = featureSections()
 		const start = premium.indexOf('**custom categories**')
@@ -225,7 +225,7 @@ describe('documentation content accuracy (story 10-4)', () => {
 		expect(bullet).not.toMatch(/sync|across (?:all )?your devices|other devices|phone to laptop/)
 	})
 
-	it('the Features page describes Advanced forecasting honestly (stories 20-1, 30-2)', () => {
+	it('the Features page describes Advanced forecasting honestly', () => {
 		// Both slices are lowercased by featureSections(), so every literal here must be lowercase.
 		const { premium } = featureSections()
 		expect(premium).toContain('what-if scenarios')
@@ -237,7 +237,7 @@ describe('documentation content accuracy (story 10-4)', () => {
 		expect(premium).not.toMatch(/side[\s-]by[\s-]side/)
 	})
 
-	it('scopes the EU-storage claim to SAVED forecasts, and states it once (story 30-2)', () => {
+	it('scopes the EU-storage claim to SAVED forecasts, and states it once', () => {
 		// Only SAVED forecasts are EU-stored; the math runs in the browser. Anchor on the scoping words.
 		const { premium } = featureSections()
 		expect(premium).toMatch(
@@ -251,7 +251,7 @@ describe('documentation content accuracy (story 10-4)', () => {
 		expect(premiumBullets.match(/european union/g) ?? []).toHaveLength(2)
 	})
 
-	it('contrasts the free retirement projection with Premium forecasting (story 30-2, AC-3)', () => {
+	it('contrasts the free retirement projection with Premium forecasting', () => {
 		// The builder seeds hardcoded defaults rather than reading budget figures, so no continuity claim.
 		const { free } = featureSections()
 		// Don't weaken this to /projections/, which appears throughout the page.
@@ -261,7 +261,7 @@ describe('documentation content accuracy (story 10-4)', () => {
 		expect(free).toMatch(/premium\s+forecasting\s+is\s+a\s+separate\s+what-if\s+workspace/)
 	})
 
-	it('the docs carry the "without bank sync or AI integrations" framing (FR45 as amended by brand-1)', () => {
+	it('the docs carry the "without bank sync or AI integrations" framing', () => {
 		const framing = /intentional\s+budgeting\s+without\s+bank\s+sync\s+or\s+AI\s+integrations/i
 		expect(framing.test(contentFor('features'))).toBe(true)
 		expect(framing.test(contentFor('getting-started'))).toBe(true)
@@ -296,7 +296,7 @@ describe('documentation content accuracy (story 10-4)', () => {
 		}
 	}
 
-	it('tells you in the income steps that the amount is take-home pay (story 46.1)', () => {
+	it('tells you in the income steps that the amount is take-home pay', () => {
 		const { addIncome } = gettingStartedSections()
 
 		// Anchored on the distinguishing clause; "income" and "amount" appear all over this section.
@@ -305,13 +305,13 @@ describe('documentation content accuracy (story 10-4)', () => {
 		expect(addIncome).toMatch(/deductions/i)
 	})
 
-	it('uses "net" on this page ONLY for net worth (story 46.1)', () => {
+	it('uses "net" on this page ONLY for net worth', () => {
 		// Core's `netIncome` means income minus expenses, so ban the word "net" and carve out "net worth".
 		expect(contentFor('getting-started')).not.toMatch(/\bnet\b(?!\s+worth)/i)
 		expect(contentFor('getting-started')).toMatch(/\bnet\s+worth\b/i)
 	})
 
-	it('does not claim the overview shows a figure it no longer renders (story 46.1)', () => {
+	it('does not claim the overview shows a figure it no longer renders', () => {
 		const { overview } = gettingStartedSections()
 
 		// The overview doesn't render net income, so the clause is gone rather than re-pointed.
@@ -373,7 +373,7 @@ describe('documentation content accuracy (story 10-4)', () => {
 		expect(rounding).toContain('$99.96')
 	})
 
-	it('names forecasts as the exception, with the figure the engine actually computes (story 111.1)', () => {
+	it('names forecasts as the exception, with the figure the engine actually computes', () => {
 		// Computed from the engine: a forecast year counts each entry in full, so year 1 at 0% growth
 		// is the spreadsheet figure.
 		const forecast = calculateFinancialForecast(
@@ -435,14 +435,14 @@ describe('documentation content accuracy (story 10-4)', () => {
 		}
 	})
 
-	it('the FAQ lists all FOUR selectable durations, including biweekly (story 32.3, AC-7)', () => {
+	it('the FAQ lists all FOUR selectable durations, including biweekly', () => {
 		// The sentence hard-wraps between "duration" and "selector".
 		const faq = contentFor('faq')
 		expect(faq).toMatch(/weekly,\s+biweekly,\s+monthly,\s+and\s+annual\s+totals/)
 		expect(faq).not.toMatch(/between\s+weekly,\s+monthly,\s+and\s+annual/)
 	})
 
-	it('all three existing surfaces link to the new page (story 32.3, AC-7)', () => {
+	it('all three existing surfaces link to the new page', () => {
 		// The link guard below proves links resolve; only this proves they exist.
 		const link = '(/docs/how-totals-are-calculated)'
 		expect(contentFor('faq')).toContain(link)
@@ -515,14 +515,14 @@ describe('documentation content accuracy (story 10-4)', () => {
 		return sections
 	}
 
-	it('the mortgage page tells the reader to link the payment in the debt’s Paid by field (102.1, AC-11)', () => {
+	it('the mortgage page tells the reader to link the payment in the debt’s Paid by field', () => {
 		const { where } = mortgageSections()
 		// Named by the literal field label the debt form renders.
 		expect(where).toMatch(/\*Paid\s+by\*\s+field,\s+pick\s+the\s+payment[^.]*Expenses\s+page/i)
 		expect(where).toMatch(/enter\s+it\s+only\s+once/i)
 	})
 
-	it('the mortgage page states the three-part model and scopes the debt claims (43.5, AC-1)', () => {
+	it('the mortgage page states the three-part model and scopes the debt claims', () => {
 		const page = mortgage()
 		const { where } = mortgageSections()
 		expect(where).toMatch(/recurring\s+\*\*payment\*\*\s+goes\s+on\s+the\s+\[Expenses\]/i)
@@ -548,7 +548,7 @@ describe('documentation content accuracy (story 10-4)', () => {
 
 	/** Forecasting has no debt term and its inputs are typed by hand, so the projection sentences were deleted. */
 	/** A mortgage payment no longer affects the retirement planner, so the bullet was deleted, not re-pointed. */
-	it('the payment section no longer claims to move the retirement planner (47.2, AC-13)', () => {
+	it('the payment section no longer claims to move the retirement planner', () => {
 		const { payment, owed, property } = mortgageSections()
 
 		// Positive anchors first: the section still lists what the payment DOES
@@ -566,7 +566,7 @@ describe('documentation content accuracy (story 10-4)', () => {
 		expect(property).toMatch(/retirement\s+planner's/i)
 	})
 
-	it('the mortgage page says what each figure does NOT affect (43.5, AC-3/AC-5)', () => {
+	it('the mortgage page says what each figure does NOT affect', () => {
 		const page = mortgage()
 		const { payment, owed, property } = mortgageSections()
 		expect(payment).toMatch(/does\s+\*\*not\*\*\s+change\s+your\s+net\s+worth,\s+on\s+any\s+page/i)
@@ -582,7 +582,7 @@ describe('documentation content accuracy (story 10-4)', () => {
 		expect(property).toContain('(/savings)')
 	})
 
-	it("each figure's effects are listed under THAT figure (43.5, AC-5)", () => {
+	it("each figure's effects are listed under THAT figure", () => {
 		const { payment, owed, property } = mortgageSections()
 		// Each positive effect is pinned to its own section AND denied to the others.
 		const paymentEffects = [
@@ -613,7 +613,7 @@ describe('documentation content accuracy (story 10-4)', () => {
 		}
 	})
 
-	it('the mortgage page does not promise the debt shrinks (43.5, AC-4)', () => {
+	it('the mortgage page does not promise the debt shrinks', () => {
 		const { owed, property } = mortgageSections()
 		// No rate is asked for, so nothing amortises and no figure is recalculated.
 		expect(owed).toMatch(/does\s+not\s+ask\s+for\s+your\s+interest\s+rate/i)
@@ -642,7 +642,7 @@ describe('documentation content accuracy (story 10-4)', () => {
 		expect(offenders).toEqual([])
 	})
 
-	it('the mortgage page tells a homeowner how to record the house (43.5, AC-2)', () => {
+	it('the mortgage page tells a homeowner how to record the house', () => {
 		const page = mortgage()
 		const { property, wrong } = mortgageSections()
 		expect(page).not.toMatch(/cannot\s+yet\s+record\s+a\s+house/i)
@@ -659,7 +659,7 @@ describe('documentation content accuracy (story 10-4)', () => {
 		expect(wrong).toMatch(/add\s+it\s+as\s+an\s+\*\*Asset\*\*/i)
 	})
 
-	it('the mortgage page description matches the three-part model (43.5, AC-8)', () => {
+	it('the mortgage page description matches the three-part model', () => {
 		// The description is not in the .md; it renders as the page subtitle and on the index card.
 		const page = DOC_PAGES.find((doc) => doc.slug === 'where-a-mortgage-belongs')
 		if (!page) throw new Error('missing expected doc page: where-a-mortgage-belongs')
@@ -676,7 +676,7 @@ describe('documentation content accuracy (story 10-4)', () => {
 	 * Section-scoped: the same figures already appear in the closing section.
 	 * Pinned as literals: this is an illustrative scenario no function produces.
 	 */
-	it('the worked example lays out three entries with their pages and fields (49.2, AC-7)', () => {
+	it('the worked example lays out three entries with their pages and fields', () => {
 		const { example } = mortgageSections()
 
 		// Type names are the literal dropdown labels (`Asset`, `Debt`).
@@ -697,7 +697,7 @@ describe('documentation content accuracy (story 10-4)', () => {
 		expect(example).toMatch(/cash\s+flow\s+counts\s+only\s+the\s+third/i)
 	})
 
-	it('the worked example answers the down payment, and answers it there (49.2, AC-9)', () => {
+	it('the worked example answers the down payment, and answers it there', () => {
 		const { example } = mortgageSections()
 		const page = mortgage()
 
@@ -711,7 +711,7 @@ describe('documentation content accuracy (story 10-4)', () => {
 		expect(page.match(/down[-\s]?payment/gi)).toHaveLength(1)
 	})
 
-	it('the mortgage page uses no markdown table (36.3, AC-8)', () => {
+	it('the mortgage page uses no markdown table', () => {
 		// A bare <table> overflows at 320px, and a payment-vs-principal table is this page's most natural shape.
 		const page = mortgage()
 		expect(page).not.toMatch(/^\s*\|/m)
@@ -719,7 +719,7 @@ describe('documentation content accuracy (story 10-4)', () => {
 		expect(page).not.toMatch(/^\s*:?-+:?\s*\|/m)
 	})
 
-	it('both doc surfaces still link to the mortgage page (36.3, AC-8)', () => {
+	it('both doc surfaces still link to the mortgage page', () => {
 		// The link guard proves links resolve; only this proves they exist.
 		const link = '(/docs/where-a-mortgage-belongs)'
 		expect(contentFor('getting-started')).toContain(link)

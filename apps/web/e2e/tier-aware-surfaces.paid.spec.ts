@@ -28,7 +28,7 @@ async function assertOverviewRendered(page: Page): Promise<void> {
 	await expect(page.locator('nav[aria-label="Primary"]')).toBeVisible()
 }
 
-test.describe('the paid Overview drops the Premium Features section (D1)', () => {
+test.describe('the paid Overview drops the Premium Features section', () => {
 	test('no heading, no boxes, and the page is demonstrably rendered', async ({ page }) => {
 		// The paid seam's SSR seed is entitled but its real /api/auth/me answers
 		// signed-out, and the Overview follows that answer, so mock an agreeing one.

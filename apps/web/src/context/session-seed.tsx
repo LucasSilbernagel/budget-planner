@@ -7,7 +7,7 @@ import { createContext, type ReactNode, useContext } from 'react'
 
 export type SeedSubscriptionStatus = 'free' | 'active' | 'past_due' | 'canceled' | 'lifetime' | null
 
-export interface SessionSeed {
+export type SessionSeed = {
 	isAuthenticated: boolean
 	userId: string | null
 	email: string | null

@@ -27,7 +27,7 @@ const REFUSED: ProcessOperationResult = {
 const RETRYABLE: ProcessOperationResult = { success: false, error: 'boom', retryable: true }
 const UNCLASSIFIED: ProcessOperationResult = { success: false, error: 'batch', retryable: false }
 
-interface Deferred<T> {
+type Deferred<T> = {
 	promise: Promise<T>
 	resolve: (value: T) => void
 }
@@ -88,7 +88,7 @@ function incomeChange(updatedAt: number): ServerChange {
 
 const VALID_INCOME = { userId: USER, name: 'Rent', amount: 50_000, frequency: 'monthly' }
 
-describe('a torn-down sync never touches the queue (story 79.1)', () => {
+describe('a torn-down sync never touches the queue', () => {
 	const services: SynchronizationService[] = []
 
 	async function makeService(
@@ -127,7 +127,7 @@ describe('a torn-down sync never touches the queue (story 79.1)', () => {
 		vi.useRealTimers()
 	})
 
-	describe('AC-1: a push that resolves after destroy() changes nothing', () => {
+	describe('a push that resolves after destroy() changes nothing', () => {
 		it.each([
 			['accepted', ACCEPTED],
 			['refused (422)', REFUSED],
@@ -184,7 +184,7 @@ describe('a torn-down sync never touches the queue (story 79.1)', () => {
 		})
 	})
 
-	describe("AC-2: the new instance's queue survives the old one settling", () => {
+	describe("the new instance's queue survives the old one settling", () => {
 		it('an accepted push resolving on the dead service does not overwrite the new queue', async () => {
 			seed([op('X')])
 			const held = deferred<ProcessOperationResult>()
@@ -217,7 +217,7 @@ describe('a torn-down sync never touches the queue (story 79.1)', () => {
 		})
 	})
 
-	describe('AC-3: the other entry points honour the teardown', () => {
+	describe('the other entry points honour the teardown', () => {
 		it('a pull resolving after destroy() drops no queued op', async () => {
 			seed([op('X', { entityId: INCOME_X, timestamp: 1_000 })])
 			const held = deferred<ServerChange[]>()

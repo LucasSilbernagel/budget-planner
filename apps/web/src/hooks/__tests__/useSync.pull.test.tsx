@@ -51,7 +51,7 @@ function incomeChange(overrides: Partial<ServerChange> = {}): ServerChange {
 	}
 }
 
-describe('useSync pull wiring (Story 4-18)', () => {
+describe('useSync pull wiring', () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		resetSyncStore()
@@ -105,7 +105,7 @@ describe('useSync pull wiring (Story 4-18)', () => {
 		unmount()
 	})
 
-	it('auto-poll fires a pull on the interval (AC-4)', async () => {
+	it('auto-poll fires a pull on the interval', async () => {
 		const { unmount } = renderHook(() =>
 			useSync({ userId: 'u-1', autoSync: false, autoPull: true, pullInterval: 20 })
 		)
@@ -174,7 +174,7 @@ describe('useSync pull wiring (Story 4-18)', () => {
 		unmount()
 	})
 
-	it('exposes forcePull as a callable manual trigger (AC-5)', async () => {
+	it('exposes forcePull as a callable manual trigger', async () => {
 		asMock(fetchServerChanges).mockResolvedValue([
 			incomeChange({ entityId: INCOME_ID_2, updatedAt: 1500 }),
 		])

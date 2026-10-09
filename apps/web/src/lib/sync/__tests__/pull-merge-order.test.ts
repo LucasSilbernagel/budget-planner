@@ -50,7 +50,7 @@ beforeEach(() => {
 	useBalanceStore.setState({ entries: [] })
 })
 
-describe('applyServerChangesToStores — a pull cannot reorder the list (AC-5)', () => {
+describe('applyServerChangesToStores — a pull cannot reorder the list', () => {
 	it('a pulled UPDATE to a middle row does NOT move it to the bottom', () => {
 		useIncomeStore.setState({
 			incomeSources: [
@@ -300,7 +300,7 @@ describe('applyServerChangesToStores — a pull cannot reorder the list (AC-5)',
 		expect(rows.map((r) => r.sortOrder)).toEqual([0, 1])
 	})
 
-	it('AC-3 survives a pull: a row added AFTER unstamped rows arrive goes to the BOTTOM', () => {
+	it('bottom placement survives a pull: a row added AFTER unstamped rows arrive goes to the BOTTOM', () => {
 		applyServerChangesToStores(
 			[
 				change({

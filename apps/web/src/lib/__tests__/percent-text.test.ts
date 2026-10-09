@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { decimalCommaToPoint } from '../percent-text'
 
-describe('decimalCommaToPoint (Story 110.1, FR178, D3)', () => {
+describe('decimalCommaToPoint', () => {
 	it.each([
 		['2,5', '2.5'],
 		['2,5%', '2.5%'],

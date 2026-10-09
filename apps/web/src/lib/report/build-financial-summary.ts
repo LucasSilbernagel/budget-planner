@@ -9,21 +9,21 @@ import { FINANCE_TYPES } from '@budget-planner/core/services/balanceTracking'
 import { netWorthFromTotals } from '../net-worth'
 
 /** `frequency` is `string`, not `Frequency`, so a corrupt persisted value is representable and can be rejected. */
-interface ReportCashflowInput {
+type ReportCashflowInput = {
 	id: string
 	name: string
 	amount: number
 	frequency: string
 }
 
-interface ReportBalanceInput {
+type ReportBalanceInput = {
 	id: string
 	name: string
 	type: string
 	currentBalance: number
 }
 
-interface ReportSavingsInput {
+type ReportSavingsInput = {
 	id: string
 	name: string
 	/** `null` means a savings account with no target, not a zero target. */
@@ -31,7 +31,7 @@ interface ReportSavingsInput {
 	currentBalance: number
 }
 
-export interface BuildFinancialSummaryInput {
+export type BuildFinancialSummaryInput = {
 	income: readonly ReportCashflowInput[]
 	expenses: readonly ReportCashflowInput[]
 	balances: readonly ReportBalanceInput[]
@@ -39,7 +39,7 @@ export interface BuildFinancialSummaryInput {
 	generatedAt: Date
 }
 
-export interface ReportCashflowRow {
+export type ReportCashflowRow = {
 	id: string
 	name: string
 	amountCents: number
@@ -47,13 +47,13 @@ export interface ReportCashflowRow {
 	monthlyCents: number
 }
 
-interface ReportBalanceRow {
+type ReportBalanceRow = {
 	id: string
 	name: string
 	balanceCents: number
 }
 
-interface ReportSavingsRow {
+type ReportSavingsRow = {
 	id: string
 	name: string
 	targetCents: number | null
@@ -63,7 +63,7 @@ interface ReportSavingsRow {
 
 type BudgetStatus = 'surplus' | 'deficit' | 'break-even'
 
-interface ReportBudgetSection {
+type ReportBudgetSection = {
 	income: ReportCashflowRow[]
 	expenses: ReportCashflowRow[]
 	monthlyIncomeCents: number
@@ -74,7 +74,7 @@ interface ReportBudgetSection {
 	isEmpty: boolean
 }
 
-interface ReportNetWorthSection {
+type ReportNetWorthSection = {
 	investments: ReportBalanceRow[]
 	debts: ReportBalanceRow[]
 	assets: ReportBalanceRow[]
@@ -90,7 +90,7 @@ interface ReportNetWorthSection {
 	isEmpty: boolean
 }
 
-interface ReportSavingsSection {
+type ReportSavingsSection = {
 	goals: ReportSavingsRow[]
 	totalCurrentCents: number
 	totalTargetCents: number
@@ -101,7 +101,7 @@ interface ReportSavingsSection {
 	isEmpty: boolean
 }
 
-export interface FinancialSummaryReportModel {
+export type FinancialSummaryReportModel = {
 	generatedAtISO: string
 	budget: ReportBudgetSection
 	netWorth: ReportNetWorthSection

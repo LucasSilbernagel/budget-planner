@@ -21,7 +21,7 @@ function DocLink({ href, children, ...rest }: AnchorHTMLAttributes<HTMLAnchorEle
 	)
 }
 
-export interface MarkdownRendererProps {
+export type MarkdownRendererProps = {
 	content: string
 }
 

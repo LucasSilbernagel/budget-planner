@@ -75,8 +75,8 @@ afterEach(() => {
 	useProfileStore.setState({ activeProfileId: initialActiveProfileId })
 })
 
-describe('forecasting headline figures break only between digit groups (story 88.4)', () => {
-	it('the Scenario Builder: the Forecast Summary stat cards (five since story 107.1)', async () => {
+describe('forecasting headline figures break only between digit groups', () => {
+	it('the Scenario Builder: the Forecast Summary stat cards (five)', async () => {
 		render(<ScenarioBuilder onSave={vi.fn()} />)
 		await waitFor(() => expect(figureOf('Ending Net Worth').textContent).toBe('$310,100,483.69'))
 		for (const [label, runs] of EXPECTED) {
@@ -89,7 +89,7 @@ describe('forecasting headline figures break only between digit groups (story 88
 		}
 	})
 
-	it('the Projections tab: the summary cards (five since story 107.1)', () => {
+	it('the Projections tab: the summary cards (five)', () => {
 		render(<ProjectionChart result={RESULT} />)
 		for (const [label, runs] of EXPECTED) {
 			expect(runsOf(figureOf(label)), label).toEqual(runs)

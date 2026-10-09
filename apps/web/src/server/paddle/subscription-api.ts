@@ -13,7 +13,7 @@ const NON_TERMINAL_STATUSES = ['active', 'trialing', 'past_due', 'paused']
 /** Only exists to make an unexpected endless `has_more: true` loop impossible. */
 const MAX_PAGES = 20
 
-interface PaddleSubscriptionListResponse {
+type PaddleSubscriptionListResponse = {
 	data?: Array<{ id?: unknown }>
 	meta?: { pagination?: { has_more?: boolean; next?: string } }
 }

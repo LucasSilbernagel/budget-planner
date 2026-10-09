@@ -30,7 +30,7 @@ afterEach(() => {
 })
 
 describe('push integration — service → sendSyncOperation → /api/sync/batch', () => {
-	it('AC-2: a queued create is POSTed to /api/sync/batch and then drains', async () => {
+	it('a queued create is POSTed to /api/sync/batch and then drains', async () => {
 		const fetchMock = vi.fn<typeof fetch>(async () => okOnce())
 		vi.stubGlobal('fetch', fetchMock)
 
@@ -57,7 +57,7 @@ describe('push integration — service → sendSyncOperation → /api/sync/batch
 		expect(service.getState().pendingOperations).toHaveLength(0)
 	})
 
-	it('AC-3: a transient transport failure preserves the op (durability, not data loss)', async () => {
+	it('a transient transport failure preserves the op (durability, not data loss)', async () => {
 		// A network throw is a retryable failure: the op must stay queued, not be lost.
 		vi.stubGlobal(
 			'fetch',

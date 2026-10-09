@@ -9,14 +9,14 @@ import { useExpenseStore, useIncomeStore } from '../../../stores'
 import { type ClientCategory, useCategoryStore } from '../../../stores/categoryStore'
 import { useOverviewDurationStore } from '../../../stores/overviewDurationStore'
 
-interface CapturedDatum {
+type CapturedDatum = {
 	key: string
 	category: string
 	amount: number
 	fill: string
 }
 
-interface CapturedChart {
+type CapturedChart = {
 	data: CapturedDatum[]
 	ticks: number[]
 	domain: [number, number]
@@ -88,7 +88,7 @@ beforeEach(() => {
 })
 
 describe('CategoryBreakdown chart wiring', () => {
-	it('hands each side a chart built from ONLY its own rows, with its own domain (AC-6)', () => {
+	it('hands each side a chart built from ONLY its own rows, with its own domain', () => {
 		// Pooling would lift the expense ceiling to the income maximum and crush every expense bar.
 		useCategoryStore.setState({
 			categories: [

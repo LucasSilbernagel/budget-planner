@@ -1,6 +1,6 @@
 import type { ClientProfile } from '@/hooks/useActiveProfile'
 
-export interface ProfileFormState {
+export type ProfileFormState = {
 	name: string
 	description: string
 	icon: string

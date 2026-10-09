@@ -72,7 +72,7 @@ beforeEach(() => {
 	seed()
 })
 
-describe('cascadeProfileRowRemoval (AC-1)', () => {
+describe('cascadeProfileRowRemoval', () => {
 	it('removes the deleted profile’s rows from all FIVE collections', () => {
 		const removed = cascadeProfileRowRemoval(DOOMED)
 

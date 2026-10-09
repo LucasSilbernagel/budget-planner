@@ -9,7 +9,7 @@ import { ProfileIconPicker } from './profile-icon-picker'
 // EMPTY_PROFILE_FORM (icon '') would drop the 🏠 pre-selection.
 const INITIAL_CREATE_FORM: ProfileFormState = { ...EMPTY_PROFILE_FORM, icon: DEFAULT_PROFILE_ICON }
 
-interface CreateProfileDialogProps {
+type CreateProfileDialogProps = {
 	onClose: () => void
 }
 

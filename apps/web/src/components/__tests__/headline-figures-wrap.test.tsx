@@ -107,7 +107,7 @@ afterEach(() => {
 	useOverviewDurationStore.setState({ duration: 'annually' })
 })
 
-describe('headline figures break only between digit groups (story 88.1)', () => {
+describe('headline figures break only between digit groups', () => {
 	it('the Overview: income, expenses and net worth', () => {
 		render(<HomePage />)
 		expect(runs('overview-total-income')).toEqual(['$12,', '345,', '678.90'])
@@ -133,7 +133,7 @@ describe('headline figures break only between digit groups (story 88.1)', () => 
 	})
 })
 
-describe('the remaining headline figures break only between digit groups (story 88.4)', () => {
+describe('the remaining headline figures break only between digit groups', () => {
 	it('/savings: the Total Savings figure', () => {
 		renderWithProviders(<SavingsPage />)
 		expect(runs('savings-total')).toEqual(['$3,', '333,', '333.33'])

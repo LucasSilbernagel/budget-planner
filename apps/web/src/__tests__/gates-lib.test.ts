@@ -139,7 +139,7 @@ describe('parsers', () => {
 			stats: { expected: projects.length, skipped: 0, unexpected: 0, flaky: 0 },
 		})
 
-	it('playwright JSON: a requested project with no tests is counted (story 82.3 P1)', () => {
+	it('playwright JSON: a requested project with no tests is counted', () => {
 		expect(parsePlaywrightJson(report(['chromium']), ['chromium', 'chromium-paid'])).toMatchObject({
 			passed: 1,
 			emptyProjects: 1,
@@ -407,7 +407,7 @@ describe('buildGates', () => {
 		])
 	})
 
-	it('the web suite runs its files in parallel, with no localStorage file (story 82.2)', () => {
+	it('the web suite runs its files in parallel, with no localStorage file', () => {
 		expect(byId['web']?.args).not.toContain('--no-file-parallelism')
 		expect(byId['web']?.args?.some((a) => a.includes('localstorage'))).toBe(false)
 		expect(byId['web']?.env).toBeUndefined()
@@ -456,7 +456,7 @@ describe('buildGates', () => {
 		expect(byId['e2e']?.ports).toEqual([5173, 5174, 5175, 5176, 55432])
 	})
 
-	it('the e2e ports match the db harness constants (story 87.1), so they cannot drift', () => {
+	it('the e2e ports match the db harness constants, so they cannot drift', () => {
 		// Read as text: `e2e/` is outside this test program (TS6307 on an import).
 		const harness = readFileSync(join(__dirname, '../../e2e/helpers/db-harness.ts'), 'utf8')
 		const constant = (name: string) =>
@@ -476,7 +476,7 @@ describe('buildGates', () => {
 	const projectsOf = (gate: (typeof gates)[number] | undefined) =>
 		(gate?.args ?? []).filter((a) => a.startsWith('--project=')).map((a) => a.slice(10))
 
-	it('e2e runs the flow projects (story 82.3; the layout ones are gone since 84.2)', () => {
+	it('e2e runs the flow projects (the layout ones are gone)', () => {
 		expect(projectsOf(byId['e2e'])).toEqual([
 			'chromium',
 			'chromium-paid',
@@ -493,7 +493,7 @@ describe('buildGates', () => {
 	})
 
 	// Baselines are rendered by screenshots.yml and compared by ci.yml, so both need the SAME image.
-	it('ci.yml e2e-tests and screenshots.yml run on the same pinned runner image (story 84.1)', () => {
+	it('ci.yml e2e-tests and screenshots.yml run on the same pinned runner image', () => {
 		const workflows = join(__dirname, '../../../../.github/workflows')
 		const runsOn = (file: string, job: string) => {
 			const text = readFileSync(join(workflows, file), 'utf8')
@@ -510,7 +510,7 @@ describe('buildGates', () => {
 		expect(ci).not.toMatch(/PLAYWRIGHT_BASE_URL/)
 	})
 
-	it('no e2e spec carries a Playwright tag (story 84.2, D5)', () => {
+	it('no e2e spec carries a Playwright tag', () => {
 		const dir = join(__dirname, '../../e2e')
 		// Recursive, every extension Playwright's testMatch picks up; files only (baseline
 		// directories are named after their specs).
@@ -539,7 +539,7 @@ describe('buildGates', () => {
 		expect([...projectsOf(byId['e2e']), ...E2E_SCREENSHOT_PROJECTS].sort()).toEqual(declared)
 	})
 
-	it('no local e2e run includes a screenshot project (story 84.1)', () => {
+	it('no local e2e run includes a screenshot project', () => {
 		// Non-empty first: an e2e gate with NO --project flag runs EVERY project,
 		// screenshot ones included, and would pass the not.toContain below.
 		expect(projectsOf(byId['e2e']).length).toBeGreaterThan(0)
@@ -605,7 +605,7 @@ describe('parseArgs', () => {
 		expect(() => parseArgs(['--only', 'core', '--only', 'web'])).toThrow(/--only given twice/)
 	})
 
-	it('--layout is gone (story 84.2): it is an unknown argument, not a silent no-op', () => {
+	it('--layout is gone: it is an unknown argument, not a silent no-op', () => {
 		expect(() => parseArgs(['--layout'])).toThrow(/Unknown argument: --layout/)
 	})
 
@@ -639,7 +639,7 @@ describe('treeOf (the process tree a stop must reach)', () => {
 	})
 })
 
-describe('screenshotNotice (story 84.1, D3; 84.2, D4)', () => {
+describe('screenshotNotice', () => {
 	const CI_ONLY =
 		'screenshots: CI only (baselines are CI-rendered; see e2e/pages.screenshot.spec.ts).'
 
@@ -647,7 +647,7 @@ describe('screenshotNotice (story 84.1, D3; 84.2, D4)', () => {
 		expect(screenshotNotice({ e2e: true, changedFiles: ['README.md'] })).toEqual([CI_ONLY])
 	})
 
-	it('treats omitted changedFiles as no changes (84.2 review)', () => {
+	it('treats omitted changedFiles as no changes', () => {
 		expect(screenshotNotice({ e2e: true })).toEqual([CI_ONLY])
 	})
 

@@ -244,7 +244,7 @@ describe('Entity primary keys are client-generatable uuids', () => {
 	})
 })
 
-describe('Categories table (Story 30.4a)', () => {
+describe('Categories table', () => {
 	it('is exported and registered in allTables', () => {
 		expect(categories).toBeDefined()
 		expect(categoryKindEnum).toBeDefined()
@@ -291,7 +291,7 @@ describe('Categories table (Story 30.4a)', () => {
 		expect(balanceTracking.type.hasDefault).toBe(false)
 	})
 
-	it('balanceTracking.contributionRecordedAsExpense is NOT NULL and defaults false (Story 45.1)', () => {
+	it('balanceTracking.contributionRecordedAsExpense is NOT NULL and defaults false', () => {
 		// `false` keeps every existing row's pool arithmetic; only an explicitly ticked row changes.
 		expect(balanceTracking.contributionRecordedAsExpense).toBeDefined()
 		expect(balanceTracking.contributionRecordedAsExpense.getSQLType()).toBe('boolean')
@@ -300,7 +300,7 @@ describe('Categories table (Story 30.4a)', () => {
 		expect(balanceTracking.contributionRecordedAsExpense.default).toBe(false)
 	})
 
-	it('expenses.endsBeforeRetirement is NOT NULL and defaults false (Story 65.2)', () => {
+	it('expenses.endsBeforeRetirement is NOT NULL and defaults false', () => {
 		// `false` makes a row created outside the app's push path default to counted.
 		expect(expenses.endsBeforeRetirement).toBeDefined()
 		expect(expenses.endsBeforeRetirement.getSQLType()).toBe('boolean')
@@ -309,7 +309,7 @@ describe('Categories table (Story 30.4a)', () => {
 		expect(expenses.endsBeforeRetirement.default).toBe(false)
 	})
 
-	it('⚠️ endsBeforeRetirement is on expenses ONLY, never on incomeSources (Story 65.2)', () => {
+	it('⚠️ endsBeforeRetirement is on expenses ONLY, never on incomeSources', () => {
 		// `updateEntity` spreads `operation.data` into `.set()` with no column whitelist, so payload
 		// arms are split by entity.
 		expect('endsBeforeRetirement' in incomeSources).toBe(false)
@@ -392,7 +392,7 @@ describe('Categories table (Story 30.4a)', () => {
 	})
 })
 
-describe('sortOrder — explicit display order (Story 34.1a, FR60)', () => {
+describe('sortOrder — explicit display order', () => {
 	const ORDERED_TABLES = [
 		['incomeSources', incomeSources],
 		['expenses', expenses],
@@ -432,7 +432,7 @@ describe('sortOrder — explicit display order (Story 34.1a, FR60)', () => {
 
 // The only place pinning this table's exact column set. Exact sets, not absence checks: an
 // absence check on an already-gone column can never fail.
-describe('balanceTracking — the contribution limit is removed (story 49.1, FR75)', () => {
+describe('balanceTracking — the contribution limit is removed', () => {
 	it('has exactly the expected columns, and maxContributionLimit is not among them', () => {
 		const columns = getTableConfig(balanceTracking)
 			.columns.map((column) => column.name)
@@ -470,7 +470,7 @@ describe('balanceTracking — the contribution limit is removed (story 49.1, FR7
 
 // No foreign key on purpose: a dangling link is normal, and an FK would turn it into a 23503
 // on push that replays until the circuit breaker stops all sync.
-describe('balanceTracking.paymentExpenseId (story 102.1, FR169)', () => {
+describe('balanceTracking.paymentExpenseId', () => {
 	it('is a nullable uuid with no default', () => {
 		const column = balanceTracking.paymentExpenseId
 		expect(column.getSQLType()).toBe('uuid')

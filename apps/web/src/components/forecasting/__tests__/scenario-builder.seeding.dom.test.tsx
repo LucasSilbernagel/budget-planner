@@ -206,7 +206,7 @@ describe('a fresh scenario seeds from the user own finances (62.1)', () => {
 	})
 })
 
-describe('a seeded scenario counts each source exactly once (62.1 AC-8)', () => {
+describe('a seeded scenario counts each source exactly once', () => {
 	it('reports the hand-computed year-1 figures', async () => {
 		fillStores()
 		const onResultChange = vi.fn()
@@ -246,7 +246,7 @@ describe('a seeded scenario counts each source exactly once (62.1 AC-8)', () => 
 	})
 })
 
-describe('the seed happens once and never overwrites the user (62.1 AC-9)', () => {
+describe('the seed happens once and never overwrites the user', () => {
 	it('does not re-seed over an edit when the stores change afterwards', async () => {
 		fillStores()
 		render(<ScenarioBuilder onSave={vi.fn()} />)
@@ -266,7 +266,7 @@ describe('the seed happens once and never overwrites the user (62.1 AC-9)', () =
 	})
 })
 
-describe('the seed respects the active profile (62.1 AC-4)', () => {
+describe('the seed respects the active profile', () => {
 	it('seeds only the active profile rows and totals', () => {
 		useIncomeStore.setState({
 			incomeSources: [
@@ -331,7 +331,7 @@ describe('the seed respects the active profile (62.1 AC-4)', () => {
 	})
 })
 
-describe('a user with nothing recorded gets an empty builder (62.1 AC-6)', () => {
+describe('a user with nothing recorded gets an empty builder', () => {
 	it('renders empty income and expense lists, never the demo rows', () => {
 		render(<ScenarioBuilder onSave={vi.fn()} />)
 
@@ -355,7 +355,7 @@ describe('a user with nothing recorded gets an empty builder (62.1 AC-6)', () =>
 	})
 })
 
-describe('a loaded forecast still seeds from the saved scenario (62.1 AC-7)', () => {
+describe('a loaded forecast still seeds from the saved scenario', () => {
 	const savedIncome = [{ name: 'Saved Income', amount: 111_100, frequency: 'monthly' as const }]
 	const savedExpenses = [{ name: 'Saved Expense', amount: 222_200, frequency: 'monthly' as const }]
 	const savedForecast: SavedForecast = {
@@ -439,7 +439,7 @@ async function hydrateAfterStoresFill(element: React.ReactElement) {
 	return { recoverable, serverHtml, clientHtml }
 }
 
-describe('the seed survives the rehydration race (62.1 AC-9)', () => {
+describe('the seed survives the rehydration race', () => {
 	it('fills from the stores even though the hydration pass saw them empty', async () => {
 		const { serverHtml, clientHtml } = await hydrateAfterStoresFill(
 			<ScenarioBuilder onSave={vi.fn()} />
@@ -454,7 +454,7 @@ describe('the seed survives the rehydration race (62.1 AC-9)', () => {
 		expect(clientHtml).toContain('Index fund')
 	})
 
-	it('raises no recoverable hydration error (62.1 AC-10)', async () => {
+	it('raises no recoverable hydration error', async () => {
 		const { recoverable, serverHtml, clientHtml } = await hydrateAfterStoresFill(
 			<ScenarioBuilder onSave={vi.fn()} />
 		)

@@ -62,7 +62,7 @@ describe('InstallPrompt', () => {
 	})
 
 	// Derived from the manifest so changing short_name alone fails here.
-	it('names the app exactly as the PWA manifest short_name does (brand-1)', () => {
+	it('names the app exactly as the PWA manifest short_name does', () => {
 		render(<InstallPrompt />)
 		fireInstallEvent(createInstallEvent().event)
 

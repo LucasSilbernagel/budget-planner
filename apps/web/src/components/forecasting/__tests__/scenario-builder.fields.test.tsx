@@ -148,7 +148,7 @@ afterEach(() => {
 	vi.clearAllMocks()
 })
 
-describe('a growth rate outside -100%..+100%, or not a number, is reported on its field (AC-1)', () => {
+describe('a growth rate outside -100%..+100%, or not a number, is reported on its field', () => {
 	const invalid: [string, string][] = [
 		['an emptied field', ''],
 		['non-numeric text', 'abc'],
@@ -240,7 +240,7 @@ describe('a growth rate outside -100%..+100%, or not a number, is reported on it
 	}
 })
 
-describe('an income or expense amount is reported on its field, never silently zeroed (AC-2)', () => {
+describe('an income or expense amount is reported on its field, never silently zeroed', () => {
 	const invalid: [string, string, string][] = [
 		['a negative', '-5', NEGATIVE_MESSAGE],
 		['one cent over the money limit (109.1, Q1)', OVER_LIMIT, LIMIT_MESSAGE],
@@ -278,7 +278,7 @@ describe('an income or expense amount is reported on its field, never silently z
 		})
 	}
 
-	it('an EXPENSE row is held to the same rule (81.1 review, P8)', async () => {
+	it('an EXPENSE row is held to the same rule', async () => {
 		await renderBuilder()
 		fireEvent.click(screen.getByRole('button', { name: /add expense/i }))
 		const rows = incomeAmountInputs()
@@ -298,7 +298,7 @@ describe('an income or expense amount is reported on its field, never silently z
 		expectSaveBlocked(FIELDS_REASON)
 	})
 
-	it('a value that cannot be read (1.2.3) says "Enter a number." (replaces bug-3 AC-2 / 81.1 badInput)', async () => {
+	it('a value that cannot be read (1.2.3) says "Enter a number."', async () => {
 		await renderBuilder()
 		const callsBefore = engineCalls.length
 		const [amount] = incomeAmountInputs()
@@ -326,7 +326,7 @@ describe('an income or expense amount is reported on its field, never silently z
 		expect(screen.queryByTestId('save-blocked-reason')).toBeNull()
 	})
 
-	it('removing the row that holds a bad amount lifts the Save block (D4 cleanup)', async () => {
+	it('removing the row that holds a bad amount lifts the Save block', async () => {
 		await renderBuilder()
 		fireEvent.click(screen.getByRole('button', { name: /add income/i }))
 		const rows = incomeAmountInputs()
@@ -352,7 +352,7 @@ describe('an income or expense amount is reported on its field, never silently z
 	})
 })
 
-describe('a one-time event amount that overflows is reported on its field (AC-2, D6)', () => {
+describe('a one-time event amount that overflows is reported on its field', () => {
 	it('over the money limit: field message, the typed text stays, the last good amount is kept', async () => {
 		await renderBuilder()
 		fireEvent.click(screen.getByRole('button', { name: /add event/i }))
@@ -381,7 +381,7 @@ describe('a one-time event amount that overflows is reported on its field (AC-2,
 		expect(screen.queryByTestId('save-blocked-reason')).toBeNull()
 	})
 
-	it('text that cannot be read (1.2.3) is reported and held, like an income row (review R1; was badInput until 109.1)', async () => {
+	it('text that cannot be read (1.2.3) is reported and held, like an income row', async () => {
 		await renderBuilder()
 		fireEvent.click(screen.getByRole('button', { name: /add event/i }))
 		const amount = document.querySelector('input[id^="event-amount-"]') as HTMLInputElement
@@ -399,7 +399,7 @@ describe('a one-time event amount that overflows is reported on its field (AC-2,
 		expectSaveBlocked(FIELDS_REASON)
 	})
 
-	it('clearing an event field after a refused entry writes 0, not the old amount (review R1)', async () => {
+	it('clearing an event field after a refused entry writes 0, not the old amount', async () => {
 		await renderBuilder()
 		fireEvent.click(screen.getByRole('button', { name: /add event/i }))
 		const amount = document.querySelector('input[id^="event-amount-"]') as HTMLInputElement
@@ -422,7 +422,7 @@ describe('a one-time event amount that overflows is reported on its field (AC-2,
 		expect(screen.queryByTestId('save-blocked-reason')).toBeNull()
 	})
 
-	it('a refused over-limit `-` entry still selects "Money out" for the corrected entry (review P2)', async () => {
+	it('a refused over-limit `-` entry still selects "Money out" for the corrected entry', async () => {
 		await renderBuilder()
 		fireEvent.click(screen.getByRole('button', { name: /add event/i }))
 		const amount = document.querySelector('input[id^="event-amount-"]') as HTMLInputElement
@@ -447,7 +447,7 @@ describe('a one-time event amount that overflows is reported on its field (AC-2,
 		)
 	})
 
-	it('on a NEW event (amount 0), a refused over-limit `-` entry still selects "Money out" (review P2)', async () => {
+	it('on a NEW event (amount 0), a refused over-limit `-` entry still selects "Money out"', async () => {
 		// At amount 0 the sign cannot carry the direction, so `pendingDirection` must be set even though the entry is refused.
 		await renderBuilder()
 		fireEvent.click(screen.getByRole('button', { name: /add event/i }))
@@ -469,7 +469,7 @@ describe('a one-time event amount that overflows is reported on its field (AC-2,
 		)
 	})
 
-	it('removing the event that holds a bad amount lifts the Save block (D4 cleanup)', async () => {
+	it('removing the event that holds a bad amount lifts the Save block', async () => {
 		await renderBuilder()
 		fireEvent.click(screen.getByRole('button', { name: /add event/i }))
 		const amount = document.querySelector('input[id^="event-amount-"]') as HTMLInputElement
@@ -491,7 +491,7 @@ describe('a one-time event amount that overflows is reported on its field (AC-2,
 	})
 })
 
-describe('a stale calculation banner is cleared by ANY field turning invalid (81.1 review, P6)', () => {
+describe('a stale calculation banner is cleared by ANY field turning invalid', () => {
 	async function raiseBanner(): Promise<void> {
 		await renderBuilder(savedWithIncome(1e308))
 		expect(await screen.findByTestId('calculation-error', {}, { timeout: 3000 })).toHaveTextContent(
@@ -522,7 +522,7 @@ describe('a stale calculation banner is cleared by ANY field turning invalid (81
 	})
 })
 
-describe('which Save reason shows (D4 precedence)', () => {
+describe('which Save reason shows when several fields are invalid', () => {
 	it('the period alone keeps its own reason; the period plus another field shows the general one', async () => {
 		await renderBuilder()
 		const years = screen.getByLabelText('Projection Period (years)')
@@ -536,7 +536,7 @@ describe('which Save reason shows (D4 precedence)', () => {
 	})
 })
 
-describe('saved growth rates on load (AC-4, D3)', () => {
+describe('saved growth rates on load', () => {
 	const savedWith = (incomeGrowthRate: unknown): SavedForecast => ({
 		id: 'f-1',
 		name: 'Plan',
@@ -575,7 +575,7 @@ describe('saved growth rates on load (AC-4, D3)', () => {
 		expect(screen.queryByTestId('calculation-error')).toBeNull()
 	})
 
-	it('a saved null EXPENSE growth rate loads as 0% too (81.1 review, P8)', async () => {
+	it('a saved null EXPENSE growth rate loads as 0% too', async () => {
 		const saved = savedWith(0)
 		saved.scenario.expenseGrowthRate = null as unknown as number
 		render(<ScenarioBuilder onSave={vi.fn()} initialForecast={saved} />)

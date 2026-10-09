@@ -7,7 +7,7 @@ export type AnalyticsPropertyValue = string | number | boolean
 
 export type AnalyticsEventProperties = Record<string, AnalyticsPropertyValue>
 
-export interface AnalyticsEvent {
+export type AnalyticsEvent = {
 	name: string
 	metadata: ClientMetadata
 	properties: AnalyticsEventProperties
@@ -36,12 +36,12 @@ export function filterPiiProperties(
 	return safe
 }
 
-export interface AnalyticsServiceOptions {
+export type AnalyticsServiceOptions = {
 	metadata?: ClientMetadata
 	now?: () => number
 }
 
-export interface AnalyticsService {
+export type AnalyticsService = {
 	track(name: string, properties?: AnalyticsEventProperties): AnalyticsEvent
 	getEvents(): readonly AnalyticsEvent[]
 	setMetadata(metadata: ClientMetadata): void

@@ -128,7 +128,7 @@ afterEach(() => {
 	vi.clearAllMocks()
 })
 
-describe('a v6 forecast reloads its asset rows exactly (AC-10)', () => {
+describe('a v6 forecast reloads its asset rows exactly', () => {
 	it('names, values and order, and the engine gets their total', async () => {
 		const [data] = await loadPlan(
 			{
@@ -150,7 +150,7 @@ describe('a v6 forecast reloads its asset rows exactly (AC-10)', () => {
 	})
 })
 
-describe('a forecast saved before version 6 (AC-10)', () => {
+describe('a forecast saved before version 6', () => {
 	it('reloads with NO asset rows, and the engine gets an asset total of 0', async () => {
 		const [data] = await loadPlan({ savings: 0, investments: 0, years: 10 }, 5)
 		expect(assetRows()).toEqual([])
@@ -158,7 +158,7 @@ describe('a forecast saved before version 6 (AC-10)', () => {
 	})
 })
 
-describe('a bad assetAccounts never discards inputs (AC-10)', () => {
+describe('a bad assetAccounts never discards inputs', () => {
 	it('a non-array is ignored (no rows), and years survive', async () => {
 		await loadPlan({ savings: 0, investments: 0, years: 7, assetAccounts: 'oops' }, 6)
 		expect(assetRows()).toEqual([])

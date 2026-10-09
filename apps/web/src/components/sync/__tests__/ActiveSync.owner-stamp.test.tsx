@@ -126,7 +126,7 @@ afterEach(() => {
 	clearSyncBridge()
 })
 
-describe('an accepted push marks the row as this account’s, before any pull (story 86.3, AC 1)', () => {
+describe('an accepted push marks the row as this account’s, before any pull', () => {
 	it('stamps a Profiles-page profile, an income row and a savings goal with the session id', async () => {
 		await signInAsA()
 
@@ -183,7 +183,7 @@ describe('an accepted push marks the row as this account’s, before any pull (s
 	}, 15_000)
 })
 
-describe('what is NOT stamped (story 86.3, AC 3)', () => {
+describe('what is NOT stamped', () => {
 	it.each([
 		[
 			'refused permanently (422)',
@@ -249,7 +249,7 @@ describe('what is NOT stamped (story 86.3, AC 3)', () => {
 	}, 15_000)
 })
 
-describe('what a stamp may change (story 86.3, AC 4, D3)', () => {
+describe('what a stamp may change', () => {
 	it('only `userId`, by a plain write: no other field moves and no sync op is queued', async () => {
 		await signInAsA()
 		useIncomeStore
@@ -304,7 +304,7 @@ describe('what a stamp may change (story 86.3, AC 4, D3)', () => {
 		expect(useIncomeStore.getState().incomeSources).toEqual([])
 	}, 15_000)
 
-	it('an accepted DELETE stamps nothing (D3)', async () => {
+	it('an accepted DELETE stamps nothing', async () => {
 		seedFreeRow()
 		await signInAsA()
 		syncEntityDelete('incomeSource', incomeRow(ROW) as { id: string })

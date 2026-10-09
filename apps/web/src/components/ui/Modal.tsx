@@ -5,7 +5,7 @@ import { type ReactNode, useCallback, useEffect, useRef } from 'react'
  * behind another is still keyboard-reachable.
  */
 
-export interface ModalProps {
+export type ModalProps = {
 	isOpen: boolean
 	/** Called when the modal requests to close (overlay click, Escape, etc.). Must not perform destructive work. */
 	onClose: () => void

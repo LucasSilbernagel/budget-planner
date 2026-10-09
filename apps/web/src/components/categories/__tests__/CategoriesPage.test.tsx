@@ -92,7 +92,7 @@ describe('CategoriesPage', () => {
 	})
 })
 
-describe('CategoriesPage landmarks (story 116.1)', () => {
+describe('CategoriesPage landmarks', () => {
 	it.each([
 		['loading', { isLoading: true }],
 		['locked', { hasAccess: false, subscriptionStatus: 'free' as const }],
@@ -103,7 +103,7 @@ describe('CategoriesPage landmarks (story 116.1)', () => {
 	})
 })
 
-describe('CategoriesPage loading → resolved (story 117.2)', () => {
+describe('CategoriesPage loading → resolved', () => {
 	it.each([
 		['the locked prompt', { hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true }],
 		['the paid page', { hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true }],

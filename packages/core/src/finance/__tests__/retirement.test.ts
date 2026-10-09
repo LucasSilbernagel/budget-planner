@@ -425,7 +425,7 @@ describe('Retirement Modeler', () => {
 	})
 })
 
-describe('Retirement Accumulation Solver (Story 26.6)', () => {
+describe('Retirement Accumulation Solver', () => {
 	describe('projectAccumulatedNestEgg', () => {
 		it('reproduces the source-spreadsheet nest egg (~$788,649) at 202 months', () => {
 			// i = 0.005, n = 202: 59,541 × 1.005^n + 1,799 × (1.005^n − 1) / 0.005
@@ -504,8 +504,8 @@ describe('Retirement Accumulation Solver (Story 26.6)', () => {
 		})
 	})
 
-	describe('calculateRequiredNestEgg — two-rate model (story 35.3)', () => {
-		it('deplete: a LOWER post-retirement rate increases the required nest egg (AC-7)', () => {
+	describe('calculateRequiredNestEgg — two-rate model', () => {
+		it('deplete: a LOWER post-retirement rate increases the required nest egg', () => {
 			expect(calculateRequiredNestEgg(6_000_000, 0.06, 0.06, 65, 90, 'deplete')).toBe(150_000_000)
 			expect(calculateRequiredNestEgg(6_000_000, 0.06, 0.05, 65, 90, 'deplete')).toBe(168_462_831)
 			expect(calculateRequiredNestEgg(6_000_000, 0.06, 0.04, 65, 90, 'deplete')).toBe(190_305_280)
@@ -521,14 +521,14 @@ describe('Retirement Accumulation Solver (Story 26.6)', () => {
 			)
 		})
 
-		it('perpetual: sized by the POST-RETIREMENT rate, not the accumulation rate (AC-4)', () => {
+		it('perpetual: sized by the POST-RETIREMENT rate, not the accumulation rate', () => {
 			expect(calculateRequiredNestEgg(6_000_000, 0.06, 0.06, 65, 90, 'perpetual')).toBe(100_000_000)
 			expect(calculateRequiredNestEgg(6_000_000, 0.06, 0.03, 65, 90, 'perpetual')).toBe(200_000_000)
 			expect(calculateRequiredNestEgg(6_000_000, 0.12, 0.06, 65, 90, 'perpetual')).toBe(100_000_000)
 		})
 
 		// With equal rates, every single-rate expectation must reproduce bit-for-bit.
-		describe('equal rates reproduce the pre-35.3 results bit-for-bit (AC-6)', () => {
+		describe('equal rates reproduce the pre-35.3 results bit-for-bit', () => {
 			it('reproduces all six shipped calculateRequiredNestEgg values', () => {
 				expect(calculateRequiredNestEgg(4_000_000, 0.06, 0.06, 65, 80, 'deplete')).toBe(60_000_000)
 				expect(calculateRequiredNestEgg(4_000_000, 0, 0, 65, 80, 'deplete')).toBe(60_000_000)
@@ -563,7 +563,7 @@ describe('Retirement Accumulation Solver (Story 26.6)', () => {
 			})
 		})
 
-		describe('boundaries (AC-8, AC-13)', () => {
+		describe('boundaries', () => {
 			it('yearsInRetirement === 0 returns +0, never -0, when the post rate is LOWER', () => {
 				// Post rate below accumulation makes (1 - k) negative, giving -0; a plain toBe(0) would
 				// fail, and the reverse direction can't detect it.
@@ -716,7 +716,7 @@ describe('Retirement Accumulation Solver (Story 26.6)', () => {
 			expect(result.reachable).toBe(false)
 		})
 
-		it('perpetual: a sub-precision POST-RETIREMENT rate alone is not reachable (AC-4)', () => {
+		it('perpetual: a sub-precision POST-RETIREMENT rate alone is not reachable', () => {
 			const result = solveRetirementAccumulation({
 				...baseInput,
 				annualReturnRate: 0.06,
@@ -795,7 +795,7 @@ describe('Retirement Accumulation Solver (Story 26.6)', () => {
 			expect(huge.monthsToRetirement).toBe(normal.monthsToRetirement)
 		})
 
-		describe('two-rate solving (story 35.3)', () => {
+		describe('two-rate solving', () => {
 			const sweepBase: RetirementAccumulationInput = {
 				currentAge: 35,
 				currentSavedCents: 5_954_100,
@@ -807,7 +807,7 @@ describe('Retirement Accumulation Solver (Story 26.6)', () => {
 				model: 'deplete',
 			}
 
-			it('equal rates reproduce the shipped single-rate solve exactly (AC-6)', () => {
+			it('equal rates reproduce the shipped single-rate solve exactly', () => {
 				const result = solveRetirementAccumulation(sweepBase)
 				expect(result.reachable).toBe(true)
 				expect(result.monthsToRetirement).toBe(320)
@@ -815,7 +815,7 @@ describe('Retirement Accumulation Solver (Story 26.6)', () => {
 				expect(result.requiredNestEggCents).toBe(170_000_000)
 			})
 
-			it('a lower post-retirement rate pushes retirement LATER (AC-7)', () => {
+			it('a lower post-retirement rate pushes retirement LATER', () => {
 				const months = [0.06, 0.05, 0.04, 0.03].map((postRetirementReturnRate) => {
 					const result = solveRetirementAccumulation({ ...sweepBase, postRetirementReturnRate })
 					expect(result.reachable).toBe(true)
@@ -850,7 +850,7 @@ describe('Retirement Accumulation Solver (Story 26.6)', () => {
 				}
 			})
 
-			it('the PROJECTION never sees the post-retirement rate (AC-5)', () => {
+			it('the PROJECTION never sees the post-retirement rate', () => {
 				// Identity, not constancy: the nest egg is reported at the earliest reachable month,
 				// which legitimately differs per post rate.
 				for (const postRetirementReturnRate of [0.06, 0.04, 0.03]) {
@@ -867,7 +867,7 @@ describe('Retirement Accumulation Solver (Story 26.6)', () => {
 				}
 			})
 
-			it('a low enough post-retirement rate alone makes retirement unreachable (AC-7)', () => {
+			it('a low enough post-retirement rate alone makes retirement unreachable', () => {
 				// Perpetual, because its requirement (annual / rate) grows without bound as the rate
 				// falls; deplete stays reachable across the legal range.
 				const perpetual: RetirementAccumulationInput = { ...sweepBase, model: 'perpetual' }

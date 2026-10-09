@@ -11,7 +11,7 @@ import {
 } from '@budget-planner/core'
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from 'react'
 
-interface MetadataContextValue {
+type MetadataContextValue = {
 	metadata: ClientMetadata
 	analytics: AnalyticsService
 }

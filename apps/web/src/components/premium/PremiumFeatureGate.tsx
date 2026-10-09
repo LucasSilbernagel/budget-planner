@@ -8,7 +8,7 @@ import { PremiumPrompt } from '../auth/premium-prompt'
 import { SkeletonBlock } from '../ui/Skeleton'
 import { PremiumLockBadge } from './PremiumLockBadge'
 
-export interface PremiumFeatureGateProps {
+export type PremiumFeatureGateProps = {
 	/** For the upgrade prompt; not the locked control's accessible name. */
 	featureName: string
 	children: React.ReactNode

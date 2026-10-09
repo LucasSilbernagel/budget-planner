@@ -237,7 +237,7 @@ describe('seedOnce — once-per-user gating', () => {
 	})
 })
 
-describe("seedOnce — another account's rows on a shared browser (story 86.2, AC 3)", () => {
+describe("seedOnce — another account's rows on a shared browser", () => {
 	// A's pulled rows carry A's uuid, which is "not the session user" just as a free-tier `0` is.
 	const OTHER_ACCOUNT = '86286286-2862-4862-8862-862862862862'
 	const ISO = '2026-06-01T00:00:00.000Z'

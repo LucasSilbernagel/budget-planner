@@ -146,7 +146,7 @@ afterEach(() => {
 	})
 })
 
-describe('Overview after a profile switch (AC-2)', () => {
+describe('Overview after a profile switch', () => {
 	it('shows ONLY profile A figures before the switch (positive control)', () => {
 		render(<HomePage />)
 		expect(exactMoney('overview-total-income')).toBe('1,000.00')
@@ -165,7 +165,7 @@ describe('Overview after a profile switch (AC-2)', () => {
 	})
 })
 
-describe('Income page after a profile switch (AC-2)', () => {
+describe('Income page after a profile switch', () => {
 	it('finds profile A row by name before the switch, and it is ABSENT after', () => {
 		renderWithProviders(<IncomePage />)
 

@@ -11,7 +11,7 @@ import { useProfileStore } from './profileStore'
  * Deletion is soft (isDeleted tombstone) so a delta pull can surface it. The store validates its
  * own writes: a row the wire would reject could never sync, and the failure is swallowed.
  */
-export interface ClientCategory {
+export type ClientCategory = {
 	id: string
 	userId: number
 	/**
@@ -26,14 +26,14 @@ export interface ClientCategory {
 	updatedAt: string
 }
 
-export interface ClientNewCategory {
+export type ClientNewCategory = {
 	userId?: number
 	profileId?: string | null
 	name: string
 	kind: CategoryKind
 }
 
-interface CategoryState {
+type CategoryState = {
 	categories: ClientCategory[]
 	/** Returns null when the name fails the store's invariants. */
 	addCategory: (category: ClientNewCategory) => ClientCategory | null

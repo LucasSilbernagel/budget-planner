@@ -77,7 +77,7 @@ describe('per-entity schemas accept a healthy pulled row (the control)', () => {
 	})
 })
 
-describe('⚠️ nullable COLUMNS must not be false-rejected (story 66.2)', () => {
+describe('⚠️ nullable COLUMNS must not be false-rejected', () => {
 	it('savingsGoal: targetAmount null is a savings ACCOUNT, not a malformed row', () => {
 		const result = savingsGoalSchema.safeParse({
 			...rowChrome,
@@ -154,7 +154,7 @@ describe('⚠️ nullable COLUMNS must not be false-rejected (story 66.2)', () =
 	})
 })
 
-describe('⚠️ the corrupt-row class these schemas exist to stop (AC-3)', () => {
+describe('⚠️ the corrupt-row class these schemas exist to stop', () => {
 	it('rejects a STRING currentBalance — the concatenation mode, no NaN to flag it', () => {
 		// `800000 + "300000"` concatenates, giving a plausible wrong number.
 		expect(
@@ -277,7 +277,7 @@ describe('⚠️⚠️ the REQUIRED/NULLABLE rule: a NOT NULL column may not be 
 		).toBe(false)
 	})
 
-	it('savingsGoal: a NEGATIVE currentBalance is refused, and balanceTracking still ACCEPTS one (story 66.5)', () => {
+	it('savingsGoal: a NEGATIVE currentBalance is refused, and balanceTracking still ACCEPTS one', () => {
 		// Savings balances mirror a DB >= 0 constraint; balanceTracking stays negative-capable.
 		// The second assertion stops anyone aligning the two.
 		expect(

@@ -60,7 +60,7 @@ async function measureFirstPaint(Component: () => React.ReactElement) {
 	return { firstPaintAge, settledAge, recoverable }
 }
 
-describe('first paint of a restored plan (AC-10)', () => {
+describe('first paint of a restored plan', () => {
 	it('MEASURED: the first paint shows the DEFAULT age, not the saved one', async () => {
 		localStorage.setItem(
 			RETIREMENT_PLANNER_STORAGE_KEY,

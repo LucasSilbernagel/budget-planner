@@ -57,7 +57,7 @@ afterEach(() => {
 	})
 })
 
-describe('CategoryPicker — premium user (AC-1)', () => {
+describe('CategoryPicker — premium user', () => {
 	it('offers the uncategorized option first, then this form’s categories', () => {
 		premium()
 		seed([
@@ -134,13 +134,13 @@ describe('CategoryPicker — premium user (AC-1)', () => {
 		expect(onChange).toHaveBeenLastCalledWith(null)
 	})
 
-	it('is NOT required — leaving a row uncategorized is always valid (AC-1)', () => {
+	it('is NOT required — leaving a row uncategorized is always valid', () => {
 		premium()
 		render(<CategoryPicker kind="expense" value={null} onChange={vi.fn()} idPrefix="expense" />)
 		expect(screen.getByLabelText('Category')).not.toBeRequired()
 	})
 
-	it('displays a dangling categoryId as uncategorized rather than a blank selection (AC-3)', () => {
+	it('displays a dangling categoryId as uncategorized rather than a blank selection', () => {
 		// Not discriminating: jsdom reports selectedIndex 0 for an unmatched value where browsers show blank.
 		// This only proves the dangling id is not offered and does not crash.
 		premium()
@@ -187,7 +187,7 @@ describe('CategoryPicker — premium user (AC-1)', () => {
 	})
 })
 
-describe('CategoryPicker — gate (30.4b AC-4/AC-5; 41.2 AC-5/AC-7)', () => {
+describe('CategoryPicker — gate', () => {
 	it.each([
 		['free' as const, false],
 		['past_due' as const, true],
@@ -221,7 +221,7 @@ describe('CategoryPicker — gate (30.4b AC-4/AC-5; 41.2 AC-5/AC-7)', () => {
 		expect(within(locked).getByRole('link')).toHaveAttribute('href', '/pricing')
 	})
 
-	it('never renders category content while the tier is unknown (41.2 AC-5: loading is UNCHANGED)', () => {
+	it('never renders category content while the tier is unknown (loading is UNCHANGED)', () => {
 		mockStatus({ isLoading: true })
 		seed([category({ id: 'e1', name: 'Groceries', kind: 'expense' })])
 
@@ -235,7 +235,7 @@ describe('CategoryPicker — gate (30.4b AC-4/AC-5; 41.2 AC-5/AC-7)', () => {
 		expect(screen.queryByTestId('expense-category-locked')).not.toBeInTheDocument()
 	})
 
-	it('41.2 AC-1/AC-3: the locked control is a LINK out of the form, not a button that opens a dialog', () => {
+	it('the locked control is a LINK out of the form, not a button that opens a dialog', () => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
 
 		render(<CategoryPicker kind="expense" value={null} onChange={vi.fn()} idPrefix="expense" />)
@@ -250,7 +250,7 @@ describe('CategoryPicker — gate (30.4b AC-4/AC-5; 41.2 AC-5/AC-7)', () => {
 		expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 	})
 
-	it('41.2 AC-4: says the form will close before the user commits to leaving', () => {
+	it('says the form will close before the user commits to leaving', () => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
 
 		render(<CategoryPicker kind="expense" value={null} onChange={vi.fn()} idPrefix="expense" />)
@@ -261,7 +261,7 @@ describe('CategoryPicker — gate (30.4b AC-4/AC-5; 41.2 AC-5/AC-7)', () => {
 		expect(link).toHaveTextContent(/closes this form/i)
 	})
 
-	it('41.2 AC-8: the link restores a visible focus ring in a non-destructive colour', () => {
+	it('the link restores a visible focus ring in a non-destructive colour', () => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
 
 		render(<CategoryPicker kind="expense" value={null} onChange={vi.fn()} idPrefix="expense" />)
@@ -274,7 +274,7 @@ describe('CategoryPicker — gate (30.4b AC-4/AC-5; 41.2 AC-5/AC-7)', () => {
 		expect(tokens).not.toContain('focus:ring-red-500')
 	})
 
-	it('41.2 AC-6: an entitled user gets the real <select> and no navigation affordance', () => {
+	it('an entitled user gets the real <select> and no navigation affordance', () => {
 		premium()
 		seed([category({ id: 'e1', name: 'Groceries', kind: 'expense' })])
 

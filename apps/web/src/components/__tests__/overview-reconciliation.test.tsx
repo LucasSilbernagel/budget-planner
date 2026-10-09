@@ -172,7 +172,7 @@ afterEach(() => {
 	clearStores()
 })
 
-describe('AC-11: the Overview reconciles against a hand-computed example', () => {
+describe('the Overview reconciles against a hand-computed example', () => {
 	for (const duration of DURATIONS) {
 		it(`shows the hand-computed income, expenses and net worth at ${duration}`, () => {
 			seedFixture()
@@ -185,7 +185,7 @@ describe('AC-11: the Overview reconciles against a hand-computed example', () =>
 		})
 	}
 
-	it('does NOT show the raw entered sums — the FR58 defect detector', () => {
+	it('does NOT show the raw entered sums, only the normalized totals', () => {
 		seedFixture()
 		useOverviewDurationStore.setState({ duration: 'monthly' })
 		render(<HomePage />)
@@ -208,7 +208,7 @@ describe('AC-11: the Overview reconciles against a hand-computed example', () =>
 	})
 })
 
-describe('AC-12: every surface showing this money agrees, for one seed', () => {
+describe('every surface showing this money agrees, for one seed', () => {
 	function textFrom(surface: 'overview' | 'income' | 'expenses', testId: string): string {
 		if (surface === 'overview') {
 			render(<HomePage />)
@@ -272,7 +272,7 @@ describe('AC-12: every surface showing this money agrees, for one seed', () => {
 	// biweekly they differ by a cent.
 	const PIE_TOTAL_TESTID = 'breakdown-pie-total-expense'
 
-	it('AC-9: the expenses pie sums per entry and lands 1c ABOVE the card at biweekly', () => {
+	it('the expenses pie sums per entry and lands 1c ABOVE the card at biweekly', () => {
 		seedFixture()
 		useOverviewDurationStore.setState({ duration: 'biweekly' })
 		render(<HomePage />)
@@ -282,7 +282,7 @@ describe('AC-12: every surface showing this money agrees, for one seed', () => {
 		expect(screen.getByTestId('breakdown-pies-rounding-note')).toBeInTheDocument()
 	})
 
-	it('AC-8: the pies carry correct per-entry figures at weekly', () => {
+	it('the pies carry correct per-entry figures at weekly', () => {
 		seedFixture()
 		useOverviewDurationStore.setState({ duration: 'weekly' })
 		render(<HomePage />)

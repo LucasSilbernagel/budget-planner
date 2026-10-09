@@ -68,7 +68,7 @@ afterEach(() => {
 	localStorage.removeItem(PROFILE_KEY)
 })
 
-describe('profiles read oldest → newest through the real store (story 98.1)', () => {
+describe('profiles read oldest → newest through the real store', () => {
 	it('a pulled rename of the OLDEST profile does not move it to the end', () => {
 		useProfileStore.setState({ profiles: [OLDEST, MIDDLE, NEWEST], activeProfileId: A })
 

@@ -16,13 +16,13 @@ export const SERVED_TEST_TIMEOUT_MS = 30_000
 // Below the test timeout so a hanging SSR fails as a request error, not a stalled `vite.close()`.
 const REQUEST_TIMEOUT_MS = 25_000
 
-export interface ServedResponse {
+export type ServedResponse = {
 	status: number
 	headers: Record<string, string | string[] | undefined>
 	body: string
 }
 
-export interface ServedApp {
+export type ServedApp = {
 	origin: string
 	get(path: string): Promise<ServedResponse>
 	close(): Promise<void>

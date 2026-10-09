@@ -15,7 +15,7 @@ import { acquireMigrationLock, LOCK_WAIT_TIMEOUT_MS, stepEnv } from './migrate-l
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const BIN_DIR = path.join(PACKAGE_ROOT, 'node_modules', '.bin')
 
-interface Step {
+type Step = {
 	name: string
 	bin: string
 	args: string[]

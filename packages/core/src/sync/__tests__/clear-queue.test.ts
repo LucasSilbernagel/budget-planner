@@ -55,7 +55,7 @@ function persistedIds(): string[] {
 	return raw ? (JSON.parse(raw) as SyncOperation[]).map((o) => o.id) : []
 }
 
-describe('SynchronizationService.clearQueue (story 86.1)', () => {
+describe('SynchronizationService.clearQueue', () => {
 	const services: SynchronizationService[] = []
 
 	async function makeService(
@@ -104,7 +104,7 @@ describe('SynchronizationService.clearQueue (story 86.1)', () => {
 		expect(persistedIds()).toEqual(['C'])
 	})
 
-	it('a refusal that lands after the clear is not announced or recorded (D2)', async () => {
+	it('a refusal that lands after the clear is not announced or recorded', async () => {
 		localStorage.setItem(STORAGE_KEY, JSON.stringify([op('A')]))
 		const held = deferred<ProcessOperationResult>()
 		const send = vi.fn(async () => held.promise)
@@ -225,7 +225,7 @@ describe('SynchronizationService.clearQueue (story 86.1)', () => {
 		expect(service.getState().rejectedOperations.map((o) => o.id)).toEqual(['A'])
 	})
 
-	it('a conflict that lands after the clear is not recorded (D2)', async () => {
+	it('a conflict that lands after the clear is not recorded', async () => {
 		localStorage.setItem(STORAGE_KEY, JSON.stringify([op('A')]))
 		const held = deferred<ProcessOperationResult>()
 		const send = vi.fn(async () => held.promise)
@@ -305,7 +305,7 @@ describe('SynchronizationService.clearQueue (story 86.1)', () => {
 		expect(send).toHaveBeenCalledTimes(1)
 	})
 
-	it('keeps the pull cursor (D1: no re-pull of the whole account)', async () => {
+	it('keeps the pull cursor (no re-pull of the whole account)', async () => {
 		const ISO = '2026-09-01T00:00:00.000Z'
 		const INCOME = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 		const change: ServerChange = {

@@ -27,8 +27,8 @@ async function addCategory(
 	await user.click(screen.getByTestId(`category-add-${kind}`))
 }
 
-describe('creating a category (AC-2)', () => {
-	it('both "Add category" buttons use the shared AA green (story 115.1)', () => {
+describe('creating a category', () => {
+	it('both "Add category" buttons use the shared AA green', () => {
 		render(<CategoryManager />)
 		expectSharedGreen(screen.getByTestId('category-add-income'))
 		expectSharedGreen(screen.getByTestId('category-add-expense'))
@@ -101,7 +101,7 @@ describe('creating a category (AC-2)', () => {
 		expect(screen.queryByTestId('category-error-too-long')).not.toBeInTheDocument()
 	})
 
-	it('rejects a DUPLICATE case-insensitively and after trimming (AC-2, settled semantics)', async () => {
+	it('rejects a DUPLICATE case-insensitively and after trimming', async () => {
 		const user = userEvent.setup()
 		render(<CategoryManager />)
 
@@ -126,7 +126,7 @@ describe('creating a category (AC-2)', () => {
 	})
 })
 
-describe('renaming a category (AC-2)', () => {
+describe('renaming a category', () => {
 	it('renames it, and every referencing row shows the new name with no per-row edit', async () => {
 		const user = userEvent.setup()
 		render(<CategoryManager />)
@@ -231,7 +231,7 @@ describe('focus after the delete confirmation closes (code review 30.4b)', () =>
 	})
 })
 
-describe('single-root invariant (story 30.5)', () => {
+describe('single-root invariant', () => {
 	// Modal renders in flow, so a fragment root would let space-y offset the fixed dialog overlay.
 	it('renders one root element, so a spaced parent cannot margin the fixed overlay', () => {
 		const { container } = render(<CategoryManager />)
@@ -266,7 +266,7 @@ describe('per-row accessible names (code review 30.4b)', () => {
 	})
 })
 
-describe('deleting a category (AC-2)', () => {
+describe('deleting a category', () => {
 	async function setupWithRows(user: ReturnType<typeof userEvent.setup>): Promise<string> {
 		render(<CategoryManager />)
 		await addCategory(user, 'expense', 'Groceries')

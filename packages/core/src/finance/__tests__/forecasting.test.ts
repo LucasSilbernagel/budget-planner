@@ -329,7 +329,7 @@ describe('calculateFinancialForecast — frequency normalization, both loops', (
 		expect(r.baseline[0].income, 'same via the baseline').toBe(1_200_018)
 	})
 
-	it('counts an annual 10.00 as 10.00 a year, on both loops (story 111.1 AC 2)', () => {
+	it('counts an annual 10.00 as 10.00 a year, on both loops', () => {
 		const r = calculateFinancialForecast(
 			{
 				income: [{ amount: 1000, frequency: 'annually' as const }],
@@ -473,7 +473,7 @@ describe('calculateFinancialForecast — investment compounding, both loops', ()
 
 // Contributions only move money between the user's own pots, so per-account rows
 // split `savings` and never change the totals.
-describe('calculateFinancialForecast — savings account rows (100.1)', () => {
+describe('calculateFinancialForecast — savings account rows', () => {
 	const TWO_ROWS: SavingsAccountInput[] = [
 		{ balance: 100000, monthlyContribution: 20000 },
 		{ balance: 0, monthlyContribution: 5000 },
@@ -569,7 +569,7 @@ describe('calculateFinancialForecast — savings account rows (100.1)', () => {
 		expect(r.projection[0]?.savings).toBe(1_300_000)
 	})
 
-	it('leaves the baseline rows without the new fields (rows model the projection only, D6)', () => {
+	it('leaves the baseline rows without the new fields (rows model the projection only)', () => {
 		const r = calculateFinancialForecast(
 			{ ...CURRENT_DATA, savingsAccounts: TWO_ROWS },
 			FLAT,
@@ -650,7 +650,7 @@ describe('calculateFinancialForecast — savings account rows (100.1)', () => {
 
 // Investment: round(prev × (1 + rate)) + annual contribution. Debt: max(0, prev − annual
 // payment). A contribution flagged as already an expense leaves savings alone.
-describe('calculateFinancialForecast — investment and debt rows (100.2)', () => {
+describe('calculateFinancialForecast — investment and debt rows', () => {
 	// Net 12,000.00/yr. Counted investment 1,200.00/yr; flagged one 50.00/week = 260000/yr;
 	// debt 5,000.00 paying 2,400.00/yr.
 	const MIXED: BalanceAccountInput[] = [
@@ -699,13 +699,13 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
 		expect(r.summary.endingNetWorth).toBe(5_909_217)
 	})
 
-	it('models the rows in the baseline too, so a flat scenario keeps baseline === projection (D5, 67.1)', () => {
+	it('models the rows in the baseline too, so a flat scenario keeps baseline === projection', () => {
 		const r = calculateFinancialForecast(MIXED_DATA, FLAT, YEARS)
 		expect(r.baseline).toEqual(r.projection)
 		expect(r.baseline.map((b) => b.debts)).toEqual([260_000, 20_000, 0])
 	})
 
-	it('annualises an annual contribution exactly (story 111.1)', () => {
+	it('annualises an annual contribution exactly', () => {
 		const r = calculateFinancialForecast(
 			{
 				...CURRENT_DATA,
@@ -783,7 +783,7 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
 		expect(withRow.summary).toEqual(without.summary)
 	})
 
-	it('rounds each investment row on its own, which can differ from one total by a cent (D7, recorded)', () => {
+	it('rounds each investment row on its own, which can differ from one total by a cent', () => {
 		// Row A: 53503, 57248, 61255; row B: 53504, 57249, 61256. The sum 122511 is one cent
 		// below the single-total 122512 in year 3.
 		const r = calculateFinancialForecast(
@@ -870,7 +870,7 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
 		expect(withDebt.summary.startingNetWorth).toBe(without.summary.startingNetWorth - 750_000)
 	})
 
-	it('a FLAGGED payment bigger than the debt pays it off and stops at 0; it never touches savings (D4, kept by 102.2 for flagged rows)', () => {
+	it('a FLAGGED payment bigger than the debt pays it off and stops at 0; it never touches savings', () => {
 		const r = calculateFinancialForecast(
 			{
 				...CURRENT_DATA,
@@ -1016,7 +1016,7 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
 		).toThrow(FORECAST_OUT_OF_RANGE)
 	})
 
-	it('refuses a debt payment that normalises to Infinity, rather than flooring the debt to 0 (code review)', () => {
+	it('refuses a debt payment that normalises to Infinity, rather than flooring the debt to 0', () => {
 		// 1e308 weekly × 52 overflows; unguarded, the debt silently reads 0.
 		expect(() =>
 			calculateFinancialForecast(
@@ -1033,7 +1033,7 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
 	})
 
 	// An annual figure that overflows must be refused on the baseline too.
-	it('refuses an income or expense whose annual figure overflows, on the baseline too (111.1)', () => {
+	it('refuses an income or expense whose annual figure overflows, on the baseline too', () => {
 		const huge = (field: 'income' | 'expenses') => ({
 			...CURRENT_DATA,
 			[field]: [{ amount: 1e307, frequency: 'weekly' as const }],
@@ -1051,7 +1051,7 @@ describe('calculateFinancialForecast — investment and debt rows (100.2)', () =
 
 // An unflagged debt pays min(annual payment, balance) a year, added to `expenses` and
 // taken from `netIncome` in both loops.
-describe('calculateFinancialForecast — a debt payment stops at payoff (102.2)', () => {
+describe('calculateFinancialForecast — a debt payment stops at payoff', () => {
 	const debt = (
 		balance: number,
 		contribution: number,
@@ -1083,7 +1083,7 @@ describe('calculateFinancialForecast — a debt payment stops at payoff (102.2)'
 		expect(r.projection.map((p) => p.income)).toEqual([6_000_000, 6_000_000, 6_000_000, 6_000_000])
 	})
 
-	it('deducts in the baseline too, so a flat scenario keeps baseline === projection (D5, 67.1)', () => {
+	it('deducts in the baseline too, so a flat scenario keeps baseline === projection', () => {
 		const r = calculateFinancialForecast(
 			{ ...CURRENT_DATA, balanceAccounts: [debt(500_000, 20_000)] },
 			FLAT,
@@ -1118,7 +1118,7 @@ describe('calculateFinancialForecast — a debt payment stops at payoff (102.2)'
 		expect(r.projection.map((p) => p.debts)).toEqual([0, 0])
 	})
 
-	it('annualises a weekly payment exactly before deducting it (story 111.1)', () => {
+	it('annualises a weekly payment exactly before deducting it', () => {
 		// 50.00/week: 5000 × 52 = 260,000 a year. Net 1,200,000 − 260,000 = 940,000.
 		const r = calculateFinancialForecast(
 			{ ...CURRENT_DATA, balanceAccounts: [debt(1_000_000, 5_000, { frequency: 'weekly' })] },
@@ -1129,7 +1129,7 @@ describe('calculateFinancialForecast — a debt payment stops at payoff (102.2)'
 		expect(r.projection[0]?.debts).toBe(740_000)
 	})
 
-	it('does not grow the payment with the expense growth rate (D4: a fixed instalment)', () => {
+	it('does not grow the payment with the expense growth rate (a fixed instalment)', () => {
 		// Expenses grow 10%: Y1 440000/mo → 5,280,000/yr; Y2 484000/mo → 5,808,000. The
 		// payment stays flat.
 		const r = calculateFinancialForecast(
@@ -1226,7 +1226,7 @@ describe('calculateFinancialForecast — a debt payment stops at payoff (102.2)'
 		])
 	})
 
-	it('a moved payment ends where the old expense line did until payoff, then savings rise by the payment every year (AC-5)', () => {
+	it('a moved payment ends where the old expense line did until payoff, then savings rise by the payment every year', () => {
 		// (a) payment as an Expenses line with a flagged debt; (b) no expense line, unflagged debt.
 		const before = calculateFinancialForecast(
 			{
@@ -1263,7 +1263,7 @@ describe('calculateFinancialForecast — a debt payment stops at payoff (102.2)'
 	})
 })
 
-describe('calculateFinancialForecast — per-investment annual return (100.3)', () => {
+describe('calculateFinancialForecast — per-investment annual return', () => {
 	function oneRow(balance: number, annualReturn: unknown, contribution = 0) {
 		return {
 			...CURRENT_DATA,
@@ -1280,7 +1280,7 @@ describe('calculateFinancialForecast — per-investment annual return (100.3)', 
 		}
 	}
 
-	it('the default for a new investment row is 6% (D2)', () => {
+	it('the default for a new investment row is 6%', () => {
 		expect(DEFAULT_INVESTMENT_RETURN).toBe(0.06)
 	})
 
@@ -1437,7 +1437,7 @@ describe('calculateFinancialForecast — per-investment annual return (100.3)', 
 		expect(doubled.projection.map((p) => p.investments)).toEqual([320_000, 760_000])
 	})
 
-	it('refuses a rate outside −100%..100%, not a finite number, or missing (D4)', () => {
+	it('refuses a rate outside −100%..100%, not a finite number, or missing', () => {
 		expect(INVESTMENT_RETURN_OUT_OF_RANGE).toBe('Investment returns must be from -100% to 100%')
 		const bad: unknown[] = [
 			-1.0001,
@@ -1491,7 +1491,7 @@ describe('calculateFinancialForecast — per-investment annual return (100.3)', 
 		expect(r.projection.map((p) => p.debts)).toEqual([260_000, 20_000, 0])
 	})
 
-	it('a flat scenario keeps baseline === projection with a row at a non-7% rate (67.1, 100.2 D5)', () => {
+	it('a flat scenario keeps baseline === projection with a row at a non-7% rate', () => {
 		const r = calculateFinancialForecast(
 			{
 				...CURRENT_DATA,

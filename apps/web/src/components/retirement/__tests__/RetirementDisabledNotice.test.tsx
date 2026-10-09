@@ -23,7 +23,7 @@ describe('RetirementDisabledNotice', () => {
 		expect(screen.getByText(/you hid this planner in settings/i)).toBeInTheDocument()
 	})
 
-	it('says the expense form stopped asking too, not only the navigation (71.1, FR113)', async () => {
+	it('says the expense form stopped asking too, not only the navigation', async () => {
 		renderWithRouter(<RetirementDisabledNotice />)
 		expect(
 			await screen.findByText(/the expense form no longer asks about retirement/i)
@@ -35,7 +35,7 @@ describe('RetirementDisabledNotice', () => {
 		expect(await screen.findByText(/nothing was deleted/i)).toBeInTheDocument()
 	})
 
-	it('re-enables the planner from its own button (AC-6)', async () => {
+	it('re-enables the planner from its own button', async () => {
 		const user = userEvent.setup()
 		renderWithRouter(<RetirementDisabledNotice />)
 

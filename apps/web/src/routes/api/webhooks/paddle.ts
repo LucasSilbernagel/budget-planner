@@ -37,7 +37,7 @@ import {
 const MAX_WEBHOOK_BODY_SIZE = 1024 * 1024
 
 /** `ok: false` → nothing persisted; the caller returns 500 so Paddle retries. */
-interface WriteResult {
+type WriteResult = {
 	ok: boolean
 	createdUserId?: string
 	/** Handled by deciding not to write: return 200, since a retry can never change the outcome. */
@@ -159,7 +159,7 @@ export function entitlementWatermarkGuard(customerId: string, occurredAt: number
 	)
 }
 
-interface LifetimeGrantFields {
+type LifetimeGrantFields = {
 	lifetimeTransactionId?: string
 	lifetimeGrantTotal?: number
 }
@@ -912,7 +912,7 @@ async function handleCustomerEmailChange(
 	return { ok: true }
 }
 
-interface PaddleEventData {
+type PaddleEventData = {
 	/** Per event family: transaction, adjustment, or (on `customer.*`) the customer id. */
 	id?: string
 	/** Absent on every `customer.*` event — read `id` there instead. */
@@ -937,7 +937,7 @@ interface PaddleEventData {
 	totals?: { total?: string }
 }
 
-interface PaddleEventEnvelope {
+type PaddleEventEnvelope = {
 	event_id?: string
 	event_type?: string
 	occurred_at?: string

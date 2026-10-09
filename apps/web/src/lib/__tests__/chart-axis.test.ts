@@ -84,7 +84,7 @@ describe('niceAxisTicks', () => {
 
 describe('barDomainTicks', () => {
 	// jsdom can't lay out Recharts, so axis independence is pinned at this helper.
-	it('derives independent domains for flows vs balances (the ux-2 fix)', () => {
+	it('derives independent domains for flows vs balances so neither squashes the other', () => {
 		const flows = barDomainTicks([9_360_000, -4_800_000])
 		const balances = barDomainTicks([500_000, 800_000, -300_000])
 		expect(flows.at(-1)).toBeGreaterThan(balances.at(-1) as number)

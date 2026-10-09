@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { pwaManifest } from '../../pwa.config.mjs'
 
 // `short_name` is what the OS prints under the icon, so it must match the install prompt.
-describe('PWA manifest identity (story brand-1, AC-3)', () => {
+describe('PWA manifest identity', () => {
 	const manifest = pwaManifest as {
 		name: string
 		short_name: string

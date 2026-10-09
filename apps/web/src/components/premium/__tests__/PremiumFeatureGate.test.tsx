@@ -70,7 +70,7 @@ describe('PremiumFeatureGate', () => {
 		expect(screen.queryByTestId('premium-prompt')).not.toBeInTheDocument()
 	})
 
-	it('AC-3: renders the unlocked children with no lock badge for a paid user', () => {
+	it('renders the unlocked children with no lock badge for a paid user', () => {
 		mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
 		renderGate()
 
@@ -79,7 +79,7 @@ describe('PremiumFeatureGate', () => {
 		expect(screen.queryByText('Premium')).not.toBeInTheDocument()
 	})
 
-	it('AC-1: renders the locked presentation with a badge for a free user', () => {
+	it('renders the locked presentation with a badge for a free user', () => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
 		renderGate()
 
@@ -89,7 +89,7 @@ describe('PremiumFeatureGate', () => {
 		expect(screen.queryByTestId('unlocked-link')).not.toBeInTheDocument()
 	})
 
-	it('AC-1: fails closed — renders locked when the tier check errored', () => {
+	it('fails closed — renders locked when the tier check errored', () => {
 		mockStatus({ hasAccess: false, error: 'check failed', subscriptionStatus: null })
 		renderGate()
 
@@ -103,7 +103,7 @@ describe('PremiumFeatureGate', () => {
 		expect(screen.getByTestId('premium-gate-locked')).toBeInTheDocument()
 	})
 
-	it('AC-2: activating the locked feature opens the upgrade prompt (CTA → /pricing)', () => {
+	it('activating the locked feature opens the upgrade prompt (CTA → /pricing)', () => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
 		renderGate()
 
@@ -131,7 +131,7 @@ describe('PremiumFeatureGate', () => {
 	})
 })
 
-describe('PremiumFeatureGate locked accessible name (story 116.2)', () => {
+describe('PremiumFeatureGate locked accessible name', () => {
 	function nameOf(el: HTMLElement): string {
 		let name = ''
 		screen.queryAllByRole('button', {
@@ -143,7 +143,7 @@ describe('PremiumFeatureGate locked accessible name (story 116.2)', () => {
 		return name
 	}
 
-	it('carries no aria-label or aria-labelledby that would replace its content (AC-2)', () => {
+	it('carries no aria-label or aria-labelledby that would replace its content', () => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
 		renderGate()
 		const locked = screen.getByTestId('premium-gate-locked')
@@ -151,7 +151,7 @@ describe('PremiumFeatureGate locked accessible name (story 116.2)', () => {
 		expect(locked).not.toHaveAttribute('aria-labelledby')
 	})
 
-	it('is named title first, then the description, then "Premium, locked" (AC-1)', () => {
+	it('is named title first, then the description, then "Premium, locked"', () => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
 		renderGate()
 		const name = nameOf(screen.getByTestId('premium-gate-locked'))
@@ -160,7 +160,7 @@ describe('PremiumFeatureGate locked accessible name (story 116.2)', () => {
 		expect(name).toMatch(/\bPremium\s*,\s*locked$/)
 	})
 
-	it('takes its name from the visible content, not from `featureName` (AC-1, AC-5)', () => {
+	it('takes its name from the visible content, not from `featureName`', () => {
 		// Appears nowhere on screen, so it can only have reached the dialog.
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
 		renderGate({ featureName: 'Dialog-only Name' })
@@ -174,7 +174,7 @@ describe('PremiumFeatureGate locked accessible name (story 116.2)', () => {
 		)
 	})
 
-	it('the entitled and loading states carry no lock text (AC-3)', () => {
+	it('the entitled and loading states carry no lock text', () => {
 		mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
 		const { unmount } = renderGate()
 		expect(screen.getByTestId('unlocked-link')).toBeInTheDocument()

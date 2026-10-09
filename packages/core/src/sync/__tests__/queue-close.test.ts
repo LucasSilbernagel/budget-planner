@@ -71,7 +71,7 @@ const MUTATORS: [string, (queue: SyncQueue) => Promise<unknown>][] = [
 	['dequeue', (q) => q.dequeue()],
 ]
 
-describe('SyncQueue.close() (story 79.1)', () => {
+describe('SyncQueue.close()', () => {
 	let storage: TestStorage
 	let queue: SyncQueue
 

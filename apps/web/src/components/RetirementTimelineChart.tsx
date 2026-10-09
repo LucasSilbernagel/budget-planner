@@ -23,7 +23,7 @@ import { ErrorBoundary } from './ErrorBoundary'
 
 // Recharts numeric props cannot be driven by CSS, so they switch at the breakpoint.
 // Pure and exported because layout is not observable in jsdom.
-export interface RetirementChartChrome {
+export type RetirementChartChrome = {
 	height: number
 	yAxisWidth: number
 	tickFontSize: number
@@ -77,7 +77,7 @@ export function getRetirementMarkerAge(
 	return markerOffset === null ? null : currentAge + markerOffset
 }
 
-export interface RetirementTimelineChartProps {
+export type RetirementTimelineChartProps = {
 	/** Current amount saved at year 0, in integer cents. */
 	currentSavedCents: number
 	/** Monthly contribution, in integer cents. */
@@ -91,7 +91,7 @@ export interface RetirementTimelineChartProps {
 }
 
 /** One sampled year of the accumulation curve. All money in integer CENTS. */
-interface RetirementChartPoint {
+type RetirementChartPoint = {
 	year: number
 	age: number
 	startingBalance: number

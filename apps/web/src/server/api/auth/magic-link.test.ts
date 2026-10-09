@@ -98,7 +98,7 @@ describe('requestMagicLink (no enumeration, no signup)', () => {
 	})
 })
 
-describe('requestMagicLink — outcome and failure stage (Story 74.1, AC-5)', () => {
+describe('requestMagicLink — outcome and failure stage', () => {
 	it('omits messageRef when the provider returned no messageId', async () => {
 		selectLimit.mockResolvedValueOnce([{ id: 'u1', email: 'user@example.com', paddleId: 'pad_1' }])
 		createLoginToken.mockResolvedValueOnce('raw-tok')
@@ -135,7 +135,7 @@ describe('requestMagicLink — outcome and failure stage (Story 74.1, AC-5)', ()
 	})
 })
 
-describe('toMessageRef — a Brevo id that survives the logger (Story 74.1, AC-5 trap)', () => {
+describe('toMessageRef — a Brevo id that survives the logger', () => {
 	const BREVO_ID = '<202609271234.12345678901@smtp-relay.mailin.fr>'
 
 	it('keeps the part before @, and it survives the REAL redact()', () => {

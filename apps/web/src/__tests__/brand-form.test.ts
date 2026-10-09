@@ -31,7 +31,7 @@ const CODE_EXT = /\.[cm]?[jt]sx?$/
 const NOT_SHIPPED = /__tests__\/|\.test\.[cm]?[jt]sx?$|\.spec\.[cm]?[jt]sx?$|\.d\.ts$/
 const HARNESS = new Set(['playwright.config.ts', 'vitest.config.ts', 'vitest.setup.ts'])
 
-interface Hit {
+type Hit = {
 	readonly file: string
 	readonly line: number
 	readonly text: string
@@ -129,7 +129,7 @@ const ALL_HITS: Hit[] = [
 	...PROSE_FILES.flatMap((f) => proseHits(f, readFileSync(f, 'utf-8'))),
 ]
 
-describe('the product name is "Longhand Budget" on every user-visible surface (brand-2)', () => {
+describe('the product name is "Longhand Budget" on every user-visible surface', () => {
 	it('sweeps a non-trivial set of files, including each named root (guards a vacuous pass)', () => {
 		// A total-count floor is satisfied by src/ alone, so each root is pinned by NAME.
 		expect(CODE_FILES.length).toBeGreaterThan(100)

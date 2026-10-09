@@ -6,7 +6,7 @@ import { Modal } from '../ui/Modal'
 import { type ProfileFormState, validateProfileForm } from './profile-form'
 import { ProfileIconPicker } from './profile-icon-picker'
 
-interface EditProfileDialogProps {
+type EditProfileDialogProps = {
 	profileId: string
 	onClose: () => void
 }

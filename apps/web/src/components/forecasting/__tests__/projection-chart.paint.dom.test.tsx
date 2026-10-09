@@ -136,7 +136,7 @@ describe('the tooltip', () => {
 })
 
 describe('the "Starting" reference line', () => {
-	it('puts its label above the line, never on it (DN1 (b), story 97.2 review)', () => {
+	it('puts its label above the line, never on it', () => {
 		const seven: ForecastingResult = {
 			...result('Buy a house'),
 			baseline: [row(1, 203_400_000), row(2, 225_000_000), row(3, 248_457_568)],

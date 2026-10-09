@@ -46,7 +46,7 @@ function serverRow(amount: unknown): ServerChange {
 	}
 }
 
-describe('story 75.4: a malformed server row does not discard the local edit (web chain)', () => {
+describe('a malformed server row does not discard the local edit (web chain)', () => {
 	let service: SynchronizationService
 	let fetchServerChanges: ReturnType<typeof vi.fn>
 	let warn: ReturnType<typeof vi.spyOn>

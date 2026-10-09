@@ -86,7 +86,7 @@ afterEach(() => {
 	useOverviewDurationStore.setState({ duration: 'annually' })
 })
 
-describe('IncomePage — Total Income is frequency-correct and period-labelled (story 32.1)', () => {
+describe('IncomePage — Total Income is frequency-correct and period-labelled', () => {
 	it('states the period in the visible label rather than leaving it implicit', () => {
 		useIncomeStore.setState({ incomeSources: MIXED_INCOME })
 		renderWithProviders(<IncomePage />)
@@ -203,7 +203,7 @@ describe('IncomePage — Total Income is frequency-correct and period-labelled (
 	})
 })
 
-describe('ExpensesPage — Total Expenses is frequency-correct and period-labelled (story 32.1)', () => {
+describe('ExpensesPage — Total Expenses is frequency-correct and period-labelled', () => {
 	it('shows the frequency-normalized total, not the raw sum', () => {
 		useExpenseStore.setState({ expenses: MIXED_EXPENSES })
 		useOverviewDurationStore.setState({ duration: 'monthly' })
@@ -278,7 +278,7 @@ describe('ExpensesPage — Total Expenses is frequency-correct and period-labell
 	})
 })
 
-describe('the duration selection is one app-wide source of truth (story 32.1 AC-3)', () => {
+describe('the duration selection is one app-wide source of truth', () => {
 	it('a change on the Income page is reflected on the Expenses page', () => {
 		useIncomeStore.setState({ incomeSources: MIXED_INCOME })
 		useExpenseStore.setState({ expenses: MIXED_EXPENSES })
@@ -302,7 +302,7 @@ describe('the duration selection is one app-wide source of truth (story 32.1 AC-
 	})
 })
 
-describe('unreadable rows are excluded and disclosed, never silently dropped (story 32.1 AC-2)', () => {
+describe('unreadable rows are excluded and disclosed, never silently dropped', () => {
 	it('discloses the excluded row instead of under-reporting in silence', () => {
 		useIncomeStore.setState({
 			incomeSources: [

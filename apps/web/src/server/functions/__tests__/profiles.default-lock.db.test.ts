@@ -122,7 +122,7 @@ afterEach(() => {
 	seams.beforeTransaction = null
 })
 
-describe('a user with NO live profile: the slow path runs under the writer lock (AC-1)', () => {
+describe('a user with NO live profile: the slow path runs under the writer lock', () => {
 	it('creates the default "Main Profile" in the user\'s currency (return shape unchanged)', async () => {
 		const result = await createDefaultProfileForUser(USER)
 
@@ -207,7 +207,7 @@ describe('a user with NO live profile: the slow path runs under the writer lock 
 	})
 })
 
-describe('a user WITH a live profile: the read-only fast path (AC-1 control, D2)', () => {
+describe('a user WITH a live profile: the read-only fast path (control)', () => {
 	it('opens NO transaction and writes nothing', async () => {
 		await db.insert(userProfiles).values({ id: P, userId: USER, name: 'Main', isDefault: true })
 		statements.length = 0

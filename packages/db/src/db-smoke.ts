@@ -30,7 +30,7 @@ export function assessSmokePreconditions(
 	if (!isRelaxedDbEnv(nodeEnv) && !isEuSovereignDbHost(host)) {
 		return {
 			ok: false,
-			reason: `"${host}" is not a DanubeData EU host (NFR1/NFR2, CLOUD Act immunity). Expected the internal writer name or a *.danubedata.ro host.`,
+			reason: `"${host}" is not a DanubeData EU host (CLOUD Act immunity). Expected the internal writer name or a *.danubedata.ro host.`,
 		}
 	}
 

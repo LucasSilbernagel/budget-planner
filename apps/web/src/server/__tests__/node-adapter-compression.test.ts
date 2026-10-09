@@ -54,7 +54,7 @@ describe('isCompressibleType', () => {
 	})
 })
 
-interface RawResponse {
+type RawResponse = {
 	status: number
 	headers: Record<string, string | string[] | undefined>
 	body: Buffer

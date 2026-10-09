@@ -11,12 +11,12 @@ export const STUB_TOTALS = {
 	lifetime: '€99.00',
 } as const
 
-interface PaddleStubCall {
+type PaddleStubCall = {
 	method: string
 	args: unknown[]
 }
 
-export interface PaddleStub {
+export type PaddleStub = {
 	calls: PaddleStubCall[]
 	paddleRequests: Array<{ url: string; answer: 'stub' | 'aborted' }>
 	checkoutOpens(): Record<string, unknown>[]

@@ -13,7 +13,7 @@ const UNCATEGORIZED_VALUE = ''
 
 const UNCATEGORIZED_LABEL = 'Uncategorized'
 
-export interface CategoryPickerProps {
+export type CategoryPickerProps = {
 	kind: CategoryKind
 	value: string | null
 	onChange: (categoryId: string | null) => void

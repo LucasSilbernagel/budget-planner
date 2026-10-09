@@ -149,7 +149,7 @@ describe('SortableColumnHeader', () => {
 	})
 })
 
-describe('sortable header screen-reader state (story 120.1, FR188)', () => {
+describe('sortable header screen-reader state', () => {
 	it('describes the button as sortable plus its current state, keeping name and <th> text', () => {
 		// `aria-sort="none"` is generally not announced; the description says the column sorts.
 		const expected = {

@@ -20,7 +20,7 @@ import { OVERVIEW_BENEFITS } from '../../HomePage'
 import { PREMIUM_NAV_ROUTES } from '../GlobalNav'
 
 // Sets, not sequences: the nav and the benefit map order the routes differently on purpose.
-describe('58.2 AC-1: the nav and the Overview agree on the four premium routes', () => {
+describe('the nav and the Overview agree on the four premium routes', () => {
 	/** Selected as HomePage renders them (anything not 'none'/'prompt' is a link), not by `=== 'route'`. */
 	const overviewRoutes = PREMIUM_BENEFIT_IDS.flatMap((id) => {
 		const benefit = OVERVIEW_BENEFITS[id]

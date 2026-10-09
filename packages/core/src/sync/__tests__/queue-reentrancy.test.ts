@@ -36,7 +36,7 @@ function createRecordingStorage(): SyncQueueStorage & { saves: SyncOperation[][]
 	}
 }
 
-describe('SyncQueue re-entrancy (34.1b AC-3)', () => {
+describe('SyncQueue re-entrancy', () => {
 	let storage: ReturnType<typeof createRecordingStorage>
 	let queue: SyncQueue
 

@@ -193,7 +193,7 @@ function readNames(): string[] {
 	return names
 }
 
-describe('profile icon + order round trip (story 98.1, real engine, real routes, real PostgreSQL)', () => {
+describe('profile icon + order round trip (real engine, real routes, real PostgreSQL)', () => {
 	it('icons chosen on create (and changed later) reach the server and another device, which reads oldest → newest', async () => {
 		freshDevice()
 		rtl.render(<ActiveSync userId={USER} />)

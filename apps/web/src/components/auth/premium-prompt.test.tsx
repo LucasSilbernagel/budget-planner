@@ -12,7 +12,7 @@ const CANONICAL_BENEFITS = [
 	'Custom Categories & Category Breakdown',
 ]
 
-describe('PremiumPrompt benefit list (story 20-3)', () => {
+describe('PremiumPrompt benefit list', () => {
 	it('lists exactly the canonical benefit set and no more (inline)', async () => {
 		renderWithRouter(<PremiumPrompt />)
 
@@ -53,7 +53,7 @@ describe('PremiumPrompt benefit list (story 20-3)', () => {
 	})
 
 	// Exact text: the old copy contained the new one, so a substring pin would pass on it.
-	it('footer reads exactly "All data stored in Germany (EU)" in both modes (story 95.1)', async () => {
+	it('footer reads exactly "All data stored in Germany (EU)" in both modes', async () => {
 		const { unmount } = renderWithRouter(<PremiumPrompt />)
 		await screen.findByRole('list')
 		// Inline mode renders nothing but the card, so the body IS the card's scope.

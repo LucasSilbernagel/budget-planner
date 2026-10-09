@@ -120,7 +120,7 @@ function netWorthTextFrom(surface: 'overview' | 'balance'): string {
 	return text.trim()
 }
 
-describe('net worth agrees across every surface that shows it (story 32.2)', () => {
+describe('net worth agrees across every surface that shows it', () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		mockFreeTier()
@@ -129,7 +129,7 @@ describe('net worth agrees across every surface that shows it (story 32.2)', () 
 
 	afterEach(clearStores)
 
-	it('AC-5: the Overview and the Balance page show the SAME figure for one seed', () => {
+	it('the Overview and the Balance page show the SAME figure for one seed', () => {
 		seedSharedFixture()
 
 		const overview = netWorthTextFrom('overview')
@@ -139,7 +139,7 @@ describe('net worth agrees across every surface that shows it (story 32.2)', () 
 		expect(overview).toContain('273,000.00')
 	})
 
-	it('AC-6: both agree for a savings-only user, where they used to show zero', () => {
+	it('both agree for a savings-only user, where they used to show zero', () => {
 		useSavingsStore.setState({
 			savingsGoals: [
 				{

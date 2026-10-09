@@ -76,7 +76,7 @@ beforeEach(() => {
 })
 
 describe('HomePage premium discovery', () => {
-	it('AC-1: shows Advanced Forecasting locked with a Premium badge for a free user', () => {
+	it('shows Advanced Forecasting locked with a Premium badge for a free user', () => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
 		render(<HomePage />)
 
@@ -85,7 +85,7 @@ describe('HomePage premium discovery', () => {
 		expect(screen.queryByRole('link', { name: /advanced forecasting/i })).not.toBeInTheDocument()
 	})
 
-	it('AC-3: shows a working /forecasting link with no badge for a paid user', () => {
+	it('shows a working /forecasting link with no badge for a paid user', () => {
 		mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
 		render(<HomePage />)
 
@@ -115,7 +115,7 @@ describe('HomePage premium discovery', () => {
 		expect(expectLockedRowsNamedByVisibleText(container)).toHaveLength(GATED_COUNT)
 	})
 
-	it('AC-1: shows Custom Profiles locked with a Premium badge for a free user (13-3)', () => {
+	it('shows Custom Profiles locked with a Premium badge for a free user (13-3)', () => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
 		render(<HomePage />)
 
@@ -124,7 +124,7 @@ describe('HomePage premium discovery', () => {
 		expect(screen.queryByRole('link', { name: /custom profiles/i })).not.toBeInTheDocument()
 	})
 
-	it('AC-3: shows a working /profiles link with no badge for a paid user (13-3)', () => {
+	it('shows a working /profiles link with no badge for a paid user (13-3)', () => {
 		mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
 		render(<HomePage />)
 
@@ -135,7 +135,7 @@ describe('HomePage premium discovery', () => {
 		).not.toBeInTheDocument()
 	})
 
-	it('41.1: badges AND gates every benefit including sync, with no page affordance (UX-DR45)', () => {
+	it('41.1: badges AND gates every benefit including sync, with no page affordance', () => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
 		render(<HomePage />)
 
@@ -172,7 +172,7 @@ describe('HomePage premium discovery', () => {
 		expect(within(sync).getByText('Multi-device sync')).toBeInTheDocument()
 	})
 
-	it('33.1: badges sync when the tier check errors — fail-closed (AC-5)', () => {
+	it('33.1: badges sync when the tier check errors — fail-closed', () => {
 		mockStatus({
 			hasAccess: false,
 			isLoading: false,
@@ -188,7 +188,7 @@ describe('HomePage premium discovery', () => {
 		expect(within(sync).getByTestId('premium-gate-locked')).toBeInTheDocument()
 	})
 
-	it('41.1: an entitled user gets the sync box exactly as before — inert, unbadged (AC-5)', () => {
+	it('41.1: an entitled user gets the sync box exactly as before — inert, unbadged', () => {
 		mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
 		render(<HomePage />)
 
@@ -223,7 +223,7 @@ describe('HomePage premium discovery', () => {
 		}
 	})
 
-	it('33.2: pins the two new benefit sub-texts verbatim (FR56)', () => {
+	it('33.2: pins the two new benefit sub-texts verbatim', () => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
 		render(<HomePage />)
 
@@ -237,7 +237,7 @@ describe('HomePage premium discovery', () => {
 		).toBeInTheDocument()
 	})
 
-	it('30-1: every premium benefit box shares one chassis (AC-1/AC-3)', () => {
+	it('30-1: every premium benefit box shares one chassis', () => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
 		render(<HomePage />)
 
@@ -268,7 +268,7 @@ describe('HomePage premium discovery', () => {
 		)
 	})
 
-	it('30-1: the unlocked (paid) tiles carry the chassis and the accent (AC-1/AC-4)', () => {
+	it('30-1: the unlocked (paid) tiles carry the chassis and the accent', () => {
 		mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
 		render(<HomePage />)
 
@@ -289,7 +289,7 @@ describe('HomePage premium discovery', () => {
 		}
 	})
 
-	it('41.1: every locked box carries a persistent chevron, sync included (AC-2)', () => {
+	it('41.1: every locked box carries a persistent chevron, sync included', () => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
 		render(<HomePage />)
 
@@ -309,7 +309,7 @@ describe('HomePage premium discovery', () => {
 		}
 	})
 
-	it('41.1: activating the sync box opens the SHARED upgrade dialog (AC-1/AC-7)', async () => {
+	it('41.1: activating the sync box opens the SHARED upgrade dialog', async () => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: true })
 		renderWithRouter(<HomePage />)
 
@@ -329,7 +329,7 @@ describe('HomePage premium discovery', () => {
 		expect(sync).toContainElement(dialog)
 	})
 
-	it("41.1: an ENTITLED user still gets sync's reserved, unpainted chevron (AC-2/AC-5)", () => {
+	it("41.1: an ENTITLED user still gets sync's reserved, unpainted chevron", () => {
 		// invisible keeps the glyph's layout box so the row lines up with the "Open →" rows.
 		mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
 		render(<HomePage />)
@@ -351,7 +351,7 @@ describe('HomePage premium discovery', () => {
 	})
 })
 
-describe('subtitle parity: HomePage and login (story 36-1)', () => {
+describe('subtitle parity: HomePage and login', () => {
 	const SUBTITLE = 'Track your finances with privacy and control'
 	const read = (rel: string) => readFileSync(resolve(__dirname, rel), 'utf-8')
 
@@ -366,7 +366,7 @@ describe('subtitle parity: HomePage and login (story 36-1)', () => {
 	})
 })
 
-describe('HomePage subtitle (story 36-1)', () => {
+describe('HomePage subtitle', () => {
 	beforeEach(() => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
 	})
@@ -381,12 +381,12 @@ describe('HomePage subtitle (story 36-1)', () => {
 	})
 })
 
-describe('HomePage overview subtitle + mobile padding (story 19-4)', () => {
+describe('HomePage overview subtitle + mobile padding', () => {
 	beforeEach(() => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
 	})
 
-	it("no longer renders the bird's-eye secondary subtitle (removed by story 27-4)", () => {
+	it("no longer renders the bird's-eye secondary subtitle", () => {
 		render(<HomePage />)
 		expect(screen.getByText('Track your finances with privacy and control')).toBeInTheDocument()
 		expect(
@@ -394,7 +394,7 @@ describe('HomePage overview subtitle + mobile padding (story 19-4)', () => {
 		).toBeNull()
 	})
 
-	it('AC-2: Premium Features section is mobile-tight (p-4) and restores padding at sm (sm:p-6)', () => {
+	it('Premium Features section is mobile-tight (p-4) and restores padding at sm (sm:p-6)', () => {
 		render(<HomePage />)
 		const section = screen
 			.getByRole('heading', { name: 'Premium Features', level: 2 })
@@ -405,7 +405,7 @@ describe('HomePage overview subtitle + mobile padding (story 19-4)', () => {
 		expect(tokens).toContain('sm:p-6')
 	})
 
-	it('AC-2: empty-state onboarding section is mobile-tight (p-4) and restores padding at sm (sm:p-6)', () => {
+	it('empty-state onboarding section is mobile-tight (p-4) and restores padding at sm (sm:p-6)', () => {
 		useIncomeStore.setState({ incomeSources: [] })
 		useExpenseStore.setState({ expenses: [] })
 		useSavingsStore.setState({ savingsGoals: [] })
@@ -420,12 +420,12 @@ describe('HomePage overview subtitle + mobile padding (story 19-4)', () => {
 	})
 })
 
-describe('HomePage privacy positioning (story 27-5)', () => {
+describe('HomePage privacy positioning', () => {
 	beforeEach(() => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
 	})
 
-	it('surfaces the "without bank sync or AI integrations" framing (FR45 as amended by brand-1)', () => {
+	it('surfaces the "without bank sync or AI integrations" framing', () => {
 		render(<HomePage />)
 		expect(
 			screen.getByText('Intentional budgeting without bank sync or AI integrations.')
@@ -453,7 +453,7 @@ describe('HomePage privacy positioning (story 27-5)', () => {
 	})
 })
 
-describe('95.1: the account notice is hidden for any signed-in session (D2)', () => {
+describe('95.1: the account notice is hidden for any signed-in session', () => {
 	const PILLARS = 'No account needed · Optional sync is EU-hosted · No bank connection.'
 	const SUBTITLE = 'Track your finances with privacy and control'
 
@@ -500,25 +500,25 @@ describe('95.1: the account notice is hidden for any signed-in session (D2)', ()
 	})
 })
 
-describe('HomePage "Manage Your Finances" tiles removed (story 19-1)', () => {
+describe('HomePage "Manage Your Finances" tiles removed', () => {
 	beforeEach(() => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
 		useIncomeStore.setState({ incomeSources: [] })
 		useExpenseStore.setState({ expenses: [] })
 	})
 
-	it('AC-2: the "Manage Your Finances" section is not rendered', () => {
+	it('the "Manage Your Finances" section is not rendered', () => {
 		render(<HomePage />)
 		expect(screen.queryByRole('heading', { name: 'Manage Your Finances' })).toBeNull()
 	})
 
-	it('AC-2/AC-3: the tile-only "Projections" destination link is no longer on the overview', () => {
+	it('the tile-only "Projections" destination link is no longer on the overview', () => {
 		render(<HomePage />)
 		expect(screen.queryByRole('link', { name: 'Projections' })).toBeNull()
 	})
 })
 
-describe('HomePage financial overview copy (story 11-4)', () => {
+describe('HomePage financial overview copy', () => {
 	beforeEach(() => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
 		useIncomeStore.setState({ incomeSources: [] })
@@ -528,7 +528,7 @@ describe('HomePage financial overview copy (story 11-4)', () => {
 		useIncomeStore.setState({ incomeSources: [] })
 	})
 
-	it('AC-1: stat cards read in plain language with no "Normalized"/"Raw" jargon', () => {
+	it('stat cards read in plain language with no "Normalized"/"Raw" jargon', () => {
 		render(<HomePage />)
 		expect(screen.getByText(/^Total Income \(per (week|2 weeks|month|year)\)$/)).toBeInTheDocument()
 		expect(
@@ -538,7 +538,7 @@ describe('HomePage financial overview copy (story 11-4)', () => {
 		expect(screen.queryByText(/^Raw:/)).not.toBeInTheDocument()
 	})
 
-	it('AC-2: a normalized non-monthly amount drops the "Raw:" line and reveals the conversion (with the raw total) progressively on focus', async () => {
+	it('a normalized non-monthly amount drops the "Raw:" line and reveals the conversion (with the raw total) progressively on focus', async () => {
 		useIncomeStore.setState({
 			incomeSources: [
 				{
@@ -575,7 +575,7 @@ describe('HomePage financial overview copy (story 11-4)', () => {
 	})
 })
 
-describe('HomePage financial overview — no Financial Health score (story 11-5)', () => {
+describe('HomePage financial overview — no Financial Health score', () => {
 	beforeEach(() => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', isAuthenticated: false })
 		useIncomeStore.setState({ incomeSources: [] })
@@ -585,13 +585,13 @@ describe('HomePage financial overview — no Financial Health score (story 11-5)
 		useIncomeStore.setState({ incomeSources: [] })
 	})
 
-	it('AC-1/AC-2: the "Financial Health" card and its percentage are gone', () => {
+	it('the "Financial Health" card and its percentage are gone', () => {
 		render(<HomePage />)
 		expect(screen.queryByText('Financial Health')).not.toBeInTheDocument()
 		expect(screen.queryByText(/^\d+%$/)).not.toBeInTheDocument()
 	})
 
-	it('AC-1: the three remaining overview cards still render', () => {
+	it('the three remaining overview cards still render', () => {
 		render(<HomePage />)
 		expect(screen.getByText(/^Total Income \(per (week|2 weeks|month|year)\)$/)).toBeInTheDocument()
 		expect(
@@ -600,12 +600,12 @@ describe('HomePage financial overview — no Financial Health score (story 11-5)
 		expect(screen.getByText('Net Worth')).toBeInTheDocument()
 	})
 
-	it('AC-1: the "Net Period Income" card and its figure are gone', () => {
+	it('the "Net Period Income" card and its figure are gone', () => {
 		render(<HomePage />)
 		expect(screen.queryByText('Net Period Income')).not.toBeInTheDocument()
 	})
 
-	it('AC-2: the overview grid reflows to three columns (no 4-column gap on desktop)', () => {
+	it('the overview grid reflows to three columns (no 4-column gap on desktop)', () => {
 		render(<HomePage />)
 		const heading = screen.getByRole('heading', { name: 'Financial Overview' })
 		const grid = heading.closest('section')?.querySelector('div.grid')
@@ -616,7 +616,7 @@ describe('HomePage financial overview — no Financial Health score (story 11-5)
 	})
 })
 
-describe('HomePage overview duration selector (story 12-2)', () => {
+describe('HomePage overview duration selector', () => {
 	function seedMonthly(): void {
 		useIncomeStore.setState({
 			incomeSources: [
@@ -673,7 +673,7 @@ describe('HomePage overview duration selector (story 12-2)', () => {
 		useOverviewDurationStore.setState({ duration: 'annually' })
 	})
 
-	it('AC-1: renders one selector defaulting to Annually, with annual card labels', () => {
+	it('renders one selector defaulting to Annually, with annual card labels', () => {
 		render(<HomePage />)
 
 		const select = screen.getByRole('combobox', {
@@ -695,7 +695,7 @@ describe('HomePage overview duration selector (story 12-2)', () => {
 		])
 	})
 
-	it('AC-1/AC-2: figures start annual and re-express when the duration changes', () => {
+	it('figures start annual and re-express when the duration changes', () => {
 		seedMonthly()
 		render(<HomePage />)
 
@@ -726,7 +726,7 @@ describe('HomePage overview duration selector (story 12-2)', () => {
 
 	// Weekly $330 + annual $1,200 normalizes to exactly the raw sum, so the disclosure
 	// must not be gated on normalized !== raw.
-	it('AC-2: discloses the conversion even when it lands coincidentally on the raw sum', () => {
+	it('discloses the conversion even when it lands coincidentally on the raw sum', () => {
 		useIncomeStore.setState({
 			incomeSources: [
 				{
@@ -759,7 +759,7 @@ describe('HomePage overview duration selector (story 12-2)', () => {
 		).toBeInTheDocument()
 	})
 
-	it('AC-2: shows no conversion disclosure when every row is already monthly', () => {
+	it('shows no conversion disclosure when every row is already monthly', () => {
 		seedMonthly()
 		render(<HomePage />)
 
@@ -768,7 +768,7 @@ describe('HomePage overview duration selector (story 12-2)', () => {
 		).not.toBeInTheDocument()
 	})
 
-	it('AC-3: the selection is a single source of truth that survives remount', () => {
+	it('the selection is a single source of truth that survives remount', () => {
 		const { unmount } = render(<HomePage />)
 
 		fireEvent.change(screen.getByRole('combobox', { name: /show income and expenses per/i }), {
@@ -789,7 +789,7 @@ describe('HomePage overview duration selector (story 12-2)', () => {
 	})
 })
 
-describe('HomePage income-vs-expense breakdown period control (story 12-3)', () => {
+describe('HomePage income-vs-expense breakdown period control', () => {
 	function seedMixedFrequencyIncome(): void {
 		useIncomeStore.setState({
 			incomeSources: [
@@ -834,7 +834,7 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
 		useOverviewDurationStore.setState({ duration: 'annually' })
 	})
 
-	it('AC-1: offers the four shared durations, defaulting to Annually, with no preset labels', () => {
+	it('offers the four shared durations, defaulting to Annually, with no preset labels', () => {
 		seedMixedFrequencyIncome()
 		render(<HomePage />)
 
@@ -852,7 +852,7 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
 		expect(screen.queryByText(/Custom Range/i)).not.toBeInTheDocument()
 	})
 
-	it('AC-2: category figures are frequency-normalized and re-express when the period changes', () => {
+	it('category figures are frequency-normalized and re-express when the period changes', () => {
 		useExpenseStore.setState({
 			expenses: [
 				{
@@ -917,7 +917,7 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
 		expect(screen.getByTestId('breakdown-pie-total-expense-ratio')).toHaveTextContent('67%')
 	})
 
-	it('AC-8: changing EITHER selector moves BOTH the overview card and the pies', () => {
+	it('changing EITHER selector moves BOTH the overview card and the pies', () => {
 		seedMixedFrequencyIncome()
 		useExpenseStore.setState({
 			expenses: [
@@ -972,7 +972,7 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
 		expect(within(breakdownSection()).getByText('6,300.00')).toBeInTheDocument()
 	})
 
-	it('AC-8: each pie title states the period, so it is never implicit (FR58)', () => {
+	it('each pie title states the period, so it is never implicit', () => {
 		seedMixedFrequencyIncome()
 		render(<HomePage />)
 
@@ -986,7 +986,7 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
 
 	// Pies scale each entry then sum; cards sum then scale once. They differ only at
 	// the non-integral periods, so the note must appear at exactly those.
-	it('AC-9: the pies disclose per-entry rounding at weekly and biweekly only', () => {
+	it('the pies disclose per-entry rounding at weekly and biweekly only', () => {
 		seedMixedFrequencyIncome()
 		render(<HomePage />)
 
@@ -1012,7 +1012,7 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
 		expect(screen.queryByTestId('breakdown-pies-rounding-note')).not.toBeInTheDocument()
 	})
 
-	it('AC-9: no rounding note when both pies are EMPTY (balances-only user)', () => {
+	it('no rounding note when both pies are EMPTY (balances-only user)', () => {
 		useBalanceStore.setState({
 			entries: [
 				{
@@ -1037,7 +1037,7 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
 		useBalanceStore.setState({ entries: [] })
 	})
 
-	it('AC-4: a user with income but no expenses yet sees a 0% ratio, not an empty/broken pie', () => {
+	it('a user with income but no expenses yet sees a 0% ratio, not an empty/broken pie', () => {
 		// expenseRatioData gates emptiness on income rows, so this renders one
 		// "Remaining income" slice rather than the empty state.
 		useIncomeStore.setState({
@@ -1066,7 +1066,7 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
 		expect(screen.getByText('No expenses to break down yet')).toBeInTheDocument()
 	})
 
-	it('AC-9: no rounding note for a SINGLE entry, where divergence is impossible', () => {
+	it('no rounding note for a SINGLE entry, where divergence is impossible', () => {
 		useIncomeStore.setState({
 			incomeSources: [
 				{
@@ -1088,7 +1088,7 @@ describe('HomePage income-vs-expense breakdown period control (story 12-3)', () 
 	})
 })
 
-describe('HomePage asset/liability breakdown removed (story 12-4)', () => {
+describe('HomePage asset/liability breakdown removed', () => {
 	function seedIncomeAndSavings(): void {
 		useIncomeStore.setState({
 			incomeSources: [
@@ -1133,7 +1133,7 @@ describe('HomePage asset/liability breakdown removed (story 12-4)', () => {
 		useOverviewDurationStore.setState({ duration: 'annually' })
 	})
 
-	it('AC-3: the redundant "Asset & Liability Breakdown" pie and its heading are gone', () => {
+	it('the redundant "Asset & Liability Breakdown" pie and its heading are gone', () => {
 		seedIncomeAndSavings()
 		render(<HomePage />)
 		expect(
@@ -1141,13 +1141,13 @@ describe('HomePage asset/liability breakdown removed (story 12-4)', () => {
 		).not.toBeInTheDocument()
 	})
 
-	it('AC-2: the "Financial Category Summary" bar chart remains as the sole carrier of the Savings/Investments/Debts figures', () => {
+	it('the "Financial Category Summary" bar chart remains as the sole carrier of the Savings/Investments/Debts figures', () => {
 		seedIncomeAndSavings()
 		render(<HomePage />)
 		expect(screen.getByRole('heading', { name: /financial category summary/i })).toBeInTheDocument()
 	})
 
-	it('AC-2/UX-#4: income and expenses render as two separately-headed breakdown pies (asset & liability pie still gone)', () => {
+	it('income and expenses render as two separately-headed breakdown pies (asset & liability pie still gone)', () => {
 		seedIncomeAndSavings()
 		render(<HomePage />)
 		expect(
@@ -1161,7 +1161,7 @@ describe('HomePage asset/liability breakdown removed (story 12-4)', () => {
 	})
 })
 
-describe('HomePage flows/balances split (story UX-2)', () => {
+describe('HomePage flows/balances split', () => {
 	const TS = '2026-07-14T00:00:00.000Z'
 
 	function seedIncome(amountCents: number): void {
@@ -1255,7 +1255,7 @@ describe('HomePage flows/balances split (story UX-2)', () => {
 
 	afterEach(resetAll)
 
-	it('AC-1: renders separate "Income & expenses" and "Balances" sub-charts when both exist', () => {
+	it('renders separate "Income & expenses" and "Balances" sub-charts when both exist', () => {
 		seedIncome(500000)
 		seedExpense(200000)
 		seedSavings(500000)
@@ -1267,7 +1267,7 @@ describe('HomePage flows/balances split (story UX-2)', () => {
 		expect(screen.queryByText(/no financial data to display/i)).not.toBeInTheDocument()
 	})
 
-	it('AC-2: the flows sub-heading carries the overview-duration suffix (not regressing #8)', () => {
+	it('the flows sub-heading carries the overview-duration suffix (not regressing #8)', () => {
 		seedIncome(500000)
 		seedExpense(200000)
 		render(<HomePage />)
@@ -1286,7 +1286,7 @@ describe('HomePage flows/balances split (story UX-2)', () => {
 		).not.toBeInTheDocument()
 	})
 
-	it('AC-5: a genuinely balances-only user (no income/expense rows) still reaches the Balances sub-chart', () => {
+	it('a genuinely balances-only user (no income/expense rows) still reaches the Balances sub-chart', () => {
 		seedSavings(250000)
 		render(<HomePage />)
 		expect(screen.queryByText(/let's set up your budget/i)).not.toBeInTheDocument()
@@ -1295,7 +1295,7 @@ describe('HomePage flows/balances split (story UX-2)', () => {
 		expect(screen.queryByText(/no financial data to display/i)).not.toBeInTheDocument()
 	})
 
-	it('AC-5: with only flows (no balances), the balances sub-chart is hidden', () => {
+	it('with only flows (no balances), the balances sub-chart is hidden', () => {
 		seedIncome(500000)
 		seedExpense(200000)
 		render(<HomePage />)
@@ -1304,7 +1304,7 @@ describe('HomePage flows/balances split (story UX-2)', () => {
 		expect(screen.queryByText(/no financial data to display/i)).not.toBeInTheDocument()
 	})
 
-	it('AC-5: with neither flows nor balances present, the section shows the empty hint', () => {
+	it('with neither flows nor balances present, the section shows the empty hint', () => {
 		seedIncome(0)
 		render(<HomePage />)
 		expect(screen.getByText(/no financial data to display/i)).toBeInTheDocument()
@@ -1313,7 +1313,7 @@ describe('HomePage flows/balances split (story UX-2)', () => {
 	})
 })
 
-describe('HomePage net worth includes savings (Story 32.2)', () => {
+describe('HomePage net worth includes savings', () => {
 	const NW_TS = '2026-08-15T00:00:00.000Z'
 
 	function resetAll(): void {
@@ -1391,7 +1391,7 @@ describe('HomePage net worth includes savings (Story 32.2)', () => {
 		})
 	}
 
-	it('AC-3: adds savings into the Overview net-worth figure', () => {
+	it('adds savings into the Overview net-worth figure', () => {
 		seedSavings()
 		seedBalances()
 		render(<HomePage />)
@@ -1408,7 +1408,7 @@ describe('HomePage net worth includes savings (Story 32.2)', () => {
 		)
 	})
 
-	it('AC-3: no longer shows the pre-32.2 investments-minus-debts figure', () => {
+	it('no longer shows the pre-32.2 investments-minus-debts figure', () => {
 		seedSavings()
 		seedBalances()
 		render(<HomePage />)
@@ -1416,7 +1416,7 @@ describe('HomePage net worth includes savings (Story 32.2)', () => {
 		expect(screen.getByTestId('overview-net-worth')).not.toHaveTextContent('-130,000.00')
 	})
 
-	it('AC-3: the net-worth tooltip names savings as a component', async () => {
+	it('the net-worth tooltip names savings as a component', async () => {
 		seedSavings()
 		seedBalances()
 		render(<HomePage />)
@@ -1430,7 +1430,7 @@ describe('HomePage net worth includes savings (Story 32.2)', () => {
 		expect(tooltip).toHaveTextContent(/balance/i)
 	})
 
-	it('AC-6: a savings-only user sees a positive net worth equal to their savings', () => {
+	it('a savings-only user sees a positive net worth equal to their savings', () => {
 		seedSavings()
 		render(<HomePage />)
 
@@ -1440,14 +1440,14 @@ describe('HomePage net worth includes savings (Story 32.2)', () => {
 		)
 	})
 
-	it('AC-3: a savings-only user is NOT told the figure is untracked', () => {
+	it('a savings-only user is NOT told the figure is untracked', () => {
 		seedSavings()
 		render(<HomePage />)
 
 		expect(screen.queryByTestId('net-worth-empty-hint')).not.toBeInTheDocument()
 	})
 
-	it('AC-3: a user with only flows still sees the hint, now naming both pages', () => {
+	it('a user with only flows still sees the hint, now naming both pages', () => {
 		useIncomeStore.setState({
 			incomeSources: [
 				{
@@ -1469,7 +1469,7 @@ describe('HomePage net worth includes savings (Story 32.2)', () => {
 		expect(hint.textContent).toMatch(/savings/i)
 	})
 
-	it('AC-6: shows zero, not NaN, with no balances and no savings', () => {
+	it('shows zero, not NaN, with no balances and no savings', () => {
 		useIncomeStore.setState({
 			incomeSources: [
 				{
@@ -1494,7 +1494,7 @@ describe('HomePage net worth includes savings (Story 32.2)', () => {
 
 // The section's visibility follows the session seed, not the usePremiumAccess mock;
 // other tests here have a null seed and always see the section.
-describe('58.2: the Premium Features section is tier-conditional (FR88, D1)', () => {
+describe('58.2: the Premium Features section is tier-conditional', () => {
 	// The inner span: the outer one's textContent is title + subtitle.
 	function benefitTitles(): ReadonlyArray<readonly [PremiumBenefitId, string]> {
 		return PREMIUM_BENEFIT_IDS.map((id) => {
@@ -1562,7 +1562,7 @@ describe('58.2: the Premium Features section is tier-conditional (FR88, D1)', ()
 		}
 	)
 
-	it('hides Multi-device sync too — the accepted cost of D1 (AC-3)', () => {
+	it('hides Multi-device sync too, an accepted cost of hiding the benefit list', () => {
 		mockStatus({ hasAccess: true, subscriptionStatus: 'active', isAuthenticated: true })
 		renderWithSeed(paidSeed())
 
@@ -1581,7 +1581,7 @@ describe('58.2: the Premium Features section is tier-conditional (FR88, D1)', ()
 		['a free session', { subscriptionStatus: 'free' as const }, { isAuthenticated: true }],
 		['a past_due session', { subscriptionStatus: 'past_due' as const }, { isAuthenticated: true }],
 		['a canceled session', { subscriptionStatus: 'canceled' as const }, { isAuthenticated: true }],
-	])('renders the full section, all five boxes, for %s (AC-6)', (_label, overrides, tier) => {
+	])('renders the full section, all five boxes, for %s', (_label, overrides, tier) => {
 		mockStatus({ hasAccess: false, subscriptionStatus: 'free', ...tier })
 		renderWithSeed(overrides === null ? null : paidSeed(overrides as Partial<SessionSeed>))
 
@@ -1615,13 +1615,13 @@ describe('58.2: the Premium Features section is tier-conditional (FR88, D1)', ()
 		}
 	})
 
-	it('leaves the canonical benefit set at five keys (AC-7)', () => {
+	it('leaves the canonical benefit set at five keys', () => {
 		expect(PREMIUM_BENEFIT_IDS).toHaveLength(5)
 		expect(Object.keys(OVERVIEW_BENEFITS).sort()).toEqual([...PREMIUM_BENEFIT_IDS].sort())
 	})
 })
 
-describe('Overview: was e2e (story 84.5)', () => {
+describe('Overview: was e2e', () => {
 	afterEach(() => {
 		useIncomeStore.setState({ incomeSources: [] })
 		useOverviewDurationStore.setState({ duration: 'annually' })

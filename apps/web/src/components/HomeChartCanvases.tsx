@@ -22,7 +22,7 @@ import type { useCurrencyPreferences } from '../stores/currencyStore'
 
 type CategoryBarDatum = { category: string; amount: number; fill: string }
 
-interface CategoryBarCanvasProps {
+type CategoryBarCanvasProps = {
 	data: CategoryBarDatum[]
 	ticks: number[]
 	isNarrow: boolean
@@ -86,7 +86,7 @@ export function CategoryBarCanvas({
 	)
 }
 
-interface BreakdownPieCanvasProps {
+type BreakdownPieCanvasProps = {
 	data: RechartsDataItem[]
 	total: number
 	isNarrow: boolean

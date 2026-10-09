@@ -49,7 +49,7 @@ beforeEach(() => {
 	})
 })
 
-describe('useSync refused-edit revert timing (story 75.2)', () => {
+describe('useSync refused-edit revert timing', () => {
 	it('a refusal during an in-flight pull still ends in a FULL re-pull', async () => {
 		const sinces: (number | null)[] = []
 		let releaseSecond: (value: unknown) => void = () => {}

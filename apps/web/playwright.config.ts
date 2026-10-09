@@ -56,7 +56,7 @@ const devServer = (port: number, env: DevServerEnv) => ({
 	},
 })
 
-interface DevServerEnv {
+type DevServerEnv = {
 	sessionSeed: string
 	databaseUrl?: string
 	mailOutbox?: string

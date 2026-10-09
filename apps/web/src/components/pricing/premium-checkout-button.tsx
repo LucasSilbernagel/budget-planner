@@ -14,7 +14,7 @@ import { hasPaidAccess, type PaidAccessStatus } from '../../lib/premium/access-s
 type Plan = 'monthly' | 'annual' | 'lifetime'
 type Status = 'idle' | 'loading' | 'error'
 
-interface CheckoutConfig {
+type CheckoutConfig = {
 	isConfigured: boolean
 	environment: 'sandbox' | 'production'
 	clientToken: string | null

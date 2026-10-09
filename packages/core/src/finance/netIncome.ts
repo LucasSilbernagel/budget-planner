@@ -24,7 +24,7 @@ export function calculateTotalPeriodExpenses(expenses: NormalizableFinancialItem
 	return calculateTotalMonthlyNormalized(expenses || [])
 }
 
-export interface NetIncomeResult {
+export type NetIncomeResult = {
 	grossIncome: number
 	totalExpenses: number
 	netIncome: number

@@ -2,7 +2,7 @@ export type CurrencyMode = 'none' | 'symbol'
 
 export type CurrencyCode = 'NONE' | 'USD' | 'EUR' | 'GBP' | string
 
-export interface CurrencyOptions {
+export type CurrencyOptions = {
 	mode: CurrencyMode
 	currency: CurrencyCode
 	locale?: string
