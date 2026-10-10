@@ -23,6 +23,11 @@ export async function copyrightYear(page: Page): Promise<Locator[]> {
  */
 export async function chartsDrawn(page: Page, count: number): Promise<void> {
 	await expect(page.locator('.recharts-surface')).toHaveCount(count, { timeout: SHOT_TIMEOUT })
+	// A pie paints no sector until its animation begins, 400 ms after mount; two blank frames in that
+	// window count as a stable screenshot. Viewport shots have no bar chart in view to keep them unstable.
+	await expect(page.locator('.recharts-pie:not(:has(.recharts-sector))')).toHaveCount(0, {
+		timeout: SHOT_TIMEOUT,
+	})
 }
 
 const PHONE_TARGET_PX = 44
