@@ -24,6 +24,7 @@ import { useStoresHydrated } from '../hooks/useStoresHydrated'
 import { buildBalancesBarData } from '../lib/balances-bar-data'
 import { barDomainTicks } from '../lib/chart-axis'
 import { OVERVIEW_SECTIONS_PENDING_HOOK } from '../lib/overview/no-flash-overview-data-script'
+import { formatSharePercent } from '../lib/percent-text'
 import { PREMIUM_BENEFIT_IDS, type PremiumBenefitId } from '../lib/premium/benefits'
 import { isEntitledSeed } from '../lib/premium/entitlement'
 import { useVerifiedSession } from '../lib/session/verifiedSession'
@@ -264,7 +265,7 @@ export function HomePage() {
 		if (totalIncomeChart <= 0) {
 			return '—'
 		}
-		return `${Math.round((totalExpenseChart / totalIncomeChart) * 100)}%`
+		return formatSharePercent(totalExpenseChart, totalIncomeChart)
 	}, [totalIncomeChart, totalExpenseChart])
 
 	const formatExpenseRatioLegendValue = useCallback(
@@ -272,7 +273,7 @@ export function HomePage() {
 			if (totalIncomeChart <= 0) {
 				return '—'
 			}
-			return `${Math.round((cents / totalIncomeChart) * 100)}%`
+			return formatSharePercent(cents, totalIncomeChart)
 		},
 		[totalIncomeChart]
 	)

@@ -16,6 +16,7 @@ import {
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { formatCompactAxisTick } from '../lib/chart-axis'
 import { useChartColors } from '../lib/chartTheme'
+import { formatSharePercent } from '../lib/percent-text'
 import { useCurrencyPreferences, useFormattedAmount } from '../stores/currencyStore'
 
 // Lazy-loaded by HomePage to keep Recharts off the critical path: export chart components only. Safe only because
@@ -117,7 +118,7 @@ export function BreakdownPieCanvas({ data, total }: BreakdownPieCanvasProps): Re
 				</Pie>
 				<Tooltip
 					formatter={(value: number, name: string) => [
-						`${formatAmount(value)}${total > 0 ? ` (${((value / total) * 100).toFixed(1)}%)` : ''}`,
+						`${formatAmount(value)}${total > 0 ? ` (${formatSharePercent(value, total)})` : ''}`,
 						name,
 					]}
 				/>

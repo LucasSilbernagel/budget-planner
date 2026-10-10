@@ -905,7 +905,7 @@ describe('HomePage income-vs-expense breakdown period control', () => {
 		expect(screen.getByText('5,199.96')).toBeInTheDocument()
 		expect(screen.getByText('99.96')).toBeInTheDocument()
 		expect(screen.queryByText('100.00')).not.toBeInTheDocument()
-		expect(screen.getByTestId('breakdown-pie-total-expense-ratio')).toHaveTextContent('67%')
+		expect(screen.getByTestId('breakdown-pie-total-expense-ratio')).toHaveTextContent('66.7%')
 
 		fireEvent.change(breakdownSelect(), { target: { value: 'monthly' } })
 		expect(breakdownSelect().value).toBe('monthly')
@@ -913,7 +913,7 @@ describe('HomePage income-vs-expense breakdown period control', () => {
 		expect(screen.getByText('8.33')).toBeInTheDocument()
 		expect(screen.queryByText('5,199.96')).not.toBeInTheDocument()
 		expect(screen.queryByText('99.96')).not.toBeInTheDocument()
-		expect(screen.getByTestId('breakdown-pie-total-expense-ratio')).toHaveTextContent('67%')
+		expect(screen.getByTestId('breakdown-pie-total-expense-ratio')).toHaveTextContent('66.7%')
 	})
 
 	it('changing EITHER selector moves BOTH the overview card and the pies', () => {

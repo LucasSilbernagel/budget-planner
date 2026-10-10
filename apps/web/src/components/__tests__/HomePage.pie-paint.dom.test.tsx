@@ -147,9 +147,9 @@ describe('Overview breakdown pies paint no in-plot slice labels (was e2e breakdo
 		}
 		expect(
 			ratioItems.find((li) => li.textContent?.includes('Remaining income'))?.textContent
-		).toMatch(/(?<![\d.])46%/)
+		).toMatch(/(?<![\d.])45\.7%/)
 		expect(screen.getByTestId('breakdown-pie-total-expense')).toHaveTextContent('68,400.00')
-		expect(screen.getByTestId('breakdown-pie-total-expense-ratio')).toHaveTextContent(/^54%$/)
+		expect(screen.getByTestId('breakdown-pie-total-expense-ratio')).toHaveTextContent(/^54\.3%$/)
 
 		for (const testId of [RATIO, EXPENSE]) {
 			const sectors = screen.getByTestId(testId).querySelectorAll('.recharts-sector')
@@ -177,7 +177,7 @@ describe('Overview breakdown pies paint no in-plot slice labels (was e2e breakdo
 		expect(ratioItems).toHaveLength(3)
 		for (const [name, amount, share] of [
 			['Rent', '14,400.00', /(?<![\d.])16%/],
-			['Groceries', '13,200.00', /(?<![\d.])15%/],
+			['Groceries', '13,200.00', /(?<![\d.])14\.7%/],
 		] as const) {
 			expect(expenseItems.find((li) => li.textContent?.includes(name))?.textContent).toContain(
 				amount
@@ -186,8 +186,8 @@ describe('Overview breakdown pies paint no in-plot slice labels (was e2e breakdo
 		}
 		expect(
 			ratioItems.find((li) => li.textContent?.includes('Remaining income'))?.textContent
-		).toMatch(/(?<![\d.])69%/)
-		expect(screen.getByTestId('breakdown-pie-total-expense-ratio')).toHaveTextContent(/^31%$/)
+		).toMatch(/(?<![\d.])69\.3%/)
+		expect(screen.getByTestId('breakdown-pie-total-expense-ratio')).toHaveTextContent(/^30\.7%$/)
 	})
 
 	it('a one-slice pie is still readable with no in-plot labels', async () => {

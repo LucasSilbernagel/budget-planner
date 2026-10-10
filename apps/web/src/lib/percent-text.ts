@@ -6,3 +6,8 @@ export function decimalCommaToPoint(raw: string): string {
 	const commas = raw.split(',').length - 1
 	return commas === 1 && !raw.includes('.') ? raw.replace(',', '.') : raw
 }
+
+export function formatSharePercent(part: number, whole: number): string {
+	const rounded = Math.round((part / whole) * 1000) / 10
+	return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}%`
+}

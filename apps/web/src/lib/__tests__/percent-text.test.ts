@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decimalCommaToPoint } from '../percent-text'
+import { decimalCommaToPoint, formatSharePercent } from '../percent-text'
 
 describe('decimalCommaToPoint', () => {
 	it.each([
@@ -19,4 +19,20 @@ describe('decimalCommaToPoint', () => {
 			expect(decimalCommaToPoint(raw)).toBe(raw)
 		}
 	)
+})
+
+describe('formatSharePercent', () => {
+	it.each([
+		[8, 1000, '0.8%'],
+		[1, 1000, '0.1%'],
+		[4, 10000, '0%'],
+		[5, 10000, '0.1%'],
+		[460, 1000, '46%'],
+		[2, 3, '66.7%'],
+		[1000, 1000, '100%'],
+		[1320, 1000, '132%'],
+		[0, 1000, '0%'],
+	])('%d of %d reads %s', (part, whole, expected) => {
+		expect(formatSharePercent(part, whole)).toBe(expected)
+	})
 })
