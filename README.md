@@ -9,7 +9,7 @@ The free tier needs no account, and your financial data stays in your browser an
 The page itself does load a visit-counting analytics script, and the contact form posts what you type in it, so the guarantee is about your financial data specifically rather than about zero network traffic.
 Premium adds authenticated, EU-hosted multi-device sync.
 
-<img width="2800" height="1800" alt="Screen Shot 2026-09-14 at 16 51 47" src="https://github.com/user-attachments/assets/bb55f631-9abd-45ee-bc83-53975db88e90" />
+<img width="3024" height="1800" alt="budget-planner" src="https://github.com/user-attachments/assets/b87abdf7-fa61-42ae-b538-d62af05ffff7" />
 
 ## Live URL
 
