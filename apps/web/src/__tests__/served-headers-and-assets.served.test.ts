@@ -96,7 +96,13 @@ describe('the document response headers', () => {
 
 	// Each inline script the server sends must carry the request's nonce or have the sha256 of
 	// its exact text listed in `script-src`.
-	for (const path of ['/', '/income', '/docs/getting-started']) {
+	for (const path of [
+		'/',
+		'/income',
+		'/docs/getting-started',
+		'/compare',
+		'/compare/longhand-vs-spreadsheet',
+	]) {
 		it(`authorizes every inline <script> it serves on ${path}, by nonce or by exact hash`, async () => {
 			const response = await app.get(path)
 			expect(response.status, `${path} status`).toBe(200)
@@ -119,6 +125,36 @@ describe('the document response headers', () => {
 				const hash = `'sha256-${createHash('sha256').update(text, 'utf8').digest('base64')}'`
 				expect(policy, `inline script not authorized: ${tag.slice(0, 120)}`).toContain(hash)
 			}
+		})
+	}
+})
+
+// JSON-LD rides the same nonce as every other head script, so the loop above already admits it;
+// this pins that the blocks and the canonical actually reach the HTML.
+describe('the comparison pages ship structured data and a canonical', () => {
+	for (const [path, types] of [
+		['/compare', ['BreadcrumbList', 'SoftwareApplication']],
+		['/compare/longhand-vs-spreadsheet', ['BreadcrumbList']],
+	] as const) {
+		it(`${path} carries ${types.length} nonce'd ld+json block(s) and one canonical`, async () => {
+			const response = await app.get(path)
+			expect(response.status).toBe(200)
+			const nonce = nonceFromCsp(header(response, 'content-security-policy') ?? '')
+			const head = headOf(response.body)
+			const blocks = [
+				...head.matchAll(/<script([^>]*type="application\/ld\+json"[^>]*)>([\s\S]*?)<\/script>/g),
+			]
+			expect(blocks).toHaveLength(types.length)
+			for (const [, attributes] of blocks) {
+				expect(attributes).toContain(`nonce="${nonce}"`)
+			}
+			expect(
+				blocks.map(([, , text]) => (JSON.parse(text ?? '') as { '@type': string })['@type'])
+			).toEqual([...types])
+			const canonicals = [...head.matchAll(/<link rel="canonical" href="([^"]+)"/g)].map(
+				(m) => m[1]
+			)
+			expect(canonicals).toEqual([`https://www.longhandbudget.com${path}`])
 		})
 	}
 })

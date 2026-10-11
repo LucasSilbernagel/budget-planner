@@ -6,7 +6,8 @@
   production origin (ADR-007: www is canonical, the apex only redirects).
   `src/routes/__tests__/robots-sitemap-coverage.test.ts` fails if this set drifts
   from the route classification in robots.txt — including one /docs/<slug> per
-  entry of DOC_PAGES, so adding a document means adding its <loc> here.
+  entry of DOC_PAGES and one /compare/<slug> per entry of COMPARE_PAGES, so adding a
+  document or a comparison means adding its <loc> here.
 
   No <lastmod>/<changefreq>/<priority>: Google ignores the last two, and a
   hand-maintained lastmod goes stale and is worse than none.
@@ -15,6 +16,8 @@
   <url><loc>https://www.longhandbudget.com/</loc></url>
   <url><loc>https://www.longhandbudget.com/pricing</loc></url>
   <url><loc>https://www.longhandbudget.com/contact</loc></url>
+  <url><loc>https://www.longhandbudget.com/compare</loc></url>
+  <url><loc>https://www.longhandbudget.com/compare/longhand-vs-spreadsheet</loc></url>
   <url><loc>https://www.longhandbudget.com/docs</loc></url>
   <url><loc>https://www.longhandbudget.com/docs/getting-started</loc></url>
   <url><loc>https://www.longhandbudget.com/docs/features</loc></url>
