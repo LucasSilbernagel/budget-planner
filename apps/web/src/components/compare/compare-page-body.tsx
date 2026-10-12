@@ -19,7 +19,7 @@ const LIST_CLASS = 'list-disc space-y-2 pl-5 text-body'
 
 type SiblingLink = { href: string; label: string }
 
-// Up to two other spokes, then the hub; a lone spoke points at the features doc instead.
+// With fewer than two other spokes the slots fall back, so every page still links onward.
 export function siblingLinks(
 	current: ComparePage,
 	pages: readonly ComparePage[] = COMPARE_PAGES
@@ -28,13 +28,11 @@ export function siblingLinks(
 		.filter((p) => p.slug !== current.slug)
 		.slice(0, 2)
 		.map((p) => ({ href: `/compare/${p.slug}`, label: p.title }))
-	const hub: SiblingLink = { href: '/compare', label: 'All comparisons' }
-	const features: SiblingLink = {
-		href: '/docs/features',
-		label: 'Why Longhand Budget has no bank sync',
-	}
-	const spokes = others.length === 0 ? [features] : others
-	return [...spokes, hub]
+	const fallbacks: SiblingLink[] = [
+		{ href: '/compare', label: 'All comparisons' },
+		{ href: '/docs/features', label: 'Why Longhand Budget has no bank sync' },
+	]
+	return [...others, ...fallbacks].slice(0, 2)
 }
 
 function formatVerifiedOn(verifiedOn: string): string {

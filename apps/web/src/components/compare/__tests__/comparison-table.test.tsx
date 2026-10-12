@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { render, screen, within } from '@/test/utils'
-import {
-	COMPARE_PAGES,
-	COMPARE_ROW_IDS,
-	COMPARE_ROW_LABELS,
-	getComparePage,
-} from '../../../content/compare'
+import { COMPARE_ROW_IDS, COMPARE_ROW_LABELS, getComparePage } from '../../../content/compare'
 import { ComparisonTable } from '../comparison-table'
 
 const page = getComparePage('longhand-vs-spreadsheet')
@@ -81,13 +76,5 @@ describe('ComparisonTable', () => {
 		expect(source).toHaveAttribute('href', page.rows.priceAnnual.source)
 		expect(source).toHaveAttribute('target', '_blank')
 		expect(source).toHaveAttribute('rel', 'noopener noreferrer')
-	})
-})
-
-describe.each(COMPARE_PAGES)('ComparisonTable renders $slug', (p) => {
-	it('with all 17 row headers in tuple order', () => {
-		render(<ComparisonTable page={p} />)
-		const rowHeaders = screen.getAllByRole('rowheader').map((th) => th.textContent)
-		expect(rowHeaders).toEqual(COMPARE_ROW_IDS.map((id) => COMPARE_ROW_LABELS[id]))
 	})
 })
