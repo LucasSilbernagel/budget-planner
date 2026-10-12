@@ -96,11 +96,17 @@ describe('ComparePageBody', () => {
 })
 
 describe('siblingLinks', () => {
-	it('falls back to the hub and the features doc while this is the only spoke', () => {
-		expect(COMPARE_PAGES.length).toBe(1)
-		expect(siblingLinks(page)).toEqual([
+	it('links each live spoke to the other one, then the hub', () => {
+		expect(COMPARE_PAGES.length).toBe(2)
+		const [spreadsheet, actual] = COMPARE_PAGES
+		if (!spreadsheet || !actual) throw new Error('expected two pages')
+		expect(siblingLinks(spreadsheet)).toEqual([
+			{ href: `/compare/${actual.slug}`, label: actual.title },
 			{ href: '/compare', label: 'All comparisons' },
-			{ href: '/docs/features', label: 'Why Longhand Budget has no bank sync' },
+		])
+		expect(siblingLinks(actual)).toEqual([
+			{ href: `/compare/${spreadsheet.slug}`, label: spreadsheet.title },
+			{ href: '/compare', label: 'All comparisons' },
 		])
 	})
 

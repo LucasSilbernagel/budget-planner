@@ -20,6 +20,10 @@ describe('CompareHub', () => {
 	it('describes only the comparisons that exist, names the row count and the section order', () => {
 		for (const page of COMPARE_PAGES) expect(page.slug).not.toMatch(/ynab|monarch/)
 		expect(HUB_DESCRIPTION).not.toMatch(/YNAB|Monarch/)
+		// The parenthetical in a name is dropped in the one-line description.
+		for (const page of COMPARE_PAGES) {
+			expect(HUB_DESCRIPTION).toContain(page.competitorName.replace(/ \(.*\)$/, ''))
+		}
 		const { container } = render(<CompareHub />)
 		const text = (container.textContent ?? '').replace(/\s+/g, ' ')
 		expect(text).toContain('the same 17 rows')

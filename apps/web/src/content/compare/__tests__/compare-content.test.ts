@@ -129,7 +129,9 @@ describe.each(COMPARE_PAGES)('honesty guards: $slug', (page) => {
 	it('follows the slug, title and name conventions', () => {
 		expect(page.slug).toMatch(/^longhand-vs-[a-z0-9-]+$/)
 		expect(page.title.startsWith('Longhand Budget vs ')).toBe(true)
-		expect(page.competitorName.charAt(0)).toBe(page.competitorName.charAt(0).toLowerCase())
+		expect(page.competitorName, 'no leading article: it is read mid-sentence').not.toMatch(
+			/^(A|An|The) /
+		)
 		expect(page.competitorPricingLabel.length).toBeGreaterThan(0)
 		expect(page.description.length).toBeGreaterThan(0)
 		expect(page.faq.length).toBeGreaterThanOrEqual(4)
@@ -197,5 +199,50 @@ describe('the spreadsheet page states its sourced facts', () => {
 		expect(page.rows.thirdParties.longhand).toMatch(/hosting provider/i)
 		expect(page.rows.thirdParties.longhand).toMatch(/Paddle/)
 		expect(page.rows.thirdParties.longhand).toMatch(/Brevo/)
+	})
+})
+
+describe('the Actual Budget page states its sourced facts', () => {
+	const page = getComparePage('longhand-vs-actual-budget')
+	if (!page) throw new Error('actual budget page missing')
+	const everything = [
+		page.body,
+		...cells(page),
+		...page.competitorBetter,
+		...page.longhandBetter,
+		...page.faq.map((f) => f.a),
+	]
+		.join(' ')
+		.replace(/\s+/g, ' ')
+
+	it.each([
+		['PikaPods hosting cost', '$2 a month'],
+		['SimpleFIN yearly price', '$15 a year'],
+		['the hosted total from the 2026 breakdown', '$33 a year'],
+		['the docs quote on the browser-only app', 'not recommended for long-term use'],
+		['the licence', 'MIT'],
+		['encryption', 'end-to-end encryption'],
+		['the version', 'v26.10.0'],
+	])('mentions %s (%s)', (_label, needle) => {
+		expect(everything).toContain(needle)
+	})
+
+	it('leads the competitor-better list with free, encryption, desktop app, open source and import', () => {
+		const text = page.competitorBetter.slice(0, 5).join(' ')
+		for (const needle of [/free/i, /encryption/i, /desktop app/i, /open source/i, /import/i]) {
+			expect(text).toMatch(needle)
+		}
+	})
+
+	it('keeps the proper noun capitalised and the hosting doc as its pricing page', () => {
+		expect(page.competitorName).toBe('Actual Budget')
+		expect(page.competitorPricingUrl).toBe('https://actualbudget.org/docs/install/pikapods/')
+		expect(page.competitorPricingLabel).toBe('Actual Budget hosting costs')
+	})
+
+	it('says nothing about the scam app, the security fix or AI-written commits', () => {
+		expect(everything).not.toMatch(/scam|fake|impostor|official Actual app/i)
+		expect(everything).not.toMatch(/26\.3\.0|security fix/i)
+		expect(everything).not.toMatch(/AI-written|written by AI/i)
 	})
 })

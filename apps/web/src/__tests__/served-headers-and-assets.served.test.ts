@@ -102,6 +102,7 @@ describe('the document response headers', () => {
 		'/docs/getting-started',
 		'/compare',
 		'/compare/longhand-vs-spreadsheet',
+		'/compare/longhand-vs-actual-budget',
 	]) {
 		it(`authorizes every inline <script> it serves on ${path}, by nonce or by exact hash`, async () => {
 			const response = await app.get(path)
@@ -135,6 +136,7 @@ describe('the comparison pages ship structured data and a canonical', () => {
 	for (const [path, types] of [
 		['/compare', ['BreadcrumbList', 'SoftwareApplication']],
 		['/compare/longhand-vs-spreadsheet', ['BreadcrumbList']],
+		['/compare/longhand-vs-actual-budget', ['BreadcrumbList']],
 	] as const) {
 		it(`${path} carries ${types.length} nonce'd ld+json block(s) and one canonical`, async () => {
 			const response = await app.get(path)
