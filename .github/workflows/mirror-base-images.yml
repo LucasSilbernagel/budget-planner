@@ -1,7 +1,7 @@
 name: Mirror base images
 
-# Copies the two upstream base images into this account's GHCR namespace. CI pulls from
-# GHCR with GITHUB_TOKEN, which has no anonymous rate limit; ECR Public throttled 5 deploys.
+# Copies the two upstream base images into this account's GHCR namespace. The packages are
+# public, so CI pulls them anonymously without ECR Public's rate limit (it throttled 5 deploys).
 
 on:
   schedule:

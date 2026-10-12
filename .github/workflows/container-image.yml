@@ -14,7 +14,6 @@ on:
 
 permissions:
   contents: read
-  packages: read
 
 concurrency:
   group: container-image-${{ github.ref }}
@@ -38,9 +37,6 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
           path: target
-
-      - name: Log in to GHCR (base images are mirrored there)
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Build production image
         env:
