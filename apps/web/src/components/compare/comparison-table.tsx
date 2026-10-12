@@ -28,13 +28,13 @@ export function ComparisonTable({ page }: ComparisonTableProps) {
 							scope="col"
 							className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted"
 						>
-							Longhand Budget
+							{capitalise(page.competitorName)}
 						</th>
 						<th
 							scope="col"
 							className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted"
 						>
-							{capitalise(page.competitorName)}
+							Longhand Budget
 						</th>
 					</tr>
 				</thead>
@@ -46,7 +46,6 @@ export function ComparisonTable({ page }: ComparisonTableProps) {
 								<th scope="row" className="px-3 py-2 align-top text-sm font-medium text-subheading">
 									{COMPARE_ROW_LABELS[id]}
 								</th>
-								<td className={CELL_CLASS}>{cell.longhand}</td>
 								<td className={CELL_CLASS}>
 									{cell.competitor}
 									{cell.source ? (
@@ -64,6 +63,7 @@ export function ComparisonTable({ page }: ComparisonTableProps) {
 										</>
 									) : null}
 								</td>
+								<td className={CELL_CLASS}>{cell.longhand}</td>
 							</tr>
 						)
 					})}
