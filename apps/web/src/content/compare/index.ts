@@ -88,6 +88,7 @@ const TILLER_VS_APPS = 'https://tiller.com/spreadsheet-budgeting-vs-budgeting-ap
 const GOOGLE_DATA_REGIONS =
 	'https://knowledge.workspace.google.com/admin/compliance/choose-a-geographic-location-for-your-data'
 const MICROSOFT_PRIVACY = 'https://www.microsoft.com/en-us/privacy/privacystatement'
+const GOOGLE_PRIVACY = 'https://policies.google.com/privacy'
 const MICROSOFT_365_PRICING_DE =
 	'https://www.hagel-it.de/microsoft-365-insights/was-kostet-microsoft-365-fuer-privatpersonen'
 const ETSY_BUDGET_SHEET_LISTING =
@@ -170,7 +171,7 @@ const spreadsheet: ComparePage = {
 				'Free: none. Premium: the EU hosting provider stores your synced plan; Paddle sees billing, Brevo your sign-in email.',
 			competitor:
 				'Google or Microsoft hold the cloud file and may process it in the United States or elsewhere.',
-			source: MICROSOFT_PRIVACY,
+			source: GOOGLE_PRIVACY,
 		},
 		forecasting: {
 			longhand: 'Premium: saved what-if scenarios with projections. Free: a retirement projection.',
@@ -190,7 +191,9 @@ const spreadsheet: ComparePage = {
 		},
 		adsTrackersAi: {
 			longhand: 'No ads, no trackers, no AI features',
-			competitor: 'No ads in the file itself',
+			competitor:
+				'No ads in the file itself. A cloud spreadsheet sits under Google\u2019s or Microsoft\u2019s general privacy terms, which let your data be used to improve or develop their services; Microsoft\u2019s statement says that may include training AI models.',
+			source: MICROSOFT_PRIVACY,
 		},
 	},
 	competitorBetter: [
@@ -244,6 +247,7 @@ const spreadsheet: ComparePage = {
 		{ label: 'Tiller: spreadsheet budgeting vs budgeting apps', url: TILLER_VS_APPS },
 		{ label: 'Google Workspace data regions', url: GOOGLE_DATA_REGIONS },
 		{ label: 'Microsoft privacy statement', url: MICROSOFT_PRIVACY },
+		{ label: 'Google privacy policy', url: GOOGLE_PRIVACY },
 	],
 }
 
