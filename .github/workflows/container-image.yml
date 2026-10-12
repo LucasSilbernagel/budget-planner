@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: container-image-${{ github.ref }}
@@ -38,6 +39,9 @@ jobs:
           ref: ${{ inputs.ref }}
           path: target
 
+      - name: Log in to GHCR (base images are mirrored there)
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
       - name: Build production image
         env:
           REF: ${{ inputs.ref }}
@@ -54,10 +58,10 @@ jobs:
         run: |
           set -euo pipefail
           docker image inspect "${IMAGE_NAME}:check" --format 'uncompressed .Size: {{.Size}} B'
-          docker pull -q public.ecr.aws/docker/library/node:24-slim > /dev/null || true
+          docker pull -q ghcr.io/lucassilbernagel/mirror/node:24-slim > /dev/null || true
           mode=""
           if [ -n "${REF}" ]; then mode="--report-only"; fi
-          docker save "${IMAGE_NAME}:check" | python3 .github/scripts/image_size.py --base public.ecr.aws/docker/library/node:24-slim ${mode}
+          docker save "${IMAGE_NAME}:check" | python3 .github/scripts/image_size.py --base ghcr.io/lucassilbernagel/mirror/node:24-slim ${mode}
 
       - name: Verify the image serves and migrates
         env:
