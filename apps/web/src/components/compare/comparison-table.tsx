@@ -7,6 +7,10 @@ export type ComparisonTableProps = {
 
 const CELL_CLASS = 'px-3 py-2 align-top text-sm text-body'
 
+function capitalise(text: string): string {
+	return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
 export function ComparisonTable({ page }: ComparisonTableProps) {
 	return (
 		<div className={RESPONSIVE_WRAPPER_CLASS}>
@@ -18,7 +22,7 @@ export function ComparisonTable({ page }: ComparisonTableProps) {
 							scope="col"
 							className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted"
 						>
-							Row
+							Feature
 						</th>
 						<th
 							scope="col"
@@ -30,11 +34,11 @@ export function ComparisonTable({ page }: ComparisonTableProps) {
 							scope="col"
 							className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted"
 						>
-							{page.competitorName}
+							{capitalise(page.competitorName)}
 						</th>
 					</tr>
 				</thead>
-				<tbody className="divide-y border-default">
+				<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
 					{COMPARE_ROW_IDS.map((id) => {
 						const cell = page.rows[id]
 						return (

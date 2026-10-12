@@ -1,13 +1,10 @@
-import { COMPARE_PAGES, type ComparePage } from '../../content/compare'
+import { COMPARE_PAGES, type ComparePage, TRADEMARK_LINE } from '../../content/compare'
 import { MarkdownRenderer } from '../docs/markdown-renderer'
 import { ComparisonTable } from './comparison-table'
 
 export type ComparePageBodyProps = {
 	page: ComparePage
 }
-
-export const TRADEMARK_LINE =
-	'Product names are trademarks of their respective owners. Longhand Budget is not affiliated with or endorsed by any of them.'
 
 const VERIFIED_FORMAT = new Intl.DateTimeFormat('en-GB', {
 	day: 'numeric',
@@ -22,20 +19,29 @@ const LIST_CLASS = 'list-disc space-y-2 pl-5 text-body'
 
 type SiblingLink = { href: string; label: string }
 
-// With fewer than two other spokes the slots point at the hub, so every page still links onward.
-export function siblingLinks(current: ComparePage): SiblingLink[] {
-	const others = COMPARE_PAGES.filter((p) => p.slug !== current.slug)
+// With fewer than two other spokes the slots fall back, so every page still links onward.
+export function siblingLinks(
+	current: ComparePage,
+	pages: readonly ComparePage[] = COMPARE_PAGES
+): SiblingLink[] {
+	const others = pages
+		.filter((p) => p.slug !== current.slug)
 		.slice(0, 2)
 		.map((p) => ({ href: `/compare/${p.slug}`, label: p.title }))
 	const fallbacks: SiblingLink[] = [
 		{ href: '/compare', label: 'All comparisons' },
-		{ href: '/compare', label: 'Why Longhand Budget has no bank sync' },
+		{ href: '/docs/features', label: 'Why Longhand Budget has no bank sync' },
 	]
 	return [...others, ...fallbacks].slice(0, 2)
 }
 
+function formatVerifiedOn(verifiedOn: string): string {
+	const date = new Date(`${verifiedOn}T00:00:00Z`)
+	return Number.isNaN(date.getTime()) ? verifiedOn : VERIFIED_FORMAT.format(date)
+}
+
 export function ComparePageBody({ page }: ComparePageBodyProps) {
-	const verified = VERIFIED_FORMAT.format(new Date(`${page.verifiedOn}T00:00:00Z`))
+	const verified = formatVerifiedOn(page.verifiedOn)
 	return (
 		<div className="space-y-6">
 			<section className={SECTION_CLASS} aria-labelledby="compare-verdict">
@@ -51,7 +57,7 @@ export function ComparePageBody({ page }: ComparePageBodyProps) {
 						rel="noopener noreferrer"
 						className="text-accent underline"
 					>
-						{page.competitorName} pricing (opens in a new tab)
+						{page.competitorPricingLabel} (opens in a new tab)
 					</a>
 					.
 				</p>

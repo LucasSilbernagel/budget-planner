@@ -16,10 +16,15 @@ describe('jsonLdScript', () => {
 })
 
 describe('breadcrumbList', () => {
-	it('numbers positions from 1 with absolute item URLs', () => {
+	it('refuses an empty list and a non-canonical path', () => {
+		expect(() => breadcrumbList([])).toThrow(/at least one/)
+		expect(() => breadcrumbList([{ name: 'x', path: '/x?y' }])).toThrow(/absolute path/)
+	})
+
+	it('numbers positions from 1 with canonical absolute item URLs', () => {
 		const list = breadcrumbList([
 			{ name: 'Home', path: '/' },
-			{ name: 'Compare', path: '/compare' },
+			{ name: 'Compare', path: '/compare/' },
 		]) as { itemListElement: { position: number; item: string; name: string }[] }
 		expect(list.itemListElement.map((i) => i.position)).toEqual([1, 2])
 		expect(list.itemListElement[1]).toMatchObject({
@@ -30,12 +35,12 @@ describe('breadcrumbList', () => {
 })
 
 describe('longhandSoftwareApplication', () => {
-	it('is a FinanceApplication with three EUR offers and no invented rating', () => {
+	it('is a FinanceApplication with four EUR offers matching the pricing page, and no invented rating', () => {
 		const app = longhandSoftwareApplication() as Record<string, unknown>
 		expect(app['@type']).toBe('SoftwareApplication')
 		expect(app['applicationCategory']).toBe('FinanceApplication')
 		const offers = app['offers'] as { price: string; priceCurrency: string }[]
-		expect(offers.map((o) => o.price)).toEqual(['0', '39', '99'])
+		expect(offers.map((o) => o.price)).toEqual(['0', '5.99', '39', '99'])
 		expect(new Set(offers.map((o) => o.priceCurrency))).toEqual(new Set(['EUR']))
 		expect(app).not.toHaveProperty('aggregateRating')
 		expect(app).not.toHaveProperty('review')

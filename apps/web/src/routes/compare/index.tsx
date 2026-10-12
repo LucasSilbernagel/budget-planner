@@ -7,7 +7,7 @@ import { breadcrumbList, jsonLdScript, longhandSoftwareApplication } from '../..
 export const Route = createFileRoute('/compare/')({
 	head: () => ({
 		meta: [
-			{ title: 'Compare · Longhand Budget' },
+			{ title: `${HUB_TITLE} · Longhand Budget` },
 			{ name: 'description', content: HUB_DESCRIPTION },
 		],
 		links: [canonicalLink('/compare')],

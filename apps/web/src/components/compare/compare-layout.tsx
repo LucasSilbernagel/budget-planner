@@ -9,7 +9,7 @@ import { CompareSidebar } from './compare-sidebar'
 export type CompareLayoutProps = {
 	title: string
 	description?: string
-	activeSlug?: string
+	activeSlug?: string | null
 	children: ReactNode
 }
 

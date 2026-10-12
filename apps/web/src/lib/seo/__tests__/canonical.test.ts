@@ -13,7 +13,10 @@ describe('canonicalLink', () => {
 		)
 	})
 
-	it.each(['compare', '/x?y=1', '/x#top', ''])('rejects "%s"', (path) => {
-		expect(() => canonicalLink(path)).toThrow(/absolute path/)
-	})
+	it.each(['compare', '/x?y=1', '/x#top', '', '//evil', '/a//b', '/With Space', '/Upper'])(
+		'rejects "%s"',
+		(path) => {
+			expect(() => canonicalLink(path)).toThrow(/absolute path/)
+		}
+	)
 })

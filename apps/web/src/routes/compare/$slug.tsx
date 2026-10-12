@@ -16,7 +16,7 @@ export const Route = createFileRoute('/compare/$slug')({
 		return { page }
 	},
 	// `loaderData` is undefined while pending and after notFound(), so fall back to the hub copy.
-	head: ({ loaderData, params }) => {
+	head: ({ loaderData }) => {
 		const page = loaderData?.page
 		if (!page) {
 			return {
@@ -34,13 +34,13 @@ export const Route = createFileRoute('/compare/$slug')({
 				{ title: `${page.title} · Longhand Budget` },
 				{ name: 'description', content: page.description },
 			],
-			links: [canonicalLink(`/compare/${params.slug}`)],
+			links: [canonicalLink(`/compare/${page.slug}`)],
 			scripts: [
 				jsonLdScript(
 					breadcrumbList([
 						{ name: 'Home', path: '/' },
 						{ name: 'Compare', path: '/compare' },
-						{ name: page.title, path: `/compare/${params.slug}` },
+						{ name: page.title, path: `/compare/${page.slug}` },
 					])
 				),
 			],

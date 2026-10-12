@@ -1,3 +1,4 @@
+import { canonicalLink } from './canonical'
 import { SITE_ORIGIN } from './site-origin'
 
 export type JsonLdScript = {
@@ -16,6 +17,7 @@ export type BreadcrumbItem = {
 }
 
 export function breadcrumbList(items: readonly BreadcrumbItem[]): object {
+	if (items.length === 0) throw new Error('breadcrumbList: at least one item is required')
 	return {
 		'@context': 'https://schema.org',
 		'@type': 'BreadcrumbList',
@@ -23,13 +25,14 @@ export function breadcrumbList(items: readonly BreadcrumbItem[]): object {
 			'@type': 'ListItem',
 			position: index + 1,
 			name: item.name,
-			item: `${SITE_ORIGIN}${item.path}`,
+			item: canonicalLink(item.path).href,
 		})),
 	}
 }
 
 const LONGHAND_OFFERS = [
 	{ name: 'Free', price: '0' },
+	{ name: 'Premium, monthly', price: '5.99' },
 	{ name: 'Premium, yearly', price: '39' },
 	{ name: 'Premium, lifetime', price: '99' },
 ] as const

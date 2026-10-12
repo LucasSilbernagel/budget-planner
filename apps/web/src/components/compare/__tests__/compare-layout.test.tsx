@@ -20,7 +20,7 @@ const RETIRED_LIGHT_ONLY_TOKENS = [
 	'border-gray-200',
 ] as const
 
-function renderLayout(activeSlug?: string) {
+function renderLayout(activeSlug?: string | null) {
 	const { container } = render(
 		<CompareLayout title="Compare" description="How Longhand compares." activeSlug={activeSlug}>
 			<p>Body</p>
@@ -60,6 +60,11 @@ describe('CompareLayout', () => {
 		expect(hub).not.toHaveAttribute('aria-current')
 		const active = nav.querySelector('a[aria-current="page"]')
 		expect(active).toHaveAttribute('href', '/compare/longhand-vs-spreadsheet')
+	})
+
+	it('marks nothing current on the not-found page (activeSlug null)', () => {
+		const root = renderLayout(null)
+		expect(root.querySelector('nav a[aria-current="page"]')).toBeNull()
 	})
 
 	it('marks the hub current when no spoke is active', () => {

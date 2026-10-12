@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { COMPARE_PAGES } from '../../content/compare'
+import { SITE_ORIGIN } from '../../lib/seo/site-origin'
 import { Route as SlugRoute } from '../compare/$slug'
 import { Route as HubRoute } from '../compare/index'
 
@@ -24,9 +25,14 @@ describe('/compare head()', () => {
 		for (const script of head.scripts ?? []) expect(script).not.toHaveProperty('nonce')
 	})
 
+	it('puts the target phrase in the title tag', () => {
+		const title = (head.meta as { title?: string }[]).find((m) => 'title' in m)?.title
+		expect(title).toBe('Budget planner without bank sync · Longhand Budget')
+	})
+
 	it('has one canonical on the www origin', () => {
 		expect(head.links?.filter((l) => l.rel === 'canonical').map((l) => l.href)).toEqual([
-			'https://www.longhandbudget.com/compare',
+			`${SITE_ORIGIN}/compare`,
 		])
 	})
 })
@@ -42,7 +48,7 @@ describe('/compare/$slug head()', () => {
 		expect(blocks.map((b) => b['@type'])).toEqual(['BreadcrumbList'])
 		const items = blocks[0]?.['itemListElement'] as { name: string; item: string }[]
 		expect(items.map((i) => i.name)).toEqual(['Home', 'Compare', page.title])
-		expect(items[2]?.item).toBe(`https://www.longhandbudget.com/compare/${page.slug}`)
+		expect(items[2]?.item).toBe(`${SITE_ORIGIN}/compare/${page.slug}`)
 	})
 
 	it('emits nothing but fallback meta while pending or after notFound()', () => {

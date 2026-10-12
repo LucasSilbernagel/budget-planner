@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { COMPARE_PAGES } from '../../content/compare'
 import { DOC_PAGES } from '../../content/docs'
+import { SITE_ORIGIN } from '../../lib/seo/site-origin'
 import { Route as RootRoute } from '../__root'
 import { INDEXABLE_ROUTES } from './indexable-routes'
 import {
@@ -239,7 +240,7 @@ describe('/docs/$docId head branches', () => {
 })
 
 // Dynamic routes substitute their HEAD_ARGS fixture param; www is the canonical host, the apex redirects.
-const ORIGIN = 'https://www.longhandbudget.com'
+const ORIGIN = SITE_ORIGIN
 
 function expectedCanonical(routePath: string): string {
 	if (routePath === '/') return `${ORIGIN}/`

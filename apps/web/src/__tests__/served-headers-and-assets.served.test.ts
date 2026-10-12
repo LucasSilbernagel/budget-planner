@@ -159,6 +159,16 @@ describe('the comparison pages ship structured data and a canonical', () => {
 	}
 })
 
+describe('an unknown comparison slug', () => {
+	it('is a real 404 with no canonical and no structured data', async () => {
+		const response = await app.get('/compare/this-does-not-exist')
+		expect(response.status).toBe(404)
+		const head = headOf(response.body)
+		expect(head).not.toMatch(/rel="canonical"/)
+		expect(head).not.toMatch(/ld\+json/)
+	})
+})
+
 describe('the counter.dev analytics tag', () => {
 	it('is served once on /, deferred, with its data-id and the request nonce', async () => {
 		const response = await app.get('/')

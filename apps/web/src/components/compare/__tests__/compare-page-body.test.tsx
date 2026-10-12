@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@/test/utils'
-import { COMPARE_PAGES, type ComparePage, getComparePage } from '../../../content/compare'
-import { ComparePageBody, siblingLinks, TRADEMARK_LINE } from '../compare-page-body'
+import {
+	COMPARE_PAGES,
+	type ComparePage,
+	getComparePage,
+	TRADEMARK_LINE,
+} from '../../../content/compare'
+import { ComparePageBody, siblingLinks } from '../compare-page-body'
 
 const page = getComparePage('longhand-vs-spreadsheet')
 if (!page) throw new Error('spreadsheet page missing')
@@ -25,17 +30,31 @@ describe('ComparePageBody', () => {
 		expect(index('FAQ')).toBeGreaterThan(index('Switching'))
 	})
 
-	it('shows the verdict and a dated, linked verification line', () => {
+	it('reads naturally mid-sentence: the competitor name is lowercase in the heading', () => {
+		render(<ComparePageBody page={page} />)
+		const heading = screen.getByRole('heading', {
+			level: 2,
+			name: `Where ${page.competitorName} is better`,
+		})
+		expect(heading.textContent).toMatch(/^Where a spreadsheet/)
+	})
+
+	it('shows the verdict and a dated line linking the named pricing page', () => {
 		render(<ComparePageBody page={page} />)
 		expect(screen.getByText(page.verdict)).toBeInTheDocument()
 		const time = document.querySelector('time')
 		expect(time).toHaveAttribute('dateTime', '2026-10-11')
 		expect(time?.textContent).toBe('11 October 2026')
 		const link = screen.getByRole('link', {
-			name: `${page.competitorName} pricing (opens in a new tab)`,
+			name: `${page.competitorPricingLabel} (opens in a new tab)`,
 		})
 		expect(link).toHaveAttribute('href', page.competitorPricingUrl)
 		expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+	})
+
+	it('renders the verification date unformatted when it does not parse', () => {
+		render(<ComparePageBody page={{ ...page, verifiedOn: 'not-a-date' }} />)
+		expect(document.querySelector('time')?.textContent).toBe('not-a-date')
 	})
 
 	it('renders between four and six FAQ entries as h3 + paragraph', () => {
@@ -77,24 +96,25 @@ describe('ComparePageBody', () => {
 })
 
 describe('siblingLinks', () => {
-	it('falls back to two distinct hub links while this is the only spoke', () => {
+	it('falls back to the hub and the features doc while this is the only spoke', () => {
 		expect(COMPARE_PAGES.length).toBe(1)
-		const links = siblingLinks(page)
-		expect(links).toHaveLength(2)
-		expect(links.map((l) => l.href)).toEqual(['/compare', '/compare'])
-		expect(new Set(links.map((l) => l.label)).size).toBe(2)
+		expect(siblingLinks(page)).toEqual([
+			{ href: '/compare', label: 'All comparisons' },
+			{ href: '/docs/features', label: 'Why Longhand Budget has no bank sync' },
+		])
 	})
 
-	it('prefers real sibling spokes once they exist', () => {
-		const other: ComparePage = {
-			...page,
-			slug: 'longhand-vs-other',
-			title: 'Longhand Budget vs Other',
-		}
-		const links = siblingLinks({ ...page, slug: 'longhand-vs-nobody' })
-		// COMPARE_PAGES holds only the spreadsheet page, so it is the one real sibling of a stranger.
-		expect(links[0]).toEqual({ href: `/compare/${page.slug}`, label: page.title })
-		expect(links[1]?.href).toBe('/compare')
-		expect(other.slug).not.toBe(page.slug)
+	it('prefers real sibling spokes once they exist, in list order', () => {
+		const a: ComparePage = { ...page, slug: 'longhand-vs-a', title: 'Longhand Budget vs A' }
+		const b: ComparePage = { ...page, slug: 'longhand-vs-b', title: 'Longhand Budget vs B' }
+		const c: ComparePage = { ...page, slug: 'longhand-vs-c', title: 'Longhand Budget vs C' }
+		expect(siblingLinks(page, [page, a, b, c])).toEqual([
+			{ href: '/compare/longhand-vs-a', label: 'Longhand Budget vs A' },
+			{ href: '/compare/longhand-vs-b', label: 'Longhand Budget vs B' },
+		])
+		expect(siblingLinks(page, [page, a])).toEqual([
+			{ href: '/compare/longhand-vs-a', label: 'Longhand Budget vs A' },
+			{ href: '/compare', label: 'All comparisons' },
+		])
 	})
 })

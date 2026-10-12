@@ -66,6 +66,7 @@ export type ComparePage = {
 	readonly description: string
 	readonly verifiedOn: string
 	readonly competitorPricingUrl: string
+	readonly competitorPricingLabel: string
 	readonly verdict: string
 	readonly body: string
 	readonly rows: Readonly<Record<CompareRowId, CompareCell>>
@@ -87,15 +88,23 @@ const TILLER_VS_APPS = 'https://tiller.com/spreadsheet-budgeting-vs-budgeting-ap
 const GOOGLE_DATA_REGIONS =
 	'https://knowledge.workspace.google.com/admin/compliance/choose-a-geographic-location-for-your-data'
 const MICROSOFT_PRIVACY = 'https://www.microsoft.com/en-us/privacy/privacystatement'
+const MICROSOFT_365_PRICING_DE =
+	'https://www.hagel-it.de/microsoft-365-insights/was-kostet-microsoft-365-fuer-privatpersonen'
+const ETSY_BUDGET_SHEET_LISTING =
+	'https://findniche.com/etsy-product/budget-planner-google-sheet-monthly-budg-1619225413'
+
+export const TRADEMARK_LINE =
+	'Product names are trademarks of their respective owners. Longhand Budget is not affiliated with or endorsed by any of them.'
 
 const spreadsheet: ComparePage = {
 	slug: 'longhand-vs-spreadsheet',
-	competitorName: 'A spreadsheet (Excel or Google Sheets)',
+	competitorName: 'a spreadsheet (Excel or Google Sheets)',
 	title: 'Longhand Budget vs a spreadsheet',
 	description:
 		'A budget spreadsheet is free and endlessly flexible. Longhand Budget gives up the flexibility for guardrails, built-in forecasting and a plan that keeps working. An honest, dated comparison.',
 	verifiedOn: '2026-10-11',
 	competitorPricingUrl: MICROSOFT_365_PRICING,
+	competitorPricingLabel: 'Microsoft 365 pricing',
 	verdict:
 		'If you want to record and track every purchase, a spreadsheet does that and Longhand Budget does not. If you want to plan from the figures you already know, such as income, bills, savings and debts, and see where they lead, Longhand Budget is built for exactly that and will not break when you edit a cell.',
 	body: spreadsheetBody,
@@ -107,17 +116,20 @@ const spreadsheet: ComparePage = {
 		},
 		priceAnnual: {
 			longhand: '€39, or nothing on the free tier',
-			competitor: 'Google Sheets: free. Microsoft 365 Personal: $99.99 a year (99 € in Germany).',
-			source: MICROSOFT_365_PRICING,
+			competitor: 'Google Sheets: free. Microsoft 365 Personal: $99.99 a year, 99 € in Germany.',
+			source: MICROSOFT_365_PRICING_DE,
 		},
 		priceLifetime: {
 			longhand: '€99 once',
-			competitor: 'Google Sheets and Excel for the web: free for as long as the account exists.',
+			competitor:
+				'Google Sheets: free. Excel for the web: free with a Microsoft account, files saved to OneDrive.',
 			source: EXCEL_WEB_FREE,
 		},
 		freeTier: {
 			longhand: 'The whole planner, no account, data stays in your browser',
-			competitor: 'The whole spreadsheet; templates free or about $1 to $2.50 on Etsy',
+			competitor:
+				'The whole spreadsheet; templates free, or $0.99 to $2.50 for bestsellers on Etsy',
+			source: ETSY_BUDGET_SHEET_LISTING,
 		},
 		bankSync: {
 			longhand: 'Never. Longhand Budget does not connect to any bank.',
@@ -139,11 +151,12 @@ const spreadsheet: ComparePage = {
 		},
 		platforms: {
 			longhand: 'Web app that installs as a PWA on phone and desktop; no native app store apps',
-			competitor: 'Everywhere: desktop, web, native mobile apps',
+			competitor: 'Desktop, web and mobile apps from Microsoft and Google',
+			source: MICROSOFT_365_PRICING,
 		},
 		offline: {
 			longhand: 'Yes, the installed app keeps working offline',
-			competitor: 'Desktop Excel and LibreOffice: yes. Google Sheets: with offline mode enabled.',
+			competitor: 'Desktop Excel and LibreOffice: yes, the file is on your computer.',
 		},
 		dataLocation: {
 			longhand:
@@ -153,14 +166,14 @@ const spreadsheet: ComparePage = {
 			source: GOOGLE_DATA_REGIONS,
 		},
 		thirdParties: {
-			longhand: 'None for your figures; the payment processor sees billing details only',
+			longhand:
+				'Free: none. Premium: the EU hosting provider stores your synced plan; Paddle sees billing, Brevo your sign-in email.',
 			competitor:
 				'Google or Microsoft hold the cloud file and may process it in the United States or elsewhere.',
 			source: MICROSOFT_PRIVACY,
 		},
 		forecasting: {
-			longhand:
-				'Premium: saved what-if scenarios, year-by-year projections. Free: a retirement projection.',
+			longhand: 'Premium: saved what-if scenarios with projections. Free: a retirement projection.',
 			competitor: 'Only what you build with formulas',
 		},
 		separateBudgets: {
@@ -177,8 +190,7 @@ const spreadsheet: ComparePage = {
 		},
 		adsTrackersAi: {
 			longhand: 'No ads, no trackers, no AI features',
-			competitor:
-				'No ads in the file. Google and Microsoft run their own analytics and AI features in the apps.',
+			competitor: 'No ads in the file itself',
 		},
 	},
 	competitorBetter: [
@@ -195,7 +207,7 @@ const spreadsheet: ComparePage = {
 		'Net worth, debts and savings goals are modelled, not improvised: a debt links to the payment that pays it down.',
 		'Premium forecasting saves named what-if scenarios you can reload, instead of a copy of the sheet with different numbers.',
 		'Usable on a phone: a spreadsheet on a phone screen is awkward, and even spreadsheet vendors say so.',
-		'Privacy without a desktop file: the free tier never leaves your browser, and premium sync stores your plan in Germany with an EU host rather than a US-controlled consumer cloud.',
+		'Privacy without a desktop file. The free tier never leaves your browser. Premium sync stores your plan in Germany with an EU host rather than a US-controlled consumer cloud.',
 	],
 	switching:
 		'There is no import. Longhand Budget plans from recurring figures, so you open your sheet beside it and enter each income, bill, savings goal and balance once, with its frequency. For a typical household that is a few dozen entries. Your spreadsheet keeps working; nothing is deleted or converted.',
@@ -218,12 +230,14 @@ const spreadsheet: ComparePage = {
 		},
 		{
 			q: 'What about Tiller, the spreadsheet with bank feeds?',
-			a: 'Tiller costs $99 a year and exists to pull US bank transactions into Google Sheets or Excel. Its bank feeds cover US banks only, and it needs bank linking to be worth the fee. Longhand Budget never links a bank, so the two solve different problems.',
+			a: 'Tiller costs $99 a year and exists to pull US bank transactions into Google Sheets or Excel. Its bank feeds cover US banks only. Longhand Budget never links a bank, so the two solve different problems.',
 		},
 	],
 	sources: [
 		{ label: 'Debt.com 2026 budgeting survey', url: DEBT_COM_SURVEY },
 		{ label: 'Microsoft 365 plans and prices', url: MICROSOFT_365_PRICING },
+		{ label: 'Microsoft 365 prices in Germany', url: MICROSOFT_365_PRICING_DE },
+		{ label: 'Etsy budget-sheet bestseller listing', url: ETSY_BUDGET_SHEET_LISTING },
 		{ label: 'Excel for the web is free', url: EXCEL_WEB_FREE },
 		{ label: 'Tiller pricing', url: TILLER_PRICING },
 		{ label: 'Tiller community: broken formulas', url: TILLER_FORMULAS },

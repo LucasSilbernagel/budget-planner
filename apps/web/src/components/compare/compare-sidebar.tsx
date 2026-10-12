@@ -1,8 +1,9 @@
 import { cn } from '@/lib/cn'
 import { COMPARE_PAGES } from '../../content/compare'
 
+// `undefined` means the hub itself is the page; `null` means no listed page is (the 404).
 export type CompareSidebarProps = {
-	activeSlug?: string
+	activeSlug?: string | null
 }
 
 const LINK_CLASS = 'block rounded-md px-3 py-2 text-sm transition-colors'

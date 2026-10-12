@@ -9,10 +9,12 @@ import {
 
 const SUPERLATIVE = /\b(best|cheapest)\b/i
 
+// Abbreviations keep their space so a split never lands mid-sentence.
 function sentences(text: string): string[] {
 	return text
 		.replace(/\s+/g, ' ')
-		.split(/(?<=[.!?])\s+/)
+		.replace(/\b(e\.g|i\.e|vs|U\.S)\. /gi, (m) => m.replace('. ', '. '))
+		.split(/(?<=[.!?]) +/)
 		.map((s) => s.trim())
 		.filter(Boolean)
 }
@@ -32,6 +34,13 @@ function cells(page: ComparePage): string[] {
 	return COMPARE_ROW_IDS.flatMap((id) => [page.rows[id].longhand, page.rows[id].competitor])
 }
 
+// Everything a reader sees on the page, with the one literal `!` token a spreadsheet has.
+function visibleText(page: ComparePage): string[] {
+	return [...cells(page), page.description, ...page.competitorBetter, ...prose(page)].map((text) =>
+		text.replaceAll('#REF!', '#REF')
+	)
+}
+
 describe('COMPARE_PAGES', () => {
 	it('has at least the spreadsheet page', () => {
 		expect(COMPARE_PAGES.map((p) => p.slug)).toContain('longhand-vs-spreadsheet')
@@ -48,10 +57,11 @@ describe('COMPARE_PAGES', () => {
 })
 
 describe('getComparePage', () => {
-	it('finds a known slug and refuses an unknown one', () => {
+	it('finds a known slug exactly and refuses variants', () => {
 		expect(getComparePage('longhand-vs-spreadsheet')?.title).toBe(
 			'Longhand Budget vs a spreadsheet'
 		)
+		expect(getComparePage('Longhand-vs-spreadsheet')).toBeUndefined()
 		expect(getComparePage('longhand-vs-nothing')).toBeUndefined()
 	})
 })
@@ -75,15 +85,27 @@ describe.each(COMPARE_PAGES)('honesty guards: $slug', (page) => {
 		}
 	})
 
-	it('carries a real verification date that is not in the future', () => {
+	it('sources every competitor cell that quotes a figure', () => {
+		for (const id of COMPARE_ROW_IDS) {
+			const cell = page.rows[id]
+			if (/[\d$€]/.test(cell.competitor)) {
+				expect(cell.source, `${id}: "${cell.competitor}" quotes a figure without a source`).toMatch(
+					/^https:\/\//
+				)
+			}
+		}
+	})
+
+	it('carries a real calendar date that is not in the future', () => {
 		expect(page.verifiedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/)
 		const date = new Date(`${page.verifiedOn}T00:00:00Z`)
 		expect(Number.isNaN(date.getTime())).toBe(false)
+		expect(date.toISOString().slice(0, 10)).toBe(page.verifiedOn)
 		expect(date.getTime()).toBeLessThanOrEqual(Date.now())
 	})
 
-	it('makes no superlative claim and never shouts', () => {
-		for (const text of [...cells(page), page.verdict, ...page.longhandBetter]) {
+	it('makes no superlative claim and never shouts, anywhere a reader can see', () => {
+		for (const text of visibleText(page)) {
 			expect(text, text).not.toMatch(SUPERLATIVE)
 			expect(text, text).not.toContain('!')
 		}
@@ -93,19 +115,22 @@ describe.each(COMPARE_PAGES)('honesty guards: $slug', (page) => {
 		for (const text of prose(page)) expect(text).not.toMatch(/<img|!\[/)
 	})
 
-	it('says "EU" only of the premium tier or sync, never of the local-only free tier', () => {
+	it('says "EU" only of the premium tier or sync, never in a sentence about the free tier', () => {
 		for (const text of prose(page)) {
 			for (const sentence of sentences(text)) {
 				if (/\bEU\b|European/.test(sentence)) {
 					expect(sentence, sentence).toMatch(/premium|sync/i)
+					expect(sentence, sentence).not.toMatch(/free tier/i)
 				}
 			}
 		}
 	})
 
-	it('follows the slug and title conventions', () => {
+	it('follows the slug, title and name conventions', () => {
 		expect(page.slug).toMatch(/^longhand-vs-[a-z0-9-]+$/)
 		expect(page.title.startsWith('Longhand Budget vs ')).toBe(true)
+		expect(page.competitorName.charAt(0)).toBe(page.competitorName.charAt(0).toLowerCase())
+		expect(page.competitorPricingLabel.length).toBeGreaterThan(0)
 		expect(page.description.length).toBeGreaterThan(0)
 		expect(page.faq.length).toBeGreaterThanOrEqual(4)
 		expect(page.faq.length).toBeLessThanOrEqual(6)
@@ -114,6 +139,15 @@ describe.each(COMPARE_PAGES)('honesty guards: $slug', (page) => {
 			expect(page.rows[id].longhand.length, id).toBeGreaterThan(0)
 			expect(page.rows[id].competitor.length, id).toBeGreaterThan(0)
 		}
+	})
+})
+
+describe('the sentence splitter', () => {
+	it('does not split on common abbreviations', () => {
+		expect(sentences('Use e.g. a sheet. Then vs. an app.')).toEqual([
+			'Use e.g. a sheet.',
+			'Then vs. an app.',
+		])
 	})
 })
 
@@ -127,9 +161,11 @@ describe('the spreadsheet page states its sourced facts', () => {
 	it.each([
 		['Debt.com spreadsheet share', '27.4%'],
 		['Debt.com "too time-consuming" share', '34.2%'],
+		['Debt.com sample size', '1,051 respondents'],
 		['Tiller price', '$99 a year'],
 		['Microsoft 365 Personal price', '$99.99'],
 		['Microsoft 365 Personal price in Germany', '99 €'],
+		['Etsy bestseller price band', '$0.99 to $2.50'],
 		['the formula failure mode', '#REF'],
 	])('mentions %s (%s)', (_label, needle) => {
 		expect(everything).toContain(needle)
@@ -141,8 +177,17 @@ describe('the spreadsheet page states its sourced facts', () => {
 		expect(page.faq.map((f) => f.a).join(' ')).toMatch(/exactly as private/i)
 	})
 
-	it('links the one competitor price it quotes', () => {
+	it('links the competitor prices it quotes to the pages that show them', () => {
 		expect(page.competitorPricingUrl).toContain('microsoft.com')
-		expect(page.rows.priceAnnual.source).toBe(page.competitorPricingUrl)
+		expect(page.competitorPricingLabel).toBe('Microsoft 365 pricing')
+		expect(page.rows.priceMonthly.source).toBe(page.competitorPricingUrl)
+		expect(page.rows.priceAnnual.source).toContain('hagel-it.de')
+		expect(page.sources.map((s) => s.url)).toContain(page.rows.priceAnnual.source)
+	})
+
+	it('names the premium third parties honestly', () => {
+		expect(page.rows.thirdParties.longhand).toMatch(/hosting provider/i)
+		expect(page.rows.thirdParties.longhand).toMatch(/Paddle/)
+		expect(page.rows.thirdParties.longhand).toMatch(/Brevo/)
 	})
 })

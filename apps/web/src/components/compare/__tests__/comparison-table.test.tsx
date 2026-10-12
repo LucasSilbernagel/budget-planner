@@ -17,7 +17,7 @@ describe('ComparisonTable', () => {
 		expect(rowHeaders).toHaveLength(17)
 	})
 
-	it('names the table and its three columns', () => {
+	it('names the table and its three columns, capitalising the competitor only here', () => {
 		render(<ComparisonTable page={page} />)
 		const table = screen.getByRole('table', {
 			name: `Longhand Budget compared with ${page.competitorName}`,
@@ -25,7 +25,30 @@ describe('ComparisonTable', () => {
 		const headers = within(table)
 			.getAllByRole('columnheader')
 			.map((th) => th.textContent)
-		expect(headers).toEqual(['Row', 'Longhand Budget', page.competitorName])
+		expect(headers).toEqual([
+			'Feature',
+			'Longhand Budget',
+			'A spreadsheet (Excel or Google Sheets)',
+		])
+	})
+
+	it('gives the row dividers a dark counterpart and uses no light-only token', () => {
+		const { container } = render(<ComparisonTable page={page} />)
+		const tbody = container.querySelector('tbody')
+		expect(tbody && [...tbody.classList]).toEqual(
+			expect.arrayContaining(['divide-y', 'divide-gray-200', 'dark:divide-gray-700'])
+		)
+		expect(tbody && [...tbody.classList]).not.toContain('border-default')
+		const classes = [...container.querySelectorAll('*')].flatMap((el) => [...el.classList])
+		for (const retired of [
+			'bg-white',
+			'text-gray-900',
+			'text-gray-700',
+			'text-gray-500',
+			'border-gray-200',
+		]) {
+			expect(classes, retired).not.toContain(retired)
+		}
 	})
 
 	it('puts the table in a scroll container so an overflow scrolls the card, not the page', () => {
