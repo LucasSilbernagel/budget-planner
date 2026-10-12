@@ -1,3 +1,4 @@
+import actualBudgetBody from './longhand-vs-actual-budget.md?raw'
 import spreadsheetBody from './longhand-vs-spreadsheet.md?raw'
 
 // A const tuple, so a page that omits a row is a type error rather than a missing table line.
@@ -97,12 +98,30 @@ const ETSY_BUDGET_SHEET_LISTING =
 export const TRADEMARK_LINE =
 	'Product names are trademarks of their respective owners. Longhand Budget is not affiliated with or endorsed by any of them.'
 
+const ACTUAL_PIKAPODS_DOC = 'https://actualbudget.org/docs/install/pikapods/'
+const PIKAPODS_CATALOGUE = 'https://www.pikapods.com/apps'
+const ACTUAL_BANK_SYNC_DOC = 'https://actualbudget.org/docs/advanced/bank-sync/'
+const SIMPLEFIN_BRIDGE = 'https://beta-bridge.simplefin.org/'
+const ACTUAL_INSTALL_DOC = 'https://actualbudget.org/docs/install/'
+const ACTUAL_DESKTOP_DOC = 'https://actualbudget.org/docs/install/desktop-app/'
+const ACTUAL_FAQ = 'https://actualbudget.org/docs/faq/'
+const ACTUAL_SYNC_DOC = 'https://actualbudget.org/docs/getting-started/sync/'
+const ACTUAL_REPORTS_DOC = 'https://actualbudget.org/docs/reports/'
+const ACTUAL_FORECAST_DOC = 'https://actualbudget.org/docs/experimental/balance-forecast-report/'
+const ACTUAL_BACKUP_DOC = 'https://actualbudget.org/docs/backup-restore/backup/'
+const ACTUAL_OAUTH_DOC = 'https://actualbudget.org/docs/config/oauth-auth/'
+const ACTUAL_RELEASES = 'https://actualbudget.org/docs/releases/'
+const ACTUAL_GITHUB = 'https://github.com/actualbudget/actual'
+const FINCOMPARELAB_ACTUAL_COST = 'https://www.fincomparelab.com/?p=1279'
+const FINNY_ACTUAL_REVIEW = 'https://getfinny.app/blog/actual-budget-review-2026'
+const ACTUAL_ROADMAP_2025 = 'https://actualbudget.org/blog/roadmap-for-2025'
+
 const spreadsheet: ComparePage = {
 	slug: 'longhand-vs-spreadsheet',
 	competitorName: 'a spreadsheet (Excel or Google Sheets)',
 	title: 'Longhand Budget vs a spreadsheet',
 	description:
-		'A budget spreadsheet is free and endlessly flexible. Longhand Budget gives up the flexibility for guardrails, built-in forecasting and a plan that keeps working. An honest, dated comparison.',
+		'A budget spreadsheet is free and endlessly flexible. Longhand Budget trades that flexibility for guardrails, built-in forecasting and a plan that keeps working.',
 	verifiedOn: '2026-10-11',
 	competitorPricingUrl: MICROSOFT_365_PRICING,
 	competitorPricingLabel: 'Microsoft 365 pricing',
@@ -251,7 +270,182 @@ const spreadsheet: ComparePage = {
 	],
 }
 
-export const COMPARE_PAGES: readonly ComparePage[] = [spreadsheet]
+const actualBudget: ComparePage = {
+	slug: 'longhand-vs-actual-budget',
+	competitorName: 'Actual Budget',
+	title: 'Longhand Budget vs Actual Budget',
+	description:
+		'Actual Budget is free, open source and tracks every transaction, but you host it yourself. Longhand Budget plans from the figures you know, with nothing to run.',
+	verifiedOn: '2026-10-11',
+	competitorPricingUrl: ACTUAL_PIKAPODS_DOC,
+	competitorPricingLabel: 'Actual Budget hosting costs',
+	verdict:
+		'If you want to import and track every transaction in envelopes, and you are happy to run a server or rent one, Actual Budget does that for free plus hosting, and Longhand Budget does not track spending at all. If you want to plan from the figures you already know, such as income, bills, savings and debts, with nothing to host and your premium sync kept in Germany, Longhand Budget is built for exactly that.',
+	body: actualBudgetBody,
+	rows: {
+		priceMonthly: {
+			longhand: '€5.99, or nothing on the free tier',
+			competitor:
+				'The app is free. Hosted sync on PikaPods: about $1.50 a month in Actual\u2019s docs (November 2025), from $2 a month in the PikaPods catalogue today.',
+			source: PIKAPODS_CATALOGUE,
+		},
+		priceAnnual: {
+			longhand: '€39, or nothing on the free tier',
+			competitor:
+				'The app is free. Hosting comes to about $18 to $24 a year, SimpleFIN bank feeds $15 a year: $33 to $39 if you want sync and feeds, per a 2026 cost breakdown.',
+			source: FINCOMPARELAB_ACTUAL_COST,
+		},
+		priceLifetime: {
+			longhand: '€99 once',
+			competitor: 'Free (MIT licence). Hosting stays a running cost if you want sync.',
+			source: ACTUAL_GITHUB,
+		},
+		freeTier: {
+			longhand: 'The whole planner, no account, data stays in your browser',
+			competitor:
+				'Everything: the whole app and unlimited budget files; unlimited devices once you run a sync server',
+			source: ACTUAL_SYNC_DOC,
+		},
+		bankSync: {
+			longhand: 'Never. Longhand Budget does not connect to any bank.',
+			competitor:
+				'Optional, and it needs your own server. Actual\u2019s docs list SimpleFIN for North America, Enable Banking for European banks and GoCardless as not accepting new accounts, and note that the keys are stored unencrypted on your server.',
+			source: ACTUAL_BANK_SYNC_DOC,
+		},
+		tracksTransactions: {
+			longhand: 'No. Longhand Budget plans from recurring figures; it does not record purchases.',
+			competitor: 'Yes. Envelope budgeting over every imported or typed transaction.',
+			source: ACTUAL_FAQ,
+		},
+		manualEntry: {
+			longhand: 'Yes, structured: income, expenses, savings, balances, each with a frequency',
+			competitor: 'Yes, plus CSV, QIF, OFX and YNAB import',
+			source: ACTUAL_FAQ,
+		},
+		accountRequired: {
+			longhand: 'No for the free tier. An email address for premium sync.',
+			competitor: 'No vendor account. A server password, which you set and keep.',
+			source: ACTUAL_INSTALL_DOC,
+		},
+		platforms: {
+			longhand: 'Web app that installs as a PWA on phone and desktop; no native app store apps',
+			competitor:
+				'Web app (PWA), a desktop app for Windows, macOS and Linux, or self-hosted with Docker. Actual\u2019s install docs mark the official mobile apps as deprecated, so a phone needs a server.',
+			source: ACTUAL_INSTALL_DOC,
+		},
+		offline: {
+			longhand: 'Yes, the installed app keeps working offline',
+			competitor: 'Yes, the budget file lives on the device',
+			source: ACTUAL_SYNC_DOC,
+		},
+		dataLocation: {
+			longhand:
+				'Free tier: on your device only. Premium sync: servers in Germany, run by an EU host.',
+			competitor:
+				'On your device, synced to whichever server you run or rent; the region is your choice, or your host\u2019s.',
+			source: ACTUAL_SYNC_DOC,
+		},
+		thirdParties: {
+			longhand:
+				'Free: none. Premium: the EU hosting provider stores your synced plan; Paddle sees billing, Brevo your sign-in email.',
+			competitor:
+				'None by default. Your hosting provider if you rent a server; SimpleFIN if you use bank feeds.',
+			source: ACTUAL_SYNC_DOC,
+		},
+		forecasting: {
+			longhand: 'Premium: saved what-if scenarios with projections. Free: a retirement projection.',
+			competitor:
+				'Schedules, experimental goal templates, a Crossover Point report and an experimental balance forecast; no saved what-if scenarios.',
+			source: ACTUAL_REPORTS_DOC,
+		},
+		separateBudgets: {
+			longhand: 'Premium profiles, switchable without mixing numbers',
+			competitor: 'Multiple budget files on one server',
+			source: ACTUAL_SYNC_DOC,
+		},
+		sharing: {
+			longhand: 'No. One person per account.',
+			competitor:
+				'Anyone with access to your server; separate logins need an OpenID provider you configure.',
+			source: ACTUAL_OAUTH_DOC,
+		},
+		reportsExport: {
+			longhand: 'Premium: a PDF summary report. No CSV import or export.',
+			competitor: 'Custom reports, net worth, full budget export and CSV',
+			source: ACTUAL_BACKUP_DOC,
+		},
+		adsTrackersAi: {
+			longhand: 'No ads, no trackers, no AI features',
+			competitor: 'None. Community funded through Open Collective.',
+			source: ACTUAL_ROADMAP_2025,
+		},
+	},
+	competitorBetter: [
+		'Everything is free under an MIT licence: the app and unlimited budget files, and unlimited devices once you run a sync server.',
+		'Optional end-to-end encryption, so even your sync server cannot read the budget.',
+		'A desktop app for Windows, macOS and Linux that works on its own, with no server.',
+		'Open source with a large community and a release most months.',
+		'Imports: CSV, QIF, OFX and a YNAB migration. Longhand Budget imports nothing.',
+		'A bigger reporting engine: custom reports, net worth, a Crossover Point projection.',
+		'It tracks every transaction in envelopes; Longhand Budget does not track spending at all.',
+	],
+	longhandBetter: [
+		'Nothing to host. Actual\u2019s own docs call the browser-only version \u201cnot recommended for long-term use\u201d and say a phone needs a server; Longhand Budget runs the moment the page loads.',
+		'No server password to lose. Actual\u2019s docs warn that its optional encryption password cannot be recovered.',
+		'No hosting decision to make: premium sync is hosted in Germany by an EU provider, instead of wherever you or your host put the server.',
+		'Saved what-if scenarios you can name and reload, instead of experimental forecast reports.',
+		'A retirement projection on the free tier; we found no retirement or debt-payoff tool in Actual.',
+		'Support through the maker\u2019s contact form rather than a community Discord.',
+	],
+	switching:
+		'There is no import. Actual Budget can export your budget as CSV, but Longhand Budget cannot read it: you enter each income, bill, savings goal and balance once, with its frequency. Your Actual data stays yours and on your server; nothing is deleted or converted.',
+	faq: [
+		{
+			q: 'Do I need a server for Longhand Budget?',
+			a: 'No. The free tier runs in your browser with nothing to install or host. The premium tier syncs through servers that Longhand Budget runs for you.',
+		},
+		{
+			q: 'Is Actual Budget really free?',
+			a: 'The software is, under an MIT licence. Running it on more than one device needs a server you host or rent (PikaPods from about $1.50 to $2 a month), and bank feeds through SimpleFIN cost $15 a year. A 2026 cost breakdown puts hosting plus feeds at $33 to $39 a year.',
+		},
+		{
+			q: 'Which is more private?',
+			a: 'Actual Budget on your own server with end-to-end encryption turned on is as private as software gets, if you run it well. Longhand Budget\u2019s free tier never leaves your browser. Longhand Budget\u2019s premium sync is hosted in Germany by an EU provider, so the hosting decision is made for you.',
+		},
+		{
+			q: 'Can I import my Actual Budget data into Longhand Budget?',
+			a: 'No. Longhand Budget has no import and no CSV export. You re-enter your recurring figures once; transactions are not something Longhand Budget records.',
+		},
+		{
+			q: 'Does Longhand Budget track spending like Actual Budget?',
+			a: 'No. Longhand Budget is a planner for the figures you already know. If you want envelopes and a transaction register, Actual Budget is the better fit.',
+		},
+	],
+	sources: [
+		{ label: 'Actual Budget: installing on PikaPods', url: ACTUAL_PIKAPODS_DOC },
+		{ label: 'PikaPods app catalogue', url: PIKAPODS_CATALOGUE },
+		{ label: 'Actual Budget: bank sync', url: ACTUAL_BANK_SYNC_DOC },
+		{ label: 'SimpleFIN Bridge', url: SIMPLEFIN_BRIDGE },
+		{ label: 'Actual Budget: installing', url: ACTUAL_INSTALL_DOC },
+		{ label: 'Actual Budget: desktop app', url: ACTUAL_DESKTOP_DOC },
+		{ label: 'Actual Budget: FAQ', url: ACTUAL_FAQ },
+		{ label: 'Actual Budget: sync and encryption', url: ACTUAL_SYNC_DOC },
+		{ label: 'Actual Budget: reports', url: ACTUAL_REPORTS_DOC },
+		{ label: 'Actual Budget: balance forecast (experimental)', url: ACTUAL_FORECAST_DOC },
+		{ label: 'Actual Budget: backup and export', url: ACTUAL_BACKUP_DOC },
+		{ label: 'Actual Budget: OpenID logins', url: ACTUAL_OAUTH_DOC },
+		{ label: 'Actual Budget: releases', url: ACTUAL_RELEASES },
+		{ label: 'Actual Budget: 2025 roadmap (funding)', url: ACTUAL_ROADMAP_2025 },
+		{ label: 'Actual Budget on GitHub', url: ACTUAL_GITHUB },
+		{
+			label: 'FinCompareLab: what Actual Budget really costs (2026)',
+			url: FINCOMPARELAB_ACTUAL_COST,
+		},
+		{ label: 'Finny: Actual Budget review (2026)', url: FINNY_ACTUAL_REVIEW },
+	],
+}
+
+export const COMPARE_PAGES: readonly ComparePage[] = [spreadsheet, actualBudget]
 
 export function getComparePage(slug: string): ComparePage | undefined {
 	return COMPARE_PAGES.find((page) => page.slug === slug)

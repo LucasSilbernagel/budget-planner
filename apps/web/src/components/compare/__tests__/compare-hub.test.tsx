@@ -17,9 +17,16 @@ describe('CompareHub', () => {
 		}
 	})
 
-	it('describes only the comparisons that exist, names the row count and the section order', () => {
-		for (const page of COMPARE_PAGES) expect(page.slug).not.toMatch(/ynab|monarch/)
-		expect(HUB_DESCRIPTION).not.toMatch(/YNAB|Monarch/)
+	it('describes exactly the comparisons that exist, names the row count and the section order', () => {
+		const names = COMPARE_PAGES.map((page) => page.competitorName.replace(/ \(.*\)$/, ''))
+		const list =
+			names.length > 1 ? `${names.slice(0, -1).join(', ')} and with ${names.at(-1)}` : names[0]
+		expect(HUB_DESCRIPTION).toContain(`compares with ${list}`)
+		expect(HUB_DESCRIPTION.length).toBeLessThanOrEqual(160)
+		const notYetPages = ['YNAB', 'Monarch', 'Copilot', 'EveryDollar', 'Goodbudget'].filter(
+			(name) => !names.some((n) => n.includes(name))
+		)
+		for (const name of notYetPages) expect(HUB_DESCRIPTION).not.toContain(name)
 		const { container } = render(<CompareHub />)
 		const text = (container.textContent ?? '').replace(/\s+/g, ' ')
 		expect(text).toContain('the same 17 rows')
