@@ -1,0 +1,53 @@
+name: Mirror base images
+
+# Copies the two upstream base images into this account's GHCR namespace. The packages are
+# public, so CI pulls them anonymously without ECR Public's rate limit (it throttled 5 deploys).
+
+on:
+  schedule:
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  MIRROR: ghcr.io/lucassilbernagel/mirror
+
+jobs:
+  mirror:
+    name: Mirror ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['node:24-slim', 'postgres:18']
+    steps:
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      # Single platform: a multi-arch copy needs one upstream request per manifest, and
+      # ECR's per-second limit rejected the postgres index outright. Runners are amd64.
+      - name: Copy ${{ matrix.image }} from ECR Public
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          src="public.ecr.aws/docker/library/${IMAGE}"
+          dst="${MIRROR}/${IMAGE}"
+          for attempt in 1 2 3 4; do
+            if docker pull -q --platform linux/amd64 "${src}"; then
+              break
+            fi
+            if [ "$attempt" = 4 ]; then
+              echo "::error::pulling ${src} failed after 4 attempts"
+              exit 1
+            fi
+            echo "attempt ${attempt} failed (throttled?); retrying in $((attempt * 60))s"
+            sleep $((attempt * 60))
+          done
+          docker tag "${src}" "${dst}"
+          docker push -q "${dst}"
+          docker buildx imagetools inspect "${dst}"
