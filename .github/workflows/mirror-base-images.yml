@@ -4,8 +4,6 @@ name: Mirror base images
 # GHCR with GITHUB_TOKEN, which has no anonymous rate limit; ECR Public throttled 5 deploys.
 
 on:
-  push:
-    branches: [ci/ghcr-base-image-mirror]
   schedule:
     - cron: '0 7 * * 1'
   workflow_dispatch:
