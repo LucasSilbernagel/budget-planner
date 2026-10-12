@@ -30,23 +30,26 @@ jobs:
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      # imagetools copies the full multi-arch manifest list registry to registry; nothing is pulled locally.
+      # Single platform: a multi-arch copy needs one upstream request per manifest, and
+      # ECR's per-second limit rejected the postgres index outright. Runners are amd64.
       - name: Copy ${{ matrix.image }} from ECR Public
         env:
           IMAGE: ${{ matrix.image }}
         run: |
           set -euo pipefail
+          src="public.ecr.aws/docker/library/${IMAGE}"
+          dst="${MIRROR}/${IMAGE}"
           for attempt in 1 2 3 4; do
-            if docker buildx imagetools create \
-                --tag "${MIRROR}/${IMAGE}" \
-                "public.ecr.aws/docker/library/${IMAGE}"; then
+            if docker pull -q --platform linux/amd64 "${src}"; then
               break
             fi
             if [ "$attempt" = 4 ]; then
-              echo "::error::mirroring ${IMAGE} failed after 4 attempts"
+              echo "::error::pulling ${src} failed after 4 attempts"
               exit 1
             fi
             echo "attempt ${attempt} failed (throttled?); retrying in $((attempt * 60))s"
             sleep $((attempt * 60))
           done
-          docker buildx imagetools inspect "${MIRROR}/${IMAGE}"
+          docker tag "${src}" "${dst}"
+          docker push -q "${dst}"
+          docker buildx imagetools inspect "${dst}"
