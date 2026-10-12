@@ -96,31 +96,37 @@ describe('ComparePageBody', () => {
 })
 
 describe('siblingLinks', () => {
+	const hub = { href: '/compare', label: 'All comparisons' }
+
 	it('links each live spoke to the other one, then the hub', () => {
 		expect(COMPARE_PAGES.length).toBe(2)
 		const [spreadsheet, actual] = COMPARE_PAGES
 		if (!spreadsheet || !actual) throw new Error('expected two pages')
 		expect(siblingLinks(spreadsheet)).toEqual([
 			{ href: `/compare/${actual.slug}`, label: actual.title },
-			{ href: '/compare', label: 'All comparisons' },
+			hub,
 		])
 		expect(siblingLinks(actual)).toEqual([
 			{ href: `/compare/${spreadsheet.slug}`, label: spreadsheet.title },
-			{ href: '/compare', label: 'All comparisons' },
+			hub,
 		])
 	})
 
-	it('prefers real sibling spokes once they exist, in list order', () => {
+	it('keeps the hub link even when two other spokes fill the slots', () => {
 		const a: ComparePage = { ...page, slug: 'longhand-vs-a', title: 'Longhand Budget vs A' }
 		const b: ComparePage = { ...page, slug: 'longhand-vs-b', title: 'Longhand Budget vs B' }
 		const c: ComparePage = { ...page, slug: 'longhand-vs-c', title: 'Longhand Budget vs C' }
 		expect(siblingLinks(page, [page, a, b, c])).toEqual([
 			{ href: '/compare/longhand-vs-a', label: 'Longhand Budget vs A' },
 			{ href: '/compare/longhand-vs-b', label: 'Longhand Budget vs B' },
+			hub,
 		])
-		expect(siblingLinks(page, [page, a])).toEqual([
-			{ href: '/compare/longhand-vs-a', label: 'Longhand Budget vs A' },
-			{ href: '/compare', label: 'All comparisons' },
+	})
+
+	it('points a lone spoke at the features doc, then the hub', () => {
+		expect(siblingLinks(page, [page])).toEqual([
+			{ href: '/docs/features', label: 'Why Longhand Budget has no bank sync' },
+			hub,
 		])
 	})
 })

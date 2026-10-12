@@ -3,7 +3,7 @@ import { COMPARE_PAGES, COMPARE_ROW_IDS, TRADEMARK_LINE } from '../../content/co
 export const HUB_TITLE = 'Budget planner without bank sync'
 
 export const HUB_DESCRIPTION =
-	'How Longhand Budget compares with a spreadsheet and with Actual Budget today, and with other budgeting tools as pages are added. Every competitor figure is dated and linked to its source.'
+	'How Longhand Budget compares with a spreadsheet and with Actual Budget, with every competitor figure dated and linked to its source.'
 
 export function CompareHub() {
 	return (

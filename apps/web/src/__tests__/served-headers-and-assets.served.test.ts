@@ -2,6 +2,7 @@
 
 import { createHash } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { COMPARE_PAGES } from '../content/compare'
 import {
 	buildPermissionsPolicy,
 	paddleEnvironmentFromProcessEnv,
@@ -101,8 +102,7 @@ describe('the document response headers', () => {
 		'/income',
 		'/docs/getting-started',
 		'/compare',
-		'/compare/longhand-vs-spreadsheet',
-		'/compare/longhand-vs-actual-budget',
+		...COMPARE_PAGES.map((page) => `/compare/${page.slug}`),
 	]) {
 		it(`authorizes every inline <script> it serves on ${path}, by nonce or by exact hash`, async () => {
 			const response = await app.get(path)
@@ -135,8 +135,7 @@ describe('the document response headers', () => {
 describe('the comparison pages ship structured data and a canonical', () => {
 	for (const [path, types] of [
 		['/compare', ['BreadcrumbList', 'SoftwareApplication']],
-		['/compare/longhand-vs-spreadsheet', ['BreadcrumbList']],
-		['/compare/longhand-vs-actual-budget', ['BreadcrumbList']],
+		...COMPARE_PAGES.map((page) => [`/compare/${page.slug}`, ['BreadcrumbList']] as const),
 	] as const) {
 		it(`${path} carries ${types.length} nonce'd ld+json block(s) and one canonical`, async () => {
 			const response = await app.get(path)
