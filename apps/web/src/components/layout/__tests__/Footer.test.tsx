@@ -84,21 +84,14 @@ describe('Footer', () => {
 	})
 
 	// Pin the total first: one marked link would also pass if the siblings stopped rendering.
-	it('marks exactly one of the eight footer links current on a /docs sub-page', async () => {
+	it('marks exactly one of the seven footer links current on a /docs sub-page', async () => {
 		renderWithRouter(<Footer />, { path: '/docs/getting-started' })
 		const footer = await screen.findByRole('contentinfo')
 		const links = within(footer).getAllByRole('link')
-		expect(links).toHaveLength(8)
+		expect(links).toHaveLength(7)
 		const marked = links.filter((link) => link.getAttribute('aria-current') === 'page')
 		expect(marked).toHaveLength(1)
 		expect(marked[0]).toHaveAccessibleName(/documentation/i)
-	})
-
-	it('marks Compare current on a /compare sub-page', async () => {
-		renderWithRouter(<Footer />, { path: '/compare/longhand-vs-spreadsheet' })
-		expect(
-			await screen.findByRole('link', { name: /^compare$/i, current: 'page' })
-		).toBeInTheDocument()
 	})
 
 	it('displays a copyright notice for the current year', async () => {
@@ -137,15 +130,7 @@ describe('Footer', () => {
 			.getAllByRole('link')
 			.map((l) => l.getAttribute('href'))
 		expect(hrefs).toEqual(
-			expect.arrayContaining([
-				'/pricing',
-				'/compare',
-				'/docs',
-				'/terms',
-				'/privacy',
-				'/refund',
-				'/contact',
-			])
+			expect.arrayContaining(['/pricing', '/docs', '/terms', '/privacy', '/refund', '/contact'])
 		)
 	})
 
@@ -158,7 +143,7 @@ describe('Footer', () => {
 		expect(groupTokens).toEqual(expect.arrayContaining(['grid', 'grid-cols-2', 'w-full']))
 		expect(groupTokens).toContain('sm:contents')
 		const links = within(group).getAllByRole('link')
-		expect(links).toHaveLength(7)
+		expect(links).toHaveLength(6)
 		for (const link of links) {
 			const tokens = [...link.classList]
 			expect(tokens, `${link.textContent} is not a 44px phone cell`).toEqual(

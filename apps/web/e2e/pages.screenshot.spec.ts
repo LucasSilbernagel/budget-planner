@@ -59,7 +59,6 @@ async function open(
 
 const FOOTER_LABELS = [
 	'Pricing',
-	'Compare',
 	'Documentation',
 	'Terms of Service',
 	'Privacy Policy',
@@ -88,8 +87,7 @@ async function expectPhoneFooter(page: Page) {
 	}
 	const perRow = new Map<number, number>()
 	for (const b of boxes) perRow.set(Math.round(b.y), (perRow.get(Math.round(b.y)) ?? 0) + 1)
-	// Seven links in a two-column grid: three full rows and one single.
-	expect([...perRow.values()], 'footer links are not 2/2/2/1 rows').toEqual([2, 2, 2, 1])
+	expect([...perRow.values()], 'footer links are not three rows of two').toEqual([2, 2, 2])
 	await expectTarget(
 		footer.getByRole('link', { name: /Lucas Silbernagel/ }),
 		'footer author link',
