@@ -1,23 +1,13 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { COMPARE_PAGES } from '../../content/compare'
 import { DOC_PAGES } from '../../content/docs'
+import { INDEXABLE_ROUTES } from './indexable-routes'
 import { globbedPagePaths } from './route-discovery'
 
 const PUBLIC_DIR = resolve(__dirname, '../../../public')
 const ORIGIN = 'https://www.longhandbudget.com'
-
-// Written by hand: a decision, not a derivation. Keep in step with robots.txt's "Indexable" comment.
-const INDEXABLE_ROUTES = [
-	'/',
-	'/contact',
-	'/docs',
-	'/docs/$docId',
-	'/pricing',
-	'/privacy',
-	'/refund',
-	'/terms',
-] as const
 
 const NON_PAGE_DISALLOWS = new Set(['/api/'])
 
@@ -95,6 +85,7 @@ function disallowedBy(path: string, disallows: readonly string[]): string[] {
 
 function expandRoute(routePath: string): string[] {
 	if (routePath === '/docs/$docId') return DOC_PAGES.map((doc) => `/docs/${doc.slug}`)
+	if (routePath === '/compare/$slug') return COMPARE_PAGES.map((page) => `/compare/${page.slug}`)
 	if (routePath.includes('$')) {
 		throw new Error(`no sitemap expansion for dynamic route ${routePath} — add one here`)
 	}
@@ -118,6 +109,7 @@ describe('the parsers read what the files actually say', () => {
 		expect(locs.length).toBeGreaterThan(0)
 		expect(globbedPagePaths.length).toBeGreaterThan(0)
 		expect(DOC_PAGES.length).toBeGreaterThan(0)
+		expect(COMPARE_PAGES.length).toBeGreaterThan(0)
 	})
 })
 

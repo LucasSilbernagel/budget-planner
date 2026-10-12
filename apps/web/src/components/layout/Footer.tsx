@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router'
 // Links match by PREFIX (the router's segment-aware default). Don't hand-roll
 // `startsWith`: it would also match `/docsomething`.
 
-type FooterPath = '/pricing' | '/docs' | '/terms' | '/privacy' | '/refund' | '/contact'
+type FooterPath = '/pricing' | '/compare' | '/docs' | '/terms' | '/privacy' | '/refund' | '/contact'
 
 type FooterLink = {
 	label: string
@@ -12,6 +12,7 @@ type FooterLink = {
 
 const FOOTER_LINKS = [
 	{ label: 'Pricing', to: '/pricing' },
+	{ label: 'Compare', to: '/compare' },
 	{ label: 'Documentation', to: '/docs' },
 	{ label: 'Terms of Service', to: '/terms' },
 	{ label: 'Privacy Policy', to: '/privacy' },

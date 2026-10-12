@@ -3,6 +3,7 @@ import { DocNotFound } from '../../components/docs/doc-not-found'
 import { DocsLayout } from '../../components/docs/docs-layout'
 import { MarkdownRenderer } from '../../components/docs/markdown-renderer'
 import { getDocPage } from '../../content/docs'
+import { canonicalLink } from '../../lib/seo/canonical'
 
 // `Route` must stay the only export: any other export defeats the router's code splitting.
 export const Route = createFileRoute('/docs/$docId')({
@@ -14,7 +15,7 @@ export const Route = createFileRoute('/docs/$docId')({
 		return { doc }
 	},
 	// `loaderData` is undefined while pending and after notFound(), so fall back to the section.
-	head: ({ loaderData }) => {
+	head: ({ loaderData, params }) => {
 		const doc = loaderData?.doc
 		if (!doc) {
 			return {
@@ -32,6 +33,7 @@ export const Route = createFileRoute('/docs/$docId')({
 				{ title: `${doc.title} · Longhand Budget` },
 				{ name: 'description', content: doc.description },
 			],
+			links: [canonicalLink(`/docs/${params.docId}`)],
 		}
 	},
 	component: DocPage,

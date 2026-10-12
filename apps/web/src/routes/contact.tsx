@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { ContactForm } from '@/components/contact/contact-form'
+import { canonicalLink } from '../lib/seo/canonical'
 
 export const Route = createFileRoute('/contact')({
 	head: () => ({
@@ -10,6 +11,7 @@ export const Route = createFileRoute('/contact')({
 				content: 'Send feedback or report a bug — your message reaches the developer directly.',
 			},
 		],
+		links: [canonicalLink('/contact')],
 	}),
 	component: ContactPage,
 })

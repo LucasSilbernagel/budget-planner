@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { DocsIndex } from '../../components/docs/docs-index'
 import { DocsLayout } from '../../components/docs/docs-layout'
+import { canonicalLink } from '../../lib/seo/canonical'
 
 export const Route = createFileRoute('/docs/')({
 	head: () => ({
@@ -11,6 +12,7 @@ export const Route = createFileRoute('/docs/')({
 				content: 'Guides and answers for getting the most out of Longhand Budget.',
 			},
 		],
+		links: [canonicalLink('/docs')],
 	}),
 	component: DocsIndexPage,
 })
