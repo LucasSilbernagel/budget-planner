@@ -9,9 +9,9 @@
 # app screen. Do not describe any line below as a protection.
 #
 # Indexable (covered by the `Allow: /` below, which nothing further restricts):
-# /, /pricing, /contact, /compare and /compare/*, /docs and /docs/*, /terms, /privacy,
-# /refund. `/` is here because it is the site root a search result must be able to
-# reach — it doubles as the Overview screen, so it is the one page that is both.
+# /, /pricing, /contact, /docs and /docs/*, /terms, /privacy, /refund. `/` is
+# here because it is the site root a search result must be able to reach — it
+# doubles as the Overview screen, so it is the one page that is both.
 #
 # Every page route is EITHER in that list OR under a `Disallow:` below, and
 # `src/routes/__tests__/robots-sitemap-coverage.test.ts` fails if a route is in

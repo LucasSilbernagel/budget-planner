@@ -1,7 +1,6 @@
 import { createRootRoute, Outlet } from '@tanstack/react-router'
 import { RootDocument } from '../components/layout/RootDocument'
 import { buildAnalyticsScripts } from '../lib/analytics/counter'
-import { SITE_ORIGIN } from '../lib/seo/site-origin'
 import { getSessionSeed } from '../server/api/auth/session-seed'
 import appCss from '../styles/global.css?url'
 
@@ -33,11 +32,11 @@ export const Route = createRootRoute({
 				content:
 					'Track income, expenses, and savings in your browser — no bank sync, no account required, your data stays on your device.',
 			},
-			{ property: 'og:image', content: `${SITE_ORIGIN}/og-image.png` },
+			{ property: 'og:image', content: 'https://www.longhandbudget.com/og-image.png' },
 			{ property: 'og:image:width', content: '1200' },
 			{ property: 'og:image:height', content: '630' },
 			{ name: 'twitter:card', content: 'summary_large_image' },
-			{ name: 'twitter:image', content: `${SITE_ORIGIN}/og-image.png` },
+			{ name: 'twitter:image', content: 'https://www.longhandbudget.com/og-image.png' },
 		],
 		links: [
 			{ rel: 'stylesheet', href: appCss },

@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { COMPARE_PAGES } from '../../content/compare'
 import { DOC_PAGES } from '../../content/docs'
-import { SITE_ORIGIN } from '../../lib/seo/site-origin'
 import { Route as RootRoute } from '../__root'
-import { INDEXABLE_ROUTES } from './indexable-routes'
 import {
 	globbedPagePaths,
 	globKeyToRoutesRel,
@@ -21,8 +18,6 @@ const EXPECTED_ROUTE_PATHS = [
 	'/',
 	'/balance',
 	'/categories',
-	'/compare',
-	'/compare/$slug',
 	'/contact',
 	'/docs',
 	'/docs/$docId',
@@ -48,10 +43,6 @@ const HEAD_ARGS: Record<string, unknown> = {
 		params: { docId: DOC_PAGES[0]?.slug },
 		loaderData: { doc: DOC_PAGES[0] },
 	},
-	'/compare/$slug': {
-		params: { slug: COMPARE_PAGES[0]?.slug },
-		loaderData: { page: COMPARE_PAGES[0] },
-	},
 }
 
 type MetaEntry = {
@@ -75,19 +66,6 @@ function headMetaFor(routePath: string, mod: unknown): MetaEntry[] {
 			{ cause }
 		)
 	}
-}
-
-type LinkEntry = { rel?: string; href?: string }
-
-type HeadResult = { meta?: MetaEntry[]; links?: LinkEntry[] }
-
-function headFor(routePath: string, mod: unknown, args: unknown = HEAD_ARGS[routePath] ?? {}) {
-	const route = (mod as { Route?: { options?: { head?: (arg: unknown) => HeadResult } } }).Route
-	return route?.options?.head?.(args) ?? {}
-}
-
-function canonicalsOf(head: HeadResult): string[] {
-	return (head.links ?? []).filter((l) => l.rel === 'canonical').map((l) => l.href ?? '')
 }
 
 function titleOf(meta: MetaEntry[]): string | undefined {
@@ -236,47 +214,5 @@ describe('/docs/$docId head branches', () => {
 		const meta = head({})?.meta ?? []
 		expect(titleOf(meta)).toBe('Documentation · Longhand Budget')
 		expect(descriptionOf(meta)).toBeTruthy()
-	})
-})
-
-// Dynamic routes substitute their HEAD_ARGS fixture param; www is the canonical host, the apex redirects.
-const ORIGIN = SITE_ORIGIN
-
-function expectedCanonical(routePath: string): string {
-	if (routePath === '/') return `${ORIGIN}/`
-	if (routePath === '/docs/$docId') return `${ORIGIN}/docs/${DOC_PAGES[0]?.slug}`
-	if (routePath === '/compare/$slug') return `${ORIGIN}/compare/${COMPARE_PAGES[0]?.slug}`
-	if (routePath.includes('$'))
-		throw new Error(`no canonical fixture for ${routePath} — add one here`)
-	return `${ORIGIN}${routePath}`
-}
-
-describe('canonical links follow the indexable set exactly', () => {
-	it('has indexable and non-indexable routes to compare', () => {
-		expect(INDEXABLE_ROUTES.length).toBeGreaterThan(0)
-		expect(globbedPagePaths.some((p) => !(INDEXABLE_ROUTES as readonly string[]).includes(p))).toBe(
-			true
-		)
-	})
-
-	for (const routePath of globbedPagePaths) {
-		const indexable = (INDEXABLE_ROUTES as readonly string[]).includes(routePath)
-		it(`${routePath} emits ${indexable ? 'exactly one self-referential' : 'no'} canonical`, async () => {
-			const canonicals = canonicalsOf(headFor(routePath, await importRoute(routePath)))
-			if (indexable) {
-				expect(canonicals).toEqual([expectedCanonical(routePath)])
-			} else {
-				expect(canonicals).toEqual([])
-			}
-		})
-	}
-
-	it.each([
-		['/docs/$docId', { params: { docId: 'missing' }, loaderData: undefined }],
-		['/compare/$slug', { params: { slug: 'missing' }, loaderData: undefined }],
-	])('%s emits no canonical while pending or after notFound()', async (routePath, args) => {
-		const head = headFor(routePath, await importRoute(routePath), args)
-		expect(canonicalsOf(head)).toEqual([])
-		expect(titleOf(head.meta ?? [])).toBeTruthy()
 	})
 })

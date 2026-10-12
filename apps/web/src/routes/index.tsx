@@ -1,6 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { HomePage } from '../components/HomePage'
-import { canonicalLink } from '../lib/seo/canonical'
 
 export const Route = createFileRoute('/')({
 	head: () => ({
@@ -12,7 +11,6 @@ export const Route = createFileRoute('/')({
 					'Your income, expenses, savings and net worth at a glance, with category breakdowns for any period.',
 			},
 		],
-		links: [canonicalLink('/')],
 	}),
 	component: HomePage,
 })
