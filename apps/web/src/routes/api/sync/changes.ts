@@ -5,6 +5,7 @@ import { json } from '@tanstack/react-start'
 import { logger } from '@/lib/logger'
 import { hasPaidAccess } from '@/lib/premium/access-statuses'
 import { getCurrentUserSession } from '@/server/api/auth/paddle'
+import { appendSessionRenewal } from '@/server/api/auth/session-renewal'
 import { checkRateLimit, getLiveProfileIds, getSyncChanges } from '@/server/api/sync'
 import { createDefaultProfileForUser } from '@/server/functions/profiles'
 
@@ -82,7 +83,10 @@ export const GET = async ({ request }: { request: Request }): Promise<Response> 
 		} catch (error) {
 			logger.error('[sync/changes] live profile list failed', { error })
 		}
-		return json({ success: true, changes, lastPullTimestamp, profileIds })
+		return json(
+			{ success: true, changes, lastPullTimestamp, profileIds },
+			{ headers: appendSessionRenewal(new Headers(), session.data) }
+		)
 	} catch (error) {
 		return json(
 			{

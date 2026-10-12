@@ -30,8 +30,11 @@ export const getSessionSeed = createServerFn({ method: 'GET' }).handler(
 		try {
 			// Dynamically imported inside the extracted server handler so neither the
 			// framework server entry nor the session resolver leaks into the client.
-			const { getRequest, setResponseHeader } = await import('@tanstack/react-start/server')
+			const { getRequest, getResponseHeaders, setResponseHeader } = await import(
+				'@tanstack/react-start/server'
+			)
 			const { getCurrentUserSession } = await import('./paddle')
+			const { appendSessionRenewal } = await import('./session-renewal')
 
 			const { lookupSessionOnce } = await import('./session-lookup-once')
 
@@ -46,6 +49,7 @@ export const getSessionSeed = createServerFn({ method: 'GET' }).handler(
 				const session = result.data
 				// The document now carries the user's email and tier: never let a shared cache serve it.
 				setResponseHeader('cache-control', 'private, no-store')
+				appendSessionRenewal(getResponseHeaders(), session)
 				return {
 					isAuthenticated: true,
 					userId: session.userId,

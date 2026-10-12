@@ -1,5 +1,5 @@
-// Shared by both cookies; matches the signed-session TTL.
-export const SESSION_COOKIE_MAX_AGE = 7 * 24 * 60 * 60
+// Shared by both cookies. 400 days is the longest lifetime browsers honour; renewal keeps it sliding.
+export const SESSION_COOKIE_MAX_AGE = 400 * 24 * 60 * 60
 
 export function isProductionEnv(): boolean {
 	return process.env['NODE_ENV'] === 'production'

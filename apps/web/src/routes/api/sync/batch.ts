@@ -7,6 +7,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 import { hasPaidAccess } from '@/lib/premium/access-statuses'
 import { getCurrentUserSession } from '@/server/api/auth/paddle'
+import { appendSessionRenewal } from '@/server/api/auth/session-renewal'
 import type { BatchRefusal, BatchSyncRequest } from '@/server/api/sync'
 import { processBatchSync } from '@/server/api/sync'
 
@@ -73,7 +74,7 @@ export const POST = async ({ request }: { request: Request }): Promise<Response>
 
 	// Per-operation outcomes stay a 200; only a whole-request refusal gets its own status.
 	const status = result.refusal ? REFUSAL_STATUS[result.refusal] : 200
-	return json(result, { status })
+	return json(result, { status, headers: appendSessionRenewal(new Headers(), session.data) })
 }
 
 function errorMessage(error: unknown): string {

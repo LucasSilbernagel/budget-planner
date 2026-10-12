@@ -22,6 +22,7 @@ export type UserSession = {
 	// NULL = cadence unknown, or lifetime. Display only: no entitlement decision may read it.
 	billingInterval: BillingInterval | null
 	isAuthenticated: boolean
+	issuedAt: number
 	name?: string
 }
 
@@ -127,6 +128,7 @@ async function validateSessionToken(token: string): Promise<UserSession | null> 
 			currency: user.currency ?? 'NONE',
 			billingInterval: user.billingInterval ?? null,
 			isAuthenticated: true,
+			issuedAt: payload.iat,
 		}
 	} catch (error) {
 		// Rethrow: a DB outage is "unknown", not "no session". Callers act on null as an authoritative

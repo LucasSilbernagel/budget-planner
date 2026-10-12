@@ -4,7 +4,12 @@ vi.mock('@/server/api/auth/paddle', () => ({
 	getCurrentUserSession: vi.fn(),
 }))
 
+vi.mock('@/server/api/auth/session-renewal', () => ({
+	appendSessionRenewal: vi.fn((headers: Headers) => headers),
+}))
+
 import { getCurrentUserSession } from '@/server/api/auth/paddle'
+import { appendSessionRenewal } from '@/server/api/auth/session-renewal'
 import { GET } from '../me'
 
 const asMock = (fn: unknown) => fn as ReturnType<typeof vi.fn>
@@ -41,6 +46,20 @@ describe('GET /api/auth/me', () => {
 			expect(body.user).toHaveProperty('billingInterval', billingInterval)
 		}
 	)
+
+	it('forwards the renewed session cookies on a signed-in answer', async () => {
+		const data = session('year')
+		asMock(getCurrentUserSession).mockResolvedValue({ success: true, data })
+		asMock(appendSessionRenewal).mockImplementationOnce((headers: Headers) => {
+			headers.append('Set-Cookie', 'session=renewed; Path=/')
+			return headers
+		})
+
+		const res = await GET({ request: req() })
+
+		expect(appendSessionRenewal).toHaveBeenCalledWith(expect.any(Headers), data)
+		expect(res.headers.getSetCookie()).toEqual(['session=renewed; Path=/'])
+	})
 
 	it('returns {user:null} for an unauthenticated request (unchanged)', async () => {
 		asMock(getCurrentUserSession).mockResolvedValue({ success: true, data: null })
