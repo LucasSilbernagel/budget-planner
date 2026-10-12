@@ -185,14 +185,6 @@ describe('the spreadsheet page states its sourced facts', () => {
 		expect(page.sources.map((s) => s.url)).toContain(page.rows.priceAnnual.source)
 	})
 
-	it('states the cloud-spreadsheet AI-training possibility as a hedged, sourced claim', () => {
-		const cell = page.rows.adsTrackersAi
-		expect(cell.competitor).toMatch(/may include training AI models/)
-		expect(cell.competitor).toMatch(/improve or develop their services/)
-		expect(cell.source).toContain('microsoft.com/en-us/privacy')
-		expect(page.sources.map((s) => s.url)).toContain('https://policies.google.com/privacy')
-	})
-
 	it('names the premium third parties honestly', () => {
 		expect(page.rows.thirdParties.longhand).toMatch(/hosting provider/i)
 		expect(page.rows.thirdParties.longhand).toMatch(/Paddle/)

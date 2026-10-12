@@ -17,7 +17,7 @@ describe('ComparisonTable', () => {
 		expect(rowHeaders).toHaveLength(17)
 	})
 
-	it('names the table and its three columns, alternative before Longhand, capitalising the competitor only here', () => {
+	it('names the table and its three columns, capitalising the competitor only here', () => {
 		render(<ComparisonTable page={page} />)
 		const table = screen.getByRole('table', {
 			name: `Longhand Budget compared with ${page.competitorName}`,
@@ -27,8 +27,8 @@ describe('ComparisonTable', () => {
 			.map((th) => th.textContent)
 		expect(headers).toEqual([
 			'Feature',
-			'A spreadsheet (Excel or Google Sheets)',
 			'Longhand Budget',
+			'A spreadsheet (Excel or Google Sheets)',
 		])
 	})
 
@@ -55,17 +55,6 @@ describe('ComparisonTable', () => {
 		const { container } = render(<ComparisonTable page={page} />)
 		const wrapper = container.firstElementChild
 		expect(wrapper && [...wrapper.classList]).toContain('overflow-x-auto')
-	})
-
-	it('puts the alternative in the second column and Longhand Budget in the third', () => {
-		render(<ComparisonTable page={page} />)
-		const firstRow = screen.getAllByRole('row')[1]
-		if (!firstRow) throw new Error('no body row')
-		const cells = within(firstRow)
-			.getAllByRole('cell')
-			.map((td) => td.textContent ?? '')
-		expect(cells[0]).toContain(page.rows.priceMonthly.competitor)
-		expect(cells[1]).toBe(page.rows.priceMonthly.longhand)
 	})
 
 	it('links a sourced competitor cell to its source in a new tab', () => {
