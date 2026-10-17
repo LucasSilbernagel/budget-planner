@@ -204,8 +204,13 @@ export function ForecastingPage(): React.ReactElement {
 				const result = await deleteForecast(id)
 
 				if (result.success) {
-					// A deleted forecast is no longer the save target, so the next Save creates a new one.
-					setSaveTarget((target) => (target?.id === id ? null : target))
+					// Deleting the forecast being edited resets the builder, so its name leaves Projections too.
+					if (saveTarget?.id === id) {
+						setSaveTarget(null)
+						setLoadedForecast(null)
+						setLoadNonce((n) => n + 1)
+						setScenarioResult(null)
+					}
 					const reload = ++latestDeleteReload.current
 					const getResult = await fetchForecasts(defaultProfileId ?? undefined)
 
@@ -219,7 +224,7 @@ export function ForecastingPage(): React.ReactElement {
 				console.error('Failed to delete forecast:', error)
 			}
 		},
-		[defaultProfileId]
+		[defaultProfileId, saveTarget]
 	)
 
 	const handleLoadForecast = useCallback(

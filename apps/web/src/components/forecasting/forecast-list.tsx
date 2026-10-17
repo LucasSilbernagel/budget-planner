@@ -345,9 +345,6 @@ export function ForecastList({
 										<div className="text-sm font-medium text-subheading">
 											{truncate(forecast.name, 40)}
 										</div>
-										<div className={cn('text-xs mt-1', mutedOnRow(selectedIds.has(forecast.id)))}>
-											v{forecast.version ?? 1}
-										</div>
 									</td>
 
 									<td className="px-6 py-4">

@@ -1,4 +1,4 @@
-import { fireEvent, waitFor } from '@testing-library/react'
+import { fireEvent, waitFor, within } from '@testing-library/react'
 import type React from 'react'
 import { cloneElement, type ReactElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -121,5 +121,26 @@ describe('the Projections legend names the scenario', () => {
 		await new Promise((resolve) => setTimeout(resolve, 700))
 		await openProjections()
 		await waitFor(() => expect(legendNames()).toEqual(['Baseline', 'Scenario']))
+	})
+})
+
+describe('deleting the forecast the builder is editing', () => {
+	it('drops its name from Projections', async () => {
+		renderWithRouter(<ForecastingPage />)
+		fireEvent.click(await screen.findByRole('tab', { name: /my forecasts/i }))
+		fireEvent.click(await screen.findByRole('button', { name: 'Edit Buy a house' }))
+		await waitFor(() => expect(screen.getByDisplayValue('Buy a house')).toBeInTheDocument())
+
+		fetchForecasts.mockResolvedValue({ success: true, data: [] })
+		fireEvent.click(screen.getByRole('tab', { name: /my forecasts/i }))
+		fireEvent.click(await screen.findByRole('button', { name: 'Delete Buy a house' }))
+		fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' }))
+		await waitFor(() =>
+			expect(screen.queryByRole('button', { name: 'Edit Buy a house' })).not.toBeInTheDocument()
+		)
+
+		await openProjections()
+		await waitFor(() => expect(legendNames()).toEqual(['Baseline', 'My Financial Forecast']))
+		expect(screen.queryByText(/Buy a house/)).not.toBeInTheDocument()
 	})
 })
