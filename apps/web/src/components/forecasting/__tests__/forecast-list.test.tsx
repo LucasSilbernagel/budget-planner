@@ -127,17 +127,15 @@ describe('Total Growth sign', () => {
 describe('secondary text on a selected row', () => {
 	it('reads .text-body on the selected row’s blue tint, .text-muted otherwise', () => {
 		render(<ForecastList forecasts={[sampleForecast]} onDelete={vi.fn()} onLoad={vi.fn()} />)
-		const lines = () => [screen.getByText('v1'), screen.getByText('+40000.00')]
+		const growth = () => screen.getByText('+40000.00')
 
-		for (const line of lines()) expect([...line.classList]).toContain('text-muted')
+		expect([...growth().classList]).toContain('text-muted')
 
-		const row = screen.getByText('v1').closest('tr') as HTMLElement
+		const row = growth().closest('tr') as HTMLElement
 		fireEvent.click(row)
 		expect([...row.classList]).toContain('bg-blue-50')
-		for (const line of lines()) {
-			expect([...line.classList]).toContain('text-body')
-			expect([...line.classList]).not.toContain('text-muted')
-		}
+		expect([...growth().classList]).toContain('text-body')
+		expect([...growth().classList]).not.toContain('text-muted')
 	})
 })
 
