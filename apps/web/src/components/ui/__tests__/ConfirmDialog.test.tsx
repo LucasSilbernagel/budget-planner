@@ -27,6 +27,15 @@ describe('ConfirmDialog', () => {
 		expect(dialog).toHaveAccessibleDescription('Are you sure you want to delete this item?')
 	})
 
+	it('keeps its narrow card width after class merging', () => {
+		renderWithProviders(
+			<ConfirmDialog isOpen onConfirm={() => {}} onCancel={() => {}} message="Delete it?" />
+		)
+		const classes = [...screen.getByRole('alertdialog').classList]
+		expect(classes).toContain('max-w-md')
+		expect(classes.filter((c) => c.startsWith('max-w-'))).toEqual(['max-w-md'])
+	})
+
 	it('fires onConfirm (not onCancel) when Confirm is clicked', async () => {
 		const user = userEvent.setup()
 		const onConfirm = vi.fn()

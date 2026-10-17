@@ -40,7 +40,7 @@ export function ConfirmDialog({
 			labelledBy={titleId}
 			describedBy={descriptionId}
 			finalFocusRef={finalFocusRef}
-			className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full max-w-[90vw] dark:bg-gray-800 dark:border dark:border-gray-700"
+			className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md dark:bg-gray-800 dark:border dark:border-gray-700"
 		>
 			<h3 id={titleId} className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
 				{title}
