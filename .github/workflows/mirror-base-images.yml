@@ -28,26 +28,26 @@ jobs:
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      # Single platform: a multi-arch copy needs one upstream request per manifest, and
-      # ECR's per-second limit rejected the postgres index outright. Runners are amd64.
-      - name: Copy ${{ matrix.image }} from ECR Public
+      # Single platform: multi-arch needs one upstream request per manifest; runners are amd64.
+      # mirror.gcr.io backs up ECR, whose anonymous data cap is per (shared) runner IP.
+      - name: Copy ${{ matrix.image }} from upstream
         env:
           IMAGE: ${{ matrix.image }}
         run: |
           set -euo pipefail
-          src="public.ecr.aws/docker/library/${IMAGE}"
           dst="${MIRROR}/${IMAGE}"
-          for attempt in 1 2 3 4; do
-            if docker pull -q --platform linux/amd64 "${src}"; then
-              break
-            fi
-            if [ "$attempt" = 4 ]; then
-              echo "::error::pulling ${src} failed after 4 attempts"
-              exit 1
-            fi
-            echo "attempt ${attempt} failed (throttled?); retrying in $((attempt * 60))s"
+          for attempt in 1 2 3; do
+            for registry in public.ecr.aws/docker mirror.gcr.io; do
+              src="${registry}/library/${IMAGE}"
+              if docker pull -q --platform linux/amd64 "${src}"; then
+                docker tag "${src}" "${dst}"
+                docker push -q "${dst}"
+                docker buildx imagetools inspect "${dst}"
+                exit 0
+              fi
+            done
+            echo "attempt ${attempt} failed on every registry; retrying in $((attempt * 60))s"
             sleep $((attempt * 60))
           done
-          docker tag "${src}" "${dst}"
-          docker push -q "${dst}"
-          docker buildx imagetools inspect "${dst}"
+          echo "::error::pulling ${IMAGE} failed after 3 attempts"
+          exit 1
