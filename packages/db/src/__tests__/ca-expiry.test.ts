@@ -117,12 +117,12 @@ describe('formatCaExpiry', () => {
 
 	it('tells the reader how to fix it, not merely that it is broken', () => {
 		const text = formatCaExpiry(assessCaExpiry(pem, daysBeforeExpiry(5), 21))
-		expect(text).toMatch(/openssl s_client/)
+		expect(text).toMatch(/renew-db-ca\.sh/)
 		expect(text).toMatch(/public DNS/i)
 	})
 
 	it('carries the remedy on the missing-certificate path too', () => {
 		const text = formatCaExpiry(assessCaExpiry(undefined, new Date(), 21))
-		expect(text).toMatch(/openssl s_client/)
+		expect(text).toMatch(/renew-db-ca\.sh/)
 	})
 })

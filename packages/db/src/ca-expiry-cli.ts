@@ -5,7 +5,7 @@ import process from 'node:process'
 import { normalizeCaCert } from './ca-cert'
 import { assessCaExpiry, formatCaExpiry } from './ca-expiry'
 
-const DEFAULT_WARN_DAYS = 21
+const DEFAULT_WARN_DAYS = 6
 
 function main(): number {
 	const raw = process.env['CA_EXPIRY_WARN_DAYS']

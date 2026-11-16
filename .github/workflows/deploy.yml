@@ -434,7 +434,7 @@ jobs:
           DANUBE_TOKEN: ${{ secrets.DANUBE_TOKEN }}
         run: danube whoami
 
-      # Threshold 0, unlike the weekly job's 21 days: a deploy blocks only on a
+      # Threshold 0, unlike the daily job's 6 days: a deploy blocks only on a
       # certificate that is already expired or unparseable.
       - name: Verify the database CA certificate is usable
         env:
