@@ -73,15 +73,10 @@ export function formatCaExpiry(result: CaExpiryResult): string {
 	const remedy = [
 		'To renew:',
 		'  1. DanubeData console → database budget-planner-prod → turn public DNS ON.',
-		'  2. openssl s_client -4 -starttls postgres -showcerts \\',
-		'       -connect postgresql-budget-planner-prod.budgetplanner795.danubedata.ro:<port>',
-		'     (read <port> from `danube db ls`; it changes on re-provisioning)',
-		'  3. Take the SECOND certificate in the chain — the self-signed one whose',
-		'     subject equals its issuer — and store it as the DATABASE_CA_CERT secret',
-		'     in GitHub and as the container env var in Rapids. Rapids env inputs are',
-		'     single-line: base64-encode the PEM first (`base64 -w0 ca.pem`) and paste',
-		'     that; normalizeCaCert() decodes it back at read time.',
-		'  4. Turn public DNS back OFF.',
+		'  2. scripts/renew-db-ca.sh <port>   (read <port> from `danube db ls`)',
+		'     It fetches the chain, picks the self-signed CA, refuses one that has not',
+		'     rotated yet, and pushes it to GitHub and Rapids after you confirm.',
+		'  3. Turn public DNS back OFF.',
 		'Background: .github/DEPLOY_RUNBOOK.md and docs/production-database-runbook.md.',
 	].join('\n')
 

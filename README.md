@@ -216,7 +216,7 @@ The other workflows:
 - `container-image.yml` - On pull requests, builds the container image and runs the same size budget and serve and migrate checks as the deploy, without pushing anything.
 - `screenshots.yml` - Manually dispatched; the only place screenshot baselines are generated, because CI and dev machines render fonts differently.
 - `retention-sweep.yml` - Daily call to the retention-sweep endpoint.
-- `ca-expiry.yml` - Weekly warning when the pinned database CA certificate is close to expiry.
+- `ca-expiry.yml` - Daily warning once the pinned database CA certificate is within 6 days of expiry; renew with `scripts/renew-db-ca.sh`.
 - `paddle-drift.yml` - Weekly check that the Paddle.js internals the app relies on still match the CDN file.
 
 To skip bulk-reformat commits in `git blame`, run `git config blame.ignoreRevsFile .git-blame-ignore-revs`.

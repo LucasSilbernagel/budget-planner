@@ -1,10 +1,10 @@
-# Weekly warning: the pinned DATABASE_CA_CERT does not renew with the cluster's
-# 90-day chain, and a lapsed copy reads as a database outage.
+# Daily from 6 days out: CloudNativePG by default issues the next 90-day CA ~7 days before expiry,
+# so an earlier warning has nothing to renew to. Renew with scripts/renew-db-ca.sh.
 name: CA certificate expiry
 
 on:
   schedule:
-    - cron: '0 8 * * 1'
+    - cron: '0 8 * * *'
   workflow_dispatch:
 
 permissions:
@@ -40,5 +40,5 @@ jobs:
       - name: Check certificate expiry
         env:
           DATABASE_CA_CERT: ${{ secrets.DATABASE_CA_CERT }}
-          CA_EXPIRY_WARN_DAYS: '21'
+          CA_EXPIRY_WARN_DAYS: '6'
         run: pnpm --filter @budget-planner/db db:ca-expiry
